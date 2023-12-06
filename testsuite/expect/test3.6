@@ -1,0 +1,219 @@
+#!/usr/bin/env expect
+############################################################################
+# Purpose: Test of Slurm functionality
+#          Testing of hidden partitions.
+############################################################################
+# Copyright (C) 2002 The Regents of the University of California.
+# Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
+# Written by Morris Jette <jette1@llnl.gov>
+# CODE-OCEC-09-009. All rights reserved.
+#
+# This file is part of Slurm, a resource management program.
+# For details, see <https://slurm.schedmd.com/>.
+# Please also read the included file: DISCLAIMER.
+#
+# Slurm is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along
+# with Slurm; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
+############################################################################
+source ./globals
+
+set authorized     1
+set part_name      "QA_TEST"
+
+#
+# This test can only be run on a development build. If this is not a development
+# build, then exit with a warning, but don't fail the test.
+# We know it's a development build if the slurm_testsuite_dev_build variable is
+# set in globals.local to a nonzero value.
+#
+if { ![info exists slurm_testsuite_dev_build] || !$slurm_testsuite_dev_build } {
+	skip "Cannot run this test on a non-development build. If you are on a development build, set slurm_testsuite_dev_build in globals.local in order to run this test"
+}
+
+#
+# Set the environment variable to drop privileges for the current test.
+#
+set ::env(SLURM_TESTSUITE_DROP_PRIV) 1
+
+#
+# We only reach this point if a hidden partition must be
+# created to test this feature, which only super users can do
+#
+if {![is_super_user]} {
+	skip "Can not test more unless SlurmUser"
+}
+
+proc cleanup {} {
+	global scontrol part_name
+
+	run_command "$scontrol delete PartitionName=$part_name"
+}
+cleanup
+
+#
+# Confirm that no hidden partition is seen by default
+#
+spawn  $scontrol show part
+expect {
+	-re "Hidden=YES" {
+		fail "scontrol hidden partition seen"
+	}
+	timeout {
+		fail "scontrol not responding"
+	}
+	eof {
+		wait
+	}
+}
+
+#
+# Check if any hidden partitions exist
+#
+set found 0
+spawn  $scontrol -a show part
+expect {
+	-re "Hidden=YES" {
+		set found 1
+		exp_continue
+	}
+	timeout {
+		fail "scontrol not responding"
+	}
+	eof {
+		wait
+	}
+}
+if {$found == 1} {
+	fail "Hidden partitions were found"
+}
+
+#
+# Confirm the partition name does not already exist
+#
+set found -1
+spawn $scontrol -a show part $part_name
+expect {
+	-re "not found" {
+		log_debug "This error was expected, no worries"
+		set found 0
+		exp_continue
+	}
+	-re "PartitionName" {
+		set found 1
+		exp_continue
+	}
+	timeout {
+		fail "scontrol not responding"
+	}
+	eof {
+		wait
+	}
+}
+if {$found == -1} {
+	fail "scontrol output format error"
+}
+if {$found == 1} {
+	fail "Partition ($part_name) already exists"
+}
+
+#
+# Unset the drop privileges environment variable so a partition can be created.
+#
+unset ::env(SLURM_TESTSUITE_DROP_PRIV)
+
+#
+# Create a new partition
+#
+spawn $scontrol create PartitionName=$part_name Hidden=YES
+expect {
+	-re "error" {
+		fail "Something bad happened on partition create"
+	}
+	timeout {
+		fail "scontrol not responding"
+	}
+	eof {
+		wait
+	}
+}
+
+#
+# Confirm the partition now exists
+#
+set found -1
+set hidden 0
+spawn $scontrol -a show part $part_name
+expect {
+	-re "not found" {
+		set found 0
+		exp_continue
+	}
+	-re "PartitionName" {
+		set found 1
+		exp_continue
+	}
+	-re "Hidden=YES" {
+		set hidden 1
+		exp_continue
+	}
+	timeout {
+		fail "scontrol not responding"
+	}
+	eof {
+		wait
+	}
+}
+if {$found != 1} {
+	fail "Partition not created"
+}
+subtest {$hidden != 0} "Partition should be hidden"
+
+#
+# Now delete the partition
+#
+spawn $scontrol delete PartitionName=$part_name
+expect {
+	timeout {
+		fail "scontrol not responding"
+	}
+	eof {
+		wait
+	}
+}
+
+#
+# Confirm the partition is now gone
+#
+set found -1
+spawn $scontrol -a show part $part_name
+expect {
+	-re "not found" {
+		log_debug "This error was expected, no worries"
+		set found 0
+		exp_continue
+	}
+	-re "PartitionName" {
+		set found 1
+		exp_continue
+	}
+	timeout {
+		fail "scontrol not responding"
+	}
+	eof {
+		wait
+	}
+}
+if {$found != 0} {
+	fail "Partition not deleted"
+}

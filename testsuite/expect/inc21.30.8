@@ -1,0 +1,135 @@
+#!/usr/bin/env expect
+############################################################################
+# Purpose: Test of Slurm functionality
+#          to be called from test21.30
+#          Tests if the MaxJobSubmit limit is enforced
+############################################################################
+# Copyright (C) 2012 SchedMD LLC
+# Written by Nathan Yee <nyee32@schedmd.com>
+#
+# This file is part of Slurm, a resource management program.
+# For details, see <https://slurm.schedmd.com/>.
+# Please also read the included file: DISCLAIMER.
+#
+# Slurm is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along
+# with Slurm; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
+############################################################################
+
+# Test MaxJobsSubmits limit
+proc inc21_30_8 {} {
+	global sbatch salloc srun acct bin_rm bin_sleep jobmatch
+	global number maxjobsub_num
+
+	log_info "Starting MaxJobsSubmits limit test"
+	set check_num $maxjobsub_num
+	set file_in "in21.30.8_script"
+	set tmp_job_id 0
+	array set job_id {}
+
+	make_bash_script $file_in "sleep 5"
+
+	# Raise an error to abort the catch block
+	set exception_code [catch {
+
+		set jobmatch 0
+		for {set inx 0} {$inx <= $check_num} {incr inx} {
+			spawn $salloc --account=$acct -t1 -n1 $srun $bin_sleep 100
+			expect {
+				-re "Granted job allocation ($number)" {
+					set job_id($inx) $expect_out(1,string)
+					if {$inx < $check_num} {
+						log_debug "Job $inx $job_id($inx) was submitted"
+						incr jobmatch
+					} else {
+						error "Job $inx ($job_id($inx)) wasn't suppose to work but it did, limit was $check_num"
+					}
+				}
+				-re "error" {
+					if {$inx >= $check_num} {
+						log_debug "Job $inx didn't get submitted. This is expected"
+						incr jobmatch
+					} else {
+						error "Job $inx was suppose to work but it didn't, limit was $check_num?"
+					}
+				}
+				timeout {
+					error "salloc is not responding"
+				}
+				eof {
+					wait
+				}
+			}
+		}
+
+		set target_jobs [expr $check_num + 1]
+		subtest {$jobmatch == $target_jobs} "All $target_jobs jobs should have been submitted" "Only $jobmatch jobs were submitted"
+
+		for {set inx 0} {$inx <= $check_num} {incr inx} {
+			if [info exists job_id($inx)] {
+				# Cancels the jobs
+				cancel_job $job_id($inx)
+			}
+		}
+
+		# Test limit with job array
+		set upper_lim [expr $check_num - 1]
+		spawn $sbatch --account=$acct -t1 -a0-$upper_lim -o/dev/null $file_in
+		expect {
+			-re "Submitted batch job ($number)" {
+				set tmp_job_id $expect_out(1,string)
+				exp_continue
+			}
+			timeout {
+				error "sbatch is not responding"
+			}
+			eof {
+				wait
+			}
+		}
+		subtest {$tmp_job_id != 0} "All job array elements should have been submitted"
+
+		# Add one more job, and check for error message
+		set match 0
+		spawn $sbatch --account=$acct -t1 -a0-$upper_lim -o/dev/null $file_in
+		expect {
+			-re "Job violates accounting/QOS policy" {
+				set match 1
+				exp_continue
+			}
+			timeout {
+				error "sbatch is not responding"
+			}
+			eof {
+				wait
+			}
+		}
+		subtest {$match != 0} "Additional job should not have been submitted"
+
+	} message] ; # Store the error message in $message
+
+	# Perform local cleanup
+	for {set inx 0} {$inx <= $check_num} {incr inx} {
+		if [info exists job_id($inx)] {
+			# cancels the jobs
+			cancel_job $job_id($inx)
+		}
+	}
+	exec $bin_rm -f $file_in
+	cancel_job $tmp_job_id
+
+	# Convert any errors into failures (after cleaning up)
+	if {$exception_code == 1} { ; # errors only
+		fail "Failure testing MaxJobsSubmits limit: $message"
+	}
+}

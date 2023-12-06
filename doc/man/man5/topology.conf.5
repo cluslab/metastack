@@ -1,0 +1,97 @@
+.TH "topology.conf" "5" "Slurm Configuration File" "January 2022" "Slurm Configuration File"
+
+.SH "NAME"
+topology.conf \- Slurm configuration file for defining the network topology
+
+.SH "PREREQUISITES"
+
+Topology.conf can only represent a hierarchical network. All nodes in the
+network must be connected to at least one switch. The network must be fully
+connected to use a RoutePlugin. Jobs can only span nodes connected by the same
+switch fabric, even if there are available idle nodes.
+
+.SH "DESCRIPTION"
+\fBtopology.conf\fP is an ASCII file which describes the
+cluster's network topology for optimized job resource allocation.
+The file will always be located in the same directory as the \fBslurm.conf\fR.
+.LP
+Parameter names are case insensitive.
+Any text following a "#" in the configuration file is treated
+as a comment through the end of that line.
+Changes to the configuration file take effect upon restart of
+Slurm daemons, daemon receipt of the SIGHUP signal, or execution
+of the command "scontrol reconfigure" unless otherwise noted.
+.LP
+The network topology configuration one line defining a switch name and
+its children, either node names or switch names.
+Slurm's hostlist expression parser is used, so the node and switch
+names need not be consecutive (e.g. "Nodes=tux[0\-3,12,18\-20]"
+and "Switches=s[0\-2,4\-8,12]" will parse fine).
+An optional link speed may also be specified.
+.LP
+The \fBtopology.conf\fP file for an Infiniband switch can be
+automatically generated using the \fBslurmibtopology\fP tool found here:
+<https://ftp.fysik.dtu.dk/Slurm/slurmibtopology.sh>.
+.LP
+The overall configuration parameters available include:
+
+.TP
+\fBSwitchName\fR
+The name of a switch. This name is internal to Slurm and arbitrary.
+Each switch should have a unique name.
+This field must be specified.
+.IP
+
+.TP
+\fBSwitches\fR
+Child switches of the named switch.
+Either this option or the \fBNodes\fR option must be specified.
+.IP
+
+.TP
+\fBNodes\fR
+Child Nodes of the named leaf switch.
+Either this option or the \fBSwitches\fR option must be specified.
+.IP
+
+.TP
+\fBLinkSpeed\fR
+An optional value specifying the performance of this communication link.
+The units used are arbitrary and this information is currently not used.
+It may be used in the future to optimize resource allocations.
+.IP
+
+.SH "EXAMPLE"
+.nf
+##################################################################
+# Slurm's network topology configuration file for use with the
+# topology/tree plugin
+##################################################################
+SwitchName=s0 Nodes=dev[0\-5]
+SwitchName=s1 Nodes=dev[6\-11]
+SwitchName=s2 Nodes=dev[12\-17]
+SwitchName=s3 Switches=s[0\-2]
+.fi
+
+.SH "COPYING"
+Copyright (C) 2009 Lawrence Livermore National Security.
+Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
+.br
+Copyright (C) 2010\-2022 SchedMD LLC.
+.LP
+This file is part of Slurm, a resource management program.
+For details, see <https://slurm.schedmd.com/>.
+.LP
+Slurm is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or (at your option)
+any later version.
+.LP
+Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+details.
+
+.SH "SEE ALSO"
+.LP
+\fBslurm.conf\fR(5)

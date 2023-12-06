@@ -1,0 +1,493 @@
+<!--#include virtual="header.txt"-->
+
+<h1><a name="top">Cloud Scheduling Guide</a></h1>
+
+<h2 id="overview">Overview<a class="slurm_link" href="#overview"></a></h2>
+
+<p>Slurm has the ability to support a cluster that grows and
+shrinks on demand, typically relying upon a service such as
+<a href="http://aws.amazon.com/ec2/">Amazon Elastic Computing Cloud (Amazon EC2)</a>,
+<a href="https://cloud.google.com">Google Cloud Platform</a>
+or <a href="https://azure.microsoft.com/">Microsoft Azure</a>
+for resources.
+These resources can be combined with an existing cluster to process excess
+workload (cloud bursting) or it can operate as an independent self-contained
+cluster.
+Good responsiveness and throughput can be achieved while you only pay for the
+resources needed.</p>
+
+<p>The rest of this document describes details about Slurm's infrastructure that
+can be used to support cloud scheduling.</p>
+
+<p>Slurm's cloud scheduling logic relies heavily upon the existing power save
+logic.
+Review of Slurm's <a href="power_save.html">Power Saving Guide</a> is strongly
+recommended.
+This logic initiates programs when nodes are required for use and another
+program when those nodes are no longer required.
+For cloud scheduling, these programs will need to provision the resources
+from the cloud and notify Slurm of the node's name and network address and
+later relinquish the nodes back to the cloud.
+Most of the Slurm changes to support cloud scheduling were changes to
+support node addressing that can change.</p>
+
+<h2 id="config">Slurm Configuration
+<a class="slurm_link" href="#config"></a>
+</h2>
+
+<p>There are many ways to configure Slurm's use of resources.
+See the slurm.conf man page for more details about these options.
+Some general Slurm configuration parameters that are of interest include:
+<dl>
+<dt><b>CommunicationParameters=NoAddrCache</b>
+<dd> By default, Slurm will cache a node's network address after successfully
+establishing the node's network address. This option disables the cache and
+Slurm will look up the node's network address each time a connection is made.
+This is useful, for example, in a cloud environment where the node addresses
+come and go out of DNS.
+<dt><b>ResumeFailProgram</b>
+<dd>The program that will be executed when nodes fail to resume by
+<b>ResumeTimeout</b>. The argument to the program will be the names of the
+failed nodes (using Slurm's hostlist expression format).
+<dt><b>ResumeProgram</b>
+<dd>The program executed when a node has been allocated and should be made
+available for use. If the <i>slurmd</i> daemon fails to respond within the
+configured <b>SlurmdTimeout</b> value with an updated BootTime, the node will
+be placed in a DOWN state and the job requesting the node will be requeued.
+If the node isn't actually rebooted (i.e. when multiple-slurmd is configured)
+starting slurmd with "-b" option might be useful.
+The argument to the program is the names of nodes (using Slurm's hostlist
+expression format) to power up. A job to node mapping is available in JSON
+format by reading the temporary file specified by the <b>SLURM_RESUME_FILE</b>
+environment variable.
+
+<br>
+e.g.
+<pre>
+SLURM_RESUME_FILE=/proc/1647372/fd/7:
+{
+   "all_nodes" : "cloud[1-3]",
+   "jobs" : [
+      {
+         "job_id" : 140814,
+         "nodes" : "cloud[1-3]",
+      },
+      {
+         "job_id" : 140815,
+         "nodes" : "cloud[1-2]",
+      }
+   ]
+}
+</pre>
+<dt><b>PrivateData</b>
+<dd>Including the <i>cloud</i> flag with <b>PrivateData</b> will cause cloud
+nodes to be visible in the output of commands like <b>sinfo</b> at all times.
+Without this flag, nodes will only be visible when the they are powered on.
+<dt><b>ResumeTimeout</b>
+<dd>Maximum time permitted (in seconds) between when a node resume request
+is issued and when the node is actually available for use. Nodes which fail to
+respond in this time frame will be marked DOWN and the jobs scheduled on the
+node requeued. Nodes which reboot after this time frame will be marked DOWN
+with a reason of "Node unexpectedly rebooted." The default value is 60 seconds.
+<dt><b>SlurmctldParameters=cloud_dns</b>
+<dd>By default, Slurm expects that the network addresses for cloud nodes
+won't be known until creation of the node and that Slurm will be notified of
+the node's address (e.g. scontrol update nodename=&lt;name&gt;
+nodeaddr=&lt;addr&gt;). Since Slurm communications rely on the node
+configuration found in the slurm.conf, Slurm will tell the client command,
+after waiting for all nodes to boot, each node's IP address. However, in
+environments where the nodes are in DNS, this step can be avoided by
+configuring this option.
+<dt><b>SlurmctldParameters=idle_on_node_suspend</b>
+<dd>Mark nodes as idle, regardless of current state, when suspending nodes with
+SuspendProgram so that nodes will be eligible to be resumed at a later time.
+<dt><b>SuspendExcNodes</b>
+<dd>Nodes not subject to suspend/resume logic. This may be used to avoid
+suspending and resuming nodes which are not in the cloud. Alternately the
+suspend/resume programs can treat local nodes differently from nodes being
+provisioned from cloud.
+<dt><b>SuspendProgram</b>
+<dd>The program executed when a node is no longer required and can be
+relinquished to the cloud.
+<dt><b>SuspendTime</b>
+<dd>The time interval that a node will be left idle or down before a request is
+made to relinquish it. Units are in seconds.
+<dt><b>SuspendTimeout</b>
+<dd>Maximum time permitted (in seconds) between when a node suspend request
+is issued and when the node is shutdown. At that time the node must be ready
+for a resume request to be issued as needed for new work. The default value is
+30 seconds.
+<dt><b>TCPTimeout</b>
+<dd>Time permitted for TCP connections to be established. This value may need
+to be increased from the default (2 seconds) to account for latency between
+your local site and machines in the cloud.
+<dt><b>TreeWidth</b>
+<dd>Since the slurmd daemons are not aware of the network addresses of other
+nodes in the cloud, the slurmd daemons on each node should be sent messages
+directly and not forward those messages between each other. To do so,
+configure TreeWidth to a number at least as large as the maximum node count.
+The value may not exceed 65533.
+</dl>
+</p>
+
+<p>Some node parameters that are of interest include:
+<dl>
+<dt><b>Feature</b>
+<dd>A node feature can be associated with resources acquired from the cloud and
+user jobs can specify their preference for resource use with the "--constraint"
+option.
+<dt><b>NodeName</b>
+<dd>This is the name by which Slurm refers to the node. A name containing a
+numeric suffix is recommended for convenience. The NodeAddr and NodeHostname
+should not be set, but will be configured later using scripts.
+<dt><b>State</b>
+<dd>Nodes which are to be added on demand should have a state of "CLOUD".
+These nodes will not actually appear in Slurm commands until after they are
+configured for use.
+<dt><b>Weight</b>
+<dd>Each node can be configured with a weight indicating the desirability of
+using that resource. Nodes with lower weights are used before those with higher
+weights.
+</dl>
+</p>
+
+<p>Nodes to be acquired on demand can be placed into their own Slurm partition.
+This mode of operation can be used to use these nodes only if so requested by
+the user. Note that jobs can be submitted to multiple partitions and will use
+resources from whichever partition permits faster initiation.
+A sample configuration in which nodes are added from the cloud when the workload
+exceeds available resources. Users can explicitly request local resources or
+resources from the cloud by using the "--constraint" option.
+</p>
+
+<pre>
+# Excerpt of slurm.conf
+SelectType=select/cons_res
+SelectTypeParameters=CR_CORE_Memory
+
+SuspendProgram=/usr/sbin/slurm_suspend
+ResumeProgram=/usr/sbin/slurm_suspend
+SuspendTime=600
+SuspendExcNodes=tux[0-127]
+TreeWidth=128
+
+NodeName=DEFAULT    Sockets=1 CoresPerSocket=4 ThreadsPerCore=2
+NodeName=tux[0-127] Weight=1 Feature=local State=UNKNOWN
+NodeName=ec[0-127]  Weight=8 Feature=cloud State=CLOUD
+PartitionName=debug MaxTime=1:00:00 Nodes=tux[0-32] Default=yes
+PartitionName=batch MaxTime=8:00:00 Nodes=tux[0-127],ec[0-127] Default=no
+</pre>
+
+<p><b>ResumeTimeout</b>, <b>SuspendTimeout</b> and <b>SuspendTime</b> can be
+applied at the partition level. If a node is in multiple partitions and these
+options are configured on the partitions, the higher value will be used for the
+node. If the option is not set, it will use the global setting. Configuring
+<b>SuspendTime</b> on a partition will enable power save mode if the global
+SuspendTime is not set.
+</p>
+
+<p>By default, when power save mode is enabled Slurm attempts to "suspend" all
+nodes unless excluded by <b>SuspendExcNodes</b> or <b>SuspendExcParts</b>. For
+bursting from on-premise scenarios this can be tricky to have to remember to
+add on-premise nodes to the excluded options. By setting the global
+<b>SuspendTime</b> to <b>INFINITE</b> and configuring <b>SuspendTime</b> on
+cloud specific partitions, you can avoid having to exclude nodes.
+</p>
+
+<p>If power save mode is enabled globally, disable power save mode for a
+specific partition, by setting <b>SuspendTime</b> to <b>INFINITE</b>.
+</p>
+
+<h2 id="details">Operational Details
+<a class="slurm_link" href="#details"></a>
+</h2>
+
+<p>When the slurmctld daemon starts, all nodes with a state of CLOUD will be
+included in its internal tables, but these node records will not be seen with
+user commands or used by applications until allocated to some job. After
+allocated, the <i>ResumeProgram</i> is executed and should do the following:</p>
+<ol>
+<li>Boot the node</li>
+<li>Configure and start Munge (depends upon configuration)</li>
+<li>Install the Slurm configuration file, slurm.conf, on the node.
+Note that configuration file will generally be identical on all nodes and not
+include NodeAddr or NodeHostname configuration parameters for any nodes in the
+cloud.
+Slurm commands executed on this node only need to communicate with the
+slurmctld daemon on the SlurmctldHost.
+<li>Notify the slurmctld daemon of the node's hostname and network address:<br>
+<i>scontrol update nodename=ec0 nodeaddr=123.45.67.89 nodehostname=whatever</i><br>
+Note that the node address and hostname information set by the scontrol command
+are preserved when the slurmctld daemon is restarted unless the "-c"
+(cold-start) option is used.</li>
+<li>Start the slurmd daemon on the node</li>
+</ol>
+
+<p>The <i>SuspendProgram</i> only needs to relinquish the node back to the
+cloud.</p>
+
+<p>An environment variable SLURM_NODE_ALIASES contains sets of node name,
+communication address and hostname.
+The variable is set by salloc, sbatch, and srun.
+It is then used by srun to determine the destination for job launch
+communication messages.
+This environment variable is only set for nodes allocated from the cloud.
+If a job is allocated some resources from the local cluster and others from
+the cloud, only those nodes from the cloud will appear in SLURM_NODE_ALIASES.
+Each set of names and addresses is comma separated and
+the elements within the set are separated by colons. For example:<br>
+SLURM_NODE_ALIASES=ec0:123.45.67.8:foo,ec2:123.45.67.9:bar</p>
+
+<h2 id="cloud">Cloud Node Lifecycle
+<a class="slurm_link" href="#cloud"></a>
+</h2>
+
+<p>A cloud node moves through different states when enabled with Power Saving
+mode. A node can have multiple states associated with it at one time. States
+associated with Power Saving are labeled with a symbol when viewing node
+details in &ldquo;sinfo&rdquo;.</p>
+<p>List of Node States a cloud node may have during autoscaling operations:</p>
+<div>
+<table cellpadding="8">
+<tbody>
+	<tr>
+		<td><u><b>STATE</b></u></td>
+		<td style="text-align:center">
+			<b><u>Power Saving Symbol</u></b>
+		</td>
+		<td><b><u>Description</u></b></td>
+	</tr>
+	<tr>
+		<td>IDLE</td>
+		<td>&nbsp;</td>
+		<td>
+			The node is not allocated to any jobs and is available
+			for use.
+		</td>
+	</tr>
+	<tr>
+		<td>POWERED_DOWN</td>
+		<td style="text-align:center">~</td>
+		<td>
+			The node is powered off (node has been relinquished to
+			the cloud).
+		</td>
+	</tr>
+	<tr>
+		<td>ALLOCATED</td>
+		<td>&nbsp;</td>
+		<td>
+			All CPUS on the node have been allocated to one or more
+			jobs.
+		</td>
+	</tr>
+	<tr>
+		<td>MIXED</td>
+		<td>&nbsp;</td>
+		<td>
+			The node has some of its CPUs allocated while others
+			are idle.
+		</td>
+	</tr>
+	<tr>
+		<td>POWERING_UP</td>
+		<td style="text-align:center">#</td>
+		<td>
+			The node is in the process of being powered up.
+		</td>
+	</tr>
+	<tr>
+		<td>COMPLETING</td>
+		<td>&nbsp;</td>
+		<td>
+			All jobs associated with this node are in the process
+			of <i>COMPLETING</i>. This node state will be removed
+			when all of the job's processes have terminated and the
+			Slurm epilog program (if any) has terminated.
+		</td>
+	</tr>
+	<tr>
+		<td>POWERING_DOWN</td>
+		<td style="text-align:center">%</td>
+		<td>
+			The node is in the process of powering down and not
+			capable of running any jobs.
+		</td>
+	</tr>
+	<tr>
+		<td>DOWN</td>
+		<td>&nbsp;</td>
+		<td>
+			The node is unavailable for use. Slurm can
+			automatically place nodes in this state if some failure
+			occurs. System administrators may also explicitly place
+			nodes in this state. If a node resumes normal
+			operation, Slurm can automatically return it to service
+			(See <i>ReturnToService</i>). A DOWN Cloud node can be
+			changed to IDLE using the scontrol command: <i>scontrol
+			update node=[nodename] state=idle</i>
+		</td>
+	</tr>
+</tbody>
+</table>
+</div>
+<p>Additional states nodes can have during manual power saving operations:</p>
+<div>
+	<table cellpadding="8">
+<tbody>
+	<tr>
+		<td><u><b>STATE</b></u></td>
+		<td style="text-align:center">
+			<b><u>Power Saving Symbol</u></b>
+		</td>
+		<td><b><u>Description</u></b></td>
+	</tr>
+	<tr>
+		<td>DRAINING</td>
+		<td>&nbsp;</td>
+		<td>
+			The node is currently executing a job, but will not be
+			allocated additional jobs. The node state will be
+			changed to state DRAINED when the last job on it
+			completes. Nodes enter this state per system
+			administrator request.
+		</td>
+	</tr>
+	<tr>
+		<td>POWER_DOWN</td>
+		<td style="text-align:center">!</td>
+		<td>
+			When the node is no longer running jobs, run the
+			<b>SuspendProgram</b>.
+		</td>
+	</tr>
+	<tr>
+		<td>DRAINED</td>
+		<td>&nbsp;</td>
+		<td>
+			The node is unavailable for use per system
+			administrator request.
+		</td>
+	</tr>
+</tbody>
+</table>
+</div>
+<p>A cloud node starts out in <i>IDLE</i> and <i>POWERED_DOWN</i> (~) state. In
+this state, no actual node exists, as the node is in the cloud waiting to be
+provisioned. However, the <i>IDLE</i> state indicates that it is eligible for
+work.</p>
+<pre>
+PARTITION AVAIL TIMELIMIT NODES STATE  NODELIST
+debug*     up   infinite  100   idle~  c1-compute-0-[0-99]
+</pre>
+<p>When Slurm schedules a job to a node in this state, the node will move to
+<i>ALLOCATED</i> or <i>MIXED</i> (based on whether all the CPUs are allocated)
+and <i>POWERING_UP</i> (#).</p>
+<pre>
+PARTITION AVAIL    TIMELIMIT  NODES STATE   NODELIST
+debug*     up      infinite     1   alloc#  c1-compute-0-0>
+debug*     up      infinite    99   idle~   c1-compute-0-[1-99]
+</pre>
+<p>The scheduled job is in CONFIGURING state as it waits for the node to power
+up.</p>
+<pre>
+JOBID PARTITION  NAME  USER      ST  TIME  NODES  NODELIST(REASON)
+182    debug     wrap  nick_sch  CF  0:01   2     c1-compute-0-0
+</pre>
+<p>After power up, the node registers with the Slurm controller and the
+<i>POWERING_UP (#)</i> is removed. The job will start running after the node
+registers + MAX of 30 seconds, based on when the node registers and job starts
+begin.</p>
+<pre>
+PARTITION  AVAIL  TIMELIMIT  NODES  STATE  NODELIST
+debug*      up    infinite     1    alloc  c1-compute-0-0
+debug*      up    infinite    99    idle~  c1-compute-0-[1-99]
+&nbsp
+JOBID PARTITION  NAME  USER      ST  TIME  NODES   NODELIST(REASON)
+182   debug      wrap  nick_sch  R   0:04    2     c1-compute-0-0
+</pre>
+<p>Once the job completes, if no other job is scheduled to the node, the node
+moves to <i>IDLE</i> state and the timer for the <b>SuspendTime</b> begins. The
+"scontrol show node" output displays <i>LastBusyTime</i>, the timestamp when
+the node stopped running a job and became idle.</p>
+<p>When <i>SuspendTime</i> is reached, the node will move to
+<i>IDLE</i>+<i>POWERING_DOWN (%)</i>. At this time, the <b>SuspendProgram</b>
+will execute. The node is not eligible for allocation until
+<i>POWERING_DOWN</i> state is removed.
+<pre>
+PARTITION  AVAIL  TIMELIMIT  NODES  STATE  NODELIST
+debug*      up    infinite     1    idle%  c1-compute-0-0
+debug*      up    infinite    99    idle~  c1-compute-0-[1-99]
+</pre>
+</p>
+<h3 id="power_failures"><strong>POWER UP and POWER DOWN Failures</strong>
+<a class="slurm_link" href="#power_failures"></a>
+</h3>
+<p>A node may move into <i>DOWN</i> state if there is a failure during the
+<i>POWERING_UP</i> or <i>POWERING_DOWN</i> phase. The <b>ResumeTimeout</b>
+controls how long Slurm waits until nodes are expected to register. The node is
+marked <i>DOWN</i> if it fails to register in that time and the jobs scheduled
+on the node are requeued. To move the node back into <i>IDLE</i> state,
+run:</p>
+<pre>
+scontrol update node=[nodename] state=resume
+</pre>
+
+<p><b>SuspendTimeout</b> controls when Slurm will assume the node has been
+relinquished to the cloud. The node is marked <i>IDLE</i> and
+<i>POWERED_DOWN</i> at this point. This step can be accelerated by running the
+"scontrol update node=[nodename] state=resume" manually, or in the
+<b>SuspendProgram</b> script.</p>
+
+
+<div class="figure">
+  <img src=node_lifecycle.png width=1000 ><BR>
+  Figure 1. Node State Lifecycle
+</div>
+
+
+
+<h3 id="manual"><strong>Manual Power Saving</strong>
+<a class="slurm_link" href="#manual"></a>
+</h3>
+<p>A node can be manually powered on and off by setting the state of the node
+to the following states using "scontrol update":</p>
+<p><i>POWER_DOWN</i>, <i>POWER_UP</i>, <i>POWER_DOWN_ASAP</i>, or
+<i>POWER_DOWN_FORCE</i></p>
+<p><i>POWER_DOWN</i> or <i>POWER_UP</i> use the configured
+<b>SuspendProgram</b> and <b>ResumeProgram</b> programs to explicitly place a
+node in or out of a power saving mode. If a node is already in the process of
+being powered up or down, the command will only change the state of the node
+but won't have any effect until the configured <b>ResumeTimeout</b> or
+<b>SuspendTimeout</b> is reached.</p>
+
+<p>For <i>POWER_UP</i>, the node goes through a similar lifecycle as noted
+above, except it will be in <i>IDLE</i> state instead of <i>MIXED</i> or
+<i>ALLOCATED</i> as it is not allocated to a job yet.</p>
+
+<p><i>POWER_DOWN</i> is signified by the <i>(!)</i> symbol. It marks the node
+to be powered down as soon as no jobs are running on the node anymore. Powering
+down may be delayed if more jobs are scheduled to the node while it is
+currently running other jobs. As soon as all jobs complete on the node, the
+node will move to <i>POWERING_DOWN (%)</i>.</p>
+
+<p><i>POWER_DOWN_ASAP</i> sets the node state as <i>DRAINING</i> and marks it to
+be powered off with the <i>POWER_DOWN</i> state. <i>DRAINING</i> allows for
+currently running jobs to complete, but no additional jobs will be allocated to
+it. When the jobs are completed, the node will move to <i>POWERING_DOWN
+(%)</i>.</p>
+<p><i>POWER_DOWN_FORCE</i> cancels all jobs on the node and suspends the node
+immediately, placing the node in <i>IDLE</i> and <i>POWER_DOWN (!)</i> state
+and then  <i>POWERING_DOWN (%)</i> state.</p>
+<pre>
+scontrol update nodename=c1-compute-0-0 state=power_down_asap
+</pre>
+<pre>
+PARTITION  AVAIL  TIMELIMIT  NODES  STATE  NODELIST
+debug*      up    infinite     1    drng!  c1-compute-0-0
+debug*      up    infinite    99    idle~  c1-compute-0-[1-99]
+</pre>
+
+<p style="text-align:center;">Last modified 14 June 2022</p>
+
+<!--#include virtual="footer.txt"-->

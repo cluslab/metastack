@@ -1,0 +1,197 @@
+#!/usr/bin/env expect
+############################################################################
+# Purpose: Test of Slurm functionality
+#          Test sacct filtering of records by account and job name.
+############################################################################
+# Copyright (C) 2012 SchedMD LLC.
+# Copyright (C) 2008-2010 Lawrence Livermore National Security.
+# Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
+# Written by Joseph Donaghy <donaghy1@llnl.gov> and
+#            Nathan Yee <nyee32@schedmd.com>
+# CODE-OCEC-09-009. All rights reserved.
+#
+# This file is part of Slurm, a resource management program.
+# For details, see <https://slurm.schedmd.com/>.
+# Please also read the included file: DISCLAIMER.
+#
+# Slurm is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along
+# with Slurm; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
+############################################################################
+source ./globals
+source ./globals_accounting
+source ./inc12.3.1
+source ./inc12.3.2
+
+set job_id_1    0
+set job_id_2    0
+set job_name_1  "JOB1"
+set job_name_2  "JOB2"
+set test_acct	"${test_name}-account.1"
+set step_id     0
+
+if {[get_config_param "FrontendName"] ne "MISSING"} {
+	skip "This test can't be run on a front end system"
+}
+
+#
+# Check accounting config and bail if not found.
+#
+if {[get_config_param "AccountingStorageType"] ne "accounting_storage/slurmdbd"} {
+	skip "This test can't be run without a usable AccountStorageType"
+}
+
+if {[get_admin_level] ne "Administrator"} {
+	skip "This test can't be run without being an Accounting administrator. Use: sacctmgr mod user \$USER set admin=admin"
+}
+
+#
+# Make sure we have enough nodes to test functionality
+#
+set nodes [get_nodes_by_request "-N3"]
+if {[llength $nodes] != 3} {
+	skip "This test requires to be able to run a job on as least 3 nodes"
+}
+lassign $nodes node1 node2 node3
+
+proc cleanup {} {
+	global sacctmgr test_acct
+
+	run_command "$sacctmgr -i delete account $test_acct"
+}
+
+#
+# Identify the user and his current default account
+#
+set acct_name ""
+set user_name [get_my_user_name]
+spawn $sacctmgr show user $user_name
+expect {
+	-re "$user_name *($re_word_str)" {
+		set acct_name $expect_out(1,string)
+		exp_continue
+	}
+	timeout {
+		fail "sacctmgr add not responding"
+	}
+	eof {
+		wait
+	}
+}
+
+#
+# Use sacctmgr to add a test account
+#
+set aamatches 0
+spawn $sacctmgr -i add account $test_acct
+expect {
+	-re "Adding Account" {
+		incr aamatches
+		exp_continue
+	}
+	-re "Nothing new added" {
+		log_warn "Vestigial account $test_acct found"
+		incr aamatches
+		exp_continue
+	}
+	timeout {
+		fail "sacctmgr add not responding"
+	}
+	eof {
+		wait
+	}
+}
+if {$aamatches != 1} {
+	fail "sacctmgr had a problem adding account ($aamatches != 1)"
+}
+
+#
+# Add self to this new account
+#
+spawn $sacctmgr -i create user name=$user_name account=$test_acct
+expect {
+	 timeout {
+		fail "sacctmgr add not responding"
+	}
+	eof {
+		wait
+	}
+}
+
+#
+# Submit two slurm jobs to capture job info
+#
+set job_1_node_inx 0
+set timeout $max_job_delay
+spawn $srun -N2 -w$node1,$node2 -t1 -A $test_acct -J $job_name_1 -v $bin_id
+expect {
+	-re "launching StepId=($number)\\.$re_word_str on host ($re_word_str)," {
+		set job_id_1 $expect_out(1,string)
+		incr job_1_node_inx
+		exp_continue
+	}
+	timeout {
+		fail "srun not responding"
+	}
+	eof {
+		wait
+	}
+}
+subtest {$job_1_node_inx == 2} "Verify host count for job 1" "srun host count bad ($job_1_node_inx != 2)"
+
+#
+# Second job includes one node from the first job and another different node
+#
+set job_2_node_inx 0
+spawn $srun -N2 -w$node2,$node3 -t1 -A $test_acct -J $job_name_2 -v $bin_id
+expect {
+
+	-re "launching StepId=($number)\\.$re_word_str on host ($re_word_str)," {
+		set job_id_2 $expect_out(1,string)
+		incr job_2_node_inx
+		exp_continue
+	}
+	timeout {
+		fail "srun not responding"
+	}
+	eof {
+		wait
+	}
+}
+subtest {$job_2_node_inx == 2} "Verify host count for job 2" "srun host count bad ($job_2_node_inx != 2)"
+
+#
+# Wait for accounting data to be propagated to slurmdbd
+# NOTE: Sometimes the complete RPC reaches the DB before the start RPC.
+#       We use sacct -S to ensure that the start time is stored in the DB.
+#       Note that subsequent sacct -N queries will need start time stored to
+#       work properly because they need that to search for active node indexes
+#       along with the events table.
+#
+if [wait_for_command_match "$sacct -A ${test_name}-account.1 --name=$job_name_1 -X -n -P -j $job_id_1 -S now-60 -o jobid,jobname" "$job_id_1.$job_name_1"] {
+	fail "Accounting data for job 1 ($job_id_1) not propogated to slurmdbd"
+}
+if [wait_for_command_match "$sacct -A ${test_name}-account.1 --name=$job_name_2 -X -n -P -j $job_id_2 -S now-60 -o jobid,jobname" "$job_id_2.$job_name_2"] {
+	fail "Accounting data for job 2 ($job_id_2) not propogated to slurmdbd"
+}
+
+# Only run these sub-tests if we haven't failed already
+if {[get_subtest_fail_count] == 0} {
+	#
+	# Execute sub-tests based upon these jobs
+	#
+	inc12_3_1 $job_id_1 $job_id_2 $job_name_1 $job_name_2 $test_acct
+
+	inc12_3_2 $job_id_1 $job_id_2 $job_name_1 $job_name_2 $test_acct \
+		$node1 $node2 $node3
+}

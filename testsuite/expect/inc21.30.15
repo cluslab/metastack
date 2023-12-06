@@ -1,0 +1,99 @@
+#!/usr/bin/env expect
+############################################################################
+# Purpose: Test of Slurm functionality
+#          to be called from test21.30
+#          Tests if the MaxCPUsPU limit is enforced
+############################################################################
+# Copyright (C) 2013 SchedMD LLC
+# Written by Nathan Yee <nyee32@schedmd.com>
+#
+# This file is part of Slurm, a resource management program.
+# For details, see <https://slurm.schedmd.com/>.
+# Please also read the included file: DISCLAIMER.
+#
+# Slurm is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along
+# with Slurm; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
+############################################################################
+
+proc inc21_30_15 { wait_reason } {
+	global salloc srun bin_sleep number maxcpuspu_num acct
+
+	log_info "Starting MaxCPUsPerUser test"
+
+	set job_id1 0
+	set job_id2 0
+
+	# Raise an error to abort the catch block
+	set exception_code [catch {
+
+		spawn $salloc --account=$acct -t1 -n$maxcpuspu_num $srun $bin_sleep 20
+		expect {
+			-re "Granted job allocation ($number)" {
+				set job_id1 $expect_out(1,string)
+				log_debug "Job $job_id1 has been submitted"
+			}
+			-re "job ($number) queued and waiting for resources" {
+				set job_id1 $expect_out(1,string)
+				error "Job ($job_id1) should not be waiting for resources, but is"
+			}
+			-re "error" {
+				error "Job allocation should not have failed"
+			}
+			timeout {
+				error "salloc is not responding"
+			}
+			eof {
+				wait
+			}
+		}
+
+		if { $job_id1 == 0 } {
+			error "Job was not submitted"
+		}
+
+		spawn $salloc --account=$acct -t1 -n$maxcpuspu_num $srun $bin_sleep 20
+		expect {
+			-re "job ($number) queued and waiting for resources" {
+				set job_id2 $expect_out(1,string)
+				log_debug "Job $job_id2 is waiting for resource. This is expected do not worry"
+			}
+			-re "Granted job allocation ($number)" {
+				set job_id2 $expect_out(1,string)
+				error "Job ($job_id2) should be pending for resources, but is not"
+			}
+			timeout {
+				error "salloc is not responding"
+			}
+			eof {
+				wait
+			}
+		}
+
+		if { $job_id2 == 0 } {
+			error "Job was not submitted"
+		}
+
+		subtest [check_reason $job_id2 $wait_reason] "Job should have wait reason $wait_reason"
+
+	} message] ; # Store the error message in $message
+
+	# Cancel Jobs
+	cancel_job $job_id1
+	cancel_job $job_id2
+
+	# Convert any errors into failures (after cleaning up)
+	if {$exception_code == 1} { ; # errors only
+		fail "Failure testing $wait_reason: $message"
+	}
+}

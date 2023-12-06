@@ -1,0 +1,488 @@
+<!--#include virtual="header.txt"-->
+
+<h1>Containers Guide</h1>
+
+<p>Containers are being adopted in HPC workloads.
+Containers rely on existing kernel features to allow greater user control over
+what applications see and can interact with at any given time. For HPC
+Workloads, these are usually restricted to the
+<a href="http://man7.org/linux/man-pages/man7/mount_namespaces.7.html">mount namespace</a>.
+Slurm natively supports the requesting of unprivileged OCI Containers for jobs
+and steps.
+
+<h2 id="limitations">Known limitations
+<a class="slurm_link" href="#limitations"></a>
+</h2>
+<p>The following is a list of known limitations of the Slurm OCI container
+implementation.</p>
+
+<ul>
+<li>All containers must run under unprivileged (i.e. rootless) invocation.
+All commands are called by Slurm as the user with no special
+permissions.</li>
+
+<li>Custom container networks are not supported. All containers should work
+with the <a href="https://docs.docker.com/network/host/">"host"
+network</a>.</li>
+
+<li>Slurm will not transfer the OCI container bundle to the execution
+nodes. The bundle must already exist on the requested path on the
+execution node.</li>
+
+<li>Containers are limited by the OCI runtime used. If the runtime does not
+support a certain feature, then that feature will not work for any job
+using a container.</li>
+
+<li>oci.conf must be configured on the execution node for the job, otherwise the
+requested container will be ignored by Slurm (but can be used by the
+job or any given plugin).</li>
+</ul>
+
+<h2 id="prereq">Prerequisites<a class="slurm_link" href="#prereq"></a></h2>
+<p>The host kernel must be configured to allow user land containers:</p>
+<pre>$ sudo sysctl -w kernel.unprivileged_userns_clone=1</pre>
+
+<p>Docker also provides a tool to verify the kernel configuration:
+<pre>$ dockerd-rootless-setuptool.sh check --force
+[INFO] Requirements are satisfied</pre>
+</p>
+
+<h2 id="software">Required software:
+<a class="slurm_link" href="#software"></a>
+</h2>
+<ul>
+<li>Fully functional
+<a href="https://github.com/opencontainers/runtime-spec/blob/master/runtime.md">
+OCI runtime</a>. It needs to be able to run outside of Slurm first.</li>
+
+<li>Fully functional OCI bundle generation tools. Slurm requires OCI
+Container compliant bundles for jobs.</li>
+</ul>
+
+<h2 id="example">Example configurations for various OCI Runtimes
+<a class="slurm_link" href="#example"></a>
+</h2>
+<p>
+The <a href="https://github.com/opencontainers/runtime-spec">OCI Runtime
+Specification</a> provides requirements for all compliant runtimes but
+does <b>not</b> expressly provide requirements on how runtimes will use
+arguments. In order to support as many runtimes as possible, Slurm provides
+pattern replacement for commands issued for each OCI runtime operation.
+This will allow a site to edit how the OCI runtimes are called as needed to
+ensure compatibility.
+</p>
+<p>
+For <i>runc</i> and <i>crun</i>, there are two sets of examples provided.
+The OCI runtime specification only provides the <i>start</i> and <i>create</i>
+operations sequence, but these runtimes provides a much more efficent <i>run</i>
+operation. Sites are strongly encouraged to use the <i>run</i> operation
+(if provided) as the <i>start</i> and <i>create</i> operations require that
+Slurm poll the OCI runtime to know when the containers have completed execution.
+While Slurm attempts to be as efficient as possible with polling, it will
+result in a thread using CPU time inside of the job and slower response of
+Slurm to catch when container execution is complete.
+</p>
+<p>
+The examples provided have been tested to work but are only suggestions.
+The "--root" directory is set as "/tmp/" to avoid certain permission issues
+but should be changed to a secured and dedicated directory for a production
+cluster.
+</p>
+
+<ul>
+<li>runc using create/start:
+<pre>
+RunTimeQuery="runc --rootless=true --root=/tmp/ state %n.%u.%j.%s.%t"
+RunTimeCreate="runc --rootless=true --root=/tmp/ create %n.%u.%j.%s.%t -b %b"
+RunTimeStart="runc --rootless=true --root=/tmp/ start %n.%u.%j.%s.%t"
+RunTimeKill="runc --rootless=true --root=/tmp/ kill -a %n.%u.%j.%s.%t"
+RunTimeDelete="runc --rootless=true --root=/tmp/ delete --force %n.%u.%j.%s.%t"
+</pre></li>
+
+<li>runc using run (suggested):
+<pre>
+RunTimeQuery="runc --rootless=true --root=/tmp/ state %n.%u.%j.%s.%t"
+RunTimeKill="runc --rootless=true --root=/tmp/ kill -a %n.%u.%j.%s.%t"
+RunTimeDelete="runc --rootless=true --root=/tmp/ delete --force %n.%u.%j.%s.%t"
+RunTimeRun="runc --rootless=true --root=/tmp/ run %n.%u.%j.%s.%t -b %b"
+</pre></li>
+
+<li>crun using create/start:
+<pre>
+RunTimeQuery="crun --rootless=true --root=/tmp/ state %n.%u.%j.%s.%t"
+RunTimeKill="crun --rootless=true --root=/tmp/ kill -a %n.%u.%j.%s.%t"
+RunTimeDelete="crun --rootless=true --root=/tmp/ delete --force %n.%u.%j.%s.%t"
+RunTimeCreate="crun --rootless=true --root=/tmp/ create --bundle %b %n.%u.%j.%s.%t"
+RunTimeStart="crun --rootless=true --root=/tmp/ start %n.%u.%j.%s.%t"
+</pre></li>
+
+<li>crun using run (suggested):
+<pre>
+RunTimeQuery="crun --rootless=true --root=/tmp/ state %n.%u.%j.%s.%t"
+RunTimeKill="crun --rootless=true --root=/tmp/ kill -a %n.%u.%j.%s.%t"
+RunTimeDelete="crun --rootless=true --root=/tmp/ delete --force %n.%u.%j.%s.%t"
+RunTimeRun="crun --rootless=true --root=/tmp/ run --bundle %b %n.%u.%j.%s.%t"
+</pre></li>
+
+<li>nvidia-container-runtime using create/start:
+<pre>
+RunTimeQuery="nvidia-container-runtime --rootless=true --root=/tmp/ state %n.%u.%j.%s.%t"
+RunTimeCreate="nvidia-container-runtime --rootless=true --root=/tmp/ create %n.%u.%j.%s.%t -b %b"
+RunTimeStart="nvidia-container-runtime --rootless=true --root=/tmp/ start %n.%u.%j.%s.%t"
+RunTimeKill="nvidia-container-runtime --rootless=true --root=/tmp/ kill -a %n.%u.%j.%s.%t"
+RunTimeDelete="nvidia-container-runtime --rootless=true --root=/tmp/ delete --force %n.%u.%j.%s.%t"
+</pre></li>
+
+<li>nvidia-container-runtime using run (suggested):
+<pre>
+RunTimeQuery="nvidia-container-runtime --rootless=true --root=/tmp/ state %n.%u.%j.%s.%t"
+RunTimeKill="nvidia-container-runtime --rootless=true --root=/tmp/ kill -a %n.%u.%j.%s.%t"
+RunTimeDelete="nvidia-container-runtime --rootless=true --root=/tmp/ delete --force %n.%u.%j.%s.%t"
+RunTimeRun="nvidia-container-runtime --rootless=true --root=/tmp/ run %n.%u.%j.%s.%t -b %b"
+</pre></li>
+
+<li>hpcng singularity v3.8.0:
+<pre>
+OCIRunTimeQuery="sudo singularity oci state %n.%u.%j.%s.%t"
+OCIRunTimeCreate="sudo singularity oci create --bundle %b %n.%u.%j.%s.%t"
+OCIRunTimeStart="sudo singularity oci start %n.%u.%j.%s.%t"
+OCIRunTimeKill="sudo singularity oci kill %n.%u.%j.%s.%t"
+OCIRunTimeDelete="sudo singularity oci delete %n.%u.%j.%s.%t
+</pre>
+<b>WARNING</b>: Singuarity (v3.8.0) requires <i>sudo</i> for OCI support,
+which is a security risk since the user is able to modify these calls.
+This example is only provided for testing purposes.
+</li>
+</ul>
+
+<h2 id="testing">Testing OCI runtime outside of Slurm
+<a class="slurm_link" href="#testing"></a>
+</h2>
+<p>Slurm calls the OCI runtime directly in the job step. If it fails,
+then the job will also fail.</p>
+<ul>
+<li>Go to the directory containing the OCI Container bundle:
+<pre>cd $ABS_PATH_TO_BUNDLE</pre></li>
+
+<li>Execute OCI Container runtime (You can find a few examples on how to build
+a bundle <a href="#bundle">below</a>):
+<pre>$OCIRunTime $ARGS create test --bundle $PATH_TO_BUNDLE</pre>
+<pre>$OCIRunTime $ARGS start test</pre>
+<pre>$OCIRunTime $ARGS kill test</pre>
+<pre>$OCIRunTime $ARGS delete test</pre>
+If these commands succeed, then the OCI runtime is correctly
+configured and can be tested in Slurm.
+</li>
+</ul>
+
+<h2 id="request">Requesting container jobs or steps
+<a class="slurm_link" href="#request"></a>
+</h2>
+<p>
+<i>salloc</i>, <i>srun</i> and <i>sbatch</i> (in Slurm 21.08+) have the
+'--container' argument, which can be used to request container runtime
+execution. The requested job container will not be inherited by the steps
+called, excluding the batch and interactive steps.
+</p>
+
+<ul>
+<li>Batch step inside of container:
+<pre>sbatch --container $ABS_PATH_TO_BUNDLE --wrap 'bash -c "cat /etc/*rel*"'
+</pre></li>
+
+<li>Batch job with step 0 inside of container:
+<pre>
+sbatch --wrap 'srun bash -c "--container $ABS_PATH_TO_BUNDLE cat /etc/*rel*"'
+</pre></li>
+
+<li>Interactive step inside of container:
+<pre>salloc --container $ABS_PATH_TO_BUNDLE bash -c "cat /etc/*rel*"</pre></li>
+
+<li>Interactive job step 0 inside of container:
+<pre>salloc srun --container $ABS_PATH_TO_BUNDLE bash -c "cat /etc/*rel*"
+</pre></li>
+
+<li>Job with step 0 inside of container:
+<pre>srun --container $ABS_PATH_TO_BUNDLE bash -c "cat /etc/*rel*"</pre></li>
+
+<li>Job with step 1 inside of container:
+<pre>srun srun --container $ABS_PATH_TO_BUNDLE bash -c "cat /etc/*rel*"
+</pre></li>
+</ul>
+
+<h2 id="bundle">OCI Container bundle
+<a class="slurm_link" href="#bundle"></a>
+</h2>
+<p>There are multiple ways to generate an OCI Container bundle. The
+instructions below are the method we found the easiest. The OCI standard
+provides the requirements for any given bundle:
+<a href="https://github.com/opencontainers/runtime-spec/blob/master/bundle.md">
+Filesystem Bundle</a>
+</p>
+
+<p>Here are instructions on how to generate a container using a few
+alternative container solutions:</p>
+
+<ul>
+    <li>Create an image and prepare it for use with runc:
+    <ol>
+	<li>
+	Use an existing tool to create a filesystem image in /image/rootfs:
+	<ul>
+	    <li>
+		debootstrap:
+		<pre>sudo debootstrap stable /image/rootfs http://deb.debian.org/debian/</pre>
+	    </li>
+	    <li>
+		yum:
+		<pre>sudo yum --config /etc/yum.conf --installroot=/image/rootfs/ --nogpgcheck --releasever=${CENTOS_RELEASE} -y</pre>
+	    </li>
+	    <li>
+		docker:
+		<pre>docker pull alpine
+docker create --name alpine alpine
+mkdir -p /image/rootfs/
+docker export alpine | tar -C /image/rootfs/ -xf -
+docker rm alpine</pre>
+	    </li>
+	</ul>
+
+	<li>
+	Configure a bundle for runtime to execute:
+	<ul>
+	    <li>Use <a href="https://github.com/opencontainers/runc">runc</a>
+	    to generate a config.json:
+	    <pre>
+cd /image
+runc --rootless=true spec --rootless</pre>
+	    </li>
+	</ul>
+    </ol>
+    </li>
+
+    <li>Use <a href="https://github.com/opencontainers/umoci">umoci</a>
+    and skopeo to generate a full image:
+    <pre>
+cd /image/
+skopeo copy docker://alpine:latest oci:alpine:latest
+umoci unpack --rootless --image alpine alpine</pre>
+    </li>
+
+    <li>
+    Use <a href="https://sylabs.io/guides/3.1/user-guide/oci_runtime.html">
+    singularity</a> to generate a full image:
+    <pre>
+sudo singularity sif dump alpine /image/alpine.sif
+sudo singularity oci mount /image/alpine.sif /image/</pre>
+    </li>
+</ul>
+
+<h2 id="plugin">Container support via Plugin
+<a class="slurm_link" href="#plugin"></a>
+</h2>
+
+Slurm also allows container developers to create <a href="plugins.html">SPANK
+Plugins</a> that can be called at various points of job execution to
+support containers. Slurm is generally agnostic to SPANK based containers and
+can be made to start most, if not all, types. Any site using a plugin to start
+containers should not create or configure the "oci.conf" configuration file to
+deactive the OCI container functionality.
+</p>
+
+<p>Some container developers have choosen a command line interface only which
+requires users to explicitly execute the container solution.</p>
+
+<p>Links to several third party container solutions are provided below:
+<ul>
+<li><a href="#charliecloud">Charliecloud</a></li>
+<li><a href="#docker">Docker</a></li>
+<li><a href="#udocker">UDOCKER</a></li>
+<li><a href="#docker-rootless">Rootless Docker</a></li>
+<li><a href="#k8s">Kubernetes Pods (k8s)</a></li>
+<li><a href="#shifter">Shifter</a></li>
+<li><a href="#singularity">Singularity</a></li>
+<li><a href="#enroot">ENROOT</a></li>
+<li><a href="#podman">Podman</a></li>
+<li><a href="#sarus">Sarus</a></li>
+</ul>
+
+Please note this list is not exhaustive as new containers types are being
+created all the time.
+</p>
+
+<hr size=4 width="100%">
+<h2 id="types">Container Types<a class="slurm_link" href="#types"></a></h2>
+<h3 id="charliecloud">Charliecloud
+<a class="slurm_link" href="#charliecloud"></a>
+</h3>
+
+<p><a href="https://github.com/hpc/charliecloud">Charliecloud</a> is user
+namespace container system sponsored by
+<a href="https://lanl.gov/">LANL</a> to provide HPC containers.
+Charliecloud supports the following:
+
+<ul>
+	<li>
+		<a href="https://hpc.github.io/charliecloud/tutorial.html?highlight=slurm">
+			Directly called by users</a>
+		via user namespace support.
+	</li>
+	<li>Direct Slurm support currently
+		<a href="https://github.com/hpc/charliecloud/tree/slurm-plugin">
+			in development</a>.
+	</li>
+	<li>Limited OCI Image support (via wrapper)</li>
+</ul>
+</p>
+
+<h3 id="docker">Docker (running as root)
+<a class="slurm_link" href="#docker"></a>
+</h3>
+
+<p><a href="https://www.docker.com/">Docker</a> currently has multiple design
+points that make it unfriendly to HPC systems.
+The issue that usually stops most sites from using Docker is the
+requirement of "only trusted users should be allowed to control your Docker
+daemon"
+<a href="https://docs.docker.com/engine/security/security/">
+[Docker Security]</a> which is not acceptable to most HPC systems.</p>
+
+<p>Sites with trusted users can add them to the docker Unix group and allow them
+control Docker directly from inside of jobs. There is currently no direct
+support for starting or stopping docker containers in Slurm.</p>
+
+<p>Sites are recommended to extract the container image from docker (procedure
+above) and then run the containers using Slurm.</p>
+
+<h3 id="udocker">UDOCKER<a class="slurm_link" href="#udocker"></a></h3>
+
+<p><a href="https://github.com/indigo-dc/udocker">UDOCKER</a> is Docker feature
+subset clone that is designed to allow execution of
+docker commands without increased user privileges.</p>
+
+<h3 id="docker-rootless">Rootless Docker
+<a class="slurm_link" href="#docker-rootless"></a>
+</h3>
+
+<p><a href="https://docs.docker.com/engine/security/rootless/">
+Rootless Docker</a> (>=v20.10) requires no extra permissions for users and
+currently (as of January 2021) has no known security issues with users gaining
+privileges. Each user will need to run an instance of the dockerd server on
+each node of the job in order to use docker. There are currently no helper
+scripts or plugins for Slurm to automate the build up or tear down the docker
+daemons.</p>
+
+<p>Sites are recommended to extract the container image from docker (procedure
+above) and then run the containers using Slurm.</p>
+
+<h3 id="k8s">Kubernetes Pods (k8s)<a class="slurm_link" href="#k8s"></a></h3>
+
+<p><a href="https://kubernetes.io/docs/concepts/workloads/pods/pod/">
+Kubernetes</a> is a container orchestration system that uses PODs, which are
+generally a logical grouping of containers for singular purpose. </p>
+
+<p>There is currently no direct support for Kubernetes Pods in Slurm.  Sites
+are encouraged to extract the OCI image from Kubernetes and then run the
+containers using Slurm. Users can create create jobs that start together using
+the "--dependency=" agument in <i>sbatch</i> to mirror the functionality of
+Pods. Users can also use a larger allocation and then start each pod as a
+parallel step using <i>srun</i>.</p>
+
+<h3 id="shifter">Shifter<a class="slurm_link" href="#shifter"></a></h3>
+
+<p><a href="https://github.com/NERSC/shifter">Shifter</a> is a container
+project out of <a href="http://www.nersc.gov/">NERSC</a>
+to provide HPC containers with full scheduler integration.
+
+<ul>
+	<li>Shifter provides full
+		<a href="https://github.com/NERSC/shifter/wiki/SLURM-Integration">
+			instructions to integrate with Slurm</a>.
+	</li>
+	<li>Presentations about Shifter and Slurm:
+		<ul>
+			<li> <a href="https://slurm.schedmd.com/SLUG15/shifter.pdf">
+				Never Port Your Code Again - Docker functionality with Shifter using SLURM
+			</a> </li>
+			<li> <a href="https://www.slideshare.net/insideHPC/shifter-containers-in-hpc-environments">
+				Shifter: Containers in HPC Environments
+			</a> </li>
+		</ul>
+	</li>
+</ul>
+</p>
+
+<h3 id="singularity">Singularity
+<a class="slurm_link" href="#singularity"></a>
+</h3>
+
+<p><a href="https://www.sylabs.io/singularity/">Singularity</a> is hybrid
+container system that supports:
+<ul>
+	<li>Slurm integration (for singularity v2.x) via
+		<a href="https://github.com/sylabs/singularity/blob/master/docs/2.x-slurm/README.md">
+		Plugin</a>. A full description of the plugin was provided in the
+		<a href="https://slurm.schedmd.com/SLUG17/SLUG_Bull_Singularity.pdf">
+		SLUG17 Singularity Presentation</a>.
+	</li>
+	<li>User namespace containers via sandbox mode that require no additional
+		permissions.</li>
+	<li>Users directly calling singularity via setuid executable outside of
+		Slurm.</li>
+</ul>
+</p>
+
+<h3 id="enroot">ENROOT<a class="slurm_link" href="#enroot"></a></h3>
+
+<p><a href="https://github.com/NVIDIA/enroot">Enroot</a> is a user namespace
+container system sponsored by <a href="https://www.nvidia.com">NVIDIA</a>
+that supports:
+<ul>
+	<li>Slurm integration via
+		<a href="https://github.com/NVIDIA/pyxis">pyxis</a>
+	</li>
+	<li>Native support for Nvidia GPUs</li>
+	<li>Faster Docker image imports</li>
+</ul>
+</p>
+
+<h3 id="podman">Podman<a class="slurm_link" href="#podman"></a></h3>
+
+<p><a href="https://podman.io/">Podman</a> is a user namespace container system
+sponsored by
+<a href="https://developers.redhat.com/blog/2018/08/29/intro-to-podman/">
+Redhat/IBM</a> that supports:
+<ul>
+	<li>Drop in replacement of Docker.</li>
+	<li>Called directly by users. (Currently lacks direct Slurm support).</li>
+	<li>Rootless image building via
+		<a href="https://buildah.io/">buildah</a>
+	</li>
+	<li>Native OCI Image support</li>
+</ul>
+</p>
+
+<h3 id="sarus">Sarus<a class="slurm_link" href="#sarus"></a></h3>
+
+<p><a href="https://github.com/eth-cscs/sarus">Sarus</a> is a privileged
+container system sponsored by ETH Zurich
+<a href="https://user.cscs.ch/tools/containers/sarus/">CSCS</a> that supports:
+<ul>
+	<li>
+		<a href="https://sarus.readthedocs.io/en/latest/config/slurm-global-sync-hook.html">
+			Slurm image synchronization via OCI hook</a>
+	</li>
+	<li>Native OCI Image support</li>
+	<li>NVIDIA GPU Support</li>
+	<li>Similar design to <a href="#shifter">Shifter</a></li>
+</ul>
+Overview slides of Sarus are
+<a href="http://hpcadvisorycouncil.com/events/2019/swiss-workshop/pdf/030419/K_Mariotti_CSCS_SARUS_OCI_ContainerRuntime_04032019.pdf">
+	here</a>.
+</p>
+
+<hr size=4 width="100%">
+
+<p style="text-align:center;">Last modified 21 September 2022</p>
+
+<!--#include virtual="footer.txt"-->
