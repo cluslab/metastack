@@ -2867,7 +2867,11 @@ extern int run_script_health_check(void)
 		 */
 		run_command_args_t run_command_args = {
 			.job_id = 0, /* implicit job_id = 0 */
+#ifdef __METASTACK_OPT_HEALTHCHECK_PROG_TIMEOUT
+			.max_wait = slurm_conf.health_check_interval * 1000,
+#else
 			.max_wait = 60 * 1000,
+#endif
 			.script_argv = cmd_argv,
 			.script_path = slurm_conf.health_check_program,
 			.script_type = "health_check",
