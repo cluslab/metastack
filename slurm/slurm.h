@@ -205,6 +205,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_JOBCOMP_PENDING
 #endif
 
+#ifndef __METASTACK_OPT_HEALTHCHECK_PROG_TIMEOUT
+#define __METASTACK_OPT_HEALTHCHECK_PROG_TIMEOUT
+#endif
+
 #ifndef __METASTACK_OPT_ENV_UCX_IB_ADDR_TYPE
 #define __METASTACK_OPT_ENV_UCX_IB_ADDR_TYPE
 #endif
