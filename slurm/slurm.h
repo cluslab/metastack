@@ -225,6 +225,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_PUBLIC_CODE_REUSE
 #endif
 
+#ifndef __METASTACK_BUG_LOG_OUTPUT
+#define __METASTACK_BUG_LOG_OUTPUT
+#endif
+
 #ifndef __METASTACK_BUG_CR_CORE
 #define __METASTACK_BUG_CR_CORE
 #endif
