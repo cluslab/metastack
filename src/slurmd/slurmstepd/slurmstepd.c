@@ -125,6 +125,17 @@ main (int argc, char **argv)
 	if (_process_cmdline (argc, argv) < 0)
 		fatal ("Error in slurmstepd command line");
 
+#ifdef __METASTACK_BUG_LOG_OUTPUT
+	log_init("slurmstepd", lopts, LOG_DAEMON, NULL);
+	slurm_conf_init(NULL);
+	run_command_init();
+
+	xsignal_block(slurmstepd_blocked_signals);
+	conf = xmalloc(sizeof(*conf));
+	conf->argv = &argv;
+	conf->argc = &argc;
+	init_setproctitle(argc, argv);
+#else
 	slurm_conf_init(NULL);
 	run_command_init();
 
@@ -135,6 +146,7 @@ main (int argc, char **argv)
 	init_setproctitle(argc, argv);
 
 	log_init(argv[0], lopts, LOG_DAEMON, NULL);
+#endif
 
 	if (select_g_init(1) != SLURM_SUCCESS )
 		fatal( "failed to initialize node selection plugin" );
