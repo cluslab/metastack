@@ -4,7 +4,8 @@ metastack可轻松创建计算集群，帮助您在高性能计算集群中有�
 metastack源码地址：[https://github.com/cluslab/metastack](https://github.com/cluslab/metastack)
 metastack demo：[https://www.scnet.cn/](https://www.scnet.cn/)
 # 整体架构
-![slurm架构.jpg](https://cdn.nlark.com/yuque/0/2023/jpeg/2648043/1701847571911-da129ee8-51e6-42b3-af7f-86d6970e944f.jpeg#averageHue=%23f6f7f4&clientId=u61f67284-f54a-4&from=paste&height=494&id=u938bc16c&originHeight=572&originWidth=952&originalType=binary&ratio=1.5&rotation=0&showTitle=false&size=72901&status=done&style=none&taskId=uaf77a514-1216-445d-887d-cb86e466484&title=&width=823)
+![image](https://github.com/cluslab/metastack/assets/150906851/fabbe9e3-288f-41b3-8720-33085ee1cdcb)
+
 # 亮点
 
 1. 大规模稳定性
@@ -40,5 +41,6 @@ metastack demo：[https://www.scnet.cn/](https://www.scnet.cn/)
 [https://github.com/cluslab/metastack/issues](https://github.com/cluslab/metastack/issues)
 # 联系我们
 如果您有任何疑问，请随时通过以下方式与我们联系：
+
 微信：callme-frank
 
