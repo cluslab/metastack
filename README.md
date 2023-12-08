@@ -1,5 +1,5 @@
 # metastack简介
-metastack 是基于 Slurm 的功能增强和性能优化的版本。我们团队根据多个超算，智算中心稳定运行的经验，并结合开源社区的最佳理念和实践，在保留Slurm原生功能的基础上，对Slurm进行了改进，提供了一些特色功能，例如对常见国产操作系统和国产GPU卡的支持，分区并行调度，分区可见性等，解决了用户在使用Slurm中的痛点。目前MetaStack仅在 Linux 下进行了测试。
+metastack 是基于 Slurm 的功能增强和性能优化的版本。我们团队根据多个超算，智算中心稳定运行的经验，并结合开源社区的最佳理念和实践，在保留Slurm原生功能的基础上，对Slurm进行了改进，提供了一些特色功能，例如对常见国产操作系统和国产GPU卡的支持，分区并行调度，分区可见性等，解决了用户在使用Slurm中的痛点。目前metaStack仅在 Linux 下进行了测试。
 
 metastack可轻松创建计算集群，帮助您在高性能计算集群中有效地管理和调度作业。
 
@@ -39,6 +39,7 @@ metastack demo：[https://www.scnet.cn/](https://www.scnet.cn/)
 # 快速安装
 请参阅快速入门指南立即开始使用 MetaStack
 
+https://www.cluslab.cn/thread/57
 # 获取帮助
 [https://www.cluslab.cn/cate/13/seq/0](https://www.cluslab.cn/cate/13/seq/0)
 
