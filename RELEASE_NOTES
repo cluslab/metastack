@@ -24,7 +24,6 @@ metastack2.0可以从Slurm-20.11或Slurm-21.08版本直接升级到该版本，�
 -- 将Slurm23版本新增的RPC RATE LIMIT功能迁移到metastack2.0，实现用户请求的流控机制，设定在单位时间内单用户请求量的最大值，并增加如下功能：1）当流控发生时，command端提示客户已超过流控；2）配置参数非法字符的有效性检查。
 -- 支持单节点单核心作业NUMA内均衡分布。
 -- 修复分区配置SelectTypeParameters=CR_CORE时，srun 指定--mem无法创建作业步的问题。
--- 支持DCU基础功能和绑定功能。
 -- 支持MLU插件。
 -- 新增license查询字段occupied。
 -- 修复抢占策略开启时，作业退出长时间CG影响同队列后续作业正常运行的问题。
@@ -40,7 +39,6 @@ metastack2.0可以从Slurm-20.11或Slurm-21.08版本直接升级到该版本，�
 -- 支持设置NHC超时时间。
 -- slurmctld prolog重复失败5次后作业取消。
 -- 支持设置IB环境变量。
--- PMIx-ducx支持。
 -- 兼容hwloc1.x版本，将L3cache等效为Socket。
 -- 修复slurmstepd启动失败时日志打印丢失问题。
 
@@ -48,14 +46,13 @@ metastack2.0可以从Slurm-20.11或Slurm-21.08版本直接升级到该版本，�
 =====================================================================
 -- slurm.conf - 添加SchedulerParameters=part_repeat_job_template=N，控制避免重复调度每个分区作业模板的数量，如果设置为0或者不设置，为不启用。仅针对主调度算法。
 -- slurm.conf - 添加SchedulerParameters=para_sched，控制分区之间并行调度。若所有分区节点资源不重叠，所有分区的作业可以进行各自调度；某些分区有节点资源重叠，将有节点资源重叠分区的作业放在一起做串行调度，其他分区各自调度。
--- slurm_partition.conf - 添加配置项LLS（Least Loaded Socket）。若启用该配置，LLS=YES，则在计算节点内，基于空闲的CPU数量，将各socket中的CPU均衡分配给串行作业；若不启用，LLS=NO或不配置该项，则节点内按照slurm默认分配规则进行CPU分 配。
+-- slurm_partition.conf - 添加配置项LLS（Least Loaded Socket）。若启用该配置，LLS=YES，则在计算节点内，基于空闲的CPU数量，将各socket中的CPU均衡分配给串行作业；若不启用，LLS=NO或不配置该项，则节点内按照slurm默认分配规则进行CPU分配。
 -- slurm.conf - 添加PrivateData=part_extend，以修改队列对用户的可见性。
 -- slurm.conf和slurm_partition.conf - 添加配置项SuspendDefIdlePerPart=N。Slurm.conf中该配置项不仅控制每个队列默认的要保留为idle节点的数目，还控制节能功能的开关。一般情况下，如果N>0时表示配置的数值；N=0时，如果slurm_partition.conf中队列单独配置了数值，根据该数值为队列保留idle节点，否则，关闭节能；N<0时，关闭节能。
 -- slurm.conf - 添加SlurmctldParameters=exclude_down_drain。不改变原SlurmctldParameters字段，在其后追加。
 
 命令更改（详见手册）
 =====================================================================
--- srun - 添加--cpus-per-dcu/-U, --dcus/--dcu-bind/--dcu-freq/--dcus-per-node/--dcus-per-socket/--dcus-per-task/--mem-per-dcu/--ntasks-per-dcu选项，以支持DCU基础功能和绑定功能。
 -- sinfo - 统计idle节点及cpu时会将unk或者unk*状态的节点排除并放入A/I/O/T的O中。
 -- sacct - 添加数据查询字段：stdout 、stderr、command和resource_node_detail。
 -- sstat - 添加查询字段：CPUREALUTIL（cpu实时利用率）、CPUUTILAVE（cpu平均利用率）、MAXCPUUTIL(cpu最大利用率)、MINCPUUTIL（cpu最小利用率）。
@@ -63,6 +60,5 @@ metastack2.0可以从Slurm-20.11或Slurm-21.08版本直接升级到该版本，�
 
 API更改
 =====================================================================
--- 添加Gres DCU plugin插件。
 -- 添加spank_env插件。
 -- 添加validate_account、validate_qos函数。
