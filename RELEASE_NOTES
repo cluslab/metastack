@@ -39,6 +39,7 @@ metastack2.0可以从Slurm-20.11或Slurm-21.08版本直接升级到该版本，�
 -- 支持设置NHC超时时间。
 -- slurmctld prolog重复失败5次后作业取消。
 -- 支持设置IB环境变量。
+-- PMIx-dUCX支持。
 -- 兼容hwloc1.x版本，将L3cache等效为Socket。
 -- 修复slurmstepd启动失败时日志打印丢失问题。
 
