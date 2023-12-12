@@ -161,6 +161,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_RPC_USER_FIX
 #endif
 
+#ifndef __METASTACK_OPT_PROLOG_SLURMCTLD
+#define __METASTACK_OPT_PROLOG_SLURMCTLD
+#endif
+
 #ifndef __METASTACK_BUG_IDLE_SINFO
 #define __METASTACK_BUG_IDLE_SINFO
 #endif
@@ -451,6 +455,10 @@ enum job_states {
 #define JOB_RESV_DEL_HOLD SLURM_BIT(21) /* Job is hold */
 #define JOB_SIGNALING     SLURM_BIT(22) /* Outgoing signal is pending */
 #define JOB_STAGE_OUT     SLURM_BIT(23) /* Staging out data (burst buffer) */
+
+#ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
+#define JOB_PROLOG_MAXREQUEUE_HOLD  SLURM_BIT(27) /* Requeue jobs in hold when failed to run prologue for much times */
+#endif
 
 #define READY_JOB_FATAL	   -2	/* fatal error */
 #define READY_JOB_ERROR    -1	/* ordinary error */
