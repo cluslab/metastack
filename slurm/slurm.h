@@ -157,6 +157,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_SSTAT_CPUUTIL
 #endif
 
+#ifndef __METASTACK_BUG_NODESTATE_EXCLUDE
+#define __METASTACK_BUG_NODESTATE_EXCLUDE
+#endif
+
 #ifndef __METASTACK_OPT_RPC_USER_FIX
 #define __METASTACK_OPT_RPC_USER_FIX
 #endif

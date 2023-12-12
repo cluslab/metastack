@@ -103,6 +103,10 @@ char *exc_nodes = NULL, *exc_parts = NULL;
 time_t last_log = (time_t) 0, last_work_scan = (time_t) 0;
 uint16_t slurmd_timeout;
 static bool idle_on_node_suspend = false;
+#ifdef __METASTACK_BUG_NODESTATE_EXCLUDE
+static bool exclude_drain = false;
+static bool exclude_down = false;
+#endif
 static uint16_t power_save_interval = 10;
 static uint16_t power_save_min_interval = 0;
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
@@ -149,7 +153,23 @@ static void _exc_node_part_free(void *x)
 	FREE_NULL_BITMAP(ext_part_struct->exc_node_cnt_bitmap);
 	xfree(ext_part_struct);
 }
+#ifdef __METASTACK_BUG_NODESTATE_EXCLUDE
+/*
+ * check node_ptr state
+ */
+static bool _node_should_suspend(node_record_t *node_ptr)
+{
+	/* Suspend or not */
+	if (exclude_down && IS_NODE_DOWN(node_ptr))
+		return false;
+	if ((exclude_drain && IS_NODE_DRAIN(node_ptr)) ||
+	    IS_NODE_RES(node_ptr)                      ||
+		IS_NODE_MAINT(node_ptr))
+		return false;
 
+	return true;
+}
+#endif
 static int _parse_exc_nodes(void)
 {
 	int rc = SLURM_SUCCESS;
@@ -762,6 +782,9 @@ static void _do_power_work(time_t now)
 			  (keep_idle_bitmap == NULL || bit_test(keep_idle_bitmap, node_ptr->index) == 0) &&
 			  (need_to_resume_bitmap == NULL || bit_test(need_to_resume_bitmap, node_ptr->index) == 0) &&
 #endif
+#ifdef __METASTACK_BUG_NODESTATE_EXCLUDE
+			  _node_should_suspend(node_ptr)                &&
+#endif
 		      ((avoid_node_bitmap == NULL) ||
 		       (bit_test(avoid_node_bitmap, node_ptr->index) == 0))))) {
 			if (sleep_node_bitmap == NULL) {
@@ -1226,7 +1249,12 @@ static int _init_power_config(void)
 				      "cloud_reg_addrs");
 	idle_on_node_suspend = xstrcasestr(slurm_conf.slurmctld_params,
 					   "idle_on_node_suspend");
-
+#ifdef __METASTACK_BUG_NODESTATE_EXCLUDE
+	exclude_down =  xstrcasestr(slurm_conf.slurmctld_params,
+					   "exclude_down");
+	exclude_drain =  xstrcasestr(slurm_conf.slurmctld_params,
+					"exclude_drain");
+#endif
 	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
 				   "power_save_interval="))) {
 		power_save_interval =
