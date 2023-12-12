@@ -5811,6 +5811,15 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_ptr->requid = uid;
 	if (IS_JOB_PENDING(job_ptr) && IS_JOB_COMPLETING(job_ptr) &&
 	    (signal == SIGKILL)) {
+#ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
+		if (IS_JOB_REQUEUE_HOLD(job_ptr) || IS_JOB_SPECIAL_EXIT(job_ptr)) {
+		//	last_job_update         = now;
+		//	job_ptr->end_time       = now;
+			job_ptr->job_state  |= JOB_CANCELLED;
+			build_cg_bitmap(job_ptr);
+			job_completion_logger(job_ptr, false);
+		}
+#endif			
 		/* Prevent job requeue, otherwise preserve state */
 		job_ptr->job_state = JOB_CANCELLED | JOB_COMPLETING;
 
@@ -18053,7 +18062,25 @@ reply:
 		debug("%s: Holding %pJ, requeue-hold exit", __func__, job_ptr);
 		job_ptr->priority = 0;
 	}
+#ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
+	/*
+	 * When PrologSlurmctld failed to run (timeout/non-zero exit),
+	 * _job_requeue_op was called with state 'JOB_PROLOG_MAXREQUEUE_HOLD'
+	 */
+	if (is_running && (flags & JOB_PROLOG_MAXREQUEUE_HOLD) && (job_ptr->restart_cnt >= MAX_BATCH_REQUEUE)) {
+		job_ptr->job_state |= JOB_REQUEUE_HOLD;
+		job_ptr->state_reason = WAIT_MAX_REQUEUE;
+		xfree(job_ptr->state_desc);
+		job_ptr->state_desc
+			= xstrdup(job_reason_string(job_ptr->state_reason));
+		job_ptr->priority = 0;
 
+		debug("%s: %pJ state 0x%x reason %u failed to call prologslurmctld",
+	      		__func__, job_ptr, job_ptr->job_state,
+	      		job_ptr->state_reason);
+		return ESLURMD_PROLOG_FAILED;
+	}
+#endif
 	/*
 	 * When jobs are requeued while running/completing batch_requeue_fini is
 	 * called after the job is completely finished.  If the job is already

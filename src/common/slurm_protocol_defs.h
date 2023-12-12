@@ -118,6 +118,13 @@
 #define IS_JOB_STAGE_OUT(_X)		\
 	(_X->job_state & JOB_STAGE_OUT)
 
+#ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
+#define IS_JOB_REQUEUE_HOLD(_X)         \
+        (_X->job_state & JOB_REQUEUE_HOLD)
+#define IS_JOB_SPECIAL_EXIT(_X)         \
+        (_X->job_state & JOB_SPECIAL_EXIT)
+#endif
+
 /* Defined node states */
 #define IS_NODE_UNKNOWN(_X)		\
 	((_X->node_state & NODE_STATE_BASE) == NODE_STATE_UNKNOWN)
