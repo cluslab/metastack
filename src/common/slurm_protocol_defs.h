@@ -173,6 +173,10 @@
 	(_X->node_state & NODE_STATE_POWERING_UP)
 #define IS_NODE_MAINT(_X)		\
 	(_X->node_state & NODE_STATE_MAINT)
+#ifdef __METASTACK_BUG_NODESTATE_EXCLUDE
+#define IS_NODE_RES(_X)		\
+	(_X->node_state & NODE_STATE_RES)
+#endif
 #define IS_NODE_REBOOT_REQUESTED(_X)	\
 	(_X->node_state & NODE_STATE_REBOOT_REQUESTED)
 #define IS_NODE_REBOOT_ISSUED(_X)	\
