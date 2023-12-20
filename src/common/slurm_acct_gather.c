@@ -236,6 +236,67 @@ extern int acct_gather_conf_destroy(void)
 	return rc;
 }
 
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_parse_time(char *freq, char* freq_def)
+{
+	int timer = -1;
+	char *sub_str = NULL;
+    bool flag = false;
+	
+	if(freq) {
+		if ((sub_str = xstrcasestr(freq, "time="))) {
+				timer = _get_int(sub_str + 5);
+			flag = true;
+		}
+	}
+	if(!flag && freq_def) {
+		if ((sub_str = xstrcasestr(freq_def, "time="))) 
+		timer = _get_int(sub_str + 5);
+	}
+
+	return timer;
+}
+
+extern int acct_gather_parse_cpu_load(char *freq, char* freq_def)
+{
+	int cpu_load = -1;
+	char *sub_str = NULL;
+    bool flag = false;
+	if(freq) {
+		if ((sub_str = xstrcasestr(freq, "cpuminload="))) {
+				cpu_load = _get_int(sub_str + 11);
+			flag = true;
+		}
+	}
+	if(!flag && freq_def) {
+		if ((sub_str = xstrcasestr(freq_def, "cpuminload="))) 
+		cpu_load = _get_int(sub_str + 11);
+	}
+
+	return cpu_load;
+}
+
+/* 0 disable all step, 1 enable digital stepd , 2 enable batch step 3、 enable digital step and batch step*/
+extern int acct_gather_parse_monitor(char *freq, char* freq_def) 
+{
+	char *sub_str = NULL;
+    int batch = -1;
+	bool flag = false;
+	if(freq) {
+		if ((sub_str = xstrcasestr(freq, "stepd="))) {
+				batch = _get_int(sub_str + 6);
+			flag = true;
+		}
+	}
+	if(!flag && freq_def) {
+		if ((sub_str = xstrcasestr(freq_def, "stepd="))) 
+		batch = _get_int(sub_str + 6);
+	}
+	return batch;
+}
+#endif
+
 extern List acct_gather_conf_values(void)
 {
 	List acct_list = list_create(destroy_config_key_pair);

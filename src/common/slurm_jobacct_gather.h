@@ -72,6 +72,17 @@
 
 #define CPU_TIME_ADJ 1000
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+#define MAX_SIZE 100000
+#define LOAD_LOW 0x0000000000000001
+#define PROC_AB 0x0000000000000010
+typedef struct {
+    double *data;
+    int front;
+    int rear;
+} fifo_queue_t;
+#endif
+
 typedef struct {
 	uint32_t taskid; /* contains which task number it was on */
 	uint32_t nodeid; /* contains which node number it was on */
@@ -129,7 +140,39 @@ struct jobacctinfo {
 	double min_cpu_util;
 	double cpu_util;
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+	uint64_t flag;
+#endif
 };
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+struct jobinfostat {
+	double job_avg_cpu;
+	double job_cpu_util;
+	uint64_t pid_status;
+};
+
+struct  collection{
+	uint64_t load_flag; /*exception criteria*/
+	bool update;/* update load_flag*/
+	bool mode; /*call pll_data method*/
+	bool step;  /*enable step*/
+    bool gather;
+	//double step_calc;
+	double cpu_threshold;/*cpu calc*/
+	double cpu_all_calc;
+	time_t start;
+	fifo_queue_t fifo;   /*job storage*/
+	int count;    
+	int times;
+};
+
+extern void initialize_queue(fifo_queue_t *queue, int maxsize);
+extern int is_empty(fifo_queue_t *queue);
+extern int is_full(fifo_queue_t *queue, int maxsize);
+extern int enqueue(fifo_queue_t *queue,double value, int maxsize);
+extern double dequeue(fifo_queue_t *queue, int maxsize);
+#endif
 
 /* Define jobacctinfo_t below to avoid including extraneous slurm headers */
 #ifndef __jobacctinfo_t_defined
@@ -139,8 +182,11 @@ struct jobacctinfo {
 
 extern int jobacct_gather_init(void); /* load the plugin */
 extern int jobacct_gather_fini(void); /* unload the plugin */
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int  jobacct_gather_startpoll(uint16_t frequency, acct_gather_info_t *job_set);
+#else
 extern int  jobacct_gather_startpoll(uint16_t frequency);
+#endif
 extern int  jobacct_gather_endpoll(void);
 extern void jobacct_gather_suspend_poll(void);
 extern void jobacct_gather_resume_poll(void);

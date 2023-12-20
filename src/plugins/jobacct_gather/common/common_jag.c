@@ -81,6 +81,57 @@ List prec_list = NULL;
 static int my_pagesize = 0;
 static int energy_profile = ENERGY_DATA_NODE_ENERGY_UP;
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+static int _get_process_status_line(pid_t pid, jag_prec_t *prec) 
+{
+	char *filename = NULL;
+	char buf[4096];
+	int fd, attempts = 1;
+	ssize_t n;
+	char *status = NULL;
+	//pid_t tgid = -1;
+    int flag = 0 ;
+	xstrfmtcat(filename, "/proc/%u/status", pid);
+	//debug("filename : %s" , filename);
+
+	fd = open(filename, O_RDONLY);
+	if (fd < 0) {
+		xfree(filename);
+		return -1;
+	}
+
+again:
+	n = read(fd, buf, sizeof(buf) - 1);
+	if (n == -1 && (errno == EINTR || errno == EAGAIN) && attempts < 100) {
+		attempts++;
+		goto again;
+	}
+	if (n <= 0) {
+		close(fd);
+		xfree(filename);
+		return -1;
+	}
+	buf[n] = '\0';
+	close(fd);
+	xfree(filename);
+
+	status = xstrstr(buf, "State:");
+	if(status) {
+		status[9] = '\0';
+		if(status[7] == 'D' ) {
+		// if(status[7] == 'D' || status[7] == 'Z') {
+			flag = 1;
+		//error("the pid=%u status = %c may be abnormal set flag=%d ,\n",pid, status[7], flag);
+		}
+	} else {
+		debug2("%s: status: string not found for pid=%u\n", __func__, pid);
+	}
+	prec->flag = flag;
+	return 0;
+}
+
+#endif
+
 static int _find_prec(void *x, void *key)
 {
 	jag_prec_t *prec = (jag_prec_t *) x;
@@ -620,7 +671,14 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 		}
 		fclose(io_fp);
 	}
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	int flag = 0;
+	flag = _get_process_status_line(pid, prec);
+	if(flag == -1) {
+		//fclose(status_fp);
+		goto bail_out;
+	} 
+#endif
 	destroy_jag_prec(list_remove_first(prec_list, _find_prec, &prec->pid));
 	list_append(prec_list, prec);
 	xfree(proc_file);
@@ -862,6 +920,9 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 	if (jobacct->first_acct_time.tv_sec == 0) {
 		gettimeofday(&jobacct->first_acct_time, NULL) ;
 		jobacct->first_total_cputime = cpu_calc;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		jobacct->flag = 0;
+#endif
 		jobacct->cpu_util = 0.0;
 		jobacct->avg_cpu_util = 0.0;
 		jobacct->min_cpu_util = INFINITE64;
@@ -899,8 +960,13 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 }
 #endif
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern void jag_common_poll_data(List task_list, uint64_t cont_id,
+				 jag_callbacks_t *callbacks, bool profile, struct collection* collect)
+#else
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jag_callbacks_t *callbacks, bool profile)
+#endif
 {
 	/* Update the data */
 	uint64_t total_job_mem = 0, total_job_vsize = 0;
@@ -913,6 +979,11 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	int energy_counted = 0;
 	time_t ct;
 	int i = 0;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	uint64_t total_job_cpuutil = 0;
+	uint64_t total_job_cpuutil_ave = 0;
+	uint64_t pid_status = 0;
+#endif
 
 	xassert(callbacks);
 
@@ -952,7 +1023,19 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		 */
 		memcpy(&tmp_prec, prec, sizeof(*prec));
 		prec = &tmp_prec;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		ListIterator itr1;
+		jag_prec_t *prec1 = NULL;
+		itr1 = list_iterator_create(prec_list);
+		while ((prec1 = list_next(itr1))) {
+			if((prec1->flag) == 1) {
+				log_flag(JAG,"pid = %d  abnormal process status",prec1->pid);
+				pid_status = pid_status|0x0000000000000010;
+			} 
 
+		}
+		list_iterator_destroy(itr1);
+#endif
 		/*
 		 * Only jobacct_gather/cgroup uses prec_extra, and we want to
 		 * make sure we call it once per task, so call it here as we
@@ -1060,10 +1143,16 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 			jobacct->tres_usage_out_tot[i] =
 				prec->tres_data[i].size_write;
 		}
-
 		total_job_mem += jobacct->tres_usage_in_tot[TRES_ARRAY_MEM];
 		total_job_vsize += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
-
+#ifdef __METASTACK_LOAD_ABNORMAL	
+		total_job_cpuutil += jobacct->cpu_util;
+		total_job_cpuutil_ave += jobacct->avg_cpu_util;
+		if(collect && (!collect->step)) {
+			jobacct->flag = jobacct->flag|collect->load_flag;
+			jobacct->flag = jobacct->flag|pid_status;
+		}
+#endif
 		/* Update the cpu times */
 		jobacct->user_cpu_sec = (uint64_t)(prec->usec /
 						   (double)conv_units);
@@ -1118,7 +1207,51 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		}
 	}
 	list_iterator_destroy(itr);
+#ifdef __METASTACK_LOAD_ABNORMAL
+	double item = 0.0;
+	double tmp_cpuutil = 0.0;
+	if(collect) {
+		if(!collect->step) {
+			/*Calculate threshold*/
+			if((collect->times > 0) && (collect->count >= collect->times)) {
+      	 		/*Dequeue*/
+			 	item = dequeue(&collect->fifo, collect->times);
 
+				if(item >= 0) {
+					collect->cpu_all_calc += total_job_cpuutil;
+					collect->cpu_all_calc = collect->cpu_all_calc - item;
+					tmp_cpuutil = collect->cpu_all_calc / collect->count;
+
+					if(tmp_cpuutil < collect->cpu_threshold) {
+						collect->load_flag = collect->load_flag |LOAD_LOW; 
+					}
+
+				} else {
+					if(collect->fifo.data)
+						xfree(collect->fifo.data);
+					collect->count = 0;
+					collect->cpu_all_calc = 0;
+					collect->gather = true;
+				} 						
+                if(collect->count != 0) {
+		 			if(enqueue(&collect->fifo, total_job_cpuutil, collect->times) ==-1) {
+						collect->count = 0;
+						collect->cpu_all_calc = 0;
+						collect->gather = true;
+
+		 			} 
+				}				
+			} else if((collect->times > 0) &&  (collect->count < collect->times)){
+				/*Reached queue length*/
+				if(enqueue(&collect->fifo, total_job_cpuutil, collect->times)!=-1) {
+					collect->cpu_all_calc += total_job_cpuutil;
+					collect->count ++;
+				}				
+			}
+		}
+		
+	}
+#endif
 	if (slurm_conf.job_acct_oom_kill)
 		jobacct_gather_handle_mem_limit(total_job_mem,
 						total_job_vsize);

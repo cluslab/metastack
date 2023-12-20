@@ -276,6 +276,9 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_RPC_RATE_LIMIT
 #endif
 
+#if (!defined __METASTACK_LOAD_ABNORMAL) && (defined __METASTACK_OPT_SSTAT_CPUUTIL)
+#define __METASTACK_LOAD_ABNORMAL
+#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/

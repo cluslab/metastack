@@ -1630,7 +1630,9 @@ extern int as_mysql_step_complete(mysql_conn_t *mysql_conn,
 			jobacct->tres_ids,
 			jobacct->tres_usage_out_tot,
 			jobacct->tres_count, 1);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+			xstrfmtcat(stats.tres_usage_out_tot, "; %"PRIu64"",jobacct->flag);
+#endif
 		xstrfmtcat(query,
 			   ", user_sec=%"PRIu64", user_usec=%u, "
 			   "sys_sec=%"PRIu64", sys_usec=%u, "

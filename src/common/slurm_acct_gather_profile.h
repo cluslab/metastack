@@ -56,6 +56,21 @@
 
 #define NO_PARENT -1
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+#define DATA_STEP 0
+#define EXTERN_STEP 1
+#define BATCH_STEP 2
+
+#define ENABLE_DIG 1
+#define ENABLE_BATCH 2
+#define ENABLE_ALL 3
+
+typedef struct {
+	int timer;
+	int cpu_min_load;
+	bool switch_step;
+} acct_gather_info_t;
+#endif
 typedef enum {
 	PROFILE_ENERGY,
 	PROFILE_TASK,
@@ -113,7 +128,11 @@ extern char *acct_gather_profile_type_t_name(acct_gather_profile_type_t type);
 extern char *acct_gather_profile_dataset_str(
 	acct_gather_profile_dataset_t *dataset, void *data,
 	char *str, int str_len);
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_startpoll(char *freq, char *freq_def, int step_flag);
+#else
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def);
+#endif
 extern void acct_gather_profile_endpoll(void);
 
 /* Called from slurmstepd between fork() and exec() of application.

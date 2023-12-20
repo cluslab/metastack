@@ -1153,9 +1153,32 @@ static int _cluster_get_jobs(mysql_conn_t *mysql_conn,
 			if (step_row[STEP_REQ_TRES_USAGE_OUT_MIN_NODEID])
 				step->stats.tres_usage_out_min_nodeid =
 					xstrdup(step_row[STEP_REQ_TRES_USAGE_OUT_MIN_NODEID]);
+#ifdef __METASTACK_LOAD_ABNORMAL
+			char *tres_usage_out_tot_tmp = NULL;
+			if(step_row[STEP_REQ_TRES_USAGE_OUT_TOT]) {
+				tres_usage_out_tot_tmp = xstrdup(step_row[STEP_REQ_TRES_USAGE_OUT_TOT]);
+				char *lastcomma = strrchr(tres_usage_out_tot_tmp, ';');
+				if (lastcomma != NULL) {
+					*lastcomma = '\0'; 
+				}
+				step->stats.tres_usage_out_tot = xstrdup(tres_usage_out_tot_tmp);
+				char *tmp_flag = NULL;
+				if(lastcomma)
+					tmp_flag = xstrdup(lastcomma + 1);
+				if(tmp_flag)
+					step->stats.flag = slurm_atoul(tmp_flag); 
+				else
+					step->stats.flag = 0;
+				if(tres_usage_out_tot_tmp)
+					xfree(tres_usage_out_tot_tmp);
+				if(tmp_flag)
+					xfree(tmp_flag);
+			}
+#else
 			if (step_row[STEP_REQ_TRES_USAGE_OUT_TOT])
 				step->stats.tres_usage_out_tot =
 					xstrdup(step_row[STEP_REQ_TRES_USAGE_OUT_TOT]);
+#endif
 			step->stats.act_cpufreq =
 				atof(step_row[STEP_REQ_ACT_CPUFREQ]);
 			step->stats.consumed_energy = slurm_atoull(

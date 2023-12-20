@@ -448,11 +448,20 @@ extern char *acct_gather_profile_dataset_str(
 	return str;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_startpoll(char *freq, char *freq_def, int step_flag)
+#else
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
+#endif
 {
 	int i;
 	uint32_t profile = ACCT_GATHER_PROFILE_NOT_SET;
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	acct_gather_info_t *job_set = xmalloc(sizeof(acct_gather_info_t));
+	job_set->timer = 0;
+	job_set->cpu_min_load = 0;
+    job_set->switch_step = true;
+#endif
 	if (acct_gather_profile_init() < 0)
 		return SLURM_ERROR;
 
@@ -489,11 +498,31 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			   consumption and such.  It will check
 			   profile inside it's plugin.
 			*/
+			
+#ifdef __METASTACK_LOAD_ABNORMAL
+			job_set->timer  = acct_gather_parse_time(freq, freq_def);
+			job_set->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
+			int enable_flag = acct_gather_parse_monitor(freq, freq_def);
 			_set_freq(i, freq, freq_def);
+			if(step_flag == EXTERN_STEP) {
+				job_set->switch_step = true;
+			}
+			else if(step_flag == BATCH_STEP) {
+				if(enable_flag == ENABLE_BATCH ||enable_flag == ENABLE_ALL)
+					job_set->switch_step = false;
+			} else {
+				if(enable_flag == ENABLE_DIG ||enable_flag == ENABLE_ALL)
+					job_set->switch_step = false;
+			}
+				
+			jobacct_gather_startpoll(
+					acct_gather_profile_timer[i].freq, job_set);
 
+#else
+			_set_freq(i, freq, freq_def);
 			jobacct_gather_startpoll(
 				acct_gather_profile_timer[i].freq);
-
+#endif
 			break;
 		case PROFILE_FILESYSTEM:
 			if (!(profile & ACCT_GATHER_PROFILE_LUSTRE))
@@ -517,7 +546,10 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			      "(acct_gather_profile_startpoll)", i);
 		}
 	}
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if(job_set) 
+			xfree(job_set);
+#endif
 	/* create polling thread */
 	slurm_thread_create(&timer_thread_id, _timer_thread, NULL);
 

@@ -462,9 +462,18 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	*/
 	acct_gather_profile_g_node_step_start(job);
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+	int extern_flag = DATA_STEP;
+	if(msg->step_id.step_id == SLURM_EXTERN_CONT) {
+		extern_flag	 = EXTERN_STEP;
+	}
 	acct_gather_profile_startpoll(msg->acctg_freq,
-				      slurm_conf.job_acct_gather_freq);
-
+				      slurm_conf.job_acct_gather_freq, extern_flag);
+	
+#else
+	acct_gather_profile_startpoll(msg->acctg_freq,
+				      slurm_conf.job_acct_gather_freq);		
+#endif
 	job->timelimit   = (time_t) -1;
 	job->flags       = msg->flags;
 	job->switch_job  = msg->switch_job;
@@ -515,7 +524,6 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 
 	if (acct_gather_check_acct_freq_task(msg->job_mem, msg->acctg_freq))
 		return NULL;
-
 	job = xmalloc(sizeof(stepd_step_rec_t));
 
 	job->state = SLURMSTEPD_STEP_STARTING;
@@ -568,8 +576,17 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	*/
 	acct_gather_profile_g_node_step_start(job);
 	/* needed for the jobacct_gather plugin to start */
+#ifdef __METASTACK_LOAD_ABNORMAL
+    int batch_flag = DATA_STEP;
+    if(job->step_id.step_id == SLURM_BATCH_SCRIPT) {
+		batch_flag = BATCH_STEP;
+	}
+	acct_gather_profile_startpoll(msg->acctg_freq,
+				      slurm_conf.job_acct_gather_freq, batch_flag);
+#else
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq);
+#endif
 
 	job->open_mode  = msg->open_mode;
 	job->overcommit = (bool) msg->overcommit;

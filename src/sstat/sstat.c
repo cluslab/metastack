@@ -105,6 +105,9 @@ print_field_t fields[] = {
 	{10, "MinCPUUtil", print_fields_str, PRINT_MINCPUUTIL},
 	{8, "TotalRSS", print_fields_str, PRINT_TOTALRSS},
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+	{11, "StepdStatus", print_fields_str, PRINT_STEPDSTATUS},
+#endif
 	{0, NULL, NULL, 0, 0}};
 #else
 print_field_t fields[] = {
@@ -167,6 +170,9 @@ print_field_t fields[] = {
 	{10, "MinCPUUtil", print_fields_str, PRINT_MINCPUUTIL},
 	{8, "TotalRSS", print_fields_str, PRINT_TOTALRSS},
 #endif	
+#ifdef __METASTACK_LOAD_ABNORMAL
+	{11, "StepdStatus", print_fields_str, PRINT_STEPDSTATUS},
+#endif
 	{0, NULL, NULL, 0}};
 #endif
 List jobs = NULL;
@@ -189,6 +195,9 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	int tot_tasks = 0;
 	hostlist_t hl = NULL;
 	char *ave_usage_tmp = NULL;
+#ifdef __METASTACK_LOAD_ABNORMAL
+    char *nodenames = NULL;
+#endif
 
 	debug("requesting info for %ps", step_id);
 	if ((rc = slurm_job_step_stat(step_id,
@@ -237,7 +246,11 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 
 		if (params.pid_format) {
 			step.nodes = step_stat->step_pids->node_name;
+#ifdef __METASTACK_LOAD_ABNORMAL
+			print_fields(&step, NULL);
+#else
 			print_fields(&step);
+#endif
 			xfree(step.pid_str);
 		} else {
 			hostlist_push_host(hl, step_stat->step_pids->node_name);
@@ -268,6 +281,11 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 
 				jobacctinfo_aggregate(total_jobacct,
 						      step_stat->jobacct);
+#ifdef __METASTACK_LOAD_ABNORMAL
+				if(step_stat->jobacct->flag > 0) {
+					xstrfmtcat(nodenames, "%s,", step_stat->step_pids->node_name);
+				} 
+#endif
 			}
 		}
 	}
@@ -303,7 +321,13 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 		step.ntasks = tot_tasks;
 	}
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+	print_fields(&step, nodenames);
+	if(nodenames)
+		xfree(nodenames);
+#else
 	print_fields(&step);
+#endif
 
 getout:
 

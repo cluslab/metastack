@@ -1680,7 +1680,28 @@ extern int validate_acctg_freq(char *acctg_freq)
 				valid = true;
 				break;
 			}
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+        /*Valid value detection of collection times*/
+        if (acct_gather_parse_time(tok, NULL)!= -1) {
+			valid = true;
+		} 
+		/*Load threshold invalid parameter check*/
+		if (acct_gather_parse_cpu_load(tok, NULL)!= -1) {
+			valid = true;
+		} 
+		int stepd = acct_gather_parse_monitor(tok, NULL);
+        if(stepd!= -1) {
+			/* 
+			 *0 disable all stepd, 1 enable digital stepd, 2、enable batch stepd 3、enable digital stepd and batch stepd
+			 */
+			if(stepd == 0 || stepd == 1 || stepd==2 || stepd==3) 
+				valid = true;
+			else {
+				valid = false;
+				error("Invalid parameter; 0 disable all stepd, 1 enable digital stepd, 2、enable batch stepd 3、enable digital stepd and batch stepd;");
+			}
+		}
+#endif 
 		if (!valid) {
 			error("Invalid --acctg-freq specification: %s", tok);
 			rc = SLURM_ERROR;

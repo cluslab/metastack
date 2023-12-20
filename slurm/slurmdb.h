@@ -359,6 +359,9 @@ typedef struct {
 	char *tres_usage_out_min_nodeid; /* contains node number min was on */
 	char *tres_usage_out_min_taskid; /* contains task number min was on */
 	char *tres_usage_out_tot; /* total amount of usage out data */
+#ifdef __METASTACK_LOAD_ABNORMAL
+    uint64_t flag;
+#endif
 } slurmdb_stats_t;
 
 /************** alphabetical order of structures **************/

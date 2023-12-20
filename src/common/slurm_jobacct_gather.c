@@ -91,12 +91,26 @@ strong_alias(jobacctinfo_unpack, slurm_jobacctinfo_unpack);
 strong_alias(jobacctinfo_create, slurm_jobacctinfo_create);
 strong_alias(jobacctinfo_destroy, slurm_jobacctinfo_destroy);
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+typedef struct slurm_jobacct_gather_ops {
+	void (*poll_data) (List task_list, uint64_t cont_id, bool profile, struct collection* collect);
+	int (*endpoll)    ();
+	int (*add_task)   (pid_t pid, jobacct_id_t *jobacct_id);
+} slurm_jobacct_gather_ops_t;
+
+struct gather_tran {
+	bool step_flag;
+	int times;
+	int cpu_load; /*cputhreshold*/
+	int frequency;
+};
+#else
 typedef struct slurm_jobacct_gather_ops {
 	void (*poll_data) (List task_list, uint64_t cont_id, bool profile);
 	int (*endpoll)    ();
 	int (*add_task)   (pid_t pid, jobacct_id_t *jobacct_id);
 } slurm_jobacct_gather_ops_t;
-
+#endif
 /*
  * These strings must be in the same order as the fields declared
  * for slurm_jobacct_gather_ops_t.
@@ -133,6 +147,64 @@ static uint64_t jobacct_vmem_limit = 0;
 static acct_gather_profile_timer_t *profile_timer =
 	&acct_gather_profile_timer[PROFILE_TASK];
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*Initialize queue */
+extern void initialize_queue(fifo_queue_t *queue, int maxsize) 
+{
+	queue->data = (double *)xmalloc(maxsize * sizeof(double));
+	queue->front = -1;
+	queue->rear = -1;
+}
+
+/*Check if the queue is empty*/
+extern int is_empty(fifo_queue_t *queue) 
+{
+     return queue->front == -1;
+}
+
+/*Check if the queue is full*/ 
+extern int is_full(fifo_queue_t *queue, int maxsize) 
+{
+    return (queue->rear + 1) % maxsize == queue->front;
+}
+
+/*Enqueue operation*/ 
+extern int enqueue(fifo_queue_t *queue,double value, int maxsize) 
+{
+    if (is_full(queue, maxsize)) {
+        //debug("Queue is full. Cannot enqueue.");
+        return -1;
+    }
+
+    if (is_empty(queue)) {
+        queue->front = 0;
+    }
+
+    queue->rear = (queue->rear + 1) % maxsize;
+    queue->data[queue->rear] = value;
+	return 0;
+}
+
+/*Dequeue operation*/ 
+extern double dequeue(fifo_queue_t *queue, int maxsize) 
+{
+  if (is_empty(queue)) {
+       //debug("Queue is empty. Cannot dequeue.");
+        return -1; 
+    }
+
+    double value = queue->data[queue->front];
+	if (queue->front == queue->rear) {
+        queue->front = -1;
+        queue->rear = -1;
+    } else {
+         queue->front = (queue->front + 1) % maxsize;
+    }
+
+    return value;
+}
+#endif
+
 static void _init_tres_usage(struct jobacctinfo *jobacct,
 			     jobacct_id_t *jobacct_id,
 			     uint32_t tres_cnt)
@@ -140,7 +212,6 @@ static void _init_tres_usage(struct jobacctinfo *jobacct,
 	int alloc_size, i;
 
 	jobacct->tres_count = tres_cnt;
-
 	jobacct->tres_ids = xcalloc(tres_cnt, sizeof(uint32_t));
 
 	alloc_size = tres_cnt * sizeof(uint64_t);
@@ -318,16 +389,27 @@ static bool _jobacct_shutdown_test(void)
 	slurm_mutex_unlock(&jobacct_shutdown_mutex);
 	return rc;
 }
+#ifdef __METASTACK_LOAD_ABNORMAL
+static void _poll_data(bool profile,  struct collection* collect)
+{
+	/* Update the data */
+	slurm_mutex_lock(&task_list_lock);
 
+	if (task_list)
+		(*(ops.poll_data))(task_list, cont_id, profile, collect);
+	slurm_mutex_unlock(&task_list_lock);
+}
+#else
 static void _poll_data(bool profile)
 {
 	/* Update the data */
 	slurm_mutex_lock(&task_list_lock);
 	if (task_list)
+
 		(*(ops.poll_data))(task_list, cont_id, profile);
 	slurm_mutex_unlock(&task_list_lock);
 }
-
+#endif
 static bool _init_run_test(void)
 {
 	bool rc;
@@ -342,12 +424,32 @@ static bool _init_run_test(void)
 
 static void *_watch_tasks(void *arg)
 {
+#ifdef __METASTACK_LOAD_ABNORMAL
+	struct gather_tran *times_tmp = (struct gather_tran *) arg;
+	struct collection* collect = NULL;
+	time_t now;
+	collect = xmalloc(sizeof(struct collection));
+	if(times_tmp->cpu_load < 0) {
+		times_tmp->cpu_load = 0;
+	} 
+    
+	if(times_tmp->times <= 0 ) {
+		times_tmp->times = 0;
+	} else {
+    	/*Set time limit*/
+		if(times_tmp->times > MAX_SIZE) {
+			times_tmp->times = MAX_SIZE;
+		}
+		initialize_queue(&collect->fifo, times_tmp->times);
+		 collect->count = 0;
+	}
+
+#endif 
 #if HAVE_SYS_PRCTL_H
 	if (prctl(PR_SET_NAME, "acctg", NULL, NULL, NULL) < 0) {
 		error("%s: cannot set my name to %s %m", __func__, "acctg");
 	}
 #endif
-
 	while (_init_run_test() && !_jobacct_shutdown_test() &&
 	       acct_gather_profile_test()) {
 		/* Do this until shutdown is requested */
@@ -362,10 +464,38 @@ static void *_watch_tasks(void *arg)
 
 		slurm_mutex_lock(&g_context_lock);
 		/* The initial poll is done after the last task is added */
+#ifdef __METASTACK_LOAD_ABNORMAL
+        now = time(NULL);
+		collect->cpu_threshold = times_tmp->cpu_load;
+		collect->times = times_tmp->times;
+		collect->step = times_tmp->step_flag; 
+		collect->mode = false;
+        collect->start = now;
+		collect->gather = false;
+		_poll_data(1, collect);	
+
+		if((times_tmp->times > 0) && collect->gather) {
+			xfree(collect->fifo.data);
+			initialize_queue(&collect->fifo, collect->times);
+			collect->count = 0;
+			collect->cpu_all_calc = 0;
+		}
+#else
 		_poll_data(1);
+#endif
 		slurm_mutex_unlock(&g_context_lock);
 
 	}
+#ifdef __METASTACK_LOAD_ABNORMAL
+	if(collect) {
+		if(times_tmp->times > 0)
+			xfree(collect->fifo.data);
+		xfree(collect);	
+	}
+	if(times_tmp)
+		xfree(times_tmp);
+#endif
+	
 	return NULL;
 }
 
@@ -604,8 +734,11 @@ extern int jobacct_gather_fini(void)
 
 	return rc;
 }
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int jobacct_gather_startpoll(uint16_t frequency, acct_gather_info_t *job_set)
+#else
 extern int jobacct_gather_startpoll(uint16_t frequency)
+#endif
 {
 	int retval = SLURM_SUCCESS;
 
@@ -632,8 +765,17 @@ extern int jobacct_gather_startpoll(uint16_t frequency)
 	}
 
 	/* create polling thread */
-	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, NULL);
+#ifdef __METASTACK_LOAD_ABNORMAL
+    struct gather_tran *tmp = xmalloc(sizeof(struct gather_tran));
+	tmp->step_flag = job_set->switch_step;
+	tmp->times= job_set->timer;
+	tmp->cpu_load = job_set->cpu_min_load;
+	tmp->frequency = frequency;			           		   
+	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, tmp);
 
+#else
+	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, NULL);
+#endif
 	debug3("jobacct_gather dynamic logging enabled");
 
 	return retval;
@@ -691,9 +833,13 @@ extern int jobacct_gather_add_task(pid_t pid, jobacct_id_t *jobacct_id,
 	(*(ops.add_task))(pid, jobacct_id);
 	list_push(task_list, jobacct);
 	slurm_mutex_unlock(&task_list_lock);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	if (poll == 1)
+		_poll_data(1, NULL);
+#else
 	if (poll == 1)
 		_poll_data(1);
+#endif
 
 	return SLURM_SUCCESS;
 error:
@@ -706,9 +852,16 @@ extern jobacctinfo_t *jobacct_gather_stat_task(pid_t pid)
 {
 	if (!plugin_polling || _jobacct_shutdown_test())
 		return NULL;
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	struct collection* collect = NULL;
+	collect = xmalloc(sizeof(struct collection));
+	collect->mode = true;
+	_poll_data(0, collect);
+	if(collect)
+		xfree(collect);
+#else
 	_poll_data(0);
-
+#endif
 	if (pid) {
 		struct jobacctinfo *jobacct = NULL;
 		struct jobacctinfo *ret_jobacct = NULL;
@@ -749,7 +902,11 @@ extern jobacctinfo_t *jobacct_gather_remove_task(pid_t pid)
 
 	/* poll data one last time before removing task
 	 * mainly for updating energy consumption */
+#ifdef __METASTACK_LOAD_ABNORMAL
+	_poll_data(1, NULL);
+#else
 	_poll_data(1);
+#endif
 
 	if (_jobacct_shutdown_test())
 		return NULL;
@@ -864,6 +1021,7 @@ extern jobacctinfo_t *jobacctinfo_create(jobacct_id_t *jobacct_id)
    jobacct->first_acct_time.tv_sec = 0;
    jobacct->first_acct_time.tv_usec = 0;
 #endif
+
 	jobacct->dataset_id = -1;
 	jobacct->sys_cpu_sec = 0;
 	jobacct->sys_cpu_usec = 0;
@@ -877,7 +1035,6 @@ extern jobacctinfo_t *jobacctinfo_create(jobacct_id_t *jobacct_id)
 extern void jobacctinfo_destroy(void *object)
 {
 	struct jobacctinfo *jobacct = (struct jobacctinfo *)object;
-
 	_free_tres_usage(jobacct);
 	xfree(jobacct);
 }
@@ -1029,6 +1186,9 @@ extern void jobacctinfo_pack(jobacctinfo_t *jobacct, uint16_t rpc_version,
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL	
     double tmp_dbl;
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+	uint64_t tmp_64;
+#endif
 	no_pack = (!plugin_polling && (protocol_type != PROTOCOL_TYPE_DBD));
 
 	if (!jobacct || no_pack) {
@@ -1097,6 +1257,11 @@ extern void jobacctinfo_pack(jobacctinfo_t *jobacct, uint16_t rpc_version,
 			tmp_dbl = 0;
 		packdouble(tmp_dbl, buffer);
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if ((tmp_64 = jobacct->flag) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+#endif
 	} else if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		if (jobacct->user_cpu_sec > NO_VAL) {
 			pack32((uint32_t)NO_VAL, buffer);
@@ -1161,6 +1326,11 @@ extern void jobacctinfo_pack(jobacctinfo_t *jobacct, uint16_t rpc_version,
 		if ((tmp_dbl = jobacct->max_cpu_util) < 0)
 			tmp_dbl = 0;
 		packdouble(tmp_dbl, buffer);
+#endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if ((tmp_64 = jobacct->flag) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
 #endif
 	} else {
 		info("jobacctinfo_pack version %u not supported", rpc_version);
@@ -1249,6 +1419,11 @@ extern int jobacctinfo_unpack(jobacctinfo_t **jobacct, uint16_t rpc_version,
 		safe_unpackdouble(&tmp_double, buffer);
 		(*jobacct)->max_cpu_util = tmp_double;
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+        uint64_t tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->flag = tmp_int64;
+#endif
 	} else if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		safe_unpack32(&uint32_tmp, buffer);
 		(*jobacct)->user_cpu_sec = uint32_tmp;
@@ -1310,6 +1485,11 @@ extern int jobacctinfo_unpack(jobacctinfo_t **jobacct, uint16_t rpc_version,
 		safe_unpackdouble(&tmp_double, buffer);
 		(*jobacct)->max_cpu_util = tmp_double;
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+		uint64_t tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->flag = tmp_int64;
+#endif
 	} else {
 		info("jobacctinfo_unpack version %u not supported",
 		     rpc_version);
@@ -1344,7 +1524,9 @@ extern void jobacctinfo_aggregate(jobacctinfo_t *dest, jobacctinfo_t *from)
 	dest->min_cpu_util += from->min_cpu_util;
 	dest->max_cpu_util += from->max_cpu_util;
 #endif
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	dest->flag =dest->flag | from->flag;
+#endif
 	dest->user_cpu_sec	+= from->user_cpu_sec;
 	dest->user_cpu_usec	+= from->user_cpu_usec;
 	if (dest->user_cpu_usec >= 1E6) {
@@ -1382,7 +1564,9 @@ extern void jobacctinfo_2_stats(slurmdb_stats_t *stats, jobacctinfo_t *jobacct)
     stats->max_cpu_util=(double)jobacct->max_cpu_util;
 	stats->min_cpu_util=(double)jobacct->min_cpu_util;
 #endif
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	stats->flag=(uint64_t)jobacct->flag;
+#endif
 	if (jobacct->energy.consumed_energy == NO_VAL64)
 		stats->consumed_energy = NO_VAL64;
 	else
