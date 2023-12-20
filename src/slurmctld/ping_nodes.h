@@ -71,4 +71,11 @@ extern void ping_end (void);
  */
 extern void ping_nodes (void);
 
+/**
+ * check node whether in partition
+ */
+#ifdef __METASTACK_REGISTRATION_FIX
+bool node_in_partition(struct node_record *node_ptr);
+#endif
+
 #endif /* !_HAVE_PING_NODES_H */

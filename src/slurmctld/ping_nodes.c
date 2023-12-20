@@ -135,6 +135,11 @@ void ping_nodes (void)
 					 * this can include DOWN nodes, so
 					 * limit the number to avoid huge
 					 * communication delays */
+#ifdef __METASTACK_REGISTRATION_FIX
+	static int reg_counts = 0; /* Count the number of registrations */
+	hostlist_t no_par_hostlist = NULL;
+	hostlist_t already_down_hostlist = NULL;
+#endif
 	int i;
 	time_t now = time(NULL), still_live_time, node_dead_time;
 	static time_t last_ping_time = (time_t) 0;
@@ -291,14 +296,52 @@ void ping_nodes (void)
 			node_ptr->not_responding = false;  /* logged below */
 			continue;
 		}
-
+#ifdef __METASTACK_REGISTRATION_FIX
+		if (reg_counts >= 5 && (reg_counts - 5) % 3 != 0 &&
+			! node_in_partition(node_ptr) &&
+			((node_ptr->last_response == (time_t) 0 && IS_NODE_UNKNOWN(node_ptr))))
+		{
+			if (no_par_hostlist)
+				(void) hostlist_push_host(no_par_hostlist,
+					node_ptr->name);
+			else {
+				no_par_hostlist =
+					hostlist_create(node_ptr->name);
+				if (!no_par_hostlist) {
+					fatal("Invalid host name: %s",
+					      node_ptr->name);
+				}
+			}
+			continue;
+		}
+		if (reg_counts >= 5 && node_ptr->boot_time == 0 && (! node_ptr->do_reg) &&
+			 IS_NODE_NO_RESPOND(node_ptr) && IS_NODE_DOWN(node_ptr))
+		{
+			if (already_down_hostlist)
+				(void) hostlist_push_host(already_down_hostlist,
+					node_ptr->name);
+			else {
+				already_down_hostlist =
+					hostlist_create(node_ptr->name);
+				if (!already_down_hostlist) {
+					fatal("Invalid host name: %s",
+					      node_ptr->name);
+				}
+			}
+			continue;
+		}
+#endif
 		/* Request a node registration if its state is UNKNOWN or
 		 * on a periodic basis (about every MAX_REG_FREQUENCY ping,
 		 * this mechanism avoids an additional (per node) timer or
 		 * counter and gets updated configuration information
 		 * once in a while). We limit these requests since they
 		 * can generate a flood of incoming RPCs. */
+#ifdef __METASTACK_REGISTRATION_FIX
+		if (IS_NODE_UNKNOWN(node_ptr) || (node_ptr->boot_time == 0) || node_ptr->do_reg ||
+#else
 		if (IS_NODE_UNKNOWN(node_ptr) || (node_ptr->boot_time == 0) ||
+#endif
 		    ((node_ptr->index >= offset) &&
 		     (node_ptr->index < (offset + max_reg_threads)))) {
 			if (reg_agent_args->protocol_version >
@@ -307,6 +350,9 @@ void ping_nodes (void)
 					node_ptr->protocol_version;
 			hostlist_push_host(reg_agent_args->hostlist,
 					   node_ptr->name);
+#ifdef __METASTACK_REGISTRATION_FIX
+			node_ptr->do_reg = false;
+#endif
 			reg_agent_args->node_count++;
 			continue;
 		}
@@ -332,6 +378,9 @@ void ping_nodes (void)
 #endif
 
 	restart_flag = false;
+#ifdef __METASTACK_REGISTRATION_FIX
+	reg_counts++;
+#endif
 	if (ping_agent_args->node_count == 0) {
 		hostlist_destroy(ping_agent_args->hostlist);
 		xfree (ping_agent_args);
@@ -368,6 +417,22 @@ void ping_nodes (void)
 		xfree(host_str);
 		hostlist_destroy(down_hostlist);
 	}
+#ifdef __METASTACK_REGISTRATION_FIX
+	if (no_par_hostlist) {
+		hostlist_uniq(no_par_hostlist);
+		host_str = hostlist_ranged_string_xmalloc(no_par_hostlist);
+		debug("Nodes %s don't have partition, ignore registration", host_str);
+		xfree(host_str);
+		hostlist_destroy(no_par_hostlist);
+	}
+	if (already_down_hostlist) {
+		hostlist_uniq(already_down_hostlist);
+		host_str = hostlist_ranged_string_xmalloc(already_down_hostlist);
+		debug("Nodes %s already down and don't have boot_time, ignore registration", host_str);
+		xfree(host_str);
+		hostlist_destroy(already_down_hostlist);
+	}
+#endif
 }
 
 /* Spawn health check function for every node that is not DOWN */
@@ -573,3 +638,21 @@ extern void update_nodes_acct_gather_data(void)
 		agent_queue_request(agent_args);
 	}
 }
+#ifdef __METASTACK_REGISTRATION_FIX
+bool node_in_partition(struct node_record *node_ptr)
+{
+	xassert(node_ptr);
+	ListIterator part_iterator;
+	part_record_t *part_ptr;
+	part_iterator = list_iterator_create(part_list);
+	while ((part_ptr = list_next(part_iterator)))
+	{
+		if (part_ptr->node_bitmap == NULL)
+			continue;
+		if (bit_test(part_ptr->node_bitmap, node_ptr->index))
+			return true;
+	}
+	list_iterator_destroy(part_iterator);
+	return false;
+}
+#endif

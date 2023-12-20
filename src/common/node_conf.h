@@ -186,6 +186,9 @@ struct node_record {
 	uint32_t weight;		/* orignal weight, used only for state
 					 * save/restore, DO NOT use for
 					 * scheduling purposes. */
+#ifdef __METASTACK_REGISTRATION_FIX
+	bool do_reg;  /*if true,do reg*/
+#endif
 };
 extern node_record_t **node_record_table_ptr;  /* ptr to node records */
 extern int node_record_count;		/* count in node_record_table_ptr */

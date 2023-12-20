@@ -2032,6 +2032,10 @@ static void *_slurmctld_background(void *no_data)
 	/* Locks: Write node */
 	slurmctld_lock_t node_write_lock2 = {
 		NO_LOCK, NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
+#ifdef __METASTACK_REGISTRATION_FIX
+	slurmctld_lock_t node_write_lock3 = {
+		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, NO_LOCK };	
+#endif
 	/* Locks: Write partition */
 	slurmctld_lock_t part_write_lock = {
 		NO_LOCK, NO_LOCK, NO_LOCK, WRITE_LOCK, NO_LOCK };
@@ -2214,12 +2218,20 @@ static void *_slurmctld_background(void *no_data)
 
 		if (((difftime(now, last_ping_node_time) >= ping_interval) ||
 		     ping_nodes_now) && is_ping_done()) {
+#ifdef __METASTACK_REGISTRATION_FIX
+			lock_slurmctld(node_write_lock3);
+#else
 			lock_slurmctld(node_write_lock);
+#endif
 			now = time(NULL);
 			last_ping_node_time = now;
 			ping_nodes_now = false;
 			ping_nodes();
+#ifdef __METASTACK_REGISTRATION_FIX
+			unlock_slurmctld(node_write_lock3);
+#else
 			unlock_slurmctld(node_write_lock);
+#endif
 		}
 
 		if (slurm_conf.inactive_limit &&

@@ -708,6 +708,9 @@ static void _init_node_record(node_record_t *node_ptr,
 	node_ptr->tot_sockets = config_ptr->tot_sockets;
 	node_ptr->tot_cores = config_ptr->tot_sockets * config_ptr->cores;
 	node_ptr->weight = config_ptr->weight;
+#ifdef __METASTACK_REGISTRATION_FIX
+	node_ptr->do_reg = false;
+#endif
 
 	/*
 	 * Here we determine if this node is scheduling threads or not.
