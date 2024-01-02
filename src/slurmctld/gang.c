@@ -1261,7 +1261,9 @@ extern void gs_job_start(job_record_t *job_ptr)
 	DEF_TIMERS;
 	START_TIMER;
 
+	slurm_mutex_lock(&data_mutex);
 	_update_all_active_rows();
+	slurm_mutex_unlock(&data_mutex);
 
 	END_TIMER2(__func__);
 	debug2("%s: scaning all gs jobs, %s", __func__, TIME_STR);
