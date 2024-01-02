@@ -2402,19 +2402,29 @@ next_task:
 			continue;
 		}
 
-		if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
-		    job_ptr->details && job_ptr->details->req_node_bitmap &&
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
-			para_sched && (!bit_super_set(job_ptr->details->req_node_bitmap,
-					para_sched_avail_node_bitmap[index]))) {
-			do_sched_assoc_lock_unlock(false, job_ptr);						
-			do_sched_job_lock_unlock(false, job_ptr);
-#else				
-		    !bit_super_set(job_ptr->details->req_node_bitmap,
-				   avail_node_bitmap)) {
-#endif					
+		if (para_sched) {
+			if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
+					job_ptr->details && job_ptr->details->req_node_bitmap &&
+					(!bit_super_set(job_ptr->details->req_node_bitmap, para_sched_avail_node_bitmap[index]))) {
+				do_sched_assoc_lock_unlock(false, job_ptr);						
+				do_sched_job_lock_unlock(false, job_ptr);
+				continue;				
+			}
+		} else {
+			if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
+					job_ptr->details && job_ptr->details->req_node_bitmap &&
+					(!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap))) {
+				continue;
+			}
+		}
+#else
+		if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
+		    	job_ptr->details && job_ptr->details->req_node_bitmap &&				
+		    	!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap)) {				
 			continue;
 		}
+#endif
 
 		if (!job_ptr->part_ptr) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
