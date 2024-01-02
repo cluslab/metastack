@@ -1748,12 +1748,14 @@ static int _schedule(bool full_queue)
 	part_cnt = list_count(part_list);
 	failed_parts = xcalloc(part_cnt, sizeof(part_record_t *));
 	failed_resv = xcalloc(MAX_FAILED_RESV, sizeof(slurmctld_resv_t *));
-	save_avail_node_bitmap = bit_copy(avail_node_bitmap);
+
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
-	if(para_sched)
+	if(para_sched) {
 		bit_or(para_sched_avail_node_bitmap[index], rs_node_bitmap);
-	else
+	} else {
+		save_avail_node_bitmap = bit_copy(avail_node_bitmap);
 		bit_or(avail_node_bitmap, rs_node_bitmap);
+	}
 #else		
 	bit_or(avail_node_bitmap, rs_node_bitmap);
 #endif	
