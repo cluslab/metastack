@@ -72,17 +72,6 @@
 
 #define CPU_TIME_ADJ 1000
 
-#ifdef __METASTACK_LOAD_ABNORMAL
-#define MAX_SIZE 100000
-#define LOAD_LOW 0x0000000000000001
-#define PROC_AB 0x0000000000000010
-typedef struct {
-    double *data;
-    int front;
-    int rear;
-} fifo_queue_t;
-#endif
-
 typedef struct {
 	uint32_t taskid; /* contains which task number it was on */
 	uint32_t nodeid; /* contains which node number it was on */
@@ -146,32 +135,57 @@ struct jobacctinfo {
 };
 
 #ifdef __METASTACK_LOAD_ABNORMAL
+
+#define MAX_SIZE 1000000
+#define LOAD_LOW 0x0000000000000001
+#define PROC_AB 0x0000000000000010
+
 struct jobinfostat {
 	double job_avg_cpu;
 	double job_cpu_util;
 	uint64_t pid_status;
 };
 
-struct  collection{
+typedef struct {
 	uint64_t load_flag; /*exception criteria*/
-	bool update;/* update load_flag*/
-	bool mode; /*call pll_data method*/
 	bool step;  /*enable step*/
-    bool gather;
-	//double step_calc;
-	double cpu_threshold;/*cpu calc*/
-	double cpu_all_calc;
-	time_t start;
-	fifo_queue_t fifo;   /*job storage*/
-	int count;    
-	int times;
-};
+	uint64_t cpu_step_real; 
+	uint64_t cpu_step_ave;
+	uint64_t mem_step;
+	uint64_t vmem_step;
+	uint64_t step_pages;
+	uint64_t gpu_step_util;
+	//uint64_t page_fault;     /* The total number of page fault exceptions in individual job steps on the node */
+	//int count;    /*slurmstepd number of tasks*/
+} collection_t;
+#endif
 
-extern void initialize_queue(fifo_queue_t *queue, int maxsize);
-extern int is_empty(fifo_queue_t *queue);
-extern int is_full(fifo_queue_t *queue, int maxsize);
-extern int enqueue(fifo_queue_t *queue,double value, int maxsize);
-extern double dequeue(fifo_queue_t *queue, int maxsize);
+ #ifdef __METASTACK_LOAD_ABNORMAL
+typedef struct {
+	pthread_cond_t cond;
+	pthread_mutex_t lock;
+	int count_nodelist;
+	int rank_gather;
+	int parent_rank_gather;
+	int children_gather;
+	int depth_gather;
+	int max_depth_gather;
+	//节点名称或者rank号需要携带
+	int wait_child_count; /*number node of child count now*/
+	uint64_t step_cpu;
+	uint64_t step_cpu_ave;
+	uint64_t step_mem;
+	uint64_t step_vmem;
+	uint64_t load_status;
+	uint64_t page_fault;
+	 time_t start;
+	// time_t now;
+	slurm_addr_t parent_addr_gather;
+	bitstr_t *bits;
+	bool wait_children;
+} step_gather_t;
+
+extern step_gather_t step_gather;
 #endif
 
 /* Define jobacctinfo_t below to avoid including extraneous slurm headers */
@@ -184,6 +198,7 @@ extern int jobacct_gather_init(void); /* load the plugin */
 extern int jobacct_gather_fini(void); /* unload the plugin */
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int  jobacct_gather_startpoll(uint16_t frequency, acct_gather_info_t *job_set);
+extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_info_t *job_set);
 #else
 extern int  jobacct_gather_startpoll(uint16_t frequency);
 #endif

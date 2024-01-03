@@ -90,19 +90,50 @@ strong_alias(jobacctinfo_pack, slurm_jobacctinfo_pack);
 strong_alias(jobacctinfo_unpack, slurm_jobacctinfo_unpack);
 strong_alias(jobacctinfo_create, slurm_jobacctinfo_create);
 strong_alias(jobacctinfo_destroy, slurm_jobacctinfo_destroy);
+#ifdef __METASTACK_LOAD_ABNORMAL
+step_gather_t step_gather = {
+	PTHREAD_COND_INITIALIZER,
+	PTHREAD_MUTEX_INITIALIZER,
+	0,
+	-1,
+	-1,
+	-1,
+	-1,
+	-1,
+	0,/*number node of child count now*/
+	0,
+	0,
+	0,
+	0,
+	0,
+	// 0,
+	0,
+	0,
+	{},
+	(bitstr_t *)NULL,
+	true
+};
+#endif
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 typedef struct slurm_jobacct_gather_ops {
-	void (*poll_data) (List task_list, uint64_t cont_id, bool profile, struct collection* collect);
+	void (*poll_data) (List task_list, uint64_t cont_id, bool profile, collection_t *collect);
 	int (*endpoll)    ();
 	int (*add_task)   (pid_t pid, jobacct_id_t *jobacct_id);
 } slurm_jobacct_gather_ops_t;
 
-struct gather_tran {
-	bool step_flag;
+struct step_gather {
+	bool step; /*enable stepd gather */
 	int times;
 	int cpu_load; /*cputhreshold*/
 	int frequency;
+	int rank;
+	int depth;
+	int parent_rank;
+	slurm_addr_t parent_addr;
+	int children;
+	int max_depth;
+    slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
 };
 #else
 typedef struct slurm_jobacct_gather_ops {
@@ -127,6 +158,23 @@ static pthread_mutex_t g_context_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool init_run = false;
 static pthread_mutex_t init_run_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t watch_tasks_thread_id = 0;
+#ifdef __METASTACK_LOAD_ABNORMAL
+static pthread_t watch_stepd_thread_id = 0;
+static acct_gather_profile_timer_t *profile_stepd =
+	&acct_gather_profile_timer[PROFILE_STEPD];
+
+static pthread_mutex_t data_send_lock = PTHREAD_MUTEX_INITIALIZER;
+static collection_t share_data = {
+	.load_flag = 0,
+	.step = false,
+	.cpu_step_real = 0,
+	.cpu_step_ave = 0,
+	.mem_step = 0,
+	.vmem_step = 0,
+	.step_pages = 0,
+	.gpu_step_util = 0,
+};
+#endif
 
 static int freq = 0;
 static List task_list = NULL;
@@ -146,64 +194,6 @@ static uint64_t jobacct_mem_limit  = 0;
 static uint64_t jobacct_vmem_limit = 0;
 static acct_gather_profile_timer_t *profile_timer =
 	&acct_gather_profile_timer[PROFILE_TASK];
-
-#ifdef __METASTACK_LOAD_ABNORMAL
-/*Initialize queue */
-extern void initialize_queue(fifo_queue_t *queue, int maxsize) 
-{
-	queue->data = (double *)xmalloc(maxsize * sizeof(double));
-	queue->front = -1;
-	queue->rear = -1;
-}
-
-/*Check if the queue is empty*/
-extern int is_empty(fifo_queue_t *queue) 
-{
-     return queue->front == -1;
-}
-
-/*Check if the queue is full*/ 
-extern int is_full(fifo_queue_t *queue, int maxsize) 
-{
-    return (queue->rear + 1) % maxsize == queue->front;
-}
-
-/*Enqueue operation*/ 
-extern int enqueue(fifo_queue_t *queue,double value, int maxsize) 
-{
-    if (is_full(queue, maxsize)) {
-        //debug("Queue is full. Cannot enqueue.");
-        return -1;
-    }
-
-    if (is_empty(queue)) {
-        queue->front = 0;
-    }
-
-    queue->rear = (queue->rear + 1) % maxsize;
-    queue->data[queue->rear] = value;
-	return 0;
-}
-
-/*Dequeue operation*/ 
-extern double dequeue(fifo_queue_t *queue, int maxsize) 
-{
-  if (is_empty(queue)) {
-       //debug("Queue is empty. Cannot dequeue.");
-        return -1; 
-    }
-
-    double value = queue->data[queue->front];
-	if (queue->front == queue->rear) {
-        queue->front = -1;
-        queue->rear = -1;
-    } else {
-         queue->front = (queue->front + 1) % maxsize;
-    }
-
-    return value;
-}
-#endif
 
 static void _init_tres_usage(struct jobacctinfo *jobacct,
 			     jobacct_id_t *jobacct_id,
@@ -390,7 +380,7 @@ static bool _jobacct_shutdown_test(void)
 	return rc;
 }
 #ifdef __METASTACK_LOAD_ABNORMAL
-static void _poll_data(bool profile,  struct collection* collect)
+static void _poll_data(bool profile,  collection_t *collect)
 {
 	/* Update the data */
 	slurm_mutex_lock(&task_list_lock);
@@ -419,31 +409,153 @@ static bool _init_run_test(void)
 	return rc;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+/* _acct_kill_step() issue RPC to kill a slurm job step */
+static void _acct_send_data_step(struct step_gather *job_send, step_gather_msg_t msg, int timeout)
+{
+	slurm_msg_t req;
+	step_gather_msg_t msg_send;
+	int rc = -1;
+	int retcode;
+
+	memset(&msg_send, 0, sizeof(msg_send));
+	memcpy(&msg_send.step_id, &job_send->step_id, sizeof(msg_send.step_id));
+
+	msg_send.rank = msg.rank;
+	msg_send.cpu_util = msg.cpu_util;
+	msg_send.cpu_ave =  msg.cpu_ave;
+	msg_send.mem_real = msg.mem_real;
+	msg_send.vmem_real = msg.vmem_real;
+	msg_send.load_flag = msg.load_flag ;
+	msg_send.page_fault  = msg.page_fault;
+
+	slurm_msg_t_init(&req);
+	slurm_msg_set_r_uid(&req, slurm_conf.slurmd_user_id);
+	req.protocol_version = SLURM_PROTOCOL_VERSION;
+	req.msg_type = REQUEST_JOB_STEP_DATA;
+	req.data = &msg_send;
+	req.address = job_send->parent_addr;
+    
+	/* Do NOT change this check to "step_complete.rank != 0", because
+	 * there are odd situations where SlurmUser or root could
+	 * craft a launch without a valid credential, and no tree information
+	 * can be built with out the hostlist from the credential.
+	 */
+	if (job_send->parent_rank != -1) {
+		/* On error, pause then try sending to parent again.
+		 * The parent slurmstepd may just not have started yet, because
+		 * of the way that the launch message forwarding works.
+		 */
+		retcode = slurm_send_recv_rc_msg_only_one(&req, &rc, timeout);
+		if ((retcode == 0) && (rc == 0))
+			debug(" Rank %d sending data to rank %d ip parent = %pA is sucessed ",
+				job_send->rank, job_send->parent_rank, &req.address);
+	} 
+	
+}
+
+static void *step_collect(void *args)
+{
+	struct step_gather *jobinfo = (struct step_gather *) args;
+	int count = 1,tmp = 0, rank_wait = 0;
+	//time_t now;
+	count = jobinfo->times*60 / jobinfo->frequency; 
+#if HAVE_SYS_PRCTL_H
+	if (prctl(PR_SET_NAME, "acctg_step", NULL, NULL, NULL) < 0) {
+		error("%s: cannot set my name to %s %m", __func__, "acctg_step");
+	}
+#endif
+	while (_init_run_test() && !_jobacct_shutdown_test() &&
+	       acct_gather_profile_test()) {
+		 /* Do this until shutdown is requested */
+		slurm_mutex_lock(&profile_stepd->notify_mutex);
+		slurm_cond_wait(&profile_stepd->notify,
+				&profile_stepd->notify_mutex);
+		slurm_mutex_unlock(&profile_stepd->notify_mutex);
+
+		/* shutting down, woken by jobacct_gather_fini() */
+		if (!_init_run_test())
+			break;
+
+		slurm_mutex_lock(&step_gather.lock);
+		if(step_gather.children_gather) {
+
+			
+		}
+		debug("接收端++++++++++++++++++++++ == rank = %d step_gather.step_cpu_ave=%ld step_gather.step_cpu =%ld "
+		"step_gather.step_mem =%ld step_gather.step_vmem =%ld step_gather.page_fault =%ld step_gather.count_nodelist=%d",step_gather.rank_gather,step_gather.step_cpu_ave,step_gather.step_cpu,
+		step_gather.step_mem,step_gather.step_vmem,step_gather.page_fault,step_gather.count_nodelist);
+
+		slurm_mutex_unlock(&step_gather.lock);
+		if(tmp >= count) {
+			step_gather_msg_t msg;
+			slurm_mutex_lock(&data_send_lock);
+			msg.rank = jobinfo->rank;
+			msg.cpu_util = share_data.cpu_step_real;
+			msg.cpu_ave =  share_data.cpu_step_ave;
+			msg.mem_real = share_data.mem_step;
+			msg.vmem_real = share_data.vmem_step;
+			msg.load_flag = share_data.load_flag ;
+			msg.page_fault  =share_data.step_pages;
+			slurm_mutex_unlock(&data_send_lock);
+			tmp = 1;
+			debug3("Rank %d sending data to rank %d ip parent = %pA,jobid is %ps",
+		       jobinfo->rank, jobinfo->parent_rank, &jobinfo->parent_addr,&jobinfo->step_id);
+		    /* Do NOT change this check to "step_complete.rank != 0", because
+			* there are odd situations where SlurmUser or root could
+			* craft a launch without a valid credential, and no tree information
+			* can be built with out the hostlist from the credential.
+			*/
+			if((jobinfo->children == 0) && (jobinfo->parent_rank != -1) && (jobinfo->rank != -1)) {
+
+				_acct_send_data_step(jobinfo, msg, 0);
+			} else if((jobinfo->children !=0) && (jobinfo->rank !=0)) {
+				if(rank_wait == jobinfo->children) {
+
+					
+				}
+				//_acct_send_data_step(jobinfo, msg, 0);
+				 
+			}
+
+		
+		} else {
+			tmp++;
+		}	
+
+
+	}
+	return NULL;
+}
+#endif
+
 /* _watch_tasks() -- monitor slurm jobs and track their memory usage
  */
 
 static void *_watch_tasks(void *arg)
 {
 #ifdef __METASTACK_LOAD_ABNORMAL
-	struct gather_tran *times_tmp = (struct gather_tran *) arg;
-	struct collection* collect = NULL;
-	time_t now;
-	collect = xmalloc(sizeof(struct collection));
-	if(times_tmp->cpu_load < 0) {
-		times_tmp->cpu_load = 0;
-	} 
-    
-	if(times_tmp->times <= 0 ) {
-		times_tmp->times = 0;
-	} else {
-    	/*Set time limit*/
-		if(times_tmp->times > MAX_SIZE) {
-			times_tmp->times = MAX_SIZE;
-		}
-		initialize_queue(&collect->fifo, times_tmp->times);
-		 collect->count = 0;
-	}
+	struct step_gather *message = (struct step_gather *) arg;
+	int count = 0, tmp_count = 0;
+	collection_t *collect = NULL;
+	fifo_queue_t *fifo = NULL; 
+	bool reset = false;
 
+    /*Resource consumption variable*/
+    uint64_t total_step_cpuutil = 0;
+    uint64_t  tmp_cpuutil = 0;
+	collect = xmalloc(sizeof(collection_t));
+
+	if(message->frequency > 0)
+		count = (message->times* 60) / message->frequency; 
+	
+	/*Set time limit*/
+	if(count > MAX_SIZE) 
+		count = MAX_SIZE;
+
+	collect->step = message->step;
+	fifo = xmalloc(sizeof(fifo_queue_t));
+	initialize_queue(fifo, count);
 #endif 
 #if HAVE_SYS_PRCTL_H
 	if (prctl(PR_SET_NAME, "acctg", NULL, NULL, NULL) < 0) {
@@ -465,35 +577,68 @@ static void *_watch_tasks(void *arg)
 		slurm_mutex_lock(&g_context_lock);
 		/* The initial poll is done after the last task is added */
 #ifdef __METASTACK_LOAD_ABNORMAL
-        now = time(NULL);
-		collect->cpu_threshold = times_tmp->cpu_load;
-		collect->times = times_tmp->times;
-		collect->step = times_tmp->step_flag; 
-		collect->mode = false;
-        collect->start = now;
-		collect->gather = false;
 		_poll_data(1, collect);	
-
-		if((times_tmp->times > 0) && collect->gather) {
-			xfree(collect->fifo.data);
-			initialize_queue(&collect->fifo, collect->times);
-			collect->count = 0;
-			collect->cpu_all_calc = 0;
-		}
 #else
 		_poll_data(1);
 #endif
 		slurm_mutex_unlock(&g_context_lock);
+#ifdef __METASTACK_LOAD_ABNORMAL
+		uint64_t item = 0.0;
+		if((collect != NULL) && (collect->step) && (count > 0)) {
+			/*******************
+			 *Calculate threshold
+			 *******************/
+			if(tmp_count >= count) {
+				/*Dequeue*/
+				item = dequeue(fifo, count);
+                 
+				if(item >= 0) {
+					total_step_cpuutil += collect->cpu_step_real;
+					total_step_cpuutil = total_step_cpuutil - item;
+					tmp_cpuutil = total_step_cpuutil / tmp_count;
+
+				} else {
+					tmp_count = 0;
+					total_step_cpuutil = 0;
+					reset = true;
+				} 	
+
+				if(tmp_count != 0) {
+					if(enqueue(fifo, collect->cpu_step_real, count) ==-1) {
+						tmp_count = 0;
+						total_step_cpuutil = 0;
+						reset = true;
+					} 
+				}	
+
+			} else if( tmp_count < count){
+				/*Reached queue length*/
+				if(enqueue(fifo, collect->cpu_step_real, count)!=-1) {
+					total_step_cpuutil += collect->cpu_step_real;
+					tmp_count ++;
+				}				
+			}
+			if(reset) {
+				fifo->front = -1;
+				fifo->rear = -1;
+				reset = false;
+			}
+			slurm_mutex_lock(&data_send_lock);
+			share_data.cpu_step_real= tmp_cpuutil;
+			share_data.cpu_step_ave = collect->cpu_step_ave;
+			share_data.load_flag =  collect->load_flag;
+			share_data.mem_step = collect->mem_step;
+			share_data.vmem_step = collect->vmem_step;
+			share_data.step_pages = collect->step_pages;
+			slurm_mutex_unlock(&data_send_lock);
+		}
+
 
 	}
-#ifdef __METASTACK_LOAD_ABNORMAL
-	if(collect) {
-		if(times_tmp->times > 0)
-			xfree(collect->fifo.data);
-		xfree(collect);	
-	}
-	if(times_tmp)
-		xfree(times_tmp);
+	if(fifo && fifo->data) 
+		xfree(fifo->data);
+	xfree(fifo);
+	xfree(collect);
 #endif
 	
 	return NULL;
@@ -726,6 +871,16 @@ extern int jobacct_gather_fini(void)
 			pthread_join(watch_tasks_thread_id, NULL);
 			slurm_mutex_lock(&g_context_lock);
 		}
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if (watch_stepd_thread_id) {
+			slurm_mutex_unlock(&g_context_lock);
+			slurm_mutex_lock(&profile_timer->notify_mutex);
+			slurm_cond_signal(&profile_timer->notify);
+			slurm_mutex_unlock(&profile_timer->notify_mutex);
+			pthread_join(watch_stepd_thread_id, NULL);
+			slurm_mutex_lock(&g_context_lock);
+		}
+#endif
 
 		rc = plugin_context_destroy(g_context);
 		g_context = NULL;
@@ -734,6 +889,49 @@ extern int jobacct_gather_fini(void)
 
 	return rc;
 }
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_info_t *jobinfo) 
+{
+	int retval = SLURM_SUCCESS;
+	if (!plugin_polling)
+		return SLURM_SUCCESS;
+
+	if (jobacct_gather_init() < 0)
+		return SLURM_ERROR;
+
+	if (_jobacct_shutdown_test()) {
+		slurm_mutex_lock(&jobacct_shutdown_mutex);
+		jobacct_shutdown = false;
+		slurm_mutex_unlock(&jobacct_shutdown_mutex);
+		// return SLURM_SUCCESS;
+	}
+
+	struct step_gather *tmp = xmalloc(sizeof(struct step_gather));
+	tmp->step = jobinfo->switch_step;
+	tmp->times= jobinfo->timer;
+	tmp->cpu_load = jobinfo->cpu_min_load;
+	tmp->frequency = frequency;	
+
+	/*Message conversion related settings*/
+	tmp->rank = jobinfo->rank;
+	tmp->depth = jobinfo->depth;
+	tmp->parent_rank = jobinfo->parent_rank;
+	tmp->parent_addr = jobinfo->parent_addr;
+	tmp->children = jobinfo->children;
+	tmp->max_depth = jobinfo->max_depth;
+	tmp->step_id = jobinfo->step_id;
+
+	if (frequency == 0 || !(jobinfo->switch_step)) {   /* don't want dynamic monitoring? */
+		debug2("jobacct_gather send logging disabled");
+		return retval;
+	}
+
+	slurm_thread_create(&watch_stepd_thread_id, step_collect, tmp);
+	debug3("jobacct stepd gather dynamic logging enabled");
+
+	return retval;
+}
+#endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int jobacct_gather_startpoll(uint16_t frequency, acct_gather_info_t *job_set)
 #else
@@ -766,14 +964,25 @@ extern int jobacct_gather_startpoll(uint16_t frequency)
 
 	/* create polling thread */
 #ifdef __METASTACK_LOAD_ABNORMAL
-    struct gather_tran *tmp = xmalloc(sizeof(struct gather_tran));
-	tmp->step_flag = job_set->switch_step;
-	tmp->times= job_set->timer;
-	tmp->cpu_load = job_set->cpu_min_load;
-	tmp->frequency = frequency;			           		   
-	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, tmp);
+		struct step_gather *tmp = xmalloc(sizeof(struct step_gather));
+		tmp->step = job_set->switch_step;
+		tmp->times= job_set->timer;
+		tmp->cpu_load = job_set->cpu_min_load;
+		tmp->frequency = frequency;	
 
-#else
+		/*Message conversion related settings*/
+	    tmp->rank = job_set->rank;
+		tmp->depth = job_set->depth;
+		tmp->parent_rank = job_set->parent_rank;
+		tmp->parent_addr = job_set->parent_addr;
+		tmp->children = job_set->children;
+		tmp->max_depth = job_set->max_depth;
+		// tmp->wait_children = job_set->wait_children; 
+		// tmp->step_rc = job_set->step_rc;
+        tmp->step_id = job_set->step_id;   
+		slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, tmp);
+
+#else        		   
 	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, NULL);
 #endif
 	debug3("jobacct_gather dynamic logging enabled");
@@ -853,9 +1062,9 @@ extern jobacctinfo_t *jobacct_gather_stat_task(pid_t pid)
 	if (!plugin_polling || _jobacct_shutdown_test())
 		return NULL;
 #ifdef __METASTACK_LOAD_ABNORMAL
-	struct collection* collect = NULL;
-	collect = xmalloc(sizeof(struct collection));
-	collect->mode = true;
+	collection_t * collect = NULL;
+	collect = xmalloc(sizeof(collection_t));
+	//collect->mode = true;
 	_poll_data(0, collect);
 	if(collect)
 		xfree(collect);

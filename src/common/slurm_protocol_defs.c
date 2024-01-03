@@ -4774,6 +4774,16 @@ extern void slurm_free_step_complete_msg(step_complete_msg_t *msg)
 		xfree(msg);
 	}
 }
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern void slurm_free_job_step_gather(void *object)
+{
+	step_gather_msg_t *msg = (step_gather_msg_t *)object;
+	if(msg) {
+		xfree(msg);
+	}
+
+}
+#endif
 
 extern void slurm_free_job_step_stat(void *object)
 {
@@ -5236,6 +5246,11 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case REQUEST_STEP_LAYOUT:
 		slurm_free_step_id(data);
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_JOB_STEP_DATA:	
+		slurm_free_job_step_gather(data);
+		break;
+#endif
 	case RESPONSE_JOB_STEP_STAT:
 		slurm_free_job_step_stat(data);
 		break;
@@ -5950,6 +5965,10 @@ rpc_num2string(uint16_t opcode)
 		return "SLURMSCRIPTD_REQUEST_UPDATE_LOG";
 	case SLURMSCRIPTD_SHUTDOWN:
 		return "SLURMSCRIPTD_SHUTDOWN";
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_JOB_STEP_DATA:	
+		return "REQUEST_JOB_STEP_DATA";
+#endif
 	default:
 		(void) snprintf(buf, sizeof(buf), "%u", opcode);
 		return buf;

@@ -72,7 +72,7 @@ extern void jag_common_fini(void);
 extern void destroy_jag_prec(void *object);
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
-				 jag_callbacks_t *callbacks, bool profile, struct collection* collect);
+				 jag_callbacks_t *callbacks, bool profile, collection_t *collect);
 #else
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jag_callbacks_t *callbacks, bool profile);

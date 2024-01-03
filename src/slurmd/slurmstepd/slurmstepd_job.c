@@ -69,6 +69,9 @@
 #include "src/slurmd/slurmstepd/multi_prog.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+#include "src/slurmd/slurmstepd/slurmstepd.h"
+#endif
 static char **_array_copy(int n, char **src);
 static void _job_init_task_info(stepd_step_rec_t *job, uint32_t **gtid,
 				char *ifname, char *ofname, char *efname);
@@ -281,6 +284,18 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	xassert(msg != NULL);
 	xassert(msg->complete_nodelist != NULL);
 	debug3("entering stepd_step_rec_create");
+#ifdef __METASTACK_LOAD_ABNORMAL
+	acct_gather_rank_t step_rank;
+	memset(&step_rank, 0, sizeof(acct_gather_rank_t));
+	//step_complete;
+	slurm_mutex_lock(&step_gather.lock);
+	step_rank.children = step_gather.children_gather;
+	step_rank.depth = step_gather.depth_gather;
+	step_rank.parent_addr = step_gather.parent_addr_gather;
+	step_rank.parent_rank = step_gather.parent_rank_gather;
+	step_rank.rank = step_gather.rank_gather;
+	slurm_mutex_unlock(&step_gather.lock);
+#endif
 
 	if (acct_gather_check_acct_freq_task(msg->job_mem_lim, msg->acctg_freq))
 		return NULL;
@@ -463,13 +478,15 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	acct_gather_profile_g_node_step_start(job);
 
 #ifdef __METASTACK_LOAD_ABNORMAL
-	int extern_flag = DATA_STEP;
+	step_rank.step = DATA_STEP;
+	/* here memcpy not need to be released */
+	memcpy(&step_rank.step_id, &msg->step_id, sizeof(step_rank.step_id));
 	if(msg->step_id.step_id == SLURM_EXTERN_CONT) {
-		extern_flag	 = EXTERN_STEP;
+		step_rank.step = EXTERN_STEP;
 	}
 	acct_gather_profile_startpoll(msg->acctg_freq,
-				      slurm_conf.job_acct_gather_freq, extern_flag);
-	
+				      slurm_conf.job_acct_gather_freq, step_rank);
+
 #else
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq);		
@@ -521,6 +538,17 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	xassert(msg != NULL);
 
 	debug3("entering batch_stepd_step_rec_create");
+#ifdef __METASTACK_LOAD_ABNORMAL
+	acct_gather_rank_t step_rank;
+	memset(&step_rank, 0, sizeof(acct_gather_rank_t));
+	slurm_mutex_lock(&step_complete.lock);
+	step_rank.children = step_complete.children;
+	step_rank.depth = step_complete.depth;
+    step_rank.parent_addr = step_complete.parent_addr;
+	step_rank.parent_rank = step_complete.parent_rank;
+	step_rank.rank = step_complete.rank;
+	slurm_mutex_unlock(&step_complete.lock);
+#endif
 
 	if (acct_gather_check_acct_freq_task(msg->job_mem, msg->acctg_freq))
 		return NULL;
@@ -577,12 +605,13 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	acct_gather_profile_g_node_step_start(job);
 	/* needed for the jobacct_gather plugin to start */
 #ifdef __METASTACK_LOAD_ABNORMAL
-    int batch_flag = DATA_STEP;
-    if(job->step_id.step_id == SLURM_BATCH_SCRIPT) {
-		batch_flag = BATCH_STEP;
-	}
+    step_rank.step = DATA_STEP;
+	step_rank.step_id = job->step_id;
+    if(job->step_id.step_id == SLURM_BATCH_SCRIPT)
+		step_rank.step = BATCH_STEP;
+
 	acct_gather_profile_startpoll(msg->acctg_freq,
-				      slurm_conf.job_acct_gather_freq, batch_flag);
+				      slurm_conf.job_acct_gather_freq, step_rank);
 #else
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq);

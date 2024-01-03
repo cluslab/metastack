@@ -236,6 +236,24 @@ extern int acct_gather_conf_destroy(void)
 	return rc;
 }
 
+extern List acct_gather_conf_values(void)
+{
+	List acct_list = list_create(destroy_config_key_pair);
+
+	/* get acct_gather.conf in each plugin */
+	slurm_mutex_lock(&conf_mutex);
+	acct_gather_profile_g_conf_values(&acct_list);
+	acct_gather_interconnect_g_conf_values(&acct_list);
+	acct_gather_energy_g_conf_values(&acct_list);
+	acct_gather_filesystem_g_conf_values(&acct_list);
+	/* ADD MORE HERE */
+	slurm_mutex_unlock(&conf_mutex);
+	/******************************************/
+
+	list_sort(acct_list, (ListCmpF) sort_key_pairs);
+
+	return acct_list;
+}
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int acct_gather_parse_time(char *freq, char* freq_def)
@@ -297,25 +315,6 @@ extern int acct_gather_parse_monitor(char *freq, char* freq_def)
 }
 #endif
 
-extern List acct_gather_conf_values(void)
-{
-	List acct_list = list_create(destroy_config_key_pair);
-
-	/* get acct_gather.conf in each plugin */
-	slurm_mutex_lock(&conf_mutex);
-	acct_gather_profile_g_conf_values(&acct_list);
-	acct_gather_interconnect_g_conf_values(&acct_list);
-	acct_gather_energy_g_conf_values(&acct_list);
-	acct_gather_filesystem_g_conf_values(&acct_list);
-	/* ADD MORE HERE */
-	slurm_mutex_unlock(&conf_mutex);
-	/******************************************/
-
-	list_sort(acct_list, (ListCmpF) sort_key_pairs);
-
-	return acct_list;
-}
-
 extern int acct_gather_parse_freq(int type, char *freq)
 {
 	int freq_int = -1;
@@ -346,6 +345,12 @@ extern int acct_gather_parse_freq(int type, char *freq)
 		if ((sub_str = xstrcasestr(freq, "network=")))
 			freq_int = _get_int(sub_str + 8);
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case PROFILE_STEPD:
+		if ((sub_str = xstrcasestr(freq, "task=")))
+			freq_int = _get_int(sub_str + 5);
+		break;
+#endif
 	default:
 		fatal("Unhandled profile option %d please update "
 		      "slurm_acct_gather.c "

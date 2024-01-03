@@ -64,11 +64,31 @@
 #define ENABLE_DIG 1
 #define ENABLE_BATCH 2
 #define ENABLE_ALL 3
+typedef struct {
+    double *data;
+    int front;
+    int rear;
+} fifo_queue_t;
+
+extern void initialize_queue(fifo_queue_t *fifo, int maxsize);
+extern int is_empty(fifo_queue_t *fifo);
+extern int is_full(fifo_queue_t *fifo, int maxsize);
+extern int enqueue(fifo_queue_t *fifo, double value, int maxsize);
+extern double dequeue(fifo_queue_t *fifo, int maxsize);
 
 typedef struct {
 	int timer;
 	int cpu_min_load;
 	bool switch_step;
+	fifo_queue_t* fifo;   /*job storage*/
+	int rank;
+	int depth;
+	int parent_rank;
+	slurm_addr_t parent_addr;
+	int children;
+	int max_depth;
+	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
+
 } acct_gather_info_t;
 #endif
 typedef enum {
@@ -76,6 +96,9 @@ typedef enum {
 	PROFILE_TASK,
 	PROFILE_FILESYSTEM,
 	PROFILE_NETWORK,
+#ifdef __METASTACK_LOAD_ABNORMAL
+	PROFILE_STEPD,
+#endif
 	PROFILE_CNT
 } acct_gather_profile_type_t;
 
@@ -96,6 +119,17 @@ typedef struct {
 	pthread_cond_t notify;
 	pthread_mutex_t notify_mutex;
 } acct_gather_profile_timer_t;
+#ifdef __METASTACK_LOAD_ABNORMAL
+typedef struct {
+	int rank;
+	int depth;
+	int parent_rank;
+	slurm_addr_t parent_addr;
+	int children;
+	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
+	int step; /*which stepd*/
+} acct_gather_rank_t;
+#endif
 
 extern acct_gather_profile_timer_t acct_gather_profile_timer[PROFILE_CNT];
 
@@ -129,7 +163,7 @@ extern char *acct_gather_profile_dataset_str(
 	acct_gather_profile_dataset_t *dataset, void *data,
 	char *str, int str_len);
 #ifdef __METASTACK_LOAD_ABNORMAL
-extern int acct_gather_profile_startpoll(char *freq, char *freq_def, int step_flag);
+extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather_rank_t step_rank);
 #else
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def);
 #endif

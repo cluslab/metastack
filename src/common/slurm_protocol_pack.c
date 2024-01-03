@@ -9495,6 +9495,55 @@ unpack_error:
 	*msg_ptr = NULL;
 	return SLURM_ERROR;
 }
+#ifdef __METASTACK_LOAD_ABNORMAL
+static void pack_step_gather_msg(step_gather_msg_t *msg, buf_t *buffer,
+			 uint16_t protocol_version)
+{
+
+	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		pack_step_id(&msg->step_id, buffer, protocol_version);
+		pack32((uint32_t)msg->rank, buffer);
+		pack64(msg->cpu_ave, buffer);
+		pack64(msg->cpu_util, buffer);
+
+		pack64(msg->mem_real, buffer);
+		pack64(msg->vmem_real, buffer);
+		pack64(msg->page_fault, buffer);
+		pack64(msg->load_flag, buffer);
+	}
+}
+static int
+_unpack_step_gather_msg(step_gather_msg_t ** msg_ptr, buf_t *buffer,
+			  uint16_t protocol_version)
+{
+	step_gather_msg_t *msg;
+
+	msg = xmalloc(sizeof(step_gather_msg_t));
+	*msg_ptr = msg;
+	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		if (unpack_step_id_members(&msg->step_id, buffer,
+					   protocol_version) != SLURM_SUCCESS)
+			goto unpack_error;
+		safe_unpack32(&msg->rank, buffer);
+		safe_unpack64(&msg->cpu_ave, buffer);
+		safe_unpack64(&msg->cpu_util, buffer);
+        		
+		safe_unpack64(&msg->mem_real, buffer);
+		safe_unpack64(&msg->vmem_real, buffer);
+		safe_unpack64(&msg->page_fault, buffer);
+		safe_unpack64(&msg->load_flag, buffer);
+	}
+	
+	if(false) {
+		goto unpack_error;		
+	}
+	return SLURM_SUCCESS;
+unpack_error:
+	*msg_ptr = NULL;
+	return SLURM_ERROR;
+}
+
+#endif
 
 static void
 _pack_step_complete_msg(step_complete_msg_t * msg, buf_t *buffer,
@@ -13030,6 +13079,12 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 		pack_step_id((slurm_step_id_t *)msg->data, buffer,
 			     msg->protocol_version);
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_JOB_STEP_DATA:	
+		pack_step_gather_msg((step_gather_msg_t *)msg->data, buffer,
+			 msg->protocol_version);
+		break;
+#endif
 	case RESPONSE_STEP_LAYOUT:
 		pack_slurm_step_layout((slurm_step_layout_t *)msg->data,
 				       buffer,
@@ -13670,6 +13725,12 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 		rc = unpack_step_id((slurm_step_id_t **)&msg->data,
 				    buffer, msg->protocol_version);
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_JOB_STEP_DATA:	
+		rc = _unpack_step_gather_msg((step_gather_msg_t **)&msg->data, buffer,
+				msg->protocol_version);
+		break;
+#endif
 	case RESPONSE_STEP_LAYOUT:
 		rc = unpack_slurm_step_layout(
 			(slurm_step_layout_t **)&msg->data,

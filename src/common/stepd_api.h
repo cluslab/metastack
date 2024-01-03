@@ -71,6 +71,9 @@ typedef enum {
 	REQUEST_STEP_RECONFIGURE,
 	REQUEST_STEP_STAT,
 	REQUEST_STEP_COMPLETION,
+#ifdef __METASTACK_LOAD_ABNORMAL
+	REQUEST_STEP_AGGREGATE,
+#endif
 	REQUEST_STEP_MEM_LIMITS,
 	REQUEST_STEP_UID,
 	REQUEST_STEP_NODEID,
@@ -281,6 +284,15 @@ extern int stepd_resume(int fd, uint16_t protocol_version,
  * and sets errno.
  */
 int stepd_reconfig(int fd, uint16_t protocol_version);
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*
+ *Aggregate resource consumption information of other nodes
+ *
+ * Returns SLURM_SUCCESS if successful.  On error returns SLURM_ERROR
+ * and sets errno.
+ */
+int stepd_aggregate(int fd, uint16_t protocol_version, step_gather_msg_t *sent);
+#endif
 
 /*
  *

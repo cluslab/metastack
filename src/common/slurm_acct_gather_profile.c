@@ -120,6 +120,73 @@ static pthread_t timer_thread_id = 0;
 static pthread_mutex_t timer_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t timer_thread_cond = PTHREAD_COND_INITIALIZER;
 static bool init_run = false;
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*Initialize queue */
+extern void initialize_queue(fifo_queue_t *fifo, int maxsize) 
+{  
+	if (maxsize<=0)
+		return;
+    fifo->data = (double *)xmalloc(maxsize * sizeof(double));
+    fifo->front = -1;
+    fifo->rear = -1;
+}
+
+/*Check if the queue is empty*/ 
+extern int is_empty(fifo_queue_t *fifo) 
+{
+     return (fifo->front) == -1;
+}
+
+/*Check if the queue is full*/ 
+extern int is_full(fifo_queue_t *fifo, int maxsize) 
+{
+    return (fifo->rear + 1) % maxsize == fifo->front;
+}
+
+/*Enqueue operation*/ 
+extern int enqueue(fifo_queue_t *fifo, double value, int maxsize) 
+{
+    if (is_full(fifo, maxsize)) {
+        //debug("Queue is full. Cannot enqueue.");
+        return -1;
+    }
+
+    if (is_empty(fifo)) {
+       fifo->front = 0;
+    }
+
+    fifo->rear = (fifo->rear + 1) % maxsize;
+    fifo->data[fifo->rear] = value;
+	return 0;
+}
+
+//queue->front = 0;   queue->rear=0     maxsize=3
+//queue->front = 0;   queue->rear=1     maxsize=3
+//queue->front = 0;   queue->rear=2     maxsize=3
+
+//queue->front = 0;   queue->rear=2     maxsize=3
+//queue->front = 1;   queue->rear=2     maxsize=3
+//queue->front = 2;   queue->rear=2     maxsize=3
+
+/*Dequeue operation*/ 
+extern double dequeue(fifo_queue_t *fifo, int maxsize) 
+{
+  if (is_empty(fifo)) {
+       //debug("Queue is empty. Cannot dequeue.");
+        return -1; 
+    }
+
+    double value = fifo->data[fifo->front];
+	if (fifo->front == fifo->rear) {
+        fifo->front = -1;
+        fifo->rear = -1;
+    } else {
+        fifo->front = (fifo->front + 1) % maxsize;
+    }
+
+    return value;
+}
+#endif
 
 static void _set_freq(int type, char *freq, char *freq_def)
 {
@@ -274,6 +341,10 @@ extern int acct_gather_profile_fini(void)
 		case PROFILE_NETWORK:
 			acct_gather_interconnect_fini();
 			break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		case PROFILE_STEPD:
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -405,6 +476,11 @@ extern char *acct_gather_profile_type_t_name(acct_gather_profile_type_t type)
 	case PROFILE_CNT:
 		return "CNT?";
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case PROFILE_STEPD:
+		return "Stepd";
+		break;
+#endif
 	default:
 		fatal("Unhandled profile option %d please update "
 		      "slurm_acct_gather_profile.c "
@@ -449,7 +525,47 @@ extern char *acct_gather_profile_dataset_str(
 }
 
 #ifdef __METASTACK_LOAD_ABNORMAL
-extern int acct_gather_profile_startpoll(char *freq, char *freq_def, int step_flag)
+static void acct_gather_set_parameters(char *freq, char* freq_def,  
+						acct_gather_rank_t step_rank, acct_gather_info_t *jobinfo)
+{
+	jobinfo->timer = 0;
+	jobinfo->cpu_min_load = 0;
+	jobinfo->switch_step = false;
+
+
+	/*Read parameter settings*/
+	jobinfo->timer  = acct_gather_parse_time(freq, freq_def);
+	jobinfo->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
+	int enable_flag = acct_gather_parse_monitor(freq, freq_def);
+  
+
+    /*determine job step type*/
+	switch(step_rank.step) {
+		case EXTERN_STEP:
+			jobinfo->switch_step = false;
+			break;
+		case BATCH_STEP:
+			if(enable_flag == ENABLE_BATCH ||enable_flag == ENABLE_ALL)
+				jobinfo->switch_step = true;
+			break;
+		default:
+			if(enable_flag == ENABLE_DIG ||enable_flag == ENABLE_ALL)
+				jobinfo->switch_step = true;
+	}
+    
+	/*Message conversion related settings*/
+	jobinfo->rank = step_rank.rank;
+	jobinfo->depth = step_rank.depth;
+	jobinfo->parent_rank = step_rank.parent_rank;
+	jobinfo->parent_addr = step_rank.parent_addr;
+	jobinfo->children = step_rank.children;
+	jobinfo->step_id = step_rank.step_id;
+
+}
+#endif
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather_rank_t step_rank)
 #else
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 #endif
@@ -457,10 +573,8 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 	int i;
 	uint32_t profile = ACCT_GATHER_PROFILE_NOT_SET;
 #ifdef __METASTACK_LOAD_ABNORMAL
-	acct_gather_info_t *job_set = xmalloc(sizeof(acct_gather_info_t));
-	job_set->timer = 0;
-	job_set->cpu_min_load = 0;
-    job_set->switch_step = true;
+	acct_gather_info_t *jobinfo = xmalloc(sizeof(acct_gather_info_t));
+	acct_gather_set_parameters(freq, freq_def, step_rank, jobinfo);
 #endif
 	if (acct_gather_profile_init() < 0)
 		return SLURM_ERROR;
@@ -500,24 +614,9 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			*/
 			
 #ifdef __METASTACK_LOAD_ABNORMAL
-			job_set->timer  = acct_gather_parse_time(freq, freq_def);
-			job_set->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
-			int enable_flag = acct_gather_parse_monitor(freq, freq_def);
 			_set_freq(i, freq, freq_def);
-			if(step_flag == EXTERN_STEP) {
-				job_set->switch_step = true;
-			}
-			else if(step_flag == BATCH_STEP) {
-				if(enable_flag == ENABLE_BATCH ||enable_flag == ENABLE_ALL)
-					job_set->switch_step = false;
-			} else {
-				if(enable_flag == ENABLE_DIG ||enable_flag == ENABLE_ALL)
-					job_set->switch_step = false;
-			}
-				
 			jobacct_gather_startpoll(
-					acct_gather_profile_timer[i].freq, job_set);
-
+				acct_gather_profile_timer[i].freq, jobinfo);
 #else
 			_set_freq(i, freq, freq_def);
 			jobacct_gather_startpoll(
@@ -540,6 +639,14 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			acct_gather_interconnect_startpoll(
 				acct_gather_profile_timer[i].freq);
 			break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		case PROFILE_STEPD:
+		    /*Set the timing frequency of new threads*/
+			_set_freq(i, freq, freq_def);
+			jobacct_gather_stepdpoll(
+					acct_gather_profile_timer[i].freq, jobinfo);
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -547,14 +654,14 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 		}
 	}
 #ifdef __METASTACK_LOAD_ABNORMAL
-		if(job_set) 
-			xfree(job_set);
+		if(jobinfo) 
+			xfree(jobinfo);
 #endif
 	/* create polling thread */
 	slurm_thread_create(&timer_thread_id, _timer_thread, NULL);
 
 	debug3("acct_gather_profile_startpoll dynamic logging enabled");
-
+	
 	return SLURM_SUCCESS;
 }
 
@@ -581,6 +688,9 @@ extern void acct_gather_profile_endpoll(void)
 		case PROFILE_ENERGY:
 			break;
 		case PROFILE_TASK:
+#ifdef __METASTACK_LOAD_ABNORMAL
+		case PROFILE_STEPD:
+#endif
 			jobacct_gather_endpoll();
 			break;
 		case PROFILE_FILESYSTEM:

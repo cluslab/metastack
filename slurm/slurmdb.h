@@ -342,6 +342,9 @@ typedef struct {
 	double max_cpu_util; /*cpu max utilization*/
 	double min_cpu_util; /*cpu minimum utilization*/
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+    uint64_t flag;
+#endif
 	uint64_t consumed_energy; /* contains energy consumption in joules */
 	char *tres_usage_in_ave; /* average amount of usage in data */
 	char *tres_usage_in_max; /* contains max amount of usage in data */
@@ -359,9 +362,6 @@ typedef struct {
 	char *tres_usage_out_min_nodeid; /* contains node number min was on */
 	char *tres_usage_out_min_taskid; /* contains task number min was on */
 	char *tres_usage_out_tot; /* total amount of usage out data */
-#ifdef __METASTACK_LOAD_ABNORMAL
-    uint64_t flag;
-#endif
 } slurmdb_stats_t;
 
 /************** alphabetical order of structures **************/
