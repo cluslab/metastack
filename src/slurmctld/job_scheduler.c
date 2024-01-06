@@ -1756,7 +1756,8 @@ static int _schedule(bool full_queue)
 		save_avail_node_bitmap = bit_copy(avail_node_bitmap);
 		bit_or(avail_node_bitmap, rs_node_bitmap);
 	}
-#else		
+#else
+	save_avail_node_bitmap = bit_copy(avail_node_bitmap);
 	bit_or(avail_node_bitmap, rs_node_bitmap);
 #endif	
 
