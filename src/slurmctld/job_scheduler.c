@@ -144,6 +144,7 @@ List queue_license_list;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 static void *_schedule_part(void *arg);
 static int para_sched_job_count = 0;
+static pthread_mutex_t sched_conf_init = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t sched_job_count = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t _do_diag_stats_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t schedule_cycle_depth = PTHREAD_MUTEX_INITIALIZER;
@@ -1435,6 +1436,11 @@ static int _schedule(bool full_queue)
 	if (slurmctld_config.shutdown_time)
 		return 0;
 
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	if (para_sched) {
+		slurm_mutex_lock(&sched_conf_init);
+	}
+#endif
 	if (sched_update != slurm_conf.last_update) {
 		char *tmp_ptr;
 		if (!xstrcmp(slurm_conf.schedtype, "sched/builtin") &&
@@ -1671,6 +1677,7 @@ static int _schedule(bool full_queue)
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	if(para_sched) {
+		slurm_mutex_unlock(&sched_conf_init);
 		slurm_rwlock_rdlock(&slurmctld_config.thread_count_rwlock);
 		if ((defer_rpc_cnt > 0) &&
 			(slurmctld_config.server_thread_count >= defer_rpc_cnt)) {
