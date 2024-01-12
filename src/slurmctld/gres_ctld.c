@@ -1765,23 +1765,33 @@ static void _set_type_tres_cnt(List gres_list,
 {
 	ListIterator itr;
 	gres_state_t *gres_state_ptr;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	slurmdb_tres_rec_t tres_rec;
+#else
 	static bool first_run = 1;
 	static slurmdb_tres_rec_t tres_rec;
+#endif
 	char *col_name = NULL;
 	uint64_t count;
 	int tres_pos;
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
 
+#ifndef __METASTACK_NEW_PART_PARA_SCHED
 	/* we only need to init this once */
 	if (first_run) {
 		first_run = 0;
 		memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
 		tres_rec.type = "gres";
 	}
+#endif
 
 	if (!gres_list || !tres_cnt)
 		return;
 
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
+	tres_rec.type = "gres";	
+#endif	
 	/* must be locked first before gres_contrex_lock!!! */
 	if (!locked)
 		assoc_mgr_lock(&locks);

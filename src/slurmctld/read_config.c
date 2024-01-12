@@ -141,6 +141,7 @@ static void _update_preempt(uint16_t old_enable_preempt);
 int part_count = 0;     /* The number of all partitions */
 int resource_count = 0; /* The number of all partitions after resource area division  */
 bool para_sched = false;    /* Flag for whether to execute parallel scheduling */
+bool p_preemption_enabled = true; /* Flag for whether to execute preempt */
 /* for partitions */
 char **para_sched_part_names = NULL;           /* A collection of partition names within each resource area, separated by spaces */
 part_record_t ***original_part_ptr = NULL;     /* A collection of part_ptr for each part */
@@ -168,6 +169,9 @@ extern void build_sched_resource(void)
 
 	para_sched = false;	
 	resource_count = 0;
+	
+	/* replace operation in func sort_job_queue2 */
+	p_preemption_enabled = slurm_preemption_enabled();
 	
 	/* check whether config para_sched */
 	if (!xstrcasestr(slurm_conf.sched_params, "para_sched")) 
