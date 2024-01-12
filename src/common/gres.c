@@ -10076,18 +10076,28 @@ extern void gres_clear_tres_cnt(uint64_t *tres_cnt, bool locked)
 	int tres_pos;
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
 
+#ifndef __METASTACK_NEW_PART_PARA_SCHED
 	/* we only need to init this once */
 	if (first_run) {
 		first_run = 0;
 		memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
 		tres_rec.type = "gres";
 	}
+#endif
 
 	/* must be locked first before gres_contrex_lock!!! */
 	if (!locked)
 		assoc_mgr_lock(&locks);
 
 	slurm_mutex_lock(&gres_context_lock);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	/* we only need to init this once */
+	if (first_run) {
+		first_run = 0;
+		memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
+		tres_rec.type = "gres";
+	}
+#endif
 	/* Initialize all GRES counters to zero. Increment them later. */
 	for (int i = 0; i < gres_context_cnt; i++) {
 		tres_rec.name =	gres_context[i].gres_name;
