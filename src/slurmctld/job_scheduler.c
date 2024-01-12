@@ -2997,6 +2997,14 @@ extern int sort_job_queue2(void *x, void *y)
 
 	/* The following block of code is designed to minimize run time in
 	 * typical configurations for this frequently executed function. */
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	if (p_preemption_enabled) {
+		if (preempt_g_job_preempt_check(job_rec1, job_rec2))
+			return -1;
+		if (preempt_g_job_preempt_check(job_rec2, job_rec1))
+			return 1;			
+	}
+#else
 	if (config_update != slurm_conf.last_update) {
 		preemption_enabled = slurm_preemption_enabled();
 		config_update = slurm_conf.last_update;
@@ -3007,7 +3015,7 @@ extern int sort_job_queue2(void *x, void *y)
 		if (preempt_g_job_preempt_check(job_rec2, job_rec1))
 			return 1;
 	}
-
+#endif
 	if (bf_hetjob_prio && job_rec1->job_ptr->het_job_id &&
 	    (job_rec1->job_ptr->het_job_id !=
 	     job_rec2->job_ptr->het_job_id)) {
