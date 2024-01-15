@@ -1392,7 +1392,7 @@ static int _schedule(bool full_queue)
 	job_record_t *job_ptr = NULL;
 	part_record_t *part_ptr, **failed_parts = NULL, *skip_part_ptr = NULL;
 	slurmctld_resv_t **failed_resv = NULL;
-	bitstr_t *save_avail_node_bitmap;
+	bitstr_t *save_avail_node_bitmap = NULL;
 	part_record_t **sched_part_ptr = NULL;
 	int *sched_part_jobs = NULL, bb_wait_cnt = 0;
 	/* Locks: Read config, write job, write node, read partition */
@@ -2990,8 +2990,10 @@ extern int sort_job_queue2(void *x, void *y)
 	job_queue_rec_t *job_rec2 = *(job_queue_rec_t **) y;
 	het_job_details_t *details = NULL;
 	bool has_resv1, has_resv2;
+#ifndef __METASTACK_NEW_PART_PARA_SCHED	
 	static time_t config_update = 0;
 	static bool preemption_enabled = true;
+#endif
 	uint32_t job_id1, job_id2;
 	uint32_t p1, p2;
 
