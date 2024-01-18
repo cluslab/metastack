@@ -436,6 +436,7 @@ extern int part_count;     /* The number of all partitions */
 extern int resource_count; /* The number of all partitions after resource area division  */
 extern bool para_sched;    /* Flag for whether to execute parallel scheduling */
 extern bool p_preemption_enabled; /* Flag for whether to execute preempt */
+extern bool p_power_save_on; /* Flag for whether to execute power save */
 /* for partitions */
 extern char **para_sched_part_names;           /* A collection of partition names within each resource area, separated by spaces */
 extern part_record_t ***original_part_ptr;     /* A collection of part_ptr for each part */
