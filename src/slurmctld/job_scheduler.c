@@ -5341,6 +5341,7 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 	bitstr_t *boot_node_bitmap = NULL, *feature_node_bitmap = NULL;
 	char *reboot_features = NULL;
 	uint16_t protocol_version = SLURM_PROTOCOL_VERSION;
+#ifndef __METASTACK_NEW_PART_PARA_SCHED
 	static bool power_save_on = false;
 	static time_t sched_update = 0;
 
@@ -5348,10 +5349,15 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 		power_save_on = power_save_test();
 		sched_update = slurm_conf.last_update;
 	}
+#endif
 
 	if ((job_ptr->details == NULL) || (job_ptr->node_bitmap == NULL))
 		return;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED		
+	if (!p_power_save_on &&
+#else
 	if (!power_save_on &&
+#endif
 	    ((slurm_conf.reboot_program == NULL) ||
 	     (slurm_conf.reboot_program[0] == '\0')))
 		return;
@@ -5429,8 +5435,12 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 
 	if (feature_node_bitmap) {
 		/* Reboot nodes to change KNL NUMA and/or MCDRAM mode */
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		_do_reboot(p_power_save_on, feature_node_bitmap, job_ptr,
+#else
 		_do_reboot(power_save_on, feature_node_bitmap, job_ptr,
-			   reboot_features, protocol_version);
+#endif
+			reboot_features, protocol_version);
 
 		/*
 		 * Update node features now to avoid a race where a
@@ -5453,8 +5463,12 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 
 	if (boot_node_bitmap) {
 		/* Reboot nodes with no feature changes */
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		_do_reboot(p_power_save_on, boot_node_bitmap, job_ptr, NULL,
+#else
 		_do_reboot(power_save_on, boot_node_bitmap, job_ptr, NULL,
-			   protocol_version);
+#endif
+			protocol_version);
 	}
 
 	xfree(reboot_features);

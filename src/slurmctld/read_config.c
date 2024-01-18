@@ -142,6 +142,7 @@ int part_count = 0;     /* The number of all partitions */
 int resource_count = 0; /* The number of all partitions after resource area division  */
 bool para_sched = false;    /* Flag for whether to execute parallel scheduling */
 bool p_preemption_enabled = true; /* Flag for whether to execute preempt */
+bool p_power_save_on = false; /* Flag for whether to execute power save */
 /* for partitions */
 char **para_sched_part_names = NULL;           /* A collection of partition names within each resource area, separated by spaces */
 part_record_t ***original_part_ptr = NULL;     /* A collection of part_ptr for each part */

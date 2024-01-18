@@ -1361,6 +1361,9 @@ extern void config_power_mgr(void)
 	} else {
 		power_save_enabled = true;
 	}
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	p_power_save_on = power_save_enabled;
+#endif
 	power_save_config = true;
 	slurm_cond_signal(&power_cond);
 	slurm_mutex_unlock(&power_mutex);
