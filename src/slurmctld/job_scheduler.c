@@ -566,6 +566,18 @@ static void do_sched_job_lock_unlock(bool do_lock, job_record_t *job_ptr)
 	else
 		slurm_mutex_unlock(&job_ptr->job_sched_lock);
 }
+
+/* 
+ * last_job_update - update global variables last_job_update
+ */
+static void _last_job_update(time_t time)
+{
+	if (para_sched) {
+		return;
+	}	
+	last_job_update = time;
+}
+
 #endif
 
 extern void job_queue_rec_magnetic_resv(job_queue_rec_t *job_queue_rec)
@@ -1153,6 +1165,11 @@ static void *_sched_agent(void *args)
 				pthread_join(sched_threads[i], NULL);
 			END_TIMER;
 
+			/* update last job update time */
+			if ((para_sched_job_count > 0) || (slurmctld_diag_stats.schedule_queue_len > 0)) {
+				last_job_update = time(NULL);
+			}
+
 			/* free job queue */
 			for(i=0; i<resource_count; i++){
 				FREE_NULL_LIST(job_queues[i]);
@@ -1240,7 +1257,11 @@ extern bool deadline_ok(job_record_t *job_ptr, char *func)
 		}
 	}
 	if (fail_job) {
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		_last_job_update(now);
+#else
 		last_job_update = now;
+#endif
 		job_ptr->job_state = JOB_DEADLINE;
 		job_ptr->exit_code = 1;
 		job_ptr->state_reason = FAIL_DEADLINE;
@@ -1285,7 +1306,11 @@ extern void fill_array_reasons(job_record_t *job_ptr,
 		/* Set the reason for the subsequent array task */
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = reject_array_job->state_reason;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		_last_job_update(time(NULL));
+#else
 		last_job_update = time(NULL);
+#endif
 		debug3("%s: Setting reason of array task %pJ to %s",
 		       __func__, job_ptr,
 		       job_reason_string(job_ptr->state_reason));
@@ -1731,7 +1756,11 @@ static int _schedule(bool full_queue)
 				continue;
 			job_ptr->state_reason = WAIT_FRONT_END;
 			xfree(job_ptr->state_desc);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			_last_job_update(now);
+#else
 			last_job_update = now;
+#endif
 		}
 		list_iterator_destroy(job_iterator);
 
@@ -1913,7 +1942,6 @@ static int _schedule(bool full_queue)
 			if (!avail_front_end(job_ptr)) {
 				job_ptr->state_reason = WAIT_FRONT_END;
 				xfree(job_ptr->state_desc);
-				last_job_update = now;
 				xfree(job_queue_rec);
 				continue;
 			}
@@ -2188,7 +2216,11 @@ next_task:
 				if (job_ptr->state_reason == WAIT_NO_REASON) {
 					xfree(job_ptr->state_desc);
 					job_ptr->state_reason = WAIT_PRIORITY;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+					_last_job_update(now);
+#else
 					last_job_update = now;
+#endif
 				}
 				if (job_ptr->part_ptr == skip_part_ptr) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -2287,13 +2319,15 @@ next_task:
 			if (found_resv) {
 				job_ptr->state_reason = WAIT_PRIORITY;
 				xfree(job_ptr->state_desc);
-				last_job_update = now;
 				sched_debug3("%pJ. State=PENDING. Reason=Priority. Priority=%u. Resv=%s.",
 					     job_ptr,
 					     job_ptr->priority,
 					     job_ptr->resv_name);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 				do_sched_job_lock_unlock(false, job_ptr);
+				_last_job_update(now);
+#else
+				last_job_update = now;
 #endif							 
 				continue;
 			}
@@ -2310,7 +2344,11 @@ next_task:
 					    job_ptr->priority);
 				job_ptr->state_reason = WAIT_PRIORITY;
 				xfree(job_ptr->state_desc);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+				_last_job_update(now);
+#else
 				last_job_update = now;
+#endif
 			} else {
 				/*
 				 * Log job can not run even though we are not
@@ -2323,9 +2361,12 @@ next_task:
 					     job_ptr->state_desc,
 					     job_ptr->priority);
 			}
-			last_job_update = now;
+
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_job_lock_unlock(false, job_ptr);
+			_last_job_update(now);
+#else
+			last_job_update = now;
 #endif	
 			continue;
 		} else if (wait_on_resv &&
@@ -2355,15 +2396,22 @@ next_task:
 				assoc_mgr_unlock(&locks);
 				sched_debug("%pJ has invalid QOS", job_ptr);
 				job_fail_qos(job_ptr, __func__, false);
-				last_job_update = now;
+
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 				do_sched_job_lock_unlock(false, job_ptr);
+				_last_job_update(now);
+#else
+				last_job_update = now;
 #endif					
 				continue;
 			} else if (job_ptr->state_reason == FAIL_QOS) {
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason = WAIT_NO_REASON;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+				_last_job_update(now);
+#else
 				last_job_update = now;
+#endif	
 			}
 			assoc_mgr_unlock(&locks);
 		}
@@ -2464,7 +2512,11 @@ next_task:
 			job_ptr->state_reason = WAIT_RESOURCES;
 			xfree(job_ptr->state_desc);
 			job_ptr->state_desc = xstrdup("Nodes required for job are DOWN, DRAINED or reserved for jobs in higher priority partitions");
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			_last_job_update(now);
+#else
 			last_job_update = now;
+#endif
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u. Partition=%s.",
 				     job_ptr,
 				     job_state_string(job_ptr->job_state),
@@ -2482,7 +2534,7 @@ next_task:
 		    SLURM_SUCCESS) {
 			job_ptr->state_reason = WAIT_LICENSES;
 			xfree(job_ptr->state_desc);
-			last_job_update = now;
+			
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u.",
 				     job_ptr,
 				     job_state_string(job_ptr->job_state),
@@ -2491,6 +2543,9 @@ next_task:
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
 			do_sched_job_lock_unlock(false, job_ptr);
+			_last_job_update(now);
+#else
+			last_job_update = now;
 #endif					 
 			continue;
 		}
@@ -2499,7 +2554,7 @@ next_task:
 		    SLURM_SUCCESS) {
 			job_ptr->state_reason = WAIT_LICENSES;
 			xfree(job_ptr->state_desc);
-			last_job_update = now;
+			
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u.",
 				     job_ptr,
 				     job_state_string(job_ptr->job_state),
@@ -2511,6 +2566,9 @@ next_task:
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 				do_sched_assoc_lock_unlock(false, job_ptr);
 				do_sched_job_lock_unlock(false, job_ptr);
+				_last_job_update(now);
+#else
+				last_job_update = now;
 #endif							
 				break;
 			}
@@ -2529,12 +2587,15 @@ next_task:
 			 * the time we consider running it. It should be
 			 * very rare. */
 			sched_info("%pJ has invalid account", job_ptr);
-			last_job_update = now;
+			
 			job_ptr->state_reason = FAIL_ACCOUNT;
 			xfree(job_ptr->state_desc);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
 			do_sched_job_lock_unlock(false, job_ptr);
+			_last_job_update(now);
+#else
+			last_job_update = now;
 #endif				
 			continue;
 		}
@@ -2673,7 +2734,11 @@ skip_start:
 		} else if (error_code == ESLURM_FED_JOB_LOCK) {
 			job_ptr->state_reason = WAIT_FED_JOB_LOCK;
 			xfree(job_ptr->state_desc);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			_last_job_update(now);
+#else	
 			last_job_update = now;
+#endif
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u. Partition=%s.",
 				     job_ptr,
 				     job_state_string(job_ptr->job_state),
@@ -2690,7 +2755,11 @@ skip_start:
 #endif
 			/* job initiated */
 			sched_debug3("%pJ initiated", job_ptr);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			_last_job_update(now);
+#else	
 			last_job_update = now;
+#endif
 
 			/* Clear assumed rejected array status */
 			reject_array_job = NULL;
@@ -2764,7 +2833,11 @@ skip_start:
 			   (error_code != ESLURM_INVALID_BURST_BUFFER_REQUEST)){
 			sched_info("schedule: %pJ non-runnable: %s",
 				   job_ptr, slurm_strerror(error_code));
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			_last_job_update(now);
+#else	
 			last_job_update = now;
+#endif	
 			job_ptr->job_state = JOB_PENDING;
 			job_ptr->state_reason = FAIL_BAD_CONSTRAINTS;
 			xfree(job_ptr->state_desc);
@@ -3287,7 +3360,11 @@ job_failed:
 	xfree(job_ptr->state_desc);
 	job_ptr->state_desc = xstrdup(fail_why);
 	job_ptr->state_reason = FAIL_SYSTEM;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	_last_job_update(time(NULL));
+#else	
 	last_job_update = time(NULL);
+#endif
 	slurm_free_job_launch_msg(launch_msg_ptr);
 	/* ignore the return as job is in an unknown state anyway */
 	job_complete(job_ptr->job_id, slurm_conf.slurm_user_id, false, false,
