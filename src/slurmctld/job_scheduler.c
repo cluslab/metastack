@@ -144,6 +144,8 @@ List queue_license_list;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 static void *_schedule_part(void *arg);
 static int para_sched_job_count = 0;
+static bool do_job_update = false;
+static pthread_mutex_t sched_job_update = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t sched_conf_init = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t sched_job_count = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t _do_diag_stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -573,9 +575,17 @@ static void do_sched_job_lock_unlock(bool do_lock, job_record_t *job_ptr)
 static void _last_job_update(time_t time)
 {
 	if (para_sched) {
-		return;
+		if (do_job_update) {
+			return;
+		} else {
+			slurm_mutex_lock(&sched_job_update);
+			do_job_update = true;
+			last_job_update = time;
+			slurm_mutex_unlock(&sched_job_update);
+		}
+	} else {
+		last_job_update = time;
 	}	
-	last_job_update = time;
 }
 
 #endif
@@ -1127,6 +1137,7 @@ static void *_sched_agent(void *args)
 		lock_slurmctld(job_write_lock);		
 		if(para_sched) {
 			int i;
+			do_job_update = false;
 			para_sched_job_count = 0;
 			List* job_queues = xcalloc(resource_count, sizeof(List));
 			para_sched_parms = xcalloc(resource_count, sizeof(para_sched_parms_t));
@@ -1164,11 +1175,6 @@ static void *_sched_agent(void *args)
 			for (i = 0; i < resource_count; i++)
 				pthread_join(sched_threads[i], NULL);
 			END_TIMER;
-
-			/* update last job update time */
-			if ((para_sched_job_count > 0) || (slurmctld_diag_stats.schedule_queue_len > 0)) {
-				last_job_update = time(NULL);
-			}
 
 			/* free job queue */
 			for(i=0; i<resource_count; i++){
