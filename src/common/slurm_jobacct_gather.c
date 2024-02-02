@@ -1092,9 +1092,9 @@ extern int jobacct_gather_fini(void)
 #ifdef __METASTACK_LOAD_ABNORMAL
 		if (watch_stepd_thread_id) {
 			slurm_mutex_unlock(&g_context_lock);
-			slurm_mutex_lock(&profile_timer->notify_mutex);
-			slurm_cond_signal(&profile_timer->notify);
-			slurm_mutex_unlock(&profile_timer->notify_mutex);
+			slurm_mutex_lock(&profile_stepd->notify_mutex);
+			slurm_cond_signal(&profile_stepd->notify);
+			slurm_mutex_unlock(&profile_stepd->notify_mutex);
 			pthread_join(watch_stepd_thread_id, NULL);
 			slurm_mutex_lock(&g_context_lock);
 		}
