@@ -184,6 +184,7 @@ int field_count = 0;
 #ifdef __METASTACK_LOAD_ABNORMAL
 #define LOAD_LOW 0x0000000000000001
 #define PROC_AB 0x0000000000000010
+#define NODE_ABL 0x0000000000000100
 #endif
 
 int _do_stat(slurm_step_id_t *step_id, char *nodelist,
@@ -200,7 +201,14 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	hostlist_t hl = NULL;
 	char *ave_usage_tmp = NULL;
 #ifdef __METASTACK_LOAD_ABNORMAL
-   // char *nodenames = NULL;
+	double all_task_mem_tmp = 0;
+	double all_task_vmem_tmp = 0;
+
+  	double all_task_mem_tmp_max = 0;
+	double all_task_mem_tmp_min = 0;
+	
+  	double all_task_vmem_tmp_max = 0;
+	double all_task_vmem_tmp_min = 0;
 #endif
 
 	debug("requesting info for %ps", step_id);
@@ -233,9 +241,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	step.req_cpufreq_gov = req_cpufreq_gov;
 	step.stepname = NULL;
 	step.state = JOB_RUNNING;
-#ifdef __METASTACK_LOAD_ABNORMAL
-	bool printf_stat = false;
-#endif
 	hl = hostlist_create(NULL);
 	itr = list_iterator_create(step_stat_response->stats_list);
 	while ((step_stat = list_next(itr))) {
@@ -277,27 +282,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 					 */
 					step_stat->jobacct->tres_list = NULL;
 				}
-#ifdef __METASTACK_LOAD_ABNORMAL
-				//time_t tmp_time = 0;
-				char* nodenames = NULL; 
-				
-				if((params.opt_event == 1) && (step_stat->jobacct->flag > 0)) {
-					if(printf_stat == false) {
-						printf("\n*******************************************************\n");
-						printf("Job Abnormal Events\n");
-						printf("*******************************************************\n");
-						printf_stat = true;
-					}
-					printf("step_stat->jobacct->flag = %ld \n", step_stat->jobacct->flag);
-					if((step_stat->jobacct->flag & LOAD_LOW ) != 0) {
-						xstrfmtcat(nodenames, "%s, node low load, in the interval between   ", step_stat->step_pids->node_name); 
-						xstrfmtcat(nodenames, "2023-12-09T17:06:25 and 2023-12-09T18:06:25 "); 
-						printf("\n%s\n",nodenames);
-					}
-				}  
-				if(nodenames != NULL) 
-					xfree(nodenames);
-#endif
 				/*
 				 * total_jobacct has to be created after
 				 * assoc_mgr is set up.
@@ -312,18 +296,98 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 		}
 	}
 	list_iterator_destroy(itr);
-
 #ifdef __METASTACK_LOAD_ABNORMAL
+ 	char arrTest1[] = "batch";
+	//char arrTest2[] = "extern";
 	if((params.opt_event == 1)) {
-		printf("\n*******************************************************\n");
-		printf("Resource Consumption Information for Job Steps\n");
-		printf("*******************************************************\n");
-		if(total_jobacct) {
-			printf("\nAverage CPU utilization of job steps  %3.0f%%  \n",total_jobacct->avg_cpu_util);
-			printf("Maximum CPU utilization of job steps  %3.0f%%  \n",total_jobacct->max_cpu_util);
-			printf("Minimum CPU utilization of job steps  %3.0f%%  \n",total_jobacct->min_cpu_util);
-			printf("Current CPU utilization of job steps  %3.0f%%  \n",total_jobacct->cpu_util);
-			printf("\n");
+
+		if(step.step_id.step_id == -5) {
+			printf("\n*********************************************************************************\n");
+			printf("Resource Consumption Information of %d.%s (the update interval is xxx minutes)\n", step.step_id.job_id, arrTest1);
+		} else if (step.step_id.step_id != -4){
+			printf("\n*********************************************************************************\n");
+			printf("Resource Consumption Information of %d.%d (the update interval is xxx minutes)\n", step.step_id.job_id,step.step_id.step_id);
+		}
+
+		if((total_jobacct->mem_step == 0) && (total_jobacct->vmem_step == 0) && (total_jobacct->mem_step_max==0))
+			printf("The data may need to wait for updates\n");
+		if(step.step_id.step_id != -4) {
+			printf("*********************************************************************************\n");
+			if(total_jobacct) {
+				char* nodenames = NULL; 
+				if((total_jobacct->flag & LOAD_LOW ) != 0) {
+					printf("\n*********************************************************************************\n");
+					printf("Job Abnormal Events display\n");
+					if(total_jobacct->cpu_count <= JOBACCTINFO_START_END_ARRAY_SIZE) {
+						for(int i = 0 ; i < total_jobacct->cpu_count ; ++i){
+							time_t tmptimeValueStart = (time_t)total_jobacct->cpu_start[i];
+							time_t tmptimeValueEnd = (time_t)total_jobacct->cpu_end[i];
+
+							char timeStringStart[100];
+							char timeStringEnd[100];
+							struct tm timeInfoStart;
+							struct tm timeInfoEnd;
+							localtime_r(&tmptimeValueStart, &timeInfoStart);
+							localtime_r(&tmptimeValueEnd, &timeInfoEnd);
+							strftime(timeStringStart, sizeof(timeStringStart), "%Y-%m-%d-%H:%M:%S", &timeInfoStart);
+							strftime(timeStringEnd, sizeof(timeStringEnd), "%Y-%m-%d-%H:%M:%S", &timeInfoEnd);
+
+							xstrfmtcat(nodenames, "cpu util low load, in the interval between "); 
+							xstrfmtcat(nodenames, "%s and %s ", timeStringStart, timeStringEnd);
+							printf("\n%s\n",nodenames);
+							if(nodenames != NULL) 
+								xfree(nodenames);
+						}
+					} else{
+						for(int i = 0 ; i < JOBACCTINFO_START_END_ARRAY_SIZE; ++i) {
+							time_t tmptimeValueStart = (time_t)total_jobacct->cpu_start[(total_jobacct->cpu_count + i) % JOBACCTINFO_START_END_ARRAY_SIZE];
+							time_t tmptimeValueEnd = (time_t)total_jobacct->cpu_end[(total_jobacct->cpu_count + i) % JOBACCTINFO_START_END_ARRAY_SIZE];
+
+							char timeStringStart[100];
+							char timeStringEnd[100];
+							struct tm timeInfoStart;
+							struct tm timeInfoEnd;
+							localtime_r(&tmptimeValueStart, &timeInfoStart);
+							localtime_r(&tmptimeValueEnd, &timeInfoEnd);
+
+							strftime(timeStringStart, sizeof(timeStringStart), "%Y-%m-%d-%H:%M:%S", &timeInfoStart);
+							strftime(timeStringEnd, sizeof(timeStringEnd), "%Y-%m-%d-%H:%M:%S", &timeInfoEnd);
+
+							xstrfmtcat(nodenames, "cpu util low load, in the interval between "); 
+							xstrfmtcat(nodenames, "%s and %s ", timeStringStart, timeStringEnd);
+							printf("\n%s\n",nodenames);
+							if(nodenames != NULL) 
+								xfree(nodenames);
+						}
+					}
+				}
+				if((total_jobacct->cpu_step_ave < 0) && (total_jobacct->cpu_step_max <0) && (total_jobacct->cpu_step_min<0)) {
+					printf("\nAverage CPU utilization of job steps please waitting\n");
+					printf("Maximum CPU utilization of job steps please waitting\n");
+					printf("Minimum CPU utilization of job steps please waitting\n");
+					printf("Current CPU utilization of job steps please waitting\n");
+				} else {
+					printf("\nAverage CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_ave);
+					printf("Maximum CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_max);
+					printf("Minimum CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_min);
+					printf("Current CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_real);
+				}
+				printf("---------------------------------------------------------------------------------\n");
+				if(total_jobacct->step_pages<=0) {
+					total_jobacct->step_pages = 0;
+				}
+				printf("Current page faults of job steps         %ld \n",total_jobacct->step_pages);			
+
+				all_task_mem_tmp_max = total_jobacct->mem_step_max;
+				all_task_mem_tmp_min = total_jobacct->mem_step_min;
+
+				all_task_vmem_tmp_max = total_jobacct->vmem_step_max;
+				all_task_vmem_tmp_min = total_jobacct->vmem_step_min;
+				/* mem real */		
+				all_task_mem_tmp = total_jobacct->mem_step;
+				/* vmem real */	
+				all_task_vmem_tmp = total_jobacct->vmem_step;
+			}
 		}
 	}
 #endif
@@ -357,21 +421,70 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 		step.ntasks = tot_tasks;
 	}
 #ifdef __METASTACK_LOAD_ABNORMAL
-	if((params.opt_event == 1) && tot_tasks) {
-		uint64_t tmp_uint64 = NO_VAL64;
+	if((params.opt_event == 1) && tot_tasks ) {
+		// uint64_t tmp_uint64 = NO_VAL64;
+		// uint64_t tmp_vmem_uint64 = NO_VAL64;
+
 		char outbuf_tmp[34];
-		double all_task_mem_tmp = 0;
-		tmp_uint64 = slurmdb_find_tres_count_in_string(
-				step.stats.tres_usage_in_ave,
-				TRES_MEM);
-		all_task_mem_tmp = tmp_uint64*step.ntasks;
-		convert_num_unit((double)all_task_mem_tmp, outbuf_tmp,
-				sizeof(outbuf_tmp), UNIT_NONE, UNIT_MEGA,
-				params.convert_flags);
-		printf("\nMaximum mem utilization of job steps  %s  \n", outbuf_tmp);
-		printf("Minimum mem utilization of job steps  %s  \n",  outbuf_tmp);
-		printf("Average mem utilization of job steps  %s  \n", outbuf_tmp);
-		printf("\n");
+		char outbuf_tmp_max[34];
+		char outbuf_tmp_min[34];
+
+		char vmem_outbuf_tmp[34];
+		char vmem_outbuf_tmp_max[34];
+		char vmem_outbuf_tmp_min[34];
+
+		// tmp_uint64 = slurmdb_find_tres_count_in_string(
+		// 		step.stats.tres_usage_in_ave,
+		// 		TRES_MEM);
+		// tmp_vmem_uint64 = slurmdb_find_tres_count_in_string(
+		// 		step.stats.tres_usage_in_ave,
+		// 		TRES_VMEM);
+		if(step.step_id.step_id != -4) {
+
+			if(all_task_vmem_tmp_max >=0) {
+				/* mem usage conversion */
+				convert_num_unit((double)all_task_mem_tmp, outbuf_tmp,
+						sizeof(outbuf_tmp), UNIT_NONE, UNIT_MEGA,
+						params.convert_flags);
+				/* vmem usage conversion */
+				convert_num_unit((double)all_task_vmem_tmp, vmem_outbuf_tmp,
+						sizeof(vmem_outbuf_tmp), UNIT_NONE, UNIT_MEGA,
+						params.convert_flags);
+
+				convert_num_unit((double)all_task_mem_tmp_max, outbuf_tmp_max,
+						sizeof(outbuf_tmp_max), UNIT_NONE, UNIT_MEGA,
+						params.convert_flags);
+				convert_num_unit((double)all_task_mem_tmp_min, outbuf_tmp_min,
+						sizeof(outbuf_tmp_min), UNIT_NONE, UNIT_MEGA,
+						params.convert_flags);
+
+				convert_num_unit((double)all_task_vmem_tmp_max, vmem_outbuf_tmp_max,
+						sizeof(vmem_outbuf_tmp_max), UNIT_NONE, UNIT_MEGA,
+						params.convert_flags);
+				convert_num_unit((double)all_task_vmem_tmp_min, vmem_outbuf_tmp_min,
+						sizeof(vmem_outbuf_tmp_min), UNIT_NONE, UNIT_MEGA,
+						params.convert_flags);
+			}
+			if(all_task_vmem_tmp_max >= 0 ) {
+				printf("Maximum mem utilization of job steps     %s  \n", outbuf_tmp_max);
+				printf("Minimum mem utilization of job steps     %s  \n", outbuf_tmp_min);
+				printf("Current mem utilization of job steps     %s  \n", outbuf_tmp);
+			} else {
+				printf("Maximum mem utilization of job steps please waitting\n");
+				printf("Minimum mem utilization of job steps please waitting\n");	
+				printf("Current mem utilization of job steps please waitting\n");		
+			}
+			if(all_task_vmem_tmp_max >= 0 ) {
+				printf("Maximum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp);
+				printf("Minimum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_max);
+				printf("Current vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_min);
+			} else {
+				printf("Maximum vmem utilization of job steps please waitting \n");
+				printf("Minimum vmem utilization of job steps please waitting\n");
+				printf("Vmem utilization of job steps please waitting\n");
+			}
+			printf("\n");
+		}
 	}
 #endif
 
@@ -415,7 +528,6 @@ int main(int argc, char **argv)
 		error("You didn't give me any jobs to stat.");
 		return 1;
 	}
-	
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if(params.opt_event != 1) 
 		print_fields_header(print_fields_list);

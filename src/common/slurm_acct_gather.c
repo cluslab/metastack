@@ -261,7 +261,6 @@ extern int acct_gather_parse_time(char *freq, char* freq_def)
 	int timer = -1;
 	char *sub_str = NULL;
     bool flag = false;
-	
 	if(freq) {
 		if ((sub_str = xstrcasestr(freq, "time="))) {
 				timer = _get_int(sub_str + 5);

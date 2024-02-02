@@ -131,6 +131,31 @@ struct jobacctinfo {
 #endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 	uint64_t flag;
+	uint64_t cpu_step_ave;
+	uint64_t cpu_step_max;
+	uint64_t cpu_step_min;
+	uint64_t cpu_step_real;
+
+	uint64_t mem_step_max;
+	uint64_t mem_step_min;
+	uint64_t mem_step;
+
+	uint64_t vmem_step_max;
+	uint64_t vmem_step_min;
+	uint64_t vmem_step;
+
+	uint64_t step_pages;
+	uint64_t acct_flag;
+	uint64_t cpu_count;
+	uint64_t pid_count;
+	uint64_t node_count;
+	/* record event time */
+	uint64_t  *cpu_start;
+	uint64_t  *cpu_end;
+	uint64_t  *pid_start;
+	uint64_t  *pid_end;
+	uint64_t  *node_start;
+	uint64_t  *node_end;
 #endif
 };
 
@@ -139,7 +164,7 @@ struct jobacctinfo {
 #define MAX_SIZE 1000000
 #define LOAD_LOW 0x0000000000000001
 #define PROC_AB 0x0000000000000010
-
+#define JOBACCTINFO_START_END_ARRAY_SIZE 200
 struct jobinfostat {
 	double job_avg_cpu;
 	double job_cpu_util;
@@ -147,7 +172,28 @@ struct jobinfostat {
 };
 
 typedef struct {
+	//pthread_cond_t cond;
+	bool send_flag;  /*enable send step data to jobacct*/
+	uint64_t cpu_step_real;
+	uint64_t cpu_step_ave;
+	uint64_t mem_step;
+	uint64_t vmem_step;
+	uint64_t step_pages;
+	uint64_t gpu_step_util;
 	uint64_t load_flag; /*exception criteria*/
+	time_t cpu_start;
+	time_t cpu_end;
+	time_t pid_start;
+	time_t pid_end;
+	time_t node_start;
+	time_t node_end;
+} write_t;
+
+typedef struct {
+	//pthread_cond_t cond;
+	pthread_mutex_t lock;
+	uint64_t load_flag; /*exception criteria*/
+	bool update;
 	bool step;  /*enable step*/
 	uint64_t cpu_step_real; 
 	uint64_t cpu_step_ave;
@@ -155,12 +201,10 @@ typedef struct {
 	uint64_t vmem_step;
 	uint64_t step_pages;
 	uint64_t gpu_step_util;
-	//uint64_t page_fault;     /* The total number of page fault exceptions in individual job steps on the node */
-	//int count;    /*slurmstepd number of tasks*/
+	time_t start;
 } collection_t;
-#endif
+extern collection_t share_data;
 
- #ifdef __METASTACK_LOAD_ABNORMAL
 typedef struct {
 	pthread_cond_t cond;
 	pthread_mutex_t lock;
@@ -170,7 +214,6 @@ typedef struct {
 	int children_gather;
 	int depth_gather;
 	int max_depth_gather;
-	//节点名称或者rank号需要携带
 	int wait_child_count; /*number node of child count now*/
 	uint64_t step_cpu;
 	uint64_t step_cpu_ave;
@@ -178,13 +221,11 @@ typedef struct {
 	uint64_t step_vmem;
 	uint64_t load_status;
 	uint64_t page_fault;
-	 time_t start;
-	// time_t now;
+	time_t start;
 	slurm_addr_t parent_addr_gather;
 	bitstr_t *bits;
 	bool wait_children;
 } step_gather_t;
-
 extern step_gather_t step_gather;
 #endif
 

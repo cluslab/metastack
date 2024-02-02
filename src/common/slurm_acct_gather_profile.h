@@ -64,6 +64,8 @@
 #define ENABLE_DIG 1
 #define ENABLE_BATCH 2
 #define ENABLE_ALL 3
+
+
 typedef struct {
     double *data;
     int front;
@@ -80,17 +82,17 @@ typedef struct {
 	int timer;
 	int cpu_min_load;
 	bool switch_step;
-	fifo_queue_t* fifo;   /*job storage*/
-	int rank;
-	int depth;
-	int parent_rank;
-	slurm_addr_t parent_addr;
-	int children;
-	int max_depth;
+	fifo_queue_t* fifo;  	 /*job storage								  */
 	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
 
 } acct_gather_info_t;
+
+typedef struct {
+	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
+	int step;				 /* which stepd                               */
+} acct_gather_rank_t;
 #endif
+
 typedef enum {
 	PROFILE_ENERGY,
 	PROFILE_TASK,
@@ -100,6 +102,7 @@ typedef enum {
 	PROFILE_STEPD,
 #endif
 	PROFILE_CNT
+
 } acct_gather_profile_type_t;
 
 typedef enum {
@@ -119,17 +122,6 @@ typedef struct {
 	pthread_cond_t notify;
 	pthread_mutex_t notify_mutex;
 } acct_gather_profile_timer_t;
-#ifdef __METASTACK_LOAD_ABNORMAL
-typedef struct {
-	int rank;
-	int depth;
-	int parent_rank;
-	slurm_addr_t parent_addr;
-	int children;
-	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
-	int step; /*which stepd*/
-} acct_gather_rank_t;
-#endif
 
 extern acct_gather_profile_timer_t acct_gather_profile_timer[PROFILE_CNT];
 

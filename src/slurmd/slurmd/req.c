@@ -506,7 +506,6 @@ _send_slurmstepd_init(int fd, int type, void *req,
 	int parent_rank, children, depth, max_depth;
 	char *parent_alias = NULL;
 	slurm_addr_t parent_addr = {0};
-
 #ifdef __METASTACK_LOAD_ABNORMAL
 	int rank_gather = -1;
 	int parent_rank_gather =-1, children_gather =-1, depth_gather = -1, max_depth_gather = -1;
@@ -612,7 +611,8 @@ _send_slurmstepd_init(int fd, int type, void *req,
 			if (rank_gather > 0 && parent_rank_gather != -1) {
 				int rc;
 				/* Find the slurm_addr_t of this node's parent slurmd
-				* in the step host list */
+				* in the step host list 
+				*/
 				parent_alias_gather = hostlist_nth(step_hset, parent_rank_gather);
 				rc = slurm_conf_get_addr(parent_alias_gather, &parent_addr_gather, 0);
 				if (rc != SLURM_SUCCESS) {
@@ -641,12 +641,17 @@ _send_slurmstepd_init(int fd, int type, void *req,
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if(count_gather >= 7 ) {
+        
 		rank_gather = rank;
 		parent_rank_gather = parent_rank;
-		children_gather = children;
+	
+		//children_gather = children;
 		depth_gather = depth;
 		max_depth_gather = max_depth;
 		parent_addr_gather = parent_addr;
+		int *chldrn_ids = xmalloc(sizeof(int) * REVERSE_TREE_WIDTH);
+		children_gather = reverse_tree_direct_children(rank_gather,count_gather,REVERSE_TREE_WIDTH,depth_gather, chldrn_ids);
+		xfree(chldrn_ids);	
 	}
 
     safe_write(fd, &count_gather, sizeof(int));
@@ -655,7 +660,8 @@ _send_slurmstepd_init(int fd, int type, void *req,
 	safe_write(fd, &children_gather, sizeof(int));
 	safe_write(fd, &depth_gather, sizeof(int));
 	safe_write(fd, &max_depth_gather, sizeof(int));
-	safe_write(fd, &parent_addr_gather, sizeof(slurm_addr_t));		
+	safe_write(fd, &parent_addr_gather, sizeof(slurm_addr_t));
+
 #endif
 	/* send cli address over to slurmstepd */
 	buffer = init_buf(0);

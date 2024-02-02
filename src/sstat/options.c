@@ -217,7 +217,7 @@ void parse_command_line(int argc, char **argv)
 	while (1) {		/* now cycle through the command line */
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
 #ifdef __METASTACK_LOAD_ABNORMAL
-		c = getopt_long(argc, argv, "aehijd:no:pPvVmgr",
+		c = getopt_long(argc, argv, "aehij:dno:pPvVmgr",
 				long_options, &optionIndex);
 #else
 		c = getopt_long(argc, argv, "aehij:no:pPvVmgr",

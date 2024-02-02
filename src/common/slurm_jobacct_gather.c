@@ -64,6 +64,7 @@
 #include "slurm/slurm.h"
 #include "src/common/slurm_acct_gather.h"
 #endif
+
 #include "src/common/assoc_mgr.h"
 #include "src/common/macros.h"
 #include "src/common/pack.h"
@@ -90,6 +91,7 @@ strong_alias(jobacctinfo_pack, slurm_jobacctinfo_pack);
 strong_alias(jobacctinfo_unpack, slurm_jobacctinfo_unpack);
 strong_alias(jobacctinfo_create, slurm_jobacctinfo_create);
 strong_alias(jobacctinfo_destroy, slurm_jobacctinfo_destroy);
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 step_gather_t step_gather = {
 	PTHREAD_COND_INITIALIZER,
@@ -117,7 +119,7 @@ step_gather_t step_gather = {
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 typedef struct slurm_jobacct_gather_ops {
-	void (*poll_data) (List task_list, uint64_t cont_id, bool profile, collection_t *collect);
+	void (*poll_data) (List task_list, uint64_t cont_id, bool profile, collection_t *collect, write_t *data);
 	int (*endpoll)    ();
 	int (*add_task)   (pid_t pid, jobacct_id_t *jobacct_id);
 } slurm_jobacct_gather_ops_t;
@@ -127,12 +129,6 @@ struct step_gather {
 	int times;
 	int cpu_load; /*cputhreshold*/
 	int frequency;
-	int rank;
-	int depth;
-	int parent_rank;
-	slurm_addr_t parent_addr;
-	int children;
-	int max_depth;
     slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
 };
 #else
@@ -158,14 +154,19 @@ static pthread_mutex_t g_context_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool init_run = false;
 static pthread_mutex_t init_run_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t watch_tasks_thread_id = 0;
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 static pthread_t watch_stepd_thread_id = 0;
 static acct_gather_profile_timer_t *profile_stepd =
 	&acct_gather_profile_timer[PROFILE_STEPD];
 
-static pthread_mutex_t data_send_lock = PTHREAD_MUTEX_INITIALIZER;
-static collection_t share_data = {
+// static pthread_mutex_t data_send_lock = PTHREAD_MUTEX_INITIALIZER;
+
+collection_t share_data = {
+	//.cond = PTHREAD_COND_INITIALIZER,
+	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.load_flag = 0,
+	.update = false,
 	.step = false,
 	.cpu_step_real = 0,
 	.cpu_step_ave = 0,
@@ -173,6 +174,7 @@ static collection_t share_data = {
 	.vmem_step = 0,
 	.step_pages = 0,
 	.gpu_step_util = 0,
+	.start = 0,
 };
 #endif
 
@@ -220,7 +222,23 @@ static void _init_tres_usage(struct jobacctinfo *jobacct,
 	jobacct->tres_usage_out_min_nodeid = xmalloc(alloc_size);
 	jobacct->tres_usage_out_min_taskid = xmalloc(alloc_size);
 	jobacct->tres_usage_out_tot = xmalloc(alloc_size);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	int alloc_start_end_size = JOBACCTINFO_START_END_ARRAY_SIZE * sizeof(time_t);
+	jobacct->cpu_start = xmalloc(alloc_start_end_size);
+	jobacct->cpu_end = xmalloc(alloc_start_end_size);
+	jobacct->pid_start = xmalloc(alloc_start_end_size);
+	jobacct->pid_end = xmalloc(alloc_start_end_size);
+	jobacct->node_start = xmalloc(alloc_start_end_size);
+	jobacct->node_end = xmalloc(alloc_start_end_size);
+	for(i = 0 ; i < JOBACCTINFO_START_END_ARRAY_SIZE ; i++) {
+		jobacct->cpu_start[i] = 0;
+		jobacct->cpu_end[i] = 0;
+		jobacct->pid_start[i] = 0;
+		jobacct->pid_end[i] = 0;
+		jobacct->node_start[i] = 0;
+		jobacct->node_end[i] = 0;
+	}
+#endif
 	for (i = 0; i < jobacct->tres_count; i++) {
 		jobacct->tres_ids[i] =
 			assoc_mgr_tres_array ? assoc_mgr_tres_array[i]->id : i;
@@ -275,7 +293,14 @@ static void _free_tres_usage(struct jobacctinfo *jobacct)
 		if (jobacct->tres_list &&
 		    (jobacct->tres_list != assoc_mgr_tres_list))
 			FREE_NULL_LIST(jobacct->tres_list);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+		xfree(jobacct->cpu_start);
+		xfree(jobacct->cpu_end);
+		xfree(jobacct->pid_start);
+		xfree(jobacct->pid_end);
+		xfree(jobacct->node_start);
+		xfree(jobacct->node_end);
+#endif
 		xfree(jobacct->tres_usage_in_max);
 		xfree(jobacct->tres_usage_in_max_nodeid);
 		xfree(jobacct->tres_usage_in_max_taskid);
@@ -308,7 +333,16 @@ static void _copy_tres_usage(jobacctinfo_t **dest_jobacct,
 	memcpy(*dest_jobacct, source_jobacct, sizeof(jobacctinfo_t));
 
 	_init_tres_usage(*dest_jobacct, NULL, source_jobacct->tres_count);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	for (i = 0 ; i < JOBACCTINFO_START_END_ARRAY_SIZE ; i++) {
+		(*dest_jobacct)->cpu_start[i] = source_jobacct->cpu_start[i];
+		(*dest_jobacct)->cpu_end[i] = source_jobacct->cpu_end[i];
+		(*dest_jobacct)->pid_start[i] = source_jobacct->pid_start[i];
+		(*dest_jobacct)->pid_end[i] = source_jobacct->pid_end[i];
+		(*dest_jobacct)->node_start[i] = source_jobacct->node_start[i];
+		(*dest_jobacct)->node_end[i] = source_jobacct->node_end[i];
+	}	
+#endif
 	for (i = 0; i < source_jobacct->tres_count; i++) {
 		(*dest_jobacct)->tres_usage_in_max[i] =
 			source_jobacct->tres_usage_in_max[i];
@@ -379,14 +413,15 @@ static bool _jobacct_shutdown_test(void)
 	slurm_mutex_unlock(&jobacct_shutdown_mutex);
 	return rc;
 }
+
 #ifdef __METASTACK_LOAD_ABNORMAL
-static void _poll_data(bool profile,  collection_t *collect)
+static void _poll_data(bool profile, collection_t *collect, write_t *data)
 {
 	/* Update the data */
 	slurm_mutex_lock(&task_list_lock);
 
 	if (task_list)
-		(*(ops.poll_data))(task_list, cont_id, profile, collect);
+		(*(ops.poll_data))(task_list, cont_id, profile, collect, data);
 	slurm_mutex_unlock(&task_list_lock);
 }
 #else
@@ -410,7 +445,7 @@ static bool _init_run_test(void)
 }
 
 #ifdef __METASTACK_LOAD_ABNORMAL
-/* _acct_kill_step() issue RPC to kill a slurm job step */
+/* _acct_send_step() issue RPC to aggregation job step data*/
 static void _acct_send_data_step(struct step_gather *job_send, step_gather_msg_t msg, int timeout)
 {
 	slurm_msg_t req;
@@ -428,28 +463,29 @@ static void _acct_send_data_step(struct step_gather *job_send, step_gather_msg_t
 	msg_send.vmem_real = msg.vmem_real;
 	msg_send.load_flag = msg.load_flag ;
 	msg_send.page_fault  = msg.page_fault;
+	//msg_send.depth_child =  msg.depth_child;
 
 	slurm_msg_t_init(&req);
 	slurm_msg_set_r_uid(&req, slurm_conf.slurmd_user_id);
 	req.protocol_version = SLURM_PROTOCOL_VERSION;
 	req.msg_type = REQUEST_JOB_STEP_DATA;
 	req.data = &msg_send;
-	req.address = job_send->parent_addr;
+	req.address = step_gather.parent_addr_gather;
     
 	/* Do NOT change this check to "step_complete.rank != 0", because
 	 * there are odd situations where SlurmUser or root could
 	 * craft a launch without a valid credential, and no tree information
 	 * can be built with out the hostlist from the credential.
 	 */
-	if (job_send->parent_rank != -1) {
+	if (step_gather.parent_rank_gather != -1) {
 		/* On error, pause then try sending to parent again.
 		 * The parent slurmstepd may just not have started yet, because
 		 * of the way that the launch message forwarding works.
 		 */
 		retcode = slurm_send_recv_rc_msg_only_one(&req, &rc, timeout);
 		if ((retcode == 0) && (rc == 0))
-			debug(" Rank %d sending data to rank %d ip parent = %pA is sucessed ",
-				job_send->rank, job_send->parent_rank, &req.address);
+			debug("Rank %d sending data to rank %d ip parent = %pA is sucessed ",
+				 step_gather.rank_gather, step_gather.parent_rank_gather, &req.address);
 	} 
 	
 }
@@ -457,14 +493,29 @@ static void _acct_send_data_step(struct step_gather *job_send, step_gather_msg_t
 static void *step_collect(void *args)
 {
 	struct step_gather *jobinfo = (struct step_gather *) args;
-	int count = 1,tmp = 0, rank_wait = 0;
-	//time_t now;
-	count = jobinfo->times*60 / jobinfo->frequency; 
+	//int count = 1;
+	uint32_t rank = -1;
+	bool update = false;
+	write_t *write_data = NULL;
+    write_data = xmalloc(sizeof(write_t));
+	time_t record_time = 0;
+	//bool init = false;
+	/* write_data data initialization*/
+	write_data->cpu_step_ave = 0;
+	write_data->cpu_step_real = 0;
+	write_data->mem_step = 0;
+	write_data->vmem_step = 0;
+	write_data->step_pages = 0;
+	write_data->send_flag = false;
+	write_data->load_flag = 0;
+
 #if HAVE_SYS_PRCTL_H
 	if (prctl(PR_SET_NAME, "acctg_step", NULL, NULL, NULL) < 0) {
 		error("%s: cannot set my name to %s %m", __func__, "acctg_step");
 	}
 #endif
+
+	//count = jobinfo->times / jobinfo->frequency; 
 	while (_init_run_test() && !_jobacct_shutdown_test() &&
 	       acct_gather_profile_test()) {
 		 /* Do this until shutdown is requested */
@@ -477,54 +528,208 @@ static void *step_collect(void *args)
 		if (!_init_run_test())
 			break;
 
-		slurm_mutex_lock(&step_gather.lock);
-		if(step_gather.children_gather) {
-
-			
+		step_gather_msg_t msg;
+		memset(&msg, 0, sizeof(msg));
+		if(jobinfo->frequency <=0) {
+			continue;
 		}
-		debug("接收端++++++++++++++++++++++ == rank = %d step_gather.step_cpu_ave=%ld step_gather.step_cpu =%ld "
-		"step_gather.step_mem =%ld step_gather.step_vmem =%ld step_gather.page_fault =%ld step_gather.count_nodelist=%d",step_gather.rank_gather,step_gather.step_cpu_ave,step_gather.step_cpu,
-		step_gather.step_mem,step_gather.step_vmem,step_gather.page_fault,step_gather.count_nodelist);
 
-		slurm_mutex_unlock(&step_gather.lock);
-		if(tmp >= count) {
-			step_gather_msg_t msg;
-			slurm_mutex_lock(&data_send_lock);
-			msg.rank = jobinfo->rank;
+		slurm_mutex_lock(&share_data.lock);
+		if(share_data.update) {
+			msg.rank = rank;
 			msg.cpu_util = share_data.cpu_step_real;
 			msg.cpu_ave =  share_data.cpu_step_ave;
 			msg.mem_real = share_data.mem_step;
 			msg.vmem_real = share_data.vmem_step;
-			msg.load_flag = share_data.load_flag ;
-			msg.page_fault  =share_data.step_pages;
-			slurm_mutex_unlock(&data_send_lock);
-			tmp = 1;
-			debug3("Rank %d sending data to rank %d ip parent = %pA,jobid is %ps",
-		       jobinfo->rank, jobinfo->parent_rank, &jobinfo->parent_addr,&jobinfo->step_id);
-		    /* Do NOT change this check to "step_complete.rank != 0", because
-			* there are odd situations where SlurmUser or root could
-			* craft a launch without a valid credential, and no tree information
-			* can be built with out the hostlist from the credential.
-			*/
-			if((jobinfo->children == 0) && (jobinfo->parent_rank != -1) && (jobinfo->rank != -1)) {
+			msg.load_flag = share_data.load_flag;
+			msg.page_fault  = share_data.step_pages;
+			update = true;
+		}
 
-				_acct_send_data_step(jobinfo, msg, 0);
-			} else if((jobinfo->children !=0) && (jobinfo->rank !=0)) {
-				if(rank_wait == jobinfo->children) {
+		record_time = time(NULL);
+		double diff = difftime(record_time, share_data.start);
+		slurm_mutex_unlock(&share_data.lock);
+		/*batch step*/	
+		if(update && (jobinfo->step_id.step_id == SLURM_BATCH_SCRIPT)) {
+			update = false;
+			slurm_mutex_lock(&share_data.lock);
+			share_data.update = false;
+			slurm_mutex_unlock(&share_data.lock);
 
-					
-				}
-				//_acct_send_data_step(jobinfo, msg, 0);
-				 
+			write_data->cpu_step_ave = msg.cpu_ave;
+			write_data->cpu_step_real = msg.cpu_util;
+			write_data->mem_step = msg.mem_real;
+			write_data->vmem_step = msg.vmem_real;
+			write_data->step_pages = msg.page_fault;
+			write_data->send_flag = false;
+			write_data->load_flag =msg.load_flag;
+
+			if(jobinfo->cpu_load > write_data->cpu_step_real) {
+				write_data->cpu_start = record_time - jobinfo->times;
+				write_data->cpu_end = record_time;
+				write_data->load_flag=write_data->load_flag|0x0000000000000001;
 			}
+			if(write_data->load_flag & 0x0000000000000010) {
+				write_data->pid_start = record_time - jobinfo->times;
+				write_data->pid_end = record_time;
+			}
+			if(write_data->load_flag & 0x0000000000000100) {
+				write_data->node_end = record_time - jobinfo->times;
+				write_data->node_start = record_time;
+			}
+			_poll_data(1, NULL, write_data);
+		}
 
+       	if(jobinfo->step_id.step_id != SLURM_BATCH_SCRIPT)  {
+			if(update) { /* digital work steps */
+				slurm_mutex_lock(&step_gather.lock);
+				/* It is necessary to keep the time points of the job step collection of each node consistent.*/
+				if((step_gather.children_gather > 0) && (step_gather.parent_rank_gather >=0) ) {
+					rank = step_gather.rank_gather;
+					double time_delay = 0;
+					if(step_gather.max_depth_gather > 0 )
+						time_delay = (step_gather.max_depth_gather - step_gather.depth_gather) * (jobinfo->times ) / step_gather.max_depth_gather;
+					else
+						time_delay = jobinfo->times ;
+
+					if((step_gather.wait_child_count < step_gather.children_gather) && (diff < time_delay)) {
+
+						debug("Waiting for child nodes number is %d, diff is %f  time delay %f ", (step_gather.children_gather - step_gather.wait_child_count), diff, time_delay);
+
+					} else  {
+						if(step_gather.wait_child_count == step_gather.children_gather) {
+							msg.cpu_ave += step_gather.step_cpu_ave;
+							msg.cpu_util += step_gather.step_cpu;
+							msg.mem_real += step_gather.step_mem;
+							msg.vmem_real += step_gather.step_vmem;
+							msg.page_fault += step_gather.page_fault;
+
+							msg.load_flag  = msg.load_flag | step_gather.load_status; /*load flag设置not respond 标志位*/
+							//msg.depth_child = step_gather.children_gather+1;
+
+						} else if(diff > time_delay) {
+							msg.cpu_ave += step_gather.step_cpu_ave;
+							msg.cpu_util += step_gather.step_cpu;
+							msg.mem_real += step_gather.step_mem;
+							msg.vmem_real += step_gather.step_vmem;
+							msg.page_fault += step_gather.page_fault;
+
+							msg.load_flag  = msg.load_flag | step_gather.load_status; /*load flag设置not respond 标志位*/
+							msg.load_flag  = msg.load_flag | 0x0000000000000100;
+						}
+						// debug3("Rank %d sending data to rank %d ip parent = %pA,jobid is %ps msg.cpu_util=%ld",
+						// 			step_gather.rank_gather, step_gather.parent_rank_gather, &step_gather.parent_addr_gather,&jobinfo->step_id, msg.cpu_util);
+						
+						/* Do NOT change this check to "step_complete.rank != 0", because
+						* there are odd situations where SlurmUser or root could
+						* craft a launch without a valid credential, and no tree information
+						* can be built with out the hostlist from the credential.
+						*/
+						_acct_send_data_step(jobinfo, msg, time_delay*1000);
+						update = false;
+						step_gather.wait_child_count = 0;
+						step_gather.step_cpu_ave = 0;
+						step_gather.step_cpu = 0;
+						step_gather.step_mem = 0;
+						step_gather.step_vmem = 0;
+						step_gather.page_fault = 0;
+						step_gather.load_status = 0 ;
+					}
+			
+				} else if((step_gather.children_gather > 0) && (step_gather.parent_rank_gather < 0)) {
+					//share_data.update = false;
+					int time_delay = 0;
 		
-		} else {
-			tmp++;
-		}	
+					time_delay = jobinfo->times;
+					if((step_gather.wait_child_count < step_gather.children_gather) &&  time_delay) {
+						debug("Waiting for child node number %d jobinfo->times =%d s step_gather.children_gather =%d time_delay=%d", 
+								(step_gather.children_gather - step_gather.wait_child_count), jobinfo->times, step_gather.children_gather,time_delay);
+					} else  {
+						/*It is necessary to wait until all node data is aggregated to ensure data consistency.*/
+						if(step_gather.wait_child_count == step_gather.children_gather) {
+							msg.cpu_ave += step_gather.step_cpu_ave;
+							msg.cpu_util += step_gather.step_cpu;
+							msg.mem_real += step_gather.step_mem;
+							msg.vmem_real += step_gather.step_vmem;
+							msg.page_fault += step_gather.page_fault;
+							msg.load_flag  = msg.load_flag | step_gather.load_status; /*if have node not respond set load_status*/
+						} else if(diff > time_delay) {
+							msg.cpu_ave += step_gather.step_cpu_ave;
+							msg.cpu_util += step_gather.step_cpu;
+							msg.mem_real += step_gather.step_mem;
+							msg.vmem_real += step_gather.step_vmem;
+							msg.page_fault += step_gather.page_fault;
+							msg.load_flag  = msg.load_flag | step_gather.load_status; /*if have node not respond set load_status*/
+							msg.load_flag  = msg.load_flag | 0x0000000000000100;
+						}
+						write_data->cpu_step_ave = msg.cpu_ave;
+						write_data->cpu_step_real = msg.cpu_util;
+						write_data->mem_step = msg.mem_real;
+						write_data->vmem_step = msg.vmem_real;
+						write_data->step_pages = msg.page_fault;
+						write_data->send_flag = false;
+						write_data->load_flag =msg.load_flag;
 
+						step_gather.wait_child_count = 0;
+						step_gather.step_cpu_ave = 0;
+						step_gather.step_cpu = 0;
+						step_gather.step_mem = 0;
+						step_gather.step_vmem = 0;
+						step_gather.page_fault = 0;
+						step_gather.load_status = 0 ;
+						update = false;
+						write_data->send_flag = true;
 
+					}
+				} else if((step_gather.children_gather <= 0) && (step_gather.parent_rank_gather >= 0)) {
+					int time_delay = 0;
+					if(step_gather.max_depth_gather > 0 )
+						time_delay =  (jobinfo->times) / step_gather.max_depth_gather;
+					else
+						time_delay = jobinfo->times ;
+
+					//msg.depth_child = step_gather.children_gather+1;
+					debug3("Rank %d sending data to rank %d ip parent = %pA,jobid is %ps  msg.cpu_util=%ld time_delay=%d",
+							rank, step_gather.parent_rank_gather, &step_gather.parent_addr_gather, &jobinfo->step_id, msg.cpu_util, time_delay);
+					_acct_send_data_step (jobinfo, msg, time_delay * 1000);
+					update = false;
+				}
+				slurm_mutex_unlock(&step_gather.lock);
+				
+
+				if(!update) {
+					slurm_mutex_lock(&share_data.lock);
+					share_data.update = false;
+					slurm_mutex_unlock(&share_data.lock);
+
+					if(write_data->send_flag) {
+						write_data->send_flag = false;
+							
+						if(jobinfo->cpu_load > write_data->cpu_step_real) {
+							write_data->cpu_start = record_time - jobinfo->times;
+							write_data->cpu_end = record_time;
+							write_data->load_flag=write_data->load_flag|0x0000000000000001;
+						}
+						if(write_data->load_flag & 0x0000000000000010){
+							write_data->pid_start = record_time - jobinfo->times;
+							write_data->pid_end = record_time;
+						}
+						if(write_data->load_flag & 0x0000000000000100){
+							write_data->node_end = record_time - jobinfo->times;
+							write_data->node_start = record_time;
+						}
+
+						_poll_data(1, NULL, write_data);
+					}
+
+				}
+
+			} else
+				debug3("Data has not been updated yet");
+		}
 	}
+
+	xfree(write_data);
 	return NULL;
 }
 #endif
@@ -536,27 +741,30 @@ static void *_watch_tasks(void *arg)
 {
 #ifdef __METASTACK_LOAD_ABNORMAL
 	struct step_gather *message = (struct step_gather *) arg;
-	int count = 0, tmp_count = 0;
+	int count = 0, tmp_count = 0, update_share = 0;
 	collection_t *collect = NULL;
 	fifo_queue_t *fifo = NULL; 
 	bool reset = false;
-
+    //bool first = false;
     /*Resource consumption variable*/
     uint64_t total_step_cpuutil = 0;
     uint64_t  tmp_cpuutil = 0;
 	collect = xmalloc(sizeof(collection_t));
 
-	if(message->frequency > 0)
-		count = (message->times* 60) / message->frequency; 
+	if(message->times > 0)
+		count = (message->times) / message->frequency; 
 	
 	/*Set time limit*/
 	if(count > MAX_SIZE) 
 		count = MAX_SIZE;
 
 	collect->step = message->step;
-	fifo = xmalloc(sizeof(fifo_queue_t));
-	initialize_queue(fifo, count);
+	if((count > 0) && (collect->step)) {
+		fifo = xmalloc(sizeof(fifo_queue_t));
+		initialize_queue(fifo, count);
+	}
 #endif 
+
 #if HAVE_SYS_PRCTL_H
 	if (prctl(PR_SET_NAME, "acctg", NULL, NULL, NULL) < 0) {
 		error("%s: cannot set my name to %s %m", __func__, "acctg");
@@ -577,32 +785,38 @@ static void *_watch_tasks(void *arg)
 		slurm_mutex_lock(&g_context_lock);
 		/* The initial poll is done after the last task is added */
 #ifdef __METASTACK_LOAD_ABNORMAL
-		_poll_data(1, collect);	
+		_poll_data(1, collect, NULL);	
 #else
 		_poll_data(1);
 #endif
 		slurm_mutex_unlock(&g_context_lock);
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 		uint64_t item = 0.0;
 		if((collect != NULL) && (collect->step) && (count > 0)) {
 			/*******************
 			 *Calculate threshold
 			 *******************/
+			if( tmp_count < count){
+				/*Reached queue length*/
+				if(enqueue(fifo, collect->cpu_step_real, count)!=-1) {
+					total_step_cpuutil += collect->cpu_step_real;
+					tmp_count ++;
+				}				
+			}
+
 			if(tmp_count >= count) {
 				/*Dequeue*/
 				item = dequeue(fifo, count);
-                 
 				if(item >= 0) {
 					total_step_cpuutil += collect->cpu_step_real;
 					total_step_cpuutil = total_step_cpuutil - item;
 					tmp_cpuutil = total_step_cpuutil / tmp_count;
-
 				} else {
 					tmp_count = 0;
 					total_step_cpuutil = 0;
 					reset = true;
 				} 	
-
 				if(tmp_count != 0) {
 					if(enqueue(fifo, collect->cpu_step_real, count) ==-1) {
 						tmp_count = 0;
@@ -610,39 +824,43 @@ static void *_watch_tasks(void *arg)
 						reset = true;
 					} 
 				}	
+			}  
 
-			} else if( tmp_count < count){
-				/*Reached queue length*/
-				if(enqueue(fifo, collect->cpu_step_real, count)!=-1) {
-					total_step_cpuutil += collect->cpu_step_real;
-					tmp_count ++;
-				}				
-			}
 			if(reset) {
 				fifo->front = -1;
 				fifo->rear = -1;
 				reset = false;
 			}
-			slurm_mutex_lock(&data_send_lock);
-			share_data.cpu_step_real= tmp_cpuutil;
-			share_data.cpu_step_ave = collect->cpu_step_ave;
-			share_data.load_flag =  collect->load_flag;
-			share_data.mem_step = collect->mem_step;
-			share_data.vmem_step = collect->vmem_step;
-			share_data.step_pages = collect->step_pages;
-			slurm_mutex_unlock(&data_send_lock);
+			update_share++;
+
+			if(update_share >= count && (!share_data.update) ) {
+				update_share  = 0; 
+				slurm_mutex_lock(&share_data.lock);
+				share_data.cpu_step_real = tmp_cpuutil;
+
+				share_data.cpu_step_ave = collect->cpu_step_ave;
+				share_data.load_flag =  collect->load_flag;
+				share_data.mem_step = collect->mem_step;
+				share_data.vmem_step = collect->vmem_step;
+				share_data.step_pages = collect->step_pages;
+				share_data.update = true;
+				share_data.start = time(NULL);
+				slurm_mutex_unlock(&share_data.lock);
+			} 
 		}
-
-
 	}
-	if(fifo && fifo->data) 
-		xfree(fifo->data);
-	xfree(fifo);
+	if((collect->step) && (count > 0)) {
+		if(fifo && fifo->data) 
+			xfree(fifo->data);
+		xfree(fifo);
+	}
+
 	xfree(collect);
 #endif
 	
 	return NULL;
 }
+
 
 static void _jobacctinfo_create_tres_usage(jobacct_id_t *jobacct_id,
 					   struct jobacctinfo *jobacct)
@@ -889,6 +1107,7 @@ extern int jobacct_gather_fini(void)
 
 	return rc;
 }
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_info_t *jobinfo) 
 {
@@ -912,16 +1131,9 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_info_t *jobi
 	tmp->cpu_load = jobinfo->cpu_min_load;
 	tmp->frequency = frequency;	
 
-	/*Message conversion related settings*/
-	tmp->rank = jobinfo->rank;
-	tmp->depth = jobinfo->depth;
-	tmp->parent_rank = jobinfo->parent_rank;
-	tmp->parent_addr = jobinfo->parent_addr;
-	tmp->children = jobinfo->children;
-	tmp->max_depth = jobinfo->max_depth;
 	tmp->step_id = jobinfo->step_id;
 
-	if (frequency == 0 || !(jobinfo->switch_step)) {   /* don't want dynamic monitoring? */
+	if (frequency == 0 || !(jobinfo->switch_step) || !(jobinfo->timer > 0)) {   /* don't want dynamic monitoring? */
 		debug2("jobacct_gather send logging disabled");
 		return retval;
 	}
@@ -932,6 +1144,7 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_info_t *jobi
 	return retval;
 }
 #endif
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int jobacct_gather_startpoll(uint16_t frequency, acct_gather_info_t *job_set)
 #else
@@ -950,6 +1163,7 @@ extern int jobacct_gather_startpoll(uint16_t frequency)
 		error("jobacct_gather_startpoll: poll already started!");
 		return retval;
 	}
+
 	slurm_mutex_lock(&jobacct_shutdown_mutex);
 	jobacct_shutdown = false;
 	slurm_mutex_unlock(&jobacct_shutdown_mutex);
@@ -969,19 +1183,8 @@ extern int jobacct_gather_startpoll(uint16_t frequency)
 		tmp->times= job_set->timer;
 		tmp->cpu_load = job_set->cpu_min_load;
 		tmp->frequency = frequency;	
-
-		/*Message conversion related settings*/
-	    tmp->rank = job_set->rank;
-		tmp->depth = job_set->depth;
-		tmp->parent_rank = job_set->parent_rank;
-		tmp->parent_addr = job_set->parent_addr;
-		tmp->children = job_set->children;
-		tmp->max_depth = job_set->max_depth;
-		// tmp->wait_children = job_set->wait_children; 
-		// tmp->step_rc = job_set->step_rc;
         tmp->step_id = job_set->step_id;   
 		slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, tmp);
-
 #else        		   
 	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, NULL);
 #endif
@@ -1044,7 +1247,7 @@ extern int jobacct_gather_add_task(pid_t pid, jobacct_id_t *jobacct_id,
 	slurm_mutex_unlock(&task_list_lock);
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if (poll == 1)
-		_poll_data(1, NULL);
+		_poll_data(1, NULL, NULL);
 #else
 	if (poll == 1)
 		_poll_data(1);
@@ -1065,7 +1268,7 @@ extern jobacctinfo_t *jobacct_gather_stat_task(pid_t pid)
 	collection_t * collect = NULL;
 	collect = xmalloc(sizeof(collection_t));
 	//collect->mode = true;
-	_poll_data(0, collect);
+	_poll_data(0, collect, NULL);
 	if(collect)
 		xfree(collect);
 #else
@@ -1112,7 +1315,7 @@ extern jobacctinfo_t *jobacct_gather_remove_task(pid_t pid)
 	/* poll data one last time before removing task
 	 * mainly for updating energy consumption */
 #ifdef __METASTACK_LOAD_ABNORMAL
-	_poll_data(1, NULL);
+	_poll_data(1, NULL, NULL);
 #else
 	_poll_data(1);
 #endif
@@ -1230,8 +1433,22 @@ extern jobacctinfo_t *jobacctinfo_create(jobacct_id_t *jobacct_id)
    jobacct->first_acct_time.tv_sec = 0;
    jobacct->first_acct_time.tv_usec = 0;
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+   jobacct->cpu_step_ave = 0;
+   jobacct->cpu_step_max = 0;
+   jobacct->cpu_step_min = 0;
+   jobacct->cpu_step_real = 0;
 
-	jobacct->dataset_id = -1;
+   jobacct->mem_step_max = 0;
+   jobacct->mem_step_min = 0;
+   jobacct->mem_step = 0;
+
+   jobacct->vmem_step_max = 0;
+   jobacct->vmem_step_min = 0;
+   jobacct->vmem_step = 0;
+#endif
+
+	jobacct->dataset_id = 0;
 	jobacct->sys_cpu_sec = 0;
 	jobacct->sys_cpu_usec = 0;
 	jobacct->user_cpu_sec = 0;
@@ -1470,6 +1687,57 @@ extern void jobacctinfo_pack(jobacctinfo_t *jobacct, uint16_t rpc_version,
 		if ((tmp_64 = jobacct->flag) < 0)
 			tmp_64 = 0;
 		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->cpu_step_ave) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->cpu_step_max) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->cpu_step_min) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->cpu_step_real) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->mem_step_max) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->mem_step_min) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->mem_step) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->vmem_step_max) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->vmem_step_min) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->vmem_step) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->step_pages) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->acct_flag) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);	
+		pack64((uint64_t)jobacct->cpu_count, buffer);
+		pack64((uint64_t)jobacct->pid_count, buffer);
+		pack64((uint64_t)jobacct->node_count, buffer);
+
+		pack64_array(jobacct->cpu_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->cpu_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->pid_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->pid_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->node_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->node_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
 #endif
 	} else if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		if (jobacct->user_cpu_sec > NO_VAL) {
@@ -1540,6 +1808,57 @@ extern void jobacctinfo_pack(jobacctinfo_t *jobacct, uint16_t rpc_version,
 		if ((tmp_64 = jobacct->flag) < 0)
 			tmp_64 = 0;
 		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->cpu_step_ave) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->cpu_step_max) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->cpu_step_min) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->cpu_step_real) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->mem_step_max) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->mem_step_min) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->mem_step) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->vmem_step_max) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->vmem_step_min) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+		if ((tmp_64 = jobacct->vmem_step) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->step_pages) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		if ((tmp_64 = jobacct->acct_flag) < 0)
+			tmp_64 = 0;
+		pack64(tmp_64, buffer);
+
+		pack64((uint64_t)jobacct->cpu_count, buffer);
+		pack64((uint64_t)jobacct->pid_count, buffer);
+		pack64((uint64_t)jobacct->node_count, buffer);
+		pack64_array(jobacct->cpu_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->cpu_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->pid_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->pid_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->node_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
+		pack64_array(jobacct->node_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
 #endif
 	} else {
 		info("jobacctinfo_pack version %u not supported", rpc_version);
@@ -1632,6 +1951,44 @@ extern int jobacctinfo_unpack(jobacctinfo_t **jobacct, uint16_t rpc_version,
         uint64_t tmp_int64;
 		safe_unpack64(&tmp_int64, buffer);
 		(*jobacct)->flag = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_ave = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_max = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_min = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_real = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->mem_step_max = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->mem_step_min = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->mem_step = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->vmem_step_max = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->vmem_step_min = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->vmem_step = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->step_pages = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->acct_flag = tmp_int64;	
+
+		safe_unpack64(&(*jobacct)->cpu_count, buffer);
+		safe_unpack64(&(*jobacct)->pid_count, buffer);
+		safe_unpack64(&(*jobacct)->node_count, buffer);
+		safe_unpack64_array(&(*jobacct)->cpu_start,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->cpu_end,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->pid_start,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->pid_end,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->node_start,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->node_end,&uint32_tmp, buffer);		
 #endif
 	} else if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		safe_unpack32(&uint32_tmp, buffer);
@@ -1698,6 +2055,43 @@ extern int jobacctinfo_unpack(jobacctinfo_t **jobacct, uint16_t rpc_version,
 		uint64_t tmp_int64;
 		safe_unpack64(&tmp_int64, buffer);
 		(*jobacct)->flag = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_ave = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_max = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_min = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->cpu_step_real = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->mem_step_max = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->mem_step_min = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->mem_step = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->vmem_step_max = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->vmem_step_min = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->vmem_step = tmp_int64;
+
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->step_pages = tmp_int64;
+		safe_unpack64(&tmp_int64, buffer);
+		(*jobacct)->acct_flag = tmp_int64;	
+		safe_unpack64(&(*jobacct)->cpu_count, buffer);
+		safe_unpack64(&(*jobacct)->pid_count, buffer);
+		safe_unpack64(&(*jobacct)->node_count, buffer);
+		safe_unpack64_array(&(*jobacct)->cpu_start,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->cpu_end,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->pid_start,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->pid_end,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->node_start,&uint32_tmp, buffer);
+		safe_unpack64_array(&(*jobacct)->node_end,&uint32_tmp, buffer);		
 #endif
 	} else {
 		info("jobacctinfo_unpack version %u not supported",
@@ -1735,6 +2129,37 @@ extern void jobacctinfo_aggregate(jobacctinfo_t *dest, jobacctinfo_t *from)
 #endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 	dest->flag =dest->flag | from->flag;
+	if(from->acct_flag == 1) {
+		dest->cpu_step_ave = from->cpu_step_ave;
+		dest->cpu_step_max = from->cpu_step_max;
+		dest->cpu_step_min = from->cpu_step_min;
+		dest->cpu_step_real = from->cpu_step_real;
+
+		dest->mem_step_max = from->mem_step_max;
+		dest->mem_step_min = from->mem_step_min;
+		dest->mem_step = from->mem_step;
+
+		dest->vmem_step_max = from->vmem_step_max;
+		dest->vmem_step_min = from->vmem_step_min;
+		dest->vmem_step = from->vmem_step;
+
+		dest->step_pages = from->step_pages;
+		dest->acct_flag = from->acct_flag;
+		dest->cpu_count = from->cpu_count;
+		dest->pid_count = from->pid_count;
+		dest->node_count = from->node_count;
+		for (int i = 0; i < JOBACCTINFO_START_END_ARRAY_SIZE; i++) {
+			dest->cpu_start[i] = from->cpu_start[i];
+			dest->cpu_end[i] = from->cpu_end[i];
+
+			dest->pid_start[i] = from->pid_start[i];
+			dest->pid_end[i] = from->pid_end[i];
+
+			dest->node_start[i] = from->node_start[i];
+			dest->node_end[i] = from->node_end[i];
+		}					
+	}
+
 #endif
 	dest->user_cpu_sec	+= from->user_cpu_sec;
 	dest->user_cpu_usec	+= from->user_cpu_usec;
@@ -1775,6 +2200,27 @@ extern void jobacctinfo_2_stats(slurmdb_stats_t *stats, jobacctinfo_t *jobacct)
 #endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 	stats->flag=(uint64_t)jobacct->flag;
+
+	stats->cpu_step_ave = (uint64_t)jobacct->cpu_step_ave;
+	stats->cpu_step_max = (uint64_t)jobacct->cpu_step_max;
+	stats->cpu_step_min = (uint64_t)jobacct->cpu_step_min;
+	stats->cpu_step_real = (uint64_t)jobacct->cpu_step_real;
+
+	stats->mem_step_max = (uint64_t)jobacct->mem_step_max;
+	stats->mem_step_min = (uint64_t)jobacct->mem_step_min;
+	stats->mem_step = (uint64_t)jobacct->mem_step;
+
+	stats->vmem_step_max = (uint64_t)jobacct->vmem_step_max;
+	stats->vmem_step_min = (uint64_t)jobacct->vmem_step_min;
+	stats->vmem_step = (uint64_t)jobacct->vmem_step;
+
+	stats->step_pages = (uint64_t)jobacct->step_pages;
+	stats->acct_flag =  (uint64_t)jobacct->acct_flag;			
+	stats->cpu_count = (uint64_t)jobacct->cpu_count;
+	stats->pid_count = (uint64_t)jobacct->pid_count;
+	stats->node_count = (uint64_t)jobacct->node_count;
+
+	debug("(uint64_t)jobacct->cpu_start[0] = %ld",(uint64_t)jobacct->cpu_start[0]);
 #endif
 	if (jobacct->energy.consumed_energy == NO_VAL64)
 		stats->consumed_energy = NO_VAL64;

@@ -1833,16 +1833,9 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 	uint64_t mem_real = 0;
 	uint64_t vmem_real = 0;
 	uint64_t page_fault = 0;
-	// int step_rc;
-	// char *buf = NULL;
-	//int size;
-	// int first = -1, last = -1;
-	// time_t now; 
-	// int len;
-	// buf_t *buffer = NULL;
-	// bool lock_set = false;
+
 	debug("_handle_aggregate for %ps", &job->step_id);
-	debug3("  uid = %u", uid);
+	debug3("uid = %u", uid);
 	if (!_slurm_authorized_user(uid)) {
 		debug("step aggregate message from uid %u for %ps ",
 		      uid, &job->step_id);
@@ -1864,23 +1857,18 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
     
     /*Set global variables and transfer data between threads through global variables*/
 	slurm_mutex_lock(&step_gather.lock);
-	//start = 0;
-	// if (step_gather.bits)
-	// 	size = bit_size(step_gather.bits);
-	// else
-	// 	size = 0;
-	// if(size != 0 ) {
-	// 	bit_set(step_gather.bits, rank);
-	// }
+
 	step_gather.step_cpu_ave += cpu_ave;
 	step_gather.step_cpu += cpu_util;
 	step_gather.step_mem += mem_real;
 	step_gather.step_vmem += vmem_real;
 	step_gather.page_fault += page_fault;
-	if( step_gather.wait_child_count == 0) {
-		step_gather.start = time(NULL);
-	}
+	
+	// if( step_gather.wait_child_count == 0) {
+	// 	step_gather.start = time(NULL);
+	// }
 	step_gather.wait_child_count++; 
+    //bit_set(step_gather.bits, rank);
 
 	slurm_mutex_unlock(&step_gather.lock);
 

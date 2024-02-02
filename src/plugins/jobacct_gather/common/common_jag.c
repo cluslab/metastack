@@ -916,6 +916,20 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 		jobacct->first_total_cputime = cpu_calc;
 #ifdef __METASTACK_LOAD_ABNORMAL
 		jobacct->flag = 0;
+		jobacct->cpu_step_ave = 0;
+		jobacct->cpu_step_real = 0;
+		jobacct->cpu_step_max = 0;
+		jobacct->cpu_step_min = INFINITE64;
+
+		jobacct->mem_step = 0;
+		jobacct->mem_step_max = 0;
+		jobacct->mem_step_min = INFINITE64;
+
+		jobacct->vmem_step = 0;
+		jobacct->vmem_step_max = 0;
+		jobacct->vmem_step_min = INFINITE64;
+		jobacct->acct_flag = 0;		
+
 #endif
 		jobacct->cpu_util = 0.0;
 		jobacct->avg_cpu_util = 0.0;
@@ -956,7 +970,7 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
-				 jag_callbacks_t *callbacks, bool profile, collection_t *collect)
+				 jag_callbacks_t *callbacks, bool profile, collection_t *collect, write_t *data)
 #else
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jag_callbacks_t *callbacks, bool profile)
@@ -978,7 +992,8 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	uint64_t total_job_cpuutil_ave = 0;
 	uint64_t pid_status = 0;
 	uint64_t total_job_pages = 0;
-	//uint64_t total_job_gpuutil = 0;
+	/* just write once to the jobacct structure */
+	bool stamp = false; 
 #endif
 
 	xassert(callbacks);
@@ -1128,11 +1143,51 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		}
 		total_job_mem += jobacct->tres_usage_in_tot[TRES_ARRAY_MEM];
 		total_job_vsize += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
-#ifdef __METASTACK_LOAD_ABNORMAL	
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if(data != NULL) {
+			if(stamp==false) {
+				if(data->load_flag & 0x0000000000000111) {
+					if(data->load_flag & 0x0000000000000001) { 
+						jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
+						jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;
+						jobacct->cpu_count++;
+						jobacct->flag |= data->load_flag;
+					}
+					if(data->load_flag & 0x0000000000000010) { 
+						jobacct->pid_start[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_start;
+						jobacct->pid_end[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_end;
+						jobacct->pid_count++;
+						jobacct->flag |= data->load_flag;
+					}
+
+					if(data->load_flag & 0x0000000000000100) { 
+						jobacct->node_start[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_start;
+						jobacct->node_end[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_end;
+						jobacct->flag |= data->load_flag;
+					}
+				}
+
+				jobacct->cpu_step_ave = data->cpu_step_ave;
+				jobacct->cpu_step_real = data->cpu_step_real;
+				jobacct->mem_step = data->mem_step;
+				jobacct->vmem_step = data->vmem_step;
+				jobacct->step_pages = data->step_pages;
+
+				jobacct->cpu_step_max = jobacct->cpu_step_max < data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_max;
+				jobacct->cpu_step_min = jobacct->cpu_step_min > data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_min;
+				jobacct->mem_step_max = jobacct->mem_step_max < data->mem_step ? data->mem_step : jobacct->mem_step_max;
+				jobacct->mem_step_min = jobacct->mem_step_min > data->mem_step ? data->mem_step : jobacct->mem_step_min;
+				jobacct->vmem_step_max = jobacct->vmem_step_max < data->vmem_step ? data->vmem_step : jobacct->vmem_step_max;
+				jobacct->vmem_step_min = jobacct->vmem_step_min > data->vmem_step ? data->vmem_step : jobacct->vmem_step_min;				
+				jobacct->acct_flag = 1;
+			}	
+			stamp = true;
+
+		}
+		/**/
 		total_job_cpuutil += jobacct->cpu_util;
 		total_job_cpuutil_ave += jobacct->avg_cpu_util;
 		total_job_pages += jobacct->tres_usage_in_tot[TRES_ARRAY_PAGES];
-		//total_job_gpuutil = jobacct->gpuxxxx;
 #endif
 		/* Update the cpu times */
 		jobacct->user_cpu_sec = (uint64_t)(prec->usec /

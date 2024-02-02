@@ -284,6 +284,7 @@ extern int stepd_resume(int fd, uint16_t protocol_version,
  * and sets errno.
  */
 int stepd_reconfig(int fd, uint16_t protocol_version);
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 /*
  *Aggregate resource consumption information of other nodes

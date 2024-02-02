@@ -124,7 +124,6 @@
 #define IS_JOB_SPECIAL_EXIT(_X)         \
         (_X->job_state & JOB_SPECIAL_EXIT)
 #endif
-
 /* Defined node states */
 #define IS_NODE_UNKNOWN(_X)		\
 	((_X->node_state & NODE_STATE_BASE) == NODE_STATE_UNKNOWN)
@@ -740,6 +739,7 @@ typedef struct step_complete_msg {
 #ifdef __METASTACK_LOAD_ABNORMAL
 typedef struct step_gather_msg {
 	uint32_t rank;	/* First node rank within job step's alloc */
+	//uint32_t depth_child; /*The current structure contains all child nodes*/
 	slurm_step_id_t step_id; /* Job step ID */
 	uint64_t cpu_util;         /* Real-time utilization of individual job steps on the node */
 	uint64_t cpu_ave;       	 /* Average utilization of individual job steps on the node */

@@ -164,7 +164,6 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_OPT_RPC_USER_FIX
 #define __METASTACK_OPT_RPC_USER_FIX
 #endif
-
 #ifndef __METASTACK_OPT_PROLOG_SLURMCTLD
 #define __METASTACK_OPT_PROLOG_SLURMCTLD
 #endif

@@ -12788,11 +12788,14 @@ unpack_error:
 int
 pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 {
+	
 	if (msg->protocol_version < SLURM_MIN_PROTOCOL_VERSION) {
 		error("%s: Invalid message version=%hu, type:%hu",
 		      __func__, msg->protocol_version, msg->msg_type);
 		return SLURM_ERROR;
 	}
+    
+
 
 	switch (msg->msg_type) {
 	case RESPONSE_JOB_INFO:

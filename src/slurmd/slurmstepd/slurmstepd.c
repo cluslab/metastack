@@ -111,7 +111,6 @@ int slurmstepd_blocked_signals[] = {
 /* global variable */
 slurmd_conf_t * conf;
 extern char  ** environ;
-
 int
 main (int argc, char **argv)
 {
@@ -157,7 +156,6 @@ main (int argc, char **argv)
 
 	/* Receive job parameters from the slurmd */
 	_init_from_slurmd(STDIN_FILENO, argv, &cli, &self, &msg);
-
 	/* Create the stepd_step_rec_t, mostly from info in a
 	 * launch_tasks_request_msg_t or a batch_job_launch_msg_t */
 	if (!(job = _step_setup(cli, self, msg))) {
@@ -620,9 +618,6 @@ _init_from_slurmd(int sock, char **argv,
 	safe_read(sock, &step_gather.depth_gather, sizeof(int));
 	safe_read(sock, &step_gather.max_depth_gather, sizeof(int));
 	safe_read(sock, &step_gather.parent_addr_gather, sizeof(slurm_addr_t));
-
-	if(step_gather.children_gather) 
-		step_gather.bits = bit_alloc(step_gather.children_gather);
 	slurm_mutex_unlock(&step_gather.lock);
 
 #endif

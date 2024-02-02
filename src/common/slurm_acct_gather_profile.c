@@ -120,6 +120,7 @@ static pthread_t timer_thread_id = 0;
 static pthread_mutex_t timer_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t timer_thread_cond = PTHREAD_COND_INITIALIZER;
 static bool init_run = false;
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 /*Initialize queue */
 extern void initialize_queue(fifo_queue_t *fifo, int maxsize) 
@@ -185,6 +186,44 @@ extern double dequeue(fifo_queue_t *fifo, int maxsize)
     }
 
     return value;
+}
+
+static void _set_freq_2(int type, char *freq, char *freq_def,acct_gather_info_t *jobinfo, int step)
+{
+	
+	slurm_mutex_lock(&step_gather.lock);
+	int tmp = step_gather.max_depth_gather * 2 + 1;
+	slurm_mutex_unlock(&step_gather.lock);
+
+	if ((acct_gather_profile_timer[type].freq =
+		acct_gather_parse_freq(type, freq)) == -1)
+		if ((acct_gather_profile_timer[type].freq =
+			acct_gather_parse_freq(type, freq_def)) == -1)
+			acct_gather_profile_timer[type].freq = 0;
+	if(acct_gather_profile_timer[type].freq > 0) {
+		if(jobinfo->timer  <= (acct_gather_profile_timer[type].freq) ) {
+			jobinfo->timer = acct_gather_profile_timer[type].freq;
+			if(step != BATCH_STEP) 
+				acct_gather_profile_timer[type].freq = jobinfo->timer / tmp;
+			else 
+				acct_gather_profile_timer[type].freq = jobinfo->timer / 3;	
+				
+		} else {
+			int time = 0;
+			time = jobinfo->timer / tmp;
+
+			if(step != BATCH_STEP)  {
+				if(acct_gather_profile_timer[type].freq < time)
+					acct_gather_profile_timer[type].freq = time;
+				else 
+					acct_gather_profile_timer[type].freq = jobinfo->timer / tmp;
+			} else	
+				acct_gather_profile_timer[type].freq = jobinfo->timer / 3;	
+			
+		}
+	}
+
+
 }
 #endif
 
@@ -528,39 +567,37 @@ extern char *acct_gather_profile_dataset_str(
 static void acct_gather_set_parameters(char *freq, char* freq_def,  
 						acct_gather_rank_t step_rank, acct_gather_info_t *jobinfo)
 {
-	jobinfo->timer = 0;
-	jobinfo->cpu_min_load = 0;
+	jobinfo->timer = -1;
+	jobinfo->cpu_min_load = -1;
 	jobinfo->switch_step = false;
 
 
 	/*Read parameter settings*/
 	jobinfo->timer  = acct_gather_parse_time(freq, freq_def);
+	if(jobinfo->timer > 0)
+		jobinfo->timer = jobinfo->timer *60;
 	jobinfo->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
+	
 	int enable_flag = acct_gather_parse_monitor(freq, freq_def);
-  
+	
 
     /*determine job step type*/
 	switch(step_rank.step) {
+		case DATA_STEP:
+			if(enable_flag == ENABLE_DIG || enable_flag == ENABLE_ALL)
+				jobinfo->switch_step = true;
+			break;
 		case EXTERN_STEP:
 			jobinfo->switch_step = false;
 			break;
 		case BATCH_STEP:
-			if(enable_flag == ENABLE_BATCH ||enable_flag == ENABLE_ALL)
+			if(enable_flag == ENABLE_BATCH || enable_flag == ENABLE_ALL)
 				jobinfo->switch_step = true;
 			break;
 		default:
-			if(enable_flag == ENABLE_DIG ||enable_flag == ENABLE_ALL)
-				jobinfo->switch_step = true;
+			break;
 	}
-    
-	/*Message conversion related settings*/
-	jobinfo->rank = step_rank.rank;
-	jobinfo->depth = step_rank.depth;
-	jobinfo->parent_rank = step_rank.parent_rank;
-	jobinfo->parent_addr = step_rank.parent_addr;
-	jobinfo->children = step_rank.children;
-	jobinfo->step_id = step_rank.step_id;
-
+	 jobinfo->step_id = step_rank.step_id;
 }
 #endif
 
@@ -576,6 +613,7 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 	acct_gather_info_t *jobinfo = xmalloc(sizeof(acct_gather_info_t));
 	acct_gather_set_parameters(freq, freq_def, step_rank, jobinfo);
 #endif
+
 	if (acct_gather_profile_init() < 0)
 		return SLURM_ERROR;
 
@@ -615,6 +653,12 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			
 #ifdef __METASTACK_LOAD_ABNORMAL
 			_set_freq(i, freq, freq_def);
+			if(jobinfo->timer > 0 ) {
+				if(jobinfo->timer  <= (acct_gather_profile_timer[i].freq) ) {
+					jobinfo->timer = acct_gather_profile_timer[i].freq ;
+				}
+			} 
+
 			jobacct_gather_startpoll(
 				acct_gather_profile_timer[i].freq, jobinfo);
 #else
@@ -642,9 +686,11 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 #ifdef __METASTACK_LOAD_ABNORMAL
 		case PROFILE_STEPD:
 		    /*Set the timing frequency of new threads*/
-			_set_freq(i, freq, freq_def);
-			jobacct_gather_stepdpoll(
+			if((jobinfo->timer > 0)  && (step_rank.step !=EXTERN_STEP)) {
+				_set_freq_2(i, freq, freq_def, jobinfo, step_rank.step);
+				jobacct_gather_stepdpoll(
 					acct_gather_profile_timer[i].freq, jobinfo);
+			}
 			break;
 #endif
 		default:
@@ -661,7 +707,6 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 	slurm_thread_create(&timer_thread_id, _timer_thread, NULL);
 
 	debug3("acct_gather_profile_startpoll dynamic logging enabled");
-	
 	return SLURM_SUCCESS;
 }
 

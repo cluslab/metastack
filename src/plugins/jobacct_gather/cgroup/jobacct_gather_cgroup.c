@@ -216,7 +216,7 @@ extern int fini (void)
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern void jobacct_gather_p_poll_data(List task_list, uint64_t cont_id,
-				       bool profile, collection_t *collect)
+				       bool profile, collection_t *collect, write_t *data)
 {
 	static jag_callbacks_t callbacks;
 	static bool first = 1;
@@ -227,7 +227,7 @@ extern void jobacct_gather_p_poll_data(List task_list, uint64_t cont_id,
 		callbacks.prec_extra = _prec_extra;
 	}
 
-	jag_common_poll_data(task_list, cont_id, &callbacks, profile, collect);
+	jag_common_poll_data(task_list, cont_id, &callbacks, profile, collect, data);
 
 	return;
 }

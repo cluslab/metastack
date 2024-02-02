@@ -287,14 +287,6 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 #ifdef __METASTACK_LOAD_ABNORMAL
 	acct_gather_rank_t step_rank;
 	memset(&step_rank, 0, sizeof(acct_gather_rank_t));
-	//step_complete;
-	slurm_mutex_lock(&step_gather.lock);
-	step_rank.children = step_gather.children_gather;
-	step_rank.depth = step_gather.depth_gather;
-	step_rank.parent_addr = step_gather.parent_addr_gather;
-	step_rank.parent_rank = step_gather.parent_rank_gather;
-	step_rank.rank = step_gather.rank_gather;
-	slurm_mutex_unlock(&step_gather.lock);
 #endif
 
 	if (acct_gather_check_acct_freq_task(msg->job_mem_lim, msg->acctg_freq))
@@ -486,7 +478,6 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	}
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
-
 #else
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq);		
@@ -538,16 +529,9 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	xassert(msg != NULL);
 
 	debug3("entering batch_stepd_step_rec_create");
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_LOAD_ABNORMAL	
 	acct_gather_rank_t step_rank;
 	memset(&step_rank, 0, sizeof(acct_gather_rank_t));
-	slurm_mutex_lock(&step_complete.lock);
-	step_rank.children = step_complete.children;
-	step_rank.depth = step_complete.depth;
-    step_rank.parent_addr = step_complete.parent_addr;
-	step_rank.parent_rank = step_complete.parent_rank;
-	step_rank.rank = step_complete.rank;
-	slurm_mutex_unlock(&step_complete.lock);
 #endif
 
 	if (acct_gather_check_acct_freq_task(msg->job_mem, msg->acctg_freq))
