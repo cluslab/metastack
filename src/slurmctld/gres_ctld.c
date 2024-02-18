@@ -2620,6 +2620,12 @@ static void _gres_2_tres_str_internal(char **tres_str,
 				      uint64_t count)
 {
 	slurmdb_tres_rec_t *tres_rec;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	slurmdb_tres_rec_t tres_req;
+
+	memset(&tres_req, 0, sizeof(slurmdb_tres_rec_t));
+	tres_req.type = "gres";	
+#else
 	static bool first_run = 1;
 	static slurmdb_tres_rec_t tres_req;
 
@@ -2629,6 +2635,7 @@ static void _gres_2_tres_str_internal(char **tres_str,
 		memset(&tres_req, 0, sizeof(slurmdb_tres_rec_t));
 		tres_req.type = "gres";
 	}
+#endif
 
 	xassert(verify_assoc_lock(TRES_LOCK, READ_LOCK));
 	xassert(gres_name);

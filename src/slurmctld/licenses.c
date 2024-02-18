@@ -1068,17 +1068,23 @@ extern void license_set_job_tres_cnt(List license_list,
 {
 	ListIterator itr;
 	licenses_t *license_entry;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	slurmdb_tres_rec_t tres_rec;
+#else
 	static bool first_run = 1;
 	static slurmdb_tres_rec_t tres_rec;
+#endif
 	int tres_pos;
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
 
+#ifndef __METASTACK_NEW_PART_PARA_SCHED
 	/* we only need to init this once */
 	if (first_run) {
 		first_run = 0;
 		memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
 		tres_rec.type = "license";
 	}
+#endif
 
 	if (!license_list || !tres_cnt)
 		return;
@@ -1086,6 +1092,10 @@ extern void license_set_job_tres_cnt(List license_list,
 	if (!locked)
 		assoc_mgr_lock(&locks);
 
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
+	tres_rec.type = "license";
+#endif
 	itr = list_iterator_create(license_list);
 	while ((license_entry = list_next(itr))) {
 		tres_rec.name = license_entry->name;
