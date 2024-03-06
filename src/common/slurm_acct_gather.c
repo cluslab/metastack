@@ -262,14 +262,14 @@ extern int acct_gather_parse_time(char *freq, char* freq_def)
 	char *sub_str = NULL;
     bool flag = false;
 	if(freq) {
-		if ((sub_str = xstrcasestr(freq, "time="))) {
-				timer = _get_int(sub_str + 5);
+		if ((sub_str = xstrcasestr(freq, "minute="))) {
+				timer = _get_int(sub_str + 7);
 			flag = true;
 		}
 	}
 	if(!flag && freq_def) {
-		if ((sub_str = xstrcasestr(freq_def, "time="))) 
-		timer = _get_int(sub_str + 5);
+		if ((sub_str = xstrcasestr(freq_def, "minute="))) 
+		timer = _get_int(sub_str + 7);
 	}
 
 	return timer;
@@ -311,6 +311,33 @@ extern int acct_gather_parse_monitor(char *freq, char* freq_def)
 		batch = _get_int(sub_str + 6);
 	}
 	return batch;
+}
+
+extern int acct_gather_parse_abnormal_dete(int type, char *freq)
+{
+	int freq_int = -1;
+	char* sub_str = NULL;
+
+	if(!freq)
+		return freq_int;
+	switch (type)
+	{
+	case PROFILE_ABNORMAL_DETE_MINUTE:
+		if((sub_str = xstrcasestr(freq, "minute=")))
+			freq_int = _get_int(sub_str + 7);
+		break;
+	case PROFILE_ABNORMAL_DETE_CPUMINLOAD:
+		if((sub_str = xstrcasestr(freq, "cpuminload=")))
+			freq_int = _get_int(sub_str + 11);
+		break;
+	case PROFILE_ABNORMAL_DETE_STEPD:
+		if((sub_str = xstrcasestr(freq, "stepd=")))
+			freq_int = _get_int(sub_str + 6);
+		break;
+	default:
+		fatal("Unable to resolve abnormal-dete : %d configuration, please check the input " , type);
+	}
+	return freq_int;
 }
 #endif
 

@@ -69,7 +69,7 @@
 #include "src/slurmd/slurmstepd/multi_prog.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_LOAD_ABNORMAL	
 #include "src/slurmd/slurmstepd/slurmstepd.h"
 #endif
 static char **_array_copy(int n, char **src);
@@ -284,7 +284,7 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	xassert(msg != NULL);
 	xassert(msg->complete_nodelist != NULL);
 	debug3("entering stepd_step_rec_create");
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_LOAD_ABNORMAL	
 	acct_gather_rank_t step_rank;
 	memset(&step_rank, 0, sizeof(acct_gather_rank_t));
 #endif

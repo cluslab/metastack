@@ -105,9 +105,6 @@ print_field_t fields[] = {
 	{10, "MinCPUUtil", print_fields_str, PRINT_MINCPUUTIL},
 	{8, "TotalRSS", print_fields_str, PRINT_TOTALRSS},
 #endif
-#ifdef __METASTACK_LOAD_ABNORMAL
-	{11, "StepdStatus", print_fields_str, PRINT_STEPDSTATUS},
-#endif
 	{0, NULL, NULL, 0, 0}};
 #else
 print_field_t fields[] = {
@@ -170,9 +167,6 @@ print_field_t fields[] = {
 	{10, "MinCPUUtil", print_fields_str, PRINT_MINCPUUTIL},
 	{8, "TotalRSS", print_fields_str, PRINT_TOTALRSS},
 #endif	
-#ifdef __METASTACK_LOAD_ABNORMAL
-	{11, "StepdStatus", print_fields_str, PRINT_STEPDSTATUS},
-#endif
 	{0, NULL, NULL, 0}};
 #endif
 List jobs = NULL;
@@ -209,6 +203,23 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	
   	double all_task_vmem_tmp_max = 0;
 	double all_task_vmem_tmp_min = 0;
+
+	if(params.opt_event == 1)  {
+		hostlist_t h2 = hostlist_create(nodelist);
+		int host_count= 0;
+		hostlist_uniq(h2);
+		host_count = hostlist_count(h2);
+		
+		char *one_rank = NULL;
+		int tmp_count = 0;
+		while ((one_rank = hostlist_pop(h2))){
+			tmp_count++;
+			if(tmp_count == host_count) {
+				nodelist = xstrdup(one_rank);
+			}
+		}
+		hostlist_destroy(h2);
+	}
 #endif
 
 	debug("requesting info for %ps", step_id);
@@ -258,11 +269,7 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 
 		if (params.pid_format) {
 			step.nodes = step_stat->step_pids->node_name;
-#ifdef __METASTACK_LOAD_ABNORMAL
-			print_fields(&step, NULL);
-#else
 			print_fields(&step);
-#endif
 			xfree(step.pid_str);
 		} else {
 			hostlist_push_host(hl, step_stat->step_pids->node_name);
@@ -298,7 +305,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	list_iterator_destroy(itr);
 #ifdef __METASTACK_LOAD_ABNORMAL
  	char arrTest1[] = "batch";
-	//char arrTest2[] = "extern";
 	if((params.opt_event == 1)) {
 
 		if(step.step_id.step_id == -5) {
@@ -359,7 +365,7 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 							if(nodenames != NULL) 
 								xfree(nodenames);
 						}
-					}
+					}				
 				}
 				if((total_jobacct->cpu_step_ave < 0) && (total_jobacct->cpu_step_max <0) && (total_jobacct->cpu_step_min<0)) {
 					printf("\nAverage CPU utilization of job steps please waitting\n");
@@ -367,10 +373,14 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 					printf("Minimum CPU utilization of job steps please waitting\n");
 					printf("Current CPU utilization of job steps please waitting\n");
 				} else {
-					printf("\nAverage CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_ave);
-					printf("Maximum CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_max);
-					printf("Minimum CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_min);
-					printf("Current CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_real);
+					// printf("\nAverage CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_ave);
+					// printf("Maximum CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_max);
+					// printf("Minimum CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_min);
+					// printf("Current CPU utilization of job steps     %ld%%  \n",total_jobacct->cpu_step_real);
+					printf("\nAverage CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_ave);
+					printf("Maximum CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_max);
+					printf("Minimum CPU utilization of job steps     %.2f%%  \n",(total_jobacct->cpu_step_min == INFINITE64 ? 0.0 : total_jobacct->cpu_step_min));
+					printf("Current CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_real);
 				}
 				printf("---------------------------------------------------------------------------------\n");
 				if(total_jobacct->step_pages<=0) {
@@ -422,8 +432,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	}
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if((params.opt_event == 1) && tot_tasks ) {
-		// uint64_t tmp_uint64 = NO_VAL64;
-		// uint64_t tmp_vmem_uint64 = NO_VAL64;
 
 		char outbuf_tmp[34];
 		char outbuf_tmp_max[34];
@@ -433,12 +441,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 		char vmem_outbuf_tmp_max[34];
 		char vmem_outbuf_tmp_min[34];
 
-		// tmp_uint64 = slurmdb_find_tres_count_in_string(
-		// 		step.stats.tres_usage_in_ave,
-		// 		TRES_MEM);
-		// tmp_vmem_uint64 = slurmdb_find_tres_count_in_string(
-		// 		step.stats.tres_usage_in_ave,
-		// 		TRES_VMEM);
 		if(step.step_id.step_id != -4) {
 
 			if(all_task_vmem_tmp_max >=0) {
@@ -490,7 +492,10 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if(params.opt_event != 1)
-		print_fields(&step, NULL);
+		print_fields(&step);
+	if(nodelist) {
+		xfree(nodelist);
+	}
 #else
 	print_fields(&step);
 #endif
@@ -505,7 +510,6 @@ getout:
 	xfree(step.stats.tres_usage_out_max_nodeid);
 	xfree(step.stats.tres_usage_in_ave);
 	xfree(step.stats.tres_usage_out_ave);
-
 	return rc;
 }
 
@@ -585,7 +589,7 @@ int main(int argc, char **argv)
 			    !verify_step_id(&step_info->job_steps[i].step_id,
 					    &step_id))
 				continue;
-
+			
 			_do_stat(&step_info->job_steps[i].step_id,
 				 step_info->job_steps[i].nodes,
 				 step_info->job_steps[i].cpu_freq_min,

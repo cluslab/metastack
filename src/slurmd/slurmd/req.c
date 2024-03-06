@@ -579,6 +579,7 @@ _send_slurmstepd_init(int fd, int type, void *req,
 			if (rc != SLURM_SUCCESS) 
 				error("%s: failed getting address for parent NodeName %s (parent rank %d)",
 				      __func__, parent_alias, parent_rank);
+			   
 		}
 #else
 		/* In FRONT_END mode, one slurmd pretends to be all
@@ -592,6 +593,7 @@ _send_slurmstepd_init(int fd, int type, void *req,
 		depth = 0;
 		max_depth = 0;
 #endif
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 		count_gather = hostlist_count(step_hset);
 		if((count_gather>= 2) && (count_gather<7)) {
@@ -641,7 +643,6 @@ _send_slurmstepd_init(int fd, int type, void *req,
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if(count_gather >= 7 ) {
-        
 		rank_gather = rank;
 		parent_rank_gather = parent_rank;
 	
@@ -2206,6 +2207,7 @@ static int _spawn_prolog_stepd(slurm_msg_t *msg)
 	int i;
 
 	launch_req = xmalloc(sizeof(launch_tasks_request_msg_t));
+
 	launch_req->alias_list		= req->alias_list;
 	launch_req->complete_nodelist	= req->nodes;
 	launch_req->cpus_per_task	= 1;
@@ -3679,6 +3681,7 @@ static void _rpc_daemon_status(slurm_msg_t *msg)
 	slurm_send_node_msg(msg->conn_fd, &resp_msg);
 	slurm_free_slurmd_status(resp);
 }
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 static void _rpc_step_jobacct(slurm_msg_t *msg)
 {

@@ -89,10 +89,8 @@ static int _get_process_status_line(pid_t pid, jag_prec_t *prec)
 	int fd, attempts = 1;
 	ssize_t n;
 	char *status = NULL;
-	//pid_t tgid = -1;
     int flag = 0 ;
 	xstrfmtcat(filename, "/proc/%u/status", pid);
-	//debug("filename : %s" , filename);
 
 	fd = open(filename, O_RDONLY);
 	if (fd < 0) {
@@ -723,6 +721,102 @@ static List _get_precs(List task_list, uint64_t cont_id,
 	return prec_list;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
+{
+		enum {
+		/*PROFILE*/
+		FIELD_STEPCPU,
+		FIELD_STEPCPUAVE,
+		FIELD_STEPMEM,	
+		FIELD_STEPVMEM,		
+		FIELD_STEPPAGES,
+		/*EVENT*/
+		FIELD_FLAG,
+		FIELD_CPUTHRESHOLD,
+		FIELD_EVENTTYPE1,
+		FIELD_EVENTTYPE2,
+		FIELD_EVENTTYPE3,
+		FIELD_EVENTTYPE1START,
+		FIELD_EVENTTYPE2START,
+		FIELD_EVENTTYPE3START,
+		FIELD_EVENTTYPE1END,
+		FIELD_EVENTTYPE2END,
+		FIELD_EVENTTYPE3END,						
+		FIELD_CNT
+	};
+
+	acct_gather_profile_dataset_t dataset[] = {
+		{ "STEPPROFILE", PROFILE_FIELD_DOUBLE },
+		{ "STPEDEVENT", PROFILE_FIELD_DOUBLE },
+		{ NULL, PROFILE_FIELD_NOT_SET }
+	};
+	static int64_t profile_gid = -1;
+	//double et;
+
+	union {
+		double d;
+		uint64_t u64;
+	} data[FIELD_CNT];
+
+	char str[256];
+
+	if (profile_gid == -1)
+		profile_gid = acct_gather_profile_g_create_group("Stepd");
+	/* Create the dataset first */
+	if (jobacct->dataset_id < 0) {
+		char ds_name[32];
+		snprintf(ds_name, sizeof(ds_name), "%u", jobacct->id.taskid);
+
+		jobacct->dataset_id = acct_gather_profile_g_create_dataset(
+			ds_name, profile_gid, dataset);
+		if (jobacct->dataset_id == SLURM_ERROR) {
+			error("JobAcct: Failed to create the dataset for "
+			      "task %d",
+			      jobacct->pid);
+			return;
+		}
+	}
+
+	if (jobacct->dataset_id < 0)
+		return;
+	/* Profile Mem and VMem as KB */
+	data[FIELD_STEPCPU].d = jobacct->cpu_step_real;
+	data[FIELD_STEPCPUAVE].d = jobacct->cpu_step_ave;	
+	data[FIELD_STEPMEM].d = jobacct->mem_step / 1024;
+	data[FIELD_STEPVMEM].d = jobacct->vmem_step / 1024;	
+	data[FIELD_STEPPAGES].u64 = jobacct->step_pages;
+
+	data[FIELD_CPUTHRESHOLD].d = send->cpu_threshold;
+	data[FIELD_FLAG].u64 = send->load_flag;
+
+	if(send->load_flag & 0x0000000000000001) { 
+		data[FIELD_EVENTTYPE1START].u64 = send->cpu_start;
+		data[FIELD_EVENTTYPE1END].u64 = send->cpu_end;
+	}
+
+	if(send->load_flag & 0x0000000000000010) { 
+		data[FIELD_EVENTTYPE2START].u64 = send->pid_start;
+		data[FIELD_EVENTTYPE2END].u64 = send->pid_end;
+	}
+
+	if(send->load_flag & 0x0000000000000100) { 
+		data[FIELD_EVENTTYPE3START].u64 = send->node_start;
+		data[FIELD_EVENTTYPE3END].u64 = send->node_end;
+	}	
+
+	log_flag(PROFILE, "PROFILE-Task: %s",
+		 acct_gather_profile_dataset_str(dataset, data, str,
+						 sizeof(str)));
+	int influx_flag= acct_gather_profile_g_add_sample_data_stepd(jobacct->dataset_id,
+	                                   (void *)data, jobacct->cur_time);
+	if (influx_flag == SLURM_ERROR) {
+		debug2("the influxdb plug is not enabled");
+	}
+
+}
+#endif
+
 static void _record_profile(struct jobacctinfo *jobacct)
 {
 	enum {
@@ -916,9 +1010,9 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 		jobacct->first_total_cputime = cpu_calc;
 #ifdef __METASTACK_LOAD_ABNORMAL
 		jobacct->flag = 0;
-		jobacct->cpu_step_ave = 0;
-		jobacct->cpu_step_real = 0;
-		jobacct->cpu_step_max = 0;
+		jobacct->cpu_step_ave = 0.0;
+		jobacct->cpu_step_real = 0.0;
+		jobacct->cpu_step_max = 0.0;
 		jobacct->cpu_step_min = INFINITE64;
 
 		jobacct->mem_step = 0;
@@ -988,8 +1082,8 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	time_t ct;
 	int i = 0;
 #ifdef __METASTACK_LOAD_ABNORMAL
-	uint64_t total_job_cpuutil = 0;
-	uint64_t total_job_cpuutil_ave = 0;
+	double total_job_cpuutil = 0;
+	double total_job_cpuutil_ave = 0;
 	uint64_t pid_status = 0;
 	uint64_t total_job_pages = 0;
 	/* just write once to the jobacct structure */
@@ -1145,8 +1239,9 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		total_job_vsize += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
 #ifdef __METASTACK_LOAD_ABNORMAL
 		if(data != NULL) {
-			if(stamp==false) {
+			if(stamp == false) {
 				if(data->load_flag & 0x0000000000000111) {
+
 					if(data->load_flag & 0x0000000000000001) { 
 						jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
 						jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;
@@ -1180,14 +1275,19 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				jobacct->vmem_step_max = jobacct->vmem_step_max < data->vmem_step ? data->vmem_step : jobacct->vmem_step_max;
 				jobacct->vmem_step_min = jobacct->vmem_step_min > data->vmem_step ? data->vmem_step : jobacct->vmem_step_min;				
 				jobacct->acct_flag = 1;
+				if(data && profile &&  acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_STEPD)) {	
+					jobacct->cur_time = ct;
+					_record_profile2(jobacct, data);
+				}
 			}	
 			stamp = true;
-
 		}
 		/**/
 		total_job_cpuutil += jobacct->cpu_util;
 		total_job_cpuutil_ave += jobacct->avg_cpu_util;
 		total_job_pages += jobacct->tres_usage_in_tot[TRES_ARRAY_PAGES];
+
+		
 #endif
 		/* Update the cpu times */
 		jobacct->user_cpu_sec = (uint64_t)(prec->usec /

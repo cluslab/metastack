@@ -1827,8 +1827,8 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 	int rc = SLURM_SUCCESS;
 	int errnum = 0;
 	uint32_t rank = -1;
-	uint64_t cpu_ave = 0;
-	uint64_t cpu_util = 0;
+	double cpu_ave = 0.0;
+	double cpu_util = 0.0;
 	uint64_t load_flag = 0;
 	uint64_t mem_real = 0;
 	uint64_t vmem_real = 0;
@@ -1847,8 +1847,8 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 		return SLURM_ERROR;
 	}
 
-	safe_read(fd, &cpu_ave, sizeof(uint64_t));
-	safe_read(fd, &cpu_util, sizeof(uint64_t));
+	safe_read(fd, &cpu_ave, sizeof(double));
+	safe_read(fd, &cpu_util, sizeof(double));
 	safe_read(fd, &load_flag, sizeof(uint64_t));
 	safe_read(fd, &mem_real, sizeof(uint64_t));
 	safe_read(fd, &vmem_real, sizeof(uint64_t));
@@ -1863,10 +1863,6 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 	step_gather.step_mem += mem_real;
 	step_gather.step_vmem += vmem_real;
 	step_gather.page_fault += page_fault;
-	
-	// if( step_gather.wait_child_count == 0) {
-	// 	step_gather.start = time(NULL);
-	// }
 	step_gather.wait_child_count++; 
     //bit_set(step_gather.bits, rank);
 

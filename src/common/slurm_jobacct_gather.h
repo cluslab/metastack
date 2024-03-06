@@ -131,10 +131,10 @@ struct jobacctinfo {
 #endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 	uint64_t flag;
-	uint64_t cpu_step_ave;
-	uint64_t cpu_step_max;
-	uint64_t cpu_step_min;
-	uint64_t cpu_step_real;
+	double cpu_step_ave;
+	double cpu_step_max;
+	double cpu_step_min;
+	double cpu_step_real;
 
 	uint64_t mem_step_max;
 	uint64_t mem_step_min;
@@ -174,13 +174,14 @@ struct jobinfostat {
 typedef struct {
 	//pthread_cond_t cond;
 	bool send_flag;  /*enable send step data to jobacct*/
-	uint64_t cpu_step_real;
-	uint64_t cpu_step_ave;
+	double cpu_step_real;
+	double cpu_step_ave;
 	uint64_t mem_step;
 	uint64_t vmem_step;
 	uint64_t step_pages;
-	uint64_t gpu_step_util;
+	//uint64_t gpu_step_util;
 	uint64_t load_flag; /*exception criteria*/
+	int cpu_threshold;
 	time_t cpu_start;
 	time_t cpu_end;
 	time_t pid_start;
@@ -195,12 +196,12 @@ typedef struct {
 	uint64_t load_flag; /*exception criteria*/
 	bool update;
 	bool step;  /*enable step*/
-	uint64_t cpu_step_real; 
-	uint64_t cpu_step_ave;
+	double cpu_step_real; 
+	double cpu_step_ave;
 	uint64_t mem_step;
 	uint64_t vmem_step;
 	uint64_t step_pages;
-	uint64_t gpu_step_util;
+	//uint64_t gpu_step_util;
 	time_t start;
 } collection_t;
 extern collection_t share_data;
@@ -215,8 +216,8 @@ typedef struct {
 	int depth_gather;
 	int max_depth_gather;
 	int wait_child_count; /*number node of child count now*/
-	uint64_t step_cpu;
-	uint64_t step_cpu_ave;
+	double step_cpu;
+	double step_cpu_ave;
 	uint64_t step_mem;
 	uint64_t step_vmem;
 	uint64_t load_status;

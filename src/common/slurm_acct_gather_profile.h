@@ -65,7 +65,6 @@
 #define ENABLE_BATCH 2
 #define ENABLE_ALL 3
 
-
 typedef struct {
     double *data;
     int front;
@@ -104,6 +103,15 @@ typedef enum {
 	PROFILE_CNT
 
 } acct_gather_profile_type_t;
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+typedef enum {
+	PROFILE_ABNORMAL_DETE_MINUTE,
+	PROFILE_ABNORMAL_DETE_CPUMINLOAD,
+	PROFILE_ABNORMAL_DETE_STEPD,
+	PROFILE_ABNORMAL_DETE_CNT
+} acct_gather_profile_abnormal_dete_t;
+#endif
 
 typedef enum {
 	PROFILE_FIELD_NOT_SET,
@@ -264,6 +272,10 @@ extern int acct_gather_profile_g_create_dataset(
 	const char *name, int64_t parent,
 	acct_gather_profile_dataset_t *dataset);
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_g_add_sample_data_stepd(int dataset_id, void* data,
+						 time_t sample_time);
+#endif
 /*
  * Put data at the Node Samples level. Typically called from something called
  * at either job_acct_gather interval or acct_gather_energy interval.

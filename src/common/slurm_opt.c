@@ -533,7 +533,12 @@ static int arg_set_acctg_freq(slurm_opt_t *opt, const char *arg)
 	opt->acctg_freq = xstrdup(arg);
 	if (validate_acctg_freq(opt->acctg_freq))
 		return SLURM_ERROR;
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	if(opt->abnormal_dete) { 
+		xstrcat(opt->acctg_freq , ",");
+		xstrcat(opt->acctg_freq , opt->abnormal_dete);
+	}
+#endif
 	return SLURM_SUCCESS;
 }
 COMMON_STRING_OPTION_GET_AND_RESET(acctg_freq);
@@ -547,6 +552,34 @@ static slurm_cli_opt_t slurm_opt_acctg_freq = {
 	.get_func = arg_get_acctg_freq,
 	.reset_func = arg_reset_acctg_freq,
 };
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+static int arg_set_abnormal_dete(slurm_opt_t *opt, const char *arg)
+{
+	xfree(opt->abnormal_dete);
+	opt->abnormal_dete = xstrdup(arg);
+	if (validate_abnormal_dete(opt->abnormal_dete))
+		return SLURM_ERROR;
+	if(opt->acctg_freq) { 
+		xstrcat(opt->acctg_freq , ",");
+		xstrcat(opt->acctg_freq , opt->abnormal_dete);
+	} else {
+		xstrcat(opt->acctg_freq , opt->abnormal_dete);
+	}
+	return SLURM_SUCCESS;
+}
+COMMON_STRING_OPTION_GET_AND_RESET(abnormal_dete);
+COMMON_STRING_OPTION_SET_DATA(abnormal_dete);
+static slurm_cli_opt_t slurm_opt_abnormal_dete = {
+	.name = "abnormal-dete",
+	.has_arg = required_argument,
+	.val = LONG_OPT_ABNORMAL_DETE,
+	.set_func = arg_set_abnormal_dete,
+	.set_func_data = arg_set_data_abnormal_dete,
+	.get_func = arg_get_abnormal_dete,
+	.reset_func = arg_reset_abnormal_dete,
+};
+#endif
 
 static int arg_set_alloc_nodelist(slurm_opt_t *opt, const char *arg)
 {
@@ -5254,6 +5287,9 @@ static const slurm_cli_opt_t *common_options[] = {
 	&slurm_opt_accel_bind,
 	&slurm_opt_account,
 	&slurm_opt_acctg_freq,
+#ifdef __METASTACK_LOAD_ABNORMAL
+	&slurm_opt_abnormal_dete,
+#endif
 	&slurm_opt_alloc_nodelist,
 	&slurm_opt_array,
 	&slurm_opt_argv,
@@ -5671,6 +5707,17 @@ int slurm_process_option(slurm_opt_t *opt, int optval, const char *arg,
 			opt->state[i].set = true;
 			opt->state[i].set_by_data = false;
 			opt->state[i].set_by_env = set_by_env;
+		#ifdef __METASTACK_LOAD_ABNORMAL
+			/*
+				In the case of anomaly-dete, its contents are concatenated after acctg-freq in set_func 
+				and the abnormal value is free, so there is no need to set it
+			*/
+			if(!xstrcmp(common_options[i]->name, "abnormal-dete")) {
+				opt->state[i].set = false;
+				opt->state[i].set_by_data = false;
+				opt->state[i].set_by_env = false;
+			}
+		#endif
 			return SLURM_SUCCESS;
 		}
 	} else if (opt->salloc_opt && common_options[i]->set_func_salloc) {

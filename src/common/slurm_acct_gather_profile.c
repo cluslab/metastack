@@ -82,6 +82,9 @@ typedef struct slurm_acct_gather_profile_ops {
 	int (*create_dataset)   (const char*, int64_t,
 				 acct_gather_profile_dataset_t *);
 	int (*add_sample_data)  (uint32_t, void*, time_t);
+#ifdef __METASTACK_LOAD_ABNORMAL
+    int (*add_sample_data_stepd)  (uint32_t, void*, time_t);
+#endif
 	void (*conf_values)     (List *data);
 	bool (*is_active)     (uint32_t);
 
@@ -103,6 +106,9 @@ static const char *syms[] = {
 	"acct_gather_profile_p_create_group",
 	"acct_gather_profile_p_create_dataset",
 	"acct_gather_profile_p_add_sample_data",
+#ifdef __METASTACK_LOAD_ABNORMAL
+    "acct_gather_profile_p_add_sample_data_stepd",
+#endif
 	"acct_gather_profile_p_conf_values",
 	"acct_gather_profile_p_is_active",
 };
@@ -464,6 +470,10 @@ extern uint32_t acct_gather_profile_from_string(const char *profile_str)
 
 		if (xstrcasestr(profile_str, "network"))
 			profile |= ACCT_GATHER_PROFILE_NETWORK;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if (xstrcasestr(profile_str, "abnormal"))
+			profile |= ACCT_GATHER_PROFILE_STEPD;
+#endif
 	}
 
 	return profile;
@@ -577,7 +587,7 @@ static void acct_gather_set_parameters(char *freq, char* freq_def,
 	if(jobinfo->timer > 0)
 		jobinfo->timer = jobinfo->timer *60;
 	jobinfo->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
-	
+
 	int enable_flag = acct_gather_parse_monitor(freq, freq_def);
 	
 
@@ -653,10 +663,8 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			
 #ifdef __METASTACK_LOAD_ABNORMAL
 			_set_freq(i, freq, freq_def);
-			if(jobinfo->timer > 0 ) {
-				if(jobinfo->timer  <= (acct_gather_profile_timer[i].freq) ) {
-					jobinfo->timer = acct_gather_profile_timer[i].freq ;
-				}
+			if((jobinfo->timer > 0) && (jobinfo->timer<= (acct_gather_profile_timer[i].freq))) {
+				jobinfo->timer = acct_gather_profile_timer[i].freq ;
 			} 
 
 			jobacct_gather_startpoll(
@@ -688,8 +696,7 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 		    /*Set the timing frequency of new threads*/
 			if((jobinfo->timer > 0)  && (step_rank.step !=EXTERN_STEP)) {
 				_set_freq_2(i, freq, freq_def, jobinfo, step_rank.step);
-				jobacct_gather_stepdpoll(
-					acct_gather_profile_timer[i].freq, jobinfo);
+				jobacct_gather_stepdpoll(acct_gather_profile_timer[i].freq, jobinfo);
 			}
 			break;
 #endif
@@ -858,6 +865,22 @@ extern int acct_gather_profile_g_create_dataset(
 	slurm_mutex_unlock(&profile_mutex);
 	return retval;
 }
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_g_add_sample_data_stepd(int dataset_id, void* data,
+						 time_t sample_time)
+{
+	int retval = SLURM_ERROR;
+
+	if (acct_gather_profile_init() < 0)
+		return retval;
+
+	slurm_mutex_lock(&profile_mutex);
+	retval = (*(ops.add_sample_data_stepd))(dataset_id, data, sample_time);
+	slurm_mutex_unlock(&profile_mutex);
+	return retval;
+}
+#endif
 
 extern int acct_gather_profile_g_add_sample_data(int dataset_id, void* data,
 						 time_t sample_time)

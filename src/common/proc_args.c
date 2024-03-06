@@ -1661,6 +1661,35 @@ extern bool subpath(char *path1, char *path2)
 	return ret;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int validate_abnormal_dete(char *abnorma_dete)
+{
+	int i;
+	char *save_ptr = NULL, *tok, *tmp;
+	bool valid;
+	int rc = SLURM_SUCCESS;
+	if (!abnorma_dete)
+		return rc;
+	tmp = xstrdup(abnorma_dete);
+	tok = strtok_r(tmp, ",", &save_ptr);
+	while (tok) {
+		valid = false;
+		for (i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
+			if (acct_gather_parse_abnormal_dete(i, tok) != -1) {
+				valid = true;
+				break;
+			}
+		if (!valid) {
+			error("Invalid --abnormal-dete specification: %s", tok);
+			rc = SLURM_ERROR;
+		}
+		tok = strtok_r(NULL, ",", &save_ptr);
+	}
+	xfree(tmp);
+
+	return rc;
+}
+#endif
 extern int validate_acctg_freq(char *acctg_freq)
 {
 	int i;

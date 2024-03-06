@@ -1095,6 +1095,7 @@ stepd_terminate(int fd, uint16_t protocol_version)
 rwfail:
 	return -1;
 }
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 /*
  *Aggregate resource consumption information of other nodes
@@ -1116,8 +1117,8 @@ stepd_aggregate(int fd, uint16_t protocol_version, step_gather_msg_t *sent)
 	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		safe_write(fd, &req, sizeof(int));
 		
-		safe_write(fd, &sent->cpu_ave, sizeof(uint64_t));
-		safe_write(fd, &sent->cpu_util, sizeof(uint64_t));
+		safe_write(fd, &sent->cpu_ave, sizeof(double));
+		safe_write(fd, &sent->cpu_util, sizeof(double));
 		safe_write(fd, &sent->load_flag, sizeof(uint64_t));
 		safe_write(fd, &sent->mem_real, sizeof(uint64_t));
 		safe_write(fd, &sent->vmem_real, sizeof(uint64_t));

@@ -111,11 +111,7 @@ static void _print_tres_field(char *tres_in, char *nodes, bool convert)
 	return;
 }
 
-#ifdef __METASTACK_LOAD_ABNORMAL
-void print_fields(slurmdb_step_rec_t *step, char *nodenames)
-#else
 void print_fields(slurmdb_step_rec_t *step)
-#endif
 {
 //	print_field_t *field = NULL;
 //	int curr_inx = 1;
@@ -129,9 +125,6 @@ void print_fields(slurmdb_step_rec_t *step)
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
 		double cpu_util = 0;
 		double all_task_mem=0;
-#endif
-#ifdef __METASTACK_LOAD_ABNORMAL
-	    uint64_t tmp_flag = 0;	
 #endif
 		memset(&outbuf, 0, sizeof(outbuf));
 		switch(field->type) {
@@ -658,28 +651,7 @@ void print_fields(slurmdb_step_rec_t *step)
 					     outbuf,
 					     (curr_inx == field_count));
 			break;
-#endif	
-#ifdef __METASTACK_LOAD_ABNORMAL
-	    case PRINT_STEPDSTATUS:
-		    if(nodenames) {
-				tmp_flag = (uint64_t)step->stats.flag;
-				char *outbuf1 = NULL;
-				//printf("tmp_flag=%ld",tmp_flag);
-	
-				if(tmp_flag  == 17)  
-					xstrfmtcat(outbuf1, "%s cpu utilization load and process abnormalities ", nodenames);
-				if(tmp_flag == 1) 
-					xstrfmtcat(outbuf1, "%s cpu utilization load abnormalities", nodenames);
-				if(tmp_flag == 16)
-					xstrfmtcat(outbuf1,"%s process abnormalities ", nodenames);
-				field->print_routine(field,
-								outbuf1,
-								(curr_inx == field_count));
-				if(outbuf1)
-					xfree(outbuf1);
-			}
-			break;
-#endif					
+#endif			
 		default:
 			break;
 		}

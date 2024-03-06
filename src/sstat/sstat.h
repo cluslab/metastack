@@ -62,9 +62,7 @@
 #include "src/common/slurm_jobcomp.h"
 #include "src/common/print_fields.h"
 
-#if defined (__METASTACK_OPT_SSTAT_CPUUTIL) && defined (__METASTACK_LOAD_ABNORMAL)
-#define STAT_FIELDS "jobid,maxvmsize,maxvmsizenode,maxvmsizetask,avevmsize,maxrss,maxrssnode,maxrsstask,averss,maxpages,maxpagesnode,maxpagestask,avepages,mincpu,mincpunode,mincputask,avecpu,ntasks,avecpufreq,reqcpufreqmin,reqcpufreqmax,reqcpufreqgov,consumedenergy,maxdiskread,maxdiskreadnode,maxdiskreadtask,avediskread,maxdiskwrite,maxdiskwritenode,maxdiskwritetask,avediskwrite,tresusageinave,tresusageinmax,tresusageinmaxn,tresusageinmaxt,tresusageinmin,tresusageinminn,tresusageinmint,tresusageintot,tresusageoutave,tresusageoutmax,tresusageoutmaxn,tresusageoutmaxt,tresusageoutmin,tresusageoutminn,tresusageoutmint,tresusageouttot,cpuutil,avecpuutil,maxcpuutil,mincpuutil,totalrss,stepdstatus"
-#elif defined (__METASTACK_OPT_SSTAT_CPUUTIL)
+#ifdef __METASTACK_OPT_SSTAT_CPUUTIL
 #define STAT_FIELDS "jobid,maxvmsize,maxvmsizenode,maxvmsizetask,avevmsize,maxrss,maxrssnode,maxrsstask,averss,maxpages,maxpagesnode,maxpagestask,avepages,mincpu,mincpunode,mincputask,avecpu,ntasks,avecpufreq,reqcpufreqmin,reqcpufreqmax,reqcpufreqgov,consumedenergy,maxdiskread,maxdiskreadnode,maxdiskreadtask,avediskread,maxdiskwrite,maxdiskwritenode,maxdiskwritetask,avediskwrite,tresusageinave,tresusageinmax,tresusageinmaxn,tresusageinmaxt,tresusageinmin,tresusageinminn,tresusageinmint,tresusageintot,tresusageoutave,tresusageoutmax,tresusageoutmaxn,tresusageoutmaxt,tresusageoutmin,tresusageoutminn,tresusageoutmint,tresusageouttot,cpuutil,avecpuutil,maxcpuutil,mincpuutil,totalrss"
 #else 
 #define STAT_FIELDS "jobid,maxvmsize,maxvmsizenode,maxvmsizetask,avevmsize,maxrss,maxrssnode,maxrsstask,averss,maxpages,maxpagesnode,maxpagestask,avepages,mincpu,mincpunode,mincputask,avecpu,ntasks,avecpufreq,reqcpufreqmin,reqcpufreqmax,reqcpufreqgov,consumedenergy,maxdiskread,maxdiskreadnode,maxdiskreadtask,avediskread,maxdiskwrite,maxdiskwritenode,maxdiskwritetask,avediskwrite,tresusageinave,tresusageinmax,tresusageinmaxn,tresusageinmaxt,tresusageinmin,tresusageinminn,tresusageinmint,tresusageintot,tresusageoutave,tresusageoutmax,tresusageoutmaxn,tresusageoutmaxt,tresusageoutmin,tresusageoutminn,tresusageoutmint,tresusageouttot"
@@ -130,9 +128,6 @@ typedef enum {
         PRINT_MINCPUUTIL,
 		PRINT_TOTALRSS,
 #endif
-#ifdef __METASTACK_LOAD_ABNORMAL
-		PRINT_STEPDSTATUS,
-#endif
 } sstat_print_types_t;
 
 
@@ -162,11 +157,7 @@ extern int cpu_util_readable;
 extern List jobs;
 
 /* print.c */
-#ifdef __METASTACK_LOAD_ABNORMAL
-void print_fields(slurmdb_step_rec_t *step, char *nodenames);
-#else
 void print_fields(slurmdb_step_rec_t *step);
-#endif
 
 /* options.c */
 void parse_command_line(int argc, char **argv);

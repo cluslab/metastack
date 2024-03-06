@@ -4774,6 +4774,7 @@ extern void slurm_free_step_complete_msg(step_complete_msg_t *msg)
 		xfree(msg);
 	}
 }
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern void slurm_free_job_step_gather(void *object)
 {
@@ -4781,7 +4782,6 @@ extern void slurm_free_job_step_gather(void *object)
 	if(msg) {
 		xfree(msg);
 	}
-
 }
 #endif
 

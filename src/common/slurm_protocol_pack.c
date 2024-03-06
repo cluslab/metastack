@@ -9495,6 +9495,7 @@ unpack_error:
 	*msg_ptr = NULL;
 	return SLURM_ERROR;
 }
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 static void pack_step_gather_msg(step_gather_msg_t *msg, buf_t *buffer,
 			 uint16_t protocol_version)
@@ -9503,8 +9504,8 @@ static void pack_step_gather_msg(step_gather_msg_t *msg, buf_t *buffer,
 	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		pack_step_id(&msg->step_id, buffer, protocol_version);
 		pack32((uint32_t)msg->rank, buffer);
-		pack64(msg->cpu_ave, buffer);
-		pack64(msg->cpu_util, buffer);
+		packdouble(msg->cpu_ave, buffer);
+		packdouble(msg->cpu_util, buffer);
 
 		pack64(msg->mem_real, buffer);
 		pack64(msg->vmem_real, buffer);
@@ -9525,8 +9526,8 @@ _unpack_step_gather_msg(step_gather_msg_t ** msg_ptr, buf_t *buffer,
 					   protocol_version) != SLURM_SUCCESS)
 			goto unpack_error;
 		safe_unpack32(&msg->rank, buffer);
-		safe_unpack64(&msg->cpu_ave, buffer);
-		safe_unpack64(&msg->cpu_util, buffer);
+		safe_unpackdouble(&msg->cpu_ave, buffer);
+		safe_unpackdouble(&msg->cpu_util, buffer);
         		
 		safe_unpack64(&msg->mem_real, buffer);
 		safe_unpack64(&msg->vmem_real, buffer);

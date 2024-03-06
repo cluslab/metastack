@@ -50,11 +50,7 @@ char outbuf[FORMAT_STRING_SIZE];
 #define SACCT_TRES_MIN  0x0004
 #define SACCT_TRES_TOT  0x0008
 
-#ifdef __METASTACK_LOAD_ABNORMAL
-#define LOAD_LOW_STEP 0x0000000000000001
-#define PROC_AB_STEPD 0x0000000000000010
-char outbuf_tmp[300];
-#endif
+
 static char *_elapsed_time(uint64_t secs, uint64_t usecs)
 {
 	uint64_t days, hours, minutes, seconds, subsec = 0;
@@ -326,11 +322,6 @@ extern void print_fields(type_t type, void *object)
 						    NO_VAL64 */
 		uint32_t tmp_uint32 = NO_VAL, tmp2_uint32 = NO_VAL;
 		uint64_t tmp_uint64 = NO_VAL64, tmp2_uint64 = NO_VAL64;
-#ifdef __METASTACK_LOAD_ABNORMAL
-		uint64_t tmp_uint64_flag = 0;
-		bool step_for_flag = false;
-		memset(&outbuf_tmp, 0, sizeof(outbuf_tmp));
-#endif
 
 		memset(&outbuf, 0, sizeof(outbuf));
 		switch (field->type) {
@@ -1753,11 +1744,6 @@ extern void print_fields(type_t type, void *object)
 			case JOBSTEP:
 				tmp_uint32 = step->state;
 				tmp2_uint32 = step->requid;
-#ifdef __METASTACK_LOAD_ABNORMAL
-				tmp_uint64_flag = step->stats.flag;
-				step_for_flag = true ; 
-#endif
-
 				break;
 			case JOBCOMP:
 				tmp_char = job_comp->state;
@@ -1780,33 +1766,9 @@ extern void print_fields(type_t type, void *object)
 				snprintf(outbuf, FORMAT_STRING_SIZE,
 					 "%s",
 					 tmp_char);
-#ifdef __METASTACK_LOAD_ABNORMAL
-			if((tmp_uint64_flag == 17)) {
-				sprintf(outbuf_tmp," %s -> The process states exhibit abnormalities, and the CPU utilization may be low in scenarios with low load.",outbuf);
-			} else {
-				if(tmp_uint64_flag == 1) {
-					sprintf(outbuf_tmp,"%s -> CPU utilization may be low in situations with low load.",outbuf);					
-				}
-				if(tmp_uint64_flag == 16) {
-					sprintf(outbuf_tmp,"%s -> There are situations where the process states exhibit abnormalities.",outbuf);
-				}
-			}
-			if(tmp_uint64_flag > 0 && step_for_flag ) {
-				field->print_routine(field,
-					     outbuf_tmp,
-					     (curr_inx == field_count));
-				step_for_flag = false;
-			}else {
-				field->print_routine(field,
-							outbuf,
-							(curr_inx == field_count));	
-					
-			}
-#else
 			field->print_routine(field,
 					     outbuf,
 					     (curr_inx == field_count));
-#endif
 			break;
 		case PRINT_SUBMIT:
 			switch(type) {

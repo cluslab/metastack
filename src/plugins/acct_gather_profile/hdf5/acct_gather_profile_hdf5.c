@@ -592,6 +592,15 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* data,
+						 time_t sample_time)
+{
+	info("hdf5 plugin is not supported for stepd collection.");
+	return SLURM_SUCCESS;
+}
+#endif
+
 extern void acct_gather_profile_p_conf_values(List *data)
 {
 	config_key_pair_t *key_pair;
