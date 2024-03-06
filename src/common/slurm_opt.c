@@ -535,6 +535,15 @@ static int arg_set_acctg_freq(slurm_opt_t *opt, const char *arg)
 		return SLURM_ERROR;
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if(opt->abnormal_dete) { 
+		int task = acct_gather_parse_freq(PROFILE_TASK, opt->acctg_freq);
+		int minute = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE, opt->abnormal_dete);
+		if(task == -1){
+			task = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE, slurm_conf.job_acct_gather_freq);
+		}
+		if(minute != -1 && (minute * 60) < task) {
+			info("Warning : The value of minute(%d) must be greater than or equal to task(%d), so the value of minute is set \
+				 to task(%d) !" , minute * 60 , task , task);
+		}
 		xstrcat(opt->acctg_freq , ",");
 		xstrcat(opt->acctg_freq , opt->abnormal_dete);
 	}
@@ -561,6 +570,15 @@ static int arg_set_abnormal_dete(slurm_opt_t *opt, const char *arg)
 	if (validate_abnormal_dete(opt->abnormal_dete))
 		return SLURM_ERROR;
 	if(opt->acctg_freq) { 
+		int task = acct_gather_parse_freq(PROFILE_TASK, opt->acctg_freq);
+		int minute = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE, opt->abnormal_dete);
+		if(task == -1){
+			task = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE, slurm_conf.job_acct_gather_freq);
+		}
+		if(minute != -1 && (minute * 60) < task) {
+			info("Warning : The value of minute(%d) must be greater than or equal to task(%d), so the value of minute is set \
+				 to task(%d) !" , minute * 60 , task , task);
+		}
 		xstrcat(opt->acctg_freq , ",");
 		xstrcat(opt->acctg_freq , opt->abnormal_dete);
 	} else {
