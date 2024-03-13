@@ -133,7 +133,7 @@ static uint32_t g_profile_running = ACCT_GATHER_PROFILE_NOT_SET;
 static stepd_step_rec_t *g_job = NULL;
 #ifdef __METASTACK_LOAD_ABNORMAL
 static char *datastr2 = NULL;
-// static int datastrlen2 = 0;
+static char *buffer_file = NULL;
 #endif
 
 static char *datastr = NULL;
@@ -220,7 +220,9 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid)
 	 * try to open the connection and send this buffer, instead of opening
 	 * one per sample.
 	 */
-	xstrcat(datastr2, data);
+	if(send_jobid !=0)
+		xstrcat(datastr2, data);
+    debug("QINYH--TEST datastr2=%s",datastr2);
 
 	DEF_TIMERS;
 	START_TIMER;
@@ -243,6 +245,7 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid)
 	if (influxdb_conf.password)
 		curl_easy_setopt(curl_handle, CURLOPT_PASSWORD,
 				 influxdb_conf.password);
+
 	curl_easy_setopt(curl_handle, CURLOPT_POST, 1);
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, datastr2);
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE, strlen(datastr2));
@@ -322,15 +325,18 @@ cleanup_global_init:
 		FILE *sys_file = NULL;
 		xstrfmtcat(influxdb_file,"%s/job%d.%d", influxdb_conf.workdir, send_jobid, send_stepid);
 		struct stat st;
-
+        buffer_file = xstrdup(influxdb_file);
 		if (stat(influxdb_conf.workdir, &st) == -1) {
  			if(mkdir(influxdb_conf.workdir, 0700)==-1) {
 				error("can't create directory influxdb_conf.workdir");
 			}
 		}
 		sys_file = fopen(influxdb_file, "a+");
-		fprintf(sys_file, datastr2);
-		fclose(sys_file);
+		if (sys_file != NULL) {
+			fprintf(sys_file, datastr2);
+			fclose(sys_file);
+		} else 
+			debug("QINYH Error opening file of %s!",influxdb_file);
 		if(influxdb_file)
 			xfree(influxdb_file);
 	}
@@ -339,6 +345,149 @@ cleanup_global_init:
 	}
 
 	return rc;	
+}
+#endif
+
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*Get the total number of lines in a file*/
+static int count_file_row(char *path)
+{    
+ int count = 0;
+    char c;
+    FILE *file;
+    file = fopen(path, "r");
+    if (file == NULL) {
+        debug("Error opening file!");
+    } else {
+		while ((c = getc(file)) != EOF) {
+			if (c == '\n') {
+				count++;
+			}
+		}
+
+	}
+	return count;
+    fclose(file);
+}
+
+static int _remove_row(char *path_tmp,int have_send, char* tmp_str, FILE *fp)
+{
+	FILE *fp_out = NULL;
+	fp_out = fopen(path_tmp, "a+"); 
+
+	if (fp_out != NULL) {
+		int tmpcount = 1;
+		while (fgets(tmp_str, 200, fp) != NULL) {
+			if (tmpcount > have_send ) {
+				fwrite(tmp_str, 1, strlen(tmp_str), fp_out);
+				memset(tmp_str, 0 , strlen(tmp_str) );
+			}
+			
+			tmpcount++;
+		}
+		fclose(fp_out);
+		return SLURM_SUCCESS;
+	} else
+	  return SLURM_ERROR;
+
+
+}
+
+/*At the end of the job, 
+ *check whether the influxdb cache file is generated,and if so, 
+ *try to send it again.*/
+
+static int _last_resend(const char *data)
+{
+	struct stat st;
+    int rc = SLURM_SUCCESS;
+	int rc2 = SLURM_SUCCESS;
+	bool send_buffer = false;
+	char tmp_str[200] = {'0'};
+	int all_row = 0;
+
+  
+	if(data || (!buffer_file) || (strlen(buffer_file) <= 0)) {
+		return rc;
+	}
+
+
+	if((data == NULL) && (buffer_file != NULL) && (stat(buffer_file, &st) != -1)) {
+       
+	    all_row = count_file_row(buffer_file);
+		if(all_row <= 0) {
+			remove(buffer_file);
+			return rc;
+		}
+			
+		FILE *fp = NULL;
+		char *path_tmp = NULL;
+	    xstrfmtcat(path_tmp, "%s.tmp", buffer_file);
+		fp = fopen(buffer_file, "r");
+		if (fp == NULL) {
+			rc = SLURM_ERROR;
+            debug("open %s failed!", buffer_file);
+        } else {
+
+			int line = 0;
+			datastr2[0] = '\0';
+			int datastrlen2 = 0;
+			int have_send = 0;
+
+			while (fgets(tmp_str, 200, fp) != NULL)  {
+				line++;
+				if((datastrlen2 + strlen(tmp_str)) <= BUF_SIZE) {
+					xstrcat(datastr2, tmp_str);
+					datastrlen2 += strlen(tmp_str);
+					send_buffer = true;
+				} else  {
+				   rc = _send_data2(datastr2, 0, 0);
+				   xstrcat(datastr2, tmp_str);
+				   datastrlen2 = strlen(datastr2);
+				   if(rc == SLURM_SUCCESS)
+				   		have_send = line;
+
+                   if((rc == SLURM_ERROR) && (have_send > 0)) {
+						/*
+						 *If the transmission is not successful even once, 
+						 *there is no need to regenerate the file.
+						 */
+						rc2 = _remove_row(path_tmp, have_send, tmp_str, fp);
+				   }	
+				}
+			}
+
+            
+			if(send_buffer == true)
+				rc = _send_data2(datastr2, 0, 0);
+
+			if((rc ==SLURM_SUCCESS) &&  (line >= all_row)) {
+				remove(buffer_file);
+			} else {
+				rc2 = _remove_row(path_tmp, have_send, tmp_str, fp);
+			}
+			
+			fclose(fp);
+
+			if(rc2 == SLURM_SUCCESS) {
+				remove(buffer_file);
+				rename(path_tmp, buffer_file);
+			} 
+		}
+		debug("QINYH path_tmp =%s",path_tmp);
+		if(path_tmp) 
+			xfree(path_tmp);
+		
+	}
+	if(buffer_file) 
+		xfree(buffer_file);
+
+	if((rc == SLURM_ERROR) && (rc2 == SLURM_ERROR)) {
+		debug("QINYH Resend failed, file saved in %s",buffer_file);
+	}
+	return rc;
+
 }
 #endif
 
@@ -652,6 +801,9 @@ extern int acct_gather_profile_p_task_start(uint32_t taskid)
 extern int acct_gather_profile_p_task_end(pid_t taskpid)
 {
 	debug3("%s %s called", plugin_type, __func__);
+#ifdef __METASTACK_LOAD_ABNORMAL
+	_last_resend(NULL);
+#endif
 	_send_data(NULL);
 	return SLURM_SUCCESS;
 }

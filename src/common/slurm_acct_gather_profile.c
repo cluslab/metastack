@@ -526,6 +526,7 @@ extern char *acct_gather_profile_type_t_name(acct_gather_profile_type_t type)
 		return "CNT?";
 		break;
 #ifdef __METASTACK_LOAD_ABNORMAL
+	/*The name of the newly opened thread*/
 	case PROFILE_STEPD:
 		return "Stepd";
 		break;
