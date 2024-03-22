@@ -307,6 +307,7 @@ cleanup_global_init:
 	struct stat st_tmp;
 	bool influx_dir = true;
 	if(rc == SLURM_ERROR) {
+
 		if(influxdb_conf.workdir == NULL) {
 			char tmp_dir[60]="/tmp/slurm_influxdb";
 			if (stat(tmp_dir, &st_tmp) == -1) {
@@ -320,6 +321,7 @@ cleanup_global_init:
 		}
 	}
 
+
 	if((send_jobid > 0) && (rc == SLURM_ERROR) && influx_dir) {
 		char *influxdb_file = NULL;
 		FILE *sys_file = NULL;
@@ -331,6 +333,7 @@ cleanup_global_init:
 				error("can't create directory influxdb_conf.workdir");
 			}
 		}
+
 		sys_file = fopen(influxdb_file, "a+");
 		if (sys_file != NULL) {
 			fprintf(sys_file, datastr2);
@@ -630,6 +633,7 @@ extern int init(void)
 	datastr = xmalloc(BUF_SIZE);
 #ifdef __METASTACK_LOAD_ABNORMAL
 	datastr2 = xmalloc(BUF_SIZE);
+    //buffer_file = xmalloc(1000);
 #endif
 	return SLURM_SUCCESS;
 }
@@ -648,6 +652,7 @@ extern int fini(void)
 #ifdef __METASTACK_LOAD_ABNORMAL
 	xfree(influxdb_conf.workdir);
 	xfree(datastr2);
+	//xfree(buffer_file);
 #endif	
 	return SLURM_SUCCESS;
 }
@@ -943,9 +948,9 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 		};
 		switch (i) {
 			case SLUR_SEND_STEPD_TYPE:		
-				xstrfmtcat(str1,"Stepd,job=%d,step=%d,stepcpu=%.2f,"
+				xstrfmtcat(str1,"Stepd,jobid=%d,step=%d stepcpu=%.2f,"
 				"stepcpuave=%.2f,stepmem=%.2f,stepvmem=%.2f,"
-				"steppages=%"PRIu64" value=0 %"PRIu64"\n", 
+				"steppages=%"PRIu64"  %"PRIu64"\n", 
 				g_job->step_id.job_id, 
 				g_job->step_id.step_id,
 				((union data_t*)data)[FIELD_STEPCPU].d,
@@ -960,7 +965,7 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 					xfree(str1);
 				break;
 			case SLUR_SEND_EVENT_TYPE:	
-				xstrfmtcat(str,"Event,job=%d,step=%d,"
+				xstrfmtcat(str,"Event,jobid=%d,step=%d "
 				"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,"
 				"stepvmem=%.2f,steppages=%"PRIu64"",
 				g_job->step_id.job_id, 
@@ -972,8 +977,8 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 				((union data_t*)data)[FIELD_STEPPAGES].u);	
 				// xstrfmtcat(str1,"Event,");
 				 if(((union data_t*)data)[FIELD_FLAG].u & event1) { 
-					xstrfmtcat(str1,"%s,type=%"PRIu64",start=%"PRIu64",end=%"PRIu64" "
-					"value=0 %"PRIu64"\n",
+					xstrfmtcat(str1,"%s,type=%"PRIu64",start=%"PRIu64",end=%"PRIu64""
+					" %"PRIu64"\n",
 					str,event1,
 					((union data_t*)data)[FIELD_EVENTTYPE1START].u,
 					((union data_t*)data)[FIELD_EVENTTYPE1END].u,
@@ -983,8 +988,8 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 				}
 
 				if(((union data_t*)data)[FIELD_FLAG].u & event2) { 
-					xstrfmtcat(str1,"%s,type=%"PRIu64",start=%"PRIu64",end=%"PRIu64" "
-					"value=0 %"PRIu64"\n",
+					xstrfmtcat(str1,"%s,type=%"PRIu64",start=%"PRIu64",end=%"PRIu64""
+					" %"PRIu64"\n",
 					str,event2,
 					((union data_t*)data)[FIELD_EVENTTYPE2START].u,
 					((union data_t*)data)[FIELD_EVENTTYPE2END].u,
@@ -995,7 +1000,7 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 
 				if(((union data_t*)data)[FIELD_FLAG].u & event3) { 
 					xstrfmtcat(str1,"%s,type=%"PRIu64",start=%"PRIu64",end=%"PRIu64" "
-					" %"PRIu64"\n",
+					"%"PRIu64"\n",
 					str,event3,
 					((union data_t*)data)[FIELD_EVENTTYPE3START].u,
 					((union data_t*)data)[FIELD_EVENTTYPE3END].u,
