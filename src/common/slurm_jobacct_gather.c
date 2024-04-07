@@ -235,6 +235,7 @@ static void _init_tres_usage(struct jobacctinfo *jobacct,
 		jobacct->node_end[i] = 0;
 	}
 #endif
+
 	for (i = 0; i < jobacct->tres_count; i++) {
 		jobacct->tres_ids[i] =
 			assoc_mgr_tres_array ? assoc_mgr_tres_array[i]->id : i;
@@ -431,6 +432,7 @@ static void _poll_data(bool profile)
 	slurm_mutex_unlock(&task_list_lock);
 }
 #endif
+
 static bool _init_run_test(void)
 {
 	bool rc;
@@ -565,7 +567,7 @@ static void *step_collect(void *args)
 				write_data->cpu_end = record_time;
 				write_data->load_flag=write_data->load_flag|0x0000000000000001;
 			}
-			//debug3("QINYH--TEST Data write of batch write_data->cpu_start=%ld write_data->cpu_end=%ld",write_data->cpu_start,write_data->cpu_end);
+			
 			if(write_data->load_flag & 0x0000000000000010) {
 				write_data->pid_start = record_time - jobinfo->times;
 				write_data->pid_end = record_time;
@@ -578,7 +580,8 @@ static void *step_collect(void *args)
 		}
 
        	if(jobinfo->step_id.step_id != SLURM_BATCH_SCRIPT)  {
-			if(update) { /* digital work steps */
+			if(update) { 
+				/* digital work steps */
 				slurm_mutex_lock(&step_gather.lock);
 				/* It is necessary to keep the time points of the job step collection of each node consistent.*/
 				if((step_gather.children_gather > 0) && (step_gather.parent_rank_gather >=0) ) {
@@ -614,8 +617,6 @@ static void *step_collect(void *args)
 							msg.load_flag  = msg.load_flag | step_gather.load_status; /*load flag设置not respond 标志位*/
 							msg.load_flag  = msg.load_flag | 0x0000000000000100;
 						}
-						// debug3("Rank %d sending data to rank %d ip parent = %pA,jobid is %ps msg.cpu_util=%ld",
-						// 			step_gather.rank_gather, step_gather.parent_rank_gather, &step_gather.parent_addr_gather,&jobinfo->step_id, msg.cpu_util);
 						
 						/* Do NOT change this check to "step_complete.rank != 0", because
 						* there are odd situations where SlurmUser or root could
@@ -642,7 +643,7 @@ static void *step_collect(void *args)
 						debug("Waiting for child node number %d jobinfo->times =%d s step_gather.children_gather =%d time_delay=%d", 
 								(step_gather.children_gather - step_gather.wait_child_count), jobinfo->times, step_gather.children_gather,time_delay);
 					} else  {
-						/*It is necessary to wait until all node data is aggregated to ensure data consistency.*/
+						/*it is necessary to wait until all node data is aggregated to ensure data consistency.*/
 						if(step_gather.wait_child_count == step_gather.children_gather) {
 							msg.cpu_ave += step_gather.step_cpu_ave;
 							msg.cpu_util += step_gather.step_cpu;
@@ -851,10 +852,10 @@ static void *_watch_tasks(void *arg)
 				share_data.start = time(NULL);
 				slurm_mutex_unlock(&share_data.lock);
 			} 
-			//debug("QINYH--TEST share_data.cpu_step_real =%.2f share_data.cpu_step_ave =%.2f tmp_count =%d count= %d update_share =%d", share_data.cpu_step_real, share_data.cpu_step_ave, tmp_count, count, update_share);
 		}
 #endif
 	}
+	
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if((collect->step) && (count > 0)) {
 		if(fifo && fifo->data) 

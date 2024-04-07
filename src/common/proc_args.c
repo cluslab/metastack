@@ -1690,6 +1690,7 @@ extern int validate_abnormal_dete(char *abnorma_dete)
 	return rc;
 }
 #endif
+
 extern int validate_acctg_freq(char *acctg_freq)
 {
 	int i;
@@ -1720,14 +1721,13 @@ extern int validate_acctg_freq(char *acctg_freq)
 		} 
 		int stepd = acct_gather_parse_monitor(tok, NULL);
         if(stepd!= -1) {
-			/* 
-			 *0 disable all stepd, 1 enable digital stepd, 2、enable batch stepd 3、enable digital stepd and batch stepd
-			 */
+			
 			if(stepd == 0 || stepd == 1 || stepd==2 || stepd==3) 
 				valid = true;
 			else {
 				valid = false;
-				error("Invalid parameter; 0 disable all stepd, 1 enable digital stepd, 2、enable batch stepd 3、enable digital stepd and batch stepd;");
+				error("Invalid parameter; 0 disable all stepd, 1 enable digital stepd, "
+						"2、enable batch stepd 3、enable digital stepd and batch stepd;");
 			}
 		}
 #endif 

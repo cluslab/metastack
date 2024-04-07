@@ -128,6 +128,15 @@ static pthread_cond_t timer_thread_cond = PTHREAD_COND_INITIALIZER;
 static bool init_run = false;
 
 #ifdef __METASTACK_LOAD_ABNORMAL
+/*for example
+ *queue->front = 0;   queue->rear=0     maxsize=3
+ *queue->front = 0;   queue->rear=1     maxsize=3
+ *queue->front = 0;   queue->rear=2     maxsize=3
+
+ *queue->front = 0;   queue->rear=2     maxsize=3
+ *queue->front = 1;   queue->rear=2     maxsize=3
+ *queue->front = 2;   queue->rear=2     maxsize=3
+*/
 /*Initialize queue */
 extern void initialize_queue(fifo_queue_t *fifo, int maxsize) 
 {  
@@ -167,14 +176,6 @@ extern int enqueue(fifo_queue_t *fifo, double value, int maxsize)
 	return 0;
 }
 
-//queue->front = 0;   queue->rear=0     maxsize=3
-//queue->front = 0;   queue->rear=1     maxsize=3
-//queue->front = 0;   queue->rear=2     maxsize=3
-
-//queue->front = 0;   queue->rear=2     maxsize=3
-//queue->front = 1;   queue->rear=2     maxsize=3
-//queue->front = 2;   queue->rear=2     maxsize=3
-
 /*Dequeue operation*/ 
 extern double dequeue(fifo_queue_t *fifo, int maxsize) 
 {
@@ -194,20 +195,33 @@ extern double dequeue(fifo_queue_t *fifo, int maxsize)
     return value;
 }
 
-static void _set_freq_2(int type, char *freq, char *freq_def,acct_gather_info_t *jobinfo, int step)
+static void _set_freq_2(int type, char *freq, char *freq_def, 
+							acct_gather_info_t *jobinfo, int step)
 {
-	
+
 	slurm_mutex_lock(&step_gather.lock);
 	int tmp = step_gather.max_depth_gather * 2 + 1;
 	slurm_mutex_unlock(&step_gather.lock);
 
+	/*
+	 *Get the value of 'freq', with the highest priority given to the value specified in the job, 
+	 *followed by slurm.conf. If neither the job nor slurm.conf specifies the value, then set it 
+	 *to zero, disabling the functionality.
+	 */
 	if ((acct_gather_profile_timer[type].freq =
 		acct_gather_parse_freq(type, freq)) == -1)
 		if ((acct_gather_profile_timer[type].freq =
 			acct_gather_parse_freq(type, freq_def)) == -1)
 			acct_gather_profile_timer[type].freq = 0;
+		
+	/*
+	*Set the timer interval for the anomaly detection thread based on the comparison between 
+	*the sampling time and the interval for anomaly detection.		 
+	*/
 	if(acct_gather_profile_timer[type].freq > 0) {
+
 		if(jobinfo->timer  <= (acct_gather_profile_timer[type].freq) ) {
+
 			jobinfo->timer = acct_gather_profile_timer[type].freq;
 			if(step != BATCH_STEP) 
 				acct_gather_profile_timer[type].freq = jobinfo->timer / tmp;
@@ -215,6 +229,7 @@ static void _set_freq_2(int type, char *freq, char *freq_def,acct_gather_info_t 
 				acct_gather_profile_timer[type].freq = jobinfo->timer / 3;	
 				
 		} else {
+
 			int time = 0;
 			time = jobinfo->timer / tmp;
 
@@ -228,8 +243,6 @@ static void _set_freq_2(int type, char *freq, char *freq_def,acct_gather_info_t 
 			
 		}
 	}
-
-
 }
 #endif
 
@@ -437,6 +450,14 @@ extern void acct_gather_profile_to_string_r(uint32_t profile,
 				strcat(profile_str, ",");
 			strcat(profile_str, "Task");
 		}
+#ifdef __METASTACK_LOAD_ABNORMAL
+		/*used for function printing and api interface*/
+		if (profile & ACCT_GATHER_PROFILE_STEPD) {
+			if (profile_str[0])
+				strcat(profile_str, ",");
+			strcat(profile_str, "Abnormal");
+		}
+#endif
 	}
 }
 
@@ -578,31 +599,33 @@ extern char *acct_gather_profile_dataset_str(
 static void acct_gather_set_parameters(char *freq, char* freq_def,  
 						acct_gather_rank_t step_rank, acct_gather_info_t *jobinfo)
 {
+	int enable = 0;
 	jobinfo->timer = -1;
 	jobinfo->cpu_min_load = -1;
 	jobinfo->switch_step = false;
-
 
 	/*Read parameter settings*/
 	jobinfo->timer  = acct_gather_parse_time(freq, freq_def);
 	if(jobinfo->timer > 0)
 		jobinfo->timer = jobinfo->timer *60;
+
+	/*Set the cpu utilization threshold size in the job step*/
 	jobinfo->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
 
-	int enable_flag = acct_gather_parse_monitor(freq, freq_def);
+    /*Job step enable exception detection flag*/
+	enable = acct_gather_parse_monitor(freq, freq_def);
 	
-
     /*determine job step type*/
 	switch(step_rank.step) {
 		case DATA_STEP:
-			if(enable_flag == ENABLE_DIG || enable_flag == ENABLE_ALL)
+			if(enable == ENABLE_DIG || enable == ENABLE_ALL)
 				jobinfo->switch_step = true;
 			break;
 		case EXTERN_STEP:
 			jobinfo->switch_step = false;
 			break;
 		case BATCH_STEP:
-			if(enable_flag == ENABLE_BATCH || enable_flag == ENABLE_ALL)
+			if(enable == ENABLE_BATCH || enable == ENABLE_ALL)
 				jobinfo->switch_step = true;
 			break;
 		default:
@@ -664,7 +687,8 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			
 #ifdef __METASTACK_LOAD_ABNORMAL
 			_set_freq(i, freq, freq_def);
-			if((jobinfo->timer > 0) && (jobinfo->timer<= (acct_gather_profile_timer[i].freq))) {
+			if((jobinfo->timer > 0) && (jobinfo->timer <= 
+						(acct_gather_profile_timer[i].freq))) {
 				jobinfo->timer = acct_gather_profile_timer[i].freq ;
 			} 
 
@@ -694,10 +718,12 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			break;
 #ifdef __METASTACK_LOAD_ABNORMAL
 		case PROFILE_STEPD:
-		    /*Set the timing frequency of new threads*/
-			if((jobinfo->timer > 0)  && (step_rank.step !=EXTERN_STEP)) {
+			if((jobinfo->timer > 0)  && (step_rank.step != EXTERN_STEP)) {
+                /*set the frequency of new threads*/
 				_set_freq_2(i, freq, freq_def, jobinfo, step_rank.step);
-				jobacct_gather_stepdpoll(acct_gather_profile_timer[i].freq, jobinfo);
+
+				jobacct_gather_stepdpoll(
+					acct_gather_profile_timer[i].freq, jobinfo);
 			}
 			break;
 #endif

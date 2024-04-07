@@ -948,9 +948,10 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 		};
 		switch (i) {
 			case SLUR_SEND_STEPD_TYPE:		
-				xstrfmtcat(str1,"Stepd,jobid=%d,step=%d stepcpu=%.2f,"
+				xstrfmtcat(str1,"Stepd,username=%s,jobid=%d,step=%d stepcpu=%.2f,"
 				"stepcpuave=%.2f,stepmem=%.2f,stepvmem=%.2f,"
 				"steppages=%"PRIu64"  %"PRIu64"\n", 
+				g_job->user_name,
 				g_job->step_id.job_id, 
 				g_job->step_id.step_id,
 				((union data_t*)data)[FIELD_STEPCPU].d,
@@ -965,9 +966,10 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 					xfree(str1);
 				break;
 			case SLUR_SEND_EVENT_TYPE:	
-				xstrfmtcat(str,"Event,jobid=%d,step=%d "
+				xstrfmtcat(str,"Event,username=%s,jobid=%d,step=%d "
 				"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,"
 				"stepvmem=%.2f,steppages=%"PRIu64"",
+				g_job->user_name,
 				g_job->step_id.job_id, 
 				g_job->step_id.step_id,
 				((union data_t*)data)[FIELD_CPUTHRESHOLD].d,
