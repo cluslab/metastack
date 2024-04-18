@@ -60,6 +60,7 @@ extern int acct_gather_conf_destroy(void);
 /* don't forget to free this */
 extern List acct_gather_conf_values(void);
 #ifdef __METASTACK_LOAD_ABNORMAL
+extern bool acct_gather_parse_sw(char* freq_def);
 extern int acct_gather_parse_time(char *freq,char* freq_def);
 extern int acct_gather_parse_cpu_load(char *freq, char* freq_def);
 extern int acct_gather_parse_monitor(char *freq, char* freq_def);
