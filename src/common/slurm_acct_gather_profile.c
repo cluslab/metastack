@@ -603,35 +603,39 @@ static void acct_gather_set_parameters(char *freq, char* freq_def,
 	jobinfo->timer = -1;
 	jobinfo->cpu_min_load = -1;
 	jobinfo->switch_step = false;
+    
+	if(!acct_gather_parse_sw(freq_def)) {
 
-	/*Read parameter settings*/
-	jobinfo->timer  = acct_gather_parse_time(freq, freq_def);
-	if(jobinfo->timer > 0)
-		jobinfo->timer = jobinfo->timer *60;
+		/*Read parameter settings*/
+		jobinfo->timer  = acct_gather_parse_time(freq, freq_def);
 
-	/*Set the cpu utilization threshold size in the job step*/
-	jobinfo->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
+		if(jobinfo->timer > 0)
+			jobinfo->timer = jobinfo->timer *60;
 
-    /*Job step enable exception detection flag*/
-	enable = acct_gather_parse_monitor(freq, freq_def);
-	
-    /*determine job step type*/
-	switch(step_rank.step) {
-		case DATA_STEP:
-			if(enable == ENABLE_DIG || enable == ENABLE_ALL)
-				jobinfo->switch_step = true;
-			break;
-		case EXTERN_STEP:
-			jobinfo->switch_step = false;
-			break;
-		case BATCH_STEP:
-			if(enable == ENABLE_BATCH || enable == ENABLE_ALL)
-				jobinfo->switch_step = true;
-			break;
-		default:
-			break;
+		/*Set the cpu utilization threshold size in the job step*/
+		jobinfo->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
+
+		/*Job step enable exception detection flag*/
+		enable = acct_gather_parse_monitor(freq, freq_def);
+		
+		/*determine job step type*/
+		switch(step_rank.step) {
+			case DATA_STEP:
+				if(enable == ENABLE_DIG || enable == ENABLE_ALL)
+					jobinfo->switch_step = true;
+				break;
+			case EXTERN_STEP:
+				jobinfo->switch_step = false;
+				break;
+			case BATCH_STEP:
+				if(enable == ENABLE_BATCH || enable == ENABLE_ALL)
+					jobinfo->switch_step = true;
+				break;
+			default:
+				break;
+		}
 	}
-	 jobinfo->step_id = step_rank.step_id;
+	jobinfo->step_id = step_rank.step_id;
 }
 #endif
 
@@ -643,11 +647,11 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 {
 	int i;
 	uint32_t profile = ACCT_GATHER_PROFILE_NOT_SET;
+	
 #ifdef __METASTACK_LOAD_ABNORMAL
 	acct_gather_info_t *jobinfo = xmalloc(sizeof(acct_gather_info_t));
 	acct_gather_set_parameters(freq, freq_def, step_rank, jobinfo);
 #endif
-
 	if (acct_gather_profile_init() < 0)
 		return SLURM_ERROR;
 

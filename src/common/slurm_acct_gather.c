@@ -256,6 +256,22 @@ extern List acct_gather_conf_values(void)
 }
 
 #ifdef __METASTACK_LOAD_ABNORMAL
+/**/
+extern bool acct_gather_parse_sw(char* freq_def)
+{
+	bool dsability = false;
+	char *sub_str = NULL;
+
+	if(freq_def) {
+		if ((sub_str = xstrcasestr(freq, "disabnormal"))) {
+			dsability = true;
+		}
+	}
+
+	return dsability;
+}
+
+
 extern int acct_gather_parse_time(char *freq, char* freq_def)
 {
 	int timer = -1;
@@ -286,6 +302,7 @@ extern int acct_gather_parse_cpu_load(char *freq, char* freq_def)
 			flag = true;
 		}
 	}
+
 	if(!flag && freq_def) {
 		if ((sub_str = xstrcasestr(freq_def, "cpuminload="))) 
 		cpu_load = _get_int(sub_str + 11);

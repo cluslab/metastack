@@ -193,6 +193,7 @@ extern int parse_send_libs(const char *arg);
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int validate_abnormal_dete(char *abnormal_dete);
 #endif
+
 extern int validate_acctg_freq(char *acctg_freq);
 
 /*

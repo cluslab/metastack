@@ -175,9 +175,10 @@ slurmdb_step_rec_t step;
 List print_fields_list = NULL;
 ListIterator print_fields_itr = NULL;
 int field_count = 0;
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 #define LOAD_LOW 0x0000000000000001
-#define PROC_AB 0x0000000000000010
+#define PROC_AB  0x0000000000000010
 #define NODE_ABL 0x0000000000000100
 #endif
 

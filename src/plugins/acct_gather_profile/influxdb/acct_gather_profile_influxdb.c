@@ -916,6 +916,11 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 {
     char *str = NULL;
 	char *str1 = NULL;
+
+	uint64_t event1 = 0x0000000000000001;
+	uint64_t event2 = 0x0000000000000010;
+	uint64_t event3 = 0x0000000000000100;
+
 	enum {
 		/*PROFILE*/
 		FIELD_STEPCPU,
@@ -937,11 +942,9 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 		FIELD_EVENTTYPE3END,						
 		FIELD_CNT
 	};
+	
 	debug3("%s %s called", plugin_type, __func__);
 	for(int i= 1; i <= 2; i++) {
-		uint64_t event1 = 0x0000000000000001;
-		uint64_t event2 = 0x0000000000000010;
-		uint64_t event3 = 0x0000000000000100;
 		enum {
 			SLUR_SEND_STEPD_TYPE = 1,
 			SLUR_SEND_EVENT_TYPE = 2,

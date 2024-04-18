@@ -790,17 +790,17 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 	data[FIELD_CPUTHRESHOLD].d = send->cpu_threshold;
 	data[FIELD_FLAG].u64 = send->load_flag;
 
-	if(send->load_flag & 0x0000000000000001) { 
+	if(send->load_flag & LOAD_LOW) { 
 		data[FIELD_EVENTTYPE1START].u64 = send->cpu_start;
 		data[FIELD_EVENTTYPE1END].u64 = send->cpu_end;
 	}
 
-	if(send->load_flag & 0x0000000000000010) { 
+	if(send->load_flag & PROC_AB) { 
 		data[FIELD_EVENTTYPE2START].u64 = send->pid_start;
 		data[FIELD_EVENTTYPE2END].u64 = send->pid_end;
 	}
 
-	if(send->load_flag & 0x0000000000000100) { 
+	if(send->load_flag & JNODE_STAT) { 
 		data[FIELD_EVENTTYPE3START].u64 = send->node_start;
 		data[FIELD_EVENTTYPE3END].u64 = send->node_end;
 	}	
@@ -1240,26 +1240,24 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 #ifdef __METASTACK_LOAD_ABNORMAL
 		if(data != NULL) {
 			if(stamp == false) {
-				if(data->load_flag & 0x0000000000000111) {
+				
+				if(data->load_flag & LOAD_LOW) { 
+					jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
+					jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;
+					jobacct->cpu_count++;
+					jobacct->flag |= data->load_flag;
+				}
+				if(data->load_flag & PROC_AB) { 
+					jobacct->pid_start[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_start;
+					jobacct->pid_end[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_end;
+					jobacct->pid_count++;
+					jobacct->flag |= data->load_flag;
+				}
 
-					if(data->load_flag & 0x0000000000000001) { 
-						jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
-						jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;
-						jobacct->cpu_count++;
-						jobacct->flag |= data->load_flag;
-					}
-					if(data->load_flag & 0x0000000000000010) { 
-						jobacct->pid_start[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_start;
-						jobacct->pid_end[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_end;
-						jobacct->pid_count++;
-						jobacct->flag |= data->load_flag;
-					}
-
-					if(data->load_flag & 0x0000000000000100) { 
-						jobacct->node_start[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_start;
-						jobacct->node_end[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_end;
-						jobacct->flag |= data->load_flag;
-					}
+				if(data->load_flag & JNODE_STAT) { 
+					jobacct->node_start[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_start;
+					jobacct->node_end[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_end;
+					jobacct->flag |= data->load_flag;
 				}
 
 				jobacct->cpu_step_ave = data->cpu_step_ave;
@@ -1352,7 +1350,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		while ((prec1 = list_next(itr1))) {
 			if((prec1->flag) == 1) {
 				log_flag(JAG,"pid = %d  abnormal process status",prec1->pid);
-				pid_status = pid_status|0x0000000000000010;
+				pid_status = pid_status|PROC_AB;
 			} 
 		}
 		list_iterator_destroy(itr1);
