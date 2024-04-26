@@ -132,6 +132,7 @@ static slurm_influxdb_conf_t influxdb_conf;
 static uint32_t g_profile_running = ACCT_GATHER_PROFILE_NOT_SET;
 static stepd_step_rec_t *g_job = NULL;
 #ifdef __METASTACK_LOAD_ABNORMAL
+//static pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER;
 static char *datastr2 = NULL;
 static char *buffer_file = NULL;
 #endif
@@ -222,8 +223,6 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid)
 	 */
 	if(send_jobid !=0)
 		xstrcat(datastr2, data);
-    debug("QINYH--TEST datastr2=%s",datastr2);
-
 	DEF_TIMERS;
 	START_TIMER;
 	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
@@ -306,7 +305,7 @@ cleanup_global_init:
 		 plugin_type, __func__, TIME_STR);
 	struct stat st_tmp;
 	bool influx_dir = true;
-	if(rc == SLURM_ERROR) {
+	if((rc == SLURM_ERROR) && (send_jobid > 0)) {
 
 		if(influxdb_conf.workdir == NULL) {
 			char tmp_dir[60]="/tmp/slurm_influxdb";
@@ -334,12 +333,15 @@ cleanup_global_init:
 			}
 		}
 
+		//slurm_mutex_lock(&file_lock);
 		sys_file = fopen(influxdb_file, "a+");
 		if (sys_file != NULL) {
 			fprintf(sys_file, datastr2);
 			fclose(sys_file);
 		} else 
 			debug("QINYH Error opening file of %s!",influxdb_file);
+		//slurm_mutex_unlock(&file_lock);
+
 		if(influxdb_file)
 			xfree(influxdb_file);
 	}
@@ -416,7 +418,7 @@ static int _last_resend(const char *data)
 	}
 
 
-	if((data == NULL) && (buffer_file != NULL) && (stat(buffer_file, &st) != -1)) {
+	if((buffer_file != NULL) && (stat(buffer_file, &st) != -1)) {
        
 	    all_row = count_file_row(buffer_file);
 		if(all_row <= 0) {
@@ -426,7 +428,11 @@ static int _last_resend(const char *data)
 			
 		FILE *fp = NULL;
 		char *path_tmp = NULL;
+
 	    xstrfmtcat(path_tmp, "%s.tmp", buffer_file);
+
+		//slurm_mutex_lock(&file_lock);
+		/* There is a plug-in lock on the outermost layer, which is no longer locked here.*/
 		fp = fopen(buffer_file, "r");
 		if (fp == NULL) {
 			rc = SLURM_ERROR;
@@ -460,7 +466,7 @@ static int _last_resend(const char *data)
 				   }	
 				}
 			}
-
+			//slurm_mutex_unlock(&file_lock);
             
 			if(send_buffer == true)
 				rc = _send_data2(datastr2, 0, 0);
@@ -478,7 +484,7 @@ static int _last_resend(const char *data)
 				rename(path_tmp, buffer_file);
 			} 
 		}
-		debug("QINYH path_tmp =%s",path_tmp);
+		//debug("QINYH path_tmp =%s",path_tmp);
 		if(path_tmp) 
 			xfree(path_tmp);
 		
@@ -487,7 +493,7 @@ static int _last_resend(const char *data)
 		xfree(buffer_file);
 
 	if((rc == SLURM_ERROR) && (rc2 == SLURM_ERROR)) {
-		debug("QINYH Resend failed, file saved in %s",buffer_file);
+		debug("Resend failed, file saved in %s",buffer_file);
 	}
 	return rc;
 

@@ -634,7 +634,7 @@ static void *step_collect(void *args)
 						step_gather.load_status = 0 ;
 					}
 			
-				} else if((step_gather.children_gather > 0) && (step_gather.parent_rank_gather < 0)) {
+				} else if(step_gather.parent_rank_gather < 0) {
 					//share_data.update = false;
 					int time_delay = 0;
 		
