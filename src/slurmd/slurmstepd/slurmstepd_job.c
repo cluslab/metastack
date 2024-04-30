@@ -284,7 +284,7 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	xassert(msg != NULL);
 	xassert(msg->complete_nodelist != NULL);
 	debug3("entering stepd_step_rec_create");
-#ifdef __METASTACK_LOAD_ABNORMAL	
+#ifdef __METASTACK_LOAD_ABNORMAL
 	acct_gather_rank_t step_rank;
 	memset(&step_rank, 0, sizeof(acct_gather_rank_t));
 #endif
@@ -470,12 +470,15 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	acct_gather_profile_g_node_step_start(job);
 
 #ifdef __METASTACK_LOAD_ABNORMAL
-	step_rank.step = DATA_STEP;
 	/* here memcpy not need to be released */
 	memcpy(&step_rank.step_id, &msg->step_id, sizeof(step_rank.step_id));
-	if(msg->step_id.step_id == SLURM_EXTERN_CONT) {
+
+	if(msg->step_id.step_id == DATA_STEP) {
+		step_rank.step = DATA_STEP;
+		step_rank.node_alloc_cpu =  msg->node_cpus;
+	} else if(msg->step_id.step_id == EXTERN_STEP)
 		step_rank.step = EXTERN_STEP;
-	}
+		
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
 #else
@@ -590,10 +593,11 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	/* needed for the jobacct_gather plugin to start */
 #ifdef __METASTACK_LOAD_ABNORMAL
     step_rank.step = DATA_STEP;
-	step_rank.step_id = job->step_id;
-    if(job->step_id.step_id == SLURM_BATCH_SCRIPT)
-		step_rank.step = BATCH_STEP;
+	step_rank.step = BATCH_STEP;
 
+	step_rank.step_id = job->step_id;
+	step_rank.node_alloc_cpu = job->cpus;
+	
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
 #else

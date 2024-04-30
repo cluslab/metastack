@@ -339,7 +339,7 @@ cleanup_global_init:
 			fprintf(sys_file, datastr2);
 			fclose(sys_file);
 		} else 
-			debug("QINYH Error opening file of %s!",influxdb_file);
+			debug("Error opening file of %s!",influxdb_file);
 		//slurm_mutex_unlock(&file_lock);
 
 		if(influxdb_file)
@@ -484,7 +484,6 @@ static int _last_resend(const char *data)
 				rename(path_tmp, buffer_file);
 			} 
 		}
-		//debug("QINYH path_tmp =%s",path_tmp);
 		if(path_tmp) 
 			xfree(path_tmp);
 		

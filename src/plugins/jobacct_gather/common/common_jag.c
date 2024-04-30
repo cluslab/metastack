@@ -1022,8 +1022,11 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 		jobacct->vmem_step = 0;
 		jobacct->vmem_step_max = 0;
 		jobacct->vmem_step_min = INFINITE64;
-		jobacct->acct_flag = 0;		
+		jobacct->acct_flag = 0;	
 
+		jobacct->node_alloc_cpu = 0;
+		jobacct->timer = 0;
+		jobacct->cpu_threshold = 100;
 #endif
 		jobacct->cpu_util = 0.0;
 		jobacct->avg_cpu_util = 0.0;
@@ -1241,6 +1244,10 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		if(data != NULL) {
 			if(stamp == false) {
 				
+				jobacct->node_alloc_cpu = data->node_alloc_cpu;
+				jobacct->timer = data->timer;
+				jobacct->cpu_threshold = data->cpu_threshold;
+
 				if(data->load_flag & LOAD_LOW) { 
 					jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
 					jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;

@@ -1833,6 +1833,7 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 	uint64_t mem_real = 0;
 	uint64_t vmem_real = 0;
 	uint64_t page_fault = 0;
+	uint64_t node_alloc_cpu = 0;
 
 	debug("_handle_aggregate for %ps", &job->step_id);
 	debug3("uid = %u", uid);
@@ -1854,6 +1855,7 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 	safe_read(fd, &vmem_real, sizeof(uint64_t));
 	safe_read(fd, &page_fault, sizeof(uint64_t));
 	safe_read(fd, &rank, sizeof(uint32_t));
+	safe_read(fd, &node_alloc_cpu, sizeof(uint64_t));
     
     /*Set global variables and transfer data between threads through global variables*/
 	slurm_mutex_lock(&step_gather.lock);
@@ -1863,6 +1865,8 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 	step_gather.step_mem += mem_real;
 	step_gather.step_vmem += vmem_real;
 	step_gather.page_fault += page_fault;
+	step_gather.node_alloc_cpu += node_alloc_cpu;
+
 	step_gather.wait_child_count++; 
     //bit_set(step_gather.bits, rank);
 

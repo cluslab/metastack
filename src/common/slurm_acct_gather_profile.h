@@ -77,18 +77,15 @@ extern int is_full(fifo_queue_t *fifo, int maxsize);
 extern int enqueue(fifo_queue_t *fifo, double value, int maxsize);
 extern double dequeue(fifo_queue_t *fifo, int maxsize);
 
-typedef struct {
-	int timer;
-	int cpu_min_load;
-	bool switch_step;
-	fifo_queue_t* fifo;  	 /*job storage								  */
-	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
-
-} acct_gather_info_t;
 
 typedef struct {
 	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
 	int step;				 /* which stepd                               */
+	uint16_t node_alloc_cpu;
+	bool switch_step;
+	int timer;
+	int cpu_min_load;
+	uint16_t frequency;
 } acct_gather_rank_t;
 #endif
 

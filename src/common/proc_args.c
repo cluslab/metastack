@@ -1685,6 +1685,11 @@ extern int validate_abnormal_dete(char *abnorma_dete)
 		}
 		tok = strtok_r(NULL, ",", &save_ptr);
 	}
+	int cpuminload = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_CPUMINLOAD, abnorma_dete);
+	if(cpuminload != -1 && (cpuminload < 0 || cpuminload > 100)){
+		error("The value of cpuminload must be between 0 and 100");
+		return SLURM_ERROR;
+	}
 	xfree(tmp);
 
 	return rc;

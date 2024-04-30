@@ -748,7 +748,7 @@ typedef struct step_gather_msg {
 	uint64_t vmem_real;          /* Average memory utilization of individual job steps on the node */
 	uint64_t page_fault;     /* The total number of page fault exceptions in individual job steps on the node */
 	uint64_t load_flag; 
-	
+	uint64_t node_alloc_cpu;
 	//bool pid_status;
 } step_gather_msg_t;
 #endif

@@ -128,6 +128,7 @@ struct jobacctinfo {
 	double max_cpu_util;
 	double min_cpu_util;
 	double cpu_util;
+
 #endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 	uint64_t flag;
@@ -156,6 +157,11 @@ struct jobacctinfo {
 	uint64_t  *pid_end;
 	uint64_t  *node_start;
 	uint64_t  *node_end;
+	
+	/* sstat display */
+	uint64_t node_alloc_cpu;
+    uint64_t timer;
+	uint32_t cpu_threshold;	
 #endif
 };
 
@@ -182,13 +188,15 @@ typedef struct {
 	uint64_t step_pages;
 	//uint64_t gpu_step_util;
 	uint64_t load_flag; /*exception criteria*/
-	int cpu_threshold;
+	uint32_t cpu_threshold;
 	time_t cpu_start;
 	time_t cpu_end;
 	time_t pid_start;
 	time_t pid_end;
 	time_t node_start;
 	time_t node_end;
+	uint64_t node_alloc_cpu;
+    uint64_t timer;
 } write_t;
 
 typedef struct {
@@ -227,6 +235,7 @@ typedef struct {
 	slurm_addr_t parent_addr_gather;
 	bitstr_t *bits;
 	bool wait_children;
+	uint64_t node_alloc_cpu;
 } step_gather_t;
 extern step_gather_t step_gather;
 #endif
@@ -240,8 +249,8 @@ extern step_gather_t step_gather;
 extern int jobacct_gather_init(void); /* load the plugin */
 extern int jobacct_gather_fini(void); /* unload the plugin */
 #ifdef __METASTACK_LOAD_ABNORMAL
-extern int  jobacct_gather_startpoll(uint16_t frequency, acct_gather_info_t *job_set);
-extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_info_t *job_set);
+extern int  jobacct_gather_startpoll(uint16_t frequency, acct_gather_rank_t job_set);
+extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t job_set);
 #else
 extern int  jobacct_gather_startpoll(uint16_t frequency);
 #endif

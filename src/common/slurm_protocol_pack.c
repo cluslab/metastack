@@ -9511,6 +9511,7 @@ static void pack_step_gather_msg(step_gather_msg_t *msg, buf_t *buffer,
 		pack64(msg->vmem_real, buffer);
 		pack64(msg->page_fault, buffer);
 		pack64(msg->load_flag, buffer);
+		pack64(msg->node_alloc_cpu, buffer);
 	}
 }
 static int
@@ -9533,6 +9534,7 @@ _unpack_step_gather_msg(step_gather_msg_t ** msg_ptr, buf_t *buffer,
 		safe_unpack64(&msg->vmem_real, buffer);
 		safe_unpack64(&msg->page_fault, buffer);
 		safe_unpack64(&msg->load_flag, buffer);
+		safe_unpack64(&msg->node_alloc_cpu, buffer);
 	}
 	
 	if(false) {

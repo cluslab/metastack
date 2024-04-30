@@ -1124,6 +1124,7 @@ stepd_aggregate(int fd, uint16_t protocol_version, step_gather_msg_t *sent)
 		safe_write(fd, &sent->vmem_real, sizeof(uint64_t));
 		safe_write(fd, &sent->page_fault, sizeof(uint64_t));
 		safe_write(fd, &sent->rank, sizeof(uint32_t));
+		safe_write(fd, &sent->node_alloc_cpu, sizeof(uint64_t));
 
 		safe_read(fd, &rc, sizeof(int));
 		safe_read(fd, &errnum, sizeof(int));

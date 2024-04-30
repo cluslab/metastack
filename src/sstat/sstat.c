@@ -310,14 +310,19 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 
 		if(step.step_id.step_id == -5) {
 			printf("\n*********************************************************************************\n");
-			printf("Resource Consumption Information of %d.%s (the update interval is xxx minutes)\n", step.step_id.job_id, arrTest1);
+			printf("Resource Consumption Information of %d.%s\n", step.step_id.job_id, arrTest1);
+			if((total_jobacct->mem_step == 0) && (total_jobacct->vmem_step == 0) && (total_jobacct->mem_step_max==0))
+				printf("The data may need to wait for updates\n");
+			else
+				printf("(the update interval is %ld minutes , the threshold value is %ld (%ldcpus * %d%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold * total_jobacct->node_alloc_cpu , total_jobacct->node_alloc_cpu , total_jobacct->cpu_threshold);
 		} else if (step.step_id.step_id != -4){
 			printf("\n*********************************************************************************\n");
-			printf("Resource Consumption Information of %d.%d (the update interval is xxx minutes)\n", step.step_id.job_id,step.step_id.step_id);
+			printf("Resource Consumption Information of %d.%d\n", step.step_id.job_id,step.step_id.step_id);
+			if((total_jobacct->mem_step == 0) && (total_jobacct->vmem_step == 0) && (total_jobacct->mem_step_max==0))
+				printf("The data may need to wait for updates\n");
+			else
+				printf("(the update interval is %ld minutes , the threshold value is %ld (%ldcpus * %d%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold * total_jobacct->node_alloc_cpu , total_jobacct->node_alloc_cpu , total_jobacct->cpu_threshold);
 		}
-
-		if((total_jobacct->mem_step == 0) && (total_jobacct->vmem_step == 0) && (total_jobacct->mem_step_max==0))
-			printf("The data may need to wait for updates\n");
 		if(step.step_id.step_id != -4) {
 			printf("*********************************************************************************\n");
 			if(total_jobacct) {
@@ -468,6 +473,7 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 						sizeof(vmem_outbuf_tmp_min), UNIT_NONE, UNIT_MEGA,
 						params.convert_flags);
 			}
+
 			if(all_task_vmem_tmp_max >= 0 ) {
 				printf("Maximum mem utilization of job steps     %s  \n", outbuf_tmp_max);
 				printf("Minimum mem utilization of job steps     %s  \n", outbuf_tmp_min);
