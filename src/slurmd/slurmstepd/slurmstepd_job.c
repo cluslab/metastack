@@ -473,10 +473,10 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	/* here memcpy not need to be released */
 	memcpy(&step_rank.step_id, &msg->step_id, sizeof(step_rank.step_id));
 
-	if(msg->step_id.step_id == DATA_STEP) {
+	if(msg->step_id.step_id != SLURM_EXTERN_CONT) {
 		step_rank.step = DATA_STEP;
 		step_rank.node_alloc_cpu =  msg->node_cpus;
-	} else if(msg->step_id.step_id == EXTERN_STEP)
+	} else if(msg->step_id.step_id == SLURM_EXTERN_CONT)
 		step_rank.step = EXTERN_STEP;
 		
 	acct_gather_profile_startpoll(msg->acctg_freq,
