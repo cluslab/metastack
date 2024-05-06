@@ -172,6 +172,7 @@ struct jobacctinfo {
 #define PROC_AB    0x0000000000000010
 #define JNODE_STAT 0x0000000000000100
 #define JOBACCTINFO_START_END_ARRAY_SIZE 200
+
 struct jobinfostat {
 	double job_avg_cpu;
 	double job_cpu_util;

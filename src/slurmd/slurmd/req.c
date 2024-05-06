@@ -596,7 +596,7 @@ _send_slurmstepd_init(int fd, int type, void *req,
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 		count_gather = hostlist_count(step_hset);
-		if((count_gather>= 2) && (count_gather<7)) {
+		if((count_gather >= 2) && (count_gather < 7)) {
 			rank_gather = hostlist_find(step_hset, conf->node_name);
 			reverse_tree_info(rank_gather, count_gather, count_gather,
 					&parent_rank_gather, &children_gather,
@@ -617,13 +617,14 @@ _send_slurmstepd_init(int fd, int type, void *req,
 				*/
 				parent_alias_gather = hostlist_nth(step_hset, parent_rank_gather);
 				rc = slurm_conf_get_addr(parent_alias_gather, &parent_addr_gather, 0);
-				if (rc != SLURM_SUCCESS) {
+
+				if (rc != SLURM_SUCCESS) 
 					error("%s: stepd gther data failed getting address for parent NodeName %s (parent rank %d)",
 						__func__, parent_alias_gather, parent_rank_gather);
-				}
 			}
 		}
 #endif
+
 	}
 	debug3("slurmstepd rank %d (%s), parent rank %d (%s), "
 	       "children %d, depth %d, max_depth %d",

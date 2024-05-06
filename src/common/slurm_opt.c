@@ -5725,7 +5725,7 @@ int slurm_process_option(slurm_opt_t *opt, int optval, const char *arg,
 			opt->state[i].set = true;
 			opt->state[i].set_by_data = false;
 			opt->state[i].set_by_env = set_by_env;
-		#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_LOAD_ABNORMAL
 			/*
 				In the case of anomaly-dete, its contents are concatenated after acctg-freq in set_func 
 				and the abnormal value is free, so there is no need to set it
@@ -5735,7 +5735,7 @@ int slurm_process_option(slurm_opt_t *opt, int optval, const char *arg,
 				opt->state[i].set_by_data = false;
 				opt->state[i].set_by_env = false;
 			}
-		#endif
+#endif
 			return SLURM_SUCCESS;
 		}
 	} else if (opt->salloc_opt && common_options[i]->set_func_salloc) {

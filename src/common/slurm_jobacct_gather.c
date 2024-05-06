@@ -2284,6 +2284,7 @@ extern void jobacctinfo_2_stats(slurmdb_stats_t *stats, jobacctinfo_t *jobacct)
     stats->max_cpu_util=(double)jobacct->max_cpu_util;
 	stats->min_cpu_util=(double)jobacct->min_cpu_util;
 #endif
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 	stats->flag=(uint64_t)jobacct->flag;
 
