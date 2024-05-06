@@ -256,7 +256,7 @@ extern List acct_gather_conf_values(void)
 }
 
 #ifdef __METASTACK_LOAD_ABNORMAL
-/**/
+/*global switch*/
 extern bool acct_gather_parse_sw(char* freq_def)
 {
 	bool dsability = false;
@@ -278,14 +278,14 @@ extern int acct_gather_parse_time(char *freq, char* freq_def)
 	char *sub_str = NULL;
     bool flag = false;
 	if(freq) {
-		if ((sub_str = xstrcasestr(freq, "minute="))) {
-				timer = _get_int(sub_str + 7);
+		if ((sub_str = xstrcasestr(freq, "minutes="))) {
+				timer = _get_int(sub_str + 8);
 			flag = true;
 		}
 	}
 	if(!flag && freq_def) {
-		if ((sub_str = xstrcasestr(freq_def, "minute="))) 
-		timer = _get_int(sub_str + 7);
+		if ((sub_str = xstrcasestr(freq_def, "minutes="))) 
+		timer = _get_int(sub_str + 8);
 	}
 
 	return timer;
@@ -340,8 +340,8 @@ extern int acct_gather_parse_abnormal_dete(int type, char *freq)
 	switch (type)
 	{
 	case PROFILE_ABNORMAL_DETE_MINUTE:
-		if((sub_str = xstrcasestr(freq, "minute=")))
-			freq_int = _get_int(sub_str + 7);
+		if((sub_str = xstrcasestr(freq, "minutes=")))
+			freq_int = _get_int(sub_str + 8);
 		break;
 	case PROFILE_ABNORMAL_DETE_CPUMINLOAD:
 		if((sub_str = xstrcasestr(freq, "cpuminload=")))

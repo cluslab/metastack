@@ -619,7 +619,8 @@ _send_slurmstepd_init(int fd, int type, void *req,
 				rc = slurm_conf_get_addr(parent_alias_gather, &parent_addr_gather, 0);
 
 				if (rc != SLURM_SUCCESS) 
-					error("%s: stepd gther data failed getting address for parent NodeName %s (parent rank %d)",
+					error("%s: stepd gther data failed getting address "
+						  "for parent NodeName %s (parent rank %d)",
 						__func__, parent_alias_gather, parent_rank_gather);
 			}
 		}

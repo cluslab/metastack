@@ -115,9 +115,7 @@ step_gather_t step_gather = {
 	true,
 	0
 };
-#endif
 
-#ifdef __METASTACK_LOAD_ABNORMAL
 typedef struct slurm_jobacct_gather_ops {
 	void (*poll_data) (List task_list, uint64_t cont_id, bool profile, collection_t *collect, write_t *data);
 	int (*endpoll)    ();

@@ -87,6 +87,13 @@ typedef struct {
 	int cpu_min_load;
 	uint16_t frequency;
 } acct_gather_rank_t;
+
+typedef enum {
+	PROFILE_ABNORMAL_DETE_MINUTE,
+	PROFILE_ABNORMAL_DETE_CPUMINLOAD,
+	PROFILE_ABNORMAL_DETE_STEPD,
+	PROFILE_ABNORMAL_DETE_CNT
+} acct_gather_profile_abnormal_dete_t;
 #endif
 
 typedef enum {
@@ -101,14 +108,6 @@ typedef enum {
 
 } acct_gather_profile_type_t;
 
-#ifdef __METASTACK_LOAD_ABNORMAL
-typedef enum {
-	PROFILE_ABNORMAL_DETE_MINUTE,
-	PROFILE_ABNORMAL_DETE_CPUMINLOAD,
-	PROFILE_ABNORMAL_DETE_STEPD,
-	PROFILE_ABNORMAL_DETE_CNT
-} acct_gather_profile_abnormal_dete_t;
-#endif
 
 typedef enum {
 	PROFILE_FIELD_NOT_SET,
