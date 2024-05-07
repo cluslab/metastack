@@ -205,22 +205,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
   	double all_task_vmem_tmp_max = 0;
 	double all_task_vmem_tmp_min = 0;
 
-	if(params.opt_event == 1)  {
-		hostlist_t h2 = hostlist_create(nodelist);
-		int host_count= 0;
-		hostlist_uniq(h2);
-		host_count = hostlist_count(h2);
-		
-		char *one_rank = NULL;
-		int tmp_count = 0;
-		while ((one_rank = hostlist_pop(h2))){
-			tmp_count++;
-			if(tmp_count == host_count) {
-				nodelist = xstrdup(one_rank);
-			}
-		}
-		hostlist_destroy(h2);
-	}
 #endif
 
 	debug("requesting info for %ps", step_id);

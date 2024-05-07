@@ -136,7 +136,7 @@ typedef struct {
 	char *opt_field_list;	/* --fields= */
 	int opt_help;		/* --help */
 #ifdef __METASTACK_LOAD_ABNORMAL
-	int opt_event;
+	int opt_event;     /* exception event output parameters */
 #endif
 	List opt_job_list;	/* --jobs */
 	int opt_noheader;	/* can only be cleared */

@@ -218,28 +218,27 @@ static void _set_freq_2(int type, char *freq, char *freq_def, acct_gather_rank_t
 	*the sampling time and the interval for anomaly detection.		 
 	*/
 	if(acct_gather_profile_timer[type].freq > 0) {
-
 		if(step_rank->timer  <= (acct_gather_profile_timer[type].freq) ) {
-
 			step_rank->timer = acct_gather_profile_timer[type].freq;
-			if(step_rank->step != BATCH_STEP) 
-				acct_gather_profile_timer[type].freq = step_rank->timer / tmp;
-			else 
-				acct_gather_profile_timer[type].freq = step_rank->timer / 3;	
-				
+			if(step_rank->step != BATCH_STEP) {
+				for(int i = tmp ; i > 0 ; --i){
+					if(step_rank->timer % i == 0) {
+						acct_gather_profile_timer[type].freq = step_rank->timer / i;
+					}
+				}
+			}else
+				acct_gather_profile_timer[type].freq = step_rank->timer / 3;
 		} else {
-
 			int time = 0;
-			time = step_rank->timer / tmp;
-
+			for(int i = tmp ; i > 0 ; --i) {
+				if(step_rank->timer % i == 0) {
+						time = step_rank->timer / i;
+				}
+			}
 			if(step_rank->step != BATCH_STEP)  {
-				if(acct_gather_profile_timer[type].freq < time)
-					acct_gather_profile_timer[type].freq = time;
-				else 
-					acct_gather_profile_timer[type].freq = step_rank->timer / tmp;
-			} else	
-				acct_gather_profile_timer[type].freq = step_rank->timer / 3;	
-			
+				acct_gather_profile_timer[type].freq = time;
+			} else
+				acct_gather_profile_timer[type].freq = step_rank->timer / 3;
 		}
 	}
 }

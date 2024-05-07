@@ -581,9 +581,7 @@ static int arg_set_abnormal_dete(slurm_opt_t *opt, const char *arg)
 		}
 		xstrcat(opt->acctg_freq , ",");
 		xstrcat(opt->acctg_freq , opt->abnormal_dete);
-	} else {
-		xstrcat(opt->acctg_freq , opt->abnormal_dete);
-	}
+	} 
 	return SLURM_SUCCESS;
 }
 COMMON_STRING_OPTION_GET_AND_RESET(abnormal_dete);
