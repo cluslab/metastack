@@ -221,18 +221,20 @@ static void _set_freq_2(int type, char *freq, char *freq_def, acct_gather_rank_t
 		if(step_rank->timer  <= (acct_gather_profile_timer[type].freq) ) {
 			step_rank->timer = acct_gather_profile_timer[type].freq;
 			if(step_rank->step != BATCH_STEP) {
-				for(int i = tmp ; i > 0 ; --i){
-					if(step_rank->timer % i == 0) {
+				for(int i = tmp ; i <= step_rank->timer ; ++i){
+					if(step_rank->timer % i == 0){
 						acct_gather_profile_timer[type].freq = step_rank->timer / i;
+						break;
 					}
 				}
 			}else
 				acct_gather_profile_timer[type].freq = step_rank->timer / 3;
 		} else {
 			int time = 0;
-			for(int i = tmp ; i > 0 ; --i) {
-				if(step_rank->timer % i == 0) {
-						time = step_rank->timer / i;
+			for(int i = tmp ; i <= step_rank->timer ; ++i){
+				if(step_rank->timer % i == 0){
+					time = step_rank->timer / i;
+					break;
 				}
 			}
 			if(step_rank->step != BATCH_STEP)  {

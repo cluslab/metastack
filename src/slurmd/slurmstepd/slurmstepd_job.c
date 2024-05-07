@@ -592,7 +592,6 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	acct_gather_profile_g_node_step_start(job);
 	/* needed for the jobacct_gather plugin to start */
 #ifdef __METASTACK_LOAD_ABNORMAL
-    step_rank.step = DATA_STEP;
 	step_rank.step = BATCH_STEP;
 
 	step_rank.step_id = job->step_id;
