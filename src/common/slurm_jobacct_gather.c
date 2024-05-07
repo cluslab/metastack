@@ -491,6 +491,8 @@ static void *step_collect(void *args)
     write_data = xmalloc(sizeof(write_t));
 	time_t record_time = 0;
 	uint64_t threshold = 0;
+	uint64_t minutes_synch = 0;
+	uint64_t minutes_count = 0;
 	//bool init = false;
 	/* write_data data initialization*/
 	write_data->cpu_step_ave = 0.0;
@@ -507,7 +509,8 @@ static void *step_collect(void *args)
 	}
 #endif
 
-	
+	minutes_synch = job_info->timer / job_info->frequency;
+
 	while (_init_run_test() && !_jobacct_shutdown_test() &&
 	       acct_gather_profile_test()) {
 		 /* Do this until shutdown is requested */
@@ -525,6 +528,7 @@ static void *step_collect(void *args)
 		if(job_info->frequency <=0) {
 			continue;
 		}
+
 		slurm_mutex_lock(&share_data.lock);
 		if(share_data.update) {
 			msg.rank = rank;
@@ -642,6 +646,8 @@ static void *step_collect(void *args)
 					}
 			
 				} else if(step_gather.parent_rank_gather < 0) {
+
+					minutes_count++;
 					//share_data.update = false;
 					int time_delay = 0;
 		
@@ -695,6 +701,7 @@ static void *step_collect(void *args)
 						write_data->send_flag = true;
 
 					}
+
 				} else if((step_gather.children_gather <= 0) && (step_gather.parent_rank_gather >= 0)) {
 					int time_delay = 0;
 					if(step_gather.max_depth_gather > 0 )
@@ -711,11 +718,11 @@ static void *step_collect(void *args)
 				}
 				slurm_mutex_unlock(&step_gather.lock);
 				
-				if(!update) {
+				if((!update) && (minutes_count > minutes_synch)) {
 					slurm_mutex_lock(&share_data.lock);
 					share_data.update = false;
 					slurm_mutex_unlock(&share_data.lock);
-
+                    minutes_count = 0;
 					if(write_data->send_flag) {
 						write_data->send_flag = false;
 						write_data->cpu_threshold = job_info->cpu_min_load;	
