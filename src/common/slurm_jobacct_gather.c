@@ -486,6 +486,7 @@ static void *step_collect(void *args)
 	acct_gather_rank_t *job_info = (acct_gather_rank_t *) args;
 	//int count = 1;
 	uint32_t rank = -1;
+	bool head = false;
 	bool update = false;
 	write_t *write_data = NULL;
     write_data = xmalloc(sizeof(write_t));
@@ -493,7 +494,10 @@ static void *step_collect(void *args)
 	uint64_t threshold = 0;
 	uint64_t minutes_synch = 0;
 	uint64_t minutes_count = 0;
-	//bool init = false;
+
+	bool  start = false;
+	time_t diff_time = time(NULL);
+	
 	/* write_data data initialization*/
 	write_data->cpu_step_ave = 0.0;
 	write_data->cpu_step_real = 0.0;
@@ -510,7 +514,8 @@ static void *step_collect(void *args)
 #endif
 
 	minutes_synch = job_info->timer / job_info->frequency;
-
+	step_gather_msg_t msg;
+	memset(&msg, 0, sizeof(msg));
 	while (_init_run_test() && !_jobacct_shutdown_test() &&
 	       acct_gather_profile_test()) {
 		 /* Do this until shutdown is requested */
@@ -523,14 +528,20 @@ static void *step_collect(void *args)
 		if (!_init_run_test())
 			break;
 
-		step_gather_msg_t msg;
-		memset(&msg, 0, sizeof(msg));
+
 		if(job_info->frequency <=0) {
 			continue;
 		}
 
+	  if(!start) {
+			if(difftime(time(NULL), diff_time) >= (job_info->frequency))
+				start = true;
+		} else
+			minutes_count++;
+
 		slurm_mutex_lock(&share_data.lock);
-		if(share_data.update) {
+
+		if(minutes_count >= minutes_synch ) {
 			msg.rank = rank;
 			msg.cpu_util = share_data.cpu_step_real;
 			msg.cpu_ave =  share_data.cpu_step_ave;
@@ -539,19 +550,25 @@ static void *step_collect(void *args)
 			msg.load_flag = share_data.load_flag;
 			msg.page_fault  = share_data.step_pages;
 			msg.node_alloc_cpu =(uint64_t)job_info->node_alloc_cpu;
+			share_data.start = time(NULL);
 			update = true;
 		}
 
-		record_time = time(NULL);
-		double diff = difftime(record_time, share_data.start);
 		slurm_mutex_unlock(&share_data.lock);
+	    record_time = time(NULL);
+		double diff = difftime(record_time, share_data.start);
+	    
 		/*batch step*/	
-		if(update && (job_info->step_id.step_id == SLURM_BATCH_SCRIPT)) {
-			update = false;
-			slurm_mutex_lock(&share_data.lock);
-			share_data.update = false;
-			slurm_mutex_unlock(&share_data.lock);
 
+		if((job_info->step_id.step_id == SLURM_BATCH_SCRIPT) && update) {
+
+			update = false;
+			minutes_count = 0;
+
+			// slurm_mutex_lock(&share_data.lock);
+			// share_data.update = false;
+			// slurm_mutex_unlock(&share_data.lock);
+          
 			write_data->cpu_step_ave = msg.cpu_ave;
 			write_data->cpu_step_real = msg.cpu_util;
 			write_data->mem_step = msg.mem_real;
@@ -584,171 +601,183 @@ static void *step_collect(void *args)
 			}
 
 			_poll_data(1, NULL, write_data);
+
+			memset(&msg, 0, sizeof(msg));
 		}
 
-       	if(job_info->step_id.step_id != SLURM_BATCH_SCRIPT)  {
-			if(update) { 
-				/* digital work steps */
-				slurm_mutex_lock(&step_gather.lock);
-				/* It is necessary to keep the time points of the job step collection of each node consistent.*/
-				if((step_gather.children_gather > 0) && (step_gather.parent_rank_gather >=0) ) {
-					rank = step_gather.rank_gather;
-					double time_delay = 0;
-					if(step_gather.max_depth_gather > 0 )
-						time_delay = (step_gather.max_depth_gather - step_gather.depth_gather) * (job_info->timer ) / step_gather.max_depth_gather;
-					else
-						time_delay = job_info->timer ;
+       	if((job_info->step_id.step_id != SLURM_BATCH_SCRIPT) && update)  {
 
-					if((step_gather.wait_child_count < step_gather.children_gather) && (diff < time_delay)) {
-
-						debug("Waiting for child nodes number is %d, diff is %f  time delay %f ", (step_gather.children_gather - step_gather.wait_child_count), diff, time_delay);
-
-					} else  {
-						if(step_gather.wait_child_count == step_gather.children_gather) {
-							msg.cpu_ave += step_gather.step_cpu_ave;
-							msg.cpu_util += step_gather.step_cpu;
-							msg.mem_real += step_gather.step_mem;
-							msg.vmem_real += step_gather.step_vmem;
-							msg.page_fault += step_gather.page_fault;
-							msg.node_alloc_cpu +=step_gather.node_alloc_cpu;
-
-							msg.load_flag  = msg.load_flag | step_gather.load_status; 
-							//msg.depth_child = step_gather.children_gather+1;
-
-						} else if(diff > time_delay) {
-							msg.cpu_ave += step_gather.step_cpu_ave;
-							msg.cpu_util += step_gather.step_cpu;
-							msg.mem_real += step_gather.step_mem;
-							msg.vmem_real += step_gather.step_vmem;
-							msg.page_fault += step_gather.page_fault;
-							msg.node_alloc_cpu +=step_gather.node_alloc_cpu;
-
-							msg.load_flag  = msg.load_flag | step_gather.load_status; 
-							msg.load_flag  = msg.load_flag | JNODE_STAT;
-						}
-						
-						/* Do NOT change this check to "step_gather.rank_gather != 0", because
-						* there are odd situations where SlurmUser or root could
-						* craft a launch without a valid credential, and no tree information
-						* can be built with out the hostlist from the credential.
-						*/
-						_acct_send_data_step(job_info, msg, 0);
-						update = false;
-						step_gather.wait_child_count = 0;
-						step_gather.step_cpu_ave = 0.0;
-						step_gather.step_cpu = 0.0;
-						step_gather.step_mem = 0;
-						step_gather.step_vmem = 0;
-						step_gather.page_fault = 0;
-						step_gather.load_status = 0 ;
-						step_gather.node_alloc_cpu = 0;
-
-					}
+			/* digital work steps */
+			slurm_mutex_lock(&step_gather.lock);
+			/* It is necessary to keep the time points of the job step collection of each node consistent.*/
 			
-				} else if(step_gather.parent_rank_gather < 0) {
+			if((step_gather.children_gather <= 0) && (step_gather.parent_rank_gather >= 0) ) {
 
-					minutes_count++;
-					//share_data.update = false;
-					int time_delay = 0;
-		
-					time_delay = job_info->timer;
-					if((step_gather.wait_child_count < step_gather.children_gather) &&  time_delay) {
-						debug("Waiting for child node number %d job_info->times =%d s step_gather.children_gather =%d time_delay=%d", 
-								(step_gather.children_gather - step_gather.wait_child_count), job_info->timer, step_gather.children_gather,time_delay);
-					} else  {
-						/*it is necessary to wait until all node data is aggregated to ensure data consistency.*/
-						if(step_gather.wait_child_count == step_gather.children_gather) {
-							msg.cpu_ave += step_gather.step_cpu_ave;
-							msg.cpu_util += step_gather.step_cpu;
-							msg.mem_real += step_gather.step_mem;
-							msg.vmem_real += step_gather.step_vmem;
-							msg.page_fault += step_gather.page_fault;
-							msg.node_alloc_cpu +=step_gather.node_alloc_cpu;
+				int time_delay = 0;
+				minutes_count = 0;
+				update = false;
+				if(step_gather.max_depth_gather > 0 )
+					time_delay =  (job_info->timer) / step_gather.max_depth_gather;
+				else
+					time_delay = job_info->timer ;
 
-
-							msg.load_flag  = msg.load_flag | step_gather.load_status; /*if have node not respond set load_status*/
-						} else if(diff > time_delay) {
-							msg.cpu_ave += step_gather.step_cpu_ave;
-							msg.cpu_util += step_gather.step_cpu;
-							msg.mem_real += step_gather.step_mem;
-							msg.vmem_real += step_gather.step_vmem;
-							msg.page_fault += step_gather.page_fault;
-							msg.node_alloc_cpu += step_gather.node_alloc_cpu;
-
-							msg.load_flag  = msg.load_flag | step_gather.load_status; /*if have node not respond set load_status*/
-							msg.load_flag  = msg.load_flag | JNODE_STAT;
-						}
-						write_data->cpu_step_ave = msg.cpu_ave;
-						write_data->cpu_step_real = msg.cpu_util;
-						write_data->mem_step = msg.mem_real;
-						write_data->vmem_step = msg.vmem_real;
-						write_data->step_pages = msg.page_fault;
-						write_data->send_flag = false;
-						write_data->load_flag = msg.load_flag;
-						write_data->node_alloc_cpu = msg.node_alloc_cpu;
-						write_data->timer = job_info->timer;
-
-						step_gather.wait_child_count = 0;
-						step_gather.step_cpu_ave = 0.0;
-						step_gather.step_cpu = 0;
-						step_gather.step_mem = 0;
-						step_gather.step_vmem = 0;
-						step_gather.page_fault = 0;
-						step_gather.load_status = 0 ;
-						step_gather.node_alloc_cpu = 0;
-
-						update = false;
-						write_data->send_flag = true;
-
-					}
-
-				} else if((step_gather.children_gather <= 0) && (step_gather.parent_rank_gather >= 0)) {
-					int time_delay = 0;
-					if(step_gather.max_depth_gather > 0 )
-						time_delay =  (job_info->timer) / step_gather.max_depth_gather;
-					else
-						time_delay = job_info->timer ;
-
-					//msg.depth_child = step_gather.children_gather+1;
-					debug3("Rank %d sending data to rank %d ip parent = %pA,jobid is %ps  msg.cpu_util=%.2f time_delay=%d",
-							rank, step_gather.parent_rank_gather, &step_gather.parent_addr_gather, &job_info->step_id, msg.cpu_util, time_delay);
-					//_acct_send_data_step (jobinfo, msg, time_delay * 1000);
-					_acct_send_data_step (job_info, msg, 0);
-					update = false;
-				}
-				slurm_mutex_unlock(&step_gather.lock);
 				
-				if((!update) && (minutes_count > minutes_synch)) {
-					slurm_mutex_lock(&share_data.lock);
-					share_data.update = false;
-					slurm_mutex_unlock(&share_data.lock);
-                    minutes_count = 0;
-					if(write_data->send_flag) {
-						write_data->send_flag = false;
-						write_data->cpu_threshold = job_info->cpu_min_load;	
-						
-						/*need to multiply by allocated alloc cpu*/
-						threshold = job_info->cpu_min_load * write_data->node_alloc_cpu;
-                        if(threshold > write_data->cpu_step_real) {
-							write_data->cpu_start = record_time - job_info->timer;
-							write_data->cpu_end = record_time;
-							write_data->load_flag=write_data->load_flag| LOAD_LOW;
-						}
-						if(write_data->load_flag & PROC_AB){
-							write_data->pid_start = record_time - job_info->timer;
-							write_data->pid_end = record_time;
-						}
-						if(write_data->load_flag & JNODE_STAT){
-							write_data->node_end = record_time - job_info->timer;
-							write_data->node_start = record_time;
-						}
-						_poll_data(1, NULL, write_data);
+				//msg.depth_child = step_gather.children_gather+1;
+				debug3("Rank %d sending data to rank %d ip parent = %pA,jobid is %ps  msg.cpu_util=%.2f time_delay=%d",
+						rank, step_gather.parent_rank_gather, &step_gather.parent_addr_gather, &job_info->step_id, msg.cpu_util, time_delay);
+				//_acct_send_data_step (jobinfo, msg, time_delay * 1000);
+				_acct_send_data_step (job_info, msg, 0);
+				memset(&msg, 0, sizeof(msg));
+
+			} else if((step_gather.children_gather > 0) && (step_gather.parent_rank_gather >=0) ) {
+
+				if(minutes_count >= minutes_synch)
+					minutes_count = 0;
+
+				rank = step_gather.rank_gather;
+				double time_delay = 0;
+				if(step_gather.max_depth_gather > 0 )
+					time_delay = (step_gather.max_depth_gather - step_gather.depth_gather) * (job_info->timer ) / step_gather.max_depth_gather;
+				else
+					time_delay = job_info->timer ;
+
+				if((step_gather.wait_child_count < step_gather.children_gather) && (diff < time_delay)) {
+
+					debug("Waiting for child nodes number is %d, diff is %f  time delay %f ", (step_gather.children_gather - step_gather.wait_child_count), diff, time_delay);
+
+				} else  {
+					if(step_gather.wait_child_count == step_gather.children_gather) {
+						msg.cpu_ave += step_gather.step_cpu_ave;
+						msg.cpu_util += step_gather.step_cpu;
+						msg.mem_real += step_gather.step_mem;
+						msg.vmem_real += step_gather.step_vmem;
+						msg.page_fault += step_gather.page_fault;
+						msg.node_alloc_cpu +=step_gather.node_alloc_cpu;
+
+						msg.load_flag  = msg.load_flag | step_gather.load_status; 
+						//msg.depth_child = step_gather.children_gather+1;
+
+					} else if(diff > time_delay) {
+						msg.cpu_ave += step_gather.step_cpu_ave;
+						msg.cpu_util += step_gather.step_cpu;
+						msg.mem_real += step_gather.step_mem;
+						msg.vmem_real += step_gather.step_vmem;
+						msg.page_fault += step_gather.page_fault;
+						msg.node_alloc_cpu +=step_gather.node_alloc_cpu;
+
+						msg.load_flag  = msg.load_flag | step_gather.load_status; 
+						msg.load_flag  = msg.load_flag | JNODE_STAT;
 					}
+					
+					/* Do NOT change this check to "step_gather.rank_gather != 0", because
+					* there are odd situations where SlurmUser or root could
+					* craft a launch without a valid credential, and no tree information
+					* can be built with out the hostlist from the credential.
+					*/
+					_acct_send_data_step(job_info, msg, 0);
+					update = false;
+			
+			        memset(&msg, 0, sizeof(msg));
+					step_gather.wait_child_count = 0;
+					step_gather.step_cpu_ave = 0.0;
+					step_gather.step_cpu = 0.0;
+					step_gather.step_mem = 0;
+					step_gather.step_vmem = 0;
+					step_gather.page_fault = 0;
+					step_gather.load_status = 0 ;
+					step_gather.node_alloc_cpu = 0;
 
 				}
+		
+			} else if((step_gather.parent_rank_gather < 0) ) {
+				
+				if(minutes_count >= minutes_synch)
+					minutes_count = 0;
+				
+				int time_delay = 0;
+	
+				time_delay = job_info->timer;
+				if((step_gather.wait_child_count < step_gather.children_gather) &&  time_delay) {
+					debug("Waiting for child node number %d job_info->times =%d s step_gather.children_gather =%d time_delay=%d", 
+							(step_gather.children_gather - step_gather.wait_child_count), job_info->timer, step_gather.children_gather,time_delay);
+				} else  {
+					/*it is necessary to wait until all node data is aggregated to ensure data consistency.*/
+					if(step_gather.wait_child_count == step_gather.children_gather) {
+						msg.cpu_ave += step_gather.step_cpu_ave;
+						msg.cpu_util += step_gather.step_cpu;
+						msg.mem_real += step_gather.step_mem;
+						msg.vmem_real += step_gather.step_vmem;
+						msg.page_fault += step_gather.page_fault;
+						msg.node_alloc_cpu +=step_gather.node_alloc_cpu;
 
-			} else
-				debug3("Data has not been updated yet");
+
+						msg.load_flag  = msg.load_flag | step_gather.load_status; /*if have node not respond set load_status*/
+					} else if(diff > time_delay) {
+						msg.cpu_ave += step_gather.step_cpu_ave;
+						msg.cpu_util += step_gather.step_cpu;
+						msg.mem_real += step_gather.step_mem;
+						msg.vmem_real += step_gather.step_vmem;
+						msg.page_fault += step_gather.page_fault;
+						msg.node_alloc_cpu += step_gather.node_alloc_cpu;
+
+						msg.load_flag  = msg.load_flag | step_gather.load_status; /*if have node not respond set load_status*/
+						msg.load_flag  = msg.load_flag | JNODE_STAT;
+					}
+
+					write_data->cpu_step_ave = msg.cpu_ave;
+					write_data->cpu_step_real = msg.cpu_util;
+					write_data->mem_step = msg.mem_real;
+					write_data->vmem_step = msg.vmem_real;
+					write_data->step_pages = msg.page_fault;
+					write_data->send_flag = true;
+					write_data->load_flag = msg.load_flag;
+					write_data->node_alloc_cpu = msg.node_alloc_cpu;
+					write_data->timer = job_info->timer;
+                    head = true;
+					update = false;
+
+					memset(&msg, 0, sizeof(msg));
+					step_gather.wait_child_count = 0;
+					step_gather.step_cpu_ave = 0.0;
+					step_gather.step_cpu = 0;
+					step_gather.step_mem = 0;
+					step_gather.step_vmem = 0;
+					step_gather.page_fault = 0;
+					step_gather.load_status = 0 ;
+					step_gather.node_alloc_cpu = 0;
+					
+				}
+
+			} 
+			slurm_mutex_unlock(&step_gather.lock);
+		
+		}
+
+		if(head) {
+			head = false;
+			//minutes_count = 0;
+			if(write_data->send_flag) {
+				write_data->send_flag = false;
+				write_data->cpu_threshold = job_info->cpu_min_load;	
+				
+				/*need to multiply by allocated alloc cpu*/
+				threshold = job_info->cpu_min_load * write_data->node_alloc_cpu;
+				if(threshold > write_data->cpu_step_real) {
+					write_data->cpu_start = record_time - job_info->timer;
+					write_data->cpu_end = record_time;
+					write_data->load_flag=write_data->load_flag| LOAD_LOW;
+				}
+				if(write_data->load_flag & PROC_AB){
+					write_data->pid_start = record_time - job_info->timer;
+					write_data->pid_end = record_time;
+				}
+				if(write_data->load_flag & JNODE_STAT){
+					write_data->node_end = record_time - job_info->timer;
+					write_data->node_start = record_time;
+				}
+				_poll_data(1, NULL, write_data);
+			}
+
 		}
 	}
 
@@ -865,7 +894,7 @@ static void *_watch_tasks(void *arg)
 			}
 			update_share++;
 
-			if(update_share >= count && (!share_data.update) ) {
+			if(update_share >= count ) {
 				update_share  = 0; 
 				slurm_mutex_lock(&share_data.lock);
 				share_data.cpu_step_real = tmp_cpuutil;
@@ -875,8 +904,8 @@ static void *_watch_tasks(void *arg)
 				share_data.mem_step = collect->mem_step;
 				share_data.vmem_step = collect->vmem_step;
 				share_data.step_pages = collect->step_pages;
-				share_data.update = true;
-				share_data.start = time(NULL);
+				//share_data.update = true;
+
 				slurm_mutex_unlock(&share_data.lock);
 			} 
 		}

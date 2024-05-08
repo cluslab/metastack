@@ -217,7 +217,7 @@ static void _set_freq_2(int type, char *freq, char *freq_def, acct_gather_rank_t
 	*Set the timer interval for the anomaly detection thread based on the comparison between 
 	*the sampling time and the interval for anomaly detection.		 
 	*/
-	if(acct_gather_profile_timer[type].freq > 0) {
+	if((acct_gather_profile_timer[type].freq > 0) && tmp >= 0) {
 		if(step_rank->timer  <= (acct_gather_profile_timer[type].freq) ) {
 			step_rank->timer = acct_gather_profile_timer[type].freq;
 			if(step_rank->step != BATCH_STEP) {
@@ -242,6 +242,8 @@ static void _set_freq_2(int type, char *freq, char *freq_def, acct_gather_rank_t
 			} else
 				acct_gather_profile_timer[type].freq = step_rank->timer / 3;
 		}
+	} else {
+		acct_gather_profile_timer[type].freq = step_rank->timer / 3;
 	}
 }
 #endif
