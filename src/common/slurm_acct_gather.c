@@ -337,22 +337,22 @@ extern int acct_gather_parse_abnormal_dete(int type, char *freq)
 
 	if(!freq)
 		return freq_int;
-	switch (type)
-	{
-	case PROFILE_ABNORMAL_DETE_MINUTE:
-		if((sub_str = xstrcasestr(freq, "minutes=")))
-			freq_int = _get_int(sub_str + 8);
-		break;
-	case PROFILE_ABNORMAL_DETE_CPUMINLOAD:
-		if((sub_str = xstrcasestr(freq, "cpuminload=")))
-			freq_int = _get_int(sub_str + 11);
-		break;
-	case PROFILE_ABNORMAL_DETE_STEPD:
-		if((sub_str = xstrcasestr(freq, "stepd=")))
-			freq_int = _get_int(sub_str + 6);
-		break;
-	default:
-		fatal("Unable to resolve abnormal-dete : %d configuration, please check the input " , type);
+	switch (type) {
+		
+		case PROFILE_ABNORMAL_DETE_MINUTE:
+			if((sub_str = xstrcasestr(freq, "minutes=")))
+				freq_int = _get_int(sub_str + 8);
+			break;
+		case PROFILE_ABNORMAL_DETE_CPUMINLOAD:
+			if((sub_str = xstrcasestr(freq, "cpuminload=")))
+				freq_int = _get_int(sub_str + 11);
+			break;
+		case PROFILE_ABNORMAL_DETE_STEPD:
+			if((sub_str = xstrcasestr(freq, "stepd=")))
+				freq_int = _get_int(sub_str + 6);
+			break;
+		default:
+			fatal("Unable to resolve abnormal-dete : %d configuration, please check the input " , type);
 	}
 	return freq_int;
 }

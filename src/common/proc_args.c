@@ -1664,6 +1664,8 @@ extern bool subpath(char *path1, char *path2)
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int validate_abnormal_dete(char *abnorma_dete)
 {
+	int i;
+	int stepd = -1;
 	char *save_ptr = NULL, *tok, *tmp;
 	bool valid;
 	int cpuminload = -1;
@@ -1674,15 +1676,26 @@ extern int validate_abnormal_dete(char *abnorma_dete)
 	tok = strtok_r(tmp, ",", &save_ptr);
 	while (tok) {
 		valid = false;
-		if (acct_gather_parse_time(tok, NULL)!= -1) {
-			valid = true;
-		} 
-		/*Load threshold invalid parameter check*/
-		if (acct_gather_parse_cpu_load(tok, NULL)!= -1) {
-			valid = true;
-		} 
-		int stepd = acct_gather_parse_monitor(tok, NULL);
-        if(stepd!= -1) {
+		for ( i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
+			if (acct_gather_parse_abnormal_dete(i, tok) != -1)
+				valid = true;
+				break;
+
+		if (!valid) {
+			error("Invalid --abnormal-dete specification: %s", tok);
+			rc = SLURM_ERROR;
+		}
+		tok = strtok_r(NULL, ",", &save_ptr);
+	}
+	cpuminload = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE, abnorma_dete);
+	
+	if(cpuminload != -1 && (cpuminload < 0 || cpuminload > 100)) {
+		error("The value of cpuminload must be between 0 and 100");
+		return SLURM_ERROR;
+	}
+
+	stepd = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_STEPD, abnorma_dete);
+    if(stepd!= -1) {
 			if(stepd == 0 || stepd == 1 || stepd==2 || stepd==3) 
 				valid = true;
 			else {
@@ -1692,18 +1705,6 @@ extern int validate_abnormal_dete(char *abnorma_dete)
 						"2、enable batch stepd "
 						"3、enable digital stepd and batch stepd;");
 			}
-		}
-		if (!valid) {
-			error("Invalid --abnormal-dete specification: %s", tok);
-			rc = SLURM_ERROR;
-		}
-		tok = strtok_r(NULL, ",", &save_ptr);
-	}
-	cpuminload = acct_gather_parse_abnormal_dete(1, abnorma_dete);
-	
-	if(cpuminload != -1 && (cpuminload < 0 || cpuminload > 100)) {
-		error("The value of cpuminload must be between 0 and 100");
-		return SLURM_ERROR;
 	}
 	xfree(tmp);
 
@@ -1730,6 +1731,12 @@ extern int validate_acctg_freq(char *acctg_freq)
 				valid = true;
 				break;
 			} 
+#ifdef __METASTACK_LOAD_ABNORMAL
+		for (i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
+			if (acct_gather_parse_abnormal_dete(i, tok) != -1)
+				valid = true;
+				break;
+#endif
 		if (!valid) {
 			error("Invalid --acctg-freq specification: %s", tok);
 			rc = SLURM_ERROR;
