@@ -180,14 +180,12 @@ struct jobinfostat {
 };
 
 typedef struct {
-	//pthread_cond_t cond;
 	bool send_flag;  /*enable send step data to jobacct*/
 	double cpu_step_real;
 	double cpu_step_ave;
 	uint64_t mem_step;
 	uint64_t vmem_step;
 	uint64_t step_pages;
-	//uint64_t gpu_step_util;
 	uint64_t load_flag; /*exception criteria*/
 	uint32_t cpu_threshold;
 	time_t cpu_start;
@@ -201,7 +199,6 @@ typedef struct {
 } write_t;
 
 typedef struct {
-	//pthread_cond_t cond;
 	pthread_mutex_t lock;
 	uint64_t load_flag; /*exception criteria*/
 	bool update;
@@ -211,7 +208,6 @@ typedef struct {
 	uint64_t mem_step;
 	uint64_t vmem_step;
 	uint64_t step_pages;
-	//uint64_t gpu_step_util;
 	time_t start;
 } collection_t;
 extern collection_t share_data;

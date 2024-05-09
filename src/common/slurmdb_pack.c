@@ -94,9 +94,7 @@ static void _pack_slurmdb_stats(slurmdb_stats_t *stats,
 		packdouble(stats->act_cpufreq, buffer);
 
 		pack64(stats->consumed_energy, buffer);
-// #ifdef __METASTACK_LOAD_ABNORMAL
-// 		pack64(stats->flag, buffer);
-// #endif
+
 		packstr(stats->tres_usage_in_ave, buffer);
 		packstr(stats->tres_usage_in_max, buffer);
 		packstr(stats->tres_usage_in_max_nodeid, buffer);
@@ -132,9 +130,7 @@ static int _unpack_slurmdb_stats(slurmdb_stats_t *stats,
 		safe_unpackdouble(&stats->act_cpufreq, buffer);
 
 		safe_unpack64(&stats->consumed_energy, buffer);
-// #ifdef __METASTACK_LOAD_ABNORMAL
-// 		safe_unpack64(&stats->flag, buffer);
-// #endif
+
 		safe_unpackstr_xmalloc(&stats->tres_usage_in_ave,
 				       &uint32_tmp, buffer);
 		safe_unpackstr_xmalloc(&stats->tres_usage_in_max,

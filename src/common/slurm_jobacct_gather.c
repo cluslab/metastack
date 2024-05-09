@@ -151,7 +151,6 @@ static pthread_t watch_stepd_thread_id = 0;
 static acct_gather_profile_timer_t *profile_stepd =
 	&acct_gather_profile_timer[PROFILE_STEPD];
 collection_t share_data = {
-	//.cond = PTHREAD_COND_INITIALIZER,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.load_flag = 0,
 	.update = false,
@@ -161,7 +160,6 @@ collection_t share_data = {
 	.mem_step = 0,
 	.vmem_step = 0,
 	.step_pages = 0,
-	//.gpu_step_util = 0,
 	.start = 0,
 };
 #endif
@@ -463,7 +461,7 @@ static void _acct_send_data_step(acct_gather_rank_t *job_send, step_gather_msg_t
 	req.data = &msg_send;
 	req.address = step_gather.parent_addr_gather;
     
-	/* Do NOT change this check to "step_complete.rank != 0", because
+	/* Do NOT change this check to "step_gather.rank != 0", because
 	 * there are odd situations where SlurmUser or root could
 	 * craft a launch without a valid credential, and no tree information
 	 * can be built with out the hostlist from the credential.
@@ -850,7 +848,7 @@ static void *_watch_tasks(void *arg)
 		double item = 0.0;
 		if((start) && (collect->step) && (count > 0)) {
 			/*******************
-			 *Calculate threshold
+			 *calculate threshold
 			 *******************/
 			if( tmp_count < count){
 				/*Reached queue length*/
@@ -861,7 +859,7 @@ static void *_watch_tasks(void *arg)
 			}
 
 			if(tmp_count >= count) {
-				/*Dequeue*/
+				/*dequeue*/
 				item = dequeue(fifo, count);
 				if(item >= 0) {
 					total_step_cpuutil += collect->cpu_step_real;
@@ -1239,17 +1237,17 @@ extern int jobacct_gather_startpoll(uint16_t frequency)
 
 	/* create polling thread */
 #ifdef __METASTACK_LOAD_ABNORMAL
-	    acct_gather_rank_t *jobinfo_watch = NULL;
-		jobinfo_watch = xmalloc(sizeof(acct_gather_rank_t));
-		
-		jobinfo_watch->switch_step = jobinfo.switch_step;
-		jobinfo_watch->timer= jobinfo.timer;
-		jobinfo_watch->cpu_min_load = jobinfo.cpu_min_load;
-		jobinfo_watch->frequency = frequency;	
-        jobinfo_watch->step_id = jobinfo.step_id;   
-		jobinfo_watch->node_alloc_cpu = jobinfo.node_alloc_cpu;
+	acct_gather_rank_t *jobinfo_watch = NULL;
+	jobinfo_watch = xmalloc(sizeof(acct_gather_rank_t));
+	
+	jobinfo_watch->switch_step = jobinfo.switch_step;
+	jobinfo_watch->timer= jobinfo.timer;
+	jobinfo_watch->cpu_min_load = jobinfo.cpu_min_load;
+	jobinfo_watch->frequency = frequency;	
+	jobinfo_watch->step_id = jobinfo.step_id;   
+	jobinfo_watch->node_alloc_cpu = jobinfo.node_alloc_cpu;
 
-		slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, jobinfo_watch);
+	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, jobinfo_watch);
 #else        		   
 	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, NULL);
 #endif

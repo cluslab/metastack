@@ -1868,7 +1868,6 @@ _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
 	step_gather.node_alloc_cpu += node_alloc_cpu;
 
 	step_gather.wait_child_count++; 
-    //bit_set(step_gather.bits, rank);
 
 	slurm_mutex_unlock(&step_gather.lock);
 

@@ -1287,7 +1287,6 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 			}	
 			stamp = true;
 		}
-		/**/
 		total_job_cpuutil += jobacct->cpu_util;
 		total_job_cpuutil_ave += jobacct->avg_cpu_util;
 		total_job_pages += jobacct->tres_usage_in_tot[TRES_ARRAY_PAGES];
@@ -1364,7 +1363,6 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		collect->cpu_step_real = total_job_cpuutil;
 		collect->cpu_step_ave = total_job_cpuutil_ave;
 		collect->mem_step = total_job_mem;
-		//collect->gpu_step_util = total_job_gpuutil;
 		collect->vmem_step = total_job_vsize;
 		collect->load_flag = collect->load_flag | pid_status;
 	}

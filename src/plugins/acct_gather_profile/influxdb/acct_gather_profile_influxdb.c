@@ -132,7 +132,6 @@ static slurm_influxdb_conf_t influxdb_conf;
 static uint32_t g_profile_running = ACCT_GATHER_PROFILE_NOT_SET;
 static stepd_step_rec_t *g_job = NULL;
 #ifdef __METASTACK_LOAD_ABNORMAL
-//static pthread_mutex_t file_lock = PTHREAD_MUTEX_INITIALIZER;
 static char *datastr2 = NULL;
 static char *buffer_file = NULL;
 #endif
@@ -638,7 +637,6 @@ extern int init(void)
 	datastr = xmalloc(BUF_SIZE);
 #ifdef __METASTACK_LOAD_ABNORMAL
 	datastr2 = xmalloc(BUF_SIZE);
-    //buffer_file = xmalloc(1000);
 #endif
 	return SLURM_SUCCESS;
 }
@@ -657,7 +655,6 @@ extern int fini(void)
 #ifdef __METASTACK_LOAD_ABNORMAL
 	xfree(influxdb_conf.workdir);
 	xfree(datastr2);
-	//xfree(buffer_file);
 #endif	
 	return SLURM_SUCCESS;
 }
