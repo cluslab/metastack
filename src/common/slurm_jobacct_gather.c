@@ -613,13 +613,13 @@ static void *step_collect(void *args)
 			
 			if((step_gather.children_gather <= 0) && (step_gather.parent_rank_gather >= 0) ) {
 
-				int time_delay = 0;
+				// int time_delay = 0;
 				minutes_count = 0;
 				update = false;
-				if(step_gather.max_depth_gather > 0 )
-					time_delay =  (job_info->timer) / step_gather.max_depth_gather;
-				else
-					time_delay = job_info->timer ;
+				// if(step_gather.max_depth_gather > 0 )
+				// 	time_delay =  (job_info->timer) / step_gather.max_depth_gather;
+				// else
+				// 	time_delay = job_info->timer ;
 
 				
 				//msg.depth_child = step_gather.children_gather+1;
@@ -636,10 +636,10 @@ static void *step_collect(void *args)
 
 				rank = step_gather.rank_gather;
 				double time_delay = 0;
-				if(step_gather.max_depth_gather > 0 )
-					time_delay = (step_gather.max_depth_gather - step_gather.depth_gather) * (job_info->timer ) / step_gather.max_depth_gather;
-				else
-					time_delay = job_info->timer ;
+				// if(step_gather.max_depth_gather > 0 )
+				// 	time_delay = (step_gather.max_depth_gather - step_gather.depth_gather) * (job_info->timer ) / (step_gather.max_depth_gather);
+				// else
+				time_delay = job_info->timer ;
 
 				if((step_gather.wait_child_count < step_gather.children_gather) && (diff < time_delay)) {
 
