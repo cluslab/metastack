@@ -639,13 +639,10 @@ static void *step_collect(void *args)
 				// if(step_gather.max_depth_gather > 0 )
 				// 	time_delay = (step_gather.max_depth_gather - step_gather.depth_gather) * (job_info->timer ) / (step_gather.max_depth_gather);
 				// else
-				time_delay = job_info->timer ;
+				time_delay = job_info->timer - job_info->frequency;
 
-				if((step_gather.wait_child_count < step_gather.children_gather) && (diff < time_delay)) {
-
+				if((step_gather.wait_child_count == step_gather.children_gather) || (diff >= time_delay)) {
 					debug("Waiting for child nodes number is %d, diff is %f  time delay %f ", (step_gather.children_gather - step_gather.wait_child_count), diff, time_delay);
-
-				} else  {
 					if(step_gather.wait_child_count == step_gather.children_gather) {
 						msg.cpu_ave += step_gather.step_cpu_ave;
 						msg.cpu_util += step_gather.step_cpu;
@@ -657,7 +654,7 @@ static void *step_collect(void *args)
 						msg.load_flag  = msg.load_flag | step_gather.load_status; 
 						//msg.depth_child = step_gather.children_gather+1;
 
-					} else if(diff > time_delay) {
+					} else if(diff >= time_delay) {
 						msg.cpu_ave += step_gather.step_cpu_ave;
 						msg.cpu_util += step_gather.step_cpu;
 						msg.mem_real += step_gather.step_mem;
@@ -697,10 +694,7 @@ static void *step_collect(void *args)
 				int time_delay = 0;
 	
 				time_delay = job_info->timer;
-				if((step_gather.wait_child_count < step_gather.children_gather) &&  time_delay) {
-					debug("Waiting for child node number %d job_info->times =%d s step_gather.children_gather =%d time_delay=%d", 
-							(step_gather.children_gather - step_gather.wait_child_count), job_info->timer, step_gather.children_gather,time_delay);
-				} else  {
+				if((step_gather.wait_child_count == step_gather.children_gather) || (diff >= time_delay)) {
 					/*it is necessary to wait until all node data is aggregated to ensure data consistency.*/
 					if(step_gather.wait_child_count == step_gather.children_gather) {
 						msg.cpu_ave += step_gather.step_cpu_ave;
@@ -712,7 +706,7 @@ static void *step_collect(void *args)
 
 
 						msg.load_flag  = msg.load_flag | step_gather.load_status; /*if have node not respond set load_status*/
-					} else if(diff > time_delay) {
+					} else if(diff >= time_delay) {
 						msg.cpu_ave += step_gather.step_cpu_ave;
 						msg.cpu_util += step_gather.step_cpu;
 						msg.mem_real += step_gather.step_mem;
