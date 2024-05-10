@@ -750,10 +750,11 @@ static void *step_collect(void *args)
 			//minutes_count = 0;
 			if(write_data->send_flag) {
 				write_data->send_flag = false;
-				write_data->cpu_threshold = job_info->cpu_min_load;	
+				//write_data->cpu_threshold = job_info->cpu_min_load;	
 				
 				/*need to multiply by allocated alloc cpu*/
 				threshold = job_info->cpu_min_load * write_data->node_alloc_cpu;
+				write_data->cpu_threshold = threshold;
 				if(threshold > write_data->cpu_step_real) {
 					write_data->cpu_start = record_time - job_info->timer;
 					write_data->cpu_end = record_time;
