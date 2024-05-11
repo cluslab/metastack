@@ -692,7 +692,7 @@ static void *step_collect(void *args)
 				int time_delay = 0;
 	
 				time_delay = job_info->timer;
-				if((step_gather.wait_child_count == step_gather.children_gather) || (diff >= time_delay)) {
+				if((step_gather.children_gather == -1 ) || (step_gather.wait_child_count == step_gather.children_gather) || (diff >= time_delay)) {
 					/*it is necessary to wait until all node data is aggregated to ensure data consistency.*/
 					if(step_gather.wait_child_count == step_gather.children_gather) {
 						msg.cpu_ave += step_gather.step_cpu_ave;
