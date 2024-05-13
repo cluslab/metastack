@@ -111,6 +111,11 @@ static bool _opt_verify(void);
 static void _fullpath(char **filename, const char *cwd);
 static int _set_options(int argc, char **argv);
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+static int _get_int(const char *my_str);
+static void _process_abnormal_dete();
+#endif
+
 /*---[ end forward declarations of static functions ]---------------------*/
 
 /*
@@ -137,6 +142,70 @@ static bool _valid_node_list(char **node_list_pptr)
 
 	return verify_node_list(node_list_pptr, opt.distribution, count);
 }
+
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*
+ * Convert a string to an integer.
+ * my_str: IN - The input string to be converted to an integer.
+ * Returns the integer value converted from the input string.
+ * If the input string is NULL or contains no numbers, returns -1.
+ */
+static int _get_int(const char *my_str)
+{
+	char *end = NULL;
+	int value;
+
+	if (!my_str)
+		return -1;
+	value = strtol(my_str, &end, 10);
+	//info("from %s I get %d and %s: %m", my_str, value, end);
+	/* means no numbers */
+	if (my_str == end)
+		return -1;
+
+	return value;
+}
+/*
+ * Process the job-monitor option.
+ *
+ * This function checks if the job-monitor option is not NULL,
+ * then it processes the option by extracting relevant information such as
+ * task and time_window. It checks if the acctg-freq option is set,
+ * if not, it checks the Slurm configuration file for the accounting frequency.
+ * If the option contains information about time_window, it compares it with the
+ * task value and issues a warning if necessary. Then it concatenates the job-monitor
+ * option to the accounting frequency option. 
+ */
+static void _process_abnormal_dete(){
+	char *sub_str = NULL;
+	int task = -1;
+	int minutes = -1;
+
+	/*
+		When the relationship between time_window and task is not satisfied, the output message prompts the user
+	*/
+	if (opt.acctg_freq) {
+		if ((sub_str = xstrcasestr(opt.acctg_freq, "task=")))
+			task = _get_int(sub_str + 5);
+	} else if ((sub_str = xstrcasestr(slurm_conf.job_acct_gather_freq, "task=")))
+		task = _get_int(sub_str + 5);
+
+	if ((sub_str = xstrcasestr(opt.abnormal_dete, "minutes="))) {
+		minutes = _get_int(sub_str + 8);
+		if (task != -1 && minutes != -1 && (minutes * 60) < task)
+			info("Warning : The value of minute(%d) must be greater than or equal to task(%d), so the value of minute is set to task(%d) !", minutes * 60, task, task);
+	}
+
+	/*
+		Concatenate the contents of the job-monitor parameter into the acctg-freq parameter
+	*/
+	if (opt.acctg_freq != NULL)
+		xstrcat(opt.acctg_freq, ",");
+	xstrcat(opt.acctg_freq, opt.abnormal_dete);
+	
+}
+#endif
 
 /*---[ env var processing ]-----------------------------------------------*/
 
@@ -407,6 +476,13 @@ extern void process_options_second_pass(int argc, char **argv, int *argc_off,
 
 	/* set options from command line */
 	*argc_off = _set_options(argc, argv);
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+	if (opt.abnormal_dete != NULL) {
+		_process_abnormal_dete();
+		debug("Concatenate the job-monitor and acctg-freq parameters : sbatch -> acctg_freq = %s" , opt.acctg_freq);
+	}
+#endif
 
 	if (cli_filter_g_pre_submit(&opt, het_job_inx)) {
 		error("cli_filter plugin terminated with error");

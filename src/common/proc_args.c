@@ -1717,6 +1717,9 @@ extern int validate_acctg_freq(char *acctg_freq)
 	int i;
 	char *save_ptr = NULL, *tok, *tmp;
 	bool valid;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	bool valid2;
+#endif
 	int rc = SLURM_SUCCESS;
 
 	if (!acctg_freq)
@@ -1732,15 +1735,26 @@ extern int validate_acctg_freq(char *acctg_freq)
 				break;
 			} 
 #ifdef __METASTACK_LOAD_ABNORMAL
+	/*
+		The job-monitor will be concatenated with the acctg-freq parameters, so the contents of the 
+		job-monitor should be checked together with the acctg parameters
+	*/
 		for (i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
-			if (acct_gather_parse_abnormal_dete(i, tok) != -1)
+			if (acct_gather_parse_abnormal_dete(i, tok) != -1){
+				valid2 = true;
 				valid = true;
 				break;
-#endif
+			}
+	#endif
 		if (!valid) {
 			error("Invalid --acctg-freq specification: %s", tok);
 			rc = SLURM_ERROR;
 		}
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if (!valid2) {
+			rc = SLURM_ERROR;
+		}
+#endif
 		tok = strtok_r(NULL, ",", &save_ptr);
 	}
 	xfree(tmp);
