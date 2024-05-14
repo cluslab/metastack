@@ -263,7 +263,7 @@ extern bool acct_gather_parse_sw(char* freq_def)
 	char *sub_str = NULL;
 
 	if(freq_def) {
-		if ((sub_str = xstrcasestr(freq_def, "disabnormal"))) {
+		if ((sub_str = xstrcasestr(freq_def, "disjob-monitor"))) {
 			dsability = true;
 		}
 	}

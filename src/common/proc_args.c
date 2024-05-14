@@ -1675,10 +1675,10 @@ extern int validate_abnormal_dete(char *abnormal_dete)
 	while (tok) {
 		valid = false;
 		for ( i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
-			if (acct_gather_parse_abnormal_dete(i, tok) != -1)
+			if (acct_gather_parse_abnormal_dete(i, tok) != -1){
 				valid = true;
 				break;
-
+			}
 		if (!valid) {
 			rc = SLURM_ERROR;
 		}
@@ -1708,6 +1708,9 @@ extern int validate_acctg_freq(char *acctg_freq)
 	tok = strtok_r(tmp, ",", &save_ptr);
 	while (tok) {
 		valid = false;
+	#ifdef __METASTACK_LOAD_ABNORMAL
+		valid2 = false;
+	#endif
 		for (i = 0; i < PROFILE_CNT; i++)
 			if (acct_gather_parse_freq(i, tok) != -1) {
 				valid = true;
@@ -1715,22 +1718,32 @@ extern int validate_acctg_freq(char *acctg_freq)
 			} 
 #ifdef __METASTACK_LOAD_ABNORMAL
 	/*
-		The job-monitor will be concatenated with the acctg-freq parameters, so the contents of the 
-		job-monitor should be checked together with the acctg parameters
+		In some cases, the acctg-freq parameter may be passed with the job-monitor parameter concatenated, 
+		in which case it is also necessary to check the contents of the job-monitor parameter
 	*/
 		for (i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
 			if (acct_gather_parse_abnormal_dete(i, tok) != -1){
 				valid2 = true;
-				valid = true;
 				break;
 			}
-	#endif
-		if (!valid) {
+#endif
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+	/*
+		Since the parameter will be concatenated only after the successful test, the concatenated content must be correct at this time, 
+		so the value has the following situations:
+		1. valid = 0, valid2 = 0 acctg has incorrect output parameter error information
+		2. valid = 1, valid2 = 0 No errors
+		3. valid = 0, valid2 = 1 No errors
+
+	*/
+		if (!valid && !valid2) {
 			error("Invalid --acctg-freq specification: %s", tok);
 			rc = SLURM_ERROR;
 		}
-#ifdef __METASTACK_LOAD_ABNORMAL
-		if (!valid2) {
+#else
+		if (!valid) {
+			error("Invalid --acctg-freq specification: %s", tok);
 			rc = SLURM_ERROR;
 		}
 #endif
