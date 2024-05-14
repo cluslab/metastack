@@ -295,14 +295,14 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 		if(step.step_id.step_id == -5) {
 			printf("\n*********************************************************************************\n");
 			printf("Resource Consumption Information of %d.%s\n", step.step_id.job_id, arrTest1);
-			if((total_jobacct->mem_step == 0) && (total_jobacct->vmem_step == 0) && (total_jobacct->mem_step_max==0))
+			if(total_jobacct->node_alloc_cpu == 0)
 				printf("The data may need to wait for updates\n");
 			else
 				printf("(the update interval is %ld minutes , the threshold value is %d (%ldcpus * %ld%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold  , total_jobacct->node_alloc_cpu , (uint64_t)total_jobacct->cpu_threshold / total_jobacct->node_alloc_cpu);
 		} else if (step.step_id.step_id != -4){
 			printf("\n*********************************************************************************\n");
 			printf("Resource Consumption Information of %d.%d\n", step.step_id.job_id,step.step_id.step_id);
-			if((total_jobacct->mem_step == 0) && (total_jobacct->vmem_step == 0) && (total_jobacct->mem_step_max==0))
+			if(total_jobacct->node_alloc_cpu == 0)
 				printf("The data may need to wait for updates\n");
 			else
 				printf("(the update interval is %ld minutes , the threshold value is %d (%ldcpus * %ld%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold  , total_jobacct->node_alloc_cpu ,  (uint64_t)total_jobacct->cpu_threshold / total_jobacct->node_alloc_cpu);

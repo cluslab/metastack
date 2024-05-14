@@ -1708,9 +1708,9 @@ extern int validate_acctg_freq(char *acctg_freq)
 	tok = strtok_r(tmp, ",", &save_ptr);
 	while (tok) {
 		valid = false;
-	#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_LOAD_ABNORMAL
 		valid2 = false;
-	#endif
+#endif
 		for (i = 0; i < PROFILE_CNT; i++)
 			if (acct_gather_parse_freq(i, tok) != -1) {
 				valid = true;
