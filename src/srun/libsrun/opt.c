@@ -170,8 +170,8 @@ static void _process_abnormal_dete(){
 	} else if ((sub_str = xstrcasestr(slurm_conf.job_acct_gather_freq, "task=")))
 		task = _get_int(sub_str + 5);
 
-	if ((sub_str = xstrcasestr(opt.abnormal_dete, "minutes="))) {
-		minutes = _get_int(sub_str + 8);
+	if ((sub_str = xstrcasestr(opt.abnormal_dete, "time_window="))) {
+		minutes = _get_int(sub_str + 12);
 		if (task != -1 && minutes != -1 && (minutes * 60) < task)
 			info("Warning : The value of minute(%d) must be greater than or equal to task(%d), so the value of minute is set to task(%d) !", minutes * 60, task, task);
 	}

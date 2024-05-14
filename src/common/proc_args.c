@@ -1662,17 +1662,15 @@ extern bool subpath(char *path1, char *path2)
 }
 
 #ifdef __METASTACK_LOAD_ABNORMAL
-extern int validate_abnormal_dete(char *abnorma_dete)
+extern int validate_abnormal_dete(char *abnormal_dete)
 {
 	int i;
-	int stepd = -1;
 	char *save_ptr = NULL, *tok, *tmp;
 	bool valid;
-	int cpuminload = -1;
 	int rc = SLURM_SUCCESS;
-	if (!abnorma_dete)
+	if (!abnormal_dete)
 		return rc;
-	tmp = xstrdup(abnorma_dete);
+	tmp = xstrdup(abnormal_dete);
 	tok = strtok_r(tmp, ",", &save_ptr);
 	while (tok) {
 		valid = false;
@@ -1682,30 +1680,11 @@ extern int validate_abnormal_dete(char *abnorma_dete)
 				break;
 
 		if (!valid) {
-			error("Invalid --abnormal-dete specification: %s", tok);
 			rc = SLURM_ERROR;
 		}
 		tok = strtok_r(NULL, ",", &save_ptr);
 	}
-	cpuminload = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE, abnorma_dete);
 	
-	if(cpuminload != -1 && (cpuminload < 0 || cpuminload > 100)) {
-		error("The value of cpuminload must be between 0 and 100");
-		return SLURM_ERROR;
-	}
-
-	stepd = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_STEPD, abnorma_dete);
-    if(stepd!= -1) {
-			if(stepd == 0 || stepd == 1 || stepd==2 || stepd==3) 
-				valid = true;
-			else {
-				valid = false;
-				error("Invalid parameter; 0 disable all stepd, "
-				        "1 enable digital stepd, "
-						"2、enable batch stepd "
-						"3、enable digital stepd and batch stepd;");
-			}
-	}
 	xfree(tmp);
 
 	return rc;

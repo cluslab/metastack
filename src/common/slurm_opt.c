@@ -554,29 +554,12 @@ static int arg_set_abnormal_dete(slurm_opt_t *opt, const char *arg)
 	opt->abnormal_dete = xstrdup(arg);
 	if (validate_abnormal_dete(opt->abnormal_dete))
 		return SLURM_ERROR;
-	if(opt->acctg_freq) { 
-		int task = acct_gather_parse_freq(PROFILE_TASK, opt->acctg_freq);
-		int minute = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE,
-																 opt->abnormal_dete);
-		if(task == -1){
-			task = acct_gather_parse_abnormal_dete(PROFILE_ABNORMAL_DETE_MINUTE, 
-													slurm_conf.job_acct_gather_freq);
-		}
-		
-		if(minute != -1 && (minute * 60) < task) {
-			info("Warning : The value of minute(%d) must be greater "
-			    "than or equal to task(%d), so the value of minute is set" 
-				" to task(%d) !" , minute * 60 , task , task);
-		}
-		xstrcat(opt->acctg_freq , ",");
-		xstrcat(opt->acctg_freq , opt->abnormal_dete);
-	} 
 	return SLURM_SUCCESS;
 }
 COMMON_STRING_OPTION_GET_AND_RESET(abnormal_dete);
 COMMON_STRING_OPTION_SET_DATA(abnormal_dete);
 static slurm_cli_opt_t slurm_opt_abnormal_dete = {
-	.name = "abnormal-dete",
+	.name = "job-monitor",
 	.has_arg = required_argument,
 	.val = LONG_OPT_ABNORMAL_DETE,
 	.set_func = arg_set_abnormal_dete,
@@ -5717,7 +5700,7 @@ int slurm_process_option(slurm_opt_t *opt, int optval, const char *arg,
 				In the case of anomaly-dete, its contents are concatenated after acctg-freq in set_func 
 				and the abnormal value is free, so there is no need to set it
 			*/
-			if(!xstrcmp(common_options[i]->name, "abnormal-dete")) {
+			if(!xstrcmp(common_options[i]->name, "job-monitor")) {
 				opt->state[i].set = false;
 				opt->state[i].set_by_data = false;
 				opt->state[i].set_by_env = false;
