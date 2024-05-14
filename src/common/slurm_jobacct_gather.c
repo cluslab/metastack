@@ -580,6 +580,7 @@ static void *step_collect(void *args)
 
 			/*abnormal event determination of cpu*/
 			threshold = job_info->cpu_min_load * write_data->node_alloc_cpu;
+			write_data->cpu_threshold = threshold;
 			if(threshold > write_data->cpu_step_real) {
 				write_data->cpu_start = record_time - job_info->timer;
 				write_data->cpu_end = record_time;
