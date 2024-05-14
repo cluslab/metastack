@@ -152,7 +152,7 @@ static void _process_abnormal_dete(){
 	if ((sub_str = xstrcasestr(opt.abnormal_dete, "time_window="))) {
 		minutes = _get_int(sub_str + 12);
 		if (task != -1 && minutes != -1 && (minutes * 60) < task)
-			info("Warning : The value of minute(%d) must be greater than or equal to task(%d), so the value of minute is set to task(%d) !", minutes * 60, task, task);
+			info("Warning : The value of time_window(%d) must be greater than or equal to task(%d), so the value of minute is set to task(%d) !", minutes * 60, task, task);
 	}
 
 	/*
