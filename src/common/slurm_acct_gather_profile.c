@@ -616,7 +616,7 @@ static void acct_gather_set_parameters(char *freq, char* freq_def, acct_gather_r
 			step_rank->timer = 300;//set default value 
 		/*Set the cpu utilization threshold size in the job step*/
 		step_rank->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
-        if((step_rank->cpu_min_load < 0 ) && (step_rank->cpu_min_load > 100 )) {
+        if((step_rank->cpu_min_load < 0 ) || (step_rank->cpu_min_load > 100 )) {
 			if(step_rank->cpu_min_load < 0) {
 				error("If the avecpuutil is not set or the value is faulty," 
 				  "set it to the default value.(avecpuutil=0)");	
