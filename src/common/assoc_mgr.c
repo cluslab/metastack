@@ -704,8 +704,13 @@ static void _set_user_default_acct(slurmdb_assoc_rec_t *assoc)
 			xfree(user->default_acct);
 			if (assoc->is_def == 1) {
 				user->default_acct = xstrdup(assoc->acct);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+				log_flag(ASSOC, "user %s default acct is %s",
+				       user->name, user->default_acct);
+#else
 				debug2("user %s default acct is %s",
 				       user->name, user->default_acct);
+#endif
 			} else
 				debug2("user %s default acct %s removed",
 				       user->name, assoc->acct);
@@ -793,10 +798,17 @@ static slurmdb_assoc_rec_t* _find_assoc_parent(
 	}
 
 	if (parent)
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		log_flag(ASSOC, "assoc %u(%s, %s) has %s parent of %u(%s, %s)",
+		       assoc->id, assoc->acct, assoc->user,
+		       direct ? "direct" : "fs",
+		       parent->id, parent->acct, parent->user);
+#else
 		debug2("assoc %u(%s, %s) has %s parent of %u(%s, %s)",
 		       assoc->id, assoc->acct, assoc->user,
 		       direct ? "direct" : "fs",
 		       parent->id, parent->acct, parent->user);
+#endif
 	else
 		debug2("assoc %u(%s, %s) doesn't have a %s "
 		       "parent (probably root)",
@@ -806,7 +818,11 @@ static slurmdb_assoc_rec_t* _find_assoc_parent(
 	return parent;
 }
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+static int _set_assoc_parent_and_user(slurmdb_assoc_rec_t *assoc, bool flag)
+#else
 static int _set_assoc_parent_and_user(slurmdb_assoc_rec_t *assoc)
+#endif
 {
 	xassert(verify_assoc_lock(ASSOC_LOCK, WRITE_LOCK));
 	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
@@ -899,7 +915,12 @@ static int _set_assoc_parent_and_user(slurmdb_assoc_rec_t *assoc)
 			else
 				assoc->uid = pw_uid;
 		}
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		if(flag)
+			_set_user_default_acct(assoc);
+#else
 		_set_user_default_acct(assoc);
+#endif
 
 		/* get the qos bitmap here */
 		if (g_qos_count > 0) {
@@ -1064,7 +1085,11 @@ static int _post_assoc_list(void)
 	//START_TIMER;
 	g_user_assoc_count = 0;
 	while ((assoc = list_next(itr))) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		_set_assoc_parent_and_user(assoc, true);
+#else
 		_set_assoc_parent_and_user(assoc);
+#endif
 		_add_assoc_hash(assoc);
 		assoc_mgr_set_assoc_tres_cnt(assoc);
 	}
@@ -2174,7 +2199,12 @@ extern int assoc_mgr_init(void *db_conn, assoc_init_args_t *args,
 		ListIterator itr =
 			list_iterator_create(assoc_mgr_assoc_list);
 		while ((assoc = list_next(itr))) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+                        if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
+			    log_assoc_rec(assoc, assoc_mgr_qos_list);
+#else			
 			log_assoc_rec(assoc, assoc_mgr_qos_list);
+#endif
 		}
 		list_iterator_destroy(itr);
 	}
@@ -4078,8 +4108,15 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 			}
 
 			if (!slurmdbd_conf && !parents_changed) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+                                log_flag(ASSOC, "updating assoc %u", rec->id);
+                                if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
+				    log_assoc_rec(rec, assoc_mgr_qos_list);
+#else
+				
 				debug("updating assoc %u", rec->id);
 				log_assoc_rec(rec, assoc_mgr_qos_list);
+#endif
 			}
 			break;
 		case SLURMDB_ADD_ASSOC:
@@ -4252,7 +4289,11 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 				addit = true;
 			}
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+			_set_assoc_parent_and_user(object,false);
+#else
 			_set_assoc_parent_and_user(object);
+#endif
 
 			if (addit)
 				_add_assoc_hash(object);
@@ -4298,7 +4339,12 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 			list_iterator_reset(itr);
 			while ((object = list_next(itr))) {
 				assoc_mgr_normalize_assoc_shares(object);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+                                if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
+				    log_assoc_rec(object, assoc_mgr_qos_list);
+#else				
 				log_assoc_rec(object, assoc_mgr_qos_list);
+#endif
 			}
 		}
 		list_iterator_destroy(itr);

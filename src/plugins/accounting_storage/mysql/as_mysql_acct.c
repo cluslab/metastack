@@ -40,6 +40,10 @@
 #include "as_mysql_acct.h"
 #include "as_mysql_user.h"
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+#include "as_mysql_usage.h"
+#endif
+
 /* Fill in all the users that are coordinator for this account.  This
  * will fill in if there are coordinators from a parent account also.
  */
@@ -522,6 +526,9 @@ extern List as_mysql_remove_accts(mysql_conn_t *mysql_conn, uint32_t uid,
 	slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
 	cluster_list_tmp = list_shallow_copy(as_mysql_cluster_list);
 	itr = list_iterator_create(cluster_list_tmp);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+    slurm_mutex_lock(&assoc_lock);
+#endif
 	while ((object = list_next(itr))) {
 		if ((rc = remove_common(mysql_conn, DBD_REMOVE_ACCOUNTS, now,
 					user_name, acct_table, name_char,
@@ -530,6 +537,9 @@ extern List as_mysql_remove_accts(mysql_conn_t *mysql_conn, uint32_t uid,
 		    != SLURM_SUCCESS)
 			break;
 	}
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+    slurm_mutex_unlock(&assoc_lock);
+#endif
 	list_iterator_destroy(itr);
 	FREE_NULL_LIST(cluster_list_tmp);
 	slurm_rwlock_unlock(&as_mysql_cluster_list_lock);

@@ -5760,6 +5760,14 @@ extern char * debug_flags2str(uint64_t debug_flags)
 		xstrcat(rc, "WorkQueue");
 	}
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	if (debug_flags & DEBUG_FLAG_ASSOC) {
+		if (rc) 
+			xstrcat(rc,",");
+		xstrcat(rc, "Assoc");
+	}
+#endif
+
 	return rc;
 }
 
@@ -5900,6 +5908,10 @@ extern int debug_str2flags(char *debug_flags, uint64_t *flags_out)
 		else if (xstrcasecmp(tok, "WorkQueue") == 0 ||
 			 xstrcasecmp(tok, "WorkQ") == 0)
 			(*flags_out) |= DEBUG_FLAG_WORKQ;
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		else if (xstrcasecmp(tok, "Assoc") == 0)
+			(*flags_out) |= DEBUG_FLAG_ASSOC;
+#endif		
 		else {
 			error("Invalid DebugFlag: %s", tok);
 			(*flags_out) = 0;

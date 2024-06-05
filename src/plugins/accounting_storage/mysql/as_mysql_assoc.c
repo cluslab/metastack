@@ -39,6 +39,10 @@
 #include "as_mysql_assoc.h"
 #include "as_mysql_usage.h"
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+#include "as_mysql_user.h"
+#endif
+
 static char *tmp_cluster_name = "slurmredolftrgttemp";
 
 
@@ -2472,7 +2476,11 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 	char *user_name = NULL;
 	char *tmp_char = NULL;
 	int assoc_id = 0;
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	int incr = 0, my_par_id = 0, my_right = 0;
+#else
 	int incr = 0, my_left = 0, my_par_id = 0;
+#endif
 	int moved_parent = 0;
 	MYSQL_RES *result = NULL;
 	MYSQL_ROW row;
@@ -2541,6 +2549,9 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 	/* these need to be in a specific order */
 	list_sort(assoc_list, (ListCmpF)_assoc_sort_cluster);
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+    slurm_mutex_lock(&assoc_lock);
+#endif
 	itr = list_iterator_create(assoc_list);
 	while ((object = list_next(itr))) {
 		if (!object->cluster || !object->cluster[0]
@@ -2726,14 +2737,41 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			    || xstrcasecmp(parent, old_parent)
 			    || xstrcasecmp(object->cluster, old_cluster)) {
 				char *sel_query = xstrdup_printf(
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+				char *sel_query = xstrdup_printf(
+					"SELECT rgt FROM \"%s_%s\" WHERE "
+					"acct = '%s' and user = '' "
+					"order by rgt for update;",
+					object->cluster, assoc_table,
+					parent);
+#else
 					"SELECT lft FROM \"%s_%s\" WHERE "
 					"acct = '%s' and user = '' "
 					"order by lft;",
 					object->cluster, assoc_table,
 					parent);
+#endif
 				MYSQL_RES *sel_result = NULL;
 
 				if (incr) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+					char *up_query = xstrdup_printf(
+						"UPDATE \"%s_%s\" SET "
+						"rgt = rgt+%d "
+						"WHERE rgt >= %d && deleted < 2;"
+						"UPDATE \"%s_%s\" SET "
+						"lft = lft+%d "
+						"WHERE lft > %d "
+						"&& deleted < 2;"
+						"UPDATE \"%s_%s\" SET "
+						"deleted = 0 "
+						"WHERE deleted = 2;",
+						old_cluster, assoc_table,
+						incr, my_right,
+						old_cluster, assoc_table,
+						incr, my_right,
+						old_cluster, assoc_table);
+#else
 					char *up_query = xstrdup_printf(
 						"UPDATE \"%s_%s\" SET "
 						"rgt = rgt+%d "
@@ -2750,6 +2788,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 						old_cluster, assoc_table,
 						incr, my_left,
 						old_cluster, assoc_table);
+#endif
 					DB_DEBUG(DB_ASSOC, mysql_conn->conn,
 					         "query\n%s", up_query);
 					rc = mysql_db_query(
@@ -2796,7 +2835,11 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 				}
 				xfree(sel_query);
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+				my_right = slurm_atoul(row[0]);
+#else
 				my_left = slurm_atoul(row[0]);
+#endif
 				mysql_free_result(sel_result);
 				//info("left is %d", my_left);
 				old_parent = parent;
@@ -2804,12 +2847,21 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 				incr = 0;
 			}
 			incr += 2;
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+			xstrfmtcat(query,
+				   "insert into \"%s_%s\" "
+				   "(%s, lft, rgt, deleted) "
+				   "values (%s, %d, %d, 2);",
+				   object->cluster, assoc_table, cols,
+				   vals, my_right+(incr-2), my_right+(incr-1));
+#else
 			xstrfmtcat(query,
 				   "insert into \"%s_%s\" "
 				   "(%s, lft, rgt, deleted) "
 				   "values (%s, %d, %d, 2);",
 				   object->cluster, assoc_table, cols,
 				   vals, my_left+(incr-1), my_left+incr);
+#endif
 
 			/* definitely works but slow */
 /* 			xstrfmtcat(query, */
@@ -2962,10 +3014,32 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 	list_iterator_destroy(itr);
 	xfree(user_name);
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	if (rc != SLURM_SUCCESS){
+		slurm_mutex_unlock(&assoc_lock);
+		goto end_it;
+	}
+#else
 	if (rc != SLURM_SUCCESS)
 		goto end_it;
+#endif
 
 	if (incr) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		char *up_query = xstrdup_printf(
+			"UPDATE \"%s_%s\" SET rgt = rgt+%d "
+			"WHERE rgt >= %d && deleted < 2;"
+			"UPDATE \"%s_%s\" SET lft = lft+%d "
+			"WHERE lft > %d "
+			"&& deleted < 2;"
+			"UPDATE \"%s_%s\" SET deleted = 0 "
+			"WHERE deleted = 2;",
+			old_cluster, assoc_table, incr,
+			my_right,
+			old_cluster, assoc_table, incr,
+			my_right,
+			old_cluster, assoc_table);
+#else
 		char *up_query = xstrdup_printf(
 			"UPDATE \"%s_%s\" SET rgt = rgt+%d "
 			"WHERE rgt > %d && deleted < 2;"
@@ -2979,6 +3053,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			old_cluster, assoc_table, incr,
 			my_left,
 			old_cluster, assoc_table);
+#endif
 		DB_DEBUG(DB_ASSOC, mysql_conn->conn, "query\n%s", up_query);
 		rc = mysql_db_query(mysql_conn, up_query);
 		xfree(up_query);
@@ -2986,6 +3061,10 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			error("Couldn't do update 2");
 
 	}
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	slurm_mutex_unlock(&assoc_lock);
+#endif
 
 	/* Since we are already removed all the items from assoc_list
 	 * we need to work off the update_list from here on out.
@@ -3047,7 +3126,12 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 		}
 		list_iterator_destroy(itr2);
 		/* This temp list is no longer needed */
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+ 		if (!acct_added)
+ 			assoc_list_tmp = NULL;
+#else
 		assoc_list_tmp = NULL;
+#endif
 	}
 
 	if (query) {
@@ -3058,6 +3142,51 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			error("Couldn't update defaults");
 	}
 end_it:
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+ 	/* If you add a child account and it's parent account 
+	has a coordinator, update the coordinator of the parent account */
+	if (assoc_list_tmp && acct_added) {
+		ListIterator itr3 = list_iterator_create(assoc_list_tmp);
+		MYSQL_RES *result1 = NULL;
+		MYSQL_ROW row1;
+		
+		while ((object = list_next(itr3))){
+			if(object->parent_acct){
+				char *query1 = xstrdup_printf(
+					"select user from %s where acct='%s' && deleted=0",
+					acct_coord_table, object->parent_acct);
+				
+				DB_DEBUG(DB_ASSOC, mysql_conn->conn, "query\n%s", query1);
+				if (!(result1 = mysql_db_query_ret(
+							mysql_conn, query1, 0))) {
+					xfree(query1);
+					rc = SLURM_ERROR;
+					break;
+				}
+				xfree(query1);
+
+				while ((row1 = mysql_fetch_row(result1))) {
+					slurmdb_user_rec_t *coord_user = xmalloc(sizeof(slurmdb_user_rec_t));
+					coord_user->coord_accts = list_create(slurmdb_destroy_coord_rec);
+
+					coord_user->name = xstrdup(row1[0]);
+					_get_user_coords(mysql_conn, coord_user);			
+					
+					if (addto_update_list(mysql_conn->update_list, 
+							SLURMDB_ADD_COORD, coord_user) != SLURM_SUCCESS) {
+						error("addto_update_list fail");
+						slurmdb_destroy_user_rec(coord_user);
+					}
+						
+				}
+				mysql_free_result(result1);
+			}
+		}
+		list_iterator_destroy(itr3);
+		assoc_list_tmp = NULL;
+	}			
+#endif
 
 	if (rc == SLURM_SUCCESS) {
 		_make_sure_users_have_default(mysql_conn, added_user_list,
@@ -3108,6 +3237,10 @@ end_it:
 		 * coordinators of parent accounts are also assigned to
 		 * subaccounts potentially added here.
 		 */
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+  		/* We don't need to refresh the assoc_mgr_user_list. */
+			
+#else
 		if (acct_added) {
 			if (assoc_mgr_refresh_lists((void *)mysql_conn,
 						    ASSOC_MGR_CACHE_USER)) {
@@ -3115,6 +3248,7 @@ end_it:
 				rc = SLURM_ERROR;
 			}
 		}
+#endif
 	} else {
 		FREE_NULL_LIST(added_user_list);
 		xfree(txn_query);
@@ -3242,6 +3376,10 @@ is_same_user:
 		locked = true;
 	}
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	slurm_mutex_lock(&assoc_lock);
+#endif
+
 	itr = list_iterator_create(use_cluster_list);
 	while ((cluster_name = list_next(itr))) {
 		char *qos_extra = _setup_assoc_cond_qos(
@@ -3280,6 +3418,10 @@ is_same_user:
 			break;
 		}
 	}
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	slurm_mutex_unlock(&assoc_lock);
+#endif
+
 	list_iterator_destroy(itr);
 	if (locked) {
 		FREE_NULL_LIST(use_cluster_list);
@@ -3359,6 +3501,9 @@ extern List as_mysql_remove_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 		use_cluster_list = list_shallow_copy(as_mysql_cluster_list);
 		locked = true;
 	}
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	slurm_mutex_lock(&assoc_lock);
+#endif
 
 	itr = list_iterator_create(use_cluster_list);
 	while ((cluster_name = list_next(itr))) {
@@ -3430,6 +3575,10 @@ extern List as_mysql_remove_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			break;
 		}
 	}
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	slurm_mutex_unlock(&assoc_lock);
+#endif
+
 	list_iterator_destroy(itr);
 	if (locked) {
 		FREE_NULL_LIST(use_cluster_list);

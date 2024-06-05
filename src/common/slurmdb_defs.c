@@ -2557,143 +2557,142 @@ extern uint16_t str_2_slurmdb_problem(char *problem)
 
 	return type;
 }
-#ifdef __METASTACK_OPT_RPC_USER_FIX
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 extern void log_assoc_rec(slurmdb_assoc_rec_t *assoc_ptr,
 			  List qos_list)
 {
 	xassert(assoc_ptr);
-
 	if (get_log_level() < LOG_LEVEL_DEBUG2)
 		return;
 
-	debug3("association rec id : %u", assoc_ptr->id);
-	debug3("  acct             : %s", assoc_ptr->acct);
-	debug3("  cluster          : %s", assoc_ptr->cluster);
+	log_flag(ASSOC, "association rec id : %u", assoc_ptr->id);
+	log_flag(ASSOC, "  acct             : %s", assoc_ptr->acct);
+	log_flag(ASSOC, "  cluster          : %s", assoc_ptr->cluster);
 
 	if (assoc_ptr->shares_raw == INFINITE)
-		debug3("  RawShares        : NONE");
+		log_flag(ASSOC, "  RawShares        : NONE");
 	else if (assoc_ptr->shares_raw != NO_VAL)
-		debug3("  RawShares        : %u", assoc_ptr->shares_raw);
+		log_flag(ASSOC, "  RawShares        : %u", assoc_ptr->shares_raw);
 
 	if (assoc_ptr->def_qos_id)
-		debug3("  Default QOS      : %s",
+		log_flag(ASSOC, "  Default QOS      : %s",
 		       slurmdb_qos_str(qos_list, assoc_ptr->def_qos_id));
 	else
-		debug3("  Default QOS      : NONE");
+		log_flag(ASSOC, "  Default QOS      : NONE");
 
-	debug3("  GrpTRESMins      : %s",
+	log_flag(ASSOC, "  GrpTRESMins      : %s",
 	       assoc_ptr->grp_tres_mins ?
 	       assoc_ptr->grp_tres_mins : "NONE");
-	debug3("  GrpTRESRunMins   : %s",
+	log_flag(ASSOC, "  GrpTRESRunMins   : %s",
 	       assoc_ptr->grp_tres_run_mins ?
 	       assoc_ptr->grp_tres_run_mins : "NONE");
-	debug3("  GrpTRES          : %s",
+	log_flag(ASSOC, "  GrpTRES          : %s",
 	       assoc_ptr->grp_tres ?
 	       assoc_ptr->grp_tres : "NONE");
 
 	if (assoc_ptr->grp_jobs == INFINITE)
-		debug3("  GrpJobs          : NONE");
+		log_flag(ASSOC, "  GrpJobs          : NONE");
 	else if (assoc_ptr->grp_jobs != NO_VAL)
-		debug3("  GrpJobs          : %u", assoc_ptr->grp_jobs);
+		log_flag(ASSOC, "  GrpJobs          : %u", assoc_ptr->grp_jobs);
 
 	if (assoc_ptr->grp_jobs_accrue == INFINITE)
-		debug3("  GrpJobsAccrue    : NONE");
+		log_flag(ASSOC, "  GrpJobsAccrue    : NONE");
 	else if (assoc_ptr->grp_jobs_accrue != NO_VAL)
-		debug3("  GrpJobsAccrue    : %u", assoc_ptr->grp_jobs_accrue);
+		log_flag(ASSOC, "  GrpJobsAccrue    : %u", assoc_ptr->grp_jobs_accrue);
 
 	if (assoc_ptr->grp_submit_jobs == INFINITE)
-		debug3("  GrpSubmitJobs    : NONE");
+		log_flag(ASSOC, "  GrpSubmitJobs    : NONE");
 	else if (assoc_ptr->grp_submit_jobs != NO_VAL)
-		debug3("  GrpSubmitJobs    : %u", assoc_ptr->grp_submit_jobs);
+		log_flag(ASSOC, "  GrpSubmitJobs    : %u", assoc_ptr->grp_submit_jobs);
 
 	if (assoc_ptr->grp_wall == INFINITE)
-		debug3("  GrpWall          : NONE");
+		log_flag(ASSOC, "  GrpWall          : NONE");
 	else if (assoc_ptr->grp_wall != NO_VAL) {
 		char time_buf[32];
 		mins2time_str((time_t) assoc_ptr->grp_wall,
 			      time_buf, sizeof(time_buf));
-		debug3("  GrpWall          : %s", time_buf);
+		log_flag(ASSOC, "  GrpWall          : %s", time_buf);
 	}
 
-	debug3("  MaxTRESMins      : %s",
+	log_flag(ASSOC, "  MaxTRESMins      : %s",
 	       assoc_ptr->max_tres_mins_pj ?
 	       assoc_ptr->max_tres_mins_pj : "NONE");
-	debug3("  MaxTRESRunMins   : %s",
+	log_flag(ASSOC, "  MaxTRESRunMins   : %s",
 	       assoc_ptr->max_tres_run_mins ?
 	       assoc_ptr->max_tres_run_mins : "NONE");
-	debug3("  MaxTRESPerJob    : %s",
+	log_flag(ASSOC, "  MaxTRESPerJob    : %s",
 	       assoc_ptr->max_tres_pj ?
 	       assoc_ptr->max_tres_pj : "NONE");
-	debug3("  MaxTRESPerNode   : %s",
+	log_flag(ASSOC, "  MaxTRESPerNode   : %s",
 	       assoc_ptr->max_tres_pn ?
 	       assoc_ptr->max_tres_pn : "NONE");
 
 	if (assoc_ptr->max_jobs == INFINITE)
-		debug3("  MaxJobs          : NONE");
+		log_flag(ASSOC, "  MaxJobs          : NONE");
 	else if (assoc_ptr->max_jobs != NO_VAL)
-		debug3("  MaxJobs          : %u", assoc_ptr->max_jobs);
+		log_flag(ASSOC, "  MaxJobs          : %u", assoc_ptr->max_jobs);
 
 	if (assoc_ptr->max_jobs_accrue == INFINITE)
-		debug3("  MaxJobsAccrue    : NONE");
+		log_flag(ASSOC, "  MaxJobsAccrue    : NONE");
 	else if (assoc_ptr->max_jobs_accrue != NO_VAL)
-		debug3("  MaxJobsAccrue    : %u", assoc_ptr->max_jobs_accrue);
+		log_flag(ASSOC, "  MaxJobsAccrue    : %u", assoc_ptr->max_jobs_accrue);
 
 	if (assoc_ptr->min_prio_thresh == INFINITE)
-		debug3("  MinPrioThresh    : NONE");
+		log_flag(ASSOC, "  MinPrioThresh    : NONE");
 	else if (assoc_ptr->min_prio_thresh != NO_VAL)
-		debug3("  MinPrioThresh    : %u", assoc_ptr->min_prio_thresh);
+		log_flag(ASSOC, "  MinPrioThresh    : %u", assoc_ptr->min_prio_thresh);
 
 	if (assoc_ptr->max_submit_jobs == INFINITE)
-		debug3("  MaxSubmitJobs    : NONE");
+		log_flag(ASSOC, "  MaxSubmitJobs    : NONE");
 	else if (assoc_ptr->max_submit_jobs != NO_VAL)
-		debug3("  MaxSubmitJobs    : %u", assoc_ptr->max_submit_jobs);
+		log_flag(ASSOC, "  MaxSubmitJobs    : %u", assoc_ptr->max_submit_jobs);
 
 	if (assoc_ptr->max_wall_pj == INFINITE)
-		debug3("  MaxWall          : NONE");
+		log_flag(ASSOC, "  MaxWall          : NONE");
 	else if (assoc_ptr->max_wall_pj != NO_VAL) {
 		char time_buf[32];
 		mins2time_str((time_t) assoc_ptr->max_wall_pj,
 			      time_buf, sizeof(time_buf));
-		debug3("  MaxWall          : %s", time_buf);
+		log_flag(ASSOC, "  MaxWall          : %s", time_buf);
 	}
 
 	if (assoc_ptr->qos_list) {
 		char *temp_char = get_qos_complete_str(qos_list,
 						       assoc_ptr->qos_list);
 		if (temp_char) {
-			debug3("  Qos              : %s", temp_char);
+			log_flag(ASSOC, "  Qos              : %s", temp_char);
 			xfree(temp_char);
 			if (assoc_ptr->usage && assoc_ptr->usage->valid_qos) {
 				temp_char = get_qos_complete_str_bitstr(
 					qos_list, assoc_ptr->usage->valid_qos);
-				debug3("  Valid Qos        : %s", temp_char);
+				log_flag(ASSOC, "  Valid Qos        : %s", temp_char);
 				xfree(temp_char);
 			}
 		}
 	} else {
-		debug3("  Qos              : %s", "Normal");
+		log_flag(ASSOC, "  Qos              : %s", "Normal");
 	}
 
 	if (assoc_ptr->parent_acct)
-		debug3("  ParentAccount    : %s", assoc_ptr->parent_acct);
+		log_flag(ASSOC, "  ParentAccount    : %s", assoc_ptr->parent_acct);
 	if (assoc_ptr->partition)
-		debug3("  Partition        : %s", assoc_ptr->partition);
+		log_flag(ASSOC, "  Partition        : %s", assoc_ptr->partition);
 	if (assoc_ptr->user)
-		debug3("  User             : %s(%u)",
+		log_flag(ASSOC, "  User             : %s(%u)",
 		       assoc_ptr->user, assoc_ptr->uid);
 
 	if (assoc_ptr->usage) {
 		if (!fuzzy_equal(assoc_ptr->usage->shares_norm, NO_VAL))
-			debug3("  NormalizedShares : %f",
+			log_flag(ASSOC, "  NormalizedShares : %f",
 			       assoc_ptr->usage->shares_norm);
 
 		if (assoc_ptr->usage->level_shares != NO_VAL)
-			debug3("  LevelShares      : %u",
+			log_flag(ASSOC, "  LevelShares      : %u",
 			       assoc_ptr->usage->level_shares);
 
 
-		debug3("  UsedJobs         : %u", assoc_ptr->usage->used_jobs);
-		debug3("  RawUsage         : %Lf", assoc_ptr->usage->usage_raw);
+		log_flag(ASSOC, "  UsedJobs         : %u", assoc_ptr->usage->used_jobs);
+		log_flag(ASSOC, "  RawUsage         : %Lf", assoc_ptr->usage->usage_raw);
 	}
 }
 #else

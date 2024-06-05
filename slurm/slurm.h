@@ -276,6 +276,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_RPC_RATE_LIMIT
 #endif
 
+#ifndef __METASTACK_OPT_SACCTMGR_ADD_USER
+#define __METASTACK_OPT_SACCTMGR_ADD_USER
+#endif
+
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -2878,6 +2883,10 @@ typedef struct reservation_name_msg {
 #define DEBUG_FLAG_JAG		SLURM_BIT(54) /* Job Account Gather debug */
 #define DEBUG_FLAG_CGROUP	SLURM_BIT(55) /* cgroup debug */
 #define DEBUG_FLAG_SCRIPT	SLURM_BIT(56) /* slurmscriptd debug */
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+#define DEBUG_FLAG_ASSOC	SLURM_BIT(57) /*slurmctld association debug*/
+#endif
 
 #define PREEMPT_MODE_OFF	0x0000	/* disable job preemption */
 #define PREEMPT_MODE_SUSPEND	0x0001	/* suspend jobs to preempt */
