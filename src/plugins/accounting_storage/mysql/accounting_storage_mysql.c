@@ -65,6 +65,10 @@
 #include "as_mysql_user.h"
 #include "as_mysql_wckey.h"
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+#include "as_mysql_usage.h"
+#endif
+
 List as_mysql_cluster_list = NULL;
 /* This total list is only used for converting things, so no
    need to keep it upto date even though it lives until the
@@ -2503,10 +2507,17 @@ extern int remove_common(mysql_conn_t *mysql_conn,
 		   change. If you think you need to remove this make
 		   sure your new way can handle changing lft and rgt's
 		   in the association. */
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		xstrfmtcat(query,
+			   "SELECT lft, rgt, (rgt - lft + 1) "
+			   "FROM \"%s_%s\" WHERE id_assoc = %s FOR UPDATE;",
+			   cluster_name, assoc_table, row[0]);
+#else
 		xstrfmtcat(query,
 			   "SELECT lft, rgt, (rgt - lft + 1) "
 			   "FROM \"%s_%s\" WHERE id_assoc = %s;",
 			   cluster_name, assoc_table, row[0]);
+#endif
 		DB_DEBUG(DB_ASSOC, mysql_conn->conn, "query\n%s", query);
 		if (!(result2 = mysql_db_query_ret(
 			      mysql_conn, query, 0))) {
