@@ -40,6 +40,10 @@
 #include "as_mysql_user.h"
 #include "as_mysql_wckey.h"
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+#include "as_mysql_usage.h"
+#endif
+
 static int _change_user_name(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user)
 {
 	int rc = SLURM_SUCCESS;
@@ -154,7 +158,11 @@ no_wckeys:
 /* Fill in all the accounts this user is coordinator over.  This
  * will fill in all the sub accounts they are coordinator over also.
  */
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+extern int _get_user_coords(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user)
+#else
 static int _get_user_coords(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user)
+#endif
 {
 	char *query = NULL;
 	slurmdb_coord_rec_t *coord = NULL;
@@ -1018,6 +1026,9 @@ no_user_table:
 	user_name = uid_to_string((uid_t) uid);
 	slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
 	itr = list_iterator_create(as_mysql_cluster_list);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+    slurm_mutex_lock(&assoc_lock);
+#endif
 	while ((object = list_next(itr))) {
 
 		if (is_coord) {
@@ -1036,6 +1047,9 @@ no_user_table:
 		    != SLURM_SUCCESS)
 			break;
 	}
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+    slurm_mutex_unlock(&assoc_lock);
+#endif
 	list_iterator_destroy(itr);
 	slurm_rwlock_unlock(&as_mysql_cluster_list_lock);
 

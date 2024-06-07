@@ -63,3 +63,7 @@ extern int as_mysql_roll_usage(mysql_conn_t *mysql_conn,
 extern bool trigger_reroll(mysql_conn_t *mysql_conn, time_t event_time);
 
 #endif
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+extern pthread_mutex_t assoc_lock;
+#endif
