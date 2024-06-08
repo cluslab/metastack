@@ -46,6 +46,10 @@ time_t global_last_rollup = 0;
 pthread_mutex_t rollup_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t usage_rollup_lock = PTHREAD_MUTEX_INITIALIZER;
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+pthread_mutex_t assoc_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
 typedef struct {
 	uint16_t archive_data;
 	char *cluster_name;
