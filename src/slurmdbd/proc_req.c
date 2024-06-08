@@ -135,6 +135,39 @@ static bool _validate_operator(uint32_t uid, slurmdbd_conn_t *dbd_conn)
 	return false;
 }
 
+#ifdef __METASTACK_BUG_CONN_FIX
+static void _add_registered_cluster1(slurmdbd_conn_t *db_conn)
+{
+	ListIterator itr;
+	slurmdbd_conn_t *slurmdbd_conn;
+
+	if (!db_conn->conn->rem_port) {
+		error("%s: trying to register a cluster (%s) with no remote port",
+		      __func__, db_conn->conn->cluster_name);
+		return;
+	}
+
+	itr = list_iterator_create(registered_clusters);
+	while ((slurmdbd_conn = list_next(itr))) {
+		if (db_conn == slurmdbd_conn)
+			break;
+
+		if (!xstrcmp(db_conn->conn->cluster_name,
+			     slurmdbd_conn->conn->cluster_name) &&
+		    (db_conn->conn->fd != slurmdbd_conn->conn->fd)) {
+			error("A new registration for cluster %s CONN:%d just came in, but I am already talking to that cluster (CONN:%d), closing other connection.",
+			      db_conn->conn->cluster_name, db_conn->conn->fd,
+			      slurmdbd_conn->conn->fd);
+			slurmdbd_conn->conn->rem_port = 0;
+			list_delete_item(itr);
+		}
+	}
+	list_iterator_destroy(itr);
+	if (!slurmdbd_conn)
+		list_append(registered_clusters, db_conn);
+}
+#endif
+
 static void _add_registered_cluster(slurmdbd_conn_t *db_conn)
 {
 	ListIterator itr;
@@ -675,6 +708,18 @@ end_it:
 		slurmdbd_conn->tres_str = cluster_tres_msg->tres_str;
 		cluster_tres_msg->tres_str = NULL;
 	}
+#ifdef __METASTACK_BUG_CONN_FIX
+	slurm_mutex_lock(&registered_lock);
+	if (!slurmdbd_conn->conn->rem_port) {
+		debug3("DBD_CLUSTER_TRES: cluster not registered");
+		slurmdbd_conn->conn->rem_port =
+			clusteracct_storage_g_register_disconn_ctld(
+				slurmdbd_conn->db_conn,
+				slurmdbd_conn->conn->rem_host);
+		_add_registered_cluster1(slurmdbd_conn);
+	}
+	slurm_mutex_unlock(&registered_lock);
+#else
 	if (!slurmdbd_conn->conn->rem_port) {
 		debug3("DBD_CLUSTER_TRES: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
@@ -684,7 +729,7 @@ end_it:
 
 		_add_registered_cluster(slurmdbd_conn);
 	}
-
+#endif
 	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
 						rc, comment, DBD_CLUSTER_TRES);
 	return rc;
@@ -1431,6 +1476,19 @@ static int _job_complete(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	/* just in case this gets set we need to clear it */
 	xfree(job.wckey);
 
+#ifdef __METASTACK_BUG_CONN_FIX
+	slurm_mutex_lock(&registered_lock);
+	if (!slurmdbd_conn->conn->rem_port) {
+		debug3("DBD_JOB_COMPLETE: cluster not registered");
+		slurmdbd_conn->conn->rem_port =
+			clusteracct_storage_g_register_disconn_ctld(
+				slurmdbd_conn->db_conn,
+				slurmdbd_conn->conn->rem_host);
+
+		_add_registered_cluster1(slurmdbd_conn);
+	}
+	slurm_mutex_unlock(&registered_lock);
+#else
 	if (!slurmdbd_conn->conn->rem_port) {
 		debug3("DBD_JOB_COMPLETE: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
@@ -1440,6 +1498,7 @@ static int _job_complete(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 
 		_add_registered_cluster(slurmdbd_conn);
 	}
+#endif
 
 end_it:
 	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
@@ -2239,6 +2298,19 @@ static void _process_job_start(slurmdbd_conn_t *slurmdbd_conn,
 
 	xfree(details.env_sup);
 
+#ifdef __METASTACK_BUG_CONN_FIX
+	slurm_mutex_lock(&registered_lock);
+	if (!slurmdbd_conn->conn->rem_port) {
+		debug3("DBD_JOB_START: cluster not registered");
+		slurmdbd_conn->conn->rem_port =
+			clusteracct_storage_g_register_disconn_ctld(
+				slurmdbd_conn->db_conn,
+				slurmdbd_conn->conn->rem_host);
+
+		_add_registered_cluster1(slurmdbd_conn);
+	}
+	slurm_mutex_unlock(&registered_lock);
+#else
 	if (!slurmdbd_conn->conn->rem_port) {
 		debug3("DBD_JOB_START: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
@@ -2248,6 +2320,7 @@ static void _process_job_start(slurmdbd_conn_t *slurmdbd_conn,
 
 		_add_registered_cluster(slurmdbd_conn);
 	}
+#endif
 }
 
 static int _reconfig(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
@@ -2286,6 +2359,9 @@ static int _register_ctld(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	slurmdb_cluster_rec_t cluster;
 	dbd_list_msg_t list_msg = { NULL };
 	List cluster_list;
+#ifdef __METASTACK_BUG_CONN_FIX
+	bool lock_register = false;
+#endif
 
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_REGISTER_CTLD message from invalid uid";
@@ -2329,6 +2405,10 @@ static int _register_ctld(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	    (cluster.flags & CLUSTER_FLAG_EXT))
 		slurmdbd_conn->conn->flags |= PERSIST_FLAG_EXT_DBD;
 
+#ifdef __METASTACK_BUG_CONN_FIX
+	slurm_mutex_lock(&registered_lock);
+	lock_register = true;
+#endif
 	cluster_list = acct_storage_g_get_clusters(slurmdbd_conn->db_conn, *uid,
 						   &cluster_q);
 	if (!cluster_list || errno) {
@@ -2381,11 +2461,29 @@ static int _register_ctld(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 
 end_it:
 
+#ifdef __METASTACK_BUG_CONN_FIX
+	if (lock_register) {
+		if (rc == SLURM_SUCCESS) {
+			slurmdbd_conn->conn->rem_port = register_ctld_msg->port;
+
+			_add_registered_cluster1(slurmdbd_conn);
+		}
+		slurm_mutex_unlock(&registered_lock);
+	} else {
+		if (rc == SLURM_SUCCESS) {
+			slurmdbd_conn->conn->rem_port = register_ctld_msg->port;
+
+			_add_registered_cluster(slurmdbd_conn);
+		}
+	}
+	
+#else
 	if (rc == SLURM_SUCCESS) {
 		slurmdbd_conn->conn->rem_port = register_ctld_msg->port;
 
 		_add_registered_cluster(slurmdbd_conn);
 	}
+#endif
 
 	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
 						rc, comment, DBD_REGISTER_CTLD);
@@ -3032,6 +3130,19 @@ static int _step_complete(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	/* just in case this gets set we need to clear it */
 	xfree(job.wckey);
 
+#ifdef __METASTACK_BUG_CONN_FIX
+	slurm_mutex_lock(&registered_lock);
+	if (!slurmdbd_conn->conn->rem_port) {
+		debug3("DBD_STEP_COMPLETE: cluster not registered");
+		slurmdbd_conn->conn->rem_port =
+			clusteracct_storage_g_register_disconn_ctld(
+				slurmdbd_conn->db_conn,
+				slurmdbd_conn->conn->rem_host);
+
+		_add_registered_cluster1(slurmdbd_conn);
+	}
+	slurm_mutex_unlock(&registered_lock);
+#else
 	if (!slurmdbd_conn->conn->rem_port) {
 		debug3("DBD_STEP_COMPLETE: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
@@ -3041,6 +3152,7 @@ static int _step_complete(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 
 		_add_registered_cluster(slurmdbd_conn);
 	}
+#endif
 
 end_it:
 	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
@@ -3118,6 +3230,19 @@ static int _step_start(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	/* just in case this gets set we need to clear it */
 	xfree(job.wckey);
 
+#ifdef __METASTACK_BUG_CONN_FIX
+	slurm_mutex_lock(&registered_lock);
+	if (!slurmdbd_conn->conn->rem_port) {
+		debug3("DBD_STEP_START: cluster not registered");
+		slurmdbd_conn->conn->rem_port =
+			clusteracct_storage_g_register_disconn_ctld(
+				slurmdbd_conn->db_conn,
+				slurmdbd_conn->conn->rem_host);
+
+		_add_registered_cluster1(slurmdbd_conn);
+	}
+	slurm_mutex_unlock(&registered_lock);
+#else
 	if (!slurmdbd_conn->conn->rem_port) {
 		debug3("DBD_STEP_START: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
@@ -3127,6 +3252,7 @@ static int _step_start(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 
 		_add_registered_cluster(slurmdbd_conn);
 	}
+#endif
 
 end_it:
 	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,

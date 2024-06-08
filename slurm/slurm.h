@@ -280,6 +280,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_SACCTMGR_ADD_USER
 #endif
 
+#ifndef __METASTACK_BUG_CONN_FIX
+#define __METASTACK_BUG_CONN_FIX
+#endif
+
 
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
