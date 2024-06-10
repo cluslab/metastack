@@ -65,3 +65,11 @@ extern int as_mysql_assoc_remove_default(mysql_conn_t *mysql_conn,
 					 List user_list, List cluster_list);
 
 #endif
+
+#ifdef __METASTACK_OPT_LIST_USER
+extern List as_mysql_get_assocs(mysql_conn_t *mysql_conn, uid_t uid,
+				slurmdb_assoc_cond_t *assoc_cond, bool list_all);
+#else
+extern List as_mysql_get_assocs(mysql_conn_t *mysql_conn, uid_t uid,
+				slurmdb_assoc_cond_t *assoc_cond);
+#endif

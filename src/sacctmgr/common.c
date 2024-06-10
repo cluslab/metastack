@@ -679,7 +679,11 @@ static print_field_t *_get_print_field(char *object)
 		field->type = PRINT_QOS;
 		field->name = xstrdup("QOS");
 		field->len = 20;
+#ifdef __METASTACK_QOS_HASH
+		field->print_routine = sacctmgr_print_qos_list1;
+#else
 		field->print_routine = sacctmgr_print_qos_list;
+#endif
 	} else if (!xstrncasecmp("QOSRAWLevel", object, MAX(command_len, 4))) {
 		field->type = PRINT_QOS_RAW;
 		field->name = xstrdup("QOS_RAW");
@@ -1620,6 +1624,58 @@ extern void sacctmgr_print_coord_list(
 	}
 	xfree(print_this);
 }
+
+#ifdef __METASTACK_QOS_HASH
+extern void sacctmgr_print_qos_list1(print_field_t *field,  qos_hash_t *qos_hash,
+				    List value, int last)
+{
+	int abs_len = abs(field->len);
+	char *print_this = NULL;
+
+	print_this = get_qos_complete_str1(qos_hash, value);
+
+	if (print_fields_parsable_print == PRINT_FIELDS_PARSABLE_NO_ENDING
+	    && last)
+		printf("%s", print_this);
+	else if (print_fields_parsable_print)
+		printf("%s|", print_this);
+	else {
+		if (strlen(print_this) > abs_len)
+#ifdef __METASTACK_OPT_PRINT_COMMAND
+		{
+			if(field->right_format) {
+				print_this[strlen(print_this)-abs_len] = '+';
+				if (field->len == abs_len) {
+					printf("%*.*s ", abs_len, abs_len,&print_this[strlen(print_this)-abs_len]);
+				}
+				else
+					printf("%-*.*s ", abs_len, abs_len,&print_this[strlen(print_this)-abs_len]);
+			} else {
+				print_this[abs_len-1] = '+';
+				if (field->len == abs_len)
+					printf("%*.*s ", abs_len, abs_len, print_this);
+				else
+					printf("%-*.*s ", abs_len, abs_len, print_this);
+			}
+
+		} else {
+			if (field->len == abs_len)
+				printf("%*.*s ", abs_len, abs_len, print_this);
+			else
+				printf("%-*.*s ", abs_len, abs_len, print_this);
+		}
+#else
+			print_this[abs_len-1] = '+';
+
+		if (field->len == abs_len)
+			printf("%*.*s ", abs_len, abs_len, print_this);
+		else
+			printf("%-*.*s ", abs_len, abs_len, print_this);
+#endif
+	}
+	xfree(print_this);
+}
+#endif
 
 extern void sacctmgr_print_qos_list(print_field_t *field, List qos_list,
 				    List value, int last)

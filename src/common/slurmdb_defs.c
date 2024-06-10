@@ -60,6 +60,56 @@ static void _free_res_rec_members(slurmdb_res_rec_t *res);
 
 strong_alias(get_qos_complete_str_bitstr, slurmdb_get_qos_complete_str_bitstr);
 
+#ifdef __METASTACK_QOS_HASH
+#include "uthash.h"
+
+/** build hash table, assign qos_id to entry according to key. 
+ * IN:  hash table, qos
+ * OUT: qos_hash
+ */
+extern void insert_qos(qos_hash_t **qos_hash, slurmdb_qos_rec_t *qos) {
+    qos_hash_t *entry = NULL;
+
+    if (!qos)
+        return;
+
+    HASH_FIND_INT(*qos_hash, &(qos->id), entry);
+
+    if (entry == NULL) {
+        entry = xmalloc(sizeof(qos_hash_t));
+        entry->key = qos->id;
+        entry->qos_name = xstrdup(qos->name);
+        HASH_ADD_INT(*qos_hash, key, entry);
+    }
+
+
+}
+
+/** find entry->qos_name */ 
+extern char *find_qos_hash(qos_hash_t **qos_hash, uint32_t key) {
+    qos_hash_t *entry = NULL;
+	HASH_FIND_INT(*qos_hash, &key, entry);
+
+    if (entry)
+        return entry->qos_name;
+
+    return NULL;
+}
+
+/** delete hash */
+extern void destroy_qos_hash(qos_hash_t **qos_hash) {
+    qos_hash_t *current_entry, *tmp;
+
+    HASH_ITER(hh, *qos_hash, current_entry, tmp) {
+        HASH_DEL(*qos_hash, current_entry);
+        
+        if (current_entry->qos_name)
+            xfree(current_entry->qos_name);
+		xfree(current_entry);
+    }
+}
+#endif
+
 static void _free_clus_res_rec_members(slurmdb_clus_res_rec_t *clus_res)
 {
 	if (clus_res) {
@@ -2403,6 +2453,41 @@ extern char *get_qos_complete_str_bitstr(List qos_list, bitstr_t *valid_qos)
 	return print_this;
 }
 
+#ifdef __METASTACK_QOS_HASH
+extern List get_qos_name_list1(qos_hash_t *qos_hash, List num_qos_list)
+{
+	List temp_list;
+	char *temp_char;
+	ListIterator itr;
+	int option;
+
+	if ((qos_hash == NULL) || !HASH_COUNT(qos_hash)
+	    || !num_qos_list || !list_count(num_qos_list))
+		return NULL;
+
+	temp_list = list_create(xfree_ptr);
+
+	itr = list_iterator_create(num_qos_list);
+	while((temp_char = list_next(itr))) {
+		option = 0;
+		if (temp_char[0] == '+' || temp_char[0] == '-') {
+			option = temp_char[0];
+			temp_char++;
+		}
+		temp_char = find_qos_hash(&qos_hash, (uint32_t) atoi(temp_char));
+		if (temp_char) {
+			if (option)
+				list_append(temp_list, xstrdup_printf(
+						    "%c%s", option, temp_char));
+			else
+				list_append(temp_list, xstrdup(temp_char));
+		}
+	}
+	list_iterator_destroy(itr);
+	return temp_list;
+}
+#endif
+
 extern List get_qos_name_list(List qos_list, List num_qos_list)
 {
 	List temp_list;
@@ -2435,6 +2520,28 @@ extern List get_qos_name_list(List qos_list, List num_qos_list)
 	list_iterator_destroy(itr);
 	return temp_list;
 }
+
+#ifdef __METASTACK_QOS_HASH
+extern char *get_qos_complete_str1(qos_hash_t *qos_hash, List num_qos_list)
+{
+	List temp_list;
+	char *print_this;
+
+	if ((qos_hash == NULL) || !HASH_COUNT(qos_hash) || !num_qos_list ||
+	    !list_count(num_qos_list))
+		return xstrdup("");
+
+	temp_list = get_qos_name_list1(qos_hash, num_qos_list);
+	
+	print_this = slurm_char_list_to_xstr(temp_list);
+	FREE_NULL_LIST(temp_list);
+
+	if (!print_this)
+		return xstrdup("");
+
+	return print_this;
+}
+#endif
 
 extern char *get_qos_complete_str(List qos_list, List num_qos_list)
 {

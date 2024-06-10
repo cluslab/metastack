@@ -216,6 +216,10 @@ extern int input_words;	/* number of words of input permitted */
 extern int one_liner;	/* one record per line if =1 */
 extern int quiet_flag;	/* quiet=1, verbose=-1, normal=0 */
 extern int rollback_flag;/* immediate execute=0, else = 1 */
+#ifdef __METASTACK_OPT_LIST_USER
+extern int no_get_parent_limits;
+extern int no_sort_assoc;
+#endif
 extern int with_assoc_flag;/* show acct/user associations flag */
 extern int readonly_flag; /* make it so you can only run list commands */
 extern void *db_conn;
@@ -371,4 +375,11 @@ extern int sacctmgr_list_runaway_jobs(int argc, char **argv);
 extern int verify_federations_exist(List name_list);
 extern int verify_fed_clusters(List cluster_list, const char *fed_name,
 			       bool *existing_fed);
+#endif
+
+#ifdef __METASTACK_QOS_HASH
+#include "src/common/slurmdb_defs.h"
+extern qos_hash_t *qos_hash;
+extern void sacctmgr_print_qos_list1(print_field_t *field, qos_hash_t *qos_hash,
+				    List value, int last);
 #endif

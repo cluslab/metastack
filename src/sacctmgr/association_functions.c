@@ -807,7 +807,19 @@ extern void sacctmgr_print_assoc_rec(slurmdb_assoc_rec_t *assoc,
 			g_qos_list = slurmdb_qos_get(
 				db_conn, NULL);
 
+#ifdef __METASTACK_QOS_HASH
+		if ((qos_hash == NULL) && g_qos_list) {
+			slurmdb_qos_rec_t *qos = NULL;
+			ListIterator qos_itr = list_iterator_create(g_qos_list);
+			while ((qos = list_next(qos_itr))) {
+				insert_qos(&qos_hash, qos);
+			}
+			list_iterator_destroy(qos_itr);
+		}	
+		field->print_routine(field, qos_hash, assoc->qos_list, last);
+#else
 		field->print_routine(field, g_qos_list, assoc->qos_list, last);
+#endif
 		break;
 	case PRINT_QOS_RAW:
 		field->print_routine(field, assoc->qos_list, last);
@@ -875,6 +887,11 @@ extern int sacctmgr_list_assoc(int argc, char **argv)
 		return SLURM_ERROR;
 	}
 
+#ifdef __METASTACK_OPT_LIST_USER
+	if (no_get_parent_limits)
+		assoc_cond->without_parent_limits = 2;
+#endif
+
 	assoc_list = slurmdb_associations_get(db_conn, assoc_cond);
 	slurmdb_destroy_assoc_cond(assoc_cond);
 
@@ -886,7 +903,12 @@ extern int sacctmgr_list_assoc(int argc, char **argv)
 		return SLURM_ERROR;
 	}
 
+#ifdef __METASTACK_OPT_LIST_USER
+	if (!no_sort_assoc)
+		slurmdb_sort_hierarchical_assoc_list(assoc_list, true);
+#else
 	slurmdb_sort_hierarchical_assoc_list(assoc_list, true);
+#endif
 
 	itr = list_iterator_create(assoc_list);
 	itr2 = list_iterator_create(print_fields_list);

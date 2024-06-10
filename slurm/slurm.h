@@ -144,6 +144,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define HOST_NAME_MAX 64
 #endif
 
+#ifndef __METASTACK_ASSOC_HASH
+#define __METASTACK_ASSOC_HASH
+#endif
+
 #ifndef __METASTACK_OPT_PRINT_COMMAND
 #define __METASTACK_OPT_PRINT_COMMAND
 #endif
@@ -282,6 +286,14 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 
 #ifndef __METASTACK_BUG_CONN_FIX
 #define __METASTACK_BUG_CONN_FIX
+#endif
+
+#ifndef __METASTACK_OPT_LIST_USER
+#define __METASTACK_OPT_LIST_USER
+#endif
+
+#ifndef __METASTACK_QOS_HASH
+#define __METASTACK_QOS_HASH
 #endif
 
 

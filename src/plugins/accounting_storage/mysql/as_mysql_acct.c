@@ -576,6 +576,10 @@ extern List as_mysql_get_accts(mysql_conn_t *mysql_conn, uid_t uid,
 	MYSQL_ROW row;
 	slurmdb_user_rec_t user;
 
+#ifdef __METASTACK_OPT_LIST_USER
+	bool list_all = true;
+#endif
+
 	/* if this changes you will need to edit the corresponding enum */
 	char *acct_req_inx[] = {
 		"name",
@@ -634,6 +638,11 @@ extern List as_mysql_get_accts(mysql_conn_t *mysql_conn, uid_t uid,
 		list_iterator_destroy(itr);
 		xstrcat(extra, ")");
 	}
+
+#ifdef __METASTACK_OPT_LIST_USER
+	if (list_count(acct_cond->assoc_cond->acct_list)) 
+		list_all = false;
+#endif
 
 	if (acct_cond->description_list
 	    && list_count(acct_cond->description_list)) {
@@ -753,14 +762,48 @@ empty:
 		ListIterator assoc_itr = NULL;
 		slurmdb_account_rec_t *acct = NULL;
 		slurmdb_assoc_rec_t *assoc = NULL;
+
+#ifdef __METASTACK_OPT_LIST_USER
+		List assoc_list = as_mysql_get_assocs(
+			mysql_conn, uid, acct_cond->assoc_cond, list_all);
+#else
 		List assoc_list = as_mysql_get_assocs(
 			mysql_conn, uid, acct_cond->assoc_cond);
+#endif
 
 		if (!assoc_list) {
 			error("no associations");
 			return acct_list;
 		}
 
+#ifdef __METASTACK_ASSOC_HASH
+        assoc_hash_t *assoc_hash = NULL;
+
+        /** build hash table */
+        assoc_itr = list_iterator_create(assoc_list);
+        while ((assoc = list_next(assoc_itr))) {
+            if (!assoc->acct)
+                continue;
+            
+            insert_assoc_hash(&assoc_hash, assoc, assoc->acct);
+            list_remove(assoc_itr);
+        }
+        list_iterator_destroy(assoc_itr);
+
+        itr = list_iterator_create(acct_list);
+		while ((acct = list_next(itr))) {
+            assoc_hash_t *tmp_entry = NULL;
+            tmp_entry = find_assoc_entry(&assoc_hash, acct->name);
+
+            if (tmp_entry) {
+                acct->assoc_list = tmp_entry->value_assoc_list;
+                tmp_entry->value_assoc_list = NULL;
+            }
+		}
+        list_iterator_destroy(itr);
+        
+        destroy_assoc_hash(&assoc_hash);
+#else
 		itr = list_iterator_create(acct_list);
 		assoc_itr = list_iterator_create(assoc_list);
 		while ((acct = list_next(itr))) {
@@ -779,6 +822,7 @@ empty:
 		list_iterator_destroy(itr);
 		list_iterator_destroy(assoc_itr);
 
+#endif
 		FREE_NULL_LIST(assoc_list);
 	}
 
