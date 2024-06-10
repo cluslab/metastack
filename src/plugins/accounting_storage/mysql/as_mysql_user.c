@@ -44,6 +44,56 @@
 #include "as_mysql_usage.h"
 #endif
 
+#ifdef __METASTACK_ASSOC_HASH
+/** build hash table, assign assoc to entry according to key. 
+ * IN:  hash table, assoc
+ * OUT: assoc_hash
+ */
+extern void insert_assoc_hash(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *str_key) {
+    assoc_hash_t *entry = NULL;
+
+    if (!str_key)
+        return;
+
+    HASH_FIND_STR(*assoc_hash, str_key, entry);
+
+    if (entry == NULL) {
+        entry = xmalloc(sizeof(assoc_hash_t));
+        entry->key = xstrdup(str_key);
+        entry->value_assoc_list = list_create(slurmdb_destroy_assoc_rec);
+        HASH_ADD_KEYPTR(hh, *assoc_hash, entry->key, strlen(entry->key), entry);
+    }
+
+    // add assoc to entry->value_assoc_list
+    list_append(entry->value_assoc_list, assoc);
+}
+
+extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key) {
+    assoc_hash_t *entry = NULL;
+
+    if(!key)
+        return entry;
+    
+    HASH_FIND_STR(*assoc_hash, key, entry);
+
+    return entry;
+}
+
+/** delete hash */
+extern void destroy_assoc_hash(assoc_hash_t **assoc_hash) {
+    assoc_hash_t *current_entry, *tmp;
+
+    HASH_ITER(hh, *assoc_hash, current_entry, tmp) {
+        HASH_DEL(*assoc_hash, current_entry);
+        xfree(current_entry->key);
+        if (current_entry->value_assoc_list)
+            FREE_NULL_LIST(current_entry->value_assoc_list);
+        
+        xfree(current_entry);
+    }
+}
+#endif
+
 static int _change_user_name(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user)
 {
 	int rc = SLURM_SUCCESS;
@@ -108,7 +158,11 @@ static List _get_other_user_names_to_mod(mysql_conn_t *mysql_conn, uint32_t uid,
 			assoc_cond.user_list = user_cond->assoc_cond->user_list;
 	}
 	assoc_cond.only_defs = 1;
+#ifdef __METASTACK_OPT_LIST_USER
+	tmp_list = as_mysql_get_assocs(mysql_conn, uid, &assoc_cond, false);
+#else
 	tmp_list = as_mysql_get_assocs(mysql_conn, uid, &assoc_cond);
+#endif 
 	if (tmp_list) {
 		slurmdb_assoc_rec_t *object = NULL;
 		itr = list_iterator_create(tmp_list);
@@ -1417,14 +1471,78 @@ empty:
 
 		user_cond->assoc_cond->with_deleted = user_cond->with_deleted;
 
+#ifdef __METASTACK_OPT_LIST_USER
+		assoc_list = as_mysql_get_assocs(
+			mysql_conn, uid, user_cond->assoc_cond, false);
+#else
 		assoc_list = as_mysql_get_assocs(
 			mysql_conn, uid, user_cond->assoc_cond);
+#endif
 
 		if (!assoc_list) {
 			error("no associations");
 			goto get_wckeys;
 		}
 
+#ifdef __METASTACK_ASSOC_HASH
+        assoc_hash_t *assoc_hash = NULL;
+
+        assoc_itr = list_iterator_create(assoc_list);
+        while ((assoc = list_next(assoc_itr))) {
+            if (!assoc->user)
+                continue;
+            
+            insert_assoc_hash(&assoc_hash, assoc, assoc->user);
+            list_remove(assoc_itr);
+        }
+        list_iterator_destroy(assoc_itr);
+
+        itr = list_iterator_create(user_list);
+        while ((user = list_next(itr))) {
+            assoc_hash_t *tmp_entry = NULL;
+            bool find_flag = false;
+
+            if (!user->default_acct){
+                slurmdb_assoc_rec_t *tmp_assoc = NULL;
+                List tmp_list = NULL;
+                
+                tmp_entry = find_assoc_entry(&assoc_hash, user->name);
+                find_flag = true;
+
+                if (tmp_entry)
+                    tmp_list = tmp_entry->value_assoc_list;
+
+                if (tmp_list) {
+                    ListIterator tmp_itr = list_iterator_create(tmp_list);
+                    while ((tmp_assoc = list_next(tmp_itr))) {
+                        if (tmp_assoc->is_def == 1){
+                            user->default_acct = xstrdup(tmp_assoc->acct);
+                            break;
+                        }
+                    }
+                    list_iterator_destroy(tmp_itr);
+                } else 
+                    error("not find reference assoc for user: %s", user->name);
+                
+                tmp_list = NULL;
+            }
+
+            if (!user_cond->with_assocs) {
+                continue;
+            }
+
+            if (!find_flag)
+                tmp_entry = find_assoc_entry(&assoc_hash, user->name);
+
+            if (tmp_entry) {
+                user->assoc_list = tmp_entry->value_assoc_list;
+                tmp_entry->value_assoc_list = NULL;
+            }
+        }
+        list_iterator_destroy(itr);
+        
+        destroy_assoc_hash(&assoc_hash);
+#else
 		itr = list_iterator_create(user_list);
 		assoc_itr = list_iterator_create(assoc_list);
 		while ((user = list_next(itr))) {
@@ -1460,6 +1578,7 @@ empty:
 		}
 		list_iterator_destroy(itr);
 		list_iterator_destroy(assoc_itr);
+#endif
 		FREE_NULL_LIST(assoc_list);
 	}
 

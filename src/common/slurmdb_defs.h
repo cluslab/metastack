@@ -109,6 +109,21 @@ typedef enum {
 					      * unless INFINITE64 or NO_VAL64 */
 #define TRES_STR_FLAG_BYTES       0x00000800 /* Convertable Usage in Bytes */
 
+#ifdef __METASTACK_QOS_HASH
+
+#include "uthash.h"
+
+typedef struct struct_qos_hash {
+    uint32_t key;
+    char *qos_name;
+    UT_hash_handle hh;
+} qos_hash_t;
+
+extern void insert_qos(qos_hash_t **qos_hash, slurmdb_qos_rec_t *qos);
+extern char *find_qos_hash(qos_hash_t **qos_hash, uint32_t key);
+extern void destroy_qos_hash(qos_hash_t **qos_hash);
+
+#endif
 typedef struct {
 	slurmdb_cluster_rec_t *cluster_rec;
 	int preempt_cnt;
@@ -158,6 +173,11 @@ extern int set_qos_bitstr_from_list(bitstr_t *valid_qos, List qos_list);
 extern char *get_qos_complete_str_bitstr(List qos_list, bitstr_t *valid_qos);
 extern List get_qos_name_list(List qos_list, List num_qos_list);
 extern char *get_qos_complete_str(List qos_list, List num_qos_list);
+
+#ifdef __METASTACK_QOS_HASH
+extern List get_qos_name_list1(qos_hash_t *qos_hash, List num_qos_list);
+extern char *get_qos_complete_str1(qos_hash_t *qos_hash, List num_qos_list);
+#endif
 
 extern char *get_classification_str(uint16_t classification);
 extern uint16_t str_2_classification(char *classification);

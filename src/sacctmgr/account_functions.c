@@ -645,6 +645,11 @@ extern int sacctmgr_list_account(int argc, char **argv)
 		return SLURM_ERROR;
 	}
 
+#ifdef __METASTACK_OPT_LIST_USER
+	if (acct_cond->with_assocs && no_get_parent_limits)
+		acct_cond->assoc_cond->without_parent_limits = 2;
+#endif
+
 	acct_list = slurmdb_accounts_get(db_conn, acct_cond);
 	slurmdb_destroy_account_cond(acct_cond);
 

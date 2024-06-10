@@ -3295,7 +3295,12 @@ extern List acct_storage_p_get_assocs(
 	mysql_conn_t *mysql_conn, uid_t uid,
 	slurmdb_assoc_cond_t *assoc_cond)
 {
+	
+#ifdef __METASTACK_OPT_LIST_USER
+	return as_mysql_get_assocs(mysql_conn, uid, assoc_cond, false);
+#else
 	return as_mysql_get_assocs(mysql_conn, uid, assoc_cond);
+#endif
 }
 
 extern List acct_storage_p_get_events(mysql_conn_t *mysql_conn, uint32_t uid,
