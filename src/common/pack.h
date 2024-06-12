@@ -53,11 +53,7 @@
  *  Maximum message size. Messages larger than this value (in bytes)
  *  will not be received.
  */
-#ifdef __METASTACK_BUG_MSGSIZE_FIX
-#define MAX_MSG_SIZE (1024 * 1024 * 1024 * 2U)
-#else
 #define MAX_MSG_SIZE (1024 * 1024 * 1024)
-#endif
 
 #define BUF_MAGIC 0x42554545
 #define BUF_SIZE (16 * 1024)
