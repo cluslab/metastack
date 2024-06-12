@@ -3311,7 +3311,6 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			if (!old_parent || !old_cluster
 			    || xstrcasecmp(parent, old_parent)
 			    || xstrcasecmp(object->cluster, old_cluster)) {
-				char *sel_query = xstrdup_printf(
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 				char *sel_query = xstrdup_printf(
 					"SELECT rgt FROM \"%s_%s\" WHERE "
@@ -3320,6 +3319,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 					object->cluster, assoc_table,
 					parent);
 #else
+				char *sel_query = xstrdup_printf(
 					"SELECT lft FROM \"%s_%s\" WHERE "
 					"acct = '%s' and user = '' "
 					"order by lft;",
