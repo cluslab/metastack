@@ -179,6 +179,21 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			}
 			(*update_cnt_ptr)++;
 		}
+#ifdef __METASTACK_NEW_PART_RBN
+		else if (xstrncasecmp(tag, "RBN", MAX(taglen, 1)) == 0) {
+			if (xstrncasecmp(val, "NO", MAX(vallen, 1)) == 0)
+				part_msg_ptr->meta_flags |= PART_METAFLAG_RBN_CLR;
+			else if (xstrncasecmp(val, "YES", MAX(vallen, 1)) == 0)
+				part_msg_ptr->meta_flags |= PART_METAFLAG_RBN;
+			else {
+				exit_code = 1;
+				error("Invalid input: %s", argv[i]);
+				error("Acceptable RBN values are YES and NO");
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+#endif
 		else if (xstrncasecmp(tag, "Hidden", MAX(taglen, 1)) == 0) {
 			if (xstrncasecmp(val, "NO", MAX(vallen, 1)) == 0)
 				part_msg_ptr->flags |= PART_FLAG_HIDDEN_CLR;

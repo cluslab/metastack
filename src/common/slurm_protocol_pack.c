@@ -1912,6 +1912,9 @@ _pack_update_partition_msg(update_part_msg_t * msg, buf_t *buffer,
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 	    pack32(msg->suspend_idle, buffer);
 #endif
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+		pack16(msg->meta_flags, 	   buffer);
+#endif
 	}
 }
 
@@ -1973,6 +1976,9 @@ _unpack_update_partition_msg(update_part_msg_t ** msg, buf_t *buffer,
 		safe_unpack16(&tmp_ptr->state_up,  buffer);
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 	    safe_unpack32(&tmp_ptr->suspend_idle, buffer);
+#endif
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+		safe_unpack16(&tmp_ptr->meta_flags,	   buffer);
 #endif
 	}
 
@@ -2883,6 +2889,9 @@ _unpack_partition_info_members(partition_info_t * part, buf_t *buffer,
 		safe_unpack16(&part->state_up,     buffer);
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
         safe_unpack32(&part->suspend_idle, buffer);
+#endif
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+	    	safe_unpack16(&part->meta_flags, buffer);
 #endif
 		safe_unpack16(&part->cr_type ,     buffer);
 		safe_unpack16(&part->resume_timeout, buffer);
