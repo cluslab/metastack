@@ -4758,6 +4758,17 @@ The default value is 8192.
 .IP
 
 .TP
+\fBrl_retry_max_period=\fR
+The maximum interval for the client to send a RPC request to the server when rate limit.
+The initial interval at which a client sends a RPC to the server is rl_refill_period, 
+incremented by 2 seconds per round until rl_retry_max_period is reached.
+
+For example, if rl_refill_period=1,rl_retry_max_period=60 is set, after the rate limit is exceeded, 
+The interval at which the client sends a request to the server is 1s..3s....57s..59s..60s.
+.IP
+
+
+.TP
 \fBuser_resv_delete\fR
 Allow any user able to run in a reservation to delete it.
 .RE
