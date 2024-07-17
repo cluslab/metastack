@@ -3350,15 +3350,17 @@ static batch_job_launch_msg_t *_build_launch_job_msg(job_record_t *job_ptr,
 
 job_failed:
 	/* fatal or kill the job as it can never be recovered */
-	if (!ignore_state_errors)
-		fatal("%s: %s for %pJ. Check file system serving StateSaveLocation as that directory may be missing or corrupted. Start with '-i' to ignore this error and kill the afflicted jobs.",
-		      __func__, fail_why, job_ptr);
+	// if (!ignore_state_errors)
+	//	fatal("%s: %s for %pJ. Check file system serving StateSaveLocation as that directory may be missing or corrupted. Start with '-i' to ignore this error and kill the afflicted jobs.",
+	//	      __func__, fail_why, job_ptr);
 
+	/*kill the job as it can never be recovered */
 	error("%s: %s for %pJ. %pJ will be killed due to system error.",
 	      __func__, fail_why, job_ptr, job_ptr);
 	xfree(job_ptr->state_desc);
 	job_ptr->state_desc = xstrdup(fail_why);
-	job_ptr->state_reason = FAIL_SYSTEM;
+	// job_ptr->state_reason = FAIL_SYSTEM;
+	job_ptr->state_reason = FAIL_DOWN_NODE;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	_last_job_update(time(NULL));
 #else	
@@ -3366,8 +3368,8 @@ job_failed:
 #endif
 	slurm_free_job_launch_msg(launch_msg_ptr);
 	/* ignore the return as job is in an unknown state anyway */
-	job_complete(job_ptr->job_id, slurm_conf.slurm_user_id, false, false,
-	             1);
+	job_complete(job_ptr->job_id, slurm_conf.slurm_user_id, false, true, NO_VAL);
+	// job_complete(job_ptr->job_id, slurm_conf.slurm_user_id, false, false, 1);
 	return NULL;
 }
 
