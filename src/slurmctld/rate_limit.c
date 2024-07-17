@@ -58,10 +58,14 @@ static user_bucket_t *user_buckets = NULL;
 static bool rate_limit_enabled = false;
 static pthread_mutex_t rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* 30 tokens max, bucket refills 2 tokens per 1 second */
+/* 
+ * 30 tokens max, bucket refills 2 tokens per 1 second.
+ * retry_max_period - The maximum period for the client to send a RPC request to the server when rate limit.
+ * */
 static int bucket_size = 30;
 static int refill_rate = 2;
 static int refill_period = 1;
+static int retry_max_period = 3600;
 
 extern void rate_limit_init(void)
 {
@@ -106,13 +110,23 @@ extern void rate_limit_init(void)
 			refill_period = tmp;
 		}
 	}
+	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
+				   "rl_retry_max_period="))) {
+		int tmp = atoi(tmp_ptr + 20);
+		if (tmp <= 0 || tmp > retry_max_period) {
+			error("rl_retry_max_period configured invalid value, use default value");
+		} else {
+			retry_max_period = tmp;
+		}
+	}
+
 
 	rate_limit_enabled = true;
 	user_buckets = xcalloc(table_size, sizeof(user_bucket_t));
 
 	info("RPC rate limiting enabled");
-	debug("%s: rl_table_size=%d,rl_bucket_size=%d,rl_refill_rate=%d,rl_refill_period=%d",
-	      __func__, table_size, bucket_size, refill_rate, refill_period);
+	debug("%s: rl_table_size=%d,rl_bucket_size=%d,rl_refill_rate=%d,rl_refill_period=%d,rl_retry_max_period=%d",
+	      __func__, table_size, bucket_size, refill_rate, refill_period, retry_max_period);
 }
 
 extern void rate_limit_shutdown(void)
