@@ -35,6 +35,9 @@
 \*****************************************************************************/
 
 #include <string.h>
+#ifdef __METASTACK_NEW_PART_RBN
+#include <stdlib.h>
+#endif
 #include "select_cons_tres.h"
 #include "dist_tasks.h"
 #include "job_test.h"
@@ -728,6 +731,22 @@ static int _eval_nodes(job_record_t *job_ptr, gres_mc_data_t *mc_ptr,
 		goto fini;
 	}
 
+#ifdef __METASTACK_NEW_PART_RBN
+	int index = 0, i_copy = 0, start = 0;
+	if (job_ptr->part_ptr &&
+		 (job_ptr->part_ptr->meta_flags & PART_METAFLAG_RBN) &&
+		 (consec_index != 0)){
+		index = rand() % consec_index;
+	}
+
+	if (job_ptr->part_ptr &&
+		 (job_ptr->part_ptr->meta_flags & PART_METAFLAG_RBN) &&
+		 (slurm_conf.debug_flags & DEBUG_FLAG_SELECT_TYPE)) {
+	    info("cons_tres:RBN with consec_index_number:%d random_index:%d ",
+		     consec_index, index);
+	}
+#endif
+
 	/*
 	 * accumulate nodes from these sets of consecutive nodes until
 	 * sufficient resources have been accumulated
@@ -735,6 +754,165 @@ static int _eval_nodes(job_record_t *job_ptr, gres_mc_data_t *mc_ptr,
 	while (consec_index && (max_nodes > 0)) {
 		best_fit_cpus = best_fit_nodes = best_fit_sufficient = 0;
 		best_fit_req = -1;	/* first required node, -1 if none */
+		
+#ifdef __METASTACK_NEW_PART_RBN
+		if(job_ptr->part_ptr &&
+		 (job_ptr->part_ptr->meta_flags & PART_METAFLAG_RBN)){
+			for (i = 0; i < consec_index; i++) {
+				i_copy = i;
+				start = (index + i) % consec_index;
+				if (consec_nodes[start] == 0)
+					continue;	/* no usable nodes here */
+
+				if (details_ptr->contiguous &&
+					details_ptr->req_node_bitmap &&
+					(consec_req[start] == -1))
+					continue;  /* not required nodes */
+
+				i = start;
+
+				sufficient = (consec_cpus[i] >= rem_cpus) &&
+						 _enough_nodes(consec_nodes[i], rem_nodes,
+								   min_nodes, req_nodes);
+				if (sufficient && gres_per_job) {
+					sufficient = gres_sched_sufficient(
+						job_ptr->gres_list_req, consec_gres[i]);
+				}
+
+				/*
+				* if first possibility OR
+				* contains required nodes OR
+				* lowest node weight
+				*/
+				if ((best_fit_nodes == 0) ||
+					((best_fit_req == -1) && (consec_req[i] != -1)) ||
+					(consec_weight[i] < best_weight))
+					new_best = true;
+				else
+					new_best = false;
+				/*
+				 * If equal node weight
+				 * first set large enough for request OR
+				 * tightest fit (less resource/CPU waste) OR
+				 * nothing yet large enough, but this is biggest
+				 */
+				if (!new_best && (consec_weight[i] == best_weight) &&
+					((sufficient && (best_fit_sufficient == 0)) ||
+					 (sufficient && (consec_cpus[i] < best_fit_cpus)) ||
+					 (!sufficient &&
+					  (consec_cpus[i] > best_fit_cpus))))
+					new_best = true;
+				/*
+				 * if first continuous node set large enough
+				 */
+				if (!new_best && !best_fit_sufficient &&
+					details_ptr->contiguous && sufficient)
+					new_best = true;
+				if (new_best) {
+					best_fit_cpus = consec_cpus[i];
+					best_fit_nodes = consec_nodes[i];
+					best_fit_index = i;
+					best_fit_req = consec_req[i];
+					best_fit_sufficient = sufficient;
+					best_weight = consec_weight[i];
+				}
+        
+				if (details_ptr->contiguous &&
+					details_ptr->req_node_bitmap) {
+					/*
+					 * Must wait for all required nodes to be
+					 * in a single consecutive block
+					 */
+					int j, other_blocks = 0;
+					for (j = (i+1); j < consec_index; j++) {
+						if (consec_req[j] != -1) {
+							other_blocks = 1;
+							break;
+						}
+					}
+					if (other_blocks) {
+						best_fit_nodes = 0;
+						break;
+					}
+				}
+				i = i_copy;
+			}
+		} else {
+			for (i = 0; i < consec_index; i++) {
+				if (consec_nodes[i] == 0)
+					continue;	/* no usable nodes here */
+        
+				if (details_ptr->contiguous &&
+					details_ptr->req_node_bitmap &&
+					(consec_req[i] == -1))
+					continue;  /* not required nodes */
+				sufficient = (consec_cpus[i] >= rem_cpus) &&
+						 _enough_nodes(consec_nodes[i], rem_nodes,
+								min_nodes, req_nodes);
+				if (sufficient && gres_per_job) {
+					sufficient = gres_sched_sufficient(
+						job_ptr->gres_list_req, consec_gres[i]);
+				}
+        
+				/*
+				 * if first possibility OR
+				 * contains required nodes OR
+				 * lowest node weight
+				 */
+				if ((best_fit_nodes == 0) ||
+					((best_fit_req == -1) && (consec_req[i] != -1)) ||
+					(consec_weight[i] < best_weight))
+					new_best = true;
+				else
+					new_best = false;
+				/*
+				 * If equal node weight
+				 * first set large enough for request OR
+				 * tightest fit (less resource/CPU waste) OR
+				 * nothing yet large enough, but this is biggest
+				 */
+				if (!new_best && (consec_weight[i] == best_weight) &&
+					((sufficient && (best_fit_sufficient == 0)) ||
+					 (sufficient && (consec_cpus[i] < best_fit_cpus)) ||
+					 (!sufficient &&
+					  (consec_cpus[i] > best_fit_cpus))))
+					new_best = true;
+				/*
+				 * if first continuous node set large enough
+				 */
+				if (!new_best && !best_fit_sufficient &&
+					details_ptr->contiguous && sufficient)
+					new_best = true;
+				if (new_best) {
+					best_fit_cpus = consec_cpus[i];
+					best_fit_nodes = consec_nodes[i];
+					best_fit_index = i;
+					best_fit_req = consec_req[i];
+					best_fit_sufficient = sufficient;
+					best_weight = consec_weight[i];
+				}
+        
+				if (details_ptr->contiguous &&
+					details_ptr->req_node_bitmap) {
+					/*
+					 * Must wait for all required nodes to be
+					 * in a single consecutive block
+					 */
+					int j, other_blocks = 0;
+					for (j = (i+1); j < consec_index; j++) {
+						if (consec_req[j] != -1) {
+							other_blocks = 1;
+							break;
+						}
+					}
+					if (other_blocks) {
+						best_fit_nodes = 0;
+						break;
+					}
+				}
+			}
+		}
+#else
 		for (i = 0; i < consec_index; i++) {
 			if (consec_nodes[i] == 0)
 				continue;	/* no usable nodes here */
@@ -808,6 +986,8 @@ static int _eval_nodes(job_record_t *job_ptr, gres_mc_data_t *mc_ptr,
 				}
 			}
 		}
+#endif
+
 		if (best_fit_nodes == 0)
 			break;
 

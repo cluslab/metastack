@@ -6670,6 +6670,24 @@ balancing between sockets can be realized.
 .IP
 
 .TP
+\fBRBN\fR
+Schedule resources to jobs on the random block node. (based upon the number of consecutive
+idle node blocks). When assigning nodes to a job, start with a random index of several
+consecutive sets of nodes, rather than traversing from beginning to end. Node utilization
+and node fragmentation can be balanced. Possible values are "YES" and "NO". The default value is "NO".
+
+\fBNOTE\fR:This node selection strategy takes effect when the SelectType=select/cons_res
+or SelectType=select/cons_tres is configured.
+
+This function selects the default node policy. The LLN policy and topo policy have higher
+priorities than the default node selection process. Therefore, if the LLN policy or topo
+policy is enabled, the RBN policy does not take effect.
+
+When preemption occurs, all nodes are occupied. Therefore, there is only one node block
+and the RBN policy does not take effect.
+.IP
+
+.TP
 \fBMaxCPUsPerNode\fR
 Maximum number of CPUs on any node available to all jobs from this partition.
 This can be especially useful to schedule GPUs. For example a node can be

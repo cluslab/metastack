@@ -241,6 +241,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_LOG_OUTPUT
 #endif
 
+/* Macro definition that controls random selection of continuous node blocks */
+#ifndef __METASTACK_NEW_PART_RBN
+#define __METASTACK_NEW_PART_RBN
+#endif
+
 #ifndef __METASTACK_BUG_CR_CORE
 #define __METASTACK_BUG_CR_CORE
 #endif
@@ -2563,6 +2568,11 @@ typedef struct job_defaults {
 #define PART_FLAG_LLS_CLR	    0x8000	/* Clear LLS partition flag */
 #endif
 
+#ifdef __METASTACK_NEW_PART_RBN
+#define PART_METAFLAG_RBN 	0x0002  /* Set if random block nodes selection is desired */
+#define PART_METAFLAG_RBN_CLR 	0x0200  /* Clear RBN partition flag */
+#endif
+
 typedef struct partition_info {
 	char *allow_alloc_nodes;/* list names of allowed allocating
 				 * nodes */
@@ -2598,6 +2608,9 @@ typedef struct partition_info {
 				 * start_range_2, .., -1  */
 	char *nodes;		/* list names of nodes in partition */
 	char *nodesets;		/* list of nodesets used by partition */
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+	uint16_t meta_flags;		/* see PART_NEWFLAG_* above */
+#endif
 	uint16_t over_time_limit; /* job's time limit can be exceeded by this
 				   * number of minutes before cancellation */
 	uint16_t preempt_mode;	/* See PREEMPT_MODE_* in slurm/slurm.h */

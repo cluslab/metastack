@@ -927,7 +927,11 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 #ifdef __METASTACK_NEW_PART_LLS
 	if (part->lls_flag)
 		part_ptr->flags |= PART_FLAG_LLS;
-#endif		
+#endif
+#ifdef __METASTACK_NEW_PART_RBN
+	if (part->rbn_flag)
+		part_ptr->meta_flags |= PART_METAFLAG_RBN;
+#endif	
 	part_ptr->max_time       = part->max_time;
 	part_ptr->def_mem_per_cpu = part->def_mem_per_cpu;
 	part_ptr->default_time   = part->default_time;
@@ -2786,7 +2790,18 @@ static int  _restore_part_state(List old_part_list, char *old_def_part_name,
 				else
 					part_ptr->flags &= (~PART_FLAG_LLS);
 			}
-#endif			
+#endif
+#ifdef __METASTACK_NEW_PART_RBN
+			if ((part_ptr->meta_flags & PART_METAFLAG_RBN) !=
+			    (old_part_ptr->meta_flags & PART_METAFLAG_RBN)) {
+				error("Partition %s RBN differs from "
+				      "slurm.conf", part_ptr->name);
+				if (old_part_ptr->meta_flags & PART_METAFLAG_RBN)
+					part_ptr->meta_flags |= PART_METAFLAG_RBN;
+				else
+					part_ptr->meta_flags &= (~PART_METAFLAG_RBN);
+			}
+#endif	
 			if (part_ptr->grace_time != old_part_ptr->grace_time) {
 				error("Partition %s GraceTime differs from slurm.conf",
 				      part_ptr->name);

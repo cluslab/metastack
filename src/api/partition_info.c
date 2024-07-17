@@ -263,6 +263,13 @@ char *slurm_sprint_partition_info ( partition_info_t * part_ptr,
 		xstrcat(out, " LLS=NO");
 #endif
 
+#ifdef __METASTACK_NEW_PART_RBN
+	if (part_ptr->meta_flags & PART_METAFLAG_RBN)
+		xstrcat(out, " RBN=YES");
+	else
+		xstrcat(out, " RBN=NO");
+#endif
+
 	xstrcat(out, line_end);
 
 	/****** Line ******/

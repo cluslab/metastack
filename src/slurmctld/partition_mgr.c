@@ -351,6 +351,9 @@ static void _init_part_record(part_record_t *part_ptr)
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
     part_ptr->suspend_idle		= NO_VAL;
 #endif
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+    part_ptr->meta_flags			= 0;
+#endif
 }
 
 /*
@@ -494,6 +497,9 @@ static int _dump_part_state(void *x, void *arg)
 	pack16(part_ptr->state_up,       buffer);
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 	pack32(part_ptr->suspend_idle,	 buffer);
+#endif
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+		pack16(part_ptr->meta_flags,      buffer);
 #endif
 	pack16(part_ptr->cr_type,        buffer);
 
@@ -1457,6 +1463,9 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 		(void)slurm_pack_list(part_ptr->job_defaults_list,
 				      job_defaults_pack, buffer,
 				      protocol_version);
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+		pack16(part_ptr->meta_flags,      buffer);
+#endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		if (default_part_loc == part_ptr)
 			part_ptr->flags |= PART_FLAG_DEFAULT;
@@ -1788,6 +1797,18 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		info("%s: clearing LLS for partition %s", __func__,
 		     part_desc->name);
 		part_ptr->flags &= (~PART_FLAG_LLS);
+	}
+#endif
+
+#ifdef __METASTACK_NEW_PART_RBN
+	if (part_desc->meta_flags & PART_METAFLAG_RBN) {
+		info("%s: setting RBN for partition %s", __func__,
+		     part_desc->name);
+		part_ptr->meta_flags |= PART_METAFLAG_RBN;
+	} else if (part_desc->meta_flags & PART_METAFLAG_RBN_CLR) {
+		info("%s: clearing RBN for partition %s", __func__,
+		     part_desc->name);
+		part_ptr->meta_flags &= (~PART_METAFLAG_RBN);
 	}
 #endif
 
