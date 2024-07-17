@@ -2414,6 +2414,26 @@ extern int slurm_send_recv_controller_msg(slurm_msg_t * request_msg,
 	slurmdb_cluster_rec_t *save_comm_cluster_rec = comm_cluster_rec;
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	int ratelimited = 0;
+	char *tmp_refill_period = NULL;
+	char *tmp_retry_max_period = NULL;
+	int refill_period = 1;
+	int retry_max_period = 3600;
+
+	if ((tmp_refill_period = xstrcasestr(slurm_conf.slurmctld_params,
+					     "rl_refill_period="))) {
+		int tmp = atoi(tmp_refill_period + 17);
+		if (tmp > 0){
+			refill_period = tmp;
+		}
+	}
+	if ((tmp_retry_max_period = xstrcasestr(slurm_conf.slurmctld_params,
+					     "rl_retry_max_period="))) {
+		int tmp = atoi(tmp_retry_max_period + 20);
+		if (tmp > 0 && tmp <= retry_max_period){
+			retry_max_period = tmp;
+		}
+	}
+
 #endif
 
 	/*
@@ -2494,18 +2514,38 @@ tryagain:
 	if (!rc && (response_msg->msg_type == RESPONSE_SLURM_RC) &&
 	    ((((return_code_msg_t *) response_msg->data)->return_code)
 	     == SLURMCTLD_COMMUNICATIONS_BACKOFF)) {
-		ratelimited++;
-		/*
-		 * slurmctld thinks we're being too chatty.
-		 * sleep for one second and try again.
-		 */
-		if(ratelimited == 1){
-			info("RPC rate limit exceeded.");
+		if (tmp_retry_max_period) {
+			ratelimited++;
+			/*
+			 * slurmctld thinks we're being too chatty.
+			 * sleep for one second and try again.
+			 */
+			if(ratelimited == 1){
+				info("request too frequently, retrying ......");
+			}
+			if(refill_period > retry_max_period){
+				refill_period = retry_max_period;
+			}
+			verbose("RPC rate limited %d time(s). Current sleeping %d seconds then trying again.",
+				ratelimited, refill_period);
+			sleep(refill_period);
+			refill_period += 2;
+			goto tryagain;
+		}else{
+			ratelimited++;
+			/*
+			 * slurmctld thinks we're being too chatty.
+			 * sleep for one second and try again.
+			 */
+			if(ratelimited == 1){
+				info("request too frequently, retrying ......");
+			}
+			verbose("RPC rate limited %d time(s). Sleeping then trying again.",
+				ratelimited);
+			sleep(1);
+			goto tryagain;
 		}
-		verbose("RPC rate limited %d time(s). Sleeping then trying again.",
-			ratelimited);
-		sleep(1);
-		goto tryagain;
+
 	}
 #endif
 
