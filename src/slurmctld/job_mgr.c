@@ -8270,6 +8270,38 @@ _write_data_array_to_file(char *file_name, char **data, uint32_t size)
 		return SLURM_SUCCESS;
 	}
 
+#ifdef __METASTACK_OPT_ENV_WRITE
+	int total_write = 0;
+
+	for (i = 0; i < size; i++) {
+                total_write = total_write + strlen(data[i]) + 1;
+        }
+
+	char *ndata = NULL;
+	ndata = (char *)xmalloc(total_write * sizeof(char));
+        pos = 0;
+        for (i = 0; i < size; i++) {
+                nwrite = strlen(data[i]) + 1;
+                memcpy(ndata + pos, data[i], nwrite);
+                pos = pos + nwrite;
+        }
+
+	nwrite = total_write;
+	pos = 0;
+	while (nwrite > 0) {
+		amount = write(fd, &ndata[pos], nwrite);
+		if ((amount < 0) && (errno != EINTR)) {
+			error("Error writing file %s, %m",
+			      file_name);
+			close(fd);
+			return ESLURM_WRITING_TO_FILE;
+		}
+		nwrite -= amount;
+		pos    += amount;
+	}
+
+	xfree(ndata);
+#else
 	for (i = 0; i < size; i++) {
 		nwrite = strlen(data[i]) + 1;
 		pos = 0;
@@ -8285,7 +8317,7 @@ _write_data_array_to_file(char *file_name, char **data, uint32_t size)
 			pos    += amount;
 		}
 	}
-
+#endif
 	close(fd);
 	return SLURM_SUCCESS;
 }

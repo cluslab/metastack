@@ -305,6 +305,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_MSGSIZE_FIX
 #endif
 
+#ifndef __METASTACK_OPT_ENV_WRITE
+#define __METASTACK_OPT_ENV_WRITE
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
