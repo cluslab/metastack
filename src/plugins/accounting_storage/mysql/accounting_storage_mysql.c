@@ -69,6 +69,7 @@
 #include "as_mysql_usage.h"
 #endif
 
+
 List as_mysql_cluster_list = NULL;
 /* This total list is only used for converting things, so no
    need to keep it upto date even though it lives until the
@@ -131,6 +132,9 @@ char *job_table = "job_table";
 char *job_env_table = "job_env_table";
 char *job_script_table = "job_script_table";
 char *last_ran_table = "last_ran_table";
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+char *node_borrow_table = "node_borrow_table";
+#endif
 char *qos_table = "qos_table";
 char *resv_table = "resv_table";
 char *res_table = "res_table";
@@ -1334,6 +1338,19 @@ extern int create_cluster_tables(mysql_conn_t *mysql_conn, char *cluster_name)
 		{ NULL, NULL}
 	};
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	storage_field_t node_borrow_table_fields[] = {
+		{ "time_start", "bigint unsigned not null" },
+		{ "time_end", "bigint unsigned default 0 not null" },
+		{ "node_name", "tinytext default '' not null" },
+		{ "reason", "tinytext not null" },
+		{ "reason_uid", "int unsigned default 0xfffffffe not null" },
+		{ "state", "int unsigned default 0 not null" },
+		{ "expansion", "text" },
+		{ NULL, NULL}
+	};
+#endif
+
 	storage_field_t event_table_fields[] = {
 		{ "time_start", "bigint unsigned not null" },
 		{ "time_end", "bigint unsigned default 0 not null" },
@@ -1667,6 +1684,20 @@ extern int create_cluster_tables(mysql_conn_t *mysql_conn, char *cluster_name)
 	    == SLURM_ERROR)
 		return SLURM_ERROR;
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	snprintf(table_name, sizeof(table_name), "\"%s_%s\"",
+		 cluster_name, node_borrow_table);
+
+	if (mysql_db_create_table(mysql_conn, table_name,
+				  node_borrow_table_fields,
+				  ", primary key (node_name(42), time_start), "
+				  "key rollup (node_name(42), time_start, "
+				  "time_end, reason(42)), "
+				  "key time_start_end (time_start, time_end))")
+	    == SLURM_ERROR)
+		return SLURM_ERROR;
+#endif
+
 	snprintf(table_name, sizeof(table_name), "\"%s_%s\"",
 		 cluster_name, resv_table);
 	if (mysql_db_create_table(mysql_conn, table_name,
@@ -1764,6 +1795,9 @@ extern int remove_cluster_tables(mysql_conn_t *mysql_conn, char *cluster_name)
 		   "\"%s_%s\", \"%s_%s\", \"%s_%s\", \"%s_%s\", "
 		   "\"%s_%s\", \"%s_%s\", \"%s_%s\", \"%s_%s\", "
 		   "\"%s_%s\", \"%s_%s\", \"%s_%s\", \"%s_%s\", "
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		   "\"%s_%s\", "
+#endif
 		   "\"%s_%s\", \"%s_%s\";",
 		   cluster_name, assoc_table,
 		   cluster_name, assoc_day_table,
@@ -1775,6 +1809,9 @@ extern int remove_cluster_tables(mysql_conn_t *mysql_conn, char *cluster_name)
 		   cluster_name, event_table,
 		   cluster_name, job_table,
 		   cluster_name, last_ran_table,
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			cluster_name, node_borrow_table,
+#endif
 		   cluster_name, resv_table,
 		   cluster_name, step_table,
 		   cluster_name, suspend_table,
@@ -2557,6 +2594,7 @@ extern int remove_common(mysql_conn_t *mysql_conn,
 			break;
 		}
 	}
+
 	mysql_free_result(result);
 	/* This already happened before, but we need to run it again
 	   since the first time we ran it we didn't know if we were
@@ -2608,7 +2646,6 @@ just_update:
 	if (rc != SLURM_SUCCESS) {
 		reset_mysql_conn(mysql_conn);
 	}
-
 	return rc;
 }
 
@@ -3295,7 +3332,7 @@ extern List acct_storage_p_get_assocs(
 	mysql_conn_t *mysql_conn, uid_t uid,
 	slurmdb_assoc_cond_t *assoc_cond)
 {
-	
+
 #ifdef __METASTACK_OPT_LIST_USER
 	return as_mysql_get_assocs(mysql_conn, uid, assoc_cond, false);
 #else
@@ -3398,6 +3435,30 @@ extern int acct_storage_p_fix_runaway_jobs(void *db_conn, uint32_t uid,
 {
 	return as_mysql_fix_runaway_jobs(db_conn, uid, jobs);
 }
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern List acct_storage_p_get_borrow(mysql_conn_t *mysql_conn, uint32_t uid,
+				      slurmdb_borrow_cond_t *borrow_cond)
+{
+	return as_mysql_get_cluster_borrow(mysql_conn, uid, borrow_cond);
+}
+
+extern int clusteracct_storage_p_node_borrow(mysql_conn_t *mysql_conn,
+					   node_record_t *node_ptr,
+					   time_t event_time, char *reason,
+					   uint32_t reason_uid)
+{
+	return as_mysql_node_borrow(mysql_conn, node_ptr,
+				  event_time, reason, reason_uid);
+}
+
+extern int clusteracct_storage_p_node_return(mysql_conn_t *mysql_conn,
+					 node_record_t *node_ptr,
+					 time_t event_time)
+{
+	return as_mysql_node_return(mysql_conn, node_ptr, event_time);
+}
+#endif
 
 extern int clusteracct_storage_p_node_down(mysql_conn_t *mysql_conn,
 					   node_record_t *node_ptr,

@@ -58,6 +58,10 @@ extern "C" {
 #define __METASTACK_NEW_RPC_RATE_LIMIT
 #endif
 
+#ifndef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#endif
+
 /* set errno to the specified value - then return -1 */
 #define slurm_seterrno_ret(errnum) do { \
 	slurm_seterrno(errnum);         \
@@ -240,7 +244,9 @@ typedef enum {
 #ifdef __METASTACK_NEW_CPU_MEM_FILTER
     ESLURM_SUBMIT_MISMATCH_MEMORY_CPU =  2800,	
 #endif
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	ESLURM_INVALID_STANDBY_NODE_PARAMETERS,
+#endif
 	/* SPANK errors */
 	ESPANK_ERROR = 					3000,
 	ESPANK_BAD_ARG,

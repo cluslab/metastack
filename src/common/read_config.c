@@ -1335,6 +1335,10 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 		{"ResumeTimeout", S_P_UINT16},
 		{"SelectTypeParameters", S_P_STRING},
 		{"Shared", S_P_STRING}, /* YES, NO, or FORCE */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES		
+		{"StandbyNodeParameters", S_P_STRING},
+		{"StandbyNodes", S_P_STRING},
+#endif			
 		{"State", S_P_STRING}, /* UP, DOWN, INACTIVE or DRAIN */
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
         {"SuspendKeepIdle", S_P_UINT32},
@@ -1646,6 +1650,17 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			p->suspend_idle = NO_VAL;
 		}
 #endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		if (!s_p_get_string(&p->standby_node_parameters, "StandbyNodeParameters", tbl) &&
+			!s_p_get_string(&p->standby_node_parameters, "StandbyNodeParameters", dflt)) {
+			p->standby_node_parameters = NULL;
+		}
+
+		if (!s_p_get_string(&p->standby_nodes, "StandbyNodes", tbl) && 
+			!s_p_get_string(&p->standby_nodes, "StandbyNodes", dflt)) {
+			p->standby_nodes = NULL;
+		}
+#endif
 		if (s_p_get_string(&tmp, "OverSubscribe", tbl) ||
 		    s_p_get_string(&tmp, "OverSubscribe", dflt) ||
 		    s_p_get_string(&tmp, "Shared", tbl) ||
@@ -1789,6 +1804,10 @@ static void _destroy_partitionname(void *ptr)
 	xfree(p->name);
 	xfree(p->nodes);
 	xfree(p->qos_char);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	xfree(p->standby_nodes);
+	xfree(p->standby_node_parameters);
+#endif	
 	xfree(ptr);
 }
 

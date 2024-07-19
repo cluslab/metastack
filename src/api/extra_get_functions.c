@@ -62,6 +62,23 @@ extern List slurmdb_config_get(void *db_conn)
 	return acct_storage_g_get_config(db_conn, "slurmdbd.conf");
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+/*
+ * get info from the storage
+ * IN:  slurmdb_borrow_cond_t *
+ * RET: List of slurmdb_borrow_rec_t *
+ * note List needs to be freed when called
+ */
+extern List slurmdb_borrow_get(void *db_conn,
+			       slurmdb_borrow_cond_t *borrow_cond)
+{
+	if (db_api_uid == -1)
+		db_api_uid = getuid();
+
+	return acct_storage_g_get_borrow(db_conn, db_api_uid, borrow_cond);
+}
+#endif
+
 /*
  * get info from the storage
  * IN:  slurmdb_event_cond_t *

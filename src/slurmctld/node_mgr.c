@@ -135,6 +135,118 @@ static int	_update_node_gres(char *node_names, char *gres);
 static int	_update_node_weight(char *node_names, uint32_t weight);
 static bool 	_valid_node_state_change(uint32_t old, uint32_t new);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+char* offline_reason = "The borrowing node will be returned to the original partition after the job finish";
+
+/* 
+ * _update_node_borrow_state - Update node state to BORROWED or remove BORROWED state
+ * IN node_ptr - pointer to the node that need to be updated state
+ * IN part_ptr - pointer to the partition that the node be borrowed to
+ * IN borrowed - ture: update node state to BORROWED, false: remove BORROWED state
+ */
+extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *part_ptr, bool borrowed)
+{
+	char *reason = NULL;
+	time_t now = time(NULL);
+
+	if (!node_ptr) {
+		return;
+	}
+
+	if (borrowed) {
+		if ((!part_ptr) || (!part_ptr->name)) {
+			return;
+		}
+
+		xstrcat(reason, "Borrowed by partition ");
+		xstrcat(reason, part_ptr->name);		
+		clusteracct_storage_g_node_borrow(
+			acct_db_conn,
+			node_ptr, now, reason,
+			slurm_conf.slurm_user_id);
+		xfree(reason);
+		node_ptr->node_state |= NODE_STATE_BORROWED;
+		debug("%s: set node %s state to borrowed", __func__, node_ptr->name);			
+	} else {
+		if (IS_NODE_DRAIN(node_ptr) && 
+			(!xstrcasecmp(node_ptr->reason, offline_reason))) {
+			node_ptr->node_state &= (~NODE_STATE_DRAIN);
+			clusteracct_storage_g_node_up(
+				acct_db_conn,
+				node_ptr,
+				now);
+			debug("%s: node %s remove drain state", __func__, node_ptr->name);					
+		}
+		node_ptr->node_state &= (~NODE_STATE_BORROWED);
+		debug("%s: remove borrowed state for node %s ", __func__, node_ptr->name);		
+		clusteracct_storage_g_node_return(
+			acct_db_conn,
+			node_ptr,
+			now);
+	}			
+}
+
+/* 
+ * _return_borrowed_node - return borrowed node
+ * IN node_ptr - pointer to the borrowed node
+ */
+extern void _return_borrowed_node(node_record_t *node_ptr)
+{
+	_remove_node_from_parts(node_ptr, true);
+	_add_node_to_parts(node_ptr, NULL);
+	_update_node_borrow_state(node_ptr, NULL, false);
+}
+
+
+/* 
+ * _select_node_to_borrow - attempt to select node from the standby nodes for the partition
+ * IN part_ptr - pointer to the partition
+ * OUT - number of node borrowed 
+ */
+extern int _select_node_to_borrow(part_record_t *part_ptr, int nodes_need_borrow)
+{
+	int node_borrowed = 0;
+	char *standby_node = NULL;
+	hostlist_t host_list;
+	node_record_t *standby_node_ptr = NULL;
+
+	if ((nodes_need_borrow == 0) || (!part_ptr) || (!part_ptr->standby_nodes) || (!part_ptr->standby_nodes->nodes)) {
+		return node_borrowed;
+	}
+	/* select node of idle state and not standby_node enable part from standby_nodes */
+	if ((host_list = hostlist_create(part_ptr->standby_nodes->nodes)) == NULL) {
+		error ("%s: hostlist_create error on %s: %m", __func__, part_ptr->standby_nodes->nodes);
+		return node_borrowed;
+	}
+
+	while ((standby_node = hostlist_shift(host_list)) && (nodes_need_borrow > 0)) {
+		if (!(standby_node_ptr = find_node_record(standby_node))) {
+			error("%s: lookup failure for node %s, consider other nodes", __func__, standby_node);
+			free(standby_node);
+			continue;;
+		}
+		free(standby_node);
+		/* Determine if the node is can borrow */
+		if (!_standby_node_avail(standby_node_ptr)) {
+			continue;
+		}
+		/* remove node from orig parts */
+		_remove_node_from_parts(standby_node_ptr, false);
+		/* add node to new partition */
+		_add_node_to_parts(standby_node_ptr, part_ptr);
+		_update_node_borrow_state(standby_node_ptr, part_ptr, true);
+
+		node_borrowed++;
+		nodes_need_borrow--;
+	}
+	if (standby_node) {
+		free(standby_node);
+	}
+	FREE_NULL_HOSTLIST(host_list);
+	return node_borrowed;
+}
+#endif
+
 /* dump_all_node_state - save the state of all nodes to file */
 int dump_all_node_state ( void )
 {
@@ -1415,7 +1527,9 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 	uint32_t base_state = 0, node_flags, state_val;
 	time_t now = time(NULL);
 	bool uniq = true;
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	char *old_node_reason = NULL;
+#endif
 	if (update_node_msg->node_names == NULL ) {
 		info("%s: invalid node name", __func__);
 		return ESLURM_INVALID_NODE_NAME;
@@ -1614,6 +1728,9 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 
 		if ((update_node_msg -> reason) &&
 		    (update_node_msg -> reason[0])) {
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			old_node_reason = xstrdup(node_ptr->reason);
+#endif				
 			xfree(node_ptr->reason);
 			node_ptr->reason = xstrdup(update_node_msg->reason);
 			node_ptr->reason_time = now;
@@ -1715,6 +1832,22 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 			    (state_val == NODE_STATE_FUTURE)) {
 				/* We must set node DOWN before killing
 				 * its jobs */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+				if (IS_NODE_DRAIN(node_ptr) && (!xstrcasecmp(old_node_reason, offline_reason))) {
+					node_ptr->node_state &= (~NODE_STATE_DRAIN);
+					char *new_reason = xstrdup(node_ptr->reason);
+					clusteracct_storage_g_node_up(
+						acct_db_conn,
+						node_ptr,
+						now);	
+					debug("%s: node %s remove drain state", __func__, node_ptr->name);
+					/* Update node reason related information */
+					node_ptr->reason = xstrdup(new_reason);
+					node_ptr->reason_time = now;
+					node_ptr->reason_uid = auth_uid;
+					xfree(new_reason);	
+				}
+#endif					
 				_make_node_down(node_ptr, now);
 				kill_running_job_by_node_name (this_node_name);
 				if (state_val == NODE_STATE_FUTURE) {
@@ -1957,9 +2090,22 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 			}
 
 			if (err_code == 0) {
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+				if (!IS_NODE_BORROWED(node_ptr)) {
+					node_ptr->node_state = state_val |
+						(node_ptr->node_state &
+						 NODE_STATE_FLAGS);
+					node_ptr->node_state &= (~NODE_STATE_BORROWED);				
+				} else {
+					node_ptr->node_state = state_val |
+						(node_ptr->node_state &
+						 NODE_STATE_FLAGS);				
+				}
+#else				
 				node_ptr->node_state = state_val |
 						(node_ptr->node_state &
 						 NODE_STATE_FLAGS);
+#endif
 
 				if (!IS_NODE_REBOOT_REQUESTED(node_ptr) &&
 				    !IS_NODE_REBOOT_ISSUED(node_ptr))
@@ -1970,6 +2116,9 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 					this_node_name,
 					node_state_string(state_val));
 			}
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			xfree(old_node_reason);
+#endif			
 		}
 
 		if (!acct_updated && !IS_NODE_DOWN(node_ptr) &&
@@ -3853,6 +4002,17 @@ void set_node_down_ptr(node_record_t *node_ptr, char *reason)
 {
 	time_t now = time(NULL);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	if (IS_NODE_DRAIN(node_ptr) && (!xstrcasecmp(node_ptr->reason, offline_reason))) {
+		node_ptr->node_state &= (~NODE_STATE_DRAIN);
+		clusteracct_storage_g_node_up(
+			acct_db_conn,
+			node_ptr,
+			now);	
+		debug("%s: node %s remove drain state", __func__, node_ptr->name);
+	}
+#endif	
+
 	if ((node_ptr->reason == NULL) ||
 	    (xstrncmp(node_ptr->reason, "Not responding", 14) == 0)) {
 		xfree(node_ptr->reason);
@@ -4669,7 +4829,11 @@ extern void set_node_comm_name(node_record_t *node_ptr, char *comm_name,
 
 static int _foreach_build_part_bitmap(void *x, void *arg)
 {
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	build_part_bitmap(x, false);
+#else	
 	build_part_bitmap(x);
+#endif	
 	return SLURM_SUCCESS;
 }
 

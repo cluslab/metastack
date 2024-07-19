@@ -162,6 +162,656 @@ extern void set_partition_tres()
 	list_for_each(part_list, _calc_part_tres, NULL);
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+/* 
+ * _add_node_to_parts -  add node to new partition
+ * IN node_ptr - pointer to the node will be returned
+ * IN part_ptr - pointer to the partition  standby_node_bitmap of the partition
+ */
+extern void _add_node_to_parts(node_record_t *node_ptr, part_record_t *part_ptr)
+{
+	part_record_t *p_ptr = NULL;
+
+	/* return node to orig partitions */
+	if (part_ptr == NULL) {
+		node_ptr->part_cnt = 0;
+		if ((node_ptr->orig_parts == NULL) || node_ptr->orig_parts[0] == '\0') {
+			xfree(node_ptr->part_pptr);
+		} else {
+			char *parts = NULL, *part = NULL, *save_ptr = NULL;
+			parts = xstrdup(node_ptr->orig_parts);
+			part = strtok_r(parts, ",", &save_ptr);
+			while (part != NULL) {
+				if ((p_ptr = find_part_record(part))) {
+					/* Associate node to partitions */
+					node_ptr->part_cnt++;
+					xrecalloc(node_ptr->part_pptr, node_ptr->part_cnt,
+						sizeof(part_record_t *));
+					node_ptr->part_pptr[node_ptr->part_cnt-1] = p_ptr;
+					bit_set(p_ptr->node_bitmap, node_ptr->index);
+					/* Update partition related resource attributes */
+					p_ptr->total_nodes++;
+					p_ptr->total_cpus += node_ptr->cpus;
+					p_ptr->max_cpu_cnt = MAX(p_ptr->max_cpu_cnt,
+									node_ptr->cpus);
+					p_ptr->max_core_cnt = MAX(p_ptr->max_core_cnt,
+									node_ptr->tot_cores);									
+					xfree(p_ptr->nodes);
+					xfree(p_ptr->orig_nodes);
+					p_ptr->nodes = bitmap2node_name(p_ptr->node_bitmap);
+					p_ptr->orig_nodes = xstrdup(p_ptr->nodes);
+					debug("%s: add node %s to partition %s", __func__, node_ptr->name, p_ptr->name);
+				}
+				part = strtok_r(NULL, ",", &save_ptr);
+			}
+			xfree(parts);	
+		}	
+	} else { 	/* borrow node to new partition */
+		/* Associate node to partitions */
+		bit_set(part_ptr->node_bitmap, node_ptr->index);
+		bit_set(part_ptr->standby_nodes->borrowed_node_bitmap, node_ptr->index);
+		xfree(part_ptr->nodes);
+		xfree(part_ptr->orig_nodes);
+		part_ptr->nodes = bitmap2node_name(part_ptr->node_bitmap);
+		part_ptr->orig_nodes = xstrdup(part_ptr->nodes);
+		/* Update borrowed nodes in partition */
+		xfree(part_ptr->standby_nodes->borrowed_nodes);
+		if (bit_set_count(part_ptr->standby_nodes->borrowed_node_bitmap) == 0) {
+			part_ptr->standby_nodes->borrowed_nodes = NULL;
+		} else {
+			part_ptr->standby_nodes->borrowed_nodes = bitmap2node_name(part_ptr->standby_nodes->borrowed_node_bitmap);
+		}	
+		part_ptr->standby_nodes->nodes_borrowed = bit_set_count(part_ptr->standby_nodes->borrowed_node_bitmap);
+		/* Update partition related resource attributes */
+ 		part_ptr->total_nodes++;
+		part_ptr->total_cpus += node_ptr->cpus;
+		part_ptr->max_cpu_cnt = MAX(part_ptr->max_cpu_cnt,
+					    node_ptr->cpus);
+		part_ptr->max_core_cnt = MAX(part_ptr->max_core_cnt,
+					     node_ptr->tot_cores);					 		
+		xfree(node_ptr->part_pptr);
+		node_ptr->part_cnt = 1;
+		node_ptr->part_pptr = xcalloc(1, sizeof(part_record_t *));
+		node_ptr->part_pptr[0] = part_ptr;
+
+		debug("%s: borrow node %s to partition %s", __func__, node_ptr->name, part_ptr->name);
+		debug("%s: partition %s: max_nodes_can_borrow: %u, nodes_already_borrowed: %u", 
+			__func__, part_ptr->name, part_ptr->standby_nodes->nodes_can_borrow, part_ptr->standby_nodes->nodes_borrowed);
+	}
+}
+
+/* 
+ * build_part_standby_nodes_bitmap -  Constructing standby_node_bitmap based on configuration
+ * IN part_ptr - pointer to the partition be constructing standby_node_bitmap
+ * OUT - 0: construction successful, -1: construction failed
+ */
+extern int build_part_standby_nodes_bitmap(part_record_t *part_ptr)
+{
+	int rc = SLURM_SUCCESS;
+	char *this_node_name = NULL;
+	node_record_t *node_ptr = NULL;
+	bitstr_t *old_standby_bitmap = NULL;
+	hostlist_t standby_node_host_list = NULL;
+
+	if (!(part_ptr->standby_nodes)) {
+		part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
+	}
+
+	if (part_ptr->standby_nodes->standby_node_bitmap) {
+		old_standby_bitmap = bit_copy(part_ptr->standby_nodes->standby_node_bitmap);
+		bit_nclear(part_ptr->standby_nodes->standby_node_bitmap, 0,
+			   node_record_count - 1);		
+	} else {
+		part_ptr->standby_nodes->standby_node_bitmap = bit_alloc(node_record_count);
+	}
+
+	if (!part_ptr->standby_nodes->nodes) {
+		FREE_NULL_BITMAP(old_standby_bitmap);
+		return SLURM_ERROR;
+	}
+	/* parse standby nodes */
+	standby_node_host_list = nodespec_to_hostlist(part_ptr->standby_nodes->nodes, true, NULL);
+	if ((!standby_node_host_list) || (!hostlist_count(standby_node_host_list))) {
+		error("%s: Invalid nodes in partition %s standby_nodes %s", 
+			__func__, part_ptr->name, part_ptr->standby_nodes->nodes);
+		FREE_NULL_BITMAP(part_ptr->standby_nodes->standby_node_bitmap);
+		part_ptr->standby_nodes->standby_node_bitmap = old_standby_bitmap;
+		old_standby_bitmap = NULL;
+		rc = ESLURM_INVALID_NODE_NAME;
+	}
+
+	if (rc == SLURM_SUCCESS) {
+		while ((this_node_name = hostlist_shift(standby_node_host_list))) {
+			node_ptr = find_node_record_no_alias(this_node_name);
+			if (node_ptr == NULL) {
+				error("%s: Invalid nodes in partition %s standby_nodes %s", 
+					__func__, part_ptr->name, this_node_name);
+				FREE_NULL_BITMAP(part_ptr->standby_nodes->standby_node_bitmap);
+				part_ptr->standby_nodes->standby_node_bitmap = old_standby_bitmap;
+				old_standby_bitmap = NULL;
+				free(this_node_name);
+				rc = ESLURM_INVALID_NODE_NAME;
+				break;
+			}
+
+			bit_set(part_ptr->standby_nodes->standby_node_bitmap, node_ptr->index);
+			free(this_node_name);
+		}
+	}
+	xfree(part_ptr->standby_nodes->nodes);
+	if (bit_set_count(part_ptr->standby_nodes->standby_node_bitmap) == 0) {
+		part_ptr->standby_nodes->nodes = NULL;
+	} else {
+		part_ptr->standby_nodes->nodes = bitmap2node_name(part_ptr->standby_nodes->standby_node_bitmap);
+	}
+	FREE_NULL_HOSTLIST(standby_node_host_list);
+	FREE_NULL_BITMAP(old_standby_bitmap);
+
+	return rc;
+}
+
+/* 
+ * _standby_node_avail -  Determine if a node can be borrowed immediately
+ * IN node_ptr - pointer to the node under consideration
+ * OUT - true: this node can be borrowed; false: this node cannot be borrowed
+ */
+extern bool _standby_node_avail(node_record_t *node_ptr)
+{
+	int i;
+	bool avail = false;
+	part_record_t *part_ptr;
+
+	if (!node_ptr) {
+		return avail;
+	}
+
+	if (IS_NODE_IDLE(node_ptr) &&  /* Idle nodes that meet the following conditions */
+		(!IS_NODE_DRAIN(node_ptr)) && 
+		(!IS_NODE_NO_RESPOND(node_ptr)) &&
+		(!IS_NODE_RES(node_ptr)) && (!IS_NODE_MAINT(node_ptr)) && 
+		(!IS_NODE_POWER_DOWN(node_ptr)) &&
+		(!IS_NODE_COMPLETING(node_ptr)) && 
+		(!IS_NODE_INVALID_REG(node_ptr))) {
+		avail = true;
+		debug("%s: standby node %s state idle, consider borrowing", __func__, node_ptr->name);
+	} else {
+		debug2("%s: standby node %s state not avail, consider other nodes", __func__, node_ptr->name);		
+	}
+
+	if (avail) {
+		for (i = 0; i < node_ptr->part_cnt; i++) {
+			part_ptr = node_ptr->part_pptr[i];
+			if (part_ptr && part_ptr->standby_nodes && part_ptr->standby_nodes->enable) {
+				avail = false;
+				debug2("%s: standby node %s already in standby enable part %s, consider other nodes", 
+						__func__, node_ptr->name, part_ptr->name);
+				break;
+			}
+		}
+	}
+	return avail;
+}
+
+static void _build_borrow_nodes_partitions(part_record_t *part_ptr)
+{
+	int i;
+	node_record_t *node_ptr = NULL;
+	for (i = 0; (node_ptr = next_node(&i)); i++) {
+		if (!IS_NODE_BORROWED(node_ptr)) {
+			continue;
+		}
+		_build_node_partitions(node_ptr, part_ptr, false);
+	}
+}
+
+/* 
+ * _build_node_partitions -  recoed the original partition of a node
+ * IN node_ptr - pointer to the node will be record
+ * IN part_ptr - pointer to the partition which the node belongs
+ * IN add_part - true:  add part_name to node_ptr->orig_parts
+ * 				 false：remove part_name from node_ptr->orig_parts
+ */
+extern void _build_node_partitions(node_record_t *node_ptr, part_record_t *part_ptr, bool add_part)
+{
+	char *sep = "";
+	if (add_part) {
+		if (node_ptr->orig_parts && node_ptr->orig_parts[0] == '\0') {
+			xfree(node_ptr->orig_parts);
+		}
+		/* part_ptr->name already exist in node_ptr->orig_parts */
+		if (xstrcasestr(node_ptr->orig_parts, part_ptr->name)) {
+			return;
+		}
+		 /* add part_ptr->name to node_ptr->orig_parts */
+		if (node_ptr->orig_parts) {
+			sep = ",";
+		}
+		xstrfmtcat(node_ptr->orig_parts, "%s%s", sep,
+				part_ptr->name);
+		debug3("%s: record node %s in partitions %s", __func__, node_ptr->name, node_ptr->orig_parts);
+	} else { /* remove part_ptr->name to node_ptr->orig_parts */
+		if ((node_ptr->orig_parts == NULL) || node_ptr->orig_parts[0] == '\0' || (part_ptr->name == NULL)) {
+			return;
+		} else {
+			char *parts = NULL, *pos = NULL;
+			parts = xstrdup(node_ptr->orig_parts);
+			pos = xstrstr(parts, part_ptr->name);
+			if (pos != NULL) {
+				int len = strlen(part_ptr->name);
+				char *end = pos + len;
+				char *next_comma = strchr(end, ',');
+
+				if (next_comma) {
+					/* There is more content to follow, remove 'part_name,' */
+					memmove(pos, next_comma + 1, strlen(next_comma + 1) + 1);
+				} else if (pos > parts && *(pos - 1) == ',') {
+					/* There is no content at the end but there is content at the beginning, remove ',part_name' */
+					*(pos - 1) = '\0';
+				} else {
+					/* There is no content in front or behind */
+					*pos = '\0';
+				}
+				xfree(node_ptr->orig_parts);
+				node_ptr->orig_parts = parts;				
+			} else {
+				xfree(parts);
+			}
+			debug3("%s: record node %s in partitions %s", __func__, node_ptr->name, node_ptr->orig_parts);			
+		}	
+	}
+}
+
+/* 
+ * _remove_node_from_parts -  Remove nodes from the partition
+ * IN node_ptr - pointer to the node willl be removed
+ * IN clear_flag - true: remove node from borrowed partition;
+ * 				   false: remove node from original partition
+ */
+extern void _remove_node_from_parts(node_record_t *node_ptr, bool clear_flag)
+{
+	int i, j, part_cnt;
+	node_record_t *node_record = NULL;
+	part_record_t *part_ptr = NULL;
+
+ 	part_cnt = node_ptr->part_cnt;
+	if (part_cnt < 1) {
+		return;
+	}
+
+	node_ptr->part_cnt = 0;
+	for (i = 0; i < part_cnt; i++) {
+		if (!(part_ptr = node_ptr->part_pptr[i])) {
+			continue;
+		}
+		/* Disassociate nodes from partitions */
+		bit_clear(part_ptr->node_bitmap, node_ptr->index);
+		xfree(part_ptr->nodes);
+		xfree(part_ptr->orig_nodes);
+		part_ptr->nodes = bitmap2node_name(part_ptr->node_bitmap);
+		part_ptr->orig_nodes = xstrdup(part_ptr->nodes);
+		part_ptr->total_nodes--;
+		part_ptr->total_cpus -= node_ptr->cpus;
+		/* Update partition related resource attributes */
+		for (j = 0; (node_record = next_node(&j)); j++) {
+			if (!bit_test(part_ptr->node_bitmap, node_record->index)) {
+				continue;
+			}
+			part_ptr->max_cpu_cnt = MAX(part_ptr->max_cpu_cnt,
+							node_record->cpus);
+			part_ptr->max_core_cnt = MAX(part_ptr->max_core_cnt,
+							node_record->tot_cores);				
+		}					
+		debug("%s: remove node %s from partition %s", __func__, node_ptr->name, part_ptr->name);
+		if (clear_flag && part_ptr->standby_nodes && part_ptr->standby_nodes->borrowed_node_bitmap) {
+			/* Remove nodes from partition borrowing */
+			bit_clear(part_ptr->standby_nodes->borrowed_node_bitmap, node_ptr->index);
+			xfree(part_ptr->standby_nodes->borrowed_nodes);
+			uint32_t nodes_borrowed = bit_set_count(part_ptr->standby_nodes->borrowed_node_bitmap);
+			if (nodes_borrowed == 0) {
+				part_ptr->standby_nodes->borrowed_nodes = NULL;
+			} else {
+				part_ptr->standby_nodes->borrowed_nodes = bitmap2node_name(part_ptr->standby_nodes->borrowed_node_bitmap);
+			}					
+			part_ptr->standby_nodes->nodes_borrowed = nodes_borrowed;
+			debug("%s: nodes_borrowed for partition %s: %u", __func__, part_ptr->name, nodes_borrowed);
+		}
+	}
+}
+
+/* 
+ * is_met_borrow_condition - when node offline determine whether can borrow other node to corresponding partitions
+ * IN node_ptr - pointer to the offline node
+ * IN part_ptr - pointer to the partition in which the offline node belongs
+ * OUT - true: meet borrowing condition, false: not meeting borrowing condition
+ */
+bool is_met_borrow_condition(node_record_t *node_ptr, part_record_t *part_ptr)
+{
+	bool rc = false;
+	int node_state = part_ptr->standby_nodes->offline_node_state;
+	/* Determine whether the node offline state meets the supplementary conditions */
+	switch (node_state) {
+	case 1:
+		if (IS_NODE_DRAIN(node_ptr) && (xstrcasecmp(node_ptr->reason, offline_reason))) {
+			rc = true;
+		}
+		break;			
+	case 2:
+		if (IS_NODE_DOWN(node_ptr) && IS_NODE_NO_RESPOND(node_ptr)) {
+			rc = true;
+		}
+		break;
+	case 3:
+		if ((IS_NODE_DRAIN(node_ptr) && (xstrcasecmp(node_ptr->reason, offline_reason))) ||
+			(IS_NODE_DOWN(node_ptr) && IS_NODE_NO_RESPOND(node_ptr))) {
+			rc = true;
+		}
+		break;
+	default:
+		error("%s: Invalid offline_node_state %d", __func__, node_state);
+		break;
+	}
+
+	return rc;
+}
+
+bool return_over_borrowed_nodes(part_record_t *part_ptr, uint32_t nodes_over_borrowed, 
+		int *wait_return_borrow_nodes, int *nodes_borrow_wait_return)
+{
+	bool part_change = false;
+	int i, wait_nodes = 0, *wait_return_nodes = NULL;
+	node_record_t *node_ptr = NULL;
+
+	wait_return_nodes = xcalloc(node_record_count, sizeof(int));
+	/* First, return the idle nodes */
+	for (i = 0; (i < node_record_count) && (nodes_over_borrowed > 0); i++) {
+		if (!bit_test(part_ptr->standby_nodes->borrowed_node_bitmap, i)) {
+			continue;
+		}
+		node_ptr = node_record_table_ptr[i];
+		if (!node_ptr) {
+			continue;
+		}
+		if (IS_NODE_IDLE(node_ptr)) {
+			part_change = true;
+			_return_borrowed_node(node_ptr);
+			nodes_over_borrowed--;
+		} else {
+			wait_return_nodes[wait_nodes] = node_ptr->index;
+			wait_nodes++;
+		}
+	}
+	/* Next, drain mix/alloc nodes */
+	for (i = 0; (i < wait_nodes) && (nodes_over_borrowed > 0); i++) {
+		node_ptr = node_record_table_ptr[wait_return_nodes[i]];
+		if (!node_ptr) {
+			continue;
+		}
+		if (!IS_NODE_DRAIN(node_ptr)) {
+			drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+			nodes_over_borrowed--;
+			wait_return_borrow_nodes[*nodes_borrow_wait_return] = node_ptr->index;
+			(*nodes_borrow_wait_return)++;
+		}
+	}
+	xfree(wait_return_nodes);
+	return part_change;
+}
+
+extern void update_all_parts_resource(bool update_resv)
+{
+	part_record_t *part_ptr = NULL;
+	assoc_mgr_lock_t assoc_tres_read_lock = { .tres = READ_LOCK };
+	DEF_TIMERS;
+
+	START_TIMER;
+	ListIterator part_iterator = list_iterator_create(part_list);
+	while ((part_ptr = list_next(part_iterator))) {
+		if (update_resv) {
+			update_part_nodes_in_resv(part_ptr);
+		}
+
+		assoc_mgr_lock(&assoc_tres_read_lock);
+		_calc_part_tres(part_ptr, NULL);
+		assoc_mgr_unlock(&assoc_tres_read_lock);
+	}
+	list_iterator_destroy(part_iterator);
+
+	schedule_part_save();
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	build_sched_resource();
+#endif
+	power_save_set_timeouts(NULL);
+	END_TIMER;
+	debug("%s: %s", __func__, TIME_STR);
+}
+
+extern bool validate_partition_borrow_nodes(part_record_t *part_ptr)
+{
+	bool part_change = false;
+	int i, new_borrowed_nodes;
+	node_record_t *node_ptr = NULL;
+	int *wait_return_borrow_nodes = NULL, *work_borrow_nodes = NULL, *idle_borrow_nodes = NULL;
+	int nodes_need_borrow = 0, nodes_borrow_wait_return = 0, nodes_borrowed_unavail = 0;
+	int nodes_borrowed = 0, max_can_borrow = 0, nodes_offline = 0, nodes_borrowed_worked = 0, node_borrowed_idle = 0;
+
+	if (!part_ptr->standby_nodes || !part_ptr->standby_nodes->borrowed_node_bitmap ||
+		!part_ptr->standby_nodes->standby_node_bitmap) {
+		/* This should never happen */
+		return part_change;
+	}
+
+	nodes_borrowed = part_ptr->standby_nodes->nodes_borrowed;
+	max_can_borrow = part_ptr->standby_nodes->nodes_can_borrow;
+	if (!(part_ptr->standby_nodes->enable)) {
+		/* Return borrowed nodes when disable standby nodes */
+		if (nodes_borrowed > 0) {
+			for (i = 0; i < node_record_count; i++) {
+				if (!bit_test(part_ptr->standby_nodes->borrowed_node_bitmap, i)) {
+					continue;
+				}
+				node_ptr = node_record_table_ptr[i];
+				if (!node_ptr || !IS_NODE_BORROWED(node_ptr)) {
+					continue;
+				}
+				/* There are no jobs on the node */
+				if (IS_NODE_IDLE(node_ptr) || (IS_NODE_DOWN(node_ptr))) {
+					part_change = true;
+					_return_borrowed_node(node_ptr);
+				} else {
+					if (!IS_NODE_DRAIN(node_ptr)) {
+						drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+					}
+				}
+			}
+		}
+		return part_change;
+	}
+
+	/* Return borrowed nodes or drain those nodes which are removed form standby_nodes or in DOWN* state or have no partition */
+	if (nodes_borrowed > 0) {
+		for (i = 0; i < node_record_count; i++) {
+			if (!bit_test(part_ptr->standby_nodes->borrowed_node_bitmap, i)) {
+				continue;
+			}
+			
+			node_ptr = node_record_table_ptr[i];
+			if (!node_ptr || !IS_NODE_BORROWED(node_ptr)) {
+				continue;
+			}
+
+			/* borrowed nodes not in standby_nodes will be return */
+			/* borrowed nodes in standby_nodes drain or DOWN* will be return */
+			if (bit_test(part_ptr->standby_nodes->standby_node_bitmap, i) && 
+				(!IS_NODE_DRAIN(node_ptr) && !IS_NODE_DOWN(node_ptr))) {
+				continue;
+			}
+			/* The IDLE/DOWN* or have no partition nodes will be returned immediately, and mix/alloc nodes will be taken offline */
+			if (IS_NODE_IDLE(node_ptr) || (IS_NODE_DOWN(node_ptr) && IS_NODE_NO_RESPOND(node_ptr)) || (node_ptr->part_cnt == 0)) {
+				part_change = true;
+				_return_borrowed_node(node_ptr);
+			} else {
+				if ((!IS_NODE_DRAIN(node_ptr)) && (!IS_NODE_DOWN(node_ptr))) {
+					drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+				}
+			}	
+		}	
+	}
+
+	wait_return_borrow_nodes = xcalloc(node_record_count, sizeof(int));
+	work_borrow_nodes        = xcalloc(node_record_count, sizeof(int));
+	idle_borrow_nodes        = xcalloc(node_record_count, sizeof(int));
+
+	/* Calculate offline nodes */
+	part_ptr->standby_nodes->nodes_offline = 0;
+	for (i = 0; i < node_record_count; i++) {
+		if (!bit_test(part_ptr->node_bitmap, i)) {
+			continue;
+		}
+		node_ptr = node_record_table_ptr[i];
+		if (!node_ptr) {
+			continue;
+		}
+		/* Exclude drain nodes waiting for return */
+		if (is_met_borrow_condition(node_ptr, part_ptr)) {
+			if (IS_NODE_BORROWED(node_ptr)) {
+				nodes_borrowed_unavail++;
+			} else {
+				part_ptr->standby_nodes->nodes_offline++;
+			}
+		}
+
+		/* Record the detailed status of borrowing nodes */
+		if (IS_NODE_DRAIN(node_ptr) && IS_NODE_BORROWED(node_ptr) && !xstrcasecmp(node_ptr->reason, offline_reason)
+			&& bit_test(part_ptr->standby_nodes->standby_node_bitmap, i)) {
+				/* Wait for return, can be borrowed again */
+				wait_return_borrow_nodes[nodes_borrow_wait_return] = i;
+				nodes_borrow_wait_return++;
+		}
+
+		if (IS_NODE_BORROWED(node_ptr) && !IS_NODE_DRAIN(node_ptr) && !IS_NODE_DOWN(node_ptr)) {
+			if (IS_NODE_IDLE(node_ptr)) {
+				idle_borrow_nodes[node_borrowed_idle] = i;
+				node_borrowed_idle++;
+			} else {
+				work_borrow_nodes[nodes_borrowed_worked] = i;
+				nodes_borrowed_worked++;
+			}
+		}
+	}
+
+	nodes_offline  = part_ptr->standby_nodes->nodes_offline;
+	nodes_borrowed = part_ptr->standby_nodes->nodes_borrowed - nodes_borrowed_unavail;
+
+	/* Return additional borrowed nodes */
+	if (nodes_borrowed > max_can_borrow) {
+		part_change |= return_over_borrowed_nodes(part_ptr, nodes_borrowed - max_can_borrow, 
+				wait_return_borrow_nodes, &nodes_borrow_wait_return);
+	}
+
+	nodes_need_borrow = nodes_offline;
+	if (nodes_need_borrow >= max_can_borrow) {
+		nodes_need_borrow = max_can_borrow;
+	}
+
+	/* Is the number of mix/alloc borrowed nodes sufficient */
+	if (nodes_need_borrow >= nodes_borrowed_worked) {
+		nodes_need_borrow -= nodes_borrowed_worked;
+	} else {
+		part_change |= return_over_borrowed_nodes(part_ptr, nodes_borrowed_worked - nodes_need_borrow,
+				wait_return_borrow_nodes, &nodes_borrow_wait_return);
+		xfree(wait_return_borrow_nodes);
+		xfree(work_borrow_nodes);
+		xfree(idle_borrow_nodes);				
+		return part_change;
+	}
+
+	/* Is the number of idle borrowed nodes sufficient */
+	if (nodes_need_borrow >= node_borrowed_idle) {
+		nodes_need_borrow -= node_borrowed_idle;
+	} else {
+		part_change |= return_over_borrowed_nodes(part_ptr, node_borrowed_idle - nodes_need_borrow,
+				wait_return_borrow_nodes, &nodes_borrow_wait_return);
+		xfree(wait_return_borrow_nodes);
+		xfree(work_borrow_nodes);
+		xfree(idle_borrow_nodes);		
+		return part_change;		
+	}
+
+	/* Is the number of wait for return borrowed nodes sufficient */
+	if (nodes_need_borrow >= nodes_borrow_wait_return) {
+		time_t now = time(NULL);
+		for (i = 0; i < nodes_borrow_wait_return; i++) {
+			node_ptr = node_record_table_ptr[wait_return_borrow_nodes[i]];
+			if (!node_ptr) {
+				continue;
+			}
+			node_ptr->node_state &= (~NODE_STATE_DRAIN);
+				clusteracct_storage_g_node_up(
+					acct_db_conn,
+					node_ptr,
+					now);
+			debug("%s: node %s remove drain state", __func__, node_ptr->name);							
+			nodes_need_borrow--;	
+		}
+	} else {
+		time_t now = time(NULL);
+		uint32_t tmp_nodes_need_borrow = nodes_need_borrow;
+		for (i = 0; i < tmp_nodes_need_borrow; i++) {
+			node_ptr = node_record_table_ptr[wait_return_borrow_nodes[i]];
+			if (!node_ptr) {
+				continue;
+			}
+			node_ptr->node_state &= (~NODE_STATE_DRAIN);
+			clusteracct_storage_g_node_up(
+				acct_db_conn,
+				node_ptr,
+				now);
+			debug("%s: node %s remove drain state", __func__, node_ptr->name);				
+			nodes_need_borrow--;	
+		}		
+	}
+
+	/* The current borrowing nodes are insufficient, new nodes need to be borrowed */
+	new_borrowed_nodes = _select_node_to_borrow(part_ptr, nodes_need_borrow);
+	if (new_borrowed_nodes > 0) {
+		part_change = true;
+	}
+
+	xfree(wait_return_borrow_nodes);
+	xfree(work_borrow_nodes);
+	xfree(idle_borrow_nodes);
+	return part_change;
+}
+
+extern bool validate_all_partitions_borrow_nodes(List part_list)
+{
+	bool rebuild = false;
+	part_record_t *part_ptr = NULL;
+
+	if (!part_list) {
+		return rebuild;
+	}
+
+	DEF_TIMERS;
+	START_TIMER;
+	
+	ListIterator part_iterator = list_iterator_create(part_list);
+	while ((part_ptr = list_next(part_iterator))) {
+		rebuild |= validate_partition_borrow_nodes(part_ptr);
+	}
+	list_iterator_destroy(part_iterator);
+
+	if (rebuild) {
+		update_all_parts_resource(true);
+	}
+	
+	END_TIMER;
+	debug("%s: %s", __func__, TIME_STR);
+
+	return rebuild;
+}
+#endif
+
 /*
  * build_part_bitmap - update the total_cpus, total_nodes, and node_bitmap
  *	for the specified partition, also reset the partition pointers in
@@ -172,7 +822,11 @@ extern void set_partition_tres()
  * NOTE: this does not report nodes defined in more than one partition. this
  *	is checked only upon reading the configuration file, not on an update
  */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern int build_part_bitmap(part_record_t *part_ptr, bool update_part)
+#else
 extern int build_part_bitmap(part_record_t *part_ptr)
+#endif
 {
 	int rc = SLURM_SUCCESS;
 	char *this_node_name;
@@ -234,6 +888,19 @@ extern int build_part_bitmap(part_record_t *part_ptr)
 			rc = ESLURM_INVALID_NODE_NAME;
 			continue;
 		}
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		if (update_part) {
+			if (part_ptr->standby_nodes && part_ptr->standby_nodes->borrowed_node_bitmap
+				&& bit_test(part_ptr->standby_nodes->standby_node_bitmap, node_ptr->index)) {
+				error("%s: node %s is already in StandbyNodes and cannot be updated to this partitions", __func__, node_ptr->name);
+				continue;
+			}
+			if (IS_NODE_BORROWED(node_ptr)) {
+				error("%s: node %s is already in borrowed state and cannot be updated to other partitions", __func__, node_ptr->name);
+				continue;
+			}
+		}
+#endif		
 		part_ptr->total_nodes++;
 		part_ptr->total_cpus += node_ptr->cpus;
 		part_ptr->max_cpu_cnt = MAX(part_ptr->max_cpu_cnt,
@@ -247,6 +914,9 @@ extern int build_part_bitmap(part_record_t *part_ptr)
 		}
 		if (i == node_ptr->part_cnt) { /* Node in new partition */
 			node_ptr->part_cnt++;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			_build_node_partitions(node_ptr, part_ptr, true);
+#endif			
 			xrecalloc(node_ptr->part_pptr, node_ptr->part_cnt,
 				  sizeof(part_record_t *));
 			node_ptr->part_pptr[node_ptr->part_cnt-1] = part_ptr;
@@ -302,6 +972,29 @@ static void _unlink_free_nodes(bitstr_t *old_bitmap, part_record_t *part_ptr)
 		for (j=0; j<node_ptr->part_cnt; j++) {
 			if (node_ptr->part_pptr[j] != part_ptr)
 				continue;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			/* remove part_ptr->name from node_ptr->orig_parts */
+			_build_node_partitions(node_ptr, part_ptr, false);
+			/* return borrowed_node */
+			if (IS_NODE_BORROWED(node_ptr)) {		
+				if (IS_NODE_IDLE(node_ptr) || (IS_NODE_DOWN(node_ptr) && IS_NODE_NO_RESPOND(node_ptr))) {
+					/* Returning nodes will subtract node resources from the partition, but in reality,
+						* node resources are no longer included in the partition resources. Therefore, we will
+						* increase the resources first
+						*/
+					part_ptr->total_nodes++;
+					part_ptr->total_cpus += node_ptr->cpus;							
+					_return_borrowed_node(node_ptr);
+				} else if (!IS_NODE_DRAIN(node_ptr)) {
+					/* borrowed node remove from part before, add back here */
+					debug("%s: add the borrowed node %s back to the partition %s, wait for the job finish then remove it",
+						 __func__, node_ptr->name, part_ptr->name);
+					_add_node_to_parts(node_ptr, part_ptr);
+					drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+				}
+				continue;
+			}
+#endif				
 			node_ptr->part_cnt--;
 			for (k=j; k<node_ptr->part_cnt; k++) {
 				node_ptr->part_pptr[k] =
@@ -354,6 +1047,11 @@ static void _init_part_record(part_record_t *part_ptr)
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
     part_ptr->meta_flags			= 0;
 #endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
+	part_ptr->standby_nodes->borrowed_node_bitmap = bit_alloc(node_record_count);
+	part_ptr->standby_nodes->standby_node_bitmap  = bit_alloc(node_record_count);
+#endif	
 }
 
 /*
@@ -513,6 +1211,9 @@ static int _dump_part_state(void *x, void *arg)
 	packstr(part_ptr->deny_qos,      buffer);
 	/* Save orig_nodes as nodes will be built from orig_nodes */
 	packstr(part_ptr->orig_nodes, buffer);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
+#endif
 
 	return 0;
 }
@@ -570,7 +1271,9 @@ int load_all_part_state(void)
 	char* allow_alloc_nodes = NULL;
 	uint16_t protocol_version = NO_VAL16;
 	char* alternate = NULL;
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	char *borrowed_nodes = NULL;
+#endif
 	xassert(verify_lock(CONF_LOCK, READ_LOCK));
 
 	/* read the file */
@@ -647,6 +1350,9 @@ int load_all_part_state(void)
 			safe_unpackstr_xmalloc(&deny_qos,
 					       &name_len, buffer);
 			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			safe_unpackstr_xmalloc(&borrowed_nodes, &name_len, buffer);
+#endif				
 			if ((flags & PART_FLAG_DEFAULT_CLR)   ||
 			    (flags & PART_FLAG_EXC_USER_CLR)  ||
 			    (flags & PART_FLAG_HIDDEN_CLR)    ||
@@ -682,6 +1388,9 @@ int load_all_part_state(void)
 			xfree(deny_qos);
 			xfree(part_name);
 			xfree(nodes);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			xfree(borrowed_nodes);
+#endif				
 			error_code = EINVAL;
 			break;
 		}
@@ -768,6 +1477,14 @@ int load_all_part_state(void)
 		 */
 		xfree(part_ptr->nodes);
 		part_ptr->orig_nodes = nodes;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		if (part_ptr->standby_nodes) {
+			xfree(part_ptr->standby_nodes->borrowed_nodes);
+		} else {
+			part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
+		}
+		part_ptr->standby_nodes->borrowed_nodes = borrowed_nodes;
+#endif
 
 		xfree(part_name);
 	}
@@ -784,6 +1501,422 @@ unpack_error:
 	free_buf(buffer);
 	return EFAULT;
 }
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+void standby_nodes_free(standby_nodes_t *standby_nodes)
+{
+	if (standby_nodes) {
+		xfree(standby_nodes->borrowed_nodes);
+		xfree(standby_nodes->nodes);
+		xfree(standby_nodes->parameters);
+		FREE_NULL_BITMAP(standby_nodes->borrowed_node_bitmap);
+		FREE_NULL_BITMAP(standby_nodes->standby_node_bitmap);
+		xfree(standby_nodes);
+	}
+}
+
+/*
+ * load_all_part_borrow_nodes - load the partition borrowed nodes from file, recover on
+ *	slurmctld restart. execute this after loading the configuration
+ *	file data.
+ *
+ * Note: reads dump from _dump_part_state().
+ */
+extern int load_all_part_borrow_nodes(void)
+{
+	char *part_name = NULL, *nodes = NULL;
+	char *allow_accounts = NULL, *allow_groups = NULL, *allow_qos = NULL;
+	char *deny_accounts = NULL, *deny_qos = NULL, *qos_char = NULL;
+	char *state_file = NULL;
+	uint32_t max_time, default_time, max_nodes, min_nodes;
+	uint32_t max_cpus_per_node = INFINITE, cpu_bind = 0, grace_time = 0;
+	time_t time;
+	uint16_t flags, priority_job_factor, priority_tier;
+	uint16_t max_share, over_time_limit = NO_VAL16, preempt_mode;
+	uint16_t state_up, cr_type;
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+	uint32_t suspend_idle;
+#endif
+	part_record_t *part_ptr = NULL;
+	uint32_t name_len;
+	int error_code = 0, part_cnt = 0;
+	buf_t *buffer;
+	char *ver_str = NULL;
+	char* allow_alloc_nodes = NULL;
+	uint16_t protocol_version = NO_VAL16;
+	char* alternate = NULL;
+	char *borrowed_nodes = NULL;
+
+	xassert(verify_lock(CONF_LOCK, READ_LOCK));
+
+	/* read the file */
+	lock_state_files();
+	buffer = _open_part_state_file(&state_file);
+	if (!buffer) {
+		info("No partition state file (%s) to recover",
+		     state_file);
+		xfree(state_file);
+		unlock_state_files();
+		return ENOENT;
+	}
+	xfree(state_file);
+	unlock_state_files();
+
+	safe_unpackstr_xmalloc(&ver_str, &name_len, buffer);
+	debug3("Version string in part_state header is %s", ver_str);
+	if (ver_str && !xstrcmp(ver_str, PART_STATE_VERSION))
+		safe_unpack16(&protocol_version, buffer);
+
+	if (protocol_version == NO_VAL16) {
+		if (!ignore_state_errors)
+			fatal("Can not recover partition state, data version incompatible, start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.");
+		error("**********************************************************");
+		error("Can not recover partition state, data version incompatible");
+		error("**********************************************************");
+		xfree(ver_str);
+		free_buf(buffer);
+		return EFAULT;
+	}
+	xfree(ver_str);
+	safe_unpack_time(&time, buffer);
+
+	while (remaining_buf(buffer) > 0) {
+#ifdef __META_PROTOCOL
+        if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+            if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			    safe_unpackstr_xmalloc(&borrowed_nodes, &name_len, buffer);
+#endif	
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }
+            } else if (protocol_version >= META_2_0_PROTOCOL_VERSION) {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }
+            } else {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }
+            }
+        } else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
+            safe_unpack32(&cpu_bind, buffer);
+			safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+			safe_unpack32(&grace_time, buffer);
+			safe_unpack32(&max_time, buffer);
+			safe_unpack32(&default_time, buffer);
+			safe_unpack32(&max_cpus_per_node, buffer);
+			safe_unpack32(&max_nodes, buffer);
+			safe_unpack32(&min_nodes, buffer);
+
+			safe_unpack16(&flags,        buffer);
+			safe_unpack16(&max_share,    buffer);
+			safe_unpack16(&over_time_limit, buffer);
+			safe_unpack16(&preempt_mode, buffer);
+
+			safe_unpack16(&priority_job_factor, buffer);
+			safe_unpack16(&priority_tier, buffer);
+			if (priority_job_factor > part_max_priority)
+				part_max_priority = priority_job_factor;
+
+			safe_unpack16(&state_up, buffer);
+			safe_unpack16(&cr_type, buffer);
+
+			safe_unpackstr_xmalloc(&allow_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_groups,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&qos_char,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+					       buffer);
+			safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+			if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+			    (flags & PART_FLAG_EXC_USER_CLR)  ||
+			    (flags & PART_FLAG_HIDDEN_CLR)    ||
+			    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+			    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+			    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+			    (flags & PART_FLAG_LLN_CLR)) {
+				error("Invalid data for partition %s: flags=%u",
+				      part_name, flags);
+				error_code = EINVAL;
+			}
+        } else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+			safe_unpack32(&cpu_bind, buffer);
+			safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+			safe_unpack32(&grace_time, buffer);
+			safe_unpack32(&max_time, buffer);
+			safe_unpack32(&default_time, buffer);
+			safe_unpack32(&max_cpus_per_node, buffer);
+			safe_unpack32(&max_nodes, buffer);
+			safe_unpack32(&min_nodes, buffer);
+
+			safe_unpack16(&flags,        buffer);
+			safe_unpack16(&max_share,    buffer);
+			safe_unpack16(&over_time_limit, buffer);
+			safe_unpack16(&preempt_mode, buffer);
+
+			safe_unpack16(&priority_job_factor, buffer);
+			safe_unpack16(&priority_tier, buffer);
+			if (priority_job_factor > part_max_priority)
+				part_max_priority = priority_job_factor;
+
+			safe_unpack16(&state_up, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+            safe_unpack32(&suspend_idle, buffer);
+#endif
+			safe_unpack16(&cr_type, buffer);
+
+			safe_unpackstr_xmalloc(&allow_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_groups,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&qos_char,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+					       buffer);
+			safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+			if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+			    (flags & PART_FLAG_EXC_USER_CLR)  ||
+			    (flags & PART_FLAG_HIDDEN_CLR)    ||
+			    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+			    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+			    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+			    (flags & PART_FLAG_LLN_CLR)) {
+				error("Invalid data for partition %s: flags=%u",
+				      part_name, flags);
+				error_code = EINVAL;
+			}
+        } else {
+			error("%s: protocol_version %hu not supported",
+			      __func__, protocol_version);
+			goto unpack_error;
+		}
+#endif
+
+		/* Release unnecessary field memory space */
+		xfree(allow_accounts);
+		xfree(allow_groups);
+		xfree(allow_qos);
+		xfree(allow_alloc_nodes);
+		xfree(alternate);		
+		xfree(deny_accounts);
+		xfree(deny_qos);
+		//xfree(part_name);
+		xfree(qos_char);
+		xfree(nodes);
+
+		/* validity test as possible */
+		if (state_up > PARTITION_UP) {
+			error("Invalid data for partition %s: state_up=%u",
+			      part_name, state_up);
+			error_code = EINVAL;
+		}
+		if (error_code) {
+			error("No more partition data will be processed from "
+			      "the checkpoint file");
+			xfree(part_name);	  
+			xfree(borrowed_nodes);
+			break;
+		}
+
+		/* find record and perform update */
+		part_ptr = list_find_first(part_list, &list_find_part,
+					   part_name);
+		part_cnt++;
+		if (part_ptr == NULL) {
+			info("%s: partition %s removed from configuration file, skip",
+			     __func__, part_name);
+			xfree(part_name);	 
+			xfree(borrowed_nodes);
+			continue;
+		}
+
+		xfree(part_name);
+		xfree(part_ptr->standby_nodes->borrowed_nodes);
+		if (borrowed_nodes) {
+			part_ptr->standby_nodes->borrowed_nodes = borrowed_nodes;
+			debug("%s: Recovered borrowed nodes %s of partition %s", __func__, borrowed_nodes, part_ptr->name);
+		} else {
+			debug("%s: No borrowed nodes recovered of partition %s", __func__, part_ptr->name);
+		}	
+	}
+
+	info("Recovered borrowed nodes of %d partitions", part_cnt);
+	free_buf(buffer);
+	return error_code;
+
+unpack_error:
+	if (!ignore_state_errors)
+		fatal("Incomplete partition data checkpoint file, start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.");
+	error("Incomplete partition data checkpoint file");
+	info("Recovered borrowed nodes of %d partitions", part_cnt);
+	free_buf(buffer);
+	return EFAULT;
+}
+#endif
 
 /*
  * find_part_record - find a record for partition with specified name
@@ -954,6 +2087,10 @@ static void _list_delete_part(void *part_entry)
 	xfree(part_ptr->tres_cnt);
 	xfree(part_ptr->tres_fmt_str);
 	_bf_data_free(&part_ptr->bf_data);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES	
+	standby_nodes_free(part_ptr->standby_nodes);
+	part_ptr->standby_nodes = NULL;
+#endif
 
 	xfree(part_entry);
 }
@@ -1466,6 +2603,11 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
 		pack16(part_ptr->meta_flags,      buffer);
 #endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+            packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
+            packstr(part_ptr->standby_nodes->nodes, buffer);
+            packstr(part_ptr->standby_nodes->parameters, buffer);
+#endif	
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		if (default_part_loc == part_ptr)
 			part_ptr->flags |= PART_FLAG_DEFAULT;
@@ -2120,7 +3262,11 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		xfree(part_ptr->orig_nodes);
 		part_ptr->orig_nodes = xstrdup(part_ptr->nodes);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		error_code = build_part_bitmap(part_ptr, true);
+#else
 		error_code = build_part_bitmap(part_ptr);
+#endif		
 		if (error_code) {
 			xfree(part_ptr->nodes);
 			part_ptr->nodes = backup_node_list;
@@ -2128,6 +3274,13 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 			info("%s: setting nodes to %s for partition %s",
 			     __func__, part_ptr->nodes, part_desc->name);
 			xfree(backup_node_list);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			update_part_node = true;
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			/* update borrowed node's orig partitions */
+			_build_borrow_nodes_partitions(part_ptr);
+#endif					
 		}
 		update_part_nodes_in_resv(part_ptr);
 		power_save_set_timeouts(NULL);
@@ -2139,6 +3292,81 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		/* Newly created partition needs a bitmap, even if empty */
 		part_ptr->node_bitmap = bit_alloc(node_record_count);
 	}
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	bool nodes_enable = true, parameters_enable = true, standby_changed = false;
+	char *backup_standby_nodes = NULL, *backup_standby_parameters = NULL;
+
+	if (part_desc->standby_nodes) {
+		if (!(part_ptr->standby_nodes)) {
+			part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
+		}
+		backup_standby_nodes = part_ptr->standby_nodes->nodes;
+		if (part_desc->standby_nodes[0] == '\0') {
+			part_ptr->standby_nodes->nodes = NULL;	/* avoid empty string */
+		} else {
+			part_ptr->standby_nodes->nodes = xstrdup(part_desc->standby_nodes);
+		}
+
+		if (!build_part_standby_nodes_bitmap(part_ptr)) {
+			xfree(backup_standby_nodes);
+			standby_changed = true;
+			info("%s: setting standby_nodes to %s for partition %s",
+				     __func__, part_ptr->standby_nodes->nodes, part_desc->name);
+		} else {
+			nodes_enable = false;
+			xfree(part_ptr->standby_nodes->nodes);
+			part_ptr->standby_nodes->nodes = backup_standby_nodes;
+			backup_standby_nodes = NULL;
+			error_code = ESLURM_INVALID_NODE_NAME;
+		}		 
+	}
+
+	if (nodes_enable && (part_desc->standby_node_parameters)) {
+		if (!(part_ptr->standby_nodes)) {
+			part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
+		}		
+		backup_standby_parameters = part_ptr->standby_nodes->parameters;
+		if (part_desc->standby_node_parameters[0] == '\0') {
+			part_ptr->standby_nodes->parameters = NULL;
+		} else {
+			part_ptr->standby_nodes->parameters = xstrdup(part_desc->standby_node_parameters);
+		}
+			
+		if (!valid_standby_node_parameters(part_ptr)) {
+			xfree(backup_standby_parameters);
+			standby_changed = true;
+			info("%s: setting standby_node_parameters to %s for partition %s",
+					__func__, part_ptr->standby_nodes->parameters, part_desc->name);
+		} else {
+			parameters_enable = false;
+			xfree(part_ptr->standby_nodes->parameters);
+			part_ptr->standby_nodes->parameters = backup_standby_parameters;
+			backup_standby_parameters = NULL;
+			error_code = ESLURM_INVALID_STANDBY_NODE_PARAMETERS;
+		}
+	}
+
+	if (nodes_enable && parameters_enable && standby_changed) {
+		if ((part_ptr->standby_nodes->nodes_can_borrow > 0) &&
+				(part_ptr->standby_nodes->offline_node_state > 0) &&
+					part_ptr->standby_nodes->standby_node_bitmap && 
+					(bit_set_count(part_ptr->standby_nodes->standby_node_bitmap) > 0)) {
+			part_ptr->standby_nodes->enable = true;
+			debug("partition %s standby_nodes enable", part_ptr->name);
+		} else {
+			part_ptr->standby_nodes->enable = false;
+			debug("partition %s standby_nodes disable", part_ptr->name);
+		}
+		/* validate partition borrow nodes */
+		if (validate_partition_borrow_nodes(part_ptr)) {
+			update_all_parts_resource(true);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			update_part_node = false;
+#endif
+		}
+	} 
+#endif
 
 	if (error_code == SLURM_SUCCESS) {
 		gs_reconfig();

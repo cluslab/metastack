@@ -3189,6 +3189,211 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern void slurmdb_pack_borrow_cond(void *in, uint16_t protocol_version,
+				    buf_t *buffer)
+{
+	slurmdb_borrow_cond_t *object = (slurmdb_borrow_cond_t *)in;
+
+	xassert(object);
+
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+		if (!object) {
+			pack32(NO_VAL, buffer);
+			
+			pack32(NO_VAL, buffer);
+			pack32(NO_VAL, buffer);
+			packnull(buffer);
+			pack_time(0, buffer);
+			pack_time(0, buffer);
+
+			pack32(NO_VAL, buffer);
+			pack32(NO_VAL, buffer);
+			pack32(NO_VAL, buffer);
+			return;
+		}		
+		_pack_list_of_str(object->cluster_list, buffer);
+
+		pack32(object->cond_flags, buffer);
+		_pack_list_of_str(object->format_list, buffer);
+		packstr(object->node_list, buffer);
+		pack_time(object->period_end, buffer);
+		pack_time(object->period_start, buffer);
+
+		_pack_list_of_str(object->reason_list, buffer);
+		_pack_list_of_str(object->reason_uid_list, buffer);
+		_pack_list_of_str(object->state_list, buffer);
+	}
+#endif
+}
+
+
+extern int slurmdb_unpack_borrow_cond(void **object, uint16_t protocol_version,
+				     buf_t *buffer)
+{
+	uint32_t uint32_tmp;
+	int i;
+	uint32_t count;
+	slurmdb_borrow_cond_t *object_ptr =
+		xmalloc(sizeof(slurmdb_borrow_cond_t));
+	char *tmp_info = NULL;
+
+	*object = object_ptr;
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+		safe_unpack32(&count, buffer);
+		if (count > NO_VAL)
+			goto unpack_error;
+		if (count != NO_VAL) {
+			object_ptr->cluster_list = list_create(xfree_ptr);
+			for (i = 0; i < count; i++) {
+				safe_unpackstr_xmalloc(&tmp_info, &uint32_tmp,
+						       buffer);
+				list_append(object_ptr->cluster_list, tmp_info);
+			}
+		}
+		safe_unpack32(&object_ptr->cond_flags, buffer);
+
+		safe_unpack32(&count, buffer);
+		if (count > NO_VAL)
+			goto unpack_error;
+		if (count && (count != NO_VAL)) {
+			object_ptr->format_list = list_create(xfree_ptr);
+			for (i = 0; i < count; i++) {
+				safe_unpackstr_xmalloc(&tmp_info, &uint32_tmp,
+						       buffer);
+				list_append(object_ptr->format_list, tmp_info);
+			}
+		}
+
+		safe_unpackstr_xmalloc(&object_ptr->node_list, &uint32_tmp,
+				       buffer);
+
+		safe_unpack_time(&object_ptr->period_end, buffer);
+		safe_unpack_time(&object_ptr->period_start, buffer);
+
+		safe_unpack32(&count, buffer);
+		if (count > NO_VAL)
+			goto unpack_error;
+		if (count != NO_VAL) {
+			object_ptr->reason_list = list_create(xfree_ptr);
+			for (i = 0; i < count; i++) {
+				safe_unpackstr_xmalloc(&tmp_info, &uint32_tmp,
+						       buffer);
+				list_append(object_ptr->reason_list, tmp_info);
+			}
+		}
+
+		safe_unpack32(&count, buffer);
+		if (count > NO_VAL)
+			goto unpack_error;
+		if (count != NO_VAL) {
+			object_ptr->reason_uid_list = list_create(xfree_ptr);
+			for (i = 0; i < count; i++) {
+				safe_unpackstr_xmalloc(&tmp_info, &uint32_tmp,
+						       buffer);
+				list_append(object_ptr->reason_uid_list,
+					    tmp_info);
+			}
+		}
+
+		safe_unpack32(&count, buffer);
+		if (count > NO_VAL)
+			goto unpack_error;
+		if (count != NO_VAL) {
+			object_ptr->state_list = list_create(xfree_ptr);
+			for (i = 0; i < count; i++) {
+				safe_unpackstr_xmalloc(&tmp_info, &uint32_tmp,
+						       buffer);
+				list_append(object_ptr->state_list, tmp_info);
+			}
+		}
+	} else
+		goto unpack_error;
+#endif
+
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurmdb_destroy_borrow_cond(object_ptr);
+	*object = NULL;
+	return SLURM_ERROR;
+}
+
+extern void slurmdb_pack_borrow_rec(void *in, uint16_t protocol_version,
+				   buf_t *buffer)
+{
+	slurmdb_borrow_rec_t *object = (slurmdb_borrow_rec_t *)in;
+
+	xassert(buffer);
+
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+		if (!object) {
+			packnull(buffer);
+			packnull(buffer);
+			pack_time(0, buffer);
+			pack_time(0, buffer);
+			packnull(buffer);
+			pack32(NO_VAL, buffer);
+			pack32(NO_VAL, buffer);
+			return;
+		}
+
+		packstr(object->cluster, buffer);
+		packstr(object->node_name, buffer);
+		pack_time(object->period_start, buffer);
+		pack_time(object->period_end, buffer);
+		packstr(object->reason, buffer);
+		pack32(object->reason_uid, buffer);
+		pack32(object->state, buffer);
+	} else {
+		error("%s: protocol_version %hu not supported",
+		      __func__, protocol_version);
+	}
+#endif
+}
+
+extern int slurmdb_unpack_borrow_rec(void **object, uint16_t protocol_version,
+				    buf_t *buffer)
+{
+	uint32_t uint32_tmp;
+	slurmdb_borrow_rec_t *object_ptr = xmalloc(sizeof(slurmdb_borrow_rec_t));
+
+	xassert(buffer);
+	xassert(object);
+
+	*object = object_ptr;
+
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+		safe_unpackstr_xmalloc(&object_ptr->cluster,
+				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&object_ptr->node_name,
+				       &uint32_tmp, buffer);
+		safe_unpack_time(&object_ptr->period_start, buffer);
+		safe_unpack_time(&object_ptr->period_end, buffer);
+		safe_unpackstr_xmalloc(&object_ptr->reason,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&object_ptr->reason_uid, buffer);
+		safe_unpack32(&object_ptr->state, buffer);
+	} else {
+		error("%s: protocol_version %hu not supported",
+		      __func__, protocol_version);
+		goto unpack_error;
+	}
+#endif
+
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurmdb_destroy_borrow_rec(object_ptr);
+	*object = NULL;
+	return SLURM_ERROR;
+}
+#endif
+
 extern void slurmdb_pack_event_cond(void *in, uint16_t protocol_version,
 				    buf_t *buffer)
 {

@@ -2617,6 +2617,105 @@ extern int acct_storage_p_fix_runaway_jobs(void *db_conn, uint32_t uid,
 	return rc;
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern List acct_storage_p_get_borrow(void *db_conn, uint32_t uid,
+				      slurmdb_borrow_cond_t *borrow_cond)
+{
+	persist_msg_t req = {0}, resp = {0};
+	dbd_cond_msg_t get_msg;
+	dbd_list_msg_t *got_msg;
+	int rc;
+	List ret_list = NULL;
+
+	memset(&get_msg, 0, sizeof(dbd_cond_msg_t));
+	get_msg.cond = borrow_cond;
+
+	req.msg_type = DBD_GET_BORROW;
+	req.conn = db_conn;
+	req.data = &get_msg;
+	rc = dbd_conn_send_recv(SLURM_PROTOCOL_VERSION, &req, &resp);
+
+	if (rc != SLURM_SUCCESS)
+		error("DBD_GET_BORROW failure: %m");
+	else if (resp.msg_type == PERSIST_RC) {
+		persist_rc_msg_t *msg = resp.data;
+		if (msg->rc == SLURM_SUCCESS) {
+			info("%s", msg->comment);
+			ret_list = list_create(NULL);
+		} else {
+			slurm_seterrno(msg->rc);
+			error("%s", msg->comment);
+		}
+		slurm_persist_free_rc_msg(msg);
+	} else if (resp.msg_type != DBD_GOT_BORROW) {
+		error("response type not DBD_GOT_BORROW: %u",
+		      resp.msg_type);
+	} else {
+		got_msg = (dbd_list_msg_t *) resp.data;
+		ret_list = got_msg->my_list;
+		got_msg->my_list = NULL;
+		slurmdbd_free_list_msg(got_msg);
+	}
+
+	return ret_list;
+}
+
+extern int clusteracct_storage_p_node_borrow(void *db_conn,
+					   node_record_t *node_ptr,
+					   time_t event_time, char *reason,
+					   uint32_t reason_uid)
+{
+	persist_msg_t msg = {0};
+	dbd_node_state_msg_t req;
+	char *my_reason = NULL;
+
+	if (reason)
+		my_reason = reason;
+
+	memset(&req, 0, sizeof(dbd_node_state_msg_t));
+	req.hostlist   = node_ptr->name;
+	req.new_state  = DBD_NODE_BORROW;
+	req.event_time = event_time;
+	req.reason     = my_reason;
+	req.reason_uid = reason_uid;
+	req.state      = node_ptr->node_state;
+	req.tres_str   = node_ptr->tres_str;
+
+	msg.msg_type   = DBD_NODE_STATE_BORROW;
+	msg.conn       = db_conn;
+	msg.data       = &req;
+
+	//info("sending a node borrowed message here");
+	if (slurmdbd_agent_send(SLURM_PROTOCOL_VERSION, &msg) < 0)
+		return SLURM_ERROR;
+
+	return SLURM_SUCCESS;
+}
+
+extern int clusteracct_storage_p_node_return(void *db_conn, node_record_t *node_ptr,
+					 time_t event_time)
+{
+	persist_msg_t msg = {0};
+	dbd_node_state_msg_t req;
+
+	memset(&req, 0, sizeof(dbd_node_state_msg_t));
+	req.hostlist   = node_ptr->name;
+	req.tres_str   = node_ptr->tres_str;
+	req.new_state  = DBD_NODE_RETURN;
+	req.event_time = event_time;
+	req.reason     = NULL;
+	msg.msg_type   = DBD_NODE_STATE_BORROW;
+	msg.conn       = db_conn;
+	msg.data       = &req;
+
+	// info("sending a node return message here");
+	if (slurmdbd_agent_send(SLURM_PROTOCOL_VERSION, &msg) < 0)
+		return SLURM_ERROR;
+
+	return SLURM_SUCCESS;
+}
+#endif
+
 extern int clusteracct_storage_p_node_down(void *db_conn,
 					   node_record_t *node_ptr,
 					   time_t event_time, char *reason,

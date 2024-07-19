@@ -586,6 +586,25 @@ extern int acct_storage_g_shutdown(void *db_conn);
 extern void acct_storage_g_send_all(void *db_conn, time_t event_time,
 				    slurm_msg_type_t msg_type);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+/*
+ * get info from the storage
+ * IN:  slurmdb_event_cond_t *
+ * RET: List of slurmdb_event_rec_t *
+ * note List needs to be freed when called
+ */
+extern List acct_storage_g_get_borrow(
+	void *db_conn,  uint32_t uid, slurmdb_borrow_cond_t *borrow_cond);
+
+extern int clusteracct_storage_g_node_borrow(void *db_conn,
+					   node_record_t *node_ptr,
+					   time_t event_time,
+					   char *reason, uint32_t reason_uid);
+
+extern int clusteracct_storage_g_node_return(void *db_conn, node_record_t *node_ptr,
+					 time_t event_time);
+#endif
+
 extern int clusteracct_storage_g_node_down(void *db_conn,
 					   node_record_t *node_ptr,
 					   time_t event_time,

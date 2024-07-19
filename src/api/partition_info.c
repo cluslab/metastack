@@ -93,6 +93,371 @@ void slurm_print_partition_info_msg ( FILE* out,
 
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+/*
+ * _slurm_sprint_partition_info - output information about a specific Slurm
+ *	partition based upon message as loaded using slurm_load_partitions
+ * IN part_ptr - an individual partition information record pointer
+ * IN one_liner - print as a single line if true
+ * IN borrow_flag - print information related to standby and borrowed nodes if true
+ * RET out - char * containing formatted output (must be freed after call)
+ *           NULL is returned on failure.
+ */
+char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
+				    int one_liner, int borrow_flag )
+{
+	char *out = NULL, *allow_deny = NULL, *value = NULL;
+	uint16_t force, preempt_mode, val;
+	char *line_end = (one_liner) ? " " : "\n   ";
+
+	/****** Line 1 ******/
+
+	xstrfmtcat(out, "PartitionName=%s", part_ptr->name);
+	xstrcat(out, line_end);
+
+	/****** Line 2 ******/
+
+	if ((part_ptr->allow_groups == NULL) ||
+	    (part_ptr->allow_groups[0] == '\0'))
+		xstrcat(out, "AllowGroups=ALL");
+	else {
+		xstrfmtcat(out, "AllowGroups=%s", part_ptr->allow_groups);
+	}
+
+	if (part_ptr->allow_accounts || !part_ptr->deny_accounts) {
+		allow_deny = "Allow";
+		if ((part_ptr->allow_accounts == NULL) ||
+		    (part_ptr->allow_accounts[0] == '\0'))
+			value = "ALL";
+		else
+			value = part_ptr->allow_accounts;
+	} else {
+		allow_deny = "Deny";
+		value = part_ptr->deny_accounts;
+	}
+	xstrfmtcat(out, " %sAccounts=%s", allow_deny, value);
+
+	if (part_ptr->allow_qos || !part_ptr->deny_qos) {
+		allow_deny = "Allow";
+		if ((part_ptr->allow_qos == NULL) ||
+		    (part_ptr->allow_qos[0] == '\0'))
+			value = "ALL";
+		else
+			value = part_ptr->allow_qos;
+	} else {
+		allow_deny = "Deny";
+		value = part_ptr->deny_qos;
+	}
+	xstrfmtcat(out, " %sQos=%s", allow_deny, value);
+	xstrcat(out, line_end);
+
+	/****** Line 3 ******/
+	if (part_ptr->allow_alloc_nodes == NULL)
+		xstrcat(out, "AllocNodes=ALL");
+	else
+		xstrfmtcat(out, "AllocNodes=%s", part_ptr->allow_alloc_nodes);
+
+	if (part_ptr->alternate != NULL) {
+		xstrfmtcat(out, " Alternate=%s", part_ptr->alternate);
+	}
+
+	if (part_ptr->flags & PART_FLAG_DEFAULT)
+		xstrcat(out, " Default=YES");
+	else
+		xstrcat(out, " Default=NO");
+
+	if (part_ptr->cpu_bind) {
+		char tmp_str[128];
+		slurm_sprint_cpu_bind_type(tmp_str, part_ptr->cpu_bind);
+		xstrfmtcat(out, " CpuBind=%s ", tmp_str);
+	}
+
+	if (part_ptr->qos_char)
+		xstrfmtcat(out, " QoS=%s", part_ptr->qos_char);
+	else
+		xstrcat(out, " QoS=N/A");
+
+	xstrcat(out, line_end);
+
+	/****** Line 5 ******/
+
+	if (part_ptr->default_time == INFINITE)
+		xstrcat(out, "DefaultTime=UNLIMITED");
+	else if (part_ptr->default_time == NO_VAL)
+		xstrcat(out, "DefaultTime=NONE");
+	else {
+		char time_line[32];
+		secs2time_str(part_ptr->default_time * 60, time_line,
+			sizeof(time_line));
+		xstrfmtcat(out, "DefaultTime=%s", time_line);
+	}
+
+	if (part_ptr->flags & PART_FLAG_NO_ROOT)
+		xstrcat(out, " DisableRootJobs=YES");
+	else
+		xstrcat(out, " DisableRootJobs=NO");
+
+	if (part_ptr->flags & PART_FLAG_EXCLUSIVE_USER)
+		xstrcat(out, " ExclusiveUser=YES");
+	else
+		xstrcat(out, " ExclusiveUser=NO");
+
+	xstrfmtcat(out, " GraceTime=%u", part_ptr->grace_time);
+
+	if (part_ptr->flags & PART_FLAG_HIDDEN)
+		xstrcat(out, " Hidden=YES");
+	else
+		xstrcat(out, " Hidden=NO");
+
+	xstrcat(out, line_end);
+
+	/****** Line 6 ******/
+
+	if (part_ptr->max_nodes == INFINITE)
+		xstrcat(out, "MaxNodes=UNLIMITED");
+	else
+		xstrfmtcat(out, "MaxNodes=%u", part_ptr->max_nodes);
+
+	if (part_ptr->max_time == INFINITE)
+		xstrcat(out, " MaxTime=UNLIMITED");
+	else {
+		char time_line[32];
+		secs2time_str(part_ptr->max_time * 60, time_line,
+			      sizeof(time_line));
+		xstrfmtcat(out, " MaxTime=%s", time_line);
+	}
+
+	xstrfmtcat(out, " MinNodes=%u", part_ptr->min_nodes);
+
+	if (part_ptr->flags & PART_FLAG_LLN)
+		xstrcat(out, " LLN=YES");
+	else
+		xstrcat(out, " LLN=NO");
+
+	if (part_ptr->max_cpus_per_node == INFINITE)
+		xstrcat(out, " MaxCPUsPerNode=UNLIMITED");
+	else {
+		xstrfmtcat(out, " MaxCPUsPerNode=%u",
+			   part_ptr->max_cpus_per_node);
+	}
+
+#ifdef __METASTACK_NEW_PART_LLS
+	if (part_ptr->flags & PART_FLAG_LLS)
+		xstrcat(out, " LLS=YES");
+	else
+		xstrcat(out, " LLS=NO");
+#endif
+
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	if (part_ptr->meta_flags & PART_METAFLAG_HETPART)
+		xstrcat(out, " HetPart=YES");
+	else
+		xstrcat(out, " HetPart=NO");
+#endif
+
+#ifdef __METASTACK_NEW_PART_RBN
+	if (part_ptr->meta_flags & PART_METAFLAG_RBN)
+		xstrcat(out, " RBN=YES");
+	else
+		xstrcat(out, " RBN=NO");
+#endif
+	xstrcat(out, line_end);
+
+	/****** Line ******/
+	if (part_ptr->nodesets) {
+		xstrfmtcat(out, "NodeSets=%s", part_ptr->nodesets);
+		xstrcat(out, line_end);
+	}
+
+	/****** Line ******/
+	xstrfmtcat(out, "Nodes=%s", part_ptr->nodes);
+	xstrcat(out, line_end);
+
+	/****** Lines for Standby Nodes ******/
+	if (borrow_flag) {
+		xstrfmtcat(out, "NodesBorrowed=%s", part_ptr->borrowed_nodes);
+		xstrcat(out, line_end);		
+
+		xstrfmtcat(out, "StandbyNodes=%s", part_ptr->standby_nodes);
+		xstrcat(out, line_end);
+
+		xstrfmtcat(out, "StandbyNodeParameters=%s", part_ptr->standby_node_parameters);
+		xstrcat(out, line_end);	
+	}	
+
+	/****** Line 7 ******/
+
+	xstrfmtcat(out, "PriorityJobFactor=%u", part_ptr->priority_job_factor);
+	xstrfmtcat(out, " PriorityTier=%u", part_ptr->priority_tier);
+
+	if (part_ptr->flags & PART_FLAG_ROOT_ONLY)
+		xstrcat(out, " RootOnly=YES");
+	else
+		xstrcat(out, " RootOnly=NO");
+
+	if (part_ptr->flags & PART_FLAG_REQ_RESV)
+		xstrcat(out, " ReqResv=YES");
+	else
+		xstrcat(out, " ReqResv=NO");
+
+	force = part_ptr->max_share & SHARED_FORCE;
+	val = part_ptr->max_share & (~SHARED_FORCE);
+	if (val == 0)
+		xstrcat(out, " OverSubscribe=EXCLUSIVE");
+	else if (force)
+		xstrfmtcat(out, " OverSubscribe=FORCE:%u", val);
+	else if (val == 1)
+		xstrcat(out, " OverSubscribe=NO");
+	else
+		xstrfmtcat(out, " OverSubscribe=YES:%u", val);
+
+	xstrcat(out, line_end);
+
+	/****** Line ******/
+	if (part_ptr->over_time_limit == NO_VAL16)
+		xstrfmtcat(out, "OverTimeLimit=NONE");
+	else if (part_ptr->over_time_limit == INFINITE16)
+		xstrfmtcat(out, "OverTimeLimit=UNLIMITED");
+	else
+		xstrfmtcat(out, "OverTimeLimit=%u", part_ptr->over_time_limit);
+
+	preempt_mode = part_ptr->preempt_mode;
+	if (preempt_mode == NO_VAL16)
+		preempt_mode = slurm_conf.preempt_mode; /* use cluster param */
+	xstrfmtcat(out, " PreemptMode=%s", preempt_mode_string(preempt_mode));
+
+	xstrcat(out, line_end);
+
+	/****** Line ******/
+	if (part_ptr->state_up == PARTITION_UP)
+		xstrcat(out, "State=UP");
+	else if (part_ptr->state_up == PARTITION_DOWN)
+		xstrcat(out, "State=DOWN");
+	else if (part_ptr->state_up == PARTITION_INACTIVE)
+		xstrcat(out, "State=INACTIVE");
+	else if (part_ptr->state_up == PARTITION_DRAIN)
+		xstrcat(out, "State=DRAIN");
+	else
+		xstrcat(out, "State=UNKNOWN");
+
+	xstrfmtcat(out, " TotalCPUs=%u", part_ptr->total_cpus);
+
+	xstrfmtcat(out, " TotalNodes=%u", part_ptr->total_nodes);
+
+	xstrfmtcat(out, " SelectTypeParameters=%s",
+		   select_type_param_string(part_ptr->cr_type));
+
+	xstrcat(out, line_end);
+
+	/****** Line ******/
+	value = job_defaults_str(part_ptr->job_defaults_list);
+	xstrfmtcat(out, "JobDefaults=%s", value);
+	xfree(value);
+	xstrcat(out, line_end);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+	if (part_ptr->suspend_idle != NO_VAL)
+		xstrfmtcat(out, "SuspendKeepIdle=%u", part_ptr->suspend_idle);
+	else
+		xstrcat(out, "SuspendKeepIdle=n/a");
+	xstrcat(out, line_end);
+#endif
+	/****** Line ******/
+	if (part_ptr->def_mem_per_cpu & MEM_PER_CPU) {
+		if (part_ptr->def_mem_per_cpu == MEM_PER_CPU) {
+			xstrcat(out, "DefMemPerCPU=UNLIMITED");
+		} else {
+			xstrfmtcat(out, "DefMemPerCPU=%"PRIu64"",
+				   part_ptr->def_mem_per_cpu & (~MEM_PER_CPU));
+		}
+	} else if (part_ptr->def_mem_per_cpu == 0) {
+		xstrcat(out, "DefMemPerNode=UNLIMITED");
+	} else {
+		xstrfmtcat(out, "DefMemPerNode=%"PRIu64"",
+			   part_ptr->def_mem_per_cpu);
+	}
+
+	if (part_ptr->max_mem_per_cpu & MEM_PER_CPU) {
+		if (part_ptr->max_mem_per_cpu == MEM_PER_CPU) {
+			xstrcat(out, " MaxMemPerCPU=UNLIMITED");
+		} else {
+			xstrfmtcat(out, " MaxMemPerCPU=%"PRIu64"",
+				   part_ptr->max_mem_per_cpu & (~MEM_PER_CPU));
+		}
+	} else if (part_ptr->max_mem_per_cpu == 0) {
+		xstrcat(out, " MaxMemPerNode=UNLIMITED");
+	} else {
+		xstrfmtcat(out, " MaxMemPerNode=%"PRIu64"",
+			   part_ptr->max_mem_per_cpu);
+	}
+
+	/****** Line ******/
+	xstrcat(out, line_end);
+	xstrfmtcat(out, "TRES=%s", part_ptr->tres_fmt_str);
+
+	/****** Line 10 ******/
+	if (part_ptr->billing_weights_str) {
+		xstrcat(out, line_end);
+
+		xstrfmtcat(out, "TRESBillingWeights=%s",
+			   part_ptr->billing_weights_str);
+	}
+
+	/****** Line ******/
+	if ((part_ptr->resume_timeout != NO_VAL16) ||
+	    (part_ptr->suspend_timeout != NO_VAL16) ||
+	    (part_ptr->suspend_time != NO_VAL)) {
+		xstrcat(out, line_end);
+
+		if (part_ptr->resume_timeout == NO_VAL16)
+			xstrcat(out, "ResumeTimeout=GLOBAL");
+		else if (part_ptr->resume_timeout == INFINITE16)
+			xstrcat(out, "ResumeTimeout=INFINITE");
+		else
+			xstrfmtcat(out, "ResumeTimeout=%d",
+				part_ptr->resume_timeout);
+
+		if (part_ptr->suspend_timeout == NO_VAL16)
+			xstrcat(out, " SuspendTimeout=GLOBAL");
+		else if (part_ptr->suspend_timeout == INFINITE16)
+			xstrcat(out, " SuspendTimeout=INFINITE");
+		else
+			xstrfmtcat(out, " SuspendTimeout=%d",
+				part_ptr->suspend_timeout);
+
+		if (part_ptr->suspend_time == NO_VAL)
+			xstrcat(out, " SuspendTime=GLOBAL");
+		else if (part_ptr->suspend_time == INFINITE)
+			xstrcat(out, " SuspendTime=INFINITE");
+		else
+			xstrfmtcat(out, " SuspendTime=%d",
+				part_ptr->suspend_time);
+	}
+
+	if (one_liner)
+		xstrcat(out, "\n");
+	else
+		xstrcat(out, "\n\n");
+
+	return out;
+}
+
+/*
+ * slurm_print_partition_info - output information about a specific Slurm
+ *	partition based upon message as loaded using slurm_load_partitions
+ * IN out - file to write to
+ * IN part_ptr - an individual partition information record pointer
+ * IN one_liner - print as a single line if true
+ * IN borrow_flag - print information related to standby and borrowed nodes if true
+ */
+void _slurm_print_partition_info ( FILE* out, partition_info_t * part_ptr,
+				  int one_liner, int borrow_flag)
+{
+	char *print_this = _slurm_sprint_partition_info(part_ptr, one_liner, borrow_flag);
+	fprintf ( out, "%s", print_this);
+	xfree(print_this);
+}
+#endif
+
 /*
  * slurm_print_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions

@@ -153,6 +153,11 @@ typedef enum {
 	DBD_MODIFY_FEDERATIONS, /* Modify existing federation 		*/
 	DBD_REMOVE_FEDERATIONS, /* Removing existing federation 	*/
 	DBD_JOB_HEAVY,         /* Send job script/env  		*/
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	DBD_GET_BORROW = 2000, 	/* Get node borrow information		*/
+	DBD_GOT_BORROW, 	/* Response to DBD_GET_BORROW		*/	
+	DBD_NODE_STATE_BORROW,		/* Record node borrow and return state transition		*/
+#endif
 
 	SLURM_PERSIST_INIT = 6500, /* So we don't use the
 				    * REQUEST_PERSIST_INIT also used here.
@@ -345,6 +350,11 @@ typedef struct {
 
 #define DBD_NODE_STATE_DOWN  1
 #define DBD_NODE_STATE_UP    2
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define DBD_NODE_BORROW      3
+#define DBD_NODE_RETURN      4
+#endif
+
 typedef struct dbd_node_state_msg {
 	time_t event_time;	/* time of transition */
 	char *hostlist;		/* name of hosts */
@@ -442,5 +452,7 @@ extern void slurmdbd_free_step_complete_msg(dbd_step_comp_msg_t *msg);
 extern void slurmdbd_free_step_start_msg(dbd_step_start_msg_t *msg);
 extern void slurmdbd_free_usage_msg(dbd_usage_msg_t *msg,
 				    slurmdbd_msg_type_t type);
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern void slurmdbd_free_node_borrow_msg(dbd_node_state_msg_t *msg);
+#endif
 #endif	/* !_SLURMDBD_DEFS_H */

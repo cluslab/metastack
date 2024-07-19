@@ -708,7 +708,9 @@ static void _init_node_record(node_record_t *node_ptr,
 	node_ptr->tot_sockets = config_ptr->tot_sockets;
 	node_ptr->tot_cores = config_ptr->tot_sockets * config_ptr->cores;
 	node_ptr->weight = config_ptr->weight;
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	node_ptr->orig_parts = NULL;
+#endif
 	/*
 	 * Here we determine if this node is scheduling threads or not.
 	 * We will set tpc to be the number of schedulable threads per core.
@@ -1194,6 +1196,9 @@ extern void purge_node_rec(node_record_t *node_ptr)
 	xfree(node_ptr->tres_str);
 	xfree(node_ptr->tres_fmt_str);
 	xfree(node_ptr->tres_cnt);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	xfree(node_ptr->orig_parts);
+#endif
 
 	xfree(node_ptr);
 }

@@ -351,6 +351,17 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			}
 			(*update_cnt_ptr)++;
 		}
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		else if (!xstrncasecmp(tag, "StandbyNodes", MAX(taglen, 12))) {
+			part_msg_ptr->standby_nodes = val;
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "StandbyNodeParameters", MAX(taglen, 13))) {			
+			part_msg_ptr->standby_node_parameters = val;
+			(*update_cnt_ptr)++;
+		}
+#endif			
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 		else if (!xstrncasecmp(tag, "SuspendKeepIdle", MAX(taglen, 8))) {
 			if (parse_uint32(val, &part_msg_ptr->suspend_idle)) {

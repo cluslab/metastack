@@ -360,8 +360,44 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 		if (p[i].min_nodes != 1)
 			fprintf(fp, " MinNodes=%u", p[i].min_nodes);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		if (p[i].nodes != NULL) {
+			uint32_t record_count = node_info_ptr->record_count;
+			if (record_count > 0) {
+				int j = 0;
+				char *nodes = NULL;
+				node_info_t *node_ptr = NULL;
+				hostlist_t host_list = hostlist_create(p[i].nodes);
+				while (p[i].node_inx[j] >= 0) {
+					int k = 0;
+					for (k = p[i].node_inx[j]; k <= p[i].node_inx[j+1]; k++) {
+						if (k >= record_count) {
+							break;
+						}
+						node_ptr = &(node_info_ptr->node_array[k]);
+						if (!node_ptr || (node_ptr->name == NULL)) {
+							continue;
+						}
+						if (IS_NODE_BORROWED(node_ptr)) {
+							hostlist_delete_host(host_list, node_ptr->name);
+						}
+					}
+					j += 2;
+				}
+				nodes = hostlist_ranged_string_xmalloc(host_list);
+				if (nodes != NULL) {
+					fprintf(fp, " Nodes=%s", nodes);			
+				}
+				xfree(nodes);
+				hostlist_destroy(host_list);			
+			} else {
+				fprintf(fp, " Nodes=%s", p[i].nodes);	
+			}
+		}
+#else
 		if (p[i].nodes != NULL)
 			fprintf(fp, " Nodes=%s", p[i].nodes);
+#endif
 
 		if (p[i].preempt_mode != NO_VAL16)
 			fprintf(fp, " PreemptMode=%s",
@@ -374,6 +410,13 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 		if (p[i].priority_tier != 1)
 			fprintf(fp, " PriorityTier=%u",
 				p[i].priority_tier);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES			
+		if (p[i].standby_node_parameters != NULL)
+		        fprintf(fp, " StandbyNodeParameters=%s", p[i].standby_node_parameters);
+
+		if (p[i].standby_nodes != NULL)
+			fprintf(fp, " StandbyNodes=%s", p[i].standby_nodes);
+#endif					
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 		if (p[i].suspend_idle != NO_VAL)
 			fprintf(fp, " SuspendKeepIdle=%"PRIu32"", p[i].suspend_idle);

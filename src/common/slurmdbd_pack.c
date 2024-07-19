@@ -282,6 +282,11 @@ static void _pack_cond_msg(dbd_cond_msg_t *msg, uint16_t rpc_version,
 	case DBD_GET_EVENTS:
 		my_function = slurmdb_pack_event_cond;
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GET_BORROW:
+		my_function = slurmdb_pack_borrow_cond;
+		break;
+#endif
 	default:
 		fatal("Unknown pack type");
 		return;
@@ -348,6 +353,11 @@ static int _unpack_cond_msg(dbd_cond_msg_t **msg, uint16_t rpc_version,
 	case DBD_GET_EVENTS:
 		my_function = slurmdb_unpack_event_cond;
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GET_BORROW:
+		my_function = slurmdb_unpack_borrow_cond;
+		break;
+#endif
 	default:
 		fatal("%s: Unknown unpack type", __func__);
 		return SLURM_ERROR;
@@ -372,30 +382,30 @@ static void _pack_job_complete_msg(dbd_job_comp_msg_t *msg,
 				   uint16_t rpc_version, buf_t *buffer)
 {
 	if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
-		packstr(msg->admin_comment, buffer);
-		pack32(msg->assoc_id, buffer);
-		packstr(msg->comment, buffer);
-		pack64(msg->db_index, buffer);
-		pack32(msg->derived_ec, buffer);
-		pack_time(msg->end_time, buffer);
-		pack32(msg->exit_code, buffer);
-		pack32(msg->job_id, buffer);
-		pack32(msg->job_state, buffer);
-		packstr(msg->nodes, buffer);
-		pack32(msg->req_uid, buffer);
-		pack_time(msg->start_time, buffer);
-		pack_time(msg->submit_time, buffer);
-		packstr(msg->system_comment, buffer);
-		packstr(msg->tres_alloc_str, buffer);
+        packstr(msg->admin_comment, buffer);
+        pack32(msg->assoc_id, buffer);
+        packstr(msg->comment, buffer);
+        pack64(msg->db_index, buffer);
+        pack32(msg->derived_ec, buffer);
+        pack_time(msg->end_time, buffer);
+        pack32(msg->exit_code, buffer);
+        pack32(msg->job_id, buffer);
+        pack32(msg->job_state, buffer);
+        packstr(msg->nodes, buffer);
+        pack32(msg->req_uid, buffer);
+        pack_time(msg->start_time, buffer);
+        pack_time(msg->submit_time, buffer);
+        packstr(msg->system_comment, buffer);
+        packstr(msg->tres_alloc_str, buffer);
 #ifdef __METASTACK_OPT_SACCT_COMMAND
-		packstr(msg->command, buffer);
+        packstr(msg->command, buffer);
 #endif
 #ifdef __METASTACK_OPT_SACCT_OUTPUT
-		packstr(msg->stdout, buffer);
-		packstr(msg->stderr, buffer);
+        packstr(msg->stdout, buffer);
+        packstr(msg->stderr, buffer);
 #endif
 #ifdef __METASTACK_OPT_RESC_NODEDETAIL
-		packstr(msg->resource_node_detail, buffer);
+        packstr(msg->resource_node_detail, buffer);
 #endif
 	}
 }
@@ -407,7 +417,87 @@ static int _unpack_job_complete_msg(dbd_job_comp_msg_t **msg,
 	dbd_job_comp_msg_t *msg_ptr = xmalloc(sizeof(dbd_job_comp_msg_t));
 	*msg = msg_ptr;
 
-	if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+    if (rpc_version >= SLURM_22_05_PROTOCOL_VERSION) {
+        if (rpc_version >= META_2_0_PROTOCOL_VERSION) {
+            safe_unpackstr_xmalloc(&msg_ptr->admin_comment,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&msg_ptr->assoc_id, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->comment, &uint32_tmp, buffer);
+            safe_unpack64(&msg_ptr->db_index, buffer);
+            safe_unpack32(&msg_ptr->derived_ec, buffer);
+            safe_unpack_time(&msg_ptr->end_time, buffer);
+            safe_unpack32(&msg_ptr->exit_code, buffer);
+            safe_unpack32(&msg_ptr->job_id, buffer);
+            safe_unpack32(&msg_ptr->job_state, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->nodes, &uint32_tmp, buffer);
+            safe_unpack32(&msg_ptr->req_uid, buffer);
+            safe_unpack_time(&msg_ptr->start_time, buffer);
+            safe_unpack_time(&msg_ptr->submit_time, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->system_comment,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->tres_alloc_str,
+                        &uint32_tmp, buffer);
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+            safe_unpackstr_xmalloc(&msg_ptr->command, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+            safe_unpackstr_xmalloc(&msg_ptr->stdout, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->stderr, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+            safe_unpackstr_xmalloc(&msg_ptr->resource_node_detail, &uint32_tmp, buffer);
+#endif
+        } else {
+            safe_unpackstr_xmalloc(&msg_ptr->admin_comment,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&msg_ptr->assoc_id, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->comment, &uint32_tmp, buffer);
+            safe_unpack64(&msg_ptr->db_index, buffer);
+            safe_unpack32(&msg_ptr->derived_ec, buffer);
+            safe_unpack_time(&msg_ptr->end_time, buffer);
+            safe_unpack32(&msg_ptr->exit_code, buffer);
+            safe_unpack32(&msg_ptr->job_id, buffer);
+            safe_unpack32(&msg_ptr->job_state, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->nodes, &uint32_tmp, buffer);
+            safe_unpack32(&msg_ptr->req_uid, buffer);
+            safe_unpack_time(&msg_ptr->start_time, buffer);
+            safe_unpack_time(&msg_ptr->submit_time, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->system_comment,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->tres_alloc_str,
+                        &uint32_tmp, buffer);
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+            safe_unpackstr_xmalloc(&msg_ptr->command, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+            safe_unpackstr_xmalloc(&msg_ptr->stdout, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&msg_ptr->stderr, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+            safe_unpackstr_xmalloc(&msg_ptr->resource_node_detail, &uint32_tmp, buffer);
+#endif
+        }
+    } else if (rpc_version >= SLURM_21_08_PROTOCOL_VERSION) {
+        safe_unpackstr_xmalloc(&msg_ptr->admin_comment,
+                        &uint32_tmp, buffer);
+        safe_unpack32(&msg_ptr->assoc_id, buffer);
+        safe_unpackstr_xmalloc(&msg_ptr->comment, &uint32_tmp, buffer);
+        safe_unpack64(&msg_ptr->db_index, buffer);
+        safe_unpack32(&msg_ptr->derived_ec, buffer);
+        safe_unpack_time(&msg_ptr->end_time, buffer);
+        safe_unpack32(&msg_ptr->exit_code, buffer);
+        safe_unpack32(&msg_ptr->job_id, buffer);
+        safe_unpack32(&msg_ptr->job_state, buffer);
+        safe_unpackstr_xmalloc(&msg_ptr->nodes, &uint32_tmp, buffer);
+        safe_unpack32(&msg_ptr->req_uid, buffer);
+        safe_unpack_time(&msg_ptr->start_time, buffer);
+        safe_unpack_time(&msg_ptr->submit_time, buffer);
+        safe_unpackstr_xmalloc(&msg_ptr->system_comment,
+                    &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&msg_ptr->tres_alloc_str,
+                    &uint32_tmp, buffer);
+    } else if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		safe_unpackstr_xmalloc(&msg_ptr->admin_comment,
 				       &uint32_tmp, buffer);
 		safe_unpack32(&msg_ptr->assoc_id, buffer);
@@ -436,8 +526,42 @@ static int _unpack_job_complete_msg(dbd_job_comp_msg_t **msg,
 #ifdef __METASTACK_OPT_RESC_NODEDETAIL
 		safe_unpackstr_xmalloc(&msg_ptr->resource_node_detail, &uint32_tmp, buffer);
 #endif
-	} else
+    } else
 		goto unpack_error;
+
+#else
+    if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		safe_unpackstr_xmalloc(&msg_ptr->admin_comment,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&msg_ptr->assoc_id, buffer);
+		safe_unpackstr_xmalloc(&msg_ptr->comment, &uint32_tmp, buffer);
+		safe_unpack64(&msg_ptr->db_index, buffer);
+		safe_unpack32(&msg_ptr->derived_ec, buffer);
+		safe_unpack_time(&msg_ptr->end_time, buffer);
+		safe_unpack32(&msg_ptr->exit_code, buffer);
+		safe_unpack32(&msg_ptr->job_id, buffer);
+		safe_unpack32(&msg_ptr->job_state, buffer);
+		safe_unpackstr_xmalloc(&msg_ptr->nodes, &uint32_tmp, buffer);
+		safe_unpack32(&msg_ptr->req_uid, buffer);
+		safe_unpack_time(&msg_ptr->start_time, buffer);
+		safe_unpack_time(&msg_ptr->submit_time, buffer);
+		safe_unpackstr_xmalloc(&msg_ptr->system_comment,
+				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&msg_ptr->tres_alloc_str,
+				       &uint32_tmp, buffer);
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+		safe_unpackstr_xmalloc(&msg_ptr->command, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+		safe_unpackstr_xmalloc(&msg_ptr->stdout, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&msg_ptr->stderr, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+		safe_unpackstr_xmalloc(&msg_ptr->resource_node_detail, &uint32_tmp, buffer);
+#endif
+    } else
+		goto unpack_error;
+#endif
 
 	return SLURM_SUCCESS;
 
@@ -456,8 +580,17 @@ static void _pack_job_start_msg(void *in, uint16_t rpc_version, buf_t *buffer)
 	 * See slurmdbd/acct_storage_p_node_inx() for need to
 	 * use_create_node_inx().
 	 */
+#ifdef __META_PROTOCOL
+    /**
+     * bug fix.
+     * since 23.02-rc1
+     */
+    if (!msg->node_inx)
+		msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
+#else
 	xassert(!msg->node_inx);
 	msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
+#endif
 
 	if (rpc_version >= SLURM_22_05_PROTOCOL_VERSION) {
 		packstr(msg->account, buffer);
@@ -964,6 +1097,53 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+static void _pack_node_borrow_msg(dbd_node_state_msg_t *msg,
+				 uint16_t rpc_version, buf_t *buffer)
+{
+#ifdef __META_PROTOCOL
+	if (rpc_version >= META_2_1_PROTOCOL_VERSION) {
+		packstr(msg->hostlist, buffer);
+		packstr(msg->reason, buffer);
+		pack32(msg->reason_uid, buffer);
+		pack16(msg->new_state, buffer);
+		pack_time(msg->event_time, buffer);
+		pack32(msg->state, buffer);
+	}
+#endif
+}
+
+static int _unpack_node_borrow_msg(dbd_node_state_msg_t **msg,
+				  uint16_t rpc_version, buf_t *buffer)
+{
+	dbd_node_state_msg_t *msg_ptr;
+	uint32_t uint32_tmp;
+
+	msg_ptr = xmalloc(sizeof(dbd_node_state_msg_t));
+	*msg = msg_ptr;
+
+	msg_ptr->reason_uid = NO_VAL;
+
+#ifdef __META_PROTOCOL
+	if (rpc_version >= META_2_1_PROTOCOL_VERSION) {
+		safe_unpackstr_xmalloc(&msg_ptr->hostlist, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&msg_ptr->reason,   &uint32_tmp, buffer);
+		safe_unpack32(&msg_ptr->reason_uid, buffer);
+		safe_unpack16(&msg_ptr->new_state, buffer);
+		safe_unpack_time(&msg_ptr->event_time, buffer);
+		safe_unpack32(&msg_ptr->state, buffer);
+	}
+#endif
+
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurmdbd_free_node_borrow_msg(msg_ptr);
+	*msg = NULL;
+	return SLURM_ERROR;
+}
+#endif
+
 static void _pack_node_state_msg(dbd_node_state_msg_t *msg,
 				 uint16_t rpc_version, buf_t *buffer)
 {
@@ -1137,8 +1317,17 @@ static void _pack_step_start_msg(dbd_step_start_msg_t *msg,
 	 * See slurmdbd/acct_storage_p_node_inx() for need to
 	 * use_create_node_inx().
 	 */
+#ifdef __META_PROTOCOL
+    /**
+     * bug fix.
+     * since 23.02-rc1
+     */
+    if (!msg->node_inx)
+		msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
+#else
 	xassert(!msg->node_inx);
 	msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
+#endif
 
 	if (rpc_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		pack32(msg->assoc_id, buffer);
@@ -1470,6 +1659,11 @@ extern void slurmdbd_pack_list_msg(dbd_list_msg_t *msg, uint16_t rpc_version,
 	case DBD_GOT_EVENTS:
 		my_function = slurmdb_pack_event_rec;
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GOT_BORROW:
+		my_function = slurmdb_pack_borrow_rec;
+		break;
+#endif			
 	case DBD_SEND_MULT_JOB_START:
 		slurm_pack_list_until(msg->my_list, _pack_job_start_msg,
 				      buffer, MAX_MSG_SIZE, rpc_version);
@@ -1576,6 +1770,12 @@ extern int slurmdbd_unpack_list_msg(dbd_list_msg_t **msg, uint16_t rpc_version,
 		my_function = slurmdb_unpack_event_rec;
 		my_destroy = slurmdb_destroy_event_rec;
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GOT_BORROW:
+		my_function = slurmdb_unpack_borrow_rec;
+		my_destroy = slurmdb_destroy_borrow_rec;
+		break;
+#endif
 	case DBD_SEND_MULT_JOB_START:
 		my_function = _unpack_job_start_msg;
 		my_destroy = slurmdbd_free_job_start_msg;
@@ -1665,6 +1865,9 @@ extern buf_t *pack_slurmdbd_msg(persist_msg_t *req, uint16_t rpc_version)
 	case DBD_SEND_MULT_MSG:
 	case DBD_GOT_MULT_MSG:
 	case DBD_FIX_RUNAWAY_JOB:
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GOT_BORROW:
+#endif
 		slurmdbd_pack_list_msg(
 			(dbd_list_msg_t *)req->data, rpc_version,
 			req->msg_type, buffer);
@@ -1707,6 +1910,9 @@ extern buf_t *pack_slurmdbd_msg(persist_msg_t *req, uint16_t rpc_version)
 	case DBD_REMOVE_WCKEYS:
 	case DBD_REMOVE_USERS:
 	case DBD_ARCHIVE_DUMP:
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GET_BORROW:
+#endif
 		_pack_cond_msg(
 			(dbd_cond_msg_t *)req->data, rpc_version, req->msg_type,
 			buffer);
@@ -1761,6 +1967,13 @@ extern buf_t *pack_slurmdbd_msg(persist_msg_t *req, uint16_t rpc_version)
 			(dbd_node_state_msg_t *)req->data, rpc_version,
 			buffer);
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_NODE_STATE_BORROW:
+		_pack_node_borrow_msg(
+			(dbd_node_state_msg_t *)req->data, rpc_version,
+			buffer);
+		break;
+#endif
 	case DBD_STEP_COMPLETE:
 		_pack_step_complete_msg(
 			(dbd_step_comp_msg_t *)req->data, rpc_version,
@@ -1868,6 +2081,9 @@ extern int unpack_slurmdbd_msg(persist_msg_t *resp, uint16_t rpc_version,
 	case DBD_SEND_MULT_MSG:
 	case DBD_GOT_MULT_MSG:
 	case DBD_FIX_RUNAWAY_JOB:
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GOT_BORROW:
+#endif	
 		rc = slurmdbd_unpack_list_msg(
 			(dbd_list_msg_t **)&resp->data, rpc_version,
 			resp->msg_type, buffer);
@@ -1893,6 +2109,9 @@ extern int unpack_slurmdbd_msg(persist_msg_t *resp, uint16_t rpc_version,
 	case DBD_GET_ASSOCS:
 	case DBD_GET_CLUSTERS:
 	case DBD_GET_EVENTS:
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GET_BORROW:
+#endif	
 	case DBD_GET_FEDERATIONS:
 	case DBD_GET_JOBS_COND:
 	case DBD_GET_PROBS:
@@ -1970,6 +2189,13 @@ extern int unpack_slurmdbd_msg(persist_msg_t *resp, uint16_t rpc_version,
 			(dbd_node_state_msg_t **)&resp->data, rpc_version,
 			buffer);
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_NODE_STATE_BORROW:
+		rc = _unpack_node_borrow_msg(
+			(dbd_node_state_msg_t **)&resp->data, rpc_version,
+			buffer);
+		break;
+#endif			
 	case DBD_STEP_COMPLETE:
 		rc = _unpack_step_complete_msg(
 			(dbd_step_comp_msg_t **)&resp->data,
