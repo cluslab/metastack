@@ -292,6 +292,10 @@ typedef struct slurm_conf_partition {
 				  * resume operation */
 	bool     root_only_flag;/* 1 if allocate/submit RPC can only be
 				   issued by user root */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	char    *standby_nodes;
+	char    *standby_node_parameters;
+#endif					   
 	uint16_t state_up;	/* for states see PARTITION_* in slurm.h */
 	uint32_t suspend_time;  /* node idle for this long before power save
 				 * mode */

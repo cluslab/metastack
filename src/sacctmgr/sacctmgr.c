@@ -734,6 +734,11 @@ static void _show_it(int argc, char **argv)
 	} else if (xstrncasecmp(argv[0], "Associations",
 				MAX(command_len, 2)) == 0) {
 		error_code = sacctmgr_list_assoc((argc - 1), &argv[1]);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	} else if (xstrncasecmp(argv[0], "Borrow",
+				MAX(command_len, 2)) == 0) {
+		error_code = sacctmgr_list_borrow((argc - 1), &argv[1]);
+#endif		
 	} else if (xstrncasecmp(argv[0], "Clusters",
 				MAX(command_len, 2)) == 0) {
 		error_code = sacctmgr_list_cluster((argc - 1), &argv[1]);
@@ -777,6 +782,9 @@ static void _show_it(int argc, char **argv)
 		fprintf(stderr, "No valid entity in list command\n");
 		fprintf(stderr, "Input line must include ");
 		fprintf(stderr, "\"Account\", \"Association\", "
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			"\"Borrow\", "
+#endif		
 			"\"Cluster\", \"Configuration\",\n\"Event\", "
 			"\"Federation\", \"Problem\", \"QOS\", \"Resource\", "
 			"\"Reservation\",\n\"RunAwayJobs\", \"Stats\", "

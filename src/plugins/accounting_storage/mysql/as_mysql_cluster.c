@@ -812,10 +812,16 @@ extern List as_mysql_remove_clusters(mysql_conn_t *mysql_conn, uint32_t uid,
 		 * to deleted */
 		xstrfmtcat(query,
 			   "update \"%s_%s\" set time_end=%ld where time_end=0;"
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			   "update \"%s_%s\" set time_end=%ld where time_end=0;"
+#endif
 			   "update \"%s_%s\" set mod_time=%ld, deleted=1;"
 			   "update \"%s_%s\" set mod_time=%ld, deleted=1;"
 			   "update \"%s_%s\" set mod_time=%ld, deleted=1;",
 			   object, event_table, now,
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			   object, node_borrow_table, now,
+#endif
 			   object, cluster_day_table, now,
 			   object, cluster_hour_table, now,
 			   object, cluster_month_table, now);
@@ -1047,7 +1053,6 @@ empty:
 
 	assoc_cond.user_list = list_create(NULL);
 	list_append(assoc_cond.user_list, "");
-
 #ifdef __METASTACK_OPT_LIST_USER
 	assoc_list = as_mysql_get_assocs(mysql_conn, uid, &assoc_cond, false);
 #else
@@ -1402,6 +1407,389 @@ empty:
 
 	return ret_list;
 }
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern List as_mysql_get_cluster_borrow(mysql_conn_t *mysql_conn, uint32_t uid,
+					slurmdb_borrow_cond_t *borrow_cond)
+{
+	char *query = NULL;
+	char *extra = NULL;
+	char *tmp = NULL;
+	List ret_list = NULL;
+	ListIterator itr = NULL;
+	char *object = NULL;
+	int set = 0;
+	int i=0;
+	MYSQL_RES *result = NULL;
+	MYSQL_ROW row;
+	time_t now = time(NULL);
+	List use_cluster_list = NULL;
+	slurmdb_user_rec_t user;
+	bool locked = false;
+
+	/* if this changes you will need to edit the corresponding enum */
+	char *borrow_req_inx[] = {
+		"node_name",
+		"state",
+		"time_start",
+		"time_end",
+		"reason",
+		"reason_uid",
+	};
+
+	enum {
+		BORROW_REQ_NODE,
+		BORROW_REQ_STATE,
+		BORROW_REQ_START,
+		BORROW_REQ_END,
+		BORROW_REQ_REASON,
+		BORROW_REQ_REASON_UID,
+		BORROW_REQ_COUNT
+	};
+
+	if (check_connection(mysql_conn) != SLURM_SUCCESS)
+		return NULL;
+
+	memset(&user, 0, sizeof(slurmdb_user_rec_t));
+	user.uid = uid;
+
+	if (slurm_conf.private_data & PRIVATE_DATA_EVENTS) {
+		if (!is_user_min_admin_level(
+			      mysql_conn, uid, SLURMDB_ADMIN_OPERATOR)) {
+			error("UID %u tried to access node borrow events, only administrators can look at borrow events",
+			      uid);
+			errno = ESLURM_ACCESS_DENIED;
+			return NULL;
+		}
+	}
+
+	if (!borrow_cond)
+		goto empty;
+
+	if (borrow_cond->node_list) {
+		int dims = 0;
+		hostlist_t temp_hl = NULL;
+
+		if (get_cluster_dims(mysql_conn,
+				     (char *)list_peek(borrow_cond->cluster_list),
+				     &dims))
+			return NULL;
+
+		temp_hl = hostlist_create_dims(borrow_cond->node_list, dims);
+		if (hostlist_count(temp_hl) <= 0) {
+			error("we didn't get any real hosts to look for.");
+			return NULL;
+		}
+
+		set = 0;
+		if (extra)
+			xstrcat(extra, " && (");
+		else
+			xstrcat(extra, " where (");
+
+		while ((object = hostlist_shift(temp_hl))) {
+			if (set)
+				xstrcat(extra, " || ");
+			xstrfmtcat(extra, "node_name='%s'", object);
+			set = 1;
+			free(object);
+		}
+		xstrcat(extra, ")");
+		hostlist_destroy(temp_hl);
+	}
+
+	if (borrow_cond->period_start) {
+		if (!borrow_cond->period_end)
+			borrow_cond->period_end = now;
+
+		if (extra)
+			xstrcat(extra, " && (");
+		else
+			xstrcat(extra, " where (");
+
+		if (borrow_cond->cond_flags & SLURMDB_EVENT_COND_OPEN)
+			xstrfmtcat(extra,
+				   "(time_start >= %ld) && (time_end = 0))",
+				   borrow_cond->period_start);
+		else
+			xstrfmtcat(extra,
+				   "(time_start < %ld) "
+				   "&& (time_end >= %ld || time_end = 0))",
+				   borrow_cond->period_end,
+				   borrow_cond->period_start);
+
+	} else if (borrow_cond->cond_flags & SLURMDB_EVENT_COND_OPEN) {
+		if (extra)
+			xstrcat(extra, " && (");
+		else
+			xstrcat(extra, " where (");
+
+		xstrfmtcat(extra, "time_end = 0)");
+	}
+
+	if (borrow_cond->reason_list
+	    && list_count(borrow_cond->reason_list)) {
+		set = 0;
+		if (extra)
+			xstrcat(extra, " && (");
+		else
+			xstrcat(extra, " where (");
+		itr = list_iterator_create(borrow_cond->reason_list);
+		while ((object = list_next(itr))) {
+			if (set)
+				xstrcat(extra, " || ");
+			xstrfmtcat(extra, "reason like '%%%s%%'", object);
+			set = 1;
+		}
+		list_iterator_destroy(itr);
+		xstrcat(extra, ")");
+	}
+
+	if (borrow_cond->reason_uid_list
+	    && list_count(borrow_cond->reason_uid_list)) {
+		set = 0;
+		if (extra)
+			xstrcat(extra, " && (");
+		else
+			xstrcat(extra, " where (");
+		itr = list_iterator_create(borrow_cond->reason_uid_list);
+		while ((object = list_next(itr))) {
+			if (set)
+				xstrcat(extra, " || ");
+			xstrfmtcat(extra, "reason_uid='%s'", object);
+			set = 1;
+		}
+		list_iterator_destroy(itr);
+		xstrcat(extra, ")");
+	}
+
+	if (borrow_cond->state_list
+	    && list_count(borrow_cond->state_list)) {
+		set = 0;
+		if (extra)
+			xstrcat(extra, " && (");
+		else
+			xstrcat(extra, " where (");
+		itr = list_iterator_create(borrow_cond->state_list);
+		while ((object = list_next(itr))) {
+			uint32_t tmp_state = strtol(object, NULL, 10);
+			if (set)
+				xstrcat(extra, " || ");
+			if (tmp_state & NODE_STATE_BASE)
+				xstrfmtcat(extra, "(state&%u)=%u",
+					   NODE_STATE_BASE,
+					   tmp_state & NODE_STATE_BASE);
+			else
+				xstrfmtcat(extra, "state&%u", tmp_state);
+			set = 1;
+		}
+		list_iterator_destroy(itr);
+		xstrcat(extra, ")");
+	}
+
+empty:
+	xfree(tmp);
+	xstrfmtcat(tmp, "%s", borrow_req_inx[0]);
+	for(i=1; i<BORROW_REQ_COUNT; i++) {
+		bool include = true;
+		if (borrow_cond && borrow_cond->format_list)
+			include = list_find_first(borrow_cond->format_list,
+						  slurm_find_char_in_list,
+						  borrow_req_inx[i]);
+		xstrfmtcat(tmp, ", %s%s",
+			   include ? "" : "'' as ", borrow_req_inx[i]);
+	}
+
+	if (borrow_cond && borrow_cond->cluster_list &&
+	    list_count(borrow_cond->cluster_list)) {
+		use_cluster_list = borrow_cond->cluster_list;
+	} else {
+		slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
+		use_cluster_list = list_shallow_copy(as_mysql_cluster_list);
+		locked = true;
+	}
+
+	ret_list = list_create(slurmdb_destroy_borrow_rec);
+
+	itr = list_iterator_create(use_cluster_list);
+	while ((object = list_next(itr))) {
+		query = xstrdup_printf("select %s from \"%s_%s\"",
+				       tmp, object, node_borrow_table);
+		if (extra)
+			xstrfmtcat(query, " %s", extra);
+
+		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
+		if (!(result = mysql_db_query_ret(
+			      mysql_conn, query, 0))) {
+			xfree(query);
+			if (mysql_errno(mysql_conn->db_conn)
+			    != ER_NO_SUCH_TABLE) {
+				FREE_NULL_LIST(ret_list);
+				ret_list = NULL;
+			}
+			break;
+		}
+		xfree(query);
+
+		while ((row = mysql_fetch_row(result))) {
+			slurmdb_borrow_rec_t *borrow =
+				xmalloc(sizeof(slurmdb_borrow_rec_t));
+
+			list_append(ret_list, borrow);
+
+			borrow->cluster = xstrdup(object);
+
+			if (row[BORROW_REQ_NODE] && row[BORROW_REQ_NODE][0]) {
+				borrow->node_name = xstrdup(row[BORROW_REQ_NODE]);
+			}
+
+			borrow->state = slurm_atoul(row[BORROW_REQ_STATE]);
+			borrow->period_start = slurm_atoul(row[BORROW_REQ_START]);
+			borrow->period_end = slurm_atoul(row[BORROW_REQ_END]);
+
+			if (row[BORROW_REQ_REASON] && row[BORROW_REQ_REASON][0])
+				borrow->reason = xstrdup(row[BORROW_REQ_REASON]);
+			borrow->reason_uid =
+				slurm_atoul(row[BORROW_REQ_REASON_UID]);
+		}
+		mysql_free_result(result);
+	}
+	list_iterator_destroy(itr);
+	xfree(tmp);
+	xfree(extra);
+
+	if (locked) {
+		FREE_NULL_LIST(use_cluster_list);
+		slurm_rwlock_unlock(&as_mysql_cluster_list_lock);
+	}
+
+	return ret_list;
+}
+
+extern int as_mysql_node_borrow(mysql_conn_t *mysql_conn,
+			      node_record_t *node_ptr,
+			      time_t event_time, char *reason,
+			      uint32_t reason_uid)
+{
+	int rc = SLURM_SUCCESS;
+	char *query = NULL;
+	char *my_reason;
+	MYSQL_RES *result = NULL;
+	MYSQL_ROW row;
+	uint32_t node_state;
+
+	if (check_connection(mysql_conn) != SLURM_SUCCESS)
+		return ESLURM_DB_CONNECTION;
+
+	if (!mysql_conn->cluster_name) {
+		error("%s:%d no cluster name", THIS_FILE, __LINE__);
+		return SLURM_ERROR;
+	}
+
+	if (!node_ptr) {
+		error("No node_ptr given!");
+		return SLURM_ERROR;
+	}
+
+	query = xstrdup_printf("select reason, time_start from \"%s_%s\" where "
+			       "time_end=0 and node_name='%s';",
+			       mysql_conn->cluster_name, node_borrow_table,
+			       node_ptr->name);
+
+	result = mysql_db_query_ret(mysql_conn, query, 0);
+	xfree(query);
+
+	if (!result)
+		return SLURM_ERROR;
+
+	if (reason)
+		my_reason = xstrdup(reason);
+	else
+		my_reason = xstrdup("Borrowed By Unknown Partition");
+
+	row = mysql_fetch_row(result);
+	if (row && (!xstrcasecmp(my_reason, row[0]))) {
+		DB_DEBUG(DB_EVENT, mysql_conn->conn,
+		         "no change to %s(%s) needed %s == %s",
+		         node_ptr->name, mysql_conn->cluster_name,
+		         my_reason, row[0]);
+		mysql_free_result(result);
+		xfree(my_reason);
+		return SLURM_SUCCESS;
+	}
+
+	if (row && (event_time == slurm_atoul(row[1]))) {
+		/*
+		 * If you are clean-restarting the controller over and over
+		 * again you could get records that are duplicates in the
+		 * database. If this is the case we will zero out the time_end
+		 * we are just filled in. This will cause the last time to be
+		 * erased from the last restart, but if you are restarting
+		 * things this often the pervious one didn't mean anything
+		 * anyway. This way we only get one for the last time we let it
+		 * run.
+		 */
+		query = xstrdup_printf(
+			"update \"%s_%s\" set reason='%s' where "
+			"time_start=%ld and node_name='%s';",
+			mysql_conn->cluster_name, node_borrow_table,
+			my_reason, event_time, node_ptr->name);
+		DB_DEBUG(DB_EVENT, mysql_conn->conn, "query\n%s", query);
+		rc = mysql_db_query(mysql_conn, query);
+		xfree(query);
+		xfree(my_reason);
+
+		mysql_free_result(result);
+		return rc;
+	}
+
+	mysql_free_result(result);
+	node_state = node_ptr->node_state;
+	if (node_state == NODE_STATE_UNKNOWN) {
+		node_state = NODE_STATE_IDLE;
+	}
+	xstrfmtcat(query,
+		   "insert into \"%s_%s\" "
+		   "(node_name, state, time_start, "
+		   "reason, reason_uid) "
+		   "values ('%s', %u, %ld, '%s', %u) "
+		   "on duplicate key update time_end=0;",
+		   mysql_conn->cluster_name, node_borrow_table,
+		   node_ptr->name, node_state, event_time, my_reason, reason_uid);
+	DB_DEBUG(DB_EVENT, mysql_conn->conn, "query\n%s", query);
+	rc = mysql_db_query(mysql_conn, query);
+	xfree(query);
+	xfree(my_reason);
+
+	return rc;
+}
+
+extern int as_mysql_node_return(mysql_conn_t *mysql_conn,
+			    node_record_t *node_ptr,
+			    time_t event_time)
+{
+	char* query;
+	int rc = SLURM_SUCCESS;
+
+	if (check_connection(mysql_conn) != SLURM_SUCCESS)
+		return ESLURM_DB_CONNECTION;
+
+	if (!mysql_conn->cluster_name) {
+		error("%s:%d no cluster name", THIS_FILE, __LINE__);
+		return SLURM_ERROR;
+	}
+
+	query = xstrdup_printf(
+		"update \"%s_%s\" set time_end=%ld where "
+		"time_end=0 and node_name='%s';",
+		mysql_conn->cluster_name, node_borrow_table,
+		event_time, node_ptr->name);
+	DB_DEBUG(DB_EVENT, mysql_conn->conn, "query\n%s", query);
+	rc = mysql_db_query(mysql_conn, query);
+	xfree(query);
+	return rc;
+}
+#endif
 
 extern int as_mysql_node_down(mysql_conn_t *mysql_conn,
 			      node_record_t *node_ptr,

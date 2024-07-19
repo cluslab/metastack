@@ -355,6 +355,21 @@ typedef struct {
 	xhash_t *user_usage;
 } bf_part_data_t;
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+typedef struct {
+	bool     enable;
+	uint32_t nodes_borrowed;
+	uint32_t nodes_can_borrow;
+	uint32_t nodes_offline;	
+	char     *borrowed_nodes;	
+	char     *nodes;
+	int      offline_node_state;  
+	char     *parameters;
+	bitstr_t *standby_node_bitmap;
+	bitstr_t *borrowed_node_bitmap;
+} standby_nodes_t;
+#endif
+
 typedef struct {
 	uint32_t magic;		/* magic cookie to test data integrity */
 				/* DO NOT ALPHABETIZE */
@@ -431,6 +446,9 @@ typedef struct {
 	uint64_t *tres_cnt;	/* array of total TRES in partition. NO_PACK */
 	char     *tres_fmt_str;	/* str of configured TRES in partition */
 	bf_part_data_t *bf_data;/* backfill data, NO PACK */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	standby_nodes_t *standby_nodes;
+#endif		
 } part_record_t;
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -1281,8 +1299,11 @@ extern part_record_t *create_part_record(const char *name);
  * NOTE: this does not report nodes defined in more than one partition. this
  *	is checked only upon reading the configuration file, not on an update
  */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern int build_part_bitmap(part_record_t *part_ptr, bool update_part);
+#else
 extern int build_part_bitmap(part_record_t *part_ptr);
-
+#endif
 /*
  * job_limits_check - check the limits specified for the job.
  * IN job_ptr - pointer to job table entry.

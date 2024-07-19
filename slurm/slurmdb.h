@@ -744,6 +744,43 @@ typedef struct {
 	uint16_t direct;
 } slurmdb_coord_rec_t;
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+typedef struct {
+	List cluster_list;	/* list of char * */
+	uint32_t cond_flags;    /* condition flags */
+	List format_list; 	/* list of char * */
+	char *node_list;        /* node list string */
+	time_t period_end;      /* period end of events */
+	time_t period_start;    /* period start of events */
+	List reason_list;       /* list of char * */
+	List reason_uid_list;   /* list of char * */
+	List state_list;        /* list of char * */
+} slurmdb_borrow_cond_t;
+
+typedef struct {
+	char *cluster;          /* Name of associated cluster */
+	char *node_name;        /* Name of node (only set in a node event) */
+	time_t period_end;      /* End of period */
+	time_t period_start;    /* Start of period */
+	char *reason;           /* reason node is in state during time
+				   period (only set in a node event) */
+	uint32_t reason_uid;    /* uid of that who set the reason */
+	uint32_t state;         /* State of node during time
+				   period (only set in a node event) */
+} slurmdb_borrow_rec_t;
+
+/*
+ * get info from the storage
+ * IN:  slurmdb_borrow_cond_t *
+ * RET: List of slurmdb_borrow_rec_t *
+ * note List needs to be freed when called
+ */
+extern List slurmdb_borrow_get(void *db_conn,
+			       slurmdb_borrow_cond_t *borrow_cond);
+extern void slurmdb_destroy_borrow_rec(void *object);
+extern void slurmdb_destroy_borrow_cond(void *object);				   
+#endif
+
 typedef struct {
 	List cluster_list;	/* list of char * */
 	uint32_t cond_flags;    /* condition flags */

@@ -61,6 +61,9 @@
 #define OPT_LONG_FEDR      0x105
 #define OPT_LONG_JSON      0x106
 #define OPT_LONG_YAML      0x107
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define OPT_LONG_BORROW    0x110
+#endif
 
 /* FUNCTIONS */
 static List  _build_state_list( char* str );
@@ -331,6 +334,9 @@ extern void parse_command_line(int argc, char **argv)
 	bool env_a_set = false, env_p_set = false;
 	static struct option long_options[] = {
 		{"all",       no_argument,       0, 'a'},
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		{"borrow",    no_argument,       0, OPT_LONG_BORROW},
+#endif			
 		{"dead",      no_argument,       0, 'd'},
 		{"exact",     no_argument,       0, 'e'},
 		{"federation",no_argument,       0, OPT_LONG_FEDR},
@@ -396,7 +402,9 @@ extern void parse_command_line(int argc, char **argv)
 		working_cluster_rec = list_peek(params.clusters);
 		params.local = true;
 	}
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	params.borrow_flag = false;
+#endif
 	while ((opt_char = getopt_long(argc, argv,
 				       "adehi:lM:n:No:O:p:rRsS:t:TvV",
 				       long_options, &option_index)) != -1) {
@@ -412,6 +420,11 @@ extern void parse_command_line(int argc, char **argv)
 			FREE_NULL_LIST(params.part_list);
 			params.all_flag = true;
 			break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		case OPT_LONG_BORROW:
+			params.borrow_flag = true;
+			break;			
+#endif				
 		case (int)'d':
 			params.dead_nodes = true;
 			break;

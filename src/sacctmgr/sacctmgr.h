@@ -257,6 +257,9 @@ extern int sacctmgr_add_res(int argc, char **argv);
 extern int sacctmgr_list_assoc(int argc, char **argv);
 extern int sacctmgr_list_user(int argc, char **argv);
 extern int sacctmgr_list_account(int argc, char **argv);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern int sacctmgr_list_borrow(int argc, char **argv);
+#endif
 extern int sacctmgr_list_cluster(int argc, char **argv);
 extern int sacctmgr_list_config(void);
 extern int sacctmgr_list_event(int argc, char **argv);

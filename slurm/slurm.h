@@ -309,6 +309,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_ENV_WRITE
 #endif
 
+/* Please Note to comment out same Macro in slurm_errno.h if you want to disable this feature*/
+#ifndef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -1158,7 +1163,9 @@ enum node_states {
 #define NODE_STATE_POWER_UP SLURM_BIT(24) /* manual node power up */
 #define NODE_STATE_POWER_DRAIN SLURM_BIT(25) /* signal power down asap */
 #define NODE_STATE_DYNAMIC_NORM SLURM_BIT(26) /* dynamic norm node */
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define NODE_STATE_BORROWED SLURM_BIT(31) /* node borrowed from resource pool */
+#endif
 /* used to define the size of the credential.signature size
  * used to define the key size of the io_stream_header_t
  */
@@ -1176,7 +1183,9 @@ enum node_states {
 #define SHOW_FEDERATION	0x0040	/* Show federated state information.
 				 * Shows local info if not in federation */
 #define SHOW_FUTURE	0x0080	/* Show future nodes */
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define SHOW_BORROW	0x0100	/* Show borrow nodes */
+#endif
 /* CR_CPU, CR_SOCKET and CR_CORE are mutually exclusive
  * CR_MEMORY may be added to any of the above values or used by itself
  * CR_ONE_TASK_PER_CORE may also be added to any of the above values */
@@ -2634,6 +2643,11 @@ typedef struct partition_info {
 	uint32_t total_cpus;	/* total number of cpus in the partition */
 	uint32_t total_nodes;	/* total number of nodes in the partition */
 	char    *tres_fmt_str;	/* str of configured TRES in partition */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	char     *borrowed_nodes; /* list names of nodes borrowed in partition */	
+	char     *standby_node_parameters; /* parameters about standby nodes in partition */	
+	char     *standby_nodes;  /* list names of standby nodes in partition */	
+#endif		
 } partition_info_t;
 
 typedef struct delete_partition_msg {
@@ -4690,6 +4704,31 @@ extern int slurm_load_partitions2(time_t update_time,
  * NOTE: buffer is loaded by slurm_load_partitions
  */
 extern void slurm_free_partition_info_msg(partition_info_msg_t *part_info_ptr);
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+/*
+ * slurm_print_partition_info - output information about a specific Slurm
+ *	partition based upon message as loaded using slurm_load_partitions
+ * IN out - file to write to
+ * IN part_ptr - an individual partition information record pointer
+ * IN one_liner - print as a single line if true
+ * IN borrow_flag - print information related to standby and borrowed nodes if true
+ */
+extern void _slurm_print_partition_info(FILE *out,
+				       partition_info_t *part_ptr,
+				       int one_liner, int borrow_flag);
+/*
+ * _slurm_sprint_partition_info - output information about a specific Slurm
+ *	partition based upon message as loaded using slurm_load_partitions
+ * IN part_ptr - an individual partition information record pointer
+ * IN one_liner - print as a single line if true
+ * IN borrow_flag - print information related to standby and borrowed nodes if true
+ * RET out - char * with formatted output (must be freed after call)
+ *           NULL is returned on failure.
+ */
+extern char *_slurm_sprint_partition_info(partition_info_t *part_ptr,
+					 int one_liner, int borrow_flag);
+#endif
 
 /*
  * slurm_print_partition_info_msg - output information about all Slurm

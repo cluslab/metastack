@@ -582,7 +582,13 @@ void *_build_part_info(void *args)
 			node_ptr = &(node_msg->node_array[i]);
 			if (node_ptr->name == NULL)
 				continue;
-
+				
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			/* display borrowed nodes by using '--borrow' */
+			if (params.borrow_flag && !IS_NODE_BORROWED(node_ptr)) {
+				continue;
+			}
+#endif
 			_insert_node_ptr(sinfo_list, part_num,
 					 part_ptr, node_ptr);
 		}

@@ -95,6 +95,9 @@ extern char *job_table;
 extern char *job_env_table;
 extern char *job_script_table;
 extern char *last_ran_table;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern char *node_borrow_table;
+#endif
 extern char *qos_table;
 extern char *resv_table;
 extern char *res_table;

@@ -400,6 +400,10 @@ static slurm_errtab_t slurm_errtab[] = {
 	{ ESLURM_SUBMIT_MISMATCH_MEMORY_CPU,
 	  "Job submission failed because too much memory was requested relative to the number of CPUs requested. The requested memory:CPU should be kept no more than DefMemPerCPU" },
 #endif	  
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	{ ESLURM_INVALID_STANDBY_NODE_PARAMETERS,
+	  "Invalid standby_node_parameters"},
+#endif
 
 	/* SPANK errors */
 	{ ESPANK_ERROR,

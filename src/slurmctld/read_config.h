@@ -47,6 +47,26 @@ extern void accounts_list_build(char *accounts, char ***accounts_array);
 /* Free memory allocated for an account array by accounts_list_build() */
 extern void accounts_list_free(char ***accounts_array);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define MAX_NODES_CAN_BORROW    65533
+#define DEFAULT_NODE_BORROW_INTERVAL 5
+extern char *offline_reason;
+extern int node_borrow_interval;		/* Detect the time interval for node borrowing */
+extern void _add_node_to_parts(node_record_t *node_ptr, part_record_t *part_ptr);
+extern void _build_node_partitions(node_record_t *node_ptr, part_record_t *part_ptr, bool add_part);
+extern int  load_all_part_borrow_nodes(void);
+extern void _remove_node_from_parts(node_record_t *node_ptr, bool clear_flag);
+extern void _return_borrowed_node(node_record_t *node_ptr);
+extern void update_all_parts_resource(bool update_resv);
+extern int  _select_node_to_borrow(part_record_t *part_ptr, int nodes_need_borrow);
+extern bool _standby_node_avail(node_record_t *node_ptr);
+extern int build_part_standby_nodes_bitmap(part_record_t *part_ptr);
+extern int valid_standby_node_parameters(part_record_t *part_ptr);
+extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *part_ptr, bool borrowed);
+extern bool validate_all_partitions_borrow_nodes(List part_list);
+extern bool validate_partition_borrow_nodes(part_record_t *part_ptr);
+#endif
+
 /*
  * Free the global response_cluster_rec
  */

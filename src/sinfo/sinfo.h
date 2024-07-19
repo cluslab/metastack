@@ -167,6 +167,9 @@ struct sinfo_match_flags {
 /* Input parameters */
 struct sinfo_parameters {
 	bool all_flag;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	bool borrow_flag;
+#endif	
 	List clusters;
 	uint32_t cluster_flags;
 	uint32_t convert_flags;

@@ -2012,6 +2012,12 @@ static void *_slurmctld_background(void *no_data)
 	int no_resp_msg_interval, ping_interval, purge_job_interval;
 	int i;
 	DEF_TIMERS;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	static time_t last_borrow_time;
+	/* Locks: Read config, write node, write partition */
+	slurmctld_lock_t node_write_lock3 = {
+		READ_LOCK, NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };	
+#endif
 
 	/* Locks: Read config */
 	slurmctld_lock_t config_read_lock = {
@@ -2056,7 +2062,9 @@ static void *_slurmctld_background(void *no_data)
 	last_no_resp_msg_time = last_resv_time = last_ctld_bu_ping = now;
 	last_uid_update = now;
 	last_acct_gather_node_time = last_ext_sensors_time = now;
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	last_borrow_time = now;
+#endif
 
 	last_ping_srun_time = now;
 	last_node_acct = now;
@@ -2315,6 +2323,15 @@ static void *_slurmctld_background(void *no_data)
 			trigger_process();
 			unlock_slurmctld(job_node_read_lock);
 		}
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		if (difftime(now, last_borrow_time) >= node_borrow_interval) {
+			lock_slurmctld(node_write_lock3);
+			validate_all_partitions_borrow_nodes(part_list);
+			last_borrow_time = now;
+			unlock_slurmctld(node_write_lock3);
+		}
+#endif
 
 		if (difftime(now, last_checkpoint_time) >=
 		    PERIODIC_CHECKPOINT) {

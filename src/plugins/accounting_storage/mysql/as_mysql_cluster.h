@@ -56,6 +56,19 @@ extern List as_mysql_get_clusters(mysql_conn_t *mysql_conn, uid_t uid,
 extern List as_mysql_get_cluster_events(mysql_conn_t *mysql_conn, uint32_t uid,
 					slurmdb_event_cond_t *event_cond);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern int as_mysql_node_borrow(mysql_conn_t *mysql_conn,
+			      node_record_t *node_ptr,
+			      time_t event_time, char *reason,
+			      uint32_t reason_uid);
+
+extern int as_mysql_node_return(mysql_conn_t *mysql_conn, node_record_t *node_ptr,
+			    time_t event_time);
+
+extern List as_mysql_get_cluster_borrow(mysql_conn_t *mysql_conn, uint32_t uid,
+					slurmdb_borrow_cond_t *borrow_cond);
+#endif
+
 extern int as_mysql_node_down(mysql_conn_t *mysql_conn,
 			      node_record_t *node_ptr,
 			      time_t event_time, char *reason,

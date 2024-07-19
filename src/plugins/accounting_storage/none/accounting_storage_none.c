@@ -406,6 +406,28 @@ extern int acct_storage_p_fix_runaway_jobs(void *db_conn, uint32_t uid,
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern List acct_storage_p_get_borrow(void *db_conn, uint32_t uid,
+				      slurmdb_borrow_cond_t *borrow_cond)
+{
+	return NULL;
+}
+
+extern int clusteracct_storage_p_node_borrow(void *db_conn,
+					   node_record_t *node_ptr,
+					   time_t event_time, char *reason,
+					   uint32_t reason_uid)
+{
+	return SLURM_SUCCESS;
+}
+
+extern int clusteracct_storage_p_node_return(void *db_conn, node_record_t *node_ptr,
+					 time_t event_time)
+{
+	return SLURM_SUCCESS;
+}
+#endif
+
 extern int clusteracct_storage_p_node_down(void *db_conn,
 					   node_record_t *node_ptr,
 					   time_t event_time, char *reason,

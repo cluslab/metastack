@@ -211,6 +211,15 @@ typedef struct slurm_acct_storage_ops {
 	void (*send_all) (void *db_conn, time_t event_time,
 			  slurm_msg_type_t msg_type);
 	int (*shutdown)            (void *db_conn);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	List (*get_borrow)         (void *db_conn, uint32_t uid,
+				    slurmdb_borrow_cond_t *borrow_cond);
+	int  (*node_borrow)          (void *db_conn, node_record_t *node_ptr,
+				    time_t event_time, char *reason,
+				    uint32_t reason_uid);
+	int  (*node_return)            (void *db_conn, node_record_t *node_ptr,
+				    time_t event_time);					
+#endif	
 } slurm_acct_storage_ops_t;
 /*
  * Must be synchronized with slurm_acct_storage_ops_t above.
@@ -292,6 +301,11 @@ static const char *syms[] = {
 	"acct_storage_p_get_data",
 	"acct_storage_p_send_all",
 	"acct_storage_p_shutdown",
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	"acct_storage_p_get_borrow",
+	"clusteracct_storage_p_node_borrow",
+	"clusteracct_storage_p_node_return",
+#endif	
 };
 
 static slurm_acct_storage_ops_t ops;
@@ -789,6 +803,37 @@ extern int acct_storage_g_fix_runaway_jobs(void *db_conn,
 	return (*(ops.fix_runaway_jobs))(db_conn, uid, jobs);
 
 }
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern List acct_storage_g_get_borrow(void *db_conn, uint32_t uid,
+				      slurmdb_borrow_cond_t *borrow_cond)
+{
+	if (slurm_acct_storage_init() < 0)
+		return NULL;
+	return (*(ops.get_borrow))(db_conn, uid, borrow_cond);
+}
+
+extern int clusteracct_storage_g_node_borrow(void *db_conn,
+					   node_record_t *node_ptr,
+					   time_t event_time,
+					   char *reason, uint32_t reason_uid)
+{
+	if (slurm_acct_storage_init() < 0)
+		return SLURM_ERROR;
+	return (*(ops.node_borrow))(db_conn, node_ptr, event_time,
+				  reason, reason_uid);
+}
+
+extern int clusteracct_storage_g_node_return(void *db_conn,
+					 node_record_t *node_ptr,
+					 time_t event_time)
+{
+	if (slurm_acct_storage_init() < 0)
+		return SLURM_ERROR;
+
+	return (*(ops.node_return))(db_conn, node_ptr, event_time);
+}
+#endif
 
 extern int clusteracct_storage_g_node_down(void *db_conn,
 					   node_record_t *node_ptr,

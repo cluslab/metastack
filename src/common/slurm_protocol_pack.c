@@ -1915,6 +1915,10 @@ _pack_update_partition_msg(update_part_msg_t * msg, buf_t *buffer,
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
 		pack16(msg->meta_flags, 	   buffer);
 #endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		packstr(msg->standby_nodes, buffer);
+		packstr(msg->standby_node_parameters, buffer);
+#endif	
 	}
 }
 
@@ -1980,6 +1984,10 @@ _unpack_update_partition_msg(update_part_msg_t ** msg, buf_t *buffer,
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
 		safe_unpack16(&tmp_ptr->meta_flags,	   buffer);
 #endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		safe_unpackstr_xmalloc(&tmp_ptr->standby_nodes, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&tmp_ptr->standby_node_parameters, &uint32_tmp, buffer);
+#endif	
 	}
 
 	return SLURM_SUCCESS;
@@ -2892,6 +2900,11 @@ _unpack_partition_info_members(partition_info_t * part, buf_t *buffer,
 #endif
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
 	    	safe_unpack16(&part->meta_flags, buffer);
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+            safe_unpackstr_xmalloc(&part->borrowed_nodes, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&part->standby_nodes, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&part->standby_node_parameters, &uint32_tmp, buffer);
 #endif
 		safe_unpack16(&part->cr_type ,     buffer);
 		safe_unpack16(&part->resume_timeout, buffer);

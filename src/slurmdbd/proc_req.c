@@ -963,6 +963,95 @@ static int _get_events(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	return rc;
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+static int _node_borrow(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
+		       buf_t **out_buffer, uint32_t *uid)
+{
+	dbd_node_state_msg_t *node_state_msg = msg->data;
+	node_record_t node_ptr;
+	int rc = SLURM_SUCCESS;
+	char *comment = NULL;
+
+	if (!_validate_slurm_user(*uid)) {
+		comment = "DBD_NODE_BORROW message from invalid uid";
+		error("CONN:%d %s %u",
+		      slurmdbd_conn->conn->fd, comment, *uid);
+		rc = ESLURM_ACCESS_DENIED;
+		goto end_it;
+	}
+
+	memset(&node_ptr, 0, sizeof(node_record_t));
+	node_ptr.name = node_state_msg->hostlist;
+	node_ptr.node_state = node_state_msg->state;
+	node_ptr.reason = node_state_msg->reason;
+	node_ptr.reason_time = node_state_msg->event_time;
+	node_ptr.reason_uid = node_state_msg->reason_uid;
+
+	if (node_state_msg->new_state == DBD_NODE_RETURN) {
+		debug2("DBD_NODE_RETURN: NODE:%s REASON:%s TIME:%ld",
+		       node_state_msg->hostlist,
+		       node_state_msg->reason,
+		       (long)node_state_msg->event_time);
+
+		rc = clusteracct_storage_g_node_return(
+			slurmdbd_conn->db_conn,
+			&node_ptr,
+			node_state_msg->event_time);
+		xfree(node_ptr.reason);
+	} else {
+		debug2("DBD_NODE_BORROW: NODE:%s STATE:%s REASON:%s UID:%u TIME:%ld",
+		       node_state_msg->hostlist,
+		       node_state_string(node_state_msg->state),
+		       node_state_msg->reason,
+		       node_ptr.reason_uid,
+		       (long)node_state_msg->event_time);
+		rc = clusteracct_storage_g_node_borrow(
+			slurmdbd_conn->db_conn,
+			&node_ptr,
+			node_state_msg->event_time,
+			node_state_msg->reason, node_ptr.reason_uid);
+	}
+
+end_it:
+	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
+						rc, comment, DBD_NODE_STATE_BORROW);
+	return SLURM_SUCCESS;
+}
+
+static int _get_borrow(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
+		       buf_t **out_buffer, uint32_t *uid)
+{
+	dbd_cond_msg_t *get_msg = msg->data;
+	dbd_list_msg_t list_msg = { NULL };
+	int rc = SLURM_SUCCESS;
+
+	debug2("DBD_GET_BORROW: called in CONN %d", slurmdbd_conn->conn->fd);
+
+	list_msg.my_list = acct_storage_g_get_borrow(
+		slurmdbd_conn->db_conn, *uid, get_msg->cond);
+
+	if (!errno) {
+		if (!list_msg.my_list)
+			list_msg.my_list = list_create(NULL);
+		*out_buffer = init_buf(1024);
+		pack16((uint16_t) DBD_GOT_BORROW, *out_buffer);
+		slurmdbd_pack_list_msg(&list_msg, slurmdbd_conn->conn->version,
+				       DBD_GOT_BORROW,
+				       *out_buffer);
+	} else {
+		*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
+							errno,
+							slurm_strerror(errno),
+							DBD_GET_BORROW);
+		rc = SLURM_ERROR;
+	}
+
+	FREE_NULL_LIST(list_msg.my_list);
+
+	return rc;
+}
+#endif
+
 static int _get_jobs_cond(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 			  buf_t **out_buffer, uint32_t *uid)
 {
@@ -3568,6 +3657,14 @@ extern int proc_req(void *conn, persist_msg_t *msg, buf_t **out_buffer,
 	case DBD_SHUTDOWN:
 		rc = _shutdown(slurmdbd_conn, msg, out_buffer, uid);
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GET_BORROW:
+		rc = _get_borrow(slurmdbd_conn, msg, out_buffer, uid);
+		break;
+	case DBD_NODE_STATE_BORROW:
+		rc = _node_borrow(slurmdbd_conn, msg, out_buffer, uid);
+		break;	
+#endif
 	default:
 		comment = "Invalid RPC";
 		error("CONN:%d %s msg_type=%d",

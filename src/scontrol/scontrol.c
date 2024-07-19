@@ -52,10 +52,16 @@
 #define OPT_LONG_SIBLING 0x104
 #define OPT_LONG_FEDR    0x105
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define OPT_LONG_BORROW  0x108
+#endif
 /* Global externs from scontrol.h */
 char *command_name;
 List clusters = NULL;
 int all_flag = 0;	/* display even hidden partitions */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+int borrow_flag = 0;	/* display information related to standby nodes using '--borrow' */
+#endif
 int detail_flag = 0;	/* display additional details */
 int future_flag = 0;	/* display future nodes */
 int exit_code = 0;	/* scontrol's exit code, =1 on any error at any time */
@@ -110,6 +116,9 @@ int main(int argc, char **argv)
 	int option_index;
 	static struct option long_options[] = {
 		{"all",      0, 0, 'a'},
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		{"borrow",   0, 0, OPT_LONG_BORROW},
+#endif			
 		{"cluster",  1, 0, 'M'},
 		{"clusters", 1, 0, 'M'},
 		{"details",  0, 0, 'd'},
@@ -185,6 +194,11 @@ int main(int argc, char **argv)
 		case (int)'a':
 			all_flag = 1;
 			break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		case OPT_LONG_BORROW:
+			borrow_flag = 1;
+			break;		
+#endif			
 		case (int)'d':
 			detail_flag = 1;
 			break;
@@ -1837,7 +1851,11 @@ static void _show_it(int argc, char **argv)
 		scontrol_print_node_list (val);
 	} else if (xstrncasecmp(tag, "partitions", MAX(tag_len, 2)) == 0 ||
 		   xstrncasecmp(tag, "partitionname", MAX(tag_len, 2)) == 0) {
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		scontrol_print_part (val, borrow_flag);
+#else			
 		scontrol_print_part (val);
+#endif		
 	} else if (xstrncasecmp(tag, "reservations", MAX(tag_len, 1)) == 0 ||
 		   xstrncasecmp(tag, "reservationname", MAX(tag_len, 1)) == 0) {
 		scontrol_print_res (val);

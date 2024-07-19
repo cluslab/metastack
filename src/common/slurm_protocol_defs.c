@@ -3547,6 +3547,9 @@ extern char *node_state_string_complete(uint32_t state)
 	char *state_str = NULL, *flags_str = NULL;
 
 	state_str = xstrdup(node_state_base_string(state));
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	state &= (~NODE_STATE_BORROWED);
+#endif	
 	if ((flags_str = node_state_flag_string(state))) {
 		xstrcat(state_str, flags_str);
 		xfree(flags_str);
@@ -4619,6 +4622,11 @@ extern void slurm_free_partition_info_members(partition_info_t * part)
 		xfree(part->node_inx);
 		xfree(part->qos_char);
 		xfree(part->tres_fmt_str);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		xfree(part->borrowed_nodes);
+		xfree(part->standby_nodes);
+		xfree(part->standby_node_parameters);
+#endif		
 	}
 }
 

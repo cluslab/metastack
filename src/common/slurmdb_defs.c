@@ -1281,6 +1281,38 @@ extern void slurmdb_destroy_assoc_cond(void *object)
 	}
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern void slurmdb_destroy_borrow_rec(void *object)
+{
+	slurmdb_borrow_rec_t *slurmdb_borrow =
+		(slurmdb_borrow_rec_t *)object;
+
+	if (slurmdb_borrow) {
+		xfree(slurmdb_borrow->cluster);
+		xfree(slurmdb_borrow->node_name);
+		xfree(slurmdb_borrow->reason);
+
+		xfree(slurmdb_borrow);
+	}
+}
+
+extern void slurmdb_destroy_borrow_cond(void *object)
+{
+	slurmdb_borrow_cond_t *slurmdb_borrow =
+		(slurmdb_borrow_cond_t *)object;
+
+	if (slurmdb_borrow) {
+		FREE_NULL_LIST(slurmdb_borrow->cluster_list);
+		FREE_NULL_LIST(slurmdb_borrow->format_list);
+		FREE_NULL_LIST(slurmdb_borrow->reason_list);
+		FREE_NULL_LIST(slurmdb_borrow->reason_uid_list);
+		FREE_NULL_LIST(slurmdb_borrow->state_list);
+		xfree(slurmdb_borrow->node_list);
+		xfree(slurmdb_borrow);
+	}
+}
+#endif
+
 extern void slurmdb_destroy_event_cond(void *object)
 {
 	slurmdb_event_cond_t *slurmdb_event =

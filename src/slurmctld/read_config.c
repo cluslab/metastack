@@ -519,6 +519,96 @@ static void _init_bitmaps(void)
 	rs_node_bitmap = bit_alloc(node_record_count);
 }
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+int node_borrow_interval = DEFAULT_NODE_BORROW_INTERVAL;
+void valid_node_borrow_interval(void)
+{
+	char *tmp_ptr = NULL;
+	int max_node_borrow_interval = 65533;
+	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
+				"node_borrow_interval="))) {
+		int tmp = atoi(tmp_ptr + 21);
+		if (tmp <= 0 || tmp > max_node_borrow_interval) {
+			error("node_borrow_interval configured invalid value, use default value");
+			node_borrow_interval = DEFAULT_NODE_BORROW_INTERVAL;
+		} else {
+			node_borrow_interval = tmp;
+		}
+	} else {
+		node_borrow_interval = DEFAULT_NODE_BORROW_INTERVAL;	
+	}
+	debug("%s: node_borrow_interval: %d", __func__, node_borrow_interval);
+}
+
+
+/*
+ * valid_standby_node_parameters - Confirm if the standby_node_parameters for partition 
+ *  configuration are available
+ */
+extern int valid_standby_node_parameters(part_record_t *part_ptr)
+{
+	if (!part_ptr->standby_nodes) {
+		error("%s: partition %s failed to obtain structure standby_nodes, skip", __func__, part_ptr->name);
+		return SLURM_ERROR;
+	}
+	
+	if ((part_ptr->standby_nodes->nodes == NULL) || (part_ptr->standby_nodes->parameters == NULL)) {
+		debug("%s: partition %s has incomplete standby_nodes information, skip", __func__, part_ptr->name);
+		return SLURM_ERROR;
+	} else {
+		char *tmp_ptr = NULL, *tmp = NULL, *tok = NULL, *sep = NULL, *save_ptr = NULL;
+		int nodes_can_borrow = 0, offline_node_state = 0;
+
+		tmp = xstrdup(part_ptr->standby_nodes->parameters);
+		/* Check the range of nodes_can_borrow */
+		if ((tmp_ptr = xstrcasestr(tmp, "nodes_can_borrow="))) {
+			nodes_can_borrow = atoi(tmp_ptr + 17);
+			if (nodes_can_borrow < 0 || nodes_can_borrow > MAX_NODES_CAN_BORROW) {
+				error("%s: Invalid StandbyNodeParameters nodes_can_borrow: %d", __func__, nodes_can_borrow);
+				xfree(tmp);
+				return ESLURM_INVALID_STANDBY_NODE_PARAMETERS;
+			}
+		} else {
+			error("%s: Invalid StandbyNodeParameters, not given nodes_can_borrow", __func__);
+			xfree(tmp);
+			return ESLURM_INVALID_STANDBY_NODE_PARAMETERS;
+		}
+
+		tok = strtok_r(tmp, ",", &save_ptr);
+		while (tok) {
+			sep = strchr(tok, '=');
+			if (sep) {
+				sep[0] = '\0';
+				sep++;
+				if (!strcasecmp(tok, "offline_node_state")) {
+					if (!strcasecmp(sep, "drain")) {
+						offline_node_state = 1;
+						break;
+					} else if (!strcasecmp(sep, "down")) {
+						offline_node_state = 2;
+						break;
+					} else if (!strcasecmp(sep, "all")) {
+						offline_node_state = 3;
+						break;
+					} else {
+						error("%s: Invalid StandbyNodeParameters offline_node_state: %s", __func__, sep);
+					}
+				}
+			}
+			tok = strtok_r(NULL, ",", &save_ptr);
+		}
+		xfree(tmp);
+
+		if (offline_node_state == 0) {
+			return ESLURM_INVALID_STANDBY_NODE_PARAMETERS;	
+		}
+
+		part_ptr->standby_nodes->nodes_can_borrow   = nodes_can_borrow;
+		part_ptr->standby_nodes->offline_node_state = offline_node_state;
+		return SLURM_SUCCESS;
+	}
+}
+#endif
 /*
  * _build_bitmaps_pre_select - recover some state for jobs and nodes prior to
  *	calling the select_* functions
@@ -532,9 +622,24 @@ static void _build_bitmaps_pre_select(void)
 	/* scan partition table and identify nodes in each */
 	part_iterator = list_iterator_create(part_list);
 	while ((part_ptr = list_next(part_iterator))) {
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		if (build_part_bitmap(part_ptr, false) == ESLURM_INVALID_NODE_NAME)
+			fatal("Invalid node names in partition %s",
+					part_ptr->name);
+		if ((!build_part_standby_nodes_bitmap(part_ptr)) && 
+				(!valid_standby_node_parameters(part_ptr)) && 
+				(part_ptr->standby_nodes->nodes_can_borrow > 0 )) {
+			part_ptr->standby_nodes->enable = true;
+			debug("partition %s standby_nodes enable", part_ptr->name);
+		} else {
+			part_ptr->standby_nodes->enable = false;
+			debug("partition %s standby_nodes disable", part_ptr->name);
+		}
+#else		
 		if (build_part_bitmap(part_ptr) == ESLURM_INVALID_NODE_NAME)
 			fatal("Invalid node names in partition %s",
 					part_ptr->name);
+#endif					
 	}
 	list_iterator_destroy(part_iterator);
 
@@ -963,6 +1068,10 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 	part_ptr->allow_groups = xstrdup(part->allow_groups);
 	part_ptr->alternate = xstrdup(part->alternate);
 	part_ptr->nodes = xstrdup(part->nodes);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	part_ptr->standby_nodes->parameters = xstrdup(part->standby_node_parameters);
+	part_ptr->standby_nodes->nodes = xstrdup(part->standby_nodes);
+#endif	
 	part_ptr->orig_nodes = xstrdup(part->nodes);
 
 	if (part->billing_weights_str) {
@@ -1010,6 +1119,165 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 
 	return 0;
 }
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+/* 
+ * _return_borrowed_nodes - return borrowed nodes
+ * IN nodes - the nodenames to the borrowed nodes
+ */
+static void _return_borrowed_nodes(char *nodes)
+{
+	char *borrowed_node = NULL;
+	hostlist_t host_list;
+	node_record_t *borrowed_node_ptr = NULL;
+
+	if ((host_list = hostlist_create(nodes)) == NULL) {
+		error ("%s: hostlist_create error on %s: %m", __func__, nodes);
+		return;
+	}
+
+	while ((borrowed_node = hostlist_shift(host_list))) {
+		if (!(borrowed_node_ptr = find_node_record(borrowed_node))) {
+			error("%s: lookup failure for node %s", __func__, borrowed_node);
+		} else {
+			_return_borrowed_node(borrowed_node_ptr);
+		}
+		free(borrowed_node);
+	}
+	FREE_NULL_HOSTLIST(host_list);
+}
+
+/*
+ * _build_borrow_node_bitmap - build borrow node bitmap of the partition
+ * IN part_ptr - pointer to the partition which borrow_node_bitmap will be built
+ * OUT - true: any node has been borrowed; false: no node has been borrowed
+ */
+static bool _build_borrow_node_bitmap(part_record_t *part_ptr)
+{
+	bool node_borrowed = false;
+	char *node_name, *nodes;
+	hostlist_t hostlist;
+	node_record_t *node_ptr;
+
+	if (part_ptr->standby_nodes == NULL) {
+		part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
+	}
+
+	if (part_ptr->standby_nodes->borrowed_node_bitmap) {
+		bit_clear_all(part_ptr->standby_nodes->borrowed_node_bitmap);
+	} else {
+		part_ptr->standby_nodes->borrowed_node_bitmap = bit_alloc(node_record_count);
+	}
+
+	if (!part_ptr->standby_nodes->borrowed_nodes) {
+		return node_borrowed;
+	}
+
+	nodes = xstrdup(part_ptr->standby_nodes->borrowed_nodes);
+	if ((nodes == NULL) || (nodes[0] == '\0')) {
+		debug("%s: partition %s has no borrowed nodes", __func__, part_ptr->name);
+		xfree(nodes);
+		return node_borrowed;
+	}
+	if (!(hostlist = nodespec_to_hostlist(nodes, true, NULL))) {
+		debug("%s: invalid borrowed_nodes %s", __func__, nodes);
+		xfree(nodes);
+		return node_borrowed;
+	}
+
+	if (!hostlist_count(hostlist)) {
+		debug("%s: no node in borrowed_nodes %s", __func__, nodes);
+		xfree(nodes);
+		FREE_NULL_HOSTLIST(hostlist);
+		return node_borrowed;
+	}
+
+	while ((node_name = hostlist_shift(hostlist))) {
+		if ((node_ptr = find_node_record(node_name))) {
+			bit_set(part_ptr->standby_nodes->borrowed_node_bitmap, node_ptr->index);		
+			/* remove node from orig parts */
+			_remove_node_from_parts(node_ptr, false);
+			/* add node to new partition */
+			_add_node_to_parts(node_ptr, part_ptr);
+			_update_node_borrow_state(node_ptr, part_ptr, true);
+			node_borrowed = true;			
+		} else {
+			debug("%s: invalid node %s in borrowed_nodes %s", __func__, node_name, nodes);
+		}
+		free(node_name);
+	}	
+
+	xfree(nodes);
+	FREE_NULL_HOSTLIST(hostlist);
+	return node_borrowed;
+}
+
+/*
+ * _restore_partition_borrowed_info - restore the partition nodes borrowed info
+ * IN part_ptr - pointer to the partition which borrowed information will be restored
+ */
+static bool _restore_partition_borrowed_info(part_record_t *part_ptr) {
+	bool part_change = false;
+	part_record_t *p_ptr = NULL;
+	
+	if (!part_ptr->standby_nodes) {
+		return part_change;
+	}
+
+	p_ptr = find_part_record(part_ptr->name);
+	if (!p_ptr) {
+		/* this part remove form partition conf, return borrowed nodes */
+		if (part_ptr->standby_nodes->borrowed_nodes) {
+			_return_borrowed_nodes(part_ptr->standby_nodes->borrowed_nodes);
+			part_change = true;
+		}
+		return part_change;
+	}
+	
+	if (!p_ptr->standby_nodes) {
+		return part_change;
+	}
+
+	if (!part_ptr->standby_nodes->borrowed_nodes) {
+		p_ptr->standby_nodes->borrowed_nodes = NULL;
+	} else {
+		p_ptr->standby_nodes->borrowed_nodes = xstrdup(part_ptr->standby_nodes->borrowed_nodes);
+	}	
+	part_change = _build_borrow_node_bitmap(p_ptr);
+	return part_change;
+}
+
+/*
+ * _restore_all_partition_nodes_borrowed_info - restore all partition nodes borrowed info
+ * IN reconfig - true if SIGHUP or "scontrol reconfig" and there is state in
+ *		 memory to preserve, otherwise recover state from disk
+ * IN part_list - when reconfig is true, part_list is the list of partitions in memory;
+ * 		 otherwise part_list is built according to config file and state file
+ */
+static bool _restore_all_partition_nodes_borrowed_info(bool reconfig, List part_list) {
+	bool part_change = false, rebuild = false;
+	part_record_t *part_ptr = NULL;
+	DEF_TIMERS;
+	START_TIMER;
+
+	ListIterator part_iterator = list_iterator_create(part_list);
+	while ((part_ptr = list_next(part_iterator))) {
+		if (reconfig) {
+			part_change = _restore_partition_borrowed_info(part_ptr);
+		} else {
+			part_change = _build_borrow_node_bitmap(part_ptr);
+		}
+		rebuild |= part_change;
+	}
+
+	list_iterator_destroy(part_iterator);
+
+	END_TIMER;
+	debug("%s: %s", __func__, TIME_STR);
+
+	return rebuild;
+}
+#endif
 
 /*
  * _build_all_partitionline_info - get a array of slurm_conf_partition_t
@@ -1811,6 +2079,9 @@ int read_slurm_conf(int recover, bool reconfig)
 		_set_features(node_record_table_ptr, node_record_count,
 			      recover);
 		(void) load_all_front_end_state(true);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES		
+		(void) load_all_part_borrow_nodes();
+#endif			
 		load_job_ret = load_all_job_state();
 		sync_job_priorities();
 	} else if (recover > 1) {	/* Load node, part & job state files */
@@ -1853,6 +2124,9 @@ int read_slurm_conf(int recover, bool reconfig)
 	(void) _sync_nodes_to_jobs(reconfig);
 	(void) sync_job_files();
 	_purge_old_node_state(old_node_table_ptr, old_node_record_count);
+#ifndef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES	
+	_purge_old_part_state(old_part_list, old_def_part_name);
+#endif	
 	_purge_old_part_state(old_part_list, old_def_part_name);
 	FREE_NULL_LIST(old_config_list);
 
@@ -1900,7 +2174,19 @@ int read_slurm_conf(int recover, bool reconfig)
 	 */
 	if (!test_config)
 		set_cluster_tres(false);
-
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	valid_node_borrow_interval();
+	bool rebuild = false, build_resource = false;
+	if (reconfig) {
+		rebuild = _restore_all_partition_nodes_borrowed_info(reconfig, old_part_list);
+	} else {
+		rebuild = _restore_all_partition_nodes_borrowed_info(reconfig, part_list);
+	}	
+	if (rebuild) {
+		build_resource = validate_all_partitions_borrow_nodes(part_list);
+	}
+	_purge_old_part_state(old_part_list, old_def_part_name);
+#endif
 	_validate_het_jobs();
 	(void) _sync_nodes_to_comp_job();/* must follow select_g_node_init() */
 	_requeue_job_node_failed();
@@ -2017,7 +2303,10 @@ int read_slurm_conf(int recover, bool reconfig)
 	_set_response_cluster_rec();
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
-	build_sched_resource();
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	if (!build_resource)
+#endif	
+		build_sched_resource();
 #endif
 
 	config_power_mgr();

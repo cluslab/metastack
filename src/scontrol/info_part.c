@@ -82,12 +82,25 @@ scontrol_load_partitions (partition_info_msg_t **part_buffer_pptr)
  * scontrol_print_part - print the specified partition's information
  * IN partition_name - NULL to print information about all partition
  */
+
 extern void
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+scontrol_print_part (char *partition_name, int borrow_flag)
+#else
 scontrol_print_part (char *partition_name)
+#endif
 {
 	int error_code, i, print_cnt = 0;
 	partition_info_msg_t *part_info_ptr = NULL;
 	partition_info_t *part_ptr = NULL;
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(update_client_port(cache_flag)){
+		return;
+	}
+#endif
+
+
 
 	error_code = scontrol_load_partitions(&part_info_ptr);
 	if (error_code) {
@@ -111,8 +124,13 @@ scontrol_print_part (char *partition_name)
 		    xstrcmp (partition_name, part_ptr[i].name) != 0)
 			continue;
 		print_cnt++;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		_slurm_print_partition_info (stdout, & part_ptr[i],
+		                            one_liner, borrow_flag) ;
+#else
 		slurm_print_partition_info (stdout, & part_ptr[i],
 		                            one_liner ) ;
+#endif									
 		if (partition_name)
 			break;
 	}

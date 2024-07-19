@@ -89,6 +89,14 @@ extern slurmdbd_msg_type_t str_2_slurmdbd_msg_type(char *msg_type)
 		return DBD_GET_CLUSTER_USAGE;
 	} else if (!xstrcasecmp(msg_type, "Get Events")) {
 		return DBD_GET_EVENTS;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	} else if (!xstrcasecmp(msg_type, "Get Borrow")) {
+		return DBD_GET_BORROW;
+	} else if (!xstrcasecmp(msg_type, "Got Borrow")) {
+		return DBD_GOT_BORROW;	
+	} else if (!xstrcasecmp(msg_type, "Node State Borrow")) {
+		return DBD_NODE_STATE_BORROW;			
+#endif
 	} else if (!xstrcasecmp(msg_type, "Get Federations")) {
 		return DBD_GET_FEDERATIONS;
 	} else if (!xstrcasecmp(msg_type, "Reconfigure")) {
@@ -350,6 +358,26 @@ extern char *slurmdbd_msg_type_2_str(slurmdbd_msg_type_t msg_type, int get_enum)
 		} else
 			return "Get Events";
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GET_BORROW:
+		if (get_enum) {
+			return "DBD_GET_BORROW";
+		} else
+			return "Get BORROW";
+		break;
+	case DBD_GOT_BORROW:
+		if (get_enum) {
+			return "DBD_GOT_BORROW";
+		} else
+			return "Got BORROW";
+		break;	
+	case DBD_NODE_STATE_BORROW:
+		if (get_enum) {
+			return "DBD_NODE_STATE_BORROW";
+		} else
+			return "Node State Borrow";
+		break;			
+#endif
 	case DBD_GET_FEDERATIONS:
 		if (get_enum) {
 			return "DBD_GET_FEDERATIONS";
@@ -863,6 +891,9 @@ extern void slurmdbd_free_msg(persist_msg_t *msg)
 	case DBD_SEND_MULT_MSG:
 	case DBD_GOT_MULT_MSG:
 	case DBD_FIX_RUNAWAY_JOB:
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GOT_BORROW:
+#endif
 		slurmdbd_free_list_msg(msg->data);
 		break;
 	case DBD_ADD_ACCOUNT_COORDS:
@@ -899,6 +930,9 @@ extern void slurmdbd_free_msg(persist_msg_t *msg)
 	case DBD_REMOVE_WCKEYS:
 	case DBD_REMOVE_USERS:
 	case DBD_ARCHIVE_DUMP:
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_GET_BORROW:
+#endif
 		slurmdbd_free_cond_msg(msg->data, msg->msg_type);
 		break;
 	case DBD_GET_ASSOC_USAGE:
@@ -937,6 +971,11 @@ extern void slurmdbd_free_msg(persist_msg_t *msg)
 	case DBD_NODE_STATE:
 		slurmdbd_free_node_state_msg(msg->data);
 		break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	case DBD_NODE_STATE_BORROW:
+		slurmdbd_free_node_borrow_msg(msg->data);
+		break;
+#endif
 	case DBD_STEP_COMPLETE:
 		slurmdbd_free_step_complete_msg(msg->data);
 		break;
@@ -1051,6 +1090,11 @@ extern void slurmdbd_free_cond_msg(dbd_cond_msg_t *msg,
 		case DBD_GET_EVENTS:
 			my_destroy = slurmdb_destroy_event_cond;
 			break;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+		case DBD_GET_BORROW:
+			my_destroy = slurmdb_destroy_borrow_cond;
+			break;
+#endif
 		default:
 			fatal("Unknown cond type");
 			return;
@@ -1199,6 +1243,17 @@ extern void slurmdbd_free_modify_msg(dbd_modify_msg_t *msg,
 		xfree(msg);
 	}
 }
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern void slurmdbd_free_node_borrow_msg(dbd_node_state_msg_t *msg)
+{
+	if (msg) {
+		xfree(msg->hostlist);
+		xfree(msg->reason);
+		xfree(msg);
+	}
+}
+#endif
 
 extern void slurmdbd_free_node_state_msg(dbd_node_state_msg_t *msg)
 {
