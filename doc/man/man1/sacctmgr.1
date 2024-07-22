@@ -252,6 +252,11 @@ existing usage information will not be carried over to the new association.
 .IP
 
 .TP
+\fBborrow\fR
+Node borrowed or returned on clusters.
+.IP
+
+.TP
 \fBcluster\fR
 The \fBClusterName\fR parameter in the \fBslurm.conf\fR configuration
 file, used to differentiate accounts on different machines.
@@ -931,6 +936,134 @@ indicate the QOS was added/filtered (ie, sacctmgr modify ... set
 QosLevel=[+\-]qos_name) for the entity listed or on one of its parents
 in the hierarchy. Including WOPLimits will show exactly where each QOS
 was assigned, added or filtered in the hierarchy.
+.IP
+
+.SH "SPECIFICATIONS FOR BORROW"
+
+.TP
+\fBAll_Clusters\fR
+Get information on all cluster shortcut.
+.IP
+
+.TP
+\fBAll_Time\fR
+Get time period for all time shortcut.
+.IP
+
+.TP
+\fBClusters\fR=<\fIcluster_name\fR>[,<\fIcluster_name\fR>,...]
+List the node borrowed events of the cluster(s).  Default is the cluster where the
+command was run.
+.IP
+
+.TP
+\fBCondFlags\fR=<\fIflag\fR>[,<\fIflag\fR>,...]
+Optional list of flags to filter node borrowed events by.
+.br
+Valid options are
+.RS
+.TP
+\fBOpen\fR
+If set, only open node events (currently down) will be returned.
+.IP
+.RE
+.IP
+
+.TP
+\fBEnd\fR=<\fIOPT\fR>
+Period ending of node borrowed. Default is now.
+
+Valid time formats are...
+.br
+HH:MM[:SS] [AM|PM]
+.br
+MMDD[YY] or MM/DD[/YY] or MM.DD[.YY]
+.br
+MM/DD[/YY]\-HH:MM[:SS]
+.br
+YYYY\-MM\-DD[THH:MM[:SS]]
+.br
+now[{+|\-}\fIcount\fR[seconds(default)|minutes|hours|days|weeks]]
+.IP
+
+.TP
+\fBNodes\fR=<\fInode_name\fR>[,<\fInode_name\fR>,...]
+Node names of the borrowed nodes.
+.IP
+
+.TP
+\fBReason\fR=<\fIreason\fR>[,<\fIreason\fR>,...]
+Reason which partition is the node borrowed to, format is "Borrowed by partition xxxx"
+.IP
+
+.TP
+\fBStart\fR=<\fIOPT\fR>
+Period start of node borrowed.  Default is 00:00:00 of previous day.
+
+Valid time formats are...
+.br
+HH:MM[:SS] [AM|PM]
+.br
+MMDD[YY] or MM/DD[/YY] or MM.DD[.YY]
+.br
+MM/DD[/YY]\-HH:MM[:SS]
+.br
+YYYY\-MM\-DD[THH:MM[:SS]]
+.br
+now[{+|\-}\fIcount\fR[seconds(default)|minutes|hours|days|weeks]]
+.IP
+
+.TP
+\fBStates\fR=<\fIstate\fR>[,<\fIstate\fR>,...]
+State of a node borrowed.
+.IP
+
+.TP
+\fBUser\fR=<\fIuser_name\fR>[,<\fIuser_name\fR>,...]
+Query against users who implemented node borrowing. Only user slurm can perform a node borrowed event.
+.IP
+
+
+.SH "LIST/SHOW BORROW FORMAT OPTIONS"
+
+.TP
+\fBCluster\fR
+The name of the cluster node borrowed and returned event happened on.
+.IP
+
+.TP
+\fBDuration\fR
+Time period the node borrowed to returned event was around for.
+.IP
+
+.TP
+\fBEnd\fR
+Period when the borrowed node return.
+.IP
+
+.TP
+\fBNodeName\fR
+The name of the borrowed node.
+.IP
+
+.TP
+\fBReason\fR
+Which partition is the node borrowed to.
+.IP
+
+.TP
+\fBStart\fR
+Period when node borrowed started.
+.IP
+
+.TP
+\fBState\fR
+When a node borrowed this is the formatted state of the node.
+.IP
+
+.TP
+\fBUser\fR
+When a node borrowed this is the user who caused the event to happen.
 .IP
 
 .SH "SPECIFICATIONS FOR CLUSTERS"
