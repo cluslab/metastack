@@ -92,6 +92,9 @@ bool     preempt_by_part      = false;
 bool     preempt_by_qos       = false;
 bool     spec_cores_first     = false;
 bool     topo_optional        = false;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT
+bool     enable_high_throughput = false;
+#endif
 
 /* Global variables */
 
@@ -1133,6 +1136,13 @@ extern int select_p_node_init()
 		backfill_busy_nodes = true;
 	else
 		backfill_busy_nodes = false;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT
+	if (xstrcasestr(slurm_conf.sched_params, "enable_high_throughput"))
+		enable_high_throughput = true;
+	else
+		enable_high_throughput = false;
+
+#endif
 
 	preempt_type = slurm_get_preempt_type();
 	preempt_by_part = false;
@@ -1654,6 +1664,37 @@ extern int select_p_step_finish(step_record_t *step_ptr, bool killing_step)
 {
 	return SLURM_SUCCESS;
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* copy a select node credential
+ * IN nodeinfo - the select node credential to be copied
+ * RET        - the copy or NULL on failure
+ * NOTE: returned value must be freed using select_g_free_nodeinfo
+ */
+extern select_nodeinfo_t *select_p_select_nodeinfo_copy(select_nodeinfo_t *nodeinfo)
+{
+	select_nodeinfo_t *nodeinfo_empty = NULL;
+
+	if (!nodeinfo) {
+		return nodeinfo_empty;
+	}
+	nodeinfo_empty = xmalloc(sizeof(select_nodeinfo_t));
+	
+	nodeinfo_empty->alloc_cpus = nodeinfo->alloc_cpus;
+	nodeinfo_empty->alloc_memory = nodeinfo->alloc_memory;
+	nodeinfo_empty->tres_alloc_weighted = nodeinfo->tres_alloc_weighted;
+	nodeinfo_empty->magic = nodeinfo->magic;
+	nodeinfo_empty->tres_alloc_fmt_str = xstrdup(nodeinfo->tres_alloc_fmt_str);
+	if(nodeinfo->tres_alloc_cnt){
+		nodeinfo_empty->tres_alloc_cnt = xcalloc(slurmctld_tres_cnt,sizeof(uint64_t));
+		memcpy(nodeinfo_empty->tres_alloc_cnt, nodeinfo->tres_alloc_cnt, sizeof(uint64_t) * slurmctld_tres_cnt);
+	}
+
+	return nodeinfo_empty;
+}
+
+#endif
+
 
 extern int select_p_select_nodeinfo_pack(select_nodeinfo_t *nodeinfo,
 					 buf_t *buffer,

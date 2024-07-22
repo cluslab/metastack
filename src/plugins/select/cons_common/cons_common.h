@@ -118,6 +118,9 @@ extern bool     preempt_by_qos;
 extern uint16_t priority_flags;
 extern bool     spec_cores_first;
 extern bool     topo_optional;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT
+extern bool     enable_high_throughput;
+#endif
 
 extern char *common_node_state_str(uint16_t node_state);
 

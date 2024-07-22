@@ -3957,6 +3957,13 @@ The default value.
 .IP
 
 .TP
+\fBenable_high_throughput\fR
+If set, node selection time for serial jobs will be significantly reduced, improving system throughput.
+Note that this disables RBN. Additionally, CR_LLN and LLN will cause this setting to be disabled.
+To further improve scheduling efficiency, consider SlurmctldPort and Contain.
+.IP
+
+.TP
 \fBenable_user_top\fR
 Enable use of the "scontrol top" command by non\-privileged users.
 .IP
