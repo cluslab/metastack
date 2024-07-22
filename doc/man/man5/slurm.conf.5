@@ -7063,6 +7063,50 @@ The \fBShared\fR configuration parameter has been replaced by the
 .IP
 
 .TP
+\fBStandbyNodes\fR
+Comma\-separated list of nodes or nodesets which can be considered 
+for borrowing when this partition meets the borrowing conditions.
+Also see \fBStandbyNodeParameters\fR.
+.IP
+
+.TP
+\fBStandbyNodeParameters\fR
+Quota and conditions for borrowing nodes in the partition.
+Multiple options may be comma separated.
+.IP
+.RS
+.TP
+\fBnodes_can_borrow=\fR
+Control the maximum number of nodes that the partition can borrow 
+at the same time. When the value of this item is 0 or this item not configured, the partition
+cannot borrow nodes. Min: 0, Max: 65533.
+.IP
+
+.TP
+\fBoffline_node_state=\fR
+Control when node borrowing is triggered by the occurrence of node offline 
+events in the partition. When this item not configured, the partition
+cannot borrow nodes.
+.IP
+.RS
+.TP
+\fBALL\fR
+Trigger node borrowing when a node goes offline in DRAIN or DOWN state.
+.IP
+
+.TP
+\fBDOWN\fR
+Trigger node borrowing when a node goes offline in DOWN state.
+.IP
+
+.TP
+\fBDRAIN\fR
+Trigger node borrowing when a node goes offline in DRAIN state.
+.IP
+.RE
+.RE
+
+.TP
 \fBState\fR
 State of partition or availability for use.  Possible values
 are "UP", "DOWN", "DRAIN" and "INACTIVE". The default value is "UP".

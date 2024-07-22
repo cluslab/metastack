@@ -35,6 +35,12 @@ group.
 .IP
 
 .TP
+\fB\--borrow\fR
+Causes the \fIshow partition\fR command to display details of standby_nodes 
+in the partition, including configuration and nodes already borrowed.
+.IP
+
+.TP
 \fB\-M\fR, \fB\-\-clusters\fR=<\fIstring\fR>
 The cluster to issue commands to. Only one cluster name may be specified.
 Note that the SlurmDBD must be up for this option to work properly.
@@ -2129,6 +2135,24 @@ Note that jobs may only be associated with one partition at any time.
 Specify a blank data value to remove all nodes from a partition: "Nodes=".
 Changing the \fINodes\fP in a partition has no effect upon jobs that
 have already begun execution.
+.IP
+
+.TP
+\fBNodesBorrowed\fR=<\fIname\fR>
+Display the node(s) already be borrowed by this partition, formatted the same as Nodes.
+This item can only be displayed, controlled the --borrow option.
+.IP
+
+.TP
+\fBStandbyNodes\fR=<\fIname\fR>
+Identify the node(s) can be borrowed by this partition, formatted the same as Nodes.
+Control the display of this item through the --borrow option.
+.IP
+
+.TP
+\fBStandbyNodeParameters\fR=<\fIparameter\fR>
+Identify the quota and conditions under which the partition can borrow nodes.
+Control the display of this item through the --borrow option.
 .IP
 
 .TP
