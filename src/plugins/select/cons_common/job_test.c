@@ -360,6 +360,82 @@ static avail_res_t **_get_res_avail(job_record_t *job_ptr,
 
 	return avail_res_array;
 }
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT
+
+static avail_res_t **_get_res_avail2(job_record_t *job_ptr,
+				    bitstr_t *node_map, bitstr_t **core_map,
+				    node_use_record_t *node_usage,
+				    uint16_t cr_type, bool test_only,
+				    bool will_run, bitstr_t **part_core_map)
+{
+	int i, i_first, i_last;
+	int avail_nodes = 0;
+	avail_res_t **avail_res_array = NULL;
+	uint32_t s_p_n = _socks_per_node(job_ptr);
+
+	xassert(*cons_common_callbacks.can_job_run_on_node);
+
+	avail_res_array = xcalloc(node_record_count, sizeof(avail_res_t *));
+	i_first = bit_ffs(node_map);
+	if (i_first != -1)
+		i_last = bit_fls(node_map);
+	else
+		i_last = -2;
+	if (pack_serial_at_end) {
+		for (i = i_last; i >= i_first; i--) {
+			if (bit_test(node_map, i)) {
+				avail_res_array[i] =
+					(*cons_common_callbacks.can_job_run_on_node)(
+							job_ptr, core_map, i,
+							s_p_n, node_usage,
+							cr_type, test_only, will_run,
+							part_core_map);
+				if (avail_res_array[i] && (avail_res_array[i]->avail_cpus >= job_ptr->details->min_cpus)) {
+					avail_nodes++;
+				} 
+			}
+			/*
+			 * FIXME: This is a hack to make cons_res more bullet proof as
+			 * there are places that don't always behave correctly with a
+			 * sparce array.
+			 */
+			if (!is_cons_tres && !avail_res_array[i])
+				avail_res_array[i] = xmalloc(sizeof(avail_res_t));
+			if (avail_nodes >= 1) {
+				log_flag(SELECT_TYPE, "%s get %d avail nodes", __func__, avail_nodes);
+				break;
+			}
+		}
+	} else {
+		for (i = i_first; i <= i_last; i++) {
+			if (bit_test(node_map, i)) {
+				avail_res_array[i] =
+					(*cons_common_callbacks.can_job_run_on_node)(
+							job_ptr, core_map, i,
+							s_p_n, node_usage,
+							cr_type, test_only, will_run,
+							part_core_map);
+				if (avail_res_array[i] && (avail_res_array[i]->avail_cpus >= job_ptr->details->min_cpus)) {
+					avail_nodes++;
+				} 
+			}
+			/*
+			 * FIXME: This is a hack to make cons_res more bullet proof as
+			 * there are places that don't always behave correctly with a
+			 * sparce array.
+			 */
+			if (!is_cons_tres && !avail_res_array[i])
+				avail_res_array[i] = xmalloc(sizeof(avail_res_t));
+			if (avail_nodes >= 1) {
+				log_flag(SELECT_TYPE, "%s get %d avail nodes", __func__, avail_nodes);
+				break;
+			}
+		}
+	}
+	return avail_res_array;
+}
+
+#endif
 
 /* For a given job already past it's end time, guess when it will actually end.
  * Used for backfill scheduling. */
@@ -501,6 +577,18 @@ static avail_res_t **_select_nodes(job_record_t *job_ptr, uint32_t min_nodes,
 	}
 
 	core_array_log("_select_nodes/enter", node_bitmap, avail_core);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT
+	if (enable_high_throughput &&
+            (req_nodes == 1) &&
+            (job_ptr->details && !job_ptr->details->req_node_bitmap) &&
+            !(cr_type & CR_LLN) &&
+            (job_ptr->part_ptr && !(job_ptr->part_ptr->flags & PART_FLAG_LLN))) {
+            log_flag(SELECT_TYPE, "enable_high_throughput:%d, job_ptr->details->min_cpus: %d, rep_nodes: %d", enable_high_throughput, job_ptr->details->min_cpus, req_nodes);
+            avail_res_array = _get_res_avail2(job_ptr, node_bitmap, avail_core,
+                                         node_usage, cr_type, test_only,
+                                         will_run, part_core_map);
+        } else
+#endif
 	/* Determine resource availability on each node for pending job */
 	avail_res_array = _get_res_avail(job_ptr, node_bitmap, avail_core,
 					 node_usage, cr_type, test_only,

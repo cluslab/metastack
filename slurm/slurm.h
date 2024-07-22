@@ -280,6 +280,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_PART_PARA_SCHED
 #endif
 
+/* Macro definition for optimizing serial job scheduling*/
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT
+#define __METASTACK_OPT_HIGH_THROUGHPUT
+#endif
+
 /* Please Note to comment out same Macro in slurm_errno.h if you want to disable this feature*/
 #ifndef __METASTACK_NEW_RPC_RATE_LIMIT
 #define __METASTACK_NEW_RPC_RATE_LIMIT
