@@ -264,6 +264,9 @@ s_p_options_t slurm_conf_options[] = {
 #ifdef __METASTACK_OPT_REGISTRATION_FIX
 	{"DownNodeToReg", S_P_BOOLEAN},
 #endif
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	{"HealthCheckCarryNode", S_P_BOOLEAN},
+#endif
 	{"EioTimeout", S_P_UINT16},
 	{"EnforcePartLimits", S_P_STRING},
 	{"Epilog", S_P_STRING},
@@ -4103,6 +4106,10 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	{
 		conf->conf_flags |= CTL_CONF_DNR;
 	}
+#endif
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	if (s_p_get_boolean(&truth, "HealthCheckCarryNode", hashtbl) && truth)
+		conf->conf_flags |= CTL_CONF_HCN;
 #endif
 	if (s_p_get_string(&temp_str,
 			   "EnforcePartLimits", hashtbl)) {

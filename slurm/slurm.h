@@ -323,6 +323,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_REGISTRATION_FIX
 #endif
 
+#ifndef __METASTACK_NEW_STATE_TO_NHC
+#define __METASTACK_NEW_STATE_TO_NHC
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -2993,6 +2997,10 @@ typedef struct reservation_name_msg {
 #ifdef __METASTACK_OPT_REGISTRATION_FIX
 #define CTL_CONF_DNR			SLURM_BIT(25) /* DownNodeToReg, Control whether down*
 					* nodes perform node registration */
+#endif
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+#define CTL_CONF_HCN			SLURM_BIT(26) /* HealthCheckCarryNode, Control HealthCheck
+					* carry node state to computer node */
 #endif
 #define LOG_FMT_ISO8601_MS      0
 #define LOG_FMT_ISO8601         1

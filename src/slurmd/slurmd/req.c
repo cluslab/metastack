@@ -3225,7 +3225,23 @@ static void _rpc_ping(slurm_msg_t *msg)
 static void _rpc_health_check(slurm_msg_t *msg)
 {
 	int        rc = SLURM_SUCCESS;
-
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	int i = 0;
+	char *node_state = NULL;
+	char *node_reason = NULL;
+	node_rec_state_array_t *node_rec_state_array_tmp = (node_rec_state_array_t *)msg->data;
+	if (node_rec_state_array_tmp->array_size > 0)
+	{
+		for (i = 0; i < node_rec_state_array_tmp->array_size; i++)
+		{
+			if (!xstrcmp(node_rec_state_array_tmp->node_rec_state_info_array[i].name, conf->node_name))
+			{
+				node_state = node_state_string(node_rec_state_array_tmp->node_rec_state_info_array[i].node_state);
+				node_reason = node_rec_state_array_tmp->node_rec_state_info_array[i].reason;
+			}
+		}
+	}
+#endif
 	if (!_slurm_authorized_user(msg->auth_uid)) {
 		error("Security violation, health check RPC from uid %u",
 		      msg->auth_uid);
@@ -3244,9 +3260,17 @@ static void _rpc_health_check(slurm_msg_t *msg)
 		send_registration_msg(SLURM_SUCCESS);
 	}
 
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	if (rc == SLURM_SUCCESS)
+	{
+		rc = run_script_health_check(node_state, node_reason);
+		slurm_free_nhc_node_info_msg(node_rec_state_array_tmp);
+		msg->data = NULL;
+	}
+#else
 	if (rc == SLURM_SUCCESS)
 		rc = run_script_health_check();
-
+#endif
 	/* Take this opportunity to enforce any job memory limits */
 	_enforce_job_mem_limit();
 	/* Clear up any stalled file transfers as well */

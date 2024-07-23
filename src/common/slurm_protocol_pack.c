@@ -12751,6 +12751,90 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+static void
+_pack_nhc_msg(node_rec_state_array_t *msg, buf_t *buffer, uint16_t protocol_version)
+{
+	xassert(msg);
+
+	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION)
+	{
+		int i = 0;
+		pack32(msg->array_size, buffer);
+		for (i = 0; i < msg->array_size; i++)
+		{
+			packstr(msg->node_rec_state_info_array[i].name, buffer);
+			pack32(msg->node_rec_state_info_array[i].node_state, buffer);
+			packstr(msg->node_rec_state_info_array[i].reason, buffer);
+			packstr(msg->node_rec_state_info_array[i].data, buffer);
+		}
+	}
+}
+
+void
+slurm_free_node_rec_state_info(node_rec_state_info_t * node)
+{
+	if (node)
+	{
+		xfree(node->name);
+		xfree(node->reason);
+		xfree(node->data);
+	}
+}
+
+static int
+_unpack_node_rec_state_info_members(node_rec_state_info_t *node, buf_t *buffer,
+			  uint16_t protocol_version)
+{
+	uint32_t uint32_tmp;
+
+	xassert(node);
+	safe_unpackstr_xmalloc(&node->name, &uint32_tmp, buffer);
+	safe_unpack32(&node->node_state, buffer);
+	safe_unpackstr_xmalloc(&node->reason, &uint32_tmp, buffer);
+	safe_unpackstr_xmalloc(&node->data, &uint32_tmp, buffer);
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurm_free_node_rec_state_info(node);
+	return SLURM_ERROR;
+}
+
+static int
+_unpack_nhc_msg(node_rec_state_array_t **msg, buf_t *buffer, uint16_t protocol_version)
+{
+	int i = 0;
+	node_rec_state_array_t *tmp_ptr = NULL;
+
+	xassert(msg);
+	tmp_ptr = xmalloc(sizeof(node_rec_state_array_t));
+	*msg = tmp_ptr;
+
+	/* load buffer's header (data structure version and time) */
+	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION)
+	{
+		safe_unpack32(&tmp_ptr->array_size, buffer);
+		safe_xcalloc(tmp_ptr->node_rec_state_info_array, tmp_ptr->array_size,
+			     sizeof(node_rec_state_info_t));
+		/* load individual info */
+		for (i = 0; i < tmp_ptr->array_size; i++)
+		{
+			if (_unpack_node_rec_state_info_members(&tmp_ptr->node_rec_state_info_array[i],
+						      buffer,
+						      protocol_version))
+				goto unpack_error;
+		}
+	}
+
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurm_free_nhc_node_info_msg(tmp_ptr);
+	*msg = NULL;
+	return SLURM_ERROR;
+}
+#endif
+
 /* pack_msg
  * packs a generic slurm protocol message body
  * IN msg - the body structure to pack (note: includes message type)
@@ -12884,7 +12968,9 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 	case REQUEST_CONTROL_STATUS:
 	case REQUEST_TAKEOVER:
 	case REQUEST_DAEMON_STATUS:
+#ifndef __METASTACK_NEW_STATE_TO_NHC
 	case REQUEST_HEALTH_CHECK:
+#endif
 	case REQUEST_ACCT_GATHER_UPDATE:
 	case ACCOUNTING_FIRST_REG:
 	case ACCOUNTING_REGISTER_CTLD:
@@ -12894,6 +12980,13 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 	case SRUN_PING:
 		/* Message contains no body/information */
 		break;
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	case REQUEST_HEALTH_CHECK:
+		_pack_nhc_msg(
+			(node_rec_state_array_t *)msg->data,
+			buffer, msg->protocol_version);
+		break;
+#endif
 	case REQUEST_ACCT_GATHER_ENERGY:
 		_pack_acct_gather_energy_req(
 			(acct_gather_energy_req_msg_t *)msg->data,
@@ -13511,7 +13604,9 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 	case REQUEST_CONTROL_STATUS:
 	case REQUEST_TAKEOVER:
 	case REQUEST_DAEMON_STATUS:
+#ifndef __METASTACK_NEW_STATE_TO_NHC
 	case REQUEST_HEALTH_CHECK:
+#endif
 	case REQUEST_ACCT_GATHER_UPDATE:
 	case ACCOUNTING_FIRST_REG:
 	case ACCOUNTING_REGISTER_CTLD:
@@ -13521,6 +13616,13 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 	case SRUN_PING:
 		/* Message contains no body/information */
 		break;
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	case REQUEST_HEALTH_CHECK:
+		rc = _unpack_nhc_msg(
+			(node_rec_state_array_t **)&msg->data,
+			buffer, msg->protocol_version);
+		break;
+#endif
 	case REQUEST_ACCT_GATHER_ENERGY:
 		rc = _unpack_acct_gather_energy_req(
 			(acct_gather_energy_req_msg_t **) & (msg->data),

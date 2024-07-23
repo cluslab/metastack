@@ -1319,6 +1319,25 @@ typedef enum {
 	DYN_NODE_NORM,
 } dynamic_node_type_t;
 
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+typedef struct node_rec_state_info {
+	char *name;
+	uint32_t node_state;
+	char *reason;
+	char *data;
+} node_rec_state_info_t;
+
+typedef struct node_rec_state_array {
+	uint32_t array_size;
+	node_rec_state_info_t *node_rec_state_info_array;
+} node_rec_state_array_t;
+
+typedef struct  node_rec_state_array_split {
+	int data_size;
+	node_rec_state_array_t **node_rec_state_array_data;
+} node_rec_state_array_split_t;
+#endif
+
 /*****************************************************************************\
  * Slurm API Message Types
 \*****************************************************************************/
@@ -1511,6 +1530,11 @@ extern void slurm_free_ping_slurmd_resp(ping_slurmd_resp_msg_t *msg);
 
 #define	slurm_free_timelimit_msg(msg) \
 	slurm_free_kill_job_msg(msg)
+
+#ifdef  __METASTACK_NEW_STATE_TO_NHC
+extern void slurm_free_nhc_node_info_msg(node_rec_state_array_t *msg);
+extern void slurm_free_nhc_info_msg(node_rec_state_array_split_t *msg);
+#endif
 
 extern void slurm_init_reboot_msg(reboot_msg_t * msg, bool clear);
 extern void slurm_free_reboot_msg(reboot_msg_t * msg);

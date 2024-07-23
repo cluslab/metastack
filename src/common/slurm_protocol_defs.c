@@ -1448,6 +1448,62 @@ extern void slurm_free_launch_tasks_response_msg(
 	}
 }
 
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+void slurm_free_nhc_node_info_members(node_rec_state_info_t *node)
+{
+	if (node) {
+		xfree(node->name);
+		xfree(node->reason);
+		xfree(node->data);
+		/* Do NOT free node, it is an element of an array */
+	}
+}
+void _free_all_nhc_node_info(node_rec_state_array_t *msg)
+{
+	int i = 0;
+	if ((msg == NULL) || (msg->node_rec_state_info_array == NULL))
+		return;
+
+	for (i = 0; i < msg->array_size; i++)
+		slurm_free_nhc_node_info_members(&msg->node_rec_state_info_array[i]);
+}
+extern void slurm_free_nhc_node_info_msg(node_rec_state_array_t *msg)
+{
+	if (msg) {
+		if (msg->node_rec_state_info_array) {
+			_free_all_nhc_node_info(msg);
+			xfree(msg->node_rec_state_info_array);
+		}
+		xfree(msg);
+	}
+}
+
+void _free_all_nhc_info(node_rec_state_array_split_t *msg)
+{
+	int i = 0;
+
+	if ((msg == NULL) || (msg->node_rec_state_array_data == NULL))
+		return;
+
+	for (i = 0; i < msg->data_size; i++)
+	{
+		slurm_free_nhc_node_info_msg(msg->node_rec_state_array_data[i]);
+	}
+}
+extern void slurm_free_nhc_info_msg(node_rec_state_array_split_t *msg)
+{
+	if (msg)
+	{
+		if (msg->node_rec_state_array_data)
+		{
+			_free_all_nhc_info(msg);
+			xfree(msg->node_rec_state_array_data);
+		}
+		xfree(msg);
+	}
+}
+#endif
+
 extern void slurm_free_kill_job_msg(kill_job_msg_t * msg)
 {
 	if (msg) {
