@@ -319,6 +319,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #endif
 
+#ifndef __METASTACK_OPT_REGISTRATION_FIX
+#define __METASTACK_OPT_REGISTRATION_FIX
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -2985,6 +2989,10 @@ typedef struct reservation_name_msg {
 #ifdef __METASTACK_OPT_RPC_USER_FIX
 #define CTL_CONF_ASS			SLURM_BIT(24) /* AssocServerSort, Add User or
 					* Account with no slurmdb_sort_hierarchical_assoc_list */
+#endif
+#ifdef __METASTACK_OPT_REGISTRATION_FIX
+#define CTL_CONF_DNR			SLURM_BIT(25) /* DownNodeToReg, Control whether down*
+					* nodes perform node registration */
 #endif
 #define LOG_FMT_ISO8601_MS      0
 #define LOG_FMT_ISO8601         1

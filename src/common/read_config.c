@@ -261,6 +261,9 @@ s_p_options_t slurm_conf_options[] = {
 #ifdef __METASTACK_OPT_RPC_USER_FIX
 	{"AssocServerSort", S_P_BOOLEAN},
 #endif
+#ifdef __METASTACK_OPT_REGISTRATION_FIX
+	{"DownNodeToReg", S_P_BOOLEAN},
+#endif
 	{"EioTimeout", S_P_UINT16},
 	{"EnforcePartLimits", S_P_STRING},
 	{"Epilog", S_P_STRING},
@@ -4084,9 +4087,22 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	if (s_p_get_boolean(&truth, "DisableRootJobs", hashtbl) && truth)
 		conf->conf_flags |= CTL_CONF_DRJ;
 #ifdef __METASTACK_OPT_RPC_USER_FIX
-	if (!s_p_get_boolean(&truth, "AssocServerSort", hashtbl)
-	    || truth)
+	if (!s_p_get_boolean(&truth, "AssocServerSort", hashtbl))
+	{
 		conf->conf_flags |= CTL_CONF_ASS;
+	} else if (s_p_get_boolean(&truth, "AssocServerSort", hashtbl) && truth)
+	{
+		conf->conf_flags |= CTL_CONF_ASS;
+	}
+#endif
+#ifdef __METASTACK_OPT_REGISTRATION_FIX
+	if (!s_p_get_boolean(&truth, "DownNodeToReg", hashtbl))
+	{
+		conf->conf_flags |= CTL_CONF_DNR;
+	} else if (s_p_get_boolean(&truth, "DownNodeToReg", hashtbl) && truth)
+	{
+		conf->conf_flags |= CTL_CONF_DNR;
+	}
 #endif
 	if (s_p_get_string(&temp_str,
 			   "EnforcePartLimits", hashtbl)) {

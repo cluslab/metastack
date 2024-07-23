@@ -711,6 +711,9 @@ static void _init_node_record(node_record_t *node_ptr,
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	node_ptr->orig_parts = NULL;
 #endif
+#ifdef __METASTACK_OPT_REGISTRATION_FIX
+	node_ptr->do_reg = false;
+#endif
 	/*
 	 * Here we determine if this node is scheduling threads or not.
 	 * We will set tpc to be the number of schedulable threads per core.

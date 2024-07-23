@@ -186,6 +186,9 @@ struct node_record {
 	uint32_t weight;		/* orignal weight, used only for state
 					 * save/restore, DO NOT use for
 					 * scheduling purposes. */
+#ifdef __METASTACK_OPT_REGISTRATION_FIX
+	bool do_reg;  /*if true,do reg*/
+#endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	char *orig_parts;		/*  Comma separated list of partitions containing
 				 * this node before be borrowed */
