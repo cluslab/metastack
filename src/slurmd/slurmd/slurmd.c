@@ -392,8 +392,11 @@ main (int argc, char **argv)
 	slurm_conf_install_fork_handlers();
 	record_launched_jobs();
 
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	run_script_health_check(NULL, NULL);
+#else
 	run_script_health_check();
-
+#endif
 	slurm_thread_create_detached(NULL, _registration_engine, NULL);
 
 	_msg_engine();
@@ -2851,7 +2854,11 @@ static void _resource_spec_fini(void)
  * Returns the run result. If the health check program
  * is not defined, returns success immediately.
  */
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+extern int run_script_health_check(char *node_state, char *node_reason)
+#else
 extern int run_script_health_check(void)
+#endif
 {
 	int rc = SLURM_SUCCESS;
 
@@ -2882,6 +2889,18 @@ extern int run_script_health_check(void)
 		cmd_argv[1] = NULL;
 
 		setenvf(&env, "SLURMD_NODENAME", "%s", conf->node_name);
+#ifdef  __METASTACK_NEW_STATE_TO_NHC
+		if (node_state != NULL)
+		{
+			env_array_append(&env, "SLURMD_NODE_STATE", node_state);
+		}
+		if  (node_reason != NULL)
+		{
+			env_array_append(&env, "SLURMD_NODE_REASON", node_reason);
+		}else {
+			env_array_append(&env, "SLURMD_NODE_REASON", "none");
+		}
+#endif
 		/*
 		 * We need to set the pointer after we alter or we may be
 		 * pointing to the wrong place otherwise.

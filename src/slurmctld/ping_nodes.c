@@ -50,6 +50,9 @@
 #include "src/slurmctld/front_end.h"
 #include "src/slurmctld/ping_nodes.h"
 #include "src/slurmctld/slurmctld.h"
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+#include "src/common/xstring.h"
+#endif
 
 /* Request that nodes re-register at most every MAX_REG_FREQUENCY pings */
 #define MAX_REG_FREQUENCY 20
@@ -467,6 +470,21 @@ extern void run_health_check(void)
 #endif
 	char *host_str = NULL;
 	agent_arg_t *check_agent_args = NULL;
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	node_rec_state_array_split_t **node_rec_state_array_split = xmalloc(sizeof(node_rec_state_array_split_t *));
+	node_rec_state_array_split_t *node_rec_state_array_split_args = xmalloc(sizeof(node_rec_state_array_split_t));
+	node_rec_state_array_split_args->data_size = 1;
+	node_rec_state_array_split_args->node_rec_state_array_data = xmalloc(node_rec_state_array_split_args->data_size * sizeof(node_rec_state_array_t *));
+	node_rec_state_array_t *node_rec_state_slurmd = xmalloc(sizeof(node_rec_state_array_t));
+	int actual_size = 0;
+	if (slurm_conf.conf_flags & CTL_CONF_HCN)
+	{
+		node_rec_state_slurmd->array_size = node_record_count;
+		node_rec_state_slurmd->node_rec_state_info_array = xmalloc(node_record_count * sizeof(node_rec_state_info_t));
+	} else {
+		node_rec_state_slurmd->array_size = 0;
+	}
+#endif
 
 	/* Sync plugin internal data with
 	 * node select_nodeinfo. This is important
@@ -577,15 +595,37 @@ extern void run_health_check(void)
 				node_ptr->protocol_version;
 		hostlist_push_host(check_agent_args->hostlist, node_ptr->name);
 		check_agent_args->node_count++;
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+		if (node_rec_state_slurmd->array_size != 0)
+		{
+			node_rec_state_slurmd->node_rec_state_info_array[actual_size].name = xstrdup(node_ptr->name);
+			node_rec_state_slurmd->node_rec_state_info_array[actual_size].node_state = node_ptr->node_state;
+			node_rec_state_slurmd->node_rec_state_info_array[actual_size].reason = xstrdup(node_ptr->reason);
+			actual_size++;
+		}
+#endif
 	}
 	if (base_node_loc >= node_record_count)
 		base_node_loc = 0;
 #endif
 
 	if (check_agent_args->node_count == 0) {
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+		xfree (node_rec_state_slurmd->node_rec_state_info_array);
+		xfree (node_rec_state_slurmd);
+		xfree (node_rec_state_array_split_args->node_rec_state_array_data);
+		xfree (node_rec_state_array_split_args);
+		xfree (node_rec_state_array_split);
+#endif
 		hostlist_destroy(check_agent_args->hostlist);
 		xfree (check_agent_args);
 	} else {
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+		node_rec_state_slurmd->array_size = actual_size;
+		node_rec_state_array_split_args->node_rec_state_array_data[0] = node_rec_state_slurmd;
+		*node_rec_state_array_split = node_rec_state_array_split_args;
+		check_agent_args->msg_args = node_rec_state_array_split;
+#endif
 		hostlist_uniq(check_agent_args->hostlist);
 		host_str = hostlist_ranged_string_xmalloc(
 				check_agent_args->hostlist);

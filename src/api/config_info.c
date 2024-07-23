@@ -822,6 +822,13 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(
 		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_DNR) ? "Yes" : "No");
 #endif
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	list_append(ret_list, key_pair);
+	key_pair->name = xstrdup("HealthCheckCarryNode");
+	key_pair->value = xstrdup(
+		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_HCN) ? "Yes" : "No");
+#endif
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("EioTimeout");
 	snprintf(tmp_str, sizeof(tmp_str), "%u",

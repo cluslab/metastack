@@ -1918,6 +1918,13 @@ static void _purge_agent_args(agent_arg_t *agent_arg_ptr)
 			slurm_free_reboot_msg(agent_arg_ptr->msg_args);
 		else if (agent_arg_ptr->msg_type == REQUEST_RECONFIGURE_WITH_CONFIG)
 			slurm_free_config_response_msg(agent_arg_ptr->msg_args);
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+		else if (agent_arg_ptr->msg_type == REQUEST_HEALTH_CHECK)
+		{
+			slurm_free_nhc_info_msg(*(node_rec_state_array_split_t **)agent_arg_ptr->msg_args);
+			xfree(agent_arg_ptr->msg_args);
+		}
+#endif
 		else
 			xfree(agent_arg_ptr->msg_args);
 	}
