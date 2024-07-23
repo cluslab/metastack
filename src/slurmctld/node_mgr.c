@@ -1515,6 +1515,9 @@ static void _require_node_reg(node_record_t *node_ptr)
 #endif
 	node_ptr->last_response = time(NULL);
 	node_ptr->boot_time = 0;
+#ifdef __METASTACK_OPT_REGISTRATION_FIX
+	node_ptr->do_reg = true;
+#endif
 	ping_nodes_now = true;
 }
 
