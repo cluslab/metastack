@@ -54,6 +54,9 @@ typedef struct jag_prec {	/* process record */
 	int     tres_count; /* count of tres in the tres_data */
 	acct_gather_data_t *tres_data; /* array of tres data */
 	double  usec; /* user cpu time: To normalize divide by system hertz */
+#ifdef __METASTACK_LOAD_ABNORMAL
+    int flag;/*Use different numbers to represent different states*/
+#endif
 } jag_prec_t;
 
 typedef struct jag_callbacks {
@@ -67,8 +70,11 @@ typedef struct jag_callbacks {
 extern void jag_common_init(long in_hertz);
 extern void jag_common_fini(void);
 extern void destroy_jag_prec(void *object);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern void jag_common_poll_data(List task_list, uint64_t cont_id,
+				 jag_callbacks_t *callbacks, bool profile, collection_t *collect, write_t *data);
+#else
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jag_callbacks_t *callbacks, bool profile);
-
+#endif
 #endif

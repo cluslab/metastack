@@ -1096,6 +1096,55 @@ rwfail:
 	return -1;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*
+ *Aggregate resource consumption information of other nodes
+ *
+ * Returns SLURM_SUCCESS if successful.  On error returns SLURM_ERROR
+ * and sets errno.
+ */
+int
+stepd_aggregate(int fd, uint16_t protocol_version, step_gather_msg_t *sent)
+{
+	int req = REQUEST_STEP_AGGREGATE;
+	int rc;
+	int errnum = 0;
+	//buf_t *buffer;
+	//int len = 0;
+	//buffer = init_buf(0);
+
+	debug("Entering stepd_aggregate for %ps, rank = %d", &sent->step_id, sent->rank);
+#ifdef __META_PROTOCOL
+    if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+		safe_write(fd, &req, sizeof(int));
+		
+		safe_write(fd, &sent->cpu_ave, sizeof(double));
+		safe_write(fd, &sent->cpu_util, sizeof(double));
+		safe_write(fd, &sent->load_flag, sizeof(uint64_t));
+		safe_write(fd, &sent->mem_real, sizeof(uint64_t));
+		safe_write(fd, &sent->vmem_real, sizeof(uint64_t));
+		safe_write(fd, &sent->page_fault, sizeof(uint64_t));
+		safe_write(fd, &sent->rank, sizeof(uint32_t));
+		safe_write(fd, &sent->node_alloc_cpu, sizeof(uint64_t));
+
+		safe_read(fd, &rc, sizeof(int));
+		safe_read(fd, &errnum, sizeof(int));
+	} else {
+		error("%s: bad protocol version %hu",
+		      __func__, protocol_version);
+		rc = SLURM_ERROR;
+	}
+#endif
+
+	errno = errnum;
+	return rc;
+
+rwfail:
+	//FREE_NULL_BUFFER(buffer);
+	return -1;	
+}
+#endif
+
 /*
  *
  * Returns SLURM_SUCCESS if successful.  On error returns SLURM_ERROR

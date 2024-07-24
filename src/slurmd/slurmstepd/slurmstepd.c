@@ -611,7 +611,18 @@ _init_from_slurmd(int sock, char **argv,
 		step_complete.bits = bit_alloc(step_complete.children);
 	step_complete.jobacct = jobacctinfo_create(NULL);
 	slurm_mutex_unlock(&step_complete.lock);
+#ifdef __METASTACK_LOAD_ABNORMAL
+	slurm_mutex_lock(&step_gather.lock);
+	safe_read(sock, &step_gather.count_nodelist, sizeof(int));
+	safe_read(sock, &step_gather.rank_gather, sizeof(int));
+	safe_read(sock, &step_gather.parent_rank_gather, sizeof(int));
+	safe_read(sock, &step_gather.children_gather, sizeof(int));
+	safe_read(sock, &step_gather.depth_gather, sizeof(int));
+	safe_read(sock, &step_gather.max_depth_gather, sizeof(int));
+	safe_read(sock, &step_gather.parent_addr_gather, sizeof(slurm_addr_t));
+	slurm_mutex_unlock(&step_gather.lock);
 
+#endif
 	debug3("slurmstepd rank %d, parent = %pA",
 	       step_complete.rank, &step_complete.parent_addr);
 

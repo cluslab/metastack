@@ -105,6 +105,9 @@ typedef struct {
 	char *password;
 	char *rt_policy;
 	char *username;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	char* workdir;
+#endif	
 } slurm_influxdb_conf_t;
 
 typedef struct {
@@ -128,6 +131,10 @@ union data_t{
 static slurm_influxdb_conf_t influxdb_conf;
 static uint32_t g_profile_running = ACCT_GATHER_PROFILE_NOT_SET;
 static stepd_step_rec_t *g_job = NULL;
+#ifdef __METASTACK_LOAD_ABNORMAL
+static char *datastr2 = NULL;
+static char *buffer_file = NULL;
+#endif
 
 static char *datastr = NULL;
 static int datastrlen = 0;
@@ -190,6 +197,305 @@ static size_t _write_callback(void *contents, size_t size, size_t nmemb,
 
 	return realsize;
 }
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+static int _send_data2(const char *data, int send_jobid ,int send_stepid)
+{
+	CURL *curl_handle = NULL;
+	CURLcode res;
+	struct http_response chunk;
+	int rc = SLURM_SUCCESS;
+	long response_code;
+	static int error_cnt = 0;
+	char *url = NULL;
+	//size_t length;
+
+	debug3("%s %s called", plugin_type, __func__);
+
+	/*
+	 * Every compute node which is sampling data will try to establish a
+	 * different connection to the influxdb server. The data will not be 
+	 * cached and will be sent in real time at the head node of the job.
+	 */
+	if(send_jobid !=0)
+		xstrcat(datastr2, data);
+	DEF_TIMERS;
+	START_TIMER;
+	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
+		error("%s %s: curl_global_init: %m", plugin_type, __func__);
+		rc = SLURM_ERROR;
+		goto cleanup_global_init;
+	} else if ((curl_handle = curl_easy_init()) == NULL) {
+		error("%s %s: curl_easy_init: %m", plugin_type, __func__);
+		rc = SLURM_ERROR;
+		goto cleanup_easy_init;
+	}
+	xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=s", influxdb_conf.host,
+		   influxdb_conf.database, influxdb_conf.rt_policy);
+
+	chunk.message = xmalloc(1);
+	chunk.size = 0;
+
+	curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+	if (influxdb_conf.password)
+		curl_easy_setopt(curl_handle, CURLOPT_PASSWORD,
+				 influxdb_conf.password);
+
+	curl_easy_setopt(curl_handle, CURLOPT_POST, 1);
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, datastr2);
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE, strlen(datastr2));
+	if (influxdb_conf.username)
+		curl_easy_setopt(curl_handle, CURLOPT_USERNAME,
+				 influxdb_conf.username);
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, _write_callback);
+	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *) &chunk);
+
+	if ((res = curl_easy_perform(curl_handle)) != CURLE_OK) {
+		if ((error_cnt++ % 100) == 0)
+			error("%s %s: curl_easy_perform failed to send data (discarded). Reason: %s",
+			      plugin_type, __func__, curl_easy_strerror(res));
+		rc = SLURM_ERROR;
+		goto cleanup;
+	}
+
+	if ((res = curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE,
+				     &response_code)) != CURLE_OK) {
+		error("%s %s: curl_easy_getinfo response code failed: %s",
+		      plugin_type, __func__, curl_easy_strerror(res));
+		rc = SLURM_ERROR;
+		goto cleanup;
+	}
+
+	/* In general, status codes of the form 2xx indicate success,
+	 * 4xx indicate that InfluxDB could not understand the request, and
+	 * 5xx indicate that the system is overloaded or significantly impaired.
+	 * Errors are returned in JSON.
+	 * https://docs.influxdata.com/influxdb/v0.13/concepts/api/
+	 */
+	if (response_code >= 200 && response_code <= 205) {
+		debug2("%s %s: data write success", plugin_type, __func__);
+		if (error_cnt > 0)
+			error_cnt = 0;
+	} else {
+		rc = SLURM_ERROR;
+		debug2("%s %s: data write failed, response code: %ld",
+		       plugin_type, __func__, response_code);
+		if (slurm_conf.debug_flags & DEBUG_FLAG_PROFILE) {
+			/* Strip any trailing newlines. */
+			while (chunk.message[strlen(chunk.message) - 1] == '\n')
+				chunk.message[strlen(chunk.message) - 1] = '\0';
+			info("%s %s: JSON response body: %s", plugin_type,
+			     __func__, chunk.message);
+		}
+	}
+
+cleanup:
+	xfree(chunk.message);
+	xfree(url);
+cleanup_easy_init:
+	curl_easy_cleanup(curl_handle);
+cleanup_global_init:
+	curl_global_cleanup();
+	END_TIMER;
+	log_flag(PROFILE, "%s %s: took %s to send data",
+		 plugin_type, __func__, TIME_STR);
+	struct stat st_tmp;
+	bool influx_dir = true;
+	if((rc == SLURM_ERROR) && (send_jobid > 0)) {
+
+		if(influxdb_conf.workdir == NULL) {
+			char tmp_dir[60]="/tmp/slurm_influxdb";
+			if (stat(tmp_dir, &st_tmp) == -1) {
+				if(mkdir(tmp_dir, 0700)==-1) {
+					error("can't create directory /tmp/slurm_influxdb");
+				}
+			}
+			influxdb_conf.workdir = xstrdup(tmp_dir);
+		} else if(xstrcasecmp(influxdb_conf.workdir, "None") == 0) {
+			influx_dir = false;
+		}
+	}
+
+
+	if((send_jobid > 0) && (rc == SLURM_ERROR) && influx_dir) {
+		char *influxdb_file = NULL;
+		FILE *sys_file = NULL;
+		xstrfmtcat(influxdb_file,"%s/job%d.%d", influxdb_conf.workdir, send_jobid, send_stepid);
+		struct stat st;
+		if(buffer_file == NULL)
+        	buffer_file = xstrdup(influxdb_file);
+		if (stat(influxdb_conf.workdir, &st) == -1) {
+ 			if(mkdir(influxdb_conf.workdir, 0700)==-1) {
+				error("can't create directory influxdb_conf.workdir");
+			}
+		}
+
+		//slurm_mutex_lock(&file_lock);
+		sys_file = fopen(influxdb_file, "a+");
+		if (sys_file != NULL) {
+			fprintf(sys_file, datastr2);
+			fclose(sys_file);
+		} else {
+			debug("Failed to write %s file. The file content is %s",influxdb_file ,datastr2);
+		}
+			
+		//slurm_mutex_unlock(&file_lock);
+
+		if(influxdb_file)
+			xfree(influxdb_file);
+	}
+	if (data) {
+		datastr2[0] = '\0';
+	}
+
+	return rc;	
+}
+#endif
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*Get the total number of lines in a file*/
+static int count_file_row(char *path)
+{    
+ int count = 0;
+    char c;
+    FILE *file;
+    file = fopen(path, "r");
+    if (file == NULL) {
+        debug("Error opening file!");
+    } else {
+		while ((c = getc(file)) != EOF) {
+			if (c == '\n') {
+				count++;
+			}
+		}
+
+	}
+	return count;
+    fclose(file);
+}
+
+static int _remove_row(char *path_tmp,int have_send, char* tmp_str, FILE *fp)
+{
+	FILE *fp_out = NULL;
+	fp_out = fopen(path_tmp, "a+"); 
+
+	if (fp_out != NULL) {
+		int tmpcount = 1;
+		while (fgets(tmp_str, 200, fp) != NULL) {
+			if (tmpcount > have_send ) {
+				fwrite(tmp_str, 1, strlen(tmp_str), fp_out);
+				memset(tmp_str, 0 , strlen(tmp_str) );
+			}
+			
+			tmpcount++;
+		}
+		fclose(fp_out);
+		return SLURM_SUCCESS;
+	} else
+	  return SLURM_ERROR;
+
+
+}
+
+/*At the end of the job, 
+ *check whether the influxdb cache file is generated,and if so, 
+ *try to send it again.*/
+
+static int _last_resend(const char *data)
+{
+	struct stat st;
+    int rc = SLURM_SUCCESS;
+	int rc2 = SLURM_SUCCESS;
+	bool send_buffer = false;
+	char tmp_str[200] = {'0'};
+	int all_row = 0;
+
+  
+	if(data || (!buffer_file) || (strlen(buffer_file) <= 0)) {
+		return rc;
+	}
+
+
+	if((buffer_file != NULL) && (stat(buffer_file, &st) != -1)) {
+       
+	    all_row = count_file_row(buffer_file);
+		if(all_row <= 0) {
+			remove(buffer_file);
+			return rc;
+		}
+			
+		FILE *fp = NULL;
+		char *path_tmp = NULL;
+
+	    xstrfmtcat(path_tmp, "%s.tmp", buffer_file);
+
+		//slurm_mutex_lock(&file_lock);
+		/* There is a plug-in lock on the outermost layer, which is no longer locked here.*/
+		fp = fopen(buffer_file, "r");
+		if (fp == NULL) {
+			rc = SLURM_ERROR;
+            debug("open %s failed!", buffer_file);
+        } else {
+
+			int line = 0;
+			datastr2[0] = '\0';
+			int datastrlen2 = 0;
+			int have_send = 0;
+
+			while (fgets(tmp_str, 200, fp) != NULL)  {
+				line++;
+				if((datastrlen2 + strlen(tmp_str)) <= BUF_SIZE) {
+					xstrcat(datastr2, tmp_str);
+					datastrlen2 += strlen(tmp_str);
+					send_buffer = true;
+				} else  {
+				   rc = _send_data2(datastr2, 0, 0);
+				   xstrcat(datastr2, tmp_str);
+				   datastrlen2 = strlen(datastr2);
+				   if(rc == SLURM_SUCCESS)
+				   		have_send = line;
+
+                   if((rc == SLURM_ERROR) && (have_send > 0)) {
+						/*
+						 *If the transmission is not successful even once, 
+						 *there is no need to regenerate the file.
+						 */
+						rc2 = _remove_row(path_tmp, have_send, tmp_str, fp);
+				   }	
+				}
+			}
+			//slurm_mutex_unlock(&file_lock);
+            
+			if(send_buffer == true)
+				rc = _send_data2(datastr2, 0, 0);
+
+			if((rc ==SLURM_SUCCESS) &&  (line >= all_row)) {
+				remove(buffer_file);
+			} else {
+				rc2 = _remove_row(path_tmp, have_send, tmp_str, fp);
+			}
+			
+			fclose(fp);
+
+			if(rc2 == SLURM_SUCCESS) {
+				remove(buffer_file);
+				rename(path_tmp, buffer_file);
+			} 
+		}
+		if(path_tmp) 
+			xfree(path_tmp);
+		
+	}
+	if(buffer_file) 
+		xfree(buffer_file);
+
+	if((rc == SLURM_ERROR) && (rc2 == SLURM_ERROR)) {
+		debug("Resend failed, file saved in %s",buffer_file);
+	}
+	return rc;
+
+}
+#endif
 
 /* Try to send data to influxdb */
 static int _send_data(const char *data)
@@ -306,6 +612,9 @@ cleanup_global_init:
 		 plugin_type, __func__, TIME_STR);
 
 	if (data) {
+#ifdef __METASTACK_LOAD_ABNORMAL
+		xfree(datastr);
+#endif
 		datastr = xstrdup(data);
 		datastrlen = strlen(data);
 	} else {
@@ -328,6 +637,9 @@ extern int init(void)
 		return SLURM_SUCCESS;
 
 	datastr = xmalloc(BUF_SIZE);
+#ifdef __METASTACK_LOAD_ABNORMAL
+	datastr2 = xmalloc(BUF_SIZE);
+#endif
 	return SLURM_SUCCESS;
 }
 
@@ -342,6 +654,10 @@ extern int fini(void)
 	xfree(influxdb_conf.password);
 	xfree(influxdb_conf.rt_policy);
 	xfree(influxdb_conf.username);
+#ifdef __METASTACK_LOAD_ABNORMAL
+	xfree(influxdb_conf.workdir);
+	xfree(datastr2);
+#endif	
 	return SLURM_SUCCESS;
 }
 
@@ -357,6 +673,9 @@ extern void acct_gather_profile_p_conf_options(s_p_options_t **full_options,
 		{"ProfileInfluxDBPass", S_P_STRING},
 		{"ProfileInfluxDBRTPolicy", S_P_STRING},
 		{"ProfileInfluxDBUser", S_P_STRING},
+#ifdef __METASTACK_LOAD_ABNORMAL
+		{"ProfileInfluxDBWorkdir", S_P_STRING},
+#endif	
 		{NULL} };
 
 	transfer_s_p_options(full_options, options, full_options_cnt);
@@ -388,6 +707,10 @@ extern void acct_gather_profile_p_conf_set(s_p_hashtbl_t *tbl)
 			       "ProfileInfluxDBRTPolicy", tbl);
 		s_p_get_string(&influxdb_conf.username,
 			       "ProfileInfluxDBUser", tbl);
+#ifdef __METASTACK_LOAD_ABNORMAL
+		s_p_get_string(&influxdb_conf.workdir,
+			       "ProfileInfluxDBWorkdir", tbl);
+#endif
 	}
 
 	if (!influxdb_conf.host)
@@ -487,7 +810,9 @@ extern int acct_gather_profile_p_task_start(uint32_t taskid)
 extern int acct_gather_profile_p_task_end(pid_t taskpid)
 {
 	debug3("%s %s called", plugin_type, __func__);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	_last_resend(NULL);
+#endif
 	_send_data(NULL);
 	return SLURM_SUCCESS;
 }
@@ -591,6 +916,94 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* data,
+						 time_t sample_time)
+{
+    char *str = NULL;
+	char *str1 = NULL;
+
+	uint64_t event1 = 0x0000000000000001;
+	uint64_t event2 = 0x0000000000000010;
+	uint64_t event3 = 0x0000000000000100;
+
+	enum {
+		/*PROFILE*/
+		FIELD_STEPCPU,
+		FIELD_STEPCPUAVE,
+		FIELD_STEPMEM,	
+		FIELD_STEPVMEM,		
+		FIELD_STEPPAGES,
+		/*EVENT*/
+		FIELD_FLAG,
+		FIELD_CPUTHRESHOLD,
+		FIELD_EVENTTYPE1,
+		FIELD_EVENTTYPE2,
+		FIELD_EVENTTYPE3,
+		FIELD_EVENTTYPE1START,
+		FIELD_EVENTTYPE2START,
+		FIELD_EVENTTYPE3START,
+		FIELD_EVENTTYPE1END,
+		FIELD_EVENTTYPE2END,
+		FIELD_EVENTTYPE3END,						
+		FIELD_CNT
+	};
+	
+	debug3("%s %s called", plugin_type, __func__);
+	for(int i= 1; i <= 2; i++) {
+		enum {
+			SLUR_SEND_STEPD_TYPE = 1,
+			SLUR_SEND_EVENT_TYPE = 2,
+		};
+		switch (i) {
+			case SLUR_SEND_STEPD_TYPE:		
+				xstrfmtcat(str1,"Stepd,username=%s,jobid=%d,step=%d stepcpu=%.2f,"
+				"stepcpuave=%.2f,stepmem=%.2f,stepvmem=%.2f,"
+				"steppages=%"PRIu64"  %"PRIu64"\n", 
+				g_job->user_name,
+				g_job->step_id.job_id, 
+				g_job->step_id.step_id,
+				((union data_t*)data)[FIELD_STEPCPU].d,
+				((union data_t*)data)[FIELD_STEPCPUAVE].d,
+				((union data_t*)data)[FIELD_STEPMEM].d,
+				((union data_t*)data)[FIELD_STEPVMEM].d,
+				((union data_t*)data)[FIELD_STEPPAGES].u,
+				(uint64_t)sample_time);
+				
+				_send_data2(str1, g_job->step_id.job_id, g_job->step_id.step_id);
+				if(str1)
+					xfree(str1);
+				break;
+			case SLUR_SEND_EVENT_TYPE:	
+				xstrfmtcat(str,"Event,username=%s,jobid=%d,step=%d "
+				"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,"
+				"stepvmem=%.2f,steppages=%"PRIu64",type1=%d,type2=%d,type3=%d,start=%"PRIu64",end=%"PRIu64" %"PRIu64"\n",
+				g_job->user_name,
+				g_job->step_id.job_id, 
+				g_job->step_id.step_id,
+				((union data_t*)data)[FIELD_CPUTHRESHOLD].d,
+				((union data_t*)data)[FIELD_STEPCPU].d,
+				((union data_t*)data)[FIELD_STEPMEM].d,
+				((union data_t*)data)[FIELD_STEPVMEM].d,
+				((union data_t*)data)[FIELD_STEPPAGES].u,
+				((((union data_t*)data)[FIELD_FLAG].u & event1) ? 1 : 0),
+				((((union data_t*)data)[FIELD_FLAG].u & event2) ? 1 : 0),
+				((((union data_t*)data)[FIELD_FLAG].u & event3) ? 1 : 0),
+				((union data_t*)data)[FIELD_EVENTTYPE1START].u,
+				((union data_t*)data)[FIELD_EVENTTYPE1END].u,
+				(uint64_t)sample_time);
+				_send_data2(str, g_job->step_id.job_id, g_job->step_id.step_id);
+				if(str)
+					xfree(str);
+				break;
+		}
+
+	}
+
+	return SLURM_SUCCESS;
+}
+#endif
+
 extern void acct_gather_profile_p_conf_values(List *data)
 {
 	config_key_pair_t *key_pair;
@@ -629,6 +1042,13 @@ extern void acct_gather_profile_p_conf_values(List *data)
 	key_pair->name = xstrdup("ProfileInfluxDBUser");
 	key_pair->value = xstrdup(influxdb_conf.username);
 	list_append(*data, key_pair);
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("ProfileInfluxDBWorkdir");
+	key_pair->value = xstrdup(influxdb_conf.workdir);
+	list_append(*data, key_pair);
+#endif
 
 	return;
 

@@ -342,6 +342,35 @@ typedef struct {
 	double max_cpu_util; /*cpu max utilization*/
 	double min_cpu_util; /*cpu minimum utilization*/
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+    uint64_t flag;
+
+	double cpu_step_ave;
+	double cpu_step_max;
+	double cpu_step_min;
+	double cpu_step_real;
+
+	uint64_t mem_step_max;
+	uint64_t mem_step_min;
+	uint64_t mem_step;
+
+	uint64_t vmem_step_max;
+	uint64_t vmem_step_min;
+	uint64_t vmem_step;
+
+	uint64_t step_pages;
+	uint64_t acct_flag;
+	uint64_t cpu_count;
+	uint64_t pid_count;
+	uint64_t node_count;
+	/* record event time */
+	uint64_t *cpu_start;
+	uint64_t *cpu_end;
+	uint64_t *pid_start;
+	uint64_t *pid_end;
+	uint64_t *node_start;
+	uint64_t *node_end;
+#endif
 	uint64_t consumed_energy; /* contains energy consumption in joules */
 	char *tres_usage_in_ave; /* average amount of usage in data */
 	char *tres_usage_in_max; /* contains max amount of usage in data */

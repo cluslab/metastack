@@ -336,6 +336,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_STATE_TO_NHC
 #endif
 
+#if (!defined __METASTACK_LOAD_ABNORMAL) && (defined __METASTACK_OPT_SSTAT_CPUUTIL)
+#define __METASTACK_LOAD_ABNORMAL
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -960,6 +964,9 @@ enum acct_gather_profile_info {
 #define ACCT_GATHER_PROFILE_TASK    0x00000004
 #define ACCT_GATHER_PROFILE_LUSTRE  0x00000008
 #define ACCT_GATHER_PROFILE_NETWORK 0x00000010
+#ifdef __METASTACK_LOAD_ABNORMAL
+#define ACCT_GATHER_PROFILE_STEPD   0x00000020
+#endif
 #define ACCT_GATHER_PROFILE_ALL     0xffffffff
 
 /* jobacct data types */

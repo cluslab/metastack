@@ -1661,11 +1661,44 @@ extern bool subpath(char *path1, char *path2)
 	return ret;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int validate_abnormal_dete(char *abnormal_dete)
+{
+	int i;
+	char *save_ptr = NULL, *tok = NULL, *tmp =NULL;
+	bool valid = false;
+	int rc = SLURM_SUCCESS;
+	if (!abnormal_dete)
+		return rc;
+	tmp = xstrdup(abnormal_dete);
+	tok = strtok_r(tmp, ",", &save_ptr);
+	while (tok) {
+		valid = false;
+		for ( i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
+			if (acct_gather_parse_abnormal_dete(i, tok) != -1){
+				valid = true;
+				break;
+			}
+		if (!valid) {
+			rc = SLURM_ERROR;
+		}
+		tok = strtok_r(NULL, ",", &save_ptr);
+	}
+	
+	xfree(tmp);
+
+	return rc;
+}
+#endif
+
 extern int validate_acctg_freq(char *acctg_freq)
 {
 	int i;
 	char *save_ptr = NULL, *tok, *tmp;
 	bool valid;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	bool valid2 = false;
+#endif
 	int rc = SLURM_SUCCESS;
 
 	if (!acctg_freq)
@@ -1681,10 +1714,36 @@ extern int validate_acctg_freq(char *acctg_freq)
 				break;
 			}
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+		valid2 = false;
+	/*
+		In some cases, the acctg-freq parameter may be passed with the job-monitor parameter concatenated, 
+		in which case it is also necessary to check the contents of the job-monitor parameter
+	*/
+		for (i = 0; i < PROFILE_ABNORMAL_DETE_CNT; i++)
+			if (acct_gather_parse_abnormal_dete(i, tok) != -1){
+				valid2 = true;
+				break;
+			}
+
+	/*
+		Since the parameter will be concatenated only after the successful test, the concatenated content must be correct at this time, 
+		so the value has the following situations:
+		1. valid = 0, valid2 = 0 acctg has incorrect output parameter error information
+		2. valid = 1, valid2 = 0 No errors
+		3. valid = 0, valid2 = 1 No errors
+
+	*/
+		if (!valid && !valid2) {
+			error("Invalid --acctg-freq specification: %s", tok);
+			rc = SLURM_ERROR;
+		}
+#else
 		if (!valid) {
 			error("Invalid --acctg-freq specification: %s", tok);
 			rc = SLURM_ERROR;
 		}
+#endif
 		tok = strtok_r(NULL, ",", &save_ptr);
 	}
 	xfree(tmp);

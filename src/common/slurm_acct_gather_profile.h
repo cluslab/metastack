@@ -56,11 +56,42 @@
 
 #define NO_PARENT -1
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+#define DATA_STEP    0
+#define EXTERN_STEP  1
+#define BATCH_STEP   2
+
+#define ENABLE_DIG   1
+#define ENABLE_BATCH 2
+#define ENABLE_ALL   3
+
+
+typedef struct {
+	slurm_step_id_t step_id; /* Current step id (or NO_VAL)               */
+	int step;				 /* which stepd                               */
+	uint16_t node_alloc_cpu;
+	bool switch_step;
+	int timer;
+	int cpu_min_load;
+	uint16_t frequency;
+} acct_gather_rank_t;
+
+typedef enum {
+	PROFILE_ABNORMAL_DETE_MINUTE,
+	PROFILE_ABNORMAL_DETE_CPUMINLOAD,
+	PROFILE_ABNORMAL_DETE_STEPD,
+	PROFILE_ABNORMAL_DETE_CNT
+} acct_gather_profile_abnormal_dete_t;
+#endif
+
 typedef enum {
 	PROFILE_ENERGY,
 	PROFILE_TASK,
 	PROFILE_FILESYSTEM,
 	PROFILE_NETWORK,
+#ifdef __METASTACK_LOAD_ABNORMAL
+	PROFILE_STEPD,
+#endif
 	PROFILE_CNT
 } acct_gather_profile_type_t;
 
@@ -113,7 +144,11 @@ extern char *acct_gather_profile_type_t_name(acct_gather_profile_type_t type);
 extern char *acct_gather_profile_dataset_str(
 	acct_gather_profile_dataset_t *dataset, void *data,
 	char *str, int str_len);
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather_rank_t step_rank);
+#else
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def);
+#endif
 extern void acct_gather_profile_endpoll(void);
 
 /* Called from slurmstepd between fork() and exec() of application.
@@ -218,6 +253,12 @@ extern int64_t acct_gather_profile_g_create_group(const char* name);
 extern int acct_gather_profile_g_create_dataset(
 	const char *name, int64_t parent,
 	acct_gather_profile_dataset_t *dataset);
+
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_g_add_sample_data_stepd(int dataset_id, void* data,
+						 time_t sample_time);
+#endif
 
 /*
  * Put data at the Node Samples level. Typically called from something called

@@ -193,6 +193,9 @@ static void _rpc_acct_gather_update(slurm_msg_t *);
 static void _rpc_acct_gather_energy(slurm_msg_t *);
 static void _rpc_step_complete(slurm_msg_t *msg);
 static void _rpc_stat_jobacct(slurm_msg_t *msg);
+#ifdef __METASTACK_LOAD_ABNORMAL
+static void _rpc_step_jobacct(slurm_msg_t *msg);
+#endif
 static void _rpc_list_pids(slurm_msg_t *msg);
 static void _rpc_daemon_status(slurm_msg_t *msg);
 static int _run_epilog(job_env_t *job_env, slurm_cred_t *cred);
@@ -430,7 +433,12 @@ slurmd_req(slurm_msg_t *msg)
 	case REQUEST_CANCEL_JOB_STEP:
 		_rpc_cancel_job_step(msg);
 		break;
-#endif		
+#endif	
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_JOB_STEP_DATA:	
+		_rpc_step_jobacct(msg);
+		break;
+#endif	
 	default:
 		error("slurmd_req: invalid request msg type %d",
 		      msg->msg_type);
@@ -498,7 +506,13 @@ _send_slurmstepd_init(int fd, int type, void *req,
 	int parent_rank, children, depth, max_depth;
 	char *parent_alias = NULL;
 	slurm_addr_t parent_addr = {0};
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	int rank_gather = -1;
+	int parent_rank_gather =-1, children_gather =-1, depth_gather = -1, max_depth_gather = -1;
+	char *parent_alias_gather = NULL;
+	slurm_addr_t parent_addr_gather = {0};
+	int count_gather = 0;;
+#endif
 	slurm_msg_t_init(&msg);
 
 	/* send conf over to slurmstepd */
@@ -578,6 +592,38 @@ _send_slurmstepd_init(int fd, int type, void *req,
 		depth = 0;
 		max_depth = 0;
 #endif
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+		count_gather = hostlist_count(step_hset);
+		if((count_gather >= 2) && (count_gather < 7)) {
+			rank_gather = hostlist_find(step_hset, conf->node_name);
+			reverse_tree_info(rank_gather, count_gather, count_gather,
+					&parent_rank_gather, &children_gather,
+					&depth_gather, &max_depth_gather);
+
+			if (children_gather == -1) {
+				error("reverse_tree_info: Sanity check fail, count fail");
+			
+			}
+			/*
+			* rank 0 always talks directly to the slurmctld. If
+			* parent_rank = -1, all nodes talk to the slurmctld
+			*/
+			if (rank_gather > 0 && parent_rank_gather != -1) {
+				int rc;
+				/* Find the slurm_addr_t of this node's parent slurmd
+				* in the step host list 
+				*/
+				parent_alias_gather = hostlist_nth(step_hset, parent_rank_gather);
+				rc = slurm_conf_get_addr(parent_alias_gather, &parent_addr_gather, 0);
+
+				if (rc != SLURM_SUCCESS) 
+					error("%s: stepd gther data failed getting address "
+						  "for parent NodeName %s (parent rank %d)",
+						__func__, parent_alias_gather, parent_rank_gather);
+			}
+		}
+#endif
 	}
 	debug3("slurmstepd rank %d (%s), parent rank %d (%s), "
 	       "children %d, depth %d, max_depth %d",
@@ -595,6 +641,29 @@ _send_slurmstepd_init(int fd, int type, void *req,
 	safe_write(fd, &max_depth, sizeof(int));
 	safe_write(fd, &parent_addr, sizeof(slurm_addr_t));
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+	if(count_gather >= 7 ) {
+		rank_gather = rank;
+		parent_rank_gather = parent_rank;
+	
+		//children_gather = children;
+		depth_gather = depth;
+		max_depth_gather = max_depth;
+		parent_addr_gather = parent_addr;
+		int *chldrn_ids = xmalloc(sizeof(int) * REVERSE_TREE_WIDTH);
+		children_gather = reverse_tree_direct_children(rank_gather,count_gather,REVERSE_TREE_WIDTH,depth_gather, chldrn_ids);
+		xfree(chldrn_ids);	
+	}
+
+    safe_write(fd, &count_gather, sizeof(int));
+	safe_write(fd, &rank_gather, sizeof(int));
+	safe_write(fd, &parent_rank_gather, sizeof(int));
+	safe_write(fd, &children_gather, sizeof(int));
+	safe_write(fd, &depth_gather, sizeof(int));
+	safe_write(fd, &max_depth_gather, sizeof(int));
+	safe_write(fd, &parent_addr_gather, sizeof(slurm_addr_t));
+
+#endif
 	/* send cli address over to slurmstepd */
 	buffer = init_buf(0);
 	slurm_pack_addr(cli, buffer);
@@ -3271,6 +3340,7 @@ static void _rpc_health_check(slurm_msg_t *msg)
 	if (rc == SLURM_SUCCESS)
 		rc = run_script_health_check();
 #endif
+
 	/* Take this opportunity to enforce any job memory limits */
 	_enforce_job_mem_limit();
 	/* Clear up any stalled file transfers as well */
@@ -3635,6 +3705,46 @@ static void _rpc_daemon_status(slurm_msg_t *msg)
 	slurm_send_node_msg(msg->conn_fd, &resp_msg);
 	slurm_free_slurmd_status(resp);
 }
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+static void _rpc_step_jobacct(slurm_msg_t *msg)
+{
+	step_gather_msg_t	*req = (step_gather_msg_t *)msg->data;
+
+
+	int rc = SLURM_SUCCESS;
+	uint16_t protocol_version;
+    int fd = 0;
+
+	fd = stepd_connect(conf->spooldir, conf->node_name,
+			   &req->step_id, &protocol_version);
+
+	if (fd == -1) {
+		error("stepd_connect to %ps failed: %m", &req->step_id);
+		rc = ESLURM_INVALID_JOB_ID;
+		goto done;
+	}
+
+	/* step data messages are only allowed from other slurmstepd,
+	   so only root or SlurmUser is allowed here */
+	if (!_slurm_authorized_user(msg->auth_uid)) {
+		debug("step gather data from uid %u for %ps",
+		      msg->auth_uid, &req->step_id);
+		rc = ESLURM_USER_ID_MISSING;     /* or bad in this case */
+		goto done2;
+	}
+
+	rc = stepd_aggregate(fd, protocol_version, req);
+	if (rc == -1) {
+		debug("step gather data from slurmd send slumstepd failed of %ps",
+		       &req->step_id);
+	}
+done2:
+	close(fd);
+done:
+	slurm_send_rc_msg(msg, rc);
+}
+#endif
 
 static void _rpc_stat_jobacct(slurm_msg_t *msg)
 {

@@ -80,6 +80,9 @@ typedef enum {
 	REQUEST_GETGR,
 	REQUEST_GET_NS_FD,
 	REQUEST_GETHOST,
+#ifdef __METASTACK_LOAD_ABNORMAL
+	REQUEST_STEP_AGGREGATE,
+#endif
 } step_msg_t;
 
 typedef enum {
@@ -281,6 +284,16 @@ extern int stepd_resume(int fd, uint16_t protocol_version,
  * and sets errno.
  */
 int stepd_reconfig(int fd, uint16_t protocol_version);
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*
+ *Aggregate resource consumption information of other nodes
+ *
+ * Returns SLURM_SUCCESS if successful.  On error returns SLURM_ERROR
+ * and sets errno.
+ */
+int stepd_aggregate(int fd, uint16_t protocol_version, step_gather_msg_t *sent);
+#endif
 
 /*
  *
