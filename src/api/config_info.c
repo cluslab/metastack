@@ -429,6 +429,10 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 
 		if (p[i].flags & PART_FLAG_ROOT_ONLY)
 	                fprintf(fp, " RootOnly=YES");
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		if (p[i].meta_flags & PART_METAFLAG_HETPART)
+	                fprintf(fp, " HetPart=YES");
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 		if (p[i].meta_flags & PART_METAFLAG_RBN)
 					fprintf(fp, " RBN=YES");

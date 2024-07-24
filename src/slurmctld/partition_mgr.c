@@ -2941,7 +2941,17 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		part_ptr->flags &= (~PART_FLAG_LLS);
 	}
 #endif
-
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	if (part_desc->meta_flags & PART_METAFLAG_HETPART) {
+		info("%s: setting HetPart for partition %s", __func__,
+		     part_desc->name);
+		part_ptr->meta_flags |= PART_METAFLAG_HETPART;
+	} else if (part_desc->meta_flags & PART_METAFLAG_HETPART_CLR) {
+		info("%s: clearing HetPart for partition %s", __func__,
+		     part_desc->name);
+		part_ptr->meta_flags &= (~PART_METAFLAG_HETPART);
+	}
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 	if (part_desc->meta_flags & PART_METAFLAG_RBN) {
 		info("%s: setting RBN for partition %s", __func__,
