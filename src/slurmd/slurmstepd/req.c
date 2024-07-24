@@ -105,6 +105,9 @@ static int _handle_suspend(int fd, stepd_step_rec_t *job, uid_t uid);
 static int _handle_resume(int fd, stepd_step_rec_t *job, uid_t uid);
 static int _handle_terminate(int fd, stepd_step_rec_t *job, uid_t uid);
 static int _handle_completion(int fd, stepd_step_rec_t *job, uid_t uid);
+#ifdef __METASTACK_LOAD_ABNORMAL
+static int _handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid);
+#endif
 static int _handle_stat_jobacct(int fd, stepd_step_rec_t *job, uid_t uid);
 static int _handle_task_info(int fd, stepd_step_rec_t *job);
 static int _handle_list_pids(int fd, stepd_step_rec_t *job);
@@ -547,6 +550,12 @@ int _handle_request(int fd, stepd_step_rec_t *job, uid_t uid, pid_t remote_pid)
 		debug("Handling REQUEST_STEP_COMPLETION");
 		rc = _handle_completion(fd, job, uid);
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_STEP_AGGREGATE:
+		debug("Handling REQUEST_STEP_AGGREGATE");
+		rc = _handle_aggregate(fd, job, uid);
+		break;
+#endif
 	case REQUEST_STEP_TASK_INFO:
 		debug("Handling REQUEST_STEP_TASK_INFO");
 		rc = _handle_task_info(fd, job);
@@ -1811,6 +1820,71 @@ rwfail:	if (lock_set) {
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+static int
+_handle_aggregate(int fd, stepd_step_rec_t *job, uid_t uid)
+{
+	int rc = SLURM_SUCCESS;
+	int errnum = 0;
+	uint32_t rank = -1;
+	double cpu_ave = 0.0;
+	double cpu_util = 0.0;
+	uint64_t load_flag = 0;
+	uint64_t mem_real = 0;
+	uint64_t vmem_real = 0;
+	uint64_t page_fault = 0;
+	uint64_t node_alloc_cpu = 0;
+
+	debug("_handle_aggregate for %ps", &job->step_id);
+	debug3("uid = %u", uid);
+	if (!_slurm_authorized_user(uid)) {
+		debug("step aggregate message from uid %u for %ps ",
+		      uid, &job->step_id);
+		rc = -1;
+		errnum = EPERM;
+		/* Send the return code and errno */
+		safe_write(fd, &rc, sizeof(int));
+		safe_write(fd, &errnum, sizeof(int));
+		return SLURM_ERROR;
+	}
+
+    /**
+     * __META_PROTOCOL
+     * stepd read.
+     * slurmd writes data to fd, following the version of stepd
+     * so not need to check version here.
+     */
+	safe_read(fd, &cpu_ave, sizeof(double));
+	safe_read(fd, &cpu_util, sizeof(double));
+	safe_read(fd, &load_flag, sizeof(uint64_t));
+	safe_read(fd, &mem_real, sizeof(uint64_t));
+	safe_read(fd, &vmem_real, sizeof(uint64_t));
+	safe_read(fd, &page_fault, sizeof(uint64_t));
+	safe_read(fd, &rank, sizeof(uint32_t));
+	safe_read(fd, &node_alloc_cpu, sizeof(uint64_t));
+    
+    /*Set global variables and transfer data between threads through global variables*/
+	slurm_mutex_lock(&step_gather.lock);
+
+	step_gather.step_cpu_ave += cpu_ave;
+	step_gather.step_cpu += cpu_util;
+	step_gather.step_mem += mem_real;
+	step_gather.step_vmem += vmem_real;
+	step_gather.page_fault += page_fault;
+	step_gather.node_alloc_cpu += node_alloc_cpu;
+    step_gather.load_status |= load_flag;
+	
+	step_gather.wait_child_count++; 
+
+	slurm_mutex_unlock(&step_gather.lock);
+
+	safe_write(fd, &rc, sizeof(int));
+	safe_write(fd, &errnum, sizeof(int));
+rwfail:	
+	return SLURM_SUCCESS;
+}
+#endif
+
 static int
 _handle_stat_jobacct(int fd, stepd_step_rec_t *job, uid_t uid)
 {
@@ -1865,6 +1939,9 @@ _handle_stat_jobacct(int fd, stepd_step_rec_t *job, uid_t uid)
 				jobacct_gather_stat_task(job->task[i]->pid);
 			if (temp_jobacct) {
 				jobacctinfo_aggregate(jobacct, temp_jobacct);
+#ifdef __METASTACK_LOAD_ABNORMAL				
+				jobacctinfo_aggregate_2(jobacct, temp_jobacct);
+#endif
 				jobacctinfo_destroy(temp_jobacct);
 				num_tasks++;
 			}

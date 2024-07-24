@@ -82,6 +82,9 @@ typedef struct slurm_acct_gather_profile_ops {
 	int (*create_dataset)   (const char*, int64_t,
 				 acct_gather_profile_dataset_t *);
 	int (*add_sample_data)  (uint32_t, void*, time_t);
+#ifdef __METASTACK_LOAD_ABNORMAL
+    int (*add_sample_data_stepd)  (uint32_t, void*, time_t);
+#endif
 	void (*conf_values)     (List *data);
 	bool (*is_active)     (uint32_t);
 
@@ -103,6 +106,9 @@ static const char *syms[] = {
 	"acct_gather_profile_p_create_group",
 	"acct_gather_profile_p_create_dataset",
 	"acct_gather_profile_p_add_sample_data",
+#ifdef __METASTACK_LOAD_ABNORMAL
+    "acct_gather_profile_p_add_sample_data_stepd",
+#endif
 	"acct_gather_profile_p_conf_values",
 	"acct_gather_profile_p_is_active",
 };
@@ -120,6 +126,64 @@ static pthread_t timer_thread_id = 0;
 static pthread_mutex_t timer_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t timer_thread_cond = PTHREAD_COND_INITIALIZER;
 static bool init_run = false;
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+
+/*Set the calling frequency of stepd aggregation thread*/
+static void _set_freq_2(int type, char *freq, char *freq_def, acct_gather_rank_t* step_rank)
+{
+
+	slurm_mutex_lock(&step_gather.lock);
+	int tmp = step_gather.max_depth_gather * 2 + 1;
+	slurm_mutex_unlock(&step_gather.lock);
+
+	/*
+	 *Get the value of 'freq', with the highest priority given to the value specified in the job, 
+	 *followed by slurm.conf. If neither the job nor slurm.conf specifies the value, then set it 
+	 *to zero, disabling the functionality.
+	 */
+	if ((acct_gather_profile_timer[type].freq =
+		acct_gather_parse_freq(type, freq)) == -1)
+		if ((acct_gather_profile_timer[type].freq =
+			acct_gather_parse_freq(type, freq_def)) == -1)
+			acct_gather_profile_timer[type].freq = 0;
+		
+	/*
+	*Set the timer interval for the anomaly detection thread based on the comparison between 
+	*the sampling time and the interval for anomaly detection.		 
+	*/
+	if((acct_gather_profile_timer[type].freq > 0) && tmp > 0) {
+		if(step_rank->timer  <= (acct_gather_profile_timer[type].freq) ) {
+			step_rank->timer = ((acct_gather_profile_timer[type].freq + 59) / 60) * 60;
+			if(step_rank->step != BATCH_STEP) {
+				for(int i = tmp ; i <= step_rank->timer ; ++i) {
+					if(step_rank->timer % i == 0){
+						acct_gather_profile_timer[type].freq = step_rank->timer / i;
+						break;
+					}
+				}
+			} else
+				acct_gather_profile_timer[type].freq = step_rank->timer / 3;
+		} else {
+			int time = 0;
+			for(int i = tmp ; i <= step_rank->timer ; ++i) {
+				if(step_rank->timer % i == 0) {
+					time = step_rank->timer / i;
+					break;
+				}
+			}
+			if(step_rank->step != BATCH_STEP) {
+				acct_gather_profile_timer[type].freq = time;
+			} else
+				acct_gather_profile_timer[type].freq = step_rank->timer / 3;
+		}
+	} else if(acct_gather_profile_timer[type].freq > 0) {
+		if(step_rank->timer  <= (acct_gather_profile_timer[type].freq) ) 
+			step_rank->timer = ((acct_gather_profile_timer[type].freq + 59) / 60) * 60;
+		acct_gather_profile_timer[type].freq = step_rank->timer / 3;
+	}
+}
+#endif
 
 static void _set_freq(int type, char *freq, char *freq_def)
 {
@@ -274,6 +338,10 @@ extern int acct_gather_profile_fini(void)
 		case PROFILE_NETWORK:
 			acct_gather_interconnect_fini();
 			break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		case PROFILE_STEPD:
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -321,6 +389,14 @@ extern void acct_gather_profile_to_string_r(uint32_t profile,
 				strcat(profile_str, ",");
 			strcat(profile_str, "Task");
 		}
+#ifdef __METASTACK_LOAD_ABNORMAL
+		/*used for function printing and api interface*/
+		if (profile & ACCT_GATHER_PROFILE_STEPD) {
+			if (profile_str[0])
+				strcat(profile_str, ",");
+			strcat(profile_str, "Jobmonitor");
+		}
+#endif		
 	}
 }
 
@@ -354,6 +430,10 @@ extern uint32_t acct_gather_profile_from_string(const char *profile_str)
 
 		if (xstrcasestr(profile_str, "network"))
 			profile |= ACCT_GATHER_PROFILE_NETWORK;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		if (xstrcasestr(profile_str, "jobmonitor"))
+			profile |= ACCT_GATHER_PROFILE_STEPD;
+#endif
 	}
 
 	return profile;
@@ -405,6 +485,12 @@ extern char *acct_gather_profile_type_t_name(acct_gather_profile_type_t type)
 	case PROFILE_CNT:
 		return "CNT?";
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	/*The name of the newly opened thread*/
+	case PROFILE_STEPD:
+		return "Jobmonitor";
+		break;
+#endif
 	default:
 		fatal("Unhandled profile option %d please update "
 		      "slurm_acct_gather_profile.c "
@@ -448,11 +534,75 @@ extern char *acct_gather_profile_dataset_str(
 	return str;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*
+*Used to set the parameters of the new aggregation thread, such as whether 
+*to start the exception collection function in the job step.
+*/
+static void acct_gather_set_parameters(char *freq, char* freq_def, acct_gather_rank_t* step_rank )
+{
+	int enable = 0;
+	step_rank->timer = -1;
+	step_rank->cpu_min_load = -1;
+	step_rank->switch_step = false;
+    
+	if(!acct_gather_parse_sw(freq_def)) {
+
+		/*Read parameter settings*/
+		step_rank->timer  = acct_gather_parse_time(freq, freq_def);
+
+		if(step_rank->timer > 0)
+			step_rank->timer = step_rank->timer *60;
+		else
+			step_rank->timer = 300;//set default value 
+		/*Set the cpu utilization threshold size in the job step*/
+		step_rank->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
+        if((step_rank->cpu_min_load < 0 ) || (step_rank->cpu_min_load > 100 )) {
+			if(step_rank->cpu_min_load < 0) {
+				error("If the avecpuutil is not set or the value is faulty," 
+				  "set it to the default value.(avecpuutil=0)");	
+				  step_rank->cpu_min_load = 0;			
+			} 
+			if(step_rank->cpu_min_load > 100) {
+				error("If the avecpuutil is not set or the value is faulty," 
+				  "set it to the default value.(avecpuutil=100)");
+				  step_rank->cpu_min_load = 100;					
+			} 
+			
+		} 
+		/*Job step enable exception detection flag*/
+		enable = acct_gather_parse_monitor(freq, freq_def);
+		
+		/*determine job step type*/
+		switch(step_rank->step) {
+			case DATA_STEP:
+				if(enable == ENABLE_DIG || enable == ENABLE_ALL)
+					step_rank->switch_step = true;
+				break;
+			case EXTERN_STEP:
+				step_rank->switch_step = false;
+				break;
+			case BATCH_STEP:
+				if(enable == ENABLE_BATCH || enable == ENABLE_ALL)
+					step_rank->switch_step = true;
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather_rank_t step_rank)
+#else
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
+#endif
 {
 	int i;
 	uint32_t profile = ACCT_GATHER_PROFILE_NOT_SET;
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	if(step_rank.step != EXTERN_STEP)
+	 	acct_gather_set_parameters(freq, freq_def, &step_rank);
+#endif
 	if (acct_gather_profile_init() < 0)
 		return SLURM_ERROR;
 
@@ -489,11 +639,20 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			   consumption and such.  It will check
 			   profile inside it's plugin.
 			*/
+#ifdef __METASTACK_LOAD_ABNORMAL
+			_set_freq(i, freq, freq_def);
+			if((step_rank.timer > 0) && (step_rank.step != EXTERN_STEP) &&
+						(step_rank.timer <= acct_gather_profile_timer[i].freq)) {
+				step_rank.timer = ((acct_gather_profile_timer[i].freq + 59) / 60) * 60;
+			} 
+			jobacct_gather_startpoll(
+				acct_gather_profile_timer[i].freq, step_rank);
+#else
 			_set_freq(i, freq, freq_def);
 
 			jobacct_gather_startpoll(
 				acct_gather_profile_timer[i].freq);
-
+#endif
 			break;
 		case PROFILE_FILESYSTEM:
 			if (!(profile & ACCT_GATHER_PROFILE_LUSTRE))
@@ -511,6 +670,16 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			acct_gather_interconnect_startpoll(
 				acct_gather_profile_timer[i].freq);
 			break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		case PROFILE_STEPD:
+			if((step_rank.timer > 0)  && (step_rank.step != EXTERN_STEP)) {
+                /*set the frequency of new threads*/
+				_set_freq_2(i, freq, freq_def, &step_rank);
+				jobacct_gather_stepdpoll(
+					acct_gather_profile_timer[i].freq, step_rank);
+			}
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -548,6 +717,9 @@ extern void acct_gather_profile_endpoll(void)
 		switch (i) {
 		case PROFILE_ENERGY:
 			break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+		case PROFILE_STEPD:
+#endif
 		case PROFILE_TASK:
 			jobacct_gather_endpoll();
 			break;
@@ -671,6 +843,22 @@ extern int acct_gather_profile_g_create_dataset(
 	slurm_mutex_unlock(&profile_mutex);
 	return retval;
 }
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_g_add_sample_data_stepd(int dataset_id, void* data,
+						 time_t sample_time)
+{
+	int retval = SLURM_ERROR;
+
+	if (acct_gather_profile_init() < 0)
+		return retval;
+
+	slurm_mutex_lock(&profile_mutex);
+	retval = (*(ops.add_sample_data_stepd))(dataset_id, data, sample_time);
+	slurm_mutex_unlock(&profile_mutex);
+	return retval;
+}
+#endif
 
 extern int acct_gather_profile_g_add_sample_data(int dataset_id, void* data,
 						 time_t sample_time)

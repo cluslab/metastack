@@ -124,7 +124,6 @@
 #define IS_JOB_SPECIAL_EXIT(_X)         \
         (_X->job_state & JOB_SPECIAL_EXIT)
 #endif
-
 /* Defined node states */
 #define IS_NODE_UNKNOWN(_X)		\
 	((_X->node_state & NODE_STATE_BASE) == NODE_STATE_UNKNOWN)
@@ -323,7 +322,6 @@ typedef enum {
 	REQUEST_CACHE_NODE_INFO,
 	REQUEST_CACHE_NODE_INFO_SINGLE,
 #endif
-
 	REQUEST_CRONTAB = 2200,
 	RESPONSE_CRONTAB,
 	REQUEST_UPDATE_CRONTAB,
@@ -487,6 +485,9 @@ typedef enum {
 	SLURMSCRIPTD_REQUEST_UPDATE_DEBUG_FLAGS,
 	SLURMSCRIPTD_REQUEST_UPDATE_LOG,
 	SLURMSCRIPTD_SHUTDOWN,
+#ifdef __METASTACK_LOAD_ABNORMAL
+	REQUEST_JOB_STEP_DATA,
+#endif
 } slurm_msg_type_t;
 
 /*****************************************************************************\
@@ -746,6 +747,22 @@ typedef struct step_complete_msg {
  	uint32_t step_rc;	/* largest task return code */
 	jobacctinfo_t *jobacct;
 } step_complete_msg_t;
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+typedef struct step_gather_msg {
+	uint32_t rank;	/* First node rank within job step's alloc */
+	//uint32_t depth_child; /*The current structure contains all child nodes*/
+	slurm_step_id_t step_id; /* Job step ID */
+	double cpu_util;         /* Real-time utilization of individual job steps on the node */
+	double cpu_ave;       	 /* Average utilization of individual job steps on the node */
+	uint64_t mem_real;  		 /* Real-time memory utilization of individual job steps on the node*/
+	uint64_t vmem_real;          /* Average memory utilization of individual job steps on the node */
+	uint64_t page_fault;     /* The total number of page fault exceptions in individual job steps on the node */
+	uint64_t load_flag; 
+	uint64_t node_alloc_cpu;
+	//bool pid_status;
+} step_gather_msg_t;
+#endif
 
 typedef struct signal_tasks_msg {
 	uint16_t flags;
@@ -1346,7 +1363,6 @@ typedef struct  node_rec_state_array_split {
 	node_rec_state_array_t **node_rec_state_array_data;
 } node_rec_state_array_split_t;
 #endif
-
 /*****************************************************************************\
  * Slurm API Message Types
 \*****************************************************************************/

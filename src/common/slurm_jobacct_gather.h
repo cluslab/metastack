@@ -129,7 +129,115 @@ struct jobacctinfo {
 	double min_cpu_util;
 	double cpu_util;
 #endif
+#ifdef __METASTACK_LOAD_ABNORMAL
+	uint64_t flag;
+	double cpu_step_ave;
+	double cpu_step_max;
+	double cpu_step_min;
+	double cpu_step_real;
+
+	uint64_t mem_step_max;
+	uint64_t mem_step_min;
+	uint64_t mem_step;
+
+	uint64_t vmem_step_max;
+	uint64_t vmem_step_min;
+	uint64_t vmem_step;
+
+	uint64_t step_pages;
+	uint64_t acct_flag;
+	uint64_t cpu_count;
+	uint64_t pid_count;
+	uint64_t node_count;
+	/* record event time */
+	uint64_t  *cpu_start;
+	uint64_t  *cpu_end;
+	uint64_t  *pid_start;
+	uint64_t  *pid_end;
+	uint64_t  *node_start;
+	uint64_t  *node_end;
+	
+	/* sstat display */
+	uint64_t node_alloc_cpu;
+    uint64_t timer;
+	uint32_t cpu_threshold;	
+#endif
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+    List pjobs;
+#endif
 };
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+
+#define MAX_SIZE 1000000               /*fifo max size*/
+#define LOAD_LOW   0x0000000000000001  /*cpu event*/
+#define PROC_AB    0x0000000000000010  /*pocess status read only*/
+#define JNODE_STAT 0x0000000000000100
+#define JOBACCTINFO_START_END_ARRAY_SIZE 200
+
+struct jobinfostat {
+	double job_avg_cpu;
+	double job_cpu_util;
+	uint64_t pid_status;
+};
+
+typedef struct {
+	bool send_flag;  /*enable send step data to jobacct*/
+	double cpu_step_real;
+	double cpu_step_ave;
+	uint64_t mem_step;
+	uint64_t vmem_step;
+	uint64_t step_pages;
+	uint64_t load_flag; /*exception criteria*/
+	uint32_t cpu_threshold;
+	time_t cpu_start;
+	time_t cpu_end;
+	time_t pid_start;
+	time_t pid_end;
+	time_t node_start;
+	time_t node_end;
+	uint64_t node_alloc_cpu;
+    uint64_t timer;
+} write_t;
+
+typedef struct {
+	pthread_mutex_t lock;
+	uint64_t load_flag; /*exception criteria*/
+	bool update;
+	bool step;  /*enable step*/
+	double cpu_step_real; 
+	double cpu_step_ave;
+	uint64_t mem_step;
+	uint64_t vmem_step;
+	uint64_t step_pages;
+	time_t start;
+} collection_t;
+extern collection_t share_data;
+
+typedef struct {
+	pthread_cond_t cond;
+	pthread_mutex_t lock;
+	int count_nodelist;
+	int rank_gather;
+	int parent_rank_gather;
+	int children_gather;
+	int depth_gather;
+	int max_depth_gather;
+	int wait_child_count; /*number node of child count now*/
+	double step_cpu;
+	double step_cpu_ave;
+	uint64_t step_mem;
+	uint64_t step_vmem;
+	uint64_t load_status;
+	uint64_t page_fault;
+	time_t start;
+	slurm_addr_t parent_addr_gather;
+	bitstr_t *bits;
+	bool wait_children;
+	uint64_t node_alloc_cpu;
+} step_gather_t;
+extern step_gather_t step_gather;
+#endif
 
 /* Define jobacctinfo_t below to avoid including extraneous slurm headers */
 #ifndef __jobacctinfo_t_defined
@@ -140,7 +248,17 @@ struct jobacctinfo {
 extern int jobacct_gather_init(void); /* load the plugin */
 extern int jobacct_gather_fini(void); /* unload the plugin */
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int  jobacct_gather_startpoll(uint16_t frequency, acct_gather_rank_t job_set);
+extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t job_set);
+extern void jobacctinfo_pack_detial(jobacctinfo_t *jobacct, uint16_t rpc_version,
+			     uint16_t protocol_type, buf_t *buffer);
+extern int jobacctinfo_unpack_detial(jobacctinfo_t **jobacct, uint16_t rpc_version,
+			      uint16_t protocol_type, buf_t *buffer, bool alloc); 	
+extern void jobacctinfo_aggregate_2(jobacctinfo_t *dest, jobacctinfo_t *from);
+#else
 extern int  jobacct_gather_startpoll(uint16_t frequency);
+#endif
 extern int  jobacct_gather_endpoll(void);
 extern void jobacct_gather_suspend_poll(void);
 extern void jobacct_gather_resume_poll(void);
@@ -188,5 +306,4 @@ extern long jobacct_gather_get_clk_tck();
 //#ifdef __METASTACK_OPT_CACHE_QUERY
 //extern jobacctinfo_t *jobacctinfo_extract(jobacctinfo_t *src_jobacct);
 //#endif
-
 #endif /*__SLURM_JOBACCT_GATHER_H__*/

@@ -3605,7 +3605,7 @@ extern char *node_state_string_complete(uint32_t state)
 	state_str = xstrdup(node_state_base_string(state));
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	state &= (~NODE_STATE_BORROWED);
-#endif	
+#endif
 	if ((flags_str = node_state_flag_string(state))) {
 		xstrcat(state_str, flags_str);
 		xfree(flags_str);
@@ -4682,7 +4682,7 @@ extern void slurm_free_partition_info_members(partition_info_t * part)
 		xfree(part->borrowed_nodes);
 		xfree(part->standby_nodes);
 		xfree(part->standby_node_parameters);
-#endif		
+#endif
 	}
 }
 
@@ -4838,6 +4838,16 @@ extern void slurm_free_step_complete_msg(step_complete_msg_t *msg)
 		xfree(msg);
 	}
 }
+
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern void slurm_free_job_step_gather(void *object)
+{
+	step_gather_msg_t *msg = (step_gather_msg_t *)object;
+	if(msg) {
+		xfree(msg);
+	}
+}
+#endif
 
 extern void slurm_free_job_step_stat(void *object)
 {
@@ -5323,6 +5333,11 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case REQUEST_STEP_LAYOUT:
 		slurm_free_step_id(data);
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_JOB_STEP_DATA:	
+		slurm_free_job_step_gather(data);
+		break;
+#endif
 	case RESPONSE_JOB_STEP_STAT:
 		slurm_free_job_step_stat(data);
 		break;
@@ -6054,6 +6069,10 @@ rpc_num2string(uint16_t opcode)
 		return "SLURMSCRIPTD_REQUEST_UPDATE_LOG";
 	case SLURMSCRIPTD_SHUTDOWN:
 		return "SLURMSCRIPTD_SHUTDOWN";
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case REQUEST_JOB_STEP_DATA:	
+		return "REQUEST_JOB_STEP_DATA";
+#endif
 	default:
 		(void) snprintf(buf, sizeof(buf), "%u", opcode);
 		return buf;

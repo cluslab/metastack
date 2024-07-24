@@ -204,6 +204,9 @@ enum {
 	LONG_OPT_WHOLE,
 	LONG_OPT_WRAP,
 	LONG_OPT_X11,
+#ifdef __METASTACK_LOAD_ABNORMAL
+	LONG_OPT_JOB_MONITOR,
+#endif
 	LONG_OPT_ENUM_END
 };
 
@@ -371,6 +374,9 @@ typedef struct {
 	bool hold;			/* --hold			*/
 	bool no_kill;			/* --no-kill			*/
 	char *acctg_freq;		/* --acctg-freq=<type1>=<freq1>,... */
+#ifdef __METASTACK_LOAD_ABNORMAL
+	char *abnormal_dete;
+#endif
 	bool overcommit;		/* --overcommit			*/
 	uint16_t shared;		/* --share			*/
 	char *licenses;			/* --licenses			*/

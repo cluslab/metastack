@@ -168,6 +168,15 @@ extern int acct_gather_profile_p_add_sample_data(int dataset_id, void* data,
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* data,
+						 time_t sample_time)
+{
+	debug2("profile plugin is set to none");
+	return SLURM_SUCCESS;
+}
+#endif
+
 extern void acct_gather_profile_p_conf_values(List *data)
 {
 	return;

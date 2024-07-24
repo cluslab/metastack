@@ -255,6 +255,129 @@ extern List acct_gather_conf_values(void)
 	return acct_list;
 }
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+/*global switch*/
+extern bool acct_gather_parse_sw(char* freq_def)
+{
+	bool dsability = false;
+	char *sub_str = NULL;
+
+	if(freq_def) {
+		if ((sub_str = xstrcasestr(freq_def, "disable_job_monitor"))) {
+			dsability = true;
+		}
+	}
+	return dsability;
+}
+
+
+extern int acct_gather_parse_time(char *freq, char* freq_def)
+{
+	int timer = -1;
+	char *sub_str = NULL;
+    bool flag = false;
+	if(freq) {
+		if ((sub_str = xstrcasestr(freq, "time_window="))) {
+				timer = _get_int(sub_str + 12);
+			flag = true;
+		}
+	}
+	if(!flag && freq_def) {
+		if ((sub_str = xstrcasestr(freq_def, "time_window="))) 
+		timer = _get_int(sub_str + 12);
+	}
+
+	return timer;
+}
+
+extern int acct_gather_parse_cpu_load(char *freq, char* freq_def)
+{
+	int cpu_load = -1;
+	char *sub_str = NULL;
+    bool flag = false;
+	if(freq) {
+		if ((sub_str = xstrcasestr(freq, "avecpuutil="))) {
+				cpu_load = _get_int(sub_str + 11);
+			flag = true;
+		}
+	}
+
+	if(!flag && freq_def) {
+		if ((sub_str = xstrcasestr(freq_def, "avecpuutil="))) 
+		cpu_load = _get_int(sub_str + 11);
+	}
+
+	return cpu_load;
+}
+
+/* 0 disable all step, 1 enable digital stepd , 2 enable batch step 3、 enable digital step and batch step*/
+extern int acct_gather_parse_monitor(char *freq, char* freq_def) 
+{
+	char *sub_str = NULL;
+    int batch = -1;
+	bool flag = false;
+	if(freq) {
+		if ((sub_str = xstrcasestr(freq, "collect_step="))) {
+				batch = _get_int(sub_str + 13);
+			flag = true;
+		}
+	}
+	if(!flag && freq_def) {
+		if ((sub_str = xstrcasestr(freq_def, "collect_step="))) 
+		batch = _get_int(sub_str + 13);
+	}
+	return batch;
+}
+
+extern int acct_gather_parse_abnormal_dete(int type, char *freq)
+{
+	int freq_int = -1;
+	char* sub_str = NULL;
+
+	if(!freq)
+		return freq_int;
+	switch (type) {
+		
+		case PROFILE_ABNORMAL_DETE_MINUTE:
+			if((sub_str = xstrcasestr(freq, "time_window="))){
+				freq_int = _get_int(sub_str + 12);
+				if(freq_int < 1){
+					freq_int = -1;
+					error("Invalid --job-monitor specification: %s , The minimum value of minutes is 1" , freq);
+				}
+			}
+			break;
+		case PROFILE_ABNORMAL_DETE_CPUMINLOAD:
+			if((sub_str = xstrcasestr(freq, "avecpuutil="))){
+				freq_int = _get_int(sub_str + 11);
+				if(freq_int > 100 || freq_int < 0){
+					freq_int = -1;
+					error("Invalid --job-monitor specification: %s , The value of cpuminload must be between 0 and 100" , freq);
+				}
+			}
+			break;
+		case PROFILE_ABNORMAL_DETE_STEPD:
+			if((sub_str = xstrcasestr(freq, "collect_step="))){
+				freq_int = _get_int(sub_str + 13);
+				if(freq_int != -1) {
+					if(!(freq_int == 0 || freq_int == 1 || freq_int==2 || freq_int==3)) {
+						freq_int = -1;
+						error("Invalid --job-monitor specification: %s , Invalid parameter; 0 disable all stepd, "
+								"1 enable digital stepd, "
+								"2、enable batch stepd "
+								"3、enable digital stepd and batch stepd;" , freq);
+					}
+				}
+			}
+			break;
+		default:
+			fatal("Unable to resolve job-monitor : %d configuration, please check the input " , type);
+	}
+	return freq_int;
+}
+
+#endif
+
 extern int acct_gather_parse_freq(int type, char *freq)
 {
 	int freq_int = -1;
@@ -285,6 +408,12 @@ extern int acct_gather_parse_freq(int type, char *freq)
 		if ((sub_str = xstrcasestr(freq, "network=")))
 			freq_int = _get_int(sub_str + 8);
 		break;
+#ifdef __METASTACK_LOAD_ABNORMAL
+	case PROFILE_STEPD:
+		if ((sub_str = xstrcasestr(freq, "task=")))
+			freq_int = _get_int(sub_str + 5);
+		break;
+#endif
 	default:
 		fatal("Unhandled profile option %d please update "
 		      "slurm_acct_gather.c "
