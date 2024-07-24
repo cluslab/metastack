@@ -111,6 +111,9 @@
 #include "src/slurmctld/srun_comm.h"
 #include "src/slurmctld/state_save.h"
 #include "src/slurmctld/trigger_mgr.h"
+#ifdef __METASTACK_OPT_CACHE_QUERY
+#include "src/slurmctld/read_config.h"
+#endif
 
 //NOTE: 
 #ifdef __METASTACK_OPT_HIST_OUTPUT
@@ -165,6 +168,18 @@ typedef struct {
 	bitstr_t *node_map;
 	int rc;
 } job_overlap_args_t;
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+List   copy_job_list = NULL;		/* copy_job_record list */
+List   cache_job_list = NULL;		/* cache_job_record list */
+static struct   job_record **copy_job_hash = NULL; 
+static struct   job_record **copy_job_array_hash_j = NULL;
+static struct   job_record **copy_job_array_hash_t = NULL;
+static struct   job_record **cache_job_hash = NULL;
+static struct   job_record **cache_job_array_hash_j = NULL;
+static struct   job_record **cache_job_array_hash_t = NULL;
+static int      copy_hash_table_size = 0;
+#endif
 
 /* Global variables */
 List   job_list = NULL;		/* job_record list */
@@ -278,6 +293,10 @@ static bool _valid_pn_min_mem(job_desc_msg_t * job_desc_msg,
 			      part_record_t *part_ptr);
 static int  _write_data_array_to_file(char *file_name, char **data,
 				      uint32_t size);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+static void _copy_job_details(struct job_details *src_detail_ptr, struct job_details *des_detail_ptr);
+static void _list_delete_copy_job(void *job_entry);
+#endif
 
 static char *_get_mail_user(const char *user_name, uid_t user_id)
 {
@@ -4685,7 +4704,11 @@ void init_job_conf(void)
 		job_count = 0;
 		job_list = list_create(_list_delete_job);
 	}
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if (cache_job_list == NULL) {
+			cache_job_list = list_create(_list_delete_copy_job);
+		}
+#endif
 	last_job_update = time(NULL);
 
 	if (!purge_files_list) {
@@ -16803,6 +16826,12 @@ void job_fini (void)
 	xfree(job_hash);
 	xfree(job_array_hash_j);
 	xfree(job_array_hash_t);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	FREE_NULL_LIST(cache_job_list);
+	xfree(cache_job_hash);
+	xfree(cache_job_array_hash_j);
+	xfree(cache_job_array_hash_t);
+#endif
 	FREE_NULL_LIST(purge_files_list);
 	FREE_NULL_BITMAP(requeue_exit);
 	FREE_NULL_BITMAP(requeue_exit_hold);
@@ -20007,3 +20036,1335 @@ extern int job_get_node_inx(char *node_name, bitstr_t *node_bitmap)
 	}
 	return node_cnt;
 }
+#ifdef __METASTACK_OPT_CACHE_QUERY
+ 
+ static void _copy_job_details(struct job_details *src_detail_ptr, struct job_details *des_detail_ptr)
+{
+	int i;
+	if(!src_detail_ptr || !des_detail_ptr)
+		return;
+	memcpy(des_detail_ptr, src_detail_ptr, sizeof(struct job_details));
+
+
+	des_detail_ptr->features_use = xstrdup(src_detail_ptr->features_use);
+	des_detail_ptr->features = xstrdup(src_detail_ptr->features);
+	des_detail_ptr->prefer = xstrdup(src_detail_ptr->prefer);
+	des_detail_ptr->cluster_features = xstrdup(src_detail_ptr->cluster_features);
+	des_detail_ptr->work_dir = xstrdup(src_detail_ptr->work_dir);
+	des_detail_ptr->dependency = xstrdup(src_detail_ptr->dependency);
+
+	des_detail_ptr->req_nodes = xstrdup(src_detail_ptr->req_nodes);
+	des_detail_ptr->exc_nodes = xstrdup(src_detail_ptr->exc_nodes);
+	des_detail_ptr->std_err = xstrdup(src_detail_ptr->std_err);
+	des_detail_ptr->std_in = xstrdup(src_detail_ptr->std_in);
+	des_detail_ptr->std_out = xstrdup(src_detail_ptr->std_out);
+
+	if (des_detail_ptr->argc) {
+			des_detail_ptr->argv = xcalloc((des_detail_ptr->argc + 1), sizeof(char *));
+			for (i = 0; i < des_detail_ptr->argc; i++) {
+					des_detail_ptr->argv[i] = xstrdup(src_detail_ptr->argv[i]);
+			}
+	}
+	if (src_detail_ptr->crontab_entry){
+		des_detail_ptr->crontab_entry = xmalloc(sizeof(cron_entry_t));
+		des_detail_ptr->crontab_entry->cronspec = xstrdup(src_detail_ptr->crontab_entry->cronspec);
+//		if(des_detail_ptr->crontab_entry->minute)
+//			des_detail_ptr->crontab_entry->minute = bit_copy(des_detail_ptr->crontab_entry->minute);
+//		if(des_detail_ptr->crontab_entry->hour)
+//			des_detail_ptr->crontab_entry->hour = bit_copy(des_detail_ptr->crontab_entry->hour);
+//		if(des_detail_ptr->crontab_entry->day_of_month)
+//			des_detail_ptr->crontab_entry->day_of_month = bit_copy(des_detail_ptr->crontab_entry->day_of_month);
+//		if(des_detail_ptr->crontab_entry->month)
+//			des_detail_ptr->crontab_entry->month = bit_copy(des_detail_ptr->crontab_entry->month);
+//		if(des_detail_ptr->crontab_entry->day_of_week)
+//			des_detail_ptr->crontab_entry->day_of_week = bit_copy(des_detail_ptr->crontab_entry->day_of_week);
+//		des_detail_ptr->crontab_entry->line_start = des_detail_ptr->crontab_entry->line_start;
+//		des_detail_ptr->crontab_entry->line_end = des_detail_ptr->crontab_entry->line_end;
+	}
+	if (src_detail_ptr->exc_node_bitmap)
+		des_detail_ptr->exc_node_bitmap = bit_copy(src_detail_ptr->exc_node_bitmap);
+	if (src_detail_ptr->mc_ptr) {
+		i = sizeof(multi_core_data_t);
+		des_detail_ptr->mc_ptr = xmalloc(i);
+		memcpy(des_detail_ptr->mc_ptr, src_detail_ptr->mc_ptr, i);
+	}
+	if (src_detail_ptr->req_node_bitmap)
+		des_detail_ptr->req_node_bitmap = bit_copy(src_detail_ptr->req_node_bitmap);
+//	des_detail_ptr->req_context = xstrdup(src_detail_ptr->req_context);
+//	des_detail_ptr->acctg_freq = xstrdup(src_detail_ptr->acctg_freq);
+//	des_detail_ptr->cpu_bind = xstrdup(src_detail_ptr->cpu_bind);
+//	des_detail_ptr->mem_bind = xstrdup(src_detail_ptr->mem_bind);
+//	des_detail_ptr->orig_dependency = xstrdup(src_detail_ptr->orig_dependency);
+//	des_detail_ptr->submit_line = xstrdup(src_detail_ptr->submit_line);
+//	des_detail_ptr->env_hash = xstrdup(src_detail_ptr->env_hash);
+//	des_detail_ptr->script_hash = xstrdup(src_detail_ptr->script_hash);
+//	des_detail_ptr->extra = xstrdup(src_detail_ptr->extra);
+//	des_detail_ptr->script = xstrdup(src_detail_ptr->script);
+//	des_detail_ptr->x11_magic_cookie = xstrdup(src_detail_ptr->x11_magic_cookie);
+//	des_detail_ptr->x11_target = xstrdup(src_detail_ptr->x11_target);
+//	des_detail_ptr->depend_list = depended_list_copy(src_detail_ptr->depend_list);
+//	if (src_detail_ptr->env_cnt) {
+//		des_detail_ptr->env_sup = xcalloc((src_detail_ptr->env_cnt + 1), sizeof(char *));
+//		for (i = 0; i < src_detail_ptr->env_cnt; i++) {
+//				des_detail_ptr->env_sup[i] = xstrdup(src_detail_ptr->env_sup[i]);
+//		}
+//	}
+//	des_detail_ptr->feature_list = feature_list_copy(src_detail_ptr->feature_list);
+//	des_detail_ptr->prefer_list = feature_list_copy(src_detail_ptr->prefer_list);
+//	set_job_features_use(des_detail_ptr);
+
+	des_detail_ptr->req_context = NULL;
+	des_detail_ptr->acctg_freq = NULL;
+	des_detail_ptr->cpu_bind = NULL;
+	des_detail_ptr->mem_bind = NULL;
+	des_detail_ptr->orig_dependency = NULL;
+	des_detail_ptr->submit_line = NULL;
+	des_detail_ptr->env_hash = NULL;
+	des_detail_ptr->script_hash = NULL;
+	des_detail_ptr->extra = NULL;
+	des_detail_ptr->script = NULL;
+	des_detail_ptr->x11_magic_cookie = NULL;
+	des_detail_ptr->x11_target = NULL;
+	des_detail_ptr->env_sup = NULL;
+	des_detail_ptr->depend_list = NULL;
+	des_detail_ptr->feature_list = NULL;
+	des_detail_ptr->feature_list_use = NULL;
+	des_detail_ptr->prefer_list = NULL;
+	
+		
+}
+
+/* _remove_copy_job_hash - remove a job hash entry for given job record, job_id must
+ *	already be set
+ * IN job_ptr - pointer to job record
+ * IN type - which hash to work with
+ * Globals: hash table updated
+ */
+static void _remove_copy_job_hash(job_record_t *job_entry, job_hash_type_t type)
+{
+	job_record_t *job_ptr = NULL, **job_pptr = NULL;
+
+	xassert(job_entry);
+
+	switch (type) {
+	case JOB_HASH_JOB:
+		job_pptr = &cache_job_hash[JOB_HASH_INX(job_entry->job_id)];
+		break;
+	case JOB_HASH_ARRAY_JOB:
+		job_pptr = &cache_job_array_hash_j[
+			JOB_HASH_INX(job_entry->array_job_id)];
+		break;
+	case JOB_HASH_ARRAY_TASK:
+		job_pptr = &cache_job_array_hash_t[
+			JOB_ARRAY_HASH_INX(job_entry->array_job_id,
+					   job_entry->array_task_id)];
+		break;
+	default:
+		fatal("%s: unknown job_hash_type_t %d", __func__, type);
+		return;
+	}
+
+	while ((job_pptr != NULL) && (*job_pptr != NULL) &&
+	       ((job_ptr = *job_pptr) != job_entry)) {
+		xassert(job_ptr->magic == JOB_MAGIC);
+		switch (type) {
+		case JOB_HASH_JOB:
+			job_pptr = &job_ptr->job_next;
+			break;
+		case JOB_HASH_ARRAY_JOB:
+			job_pptr = &job_ptr->job_array_next_j;
+			break;
+		case JOB_HASH_ARRAY_TASK:
+			job_pptr = &job_ptr->job_array_next_t;
+			break;
+		}
+	}
+
+	if (job_pptr == NULL || *job_pptr == NULL) {
+		if (job_entry->job_id == NO_VAL)
+			return;
+
+		switch (type) {
+		case JOB_HASH_JOB:
+			error("%s: Could not find hash entry for JobId=%u",
+			      __func__, job_entry->job_id);
+			break;
+		case JOB_HASH_ARRAY_JOB:
+			error("%s: job array hash error %u", __func__,
+			      job_entry->array_job_id);
+			break;
+		case JOB_HASH_ARRAY_TASK:
+			error("%s: job array, task ID hash error %u_%u",
+			      __func__,
+			      job_entry->array_job_id,
+			      job_entry->array_task_id);
+			break;
+		}
+		return;
+	}
+
+	switch (type) {
+	case JOB_HASH_JOB:
+		*job_pptr = job_entry->job_next;
+		job_entry->job_next = NULL;
+		break;
+	case JOB_HASH_ARRAY_JOB:
+		*job_pptr = job_entry->job_array_next_j;
+		job_entry->job_array_next_j = NULL;
+		break;
+	case JOB_HASH_ARRAY_TASK:
+		*job_pptr = job_entry->job_array_next_t;
+		job_entry->job_array_next_t = NULL;
+		break;
+	}
+}
+
+static void _delete_copy_job_common(job_record_t *job_ptr)
+{
+	/* Remove record from fed_job_list */
+//	fed_mgr_remove_fed_job_info(job_ptr->job_id);
+
+	/* Remove the record from job hash table */
+	_remove_copy_job_hash(job_ptr, JOB_HASH_JOB);
+
+	/* Remove the record from job array hash tables, if applicable */
+	if (job_ptr->array_task_id != NO_VAL) {
+		_remove_copy_job_hash(job_ptr, JOB_HASH_ARRAY_JOB);
+		_remove_copy_job_hash(job_ptr, JOB_HASH_ARRAY_TASK);
+	}
+}
+
+/*
+ * _delete_copy_job_details - delete a job's detail record and clear it's pointer
+ * IN job_entry - pointer to job_record to clear the record of
+ */
+static void _delete_copy_job_details(job_record_t *job_entry)
+{
+	int i;
+
+	if (job_entry->details == NULL)
+		return;
+
+	xassert (job_entry->details->magic == DETAILS_MAGIC);
+
+	/*
+	 * Queue up job to have the batch script and environment deleted.
+	 * This is handled by a separate thread to limit the amount of
+	 * time purge_old_job needs to spend holding locks.
+	 */
+//	if (IS_JOB_FINISHED(job_entry)) {
+//		uint32_t *job_id = xmalloc(sizeof(uint32_t));
+//		*job_id = job_entry->job_id;
+//		list_enqueue(purge_files_list, job_id);
+//	}
+
+	for (i=0; i<job_entry->details->argc; i++)
+		xfree(job_entry->details->argv[i]);
+	xfree(job_entry->details->argv);
+	if(job_entry->details->crontab_entry)
+		xfree(job_entry->details->crontab_entry->cronspec);
+	xfree(job_entry->details->crontab_entry);
+	xfree(job_entry->details->dependency);
+	xfree(job_entry->details->std_err);
+	FREE_NULL_BITMAP(job_entry->details->exc_node_bitmap);
+	xfree(job_entry->details->exc_nodes);
+	xfree(job_entry->details->features);
+	xfree(job_entry->details->features_use);
+	xfree(job_entry->details->cluster_features);
+	xfree(job_entry->details->std_in);
+	xfree(job_entry->details->mc_ptr);
+	xfree(job_entry->details->prefer);
+	xfree(job_entry->details->std_out);
+	FREE_NULL_BITMAP(job_entry->details->req_node_bitmap);
+	xfree(job_entry->details->req_nodes);
+	xfree(job_entry->details->work_dir);
+//	xfree(job_entry->details->acctg_freq);
+//	xfree(job_entry->details->cpu_bind);
+//	free_cron_entry(job_entry->details->crontab_entry);
+//	FREE_NULL_LIST(job_entry->details->depend_list);
+//	xfree(job_entry->details->orig_dependency);
+//	xfree(job_entry->details->env_hash);
+//	for (i=0; i<job_entry->details->env_cnt; i++)
+//		xfree(job_entry->details->env_sup[i]);
+//	xfree(job_entry->details->env_sup);
+//	xfree(job_entry->details->extra);
+//	FREE_NULL_LIST(job_entry->details->feature_list);
+//	xfree(job_entry->details->mem_bind);
+//	FREE_NULL_LIST(job_entry->details->prefer_list);
+//	xfree(job_entry->details->req_context);
+//	xfree(job_entry->details->submit_line);
+//	xfree(job_entry->details->script);
+//	xfree(job_entry->details->script_hash);
+//	xfree(job_entry->details->x11_magic_cookie);
+//	xfree(job_entry->details->x11_target);
+	xfree(job_entry->details);	/* Must be last */
+}
+
+static void _delete_copy_job_cache_data(job_cache_data_t *job_cache_data)
+{
+	if(job_cache_data == NULL)
+		return;
+	if(job_cache_data->qos_name)
+		xfree(job_cache_data->qos_name);
+	xfree(job_cache_data);
+}
+
+/*
+ * _list_delete_copy_job - delete a job record and its corresponding job_details,
+ *	see common/list.h for documentation
+ * IN job_entry - pointer to job_record to delete
+ */
+static void _list_delete_copy_job(void *job_entry)
+{
+	job_record_t *job_ptr = (job_record_t *) job_entry;
+//	int  i;
+
+	xassert(job_entry);
+	xassert (job_ptr->magic == JOB_MAGIC);
+	job_ptr->magic = 0;	/* make sure we don't delete record twice */
+
+	_delete_copy_job_common(job_ptr);
+
+	_delete_copy_job_details(job_ptr);
+	xfree(job_ptr->account);
+	xfree(job_ptr->admin_comment);
+
+	xfree(job_ptr->alloc_node);
+	if (job_ptr->array_recs) {
+		FREE_NULL_BITMAP(job_ptr->array_recs->task_id_bitmap);
+		xfree(job_ptr->array_recs->task_id_str);
+		xfree(job_ptr->array_recs);
+	}
+	xfree(job_ptr->batch_features);
+	xfree(job_ptr->batch_host);
+	xfree(job_ptr->burst_buffer);
+	xfree(job_ptr->burst_buffer_state);
+	xfree(job_ptr->comment);
+	xfree(job_ptr->container);
+	xfree(job_ptr->cpus_per_tres);
+	free_job_fed_details(&job_ptr->fed_details);
+	free_job_resources(&job_ptr->job_resrcs);
+	_clear_job_gres_details(job_ptr);
+	xfree(job_ptr->gres_used);
+	FREE_NULL_LIST(job_ptr->gres_list_req);
+	xfree(job_ptr->licenses);
+	xfree(job_ptr->mail_user);
+	xfree(job_ptr->mcs_label);
+	xfree(job_ptr->mem_per_tres);
+	xfree(job_ptr->name);
+	xfree(job_ptr->network);
+	FREE_NULL_BITMAP(job_ptr->node_bitmap);
+	FREE_NULL_BITMAP(job_ptr->node_bitmap_cg);
+	xfree(job_ptr->nodes);
+	xfree(job_ptr->het_job_id_set);
+	FREE_NULL_LIST(job_ptr->het_job_list);
+	xfree(job_ptr->partition);
+	FREE_NULL_LIST(job_ptr->part_ptr_list);
+	xfree(job_ptr->resv_name);
+	xfree(job_ptr->sched_nodes);
+	xfree(job_ptr->state_desc);
+	FREE_NULL_LIST(job_ptr->step_list);
+	xfree(job_ptr->system_comment);
+	xfree(job_ptr->selinux_context);
+	xfree(job_ptr->tres_bind);
+	xfree(job_ptr->tres_freq);
+	xfree(job_ptr->tres_fmt_alloc_str);
+	xfree(job_ptr->tres_per_job);
+	xfree(job_ptr->tres_per_node);
+	xfree(job_ptr->tres_per_socket);
+	xfree(job_ptr->tres_per_task);
+	xfree(job_ptr->tres_fmt_req_str);
+	select_g_select_jobinfo_free(job_ptr->select_jobinfo);
+	xfree(job_ptr->user_name);
+	xfree(job_ptr->wckey);
+	_delete_copy_job_cache_data(job_ptr->job_cache_data);
+//	xfree(job_ptr->alias_list);
+//	xfree(job_ptr->clusters);
+//#ifdef __METASTACK_OPT_HIST_COMMAND
+//	xfree(job_ptr->command);
+//#endif
+	//NOTE: for stdout/stderr, no new fields added
+//#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+//	xfree(job_ptr->resource_node_detail);
+//#endif
+//	FREE_NULL_LIST(job_ptr->gres_list_req_accum);
+//	FREE_NULL_LIST(job_ptr->gres_list_alloc);
+//	FREE_NULL_LIST(job_ptr->license_list);
+//	xfree(job_ptr->limit_set.tres);
+//	FREE_NULL_BITMAP(job_ptr->node_bitmap_pr);
+//	xfree(job_ptr->nodes_completing);
+//	xfree(job_ptr->nodes_pr);
+//	xfree(job_ptr->origin_cluster);
+//	if (job_ptr->het_details && job_ptr->het_job_id) {
+//		/* xfree struct if hetjob leader and NULL ptr otherwise. */
+//		if (job_ptr->het_job_offset == 0)
+//			xfree(job_ptr->het_details);
+//		else
+//			job_ptr->het_details = NULL;
+//	}
+//	xfree(job_ptr->priority_array);
+//	slurm_destroy_priority_factors_object(job_ptr->prio_factors);
+//	xfree(job_ptr->resp_host);
+//	FREE_NULL_LIST(job_ptr->resv_list);
+//	for (i = 0; i < job_ptr->spank_job_env_size; i++)
+//		xfree(job_ptr->spank_job_env[i]);
+//	xfree(job_ptr->spank_job_env);
+//	xfree(job_ptr->tres_alloc_cnt);
+//	xfree(job_ptr->tres_alloc_str);
+//	xfree(job_ptr->tres_req_cnt);
+//	xfree(job_ptr->tres_req_str);
+	job_ptr->job_id = 0;
+	xfree(job_ptr);
+}
+
+/*
+ * Create a copy of a job's part_list *partition list
+ * IN part_list_src - a job's part_list
+ * RET copy of part_list_src, must be freed by caller
+ */
+extern List copy_part_list_dup(List part_list_src,List part_list)
+{
+	part_record_t *part_ptr = NULL;
+	part_record_t *cache_part_ptr = NULL;
+	ListIterator iter;
+	List part_list_dest = NULL;
+
+	if (!part_list_src)
+		return part_list_dest;
+
+	part_list_dest = list_create(NULL);
+	iter = list_iterator_create(part_list_src);
+	while ((part_ptr = list_next(iter))) {
+		cache_part_ptr = find_copy_part_record(part_ptr->name, part_list);
+		if(cache_part_ptr)
+			list_append(part_list_dest, cache_part_ptr);
+	}
+	list_iterator_destroy(iter);
+
+	return part_list_dest;
+}
+static int copy_job(job_record_t *src_job_ptr, job_record_t *des_job_ptr)
+{
+	int i;
+	if(!src_job_ptr || !des_job_ptr)
+		return 0;
+	memcpy(des_job_ptr, src_job_ptr, sizeof(job_record_t));
+	
+	des_job_ptr->container = xstrdup(src_job_ptr->container);
+	des_job_ptr->het_job_id_set = xstrdup(src_job_ptr->het_job_id_set);
+	des_job_ptr->sched_nodes = xstrdup(src_job_ptr->sched_nodes);
+	des_job_ptr->partition = xstrdup(src_job_ptr->partition);
+	des_job_ptr->account = xstrdup(src_job_ptr->account);
+	des_job_ptr->admin_comment = xstrdup(src_job_ptr->admin_comment);
+	des_job_ptr->network = xstrdup(src_job_ptr->network);
+	des_job_ptr->comment = xstrdup(src_job_ptr->comment);
+	des_job_ptr->batch_features = xstrdup(src_job_ptr->batch_features);
+	des_job_ptr->batch_host = xstrdup(src_job_ptr->batch_host);
+	des_job_ptr->burst_buffer = xstrdup(src_job_ptr->burst_buffer);
+	des_job_ptr->burst_buffer_state = xstrdup(src_job_ptr->burst_buffer_state);
+	des_job_ptr->system_comment = xstrdup(src_job_ptr->system_comment);
+	des_job_ptr->licenses = xstrdup(src_job_ptr->licenses);
+	des_job_ptr->state_desc = xstrdup(src_job_ptr->state_desc);
+	des_job_ptr->resv_name = xstrdup(src_job_ptr->resv_name);
+	des_job_ptr->mcs_label = xstrdup(src_job_ptr->mcs_label);
+	des_job_ptr->gres_used = xstrdup(src_job_ptr->gres_used);
+	des_job_ptr->name = xstrdup(src_job_ptr->name);
+	des_job_ptr->user_name = xstrdup(src_job_ptr->user_name);
+	des_job_ptr->wckey = xstrdup(src_job_ptr->wckey);
+	des_job_ptr->alloc_node = xstrdup(src_job_ptr->alloc_node);
+	des_job_ptr->tres_fmt_alloc_str = xstrdup(src_job_ptr->tres_fmt_alloc_str);
+	des_job_ptr->tres_fmt_req_str = xstrdup(src_job_ptr->tres_fmt_req_str);
+	des_job_ptr->cpus_per_tres = xstrdup(src_job_ptr->cpus_per_tres);
+	des_job_ptr->mem_per_tres = xstrdup(src_job_ptr->mem_per_tres);
+	des_job_ptr->tres_bind = xstrdup(src_job_ptr->tres_bind);
+	des_job_ptr->tres_freq = xstrdup(src_job_ptr->tres_freq);
+	des_job_ptr->tres_per_job = xstrdup(src_job_ptr->tres_per_job);
+	des_job_ptr->tres_per_node = xstrdup(src_job_ptr->tres_per_node);
+	des_job_ptr->tres_per_socket = xstrdup(src_job_ptr->tres_per_socket);
+	des_job_ptr->tres_per_task = xstrdup(src_job_ptr->tres_per_task);
+	des_job_ptr->mail_user = xstrdup(src_job_ptr->mail_user);
+	des_job_ptr->selinux_context = xstrdup(src_job_ptr->selinux_context); 
+
+	des_job_ptr->part_ptr_list = copy_part_list_dup(src_job_ptr->part_ptr_list,copy_part_list);
+
+	if(src_job_ptr->part_ptr)
+    	des_job_ptr->part_ptr = find_copy_part_record(src_job_ptr->part_ptr->name, copy_part_list);
+
+	if (src_job_ptr->select_jobinfo) {
+		des_job_ptr->select_jobinfo = select_g_select_jobinfo_copy(src_job_ptr->select_jobinfo);
+	}
+
+	des_job_ptr->gres_list_req = gres_job_state_list_dup(src_job_ptr->gres_list_req);
+
+	if (src_job_ptr->array_recs) {
+		des_job_ptr->array_recs=xmalloc(sizeof(job_array_struct_t));
+	    memcpy(des_job_ptr->array_recs, src_job_ptr->array_recs, sizeof(struct job_array_struct));
+        des_job_ptr->array_recs->task_id_str = xstrdup(src_job_ptr->array_recs->task_id_str);
+		if(src_job_ptr->array_recs->task_id_bitmap){
+        	des_job_ptr->array_recs->task_id_bitmap = bit_copy(src_job_ptr->array_recs->task_id_bitmap);
+		}
+	}
+
+	if (!IS_JOB_COMPLETING(src_job_ptr)){
+		des_job_ptr->nodes = xstrdup(src_job_ptr->nodes);
+		if(src_job_ptr->node_bitmap)
+			des_job_ptr->node_bitmap = bit_copy(src_job_ptr->node_bitmap);
+		des_job_ptr->node_bitmap_cg = NULL;
+	}else {
+		if(src_job_ptr->node_bitmap_cg)
+			des_job_ptr->node_bitmap_cg = bit_copy(src_job_ptr->node_bitmap_cg);
+		des_job_ptr->nodes = NULL;
+		des_job_ptr->node_bitmap = NULL;
+	}
+	des_job_ptr->job_cache_data = xmalloc(sizeof(job_cache_data_t));
+	des_job_ptr->job_cache_data->qos = false;
+
+	if (src_job_ptr->qos_ptr){
+		des_job_ptr->qos_ptr = NULL;
+		des_job_ptr->job_cache_data->qos = true;
+		des_job_ptr->job_cache_data->qos_name = xstrdup(src_job_ptr->qos_ptr->name);
+	}
+	if (IS_JOB_STARTED(src_job_ptr) &&
+		(slurm_conf.preempt_mode != PREEMPT_MODE_OFF) &&
+		(slurm_job_preempt_mode(src_job_ptr) !=
+			PREEMPT_MODE_OFF)) {
+			des_job_ptr->job_cache_data->preemptable = acct_policy_get_preemptable_time(
+					src_job_ptr);
+	}else {
+			des_job_ptr->job_cache_data->preemptable = 0;
+	} 
+
+	if(src_job_ptr->job_resrcs)
+		des_job_ptr->job_resrcs = copy_job_resources(src_job_ptr->job_resrcs);
+
+	if(des_job_ptr->gres_detail_cnt > 0){
+			des_job_ptr->gres_detail_str = xcalloc(des_job_ptr->gres_detail_cnt, sizeof(char *));
+			for (i = 0; i < des_job_ptr->gres_detail_cnt; i++) {
+					des_job_ptr->gres_detail_str[i] = xstrdup(src_job_ptr->gres_detail_str[i]);
+			}
+	}
+
+	/* A few details are always dumped here */
+	if (src_job_ptr->details){
+		des_job_ptr->details = xmalloc(sizeof(struct job_details));
+		_copy_job_details(src_job_ptr->details, des_job_ptr->details);
+	}
+
+	if (src_job_ptr->fed_details) {
+		des_job_ptr->fed_details = _dup_job_fed_details(src_job_ptr->fed_details);
+	}
+
+	if(src_job_ptr->step_list){
+		des_job_ptr->step_list = list_create(free_copy_step_record);
+		list_for_each_ro(src_job_ptr->step_list, _copy_job_step_state, des_job_ptr);
+	}
+//	des_job_ptr->tres_alloc_str = xstrdup(src_job_ptr->tres_alloc_str);
+//	des_job_ptr->tres_req_str = xstrdup(src_job_ptr->tres_req_str);
+//	des_job_ptr->alias_list = xstrdup(src_job_ptr->alias_list);
+//	des_job_ptr->clusters = xstrdup(src_job_ptr->clusters);
+//	if(src_job_ptr->node_bitmap_pr)
+//		des_job_ptr->node_bitmap_pr = bit_copy(src_job_ptr->node_bitmap_pr);
+//	des_job_ptr->nodes_completing = xstrdup(src_job_ptr->nodes_completing);
+//	des_job_ptr->nodes_pr = xstrdup(src_job_ptr->nodes_pr);
+//	des_job_ptr->origin_cluster = xstrdup(src_job_ptr->origin_cluster);
+//#ifdef __METASTACK_OPT_HIST_COMMAND	
+//	des_job_ptr->command = xstrdup(src_job_ptr->command);
+//#endif
+//#ifdef __METASTACK_OPT_RESC_NODEDETAIL	
+//	des_job_ptr->resource_node_detail = xstrdup(des_job_ptr->resource_node_detail);
+//#endif
+
+//	des_job_ptr->resp_host = xstrdup(src_job_ptr->resp_host);
+//	if(src_job_ptr->prio_factors){
+//		des_job_ptr->prio_factors = xmalloc(sizeof(priority_factors_object_t));
+//		slurm_copy_priority_factors_object(des_job_ptr->prio_factors, src_job_ptr->prio_factors);
+//	}
+//	if(src_job_ptr->limit_set.tres){
+//		des_job_ptr->limit_set.tres = xcalloc(slurmctld_tres_cnt, sizeof(uint16_t));
+//		memcpy(des_job_ptr->limit_set.tres, src_job_ptr->limit_set.tres, sizeof(uint16_t) * slurmctld_tres_cnt);
+//	}
+
+//	des_job_ptr->license_list = license_copy(src_job_ptr->license_list);
+//	if (src_job_ptr->part_ptr_list && src_job_ptr->priority_array) {
+//		i = list_count(src_job_ptr->part_ptr_list) * sizeof(uint32_t);
+//		des_job_ptr->priority_array = xmalloc(i);
+//		memcpy(des_job_ptr->priority_array, src_job_ptr->priority_array, i);
+//	}
+//	if (src_job_ptr->resv_list)
+//		des_job_ptr->resv_list = list_shallow_copy(src_job_ptr->resv_list);
+//	if (src_job_ptr->spank_job_env_size) {
+//		des_job_ptr->spank_job_env = xcalloc((des_job_ptr->spank_job_env_size + 1), sizeof(char *));
+//		for (i = 0; i < des_job_ptr->spank_job_env_size; i++) {
+//				des_job_ptr->spank_job_env[i] = xstrdup(src_job_ptr->spank_job_env[i]);
+//		}
+//	}
+//	des_job_ptr->gres_list_alloc = gres_job_state_list_dup(src_job_ptr->gres_list_alloc);
+//	des_job_ptr->gres_list_req_accum = gres_job_state_list_dup(src_job_ptr->gres_list_req_accum);
+
+//	if (src_job_ptr->tres_alloc_cnt){
+//		i = sizeof(uint64_t) * slurmctld_tres_cnt;
+//		des_job_ptr->tres_alloc_cnt = xmalloc(i);
+//		memcpy(des_job_ptr->tres_alloc_cnt, src_job_ptr->tres_alloc_cnt, i);
+//	}
+	
+//	if (src_job_ptr->tres_req_cnt){
+//		i = sizeof(uint64_t) * slurmctld_tres_cnt;
+//		des_job_ptr->tres_req_cnt = xmalloc(i);
+//		memcpy(des_job_ptr->tres_req_cnt, src_job_ptr->tres_req_cnt, i);
+//	}
+
+	des_job_ptr->het_job_list = NULL;
+	des_job_ptr->tres_alloc_str = NULL;
+	des_job_ptr->tres_req_str = NULL;
+	des_job_ptr->alias_list = NULL;
+	des_job_ptr->clusters = NULL;
+	des_job_ptr->node_bitmap_pr = NULL;
+	des_job_ptr->nodes_completing = NULL;
+	des_job_ptr->nodes_pr = NULL;
+	des_job_ptr->origin_cluster = NULL;
+#ifdef __METASTACK_OPT_HIST_COMMAND	
+	des_job_ptr->command = NULL;
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL	
+	des_job_ptr->resource_node_detail = NULL;
+#endif
+	des_job_ptr->resp_host = NULL;
+	des_job_ptr->assoc_ptr = NULL;
+	des_job_ptr->front_end_ptr = NULL;
+	des_job_ptr->gres_list_req_accum = NULL;
+	des_job_ptr->gres_list_alloc = NULL;
+	des_job_ptr->het_details = NULL;
+	des_job_ptr->job_next = NULL;
+	des_job_ptr->job_array_next_j = NULL;
+	des_job_ptr->job_array_next_t = NULL;
+	des_job_ptr->job_preempt_comp = NULL;
+	des_job_ptr->license_list = NULL;
+	des_job_ptr->priority_array = NULL;
+	des_job_ptr->prio_factors = NULL;
+	des_job_ptr->qos_blocking_ptr = NULL;
+	des_job_ptr->resv_list = NULL;
+	des_job_ptr->resv_ptr = NULL;
+	des_job_ptr->spank_job_env = NULL;
+	des_job_ptr->tres_req_cnt = NULL;
+	des_job_ptr->tres_alloc_cnt = NULL;
+	
+	return 0;
+}
+
+/*
+ * find_hash_job_record - return a pointer to the job record with the given job_id
+ * IN job_id - requested job's id
+ * IN type - The data table to be queried, 1:copy data 2:cache data
+ * RET pointer to the job's record, NULL on error
+ */
+extern job_record_t *find_hash_job_record(uint32_t job_id, int type)
+{
+	job_record_t *job_ptr = NULL;
+	if(type == 1 && copy_job_hash){
+		job_ptr = copy_job_hash[JOB_HASH_INX(job_id)];
+		while (job_ptr) {
+			if (job_ptr->job_id == job_id)
+				return job_ptr;
+			job_ptr = job_ptr->job_next;
+		}
+
+	}else if(type == 2 && cache_job_hash){
+		job_ptr = cache_job_hash[JOB_HASH_INX(job_id)];
+		while (job_ptr) {
+			if (job_ptr->job_id == job_id)
+				return job_ptr;
+			job_ptr = job_ptr->job_next;
+		}
+	}
+	return NULL;
+}
+
+static void _add_copy_job_hash(job_record_t *job_ptr)
+{
+        int inx;
+        inx = JOB_HASH_INX(job_ptr->job_id);
+        job_ptr->job_next = copy_job_hash[inx];
+        copy_job_hash[inx] = job_ptr;
+}
+
+/* _add_copy_job_array_hash - add a job hash entry for given job record,
+ *      array_job_id and array_task_id must already be set
+ * IN job_ptr - pointer to job record
+ * Globals: hash table updated
+ */
+void _add_copy_job_array_hash(job_record_t *job_ptr)
+{
+        int inx;
+
+        if (job_ptr->array_task_id == NO_VAL)
+                return; /* Not a job array */
+
+        inx = JOB_HASH_INX(job_ptr->array_job_id);
+        job_ptr->job_array_next_j = copy_job_array_hash_j[inx];
+        copy_job_array_hash_j[inx] = job_ptr;
+
+        inx = JOB_ARRAY_HASH_INX(job_ptr->array_job_id,job_ptr->array_task_id);
+        job_ptr->job_array_next_t = copy_job_array_hash_t[inx];
+        copy_job_array_hash_t[inx] = job_ptr;
+}
+
+static int _copy_job(void *x, void *arg)
+{
+	job_record_t *src_job_ptr = (job_record_t *) x;
+	job_record_t *des_job_ptr = xmalloc(sizeof(*des_job_ptr));;
+
+	copy_job(src_job_ptr, des_job_ptr);
+	list_append(copy_job_list, des_job_ptr);
+	_add_copy_job_hash(des_job_ptr);                /* Sets job_next */
+	_add_copy_job_array_hash(des_job_ptr);
+	return 0;
+}
+
+void copy_all_job_state()
+{
+	slurmctld_lock_t job_read_lock = {
+			READ_LOCK, READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	assoc_mgr_lock_t locks = { .qos = READ_LOCK };
+	
+	lock_slurmctld(job_read_lock);
+	assoc_mgr_lock(&locks);
+    copy_job_list = list_create(_list_delete_copy_job);
+	copy_hash_table_size = slurm_conf.max_job_cnt;
+	copy_job_hash = xcalloc(copy_hash_table_size, sizeof(job_record_t *));
+	copy_job_array_hash_j = xcalloc(copy_hash_table_size, sizeof(job_record_t *));
+	copy_job_array_hash_t = xcalloc(copy_hash_table_size, sizeof(job_record_t *));
+	list_for_each_ro(job_list, _copy_job, NULL);
+	assoc_mgr_unlock(&locks);
+	unlock_slurmctld(job_read_lock);
+	if(copy_job_list)
+		_validate_copy_het_jobs();
+}
+void update_job_cache_data()
+{
+	FREE_NULL_LIST(cache_job_list);
+	xfree(cache_job_hash);
+	xfree(cache_job_array_hash_t);
+	xfree(cache_job_array_hash_j);
+	cache_job_list = copy_job_list;
+	cache_job_hash = copy_job_hash;
+	cache_job_array_hash_t = copy_job_array_hash_t;
+	cache_job_array_hash_j = copy_job_array_hash_j;
+	copy_job_list = NULL;
+	copy_job_hash = NULL;
+	copy_job_array_hash_t = NULL;
+	copy_job_array_hash_j = NULL;
+}
+/* Determine if ALL partitions associated with a job are hidden */
+static bool _all_cache_parts_hidden(job_record_t *job_ptr,
+			      part_record_t **visible_parts)
+{
+	bool rc = true;
+	ListIterator part_iterator;
+	part_record_t *part_ptr = NULL;
+
+	if(visible_parts == NULL)
+		return rc;
+		
+	if (job_ptr->part_ptr_list) {
+		part_iterator = list_iterator_create(cache_part_list);
+		while (rc && (part_ptr = list_next(part_iterator))) {
+			for (int i = 0; visible_parts[i]; i++) {
+				if (visible_parts[i] == part_ptr) {
+					rc = false;
+					break;
+				}
+			}
+		}
+		list_iterator_destroy(part_iterator);
+		return rc;
+	}
+
+	if (job_ptr->part_ptr) {
+		for (int i = 0; visible_parts[i]; i++) {
+			if (visible_parts[i] == job_ptr->part_ptr)
+				return false;
+		}
+	}
+
+	return true;
+}
+
+/*
+ * pack_job - dump all configuration information about a specific job in
+ *	machine independent form (for network transmission)
+ * IN dump_job_ptr - pointer to job for which information is requested
+ * IN show_flags - job filtering options
+ * IN/OUT buffer - buffer in which data is placed, pointers automatically
+ *	updated
+ * IN uid - user requesting the data
+ * NOTE: change _unpack_job_info_members() in common/slurm_protocol_pack.c
+ *	  whenever the data format changes
+ */
+void pack_cache_job(job_record_t *dump_job_ptr, uint16_t show_flags, buf_t *buffer,
+	      uint16_t protocol_version, uid_t uid, bool has_qos_lock)
+{
+	struct job_details *detail_ptr = NULL;
+	time_t accrue_time = 0, begin_time = 0, start_time = 0, end_time = 0;
+	uint32_t time_limit;
+	char *nodelist = NULL;
+	assoc_mgr_lock_t locks = { .qos = READ_LOCK };
+	xassert(!has_qos_lock || verify_assoc_lock(QOS_LOCK, READ_LOCK));
+
+    /**
+     * __META_PROTOCOL
+     * pack buffer with ctld's cache
+     * no matter with the client version
+     * only related to whether ctld's version
+     */
+	if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+		detail_ptr = dump_job_ptr->details;
+		pack32(dump_job_ptr->array_job_id, buffer);
+		pack32(dump_job_ptr->array_task_id, buffer);
+		if (dump_job_ptr->array_recs) {
+			build_array_str(dump_job_ptr);
+			packstr(dump_job_ptr->array_recs->task_id_str, buffer);
+			pack32(dump_job_ptr->array_recs->max_run_tasks, buffer);
+		} else {
+			job_record_t *array_head = NULL;
+			packnull(buffer);
+			if (dump_job_ptr->array_job_id) {
+				array_head = find_hash_job_record(
+					dump_job_ptr->array_job_id, 2);
+			}
+			if (array_head && array_head->array_recs) {
+				pack32(array_head->array_recs->max_run_tasks,
+				       buffer);
+			} else {
+				pack32((uint32_t)0, buffer);
+			}
+		}
+
+		pack32(dump_job_ptr->assoc_id, buffer);
+		packstr(dump_job_ptr->container, buffer);
+		pack32(dump_job_ptr->delay_boot, buffer);
+		pack32(dump_job_ptr->job_id, buffer);
+		pack32(dump_job_ptr->user_id, buffer);
+		pack32(dump_job_ptr->group_id, buffer);
+		pack32(dump_job_ptr->het_job_id, buffer);
+		packstr(dump_job_ptr->het_job_id_set, buffer);
+		pack32(dump_job_ptr->het_job_offset, buffer);
+		pack32(dump_job_ptr->profile, buffer);
+
+		pack32(dump_job_ptr->job_state, buffer);
+		pack16(dump_job_ptr->batch_flag, buffer);
+		pack16(dump_job_ptr->state_reason, buffer);
+		pack8(dump_job_ptr->power_flags, buffer);
+		pack8(dump_job_ptr->reboot, buffer);
+		pack16(dump_job_ptr->restart_cnt, buffer);
+		pack16(show_flags, buffer);
+		pack_time(dump_job_ptr->deadline, buffer);
+
+		pack32(dump_job_ptr->alloc_sid, buffer);
+		if ((dump_job_ptr->time_limit == NO_VAL) &&
+		    dump_job_ptr->part_ptr)
+			time_limit = dump_job_ptr->part_ptr->max_time;
+		else
+			time_limit = dump_job_ptr->time_limit;
+
+		pack32(time_limit, buffer);
+		pack32(dump_job_ptr->time_min, buffer);
+
+		if (dump_job_ptr->details) {
+			pack32(dump_job_ptr->details->nice, buffer);
+			pack_time(dump_job_ptr->details->submit_time, buffer);
+			/* Earliest possible begin time */
+			begin_time = dump_job_ptr->details->begin_time;
+			/* When we started accruing time for priority */
+			accrue_time = dump_job_ptr->details->accrue_time;
+		} else { /* Some job details may be purged after completion */
+			pack32(NICE_OFFSET, buffer); /* Best guess */
+			pack_time((time_t)0, buffer);
+		}
+
+		pack_time(begin_time, buffer);
+		pack_time(accrue_time, buffer);
+
+		if (IS_JOB_STARTED(dump_job_ptr)) {
+			/* Report actual start time, in past */
+			start_time = dump_job_ptr->start_time;
+			end_time = dump_job_ptr->end_time;
+		} else if (dump_job_ptr->start_time != 0) {
+			/*
+			 * Report expected start time,
+			 * making sure that time is not in the past
+			 */
+			start_time = MAX(dump_job_ptr->start_time, time(NULL));
+			if (time_limit != NO_VAL) {
+				end_time = MAX(dump_job_ptr->end_time,
+					       (start_time + time_limit * 60));
+			}
+		} else if (begin_time > time(NULL)) {
+			/* earliest start time in the future */
+			start_time = begin_time;
+			if (time_limit != NO_VAL) {
+				end_time = MAX(dump_job_ptr->end_time,
+					       (start_time + time_limit * 60));
+			}
+		}
+		pack_time(start_time, buffer);
+		pack_time(end_time, buffer);
+
+		pack_time(dump_job_ptr->suspend_time, buffer);
+		pack_time(dump_job_ptr->pre_sus_time, buffer);
+		pack_time(dump_job_ptr->resize_time, buffer);
+		pack_time(dump_job_ptr->last_sched_eval, buffer);
+		pack_time(dump_job_ptr->preempt_time, buffer);
+		pack32(dump_job_ptr->priority, buffer);
+		packdouble(dump_job_ptr->billable_tres, buffer);
+
+		packstr(slurm_conf.cluster_name, buffer);
+		/*
+		 * Only send the allocated nodelist since we are only sending
+		 * the number of cpus and nodes that are currently allocated.
+		 */
+		if (!IS_JOB_COMPLETING(dump_job_ptr))
+			packstr(dump_job_ptr->nodes, buffer);
+		else {
+			nodelist = bitmap2node_name(
+				dump_job_ptr->node_bitmap_cg);
+			packstr(nodelist, buffer);
+			xfree(nodelist);
+		}
+
+		packstr(dump_job_ptr->sched_nodes, buffer);
+
+		if (!IS_JOB_PENDING(dump_job_ptr) && dump_job_ptr->part_ptr)
+			packstr(dump_job_ptr->part_ptr->name, buffer);
+		else
+			packstr(dump_job_ptr->partition, buffer);
+		packstr(dump_job_ptr->account, buffer);
+		packstr(dump_job_ptr->admin_comment, buffer);
+		pack32(dump_job_ptr->site_factor, buffer);
+		packstr(dump_job_ptr->network, buffer);
+		packstr(dump_job_ptr->comment, buffer);
+		packstr(dump_job_ptr->container, buffer);
+		packstr(dump_job_ptr->batch_features, buffer);
+		packstr(dump_job_ptr->batch_host, buffer);
+		packstr(dump_job_ptr->burst_buffer, buffer);
+		packstr(dump_job_ptr->burst_buffer_state, buffer);
+		packstr(dump_job_ptr->system_comment, buffer);
+
+		if (!has_qos_lock)
+			assoc_mgr_lock(&locks);
+		if (dump_job_ptr->job_cache_data->qos)
+			packstr(dump_job_ptr->job_cache_data->qos_name, buffer);
+		else {
+			if (assoc_mgr_qos_list) {
+				packstr(slurmdb_qos_str(assoc_mgr_qos_list,
+							dump_job_ptr->qos_id),
+					buffer);
+			} else
+				packnull(buffer);
+		}
+
+		pack_time(dump_job_ptr->job_cache_data->preemptable, buffer);
+
+		if (!has_qos_lock)
+			assoc_mgr_unlock(&locks);
+
+		packstr(dump_job_ptr->licenses, buffer);
+		packstr(dump_job_ptr->state_desc, buffer);
+		packstr(dump_job_ptr->resv_name, buffer);
+		packstr(dump_job_ptr->mcs_label, buffer);
+
+		pack32(dump_job_ptr->exit_code, buffer);
+		pack32(dump_job_ptr->derived_ec, buffer);
+
+		packstr(dump_job_ptr->gres_used, buffer);
+		if (show_flags & SHOW_DETAIL) {
+			pack_job_resources(dump_job_ptr->job_resrcs, buffer,
+					   protocol_version);
+			_pack_job_gres(dump_job_ptr, buffer, protocol_version);
+		} else {
+			pack32(NO_VAL, buffer);
+			pack32((uint32_t)0, buffer);
+		}
+
+		packstr(dump_job_ptr->name, buffer);
+		packstr(dump_job_ptr->user_name, buffer);
+		packstr(dump_job_ptr->wckey, buffer);
+		pack32(dump_job_ptr->req_switch, buffer);
+		pack32(dump_job_ptr->wait4switch, buffer);
+
+		packstr(dump_job_ptr->alloc_node, buffer);
+		if (!IS_JOB_COMPLETING(dump_job_ptr))
+			pack_bit_str_hex(dump_job_ptr->node_bitmap, buffer);
+		else
+			pack_bit_str_hex(dump_job_ptr->node_bitmap_cg, buffer);
+
+		select_g_select_jobinfo_pack(dump_job_ptr->select_jobinfo,
+					     buffer, protocol_version);
+
+		/* A few details are always dumped here */
+		_pack_default_job_details(dump_job_ptr, buffer,
+					  protocol_version);
+
+		/*
+		 * other job details are only dumped until the job starts
+		 * running (at which time they become meaningless)
+		 */
+		if (detail_ptr)
+			_pack_pending_job_details(detail_ptr, buffer,
+						  protocol_version);
+		else
+			_pack_pending_job_details(NULL, buffer,
+						  protocol_version);
+		pack64(dump_job_ptr->bit_flags, buffer);
+		packstr(dump_job_ptr->tres_fmt_alloc_str, buffer);
+		packstr(dump_job_ptr->tres_fmt_req_str, buffer);
+		pack16(dump_job_ptr->start_protocol_ver, buffer);
+
+		if (dump_job_ptr->fed_details) {
+			packstr(dump_job_ptr->fed_details->origin_str, buffer);
+			pack64(dump_job_ptr->fed_details->siblings_active,
+			       buffer);
+			packstr(dump_job_ptr->fed_details->siblings_active_str,
+				buffer);
+			pack64(dump_job_ptr->fed_details->siblings_viable,
+			       buffer);
+			packstr(dump_job_ptr->fed_details->siblings_viable_str,
+				buffer);
+		} else {
+			packnull(buffer);
+			pack64((uint64_t)0, buffer);
+			packnull(buffer);
+			pack64((uint64_t)0, buffer);
+			packnull(buffer);
+		}
+
+		packstr(dump_job_ptr->cpus_per_tres, buffer);
+		packstr(dump_job_ptr->mem_per_tres, buffer);
+		packstr(dump_job_ptr->tres_bind, buffer);
+		packstr(dump_job_ptr->tres_freq, buffer);
+		packstr(dump_job_ptr->tres_per_job, buffer);
+		packstr(dump_job_ptr->tres_per_node, buffer);
+		packstr(dump_job_ptr->tres_per_socket, buffer);
+		packstr(dump_job_ptr->tres_per_task, buffer);
+
+		pack16(dump_job_ptr->mail_type, buffer);
+		packstr(dump_job_ptr->mail_user, buffer);
+
+		packstr(dump_job_ptr->selinux_context, buffer);
+#ifdef __METASTACK_NEW_PENDING_ORDER
+		pack32(dump_job_ptr->pending_order, buffer);
+#endif
+	} else {
+		error("pack_job: protocol_version "
+		      "%hu not supported", protocol_version);
+	}
+}
+
+static int _pack_cache_job(void *object, void *arg)
+{
+	job_record_t *job_ptr = (job_record_t *)object;
+	_foreach_pack_job_info_t *pack_info = (_foreach_pack_job_info_t *)arg;
+
+	xassert (job_ptr->magic == JOB_MAGIC);
+
+	if ((pack_info->filter_uid != NO_VAL) &&
+	    (pack_info->filter_uid != job_ptr->user_id))
+		return SLURM_SUCCESS;
+
+	if (!pack_info->privileged) {
+		if (((pack_info->show_flags & SHOW_ALL) == 0) &&
+		    _all_cache_parts_hidden(job_ptr, pack_info->visible_parts))
+			return SLURM_SUCCESS;
+
+		if (_hide_job_user_rec(job_ptr, &pack_info->user_rec,
+				       pack_info->show_flags))
+			return SLURM_SUCCESS;
+	}
+
+	pack_cache_job(job_ptr, pack_info->show_flags, pack_info->buffer,
+		 pack_info->protocol_version, pack_info->uid,
+		 pack_info->has_qos_lock);
+
+	pack_info->jobs_packed++;
+
+	return SLURM_SUCCESS;
+}
+
+static int  _pack_cache_het_job(job_record_t *job_ptr, uint16_t show_flags,
+			 buf_t *buffer, uint16_t protocol_version, uid_t uid)
+{
+	job_record_t *het_job_ptr = NULL;
+	int job_cnt = 0;
+	ListIterator iter;
+
+	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
+
+	iter = list_iterator_create(job_ptr->het_job_list);
+	while ((het_job_ptr = list_next(iter))) {
+		if (het_job_ptr->het_job_id == job_ptr->het_job_id) {
+			pack_cache_job(het_job_ptr, show_flags, buffer,
+				 protocol_version, uid, true);
+			job_cnt++;
+		} else {
+			error("%s: Bad het_job_list for %pJ",
+			      __func__, job_ptr);
+		}
+	}
+	list_iterator_destroy(iter);
+
+	return job_cnt;
+}
+
+static int _foreach_pack_cache_jobid(void *object, void *arg)
+{
+        job_record_t *job_ptr = NULL;
+        uint32_t job_id = *(uint32_t *)object;
+        _foreach_pack_job_info_t *info = (_foreach_pack_job_info_t *)arg;
+
+        if (!(job_ptr = find_hash_job_record(job_id, 2)))
+                return SLURM_SUCCESS;
+
+        return _pack_cache_job(job_ptr, info);
+}
+
+/*
+ * pack_spec_jobs - dump job information for specified jobs in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - job filtering options
+ * IN job_ids - list of job_ids to pack
+ * IN uid - uid of user making request (for partition filtering)
+ * IN filter_uid - pack only jobs belonging to this user if not NO_VAL
+ * global: job_list - global list of job records
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ */
+extern void pack_spec_cache_jobs(char **buffer_ptr, int *buffer_size, List job_ids,
+                           uint16_t show_flags, uid_t uid, uint32_t filter_uid,
+                           uint16_t protocol_version)
+{
+        uint32_t tmp_offset;
+        _foreach_pack_job_info_t pack_info = {
+                .buffer = _pack_init_job_info(protocol_version),
+                .filter_uid = filter_uid,
+                .jobs_packed = 0,
+                .protocol_version = protocol_version,
+                .show_flags = show_flags,
+                .uid = uid,
+                .has_qos_lock = true,
+                .user_rec.uid = uid,
+        };
+        assoc_mgr_lock_t locks = { .assoc = READ_LOCK, .user = READ_LOCK,
+                                   .qos = READ_LOCK };
+
+        xassert(job_ids);
+
+        buffer_ptr[0] = NULL;
+        *buffer_size = 0;
+
+        assoc_mgr_lock(&locks);
+        assoc_mgr_fill_in_user(acct_db_conn, &pack_info.user_rec,
+                               accounting_enforce, NULL, true);
+        pack_info.privileged = validate_operator_user_rec(&pack_info.user_rec);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+    /**
+     * assoc_list may have been channged in func: assoc_mgr_fill_in_user
+     */
+    pack_info.user_rec.assoc_list = NULL;
+        pack_info.visible_parts = build_visible_cache_parts_user(&pack_info.user_rec,
+                        (pack_info.privileged || (show_flags & SHOW_ALL)), true);
+#else
+        pack_info.visible_parts = build_visible_cache_parts(
+                uid, (pack_info.privileged || (show_flags & SHOW_ALL)));
+#endif
+        list_for_each_ro(job_ids, _foreach_pack_cache_jobid, &pack_info);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+        /**
+     * if (pack_info.privileged || (show_flags & SHOW_ALL)),
+         * assoc_list == NULL 
+     */
+        if (pack_info.user_rec.assoc_list)
+                list_destroy(pack_info.user_rec.assoc_list);
+#endif
+        assoc_mgr_unlock(&locks);
+
+        /* put the real record count in the message body header */
+        tmp_offset = get_buf_offset(pack_info.buffer);
+        set_buf_offset(pack_info.buffer, 0);
+        pack32(pack_info.jobs_packed, pack_info.buffer);
+        set_buf_offset(pack_info.buffer, tmp_offset);
+
+        *buffer_size = get_buf_offset(pack_info.buffer);
+        buffer_ptr[0] = xfer_buf_data(pack_info.buffer);
+        xfree(pack_info.visible_parts);
+}
+
+
+/*
+ * pack_all_cache_jobs - dump all job information for all jobs in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - job filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * IN filter_uid - pack only jobs belonging to this user if not NO_VAL
+ * global: job_list - global list of job records
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ */
+extern void pack_all_cache_jobs(char **buffer_ptr, int *buffer_size,
+                          uint16_t show_flags, uid_t uid, uint32_t filter_uid,
+                          uint16_t protocol_version)
+{
+        uint32_t tmp_offset;
+        _foreach_pack_job_info_t pack_info = {
+                .buffer = _pack_init_job_info(protocol_version),
+                .filter_uid = filter_uid,
+                .jobs_packed = 0,
+                .protocol_version = protocol_version,
+                .show_flags = show_flags,
+                .uid = uid,
+                .has_qos_lock = true,
+                .user_rec.uid = uid,
+        };
+        assoc_mgr_lock_t locks = { .assoc = READ_LOCK, .user = READ_LOCK,
+                                   .qos = READ_LOCK };
+
+        buffer_ptr[0] = NULL;
+        *buffer_size = 0;
+
+        assoc_mgr_lock(&locks);
+        assoc_mgr_fill_in_user(acct_db_conn, &pack_info.user_rec,
+                               accounting_enforce, NULL, true);
+        pack_info.privileged = validate_operator_user_rec(&pack_info.user_rec);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+    /**
+     * assoc_list may have been channged in func: assoc_mgr_fill_in_user
+     */
+    pack_info.user_rec.assoc_list = NULL;
+        pack_info.visible_parts = build_visible_cache_parts_user(&pack_info.user_rec,
+                        (pack_info.privileged || (show_flags & SHOW_ALL)), true);
+#else
+        pack_info.visible_parts = build_visible_cache_parts(
+                uid, (pack_info.privileged || (show_flags & SHOW_ALL)));
+#endif
+        list_for_each_ro(cache_job_list, _pack_cache_job, &pack_info);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+        /**
+     * if (pack_info.privileged || (show_flags & SHOW_ALL)),
+         * assoc_list == NULL 
+     */
+        if (pack_info.user_rec.assoc_list)
+                list_destroy(pack_info.user_rec.assoc_list);
+#endif
+        assoc_mgr_unlock(&locks);
+
+        /* put the real record count in the message body header */
+        tmp_offset = get_buf_offset(pack_info.buffer);
+        set_buf_offset(pack_info.buffer, 0);
+        pack32(pack_info.jobs_packed, pack_info.buffer);
+        set_buf_offset(pack_info.buffer, tmp_offset);
+
+        *buffer_size = get_buf_offset(pack_info.buffer);
+        buffer_ptr[0] = xfer_buf_data(pack_info.buffer);
+        xfree(pack_info.visible_parts);
+}
+
+/*
+ * pack_one_cache_job - dump information for one jobs in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN job_id - ID of job that we want info for
+ * IN show_flags - job filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ */
+extern int pack_one_cache_job(char **buffer_ptr, int *buffer_size,
+                        uint32_t job_id, uint16_t show_flags, uid_t uid,
+                        uint16_t protocol_version)
+{
+        job_record_t *job_ptr = NULL;
+        uint32_t jobs_packed = 0, tmp_offset;
+        buf_t *buffer = NULL;
+        assoc_mgr_lock_t locks = { .qos = READ_LOCK, .user = READ_LOCK };
+        slurmdb_user_rec_t user_rec = { 0 };
+        bool hide_job = false;
+        bool valid_operator;
+
+        buffer_ptr[0] = NULL;
+        *buffer_size = 0;
+
+        buffer = _pack_init_job_info(protocol_version);
+
+        assoc_mgr_lock(&locks);
+        user_rec.uid = uid;
+        assoc_mgr_fill_in_user(acct_db_conn, &user_rec,
+                               accounting_enforce, NULL, true);
+
+        job_ptr = find_hash_job_record(job_id, 2);
+        if (!(valid_operator = validate_operator_user_rec(&user_rec)))
+                hide_job = _hide_job_user_rec(job_ptr, &user_rec, show_flags);
+
+        if (job_ptr && job_ptr->het_job_list) {
+                /* Pack heterogeneous job components */
+                if (!hide_job) {
+                        jobs_packed = _pack_cache_het_job(job_ptr, show_flags,
+                                                    buffer, protocol_version,
+                                                    uid);
+                }
+        } else if (job_ptr && (job_ptr->array_task_id == NO_VAL) &&
+                   !job_ptr->array_recs) {
+                /* Pack regular (not array) job */
+                if (!hide_job) {
+                        pack_cache_job(job_ptr, show_flags, buffer, protocol_version,
+                                 uid, true);
+                        jobs_packed++;
+                }
+        } else {
+                bool packed_head = false;
+
+                /* Either the job is not found or it is a job array */
+                if (job_ptr) {
+                        packed_head = true;
+                        if (!hide_job) {
+                                pack_cache_job(job_ptr, show_flags, buffer,
+                                         protocol_version, uid, true);
+                                jobs_packed++;
+                        }
+                }
+
+                job_ptr = cache_job_array_hash_j[JOB_HASH_INX(job_id)];
+                while (job_ptr) {
+                        if ((job_ptr->job_id == job_id) && packed_head) {
+                                ;       /* Already packed */
+                         } else if (job_ptr->array_job_id == job_id) {
+                                if (valid_operator ||
+                                    !_hide_job_user_rec(job_ptr, &user_rec,
+                                                        show_flags)) {
+                                        pack_cache_job(job_ptr, show_flags, buffer,
+                                                 protocol_version, uid, true);
+                                        jobs_packed++;
+                                }
+                        }
+                        job_ptr = job_ptr->job_array_next_j;
+                }
+        }
+
+        assoc_mgr_unlock(&locks);
+
+        if (jobs_packed == 0) {
+                free_buf(buffer);
+                return ESLURM_INVALID_JOB_ID;
+        }
+
+        /* put the real record count in the message body header */
+        tmp_offset = get_buf_offset(buffer);
+        set_buf_offset(buffer, 0);
+        pack32(jobs_packed, buffer);
+        set_buf_offset(buffer, tmp_offset);
+
+        *buffer_size = get_buf_offset(buffer);
+        buffer_ptr[0] = xfer_buf_data(buffer);
+
+        return SLURM_SUCCESS;
+}			
+#endif

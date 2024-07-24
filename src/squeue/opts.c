@@ -68,6 +68,9 @@
 #define OPT_LONG_ME           0x109
 #define OPT_LONG_JSON         0x110
 #define OPT_LONG_YAML         0x111
+#ifdef __METASTACK_OPT_CACHE_QUERY
+#define OPT_LONG_CACHE        0x112
+#endif
 
 /* FUNCTIONS */
 static List  _build_job_list( char* str );
@@ -397,6 +400,9 @@ parse_command_line( int argc, char* *argv )
 		{"all",        no_argument,       0, 'a'},
 		{"array",      no_argument,       0, 'r'},
 		{"array-unique",no_argument,      0, OPT_LONG_ARRAY_UNIQUE},
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		{"cache",	   no_argument, 	  0, OPT_LONG_CACHE},
+#endif
 		{"Format",     required_argument, 0, 'O'},
 		{"format",     required_argument, 0, 'o'},
 		{"federation", no_argument,       0, OPT_LONG_FEDR},
@@ -662,6 +668,11 @@ parse_command_line( int argc, char* *argv )
 			params.mimetype = MIME_TYPE_YAML;
 			data_init(MIME_TYPE_YAML_PLUGIN, NULL);
 			break;
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		case OPT_LONG_CACHE:
+			params.cache_query = true;
+			break;	
+#endif
 		}
 	}
 

@@ -45,6 +45,9 @@
 #include "src/common/slurm_time.h"
 #include "src/sinfo/sinfo.h"
 #include "src/sinfo/print.h"
+#ifdef __METASTACK_OPT_CACHE_QUERY
+#include "src/common/read_config.h"
+#endif
 
 /********************
  * Global Variables *
@@ -338,6 +341,12 @@ static List _query_server(bool clear_old)
 	int cc;
 	node_info_t *node_ptr;
 	List sinfo_list = NULL;
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(update_client_port(params.cache_query)){
+		return NULL;
+	}
+#endif
 
 	if (params.all_flag)
 		show_flags |= SHOW_ALL;

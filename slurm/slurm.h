@@ -251,6 +251,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_PART_RBN
 #endif
 
+#ifndef __METASTACK_OPT_CACHE_QUERY
+#define __METASTACK_OPT_CACHE_QUERY
+#endif
+
 #ifndef __METASTACK_BUG_CR_CORE
 #define __METASTACK_BUG_CR_CORE
 #endif
@@ -3292,6 +3296,12 @@ typedef struct {
 	uint16_t vsize_factor;	/* virtual memory limit size factor */
 	uint16_t wait_time;	/* default job --wait time */
 	char *x11_params;	/* X11Parameters */
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	uint32_t query_port;  /* The default communication port for caching queries */
+	uint16_t query_port_count; /* Cache query number of communication ports */
+	uint16_t cachedup_interval; /*Data copy time interval*/ 
+	uint16_t cache_query; /*High Performance Query Switch*/
+#endif
 } slurm_conf_t;
 
 typedef struct slurmd_status_msg {

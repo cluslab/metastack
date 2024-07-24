@@ -75,6 +75,9 @@ struct squeue_parameters {
 	bool sibling_flag;
 	bool start_flag;
 	bool step_flag;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool cache_query;		
+#endif
 	bool long_format;
 	bool long_list;
 	bool no_header;

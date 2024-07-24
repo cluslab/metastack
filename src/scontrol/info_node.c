@@ -145,6 +145,12 @@ scontrol_print_node_list (char *node_list)
 	if (future_flag)
 		show_flags |= SHOW_FUTURE;
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(update_client_port(cache_flag)){
+		return;
+	}
+#endif
+
 	error_code = scontrol_load_nodes(&node_info_ptr, show_flags);
 	if (error_code) {
 		exit_code = 1;

@@ -375,7 +375,11 @@ extern void scontrol_print_job(char * job_id_str)
 		if (end_ptr[0] == '+')
 			het_job_offset = strtol(end_ptr + 1, &end_ptr, 10);
 	}
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(update_client_port(cache_flag)){
+		return;
+	}
+#endif
 	error_code = scontrol_load_job(&job_buffer_ptr, job_id);
 	if (error_code) {
 		exit_code = 1;
@@ -473,6 +477,12 @@ scontrol_print_step (char *job_step_id_str)
 		show_flags |= SHOW_ALL;
 	if (local_flag)
 		show_flags |= SHOW_LOCAL;
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(update_client_port(cache_flag)){
+		return;
+	}
+#endif
 
 	if ((old_job_step_info_ptr) && (last_job_id == step_id.job_id) &&
 	    (last_array_id == array_id) && (last_step_id == step_id.step_id)) {

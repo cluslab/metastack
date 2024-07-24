@@ -73,6 +73,9 @@ const char *node_select_syms[] = {
 	"select_p_step_pick_nodes",
 	"select_p_step_start",
 	"select_p_step_finish",
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	"select_p_select_nodeinfo_copy",
+#endif
 	"select_p_select_nodeinfo_pack",
 	"select_p_select_nodeinfo_unpack",
 	"select_p_select_nodeinfo_alloc",
@@ -1145,3 +1148,28 @@ extern bitstr_t * select_g_resv_test(resv_desc_msg_t *resv_desc_ptr,
 	return (*(ops[select_context_default].resv_test))
 		(resv_desc_ptr, node_cnt, avail_bitmap, core_bitmap);
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* copy a select node credential
+ * IN nodeinfo - the select node credential to be copied
+ * RET        - the copy or NULL on failure
+ * NOTE: returned value must be freed using select_g_free_nodeinfo
+ */
+extern dynamic_plugin_data_t *select_g_select_nodeinfo_copy(	dynamic_plugin_data_t *nodeinfo)
+{
+	dynamic_plugin_data_t *nodeinfo_ptr = NULL;
+	if (select_g_init(0) < 0)
+		return NULL;
+
+	nodeinfo_ptr = xmalloc(sizeof(dynamic_plugin_data_t));
+	if (nodeinfo) {
+		nodeinfo_ptr->plugin_id = nodeinfo->plugin_id;
+		nodeinfo_ptr->data = (*(ops[nodeinfo->plugin_id].
+				       nodeinfo_copy))(nodeinfo->data);
+	} else
+		nodeinfo_ptr->plugin_id = select_context_default;
+
+	return nodeinfo_ptr;
+}
+	
+#endif

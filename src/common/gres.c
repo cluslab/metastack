@@ -10370,3 +10370,136 @@ extern void gres_parse_config_dummy(void)
 	s_p_hashtbl_destroy(tbl);
 	xfree(gres_conf_file);
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/*Copy the gres data of the node */
+static void *_copy_node_state_dup(gres_node_state_t *gres_ns)
+{
+	int i, j;
+	gres_node_state_t *new_gres_ns = NULL;
+
+	if (gres_ns == NULL)
+		return NULL;
+
+	new_gres_ns = xmalloc(sizeof(gres_node_state_t));
+	new_gres_ns->gres_cnt_found  = gres_ns->gres_cnt_found;
+	new_gres_ns->gres_cnt_config = gres_ns->gres_cnt_config;
+	new_gres_ns->gres_cnt_avail  = gres_ns->gres_cnt_avail;
+	new_gres_ns->gres_cnt_alloc  = gres_ns->gres_cnt_alloc;
+	new_gres_ns->no_consume      = gres_ns->no_consume;
+	new_gres_ns->node_feature    = gres_ns->node_feature;
+	new_gres_ns->gres_used       = xstrdup(gres_ns->gres_used);
+	if (gres_ns->gres_bit_alloc)
+		new_gres_ns->gres_bit_alloc = bit_copy(gres_ns->gres_bit_alloc);
+
+	if (gres_ns->links_cnt && gres_ns->link_len) {
+		new_gres_ns->links_cnt = xcalloc(gres_ns->link_len,
+						 sizeof(int *));
+		j = sizeof(int) * gres_ns->link_len;
+		for (i = 0; i < gres_ns->link_len; i++) {
+			new_gres_ns->links_cnt[i] = xmalloc(j);
+			memcpy(new_gres_ns->links_cnt[i],
+			       gres_ns->links_cnt[i], j);
+		}
+		new_gres_ns->link_len = gres_ns->link_len;
+	}
+
+	if (gres_ns->topo_cnt) {
+		new_gres_ns->topo_cnt = gres_ns->topo_cnt;
+		new_gres_ns->topo_core_bitmap = xcalloc(gres_ns->topo_cnt,
+							sizeof(bitstr_t *));
+		new_gres_ns->topo_gres_bitmap = xcalloc(gres_ns->topo_cnt,
+							sizeof(bitstr_t *));
+		new_gres_ns->topo_gres_cnt_alloc = xcalloc(gres_ns->topo_cnt,
+							   sizeof(uint64_t));
+		new_gres_ns->topo_gres_cnt_avail = xcalloc(gres_ns->topo_cnt,
+							   sizeof(uint64_t));
+		new_gres_ns->topo_type_id = xcalloc(gres_ns->topo_cnt,
+						    sizeof(uint32_t));
+		new_gres_ns->topo_type_name = xcalloc(gres_ns->topo_cnt,
+						      sizeof(char *));
+		for (i = 0; i < gres_ns->topo_cnt; i++) {
+			if (gres_ns->topo_core_bitmap[i]) {
+				new_gres_ns->topo_core_bitmap[i] =
+					bit_copy(gres_ns->topo_core_bitmap[i]);
+			}
+			new_gres_ns->topo_gres_bitmap[i] =
+				bit_copy(gres_ns->topo_gres_bitmap[i]);
+			new_gres_ns->topo_gres_cnt_alloc[i] =
+				gres_ns->topo_gres_cnt_alloc[i];
+			new_gres_ns->topo_gres_cnt_avail[i] =
+				gres_ns->topo_gres_cnt_avail[i];
+			new_gres_ns->topo_type_id[i] = gres_ns->topo_type_id[i];
+			new_gres_ns->topo_type_name[i] =
+				xstrdup(gres_ns->topo_type_name[i]);
+		}
+	}
+
+	if (gres_ns->type_cnt) {
+		new_gres_ns->type_cnt       = gres_ns->type_cnt;
+		new_gres_ns->type_cnt_alloc = xcalloc(gres_ns->type_cnt,
+						      sizeof(uint64_t));
+		new_gres_ns->type_cnt_avail = xcalloc(gres_ns->type_cnt,
+						      sizeof(uint64_t));
+		new_gres_ns->type_id = xcalloc(gres_ns->type_cnt,
+					       sizeof(uint32_t));
+		new_gres_ns->type_name = xcalloc(gres_ns->type_cnt,
+						 sizeof(char *));
+		for (i = 0; i < gres_ns->type_cnt; i++) {
+			new_gres_ns->type_cnt_alloc[i] =
+				gres_ns->type_cnt_alloc[i];
+			new_gres_ns->type_cnt_avail[i] =
+				gres_ns->type_cnt_avail[i];
+			new_gres_ns->type_id[i] = gres_ns->type_id[i];
+			new_gres_ns->type_name[i] =
+				xstrdup(gres_ns->type_name[i]);
+		}
+	}
+
+	return new_gres_ns;
+}
+
+/*
+ * Duplicate a node gres status (used for will-run logic)
+ * IN gres_list - node gres state information
+ * RET a copy of gres_list or NULL on failure
+ */
+extern List gres_node_state_list_copy(List gres_list)
+{
+	List new_list = NULL;
+	ListIterator gres_iter;
+	gres_state_t *gres_state_node, *new_gres;
+	void *gres_ns;
+
+	if (gres_list == NULL)
+		return new_list;
+
+	(void) gres_init();
+
+	slurm_mutex_lock(&gres_context_lock);
+	if ((gres_context_cnt > 0)) {
+		new_list = list_create(_gres_node_list_delete);
+	}
+	gres_iter = list_iterator_create(gres_list);
+	while ((gres_state_node = (gres_state_t *) list_next(gres_iter))) {
+		if (!_find_context_by_id(gres_state_node->plugin_id)) {
+			error("Could not find plugin id %u to dup node record",
+			      gres_state_node->plugin_id);
+			continue;
+		}
+
+		gres_ns = _copy_node_state_dup(gres_state_node->gres_data);
+		if (gres_ns) {
+			new_gres = gres_create_state(
+				gres_state_node, GRES_STATE_SRC_STATE_PTR,
+				GRES_STATE_TYPE_NODE, gres_ns);
+			list_append(new_list, new_gres);
+		}
+	}
+	list_iterator_destroy(gres_iter);
+	slurm_mutex_unlock(&gres_context_lock);
+
+	return new_list;
+}
+
+#endif
