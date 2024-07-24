@@ -5203,3 +5203,388 @@ extern void set_node_reboot_reason(node_record_t *node_ptr, char *message)
 		node_ptr->reason_uid = slurm_conf.slurm_user_id;
 	}
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+/*
+ * pack_one_cache_node - dump all configuration and node information for one node
+ *	in machine independent form (for network transmission)
+ * OUT buffer_ptr - pointer to the stored data
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - node filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * IN node_name - name of node for which information is desired,
+ *		  use first node if name is NULL
+ * IN protocol_version - slurm protocol version of client
+ * global: node_record_table_ptr - pointer to global node table
+ * NOTE: the caller must xfree the buffer at *buffer_ptr
+ * NOTE: change slurm_load_node() in api/node_info.c when data format changes
+ */
+extern void pack_one_cache_node (char **buffer_ptr, int *buffer_size,
+			   uint16_t show_flags, uid_t uid, char *node_name,
+			   uint16_t protocol_version)
+{
+	uint32_t nodes_packed, tmp_offset;
+	buf_t *buffer = NULL;
+	time_t now = time(NULL);
+	node_record_t *node_ptr = NULL;
+	bool hidden, privileged = validate_operator(uid);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+	pack_node_info_t pack_info = {
+		.uid = uid,
+		.user_rec.uid = (uint32_t)uid,
+	};
+	
+    pack_info.user_rec.assoc_list = NULL;
+	/* also return user_rec.assoc_list if !privileged */
+	pack_info.visible_parts = build_visible_cache_parts_user(&pack_info.user_rec, privileged, false);
+#else
+	pack_node_info_t pack_info = {
+		.uid = uid,
+		.visible_parts = build_visible_cache_parts(uid, privileged)
+	};
+#endif
+
+	xassert(verify_lock(CONF_LOCK, READ_LOCK));
+	xassert(cache_verify_lock(PART_LOCK, READ_LOCK));
+
+	buffer_ptr[0] = NULL;
+	*buffer_size = 0;
+
+	buffer = init_buf (BUF_SIZE);
+	nodes_packed = 0;
+
+	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		/* write header: count and time */
+		pack32(nodes_packed, buffer);
+		pack_time(now, buffer);
+
+		/* write node records */
+		if (node_name)
+			node_ptr = find_cache_node_record(node_name);
+		else
+			node_ptr = cache_node_record_table_ptr[0];
+		if (node_ptr) {
+			hidden = false;
+			if (((show_flags & SHOW_ALL) == 0) &&
+			    !privileged &&
+			    (_node_is_hidden(node_ptr, &pack_info)))
+				hidden = true;
+			else if (IS_NODE_FUTURE(node_ptr) &&
+				 (!(show_flags & SHOW_FUTURE)))
+				hidden = true;
+//			Don't hide the node if explicitly requested by name
+//			else if (_is_cloud_hidden(node_ptr))
+//				hidden = true;
+			else if ((node_ptr->name == NULL) ||
+				 (node_ptr->name[0] == '\0'))
+				hidden = true;
+
+			if (!hidden) {
+				_pack_node(node_ptr, buffer, protocol_version,
+					   show_flags);
+				nodes_packed++;
+			}
+		}
+	} else {
+		error("select_g_select_jobinfo_pack: protocol_version "
+		      "%hu not supported", protocol_version);
+	}
+
+#ifdef __METASTACK_OPT_PART_VISIBLE
+	/* if (privileged) 
+	 * assoc_list == NULL */
+	if (pack_info.user_rec.assoc_list)
+		list_destroy(pack_info.user_rec.assoc_list);
+#endif
+
+	tmp_offset = get_buf_offset (buffer);
+	set_buf_offset (buffer, 0);
+	pack32  (nodes_packed, buffer);
+	set_buf_offset (buffer, tmp_offset);
+
+	*buffer_size = get_buf_offset (buffer);
+	buffer_ptr[0] = xfer_buf_data (buffer);
+	_free_pack_node_info_members(&pack_info);
+}
+
+/*
+ * pack_all_cache_node - dump all configuration and node information for all nodes
+ *	in machine independent form (for network transmission)
+ * OUT buffer_ptr - pointer to the stored data
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - node filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * IN protocol_version - slurm protocol version of client
+ * global: node_record_table_ptr - pointer to global node table
+ * NOTE: the caller must xfree the buffer at *buffer_ptr
+ * NOTE: change slurm_load_node() in api/node_info.c when data format changes
+ */
+extern void pack_all_cache_node(char **buffer_ptr, int *buffer_size,
+			  uint16_t show_flags, uid_t uid,
+			  uint16_t protocol_version)
+{
+	int inx;
+	uint32_t nodes_packed, tmp_offset;
+	buf_t *buffer = NULL;
+	time_t now = time(NULL);
+	node_record_t *node_ptr = NULL;
+	bool hidden, privileged = validate_operator(uid);
+	static bool inited = false;
+	static config_record_t blank_config = {0};
+	static node_record_t blank_node = {0};
+#ifdef __METASTACK_OPT_PART_VISIBLE
+	pack_node_info_t pack_info = {
+		.uid = uid,
+		.user_rec.uid = (uint32_t)uid,
+	};
+	
+    pack_info.user_rec.assoc_list = NULL;
+	/* also return user_rec.assoc_list if !privileged */
+	pack_info.visible_parts = build_visible_cache_parts_user(&pack_info.user_rec, privileged, false);
+#else
+	pack_node_info_t pack_info = {
+		.uid = uid,
+		.visible_parts = build_visible_cache_parts(uid, privileged)
+	};
+#endif
+
+	xassert(verify_lock(CONF_LOCK, READ_LOCK));
+	xassert(cache_verify_lock(PART_LOCK, READ_LOCK));
+
+	buffer_ptr[0] = NULL;
+	*buffer_size = 0;
+
+	buffer = init_buf (BUF_SIZE*16);
+	nodes_packed = 0;
+
+	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		/* write header: count and time */
+		pack32(nodes_packed, buffer);
+		pack_time(now, buffer);
+
+		/* write node records */
+		for (inx = 0; inx < cache_node_record_count; inx++) {
+			if (!cache_node_record_table_ptr[inx])
+				goto pack_empty;
+			node_ptr = cache_node_record_table_ptr[inx];
+			xassert(node_ptr->magic == NODE_MAGIC);
+			xassert(node_ptr->config_ptr->magic == CONFIG_MAGIC);
+
+			/*
+			 * We can't avoid packing node records without breaking
+			 * the node index pointers. So pack a node with a name
+			 * of NULL and let the caller deal with it.
+			 */
+			hidden = false;
+			if (((show_flags & SHOW_ALL) == 0) &&
+			    !privileged &&
+			    (_node_is_hidden(node_ptr, &pack_info)))
+				hidden = true;
+			else if (IS_NODE_FUTURE(node_ptr) &&
+				 (!(show_flags & SHOW_FUTURE)))
+				hidden = true;
+			else if (_is_cloud_hidden(node_ptr))
+				hidden = true;
+			else if ((node_ptr->name == NULL) ||
+				 (node_ptr->name[0] == '\0'))
+				hidden = true;
+
+			if (hidden) {
+pack_empty:
+				if (!inited) {
+					blank_node.config_ptr = &blank_config;
+					blank_node.select_nodeinfo =
+						select_g_select_nodeinfo_alloc();
+					inited = true;
+				}
+
+				_pack_node(&blank_node, buffer, protocol_version,
+					   show_flags);
+			} else {
+				_pack_node(node_ptr, buffer, protocol_version,
+					   show_flags);
+			}
+			nodes_packed++;
+		}
+	} else {
+		error("select_g_select_jobinfo_pack: protocol_version "
+		      "%hu not supported", protocol_version);
+	}
+
+#ifdef __METASTACK_OPT_PART_VISIBLE
+	/* if (privileged) 
+	 * assoc_list == NULL */
+	if (pack_info.user_rec.assoc_list)
+		list_destroy(pack_info.user_rec.assoc_list);
+#endif
+
+	tmp_offset = get_buf_offset (buffer);
+	set_buf_offset (buffer, 0);
+	pack32  (nodes_packed, buffer);
+	set_buf_offset (buffer, tmp_offset);
+
+	*buffer_size = get_buf_offset (buffer);
+	buffer_ptr[0] = xfer_buf_data (buffer);
+	_free_pack_node_info_members(&pack_info);
+}
+
+static int copy_node_config(config_record_t *src_config_ptr, config_record_t *des_config_ptr, List config_list)
+{
+	if(!src_config_ptr || !des_config_ptr)
+		return 0;
+	memcpy(des_config_ptr, src_config_ptr, sizeof(config_record_t));
+
+	des_config_ptr->cpu_spec_list = xstrdup(src_config_ptr->cpu_spec_list);
+	des_config_ptr->feature = xstrdup(src_config_ptr->feature);
+	des_config_ptr->gres = xstrdup(src_config_ptr->gres);
+	des_config_ptr->nodes = xstrdup(src_config_ptr->nodes);
+	des_config_ptr->tres_weights_str = xstrdup(src_config_ptr->tres_weights_str);
+	if(src_config_ptr->node_bitmap)
+		des_config_ptr->node_bitmap = bit_copy(src_config_ptr->node_bitmap);
+	if(src_config_ptr->tres_weights){
+		des_config_ptr->tres_weights = xcalloc(slurmctld_tres_cnt, sizeof(double));
+		memcpy(des_config_ptr->tres_weights, src_config_ptr->tres_weights, sizeof(double) * slurmctld_tres_cnt);
+	}
+	list_append(config_list, des_config_ptr);
+	return 0;
+}
+
+
+static int copy_node(node_record_t *src_node_ptr, node_record_t *des_node_ptr)
+{
+	int i;
+	config_record_t *config_ptr = NULL;
+	
+	if(!src_node_ptr || !des_node_ptr)
+		return 0;
+	
+	memcpy(des_node_ptr, src_node_ptr, sizeof(node_record_t));
+
+	des_node_ptr->name = xstrdup(src_node_ptr->name);
+	des_node_ptr->node_hostname = xstrdup(src_node_ptr->node_hostname);
+	des_node_ptr->comm_name = xstrdup(src_node_ptr->comm_name);
+	des_node_ptr->bcast_address = xstrdup(src_node_ptr->bcast_address);
+	des_node_ptr->version = xstrdup(src_node_ptr->version);
+	des_node_ptr->mcs_label = xstrdup(src_node_ptr->mcs_label);
+	des_node_ptr->cpu_spec_list = xstrdup(src_node_ptr->cpu_spec_list);
+	des_node_ptr->arch = xstrdup(src_node_ptr->arch);
+	des_node_ptr->features = xstrdup(src_node_ptr->features);
+	des_node_ptr->features_act = xstrdup(src_node_ptr->features_act);
+	des_node_ptr->os = xstrdup(src_node_ptr->os);
+	des_node_ptr->comment = xstrdup(src_node_ptr->comment);
+	des_node_ptr->extra = xstrdup(src_node_ptr->extra);
+	des_node_ptr->reason = xstrdup(src_node_ptr->reason);
+	des_node_ptr->tres_fmt_str = xstrdup(src_node_ptr->tres_fmt_str);
+	des_node_ptr->tres_str = xstrdup(src_node_ptr->tres_str);
+	if(src_node_ptr->node_spec_bitmap)
+		des_node_ptr->node_spec_bitmap = bit_copy(src_node_ptr->node_spec_bitmap);
+	if(src_node_ptr->select_nodeinfo)
+		des_node_ptr->select_nodeinfo = select_g_select_nodeinfo_copy(src_node_ptr->select_nodeinfo);
+	des_node_ptr->gres = xstrdup(src_node_ptr->gres);
+	
+	if(src_node_ptr->energy){
+		des_node_ptr->energy = acct_gather_energy_alloc(1);
+		memcpy(des_node_ptr->energy, src_node_ptr->energy, sizeof(acct_gather_energy_t));
+	}
+	if(src_node_ptr->ext_sensors){
+		des_node_ptr->ext_sensors = ext_sensors_alloc();
+		memcpy(des_node_ptr->ext_sensors, src_node_ptr->ext_sensors, sizeof(ext_sensors_data_t));
+	}
+	if(src_node_ptr->power){
+		des_node_ptr->power = xmalloc(sizeof(power_mgmt_data_t));
+		memcpy(des_node_ptr->power, src_node_ptr->power, sizeof(power_mgmt_data_t));
+	}
+	des_node_ptr->gres_list = gres_node_state_list_copy(src_node_ptr->gres_list);
+
+	if(src_node_ptr->part_pptr){
+		des_node_ptr->part_pptr = NULL;
+		des_node_ptr->part_pptr = xcalloc(des_node_ptr->part_cnt, sizeof(part_record_t *));
+		for (i = 0; i < des_node_ptr->part_cnt; i++) {
+			part_record_t *part_ptr = src_node_ptr->part_pptr[i];
+			des_node_ptr->part_pptr[i] = find_copy_part_record(part_ptr->name,copy_part_list);
+		}
+	}
+
+	if(src_node_ptr->config_ptr){
+		des_node_ptr->config_ptr = NULL;
+		if(copy_config_list){
+			ListIterator config_iterator;
+			config_iterator = list_iterator_create(copy_config_list);
+			while ((config_ptr = list_next(config_iterator))) {
+				if(config_ptr->node_bitmap && bit_test(config_ptr->node_bitmap, des_node_ptr->index)){
+					des_node_ptr->config_ptr = config_ptr;
+					break;
+				}
+			}
+			list_iterator_destroy(config_iterator);
+		}
+		if(des_node_ptr->config_ptr == NULL){
+			des_node_ptr->config_ptr = xmalloc(sizeof(config_record_t));
+			copy_node_config(src_node_ptr->config_ptr,des_node_ptr->config_ptr,copy_config_list);
+		}
+	}
+	des_node_ptr->node_next = NULL;
+	des_node_ptr->tres_cnt = NULL;
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	des_node_ptr->orig_parts = NULL;
+#endif	
+	return 0;
+}
+
+
+static int _copy_node(node_record_t *src_node_ptr, int index)
+{
+	node_record_t *des_node_ptr = xmalloc(sizeof(*des_node_ptr));
+	copy_node(src_node_ptr, des_node_ptr);
+	copy_node_record_table_ptr[index] = des_node_ptr;
+	xhash_add(copy_node_hash_table, des_node_ptr);
+	return SLURM_SUCCESS;
+}
+
+void copy_all_node_state()
+{
+	int i;
+	node_record_t *node_ptr = NULL;
+	slurmctld_lock_t node_write_lock = {
+		READ_LOCK, NO_LOCK, WRITE_LOCK, READ_LOCK, NO_LOCK };
+	slurmctld_lock_t node_read_lock = {
+			READ_LOCK, NO_LOCK, READ_LOCK, READ_LOCK, NO_LOCK };
+
+	lock_slurmctld(node_write_lock);
+	select_g_select_nodeinfo_set_all();
+	unlock_slurmctld(node_write_lock);
+
+	lock_slurmctld(node_read_lock);
+	init_node_record_table_ptr();
+	for (i = 0; (node_ptr = next_node(&i)); i++) {
+		if ((node_ptr->name == NULL) || (node_ptr->name[0] == '\0'))
+			continue;	/* vestigial record */
+		_copy_node(node_ptr,i);
+	}
+	unlock_slurmctld(node_read_lock);
+}
+
+void update_node_cache_data()
+{
+	int i;
+	node_record_t *node_ptr = NULL;
+	if(cache_config_list)
+		FREE_NULL_LIST(cache_config_list);
+	for (i = 0; (node_ptr = next_cache_node(&i, cache_node_record_count, cache_node_record_table_ptr)); i++)
+		delete_cache_node_record(node_ptr);
+	xfree(cache_node_record_table_ptr);
+	xhash_free(cache_node_hash_table);
+	cache_node_record_table_ptr = copy_node_record_table_ptr;
+	cache_node_hash_table = copy_node_hash_table;
+	cache_last_node_index = copy_last_node_index;
+	cache_node_record_count = copy_node_record_count;
+	cache_config_list = copy_config_list;
+	copy_node_record_table_ptr = NULL;
+	copy_node_hash_table = NULL;
+	copy_last_node_index = 0;
+	copy_node_record_count = 0;
+	copy_config_list = NULL;
+}
+
+#endif

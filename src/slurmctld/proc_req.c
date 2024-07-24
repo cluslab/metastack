@@ -174,6 +174,31 @@ extern diag_stats_t slurmctld_diag_stats;
 static __thread bool drop_priv = false;
 #endif
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern void record_cache_rpc_stats(uint16_t msg_type, slurm_msg_t *msg, long delta)
+{
+	slurm_mutex_lock(&rpc_mutex);
+	for (int i = 0; i < RPC_TYPE_SIZE; i++) {
+		if (rpc_type_id[i] == 0)
+			rpc_type_id[i] = msg_type;
+		else if (rpc_type_id[i] != msg_type)
+			continue;
+		rpc_type_cnt[i]++;
+		rpc_type_time[i] += delta;
+		break;
+	}
+	for (int i = 0; i < RPC_USER_SIZE; i++) {
+		if ((rpc_user_id[i] == 0) && (i != 0))
+			rpc_user_id[i] = msg->auth_uid;
+		else if (rpc_user_id[i] != msg->auth_uid)
+			continue;
+		rpc_user_cnt[i]++;
+		rpc_user_time[i] += delta;
+		break;
+	}
+	slurm_mutex_unlock(&rpc_mutex);
+}
+#endif
 extern void record_rpc_stats(slurm_msg_t *msg, long delta)
 {
 	slurm_mutex_lock(&rpc_mutex);
@@ -315,7 +340,12 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->bb_type             = xstrdup(conf->bb_type);
 	conf_ptr->bcast_exclude       = xstrdup(conf->bcast_exclude);
 	conf_ptr->bcast_parameters = xstrdup(conf->bcast_parameters);
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	conf_ptr->cachedup_interval   = conf->cachedup_interval;
+	conf_ptr->cache_query         = conf->cache_query;
+	conf_ptr->query_port          = conf->query_port;
+	conf_ptr->query_port_count    = conf->query_port_count;
+#endif
 
 	if (strstr(conf->job_acct_gather_type, "cgroup") ||
 	    strstr(conf->proctrack_type, "cgroup") ||
@@ -1545,7 +1575,392 @@ static void _slurm_rpc_dump_conf(slurm_msg_t * msg)
 		free_slurm_conf(&config_tbl, false);
 	}
 }
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+/* _slurm_rpc_dump_cache_jobs - process RPC for job state information */
+static void _slurm_rpc_dump_cache_jobs(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	char *dump = NULL;
+	int dump_size;
+	slurm_msg_t response_msg;
+	job_info_request_msg_t *job_info_request_msg =
+		(job_info_request_msg_t *) msg->data;
+	/* Locks: Read config job part */
+	slurmctld_lock_t job_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK };
+	slurmctld_lock_t job_cache_read_lock = {
+		NO_LOCK, READ_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+	START_TIMER;
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+		lock_cache_query(job_cache_read_lock);
+		lock_slurmctld(job_read_lock);
+	}
 
+	if ((job_info_request_msg->last_update - 1) >= last_job_update) {
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+			unlock_slurmctld(job_read_lock);
+			unlock_cache_query(job_cache_read_lock);
+		}
+		debug3("_slurm_rpc_dump_jobs, no change");
+		slurm_send_rc_msg(msg, SLURM_NO_CHANGE_IN_DATA);
+	} else {
+		if (job_info_request_msg->job_ids) {
+			debug2("%s CACHE_QUERY call pack_spec_cache_jobs", __func__);
+			pack_spec_cache_jobs(&dump, &dump_size,
+				       job_info_request_msg->job_ids,
+				       job_info_request_msg->show_flags,
+				       msg->auth_uid, NO_VAL,
+				       msg->protocol_version);
+		} else {
+			debug2("%s CACHE_QUERY call pack_all_cache_jobs", __func__);
+			pack_all_cache_jobs(&dump, &dump_size,
+				      job_info_request_msg->show_flags,
+				      msg->auth_uid, NO_VAL,
+				      msg->protocol_version);
+		}
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+			unlock_slurmctld(job_read_lock);
+			unlock_cache_query(job_cache_read_lock);
+		}
+		END_TIMER2("_slurm_rpc_dump_jobs");
+#if 0
+		info("_slurm_rpc_dump_jobs, size=%d %s", dump_size, TIME_STR);
+#endif
+
+		response_init(&response_msg, msg);
+		response_msg.msg_type = RESPONSE_JOB_INFO;
+		response_msg.data = dump;
+		response_msg.data_size = dump_size;
+
+		/* send message */
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+		xfree(dump);
+	}
+}
+
+/* _slurm_rpc_dump_cache_jobs_user - process RPC for job state information */
+static void _slurm_rpc_dump_cache_jobs_user(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	char *dump = NULL;
+	int dump_size;
+	slurm_msg_t response_msg;
+	job_user_id_msg_t *job_info_request_msg =
+		(job_user_id_msg_t *) msg->data;
+	/* Locks: Read config job part */
+	slurmctld_lock_t job_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK };
+	slurmctld_lock_t job_cache_read_lock = {
+		NO_LOCK, READ_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+	START_TIMER;
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+		lock_cache_query(job_cache_read_lock);
+		lock_slurmctld(job_read_lock);
+	}
+	debug2("%s CACHE_QUERY call pack_all_cache_jobs", __func__);
+	pack_all_cache_jobs(&dump, &dump_size, job_info_request_msg->show_flags,
+		      msg->auth_uid, job_info_request_msg->user_id,
+		      msg->protocol_version);
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+		unlock_slurmctld(job_read_lock);
+		unlock_cache_query(job_cache_read_lock);
+	}
+	END_TIMER2(__func__);
+#if 0
+	info("_slurm_rpc_dump_user_jobs, size=%d %s", dump_size, TIME_STR);
+#endif
+
+	response_init(&response_msg, msg);
+	response_msg.msg_type = RESPONSE_JOB_INFO;
+	response_msg.data = dump;
+	response_msg.data_size = dump_size;
+
+	/* send message */
+	slurm_send_node_msg(msg->conn_fd, &response_msg);
+	xfree(dump);
+}
+
+/* _slurm_rpc_cache_job_step_get_info - process request for job step info */
+static void _slurm_rpc_cache_job_step_get_info(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	void *resp_buffer = NULL;
+	int resp_buffer_size = 0;
+	int error_code = SLURM_SUCCESS;
+	job_step_info_request_msg_t *request =
+		(job_step_info_request_msg_t *) msg->data;
+	/* Locks: Read config, job, part */
+	slurmctld_lock_t job_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	slurmctld_lock_t job_cache_read_lock = {
+		NO_LOCK, READ_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+
+	START_TIMER;
+	lock_cache_query(job_cache_read_lock);
+	lock_slurmctld(job_read_lock);
+
+	if ((request->last_update - 1) >= last_job_update) {
+		unlock_slurmctld(job_read_lock);
+		unlock_cache_query(job_cache_read_lock);
+		log_flag(STEPS, "%s: no change", __func__);
+		error_code = SLURM_NO_CHANGE_IN_DATA;
+	} else {
+		buf_t *buffer = init_buf(BUF_SIZE);
+		debug2("%s CACHE_QUERY call pack_ctld_cache_job_step_info_response_msg", __func__);
+		error_code = pack_ctld_cache_job_step_info_response_msg(
+			&request->step_id, msg->auth_uid, request->show_flags,
+			buffer, msg->protocol_version);
+		unlock_slurmctld(job_read_lock);
+		unlock_cache_query(job_cache_read_lock);
+		END_TIMER2("_slurm_rpc_job_step_get_info");
+		if (error_code) {
+			/* job_id:step_id not found or otherwise *\
+			\* error message is printed elsewhere    */
+			log_flag(STEPS, "%s: %s",
+				 __func__, slurm_strerror(error_code));
+			free_buf(buffer);
+		} else {
+			resp_buffer_size = get_buf_offset(buffer);
+			resp_buffer = xfer_buf_data(buffer);
+			log_flag(STEPS, "%s size=%d %s",
+				 __func__, resp_buffer_size, TIME_STR);
+		}
+	}
+
+	if (error_code)
+		slurm_send_rc_msg(msg, error_code);
+	else {
+		slurm_msg_t response_msg;
+		response_init(&response_msg, msg);
+		response_msg.msg_type = RESPONSE_JOB_STEP_INFO;
+		response_msg.data = resp_buffer;
+		response_msg.data_size = resp_buffer_size;
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+		xfree(resp_buffer);
+	}
+}
+
+/* _slurm_rpc_dump_cache_job_single - process RPC for one job's state information */
+static void _slurm_rpc_dump_cache_job_single(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	char *dump = NULL;
+	int dump_size, rc;
+	slurm_msg_t response_msg;
+	job_id_msg_t *job_id_msg = (job_id_msg_t *) msg->data;
+	/* Locks: Read config, job, and node info */
+	slurmctld_lock_t job_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK };
+	slurmctld_lock_t job_cache_read_lock = {
+		NO_LOCK, READ_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+
+	START_TIMER;
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+		lock_cache_query(job_cache_read_lock);
+		lock_slurmctld(job_read_lock);
+	}
+	debug2("%s CACHE_QUERY call pack_one_cache_job", __func__);
+	rc = pack_one_cache_job(&dump, &dump_size, job_id_msg->job_id,
+			  job_id_msg->show_flags, msg->auth_uid,
+			  msg->protocol_version);
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+		unlock_slurmctld(job_read_lock);
+		unlock_cache_query(job_cache_read_lock);
+	}
+	END_TIMER2("_slurm_rpc_dump_job_single");
+#if 0
+	info("_slurm_rpc_dump_job_single, size=%d %s", dump_size, TIME_STR);
+#endif
+
+	/* init response_msg structure */
+	if (rc != SLURM_SUCCESS) {
+		slurm_send_rc_msg(msg, rc);
+	} else {
+		response_init(&response_msg, msg);
+		response_msg.msg_type = RESPONSE_JOB_INFO;
+		response_msg.data = dump;
+		response_msg.data_size = dump_size;
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+	}
+	xfree(dump);
+}
+
+/* _slurm_rpc_dump_cache_partitions - process RPC for partition state information */
+static void _slurm_rpc_dump_cache_partitions(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	char *dump = NULL;
+	int dump_size;
+	slurm_msg_t response_msg;
+	part_info_request_msg_t *part_req_msg =
+		(part_info_request_msg_t *) msg->data;
+
+	/* Locks: Read configuration and partition */
+	slurmctld_lock_t part_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	slurmctld_lock_t part_cache_read_lock = {
+		NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+
+	START_TIMER;
+	if ((slurm_conf.private_data & PRIVATE_DATA_PARTITIONS) &&
+	    !validate_operator(msg->auth_uid)) {
+		debug2("Security violation, PARTITION_INFO RPC from uid=%u",
+		       msg->auth_uid);
+		slurm_send_rc_msg(msg, ESLURM_ACCESS_DENIED);
+		return;
+	}
+
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+		lock_cache_query(part_cache_read_lock);
+		lock_slurmctld(part_read_lock);
+	}
+
+	if ((part_req_msg->last_update - 1) >= last_part_update) {
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+			unlock_slurmctld(part_read_lock);
+			unlock_cache_query(part_cache_read_lock);
+		}
+		debug2("_slurm_rpc_dump_partitions, no change");
+		slurm_send_rc_msg(msg, SLURM_NO_CHANGE_IN_DATA);
+	} else {
+		debug2("%s CACHE_QUERY call pack_all_cache_part", __func__);
+		pack_all_cache_part(&dump, &dump_size, part_req_msg->show_flags,
+			      msg->auth_uid, msg->protocol_version);
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+			unlock_slurmctld(part_read_lock);
+			unlock_cache_query(part_cache_read_lock);
+		}
+		END_TIMER2("_slurm_rpc_dump_partitions");
+		debug2("_slurm_rpc_dump_partitions, size=%d %s",
+		       dump_size, TIME_STR);
+
+		response_init(&response_msg, msg);
+		response_msg.msg_type = RESPONSE_PARTITION_INFO;
+		response_msg.data = dump;
+		response_msg.data_size = dump_size;
+
+		/* send message */
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+		xfree(dump);
+	}
+}
+
+/* _slurm_rpc_dump_cache_nodes - dump RPC for node state information */
+static void _slurm_rpc_dump_cache_nodes(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	char *dump = NULL;
+	int dump_size;
+	slurm_msg_t response_msg;
+	node_info_request_msg_t *node_req_msg =
+		(node_info_request_msg_t *) msg->data;
+	/* Locks: Read config, write node (reset allocated CPU count in some
+	 * select plugins), read part (for part_is_visible) */
+	slurmctld_lock_t node_write_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	slurmctld_lock_t node_cache_read_lock = {
+		NO_LOCK, NO_LOCK, READ_LOCK, READ_LOCK, NO_LOCK };
+
+	START_TIMER;
+	if ((slurm_conf.private_data & PRIVATE_DATA_NODES) &&
+	    (!validate_operator(msg->auth_uid))) {
+		error("Security violation, REQUEST_NODE_INFO RPC from uid=%u",
+		      msg->auth_uid);
+		slurm_send_rc_msg(msg, ESLURM_ACCESS_DENIED);
+		return;
+	}
+
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+		lock_cache_query(node_cache_read_lock);
+		lock_slurmctld(node_write_lock);
+	}
+//	select_g_select_nodeinfo_set_all();
+
+	if ((node_req_msg->last_update - 1) >= last_node_update) {
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+			unlock_slurmctld(node_write_lock);
+			unlock_cache_query(node_cache_read_lock);
+		}
+		debug3("_slurm_rpc_dump_nodes, no change");
+		slurm_send_rc_msg(msg, SLURM_NO_CHANGE_IN_DATA);
+	} else {
+		debug2("%s CACHE_QUERY call pack_all_cache_node", __func__);
+		pack_all_cache_node(&dump, &dump_size, node_req_msg->show_flags,
+			      msg->auth_uid, msg->protocol_version);
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+			unlock_slurmctld(node_write_lock);
+			unlock_cache_query(node_cache_read_lock);
+		}
+		END_TIMER2("_slurm_rpc_dump_nodes");
+#if 0
+		info("_slurm_rpc_dump_nodes, size=%d %s", dump_size, TIME_STR);
+#endif
+
+		response_init(&response_msg, msg);
+		response_msg.msg_type = RESPONSE_NODE_INFO;
+		response_msg.data = dump;
+		response_msg.data_size = dump_size;
+
+		/* send message */
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+		xfree(dump);
+	}
+}
+
+/* _slurm_rpc_dump_cache_node_single - done RPC state information for one node */
+static void _slurm_rpc_dump_cache_node_single(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	char *dump = NULL;
+	int dump_size;
+	slurm_msg_t response_msg;
+	node_info_single_msg_t *node_req_msg =
+		(node_info_single_msg_t *) msg->data;
+	/* Locks: Read config, read node, read part (for part_is_visible) */
+	slurmctld_lock_t node_write_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	slurmctld_lock_t node_cache_read_lock = {
+		NO_LOCK, NO_LOCK, READ_LOCK, READ_LOCK, NO_LOCK };
+
+	START_TIMER;
+	if ((slurm_conf.private_data & PRIVATE_DATA_NODES) &&
+	    (!validate_operator(msg->auth_uid))) {
+		error("Security violation, REQUEST_NODE_INFO_SINGLE RPC from uid=%u",
+		      msg->auth_uid);
+		slurm_send_rc_msg(msg, ESLURM_ACCESS_DENIED);
+		return;
+	}
+	lock_cache_query(node_cache_read_lock);
+	lock_slurmctld(node_write_lock);
+
+#if 0
+	/* This function updates each node's alloc_cpus count and too slow for
+	 * our use here. Node write lock is needed if this function is used */
+	select_g_select_nodeinfo_set_all();
+#endif
+	debug2("%s CACHE_QUERY call pack_one_cache_node", __func__);
+	pack_one_cache_node(&dump, &dump_size, node_req_msg->show_flags,
+		      msg->auth_uid, node_req_msg->node_name,
+		      msg->protocol_version);
+	unlock_slurmctld(node_write_lock);
+	unlock_cache_query(node_cache_read_lock);
+	END_TIMER2("_slurm_rpc_dump_node_single");
+#if 0
+	info("_slurm_rpc_dump_node_single, name=%s size=%d %s",
+	     node_req_msg->node_name, dump_size, TIME_STR);
+#endif
+
+	response_init(&response_msg, msg);
+	response_msg.msg_type = RESPONSE_NODE_INFO;
+	response_msg.data = dump;
+	response_msg.data_size = dump_size;
+
+	/* send message */
+	slurm_send_node_msg(msg->conn_fd, &response_msg);
+	xfree(dump);
+}
+
+#endif
 /* _slurm_rpc_dump_jobs - process RPC for job state information */
 static void _slurm_rpc_dump_jobs(slurm_msg_t * msg)
 {
@@ -3447,6 +3862,9 @@ static void _slurm_rpc_reconfigure_controller(slurm_msg_t * msg)
 				fatal("Failed to reconfigure MPI plugins.");
 		}
 		trigger_reconfig();
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		real_time_state_copy();
+#endif
 	}
 	END_TIMER2("_slurm_rpc_reconfigure_controller");
 
@@ -6752,6 +7170,29 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 	},{
 		.msg_type = REQUEST_UPDATE_CRONTAB,
 		.func = _slurm_rpc_update_crontab,
+#ifdef __METASTACK_OPT_CACHE_QUERY		
+	},{
+		.msg_type = REQUEST_CACHE_JOB_INFO,
+		.func = _slurm_rpc_dump_cache_jobs,
+	},{
+		.msg_type = REQUEST_CACHE_JOB_USER_INFO,
+		.func = _slurm_rpc_dump_cache_jobs_user,
+	},{
+		.msg_type = REQUEST_CACHE_JOB_STEP_INFO,
+		.func = _slurm_rpc_cache_job_step_get_info,
+	},{
+		.msg_type = REQUEST_CACHE_JOB_INFO_SINGLE,
+		.func = _slurm_rpc_dump_cache_job_single,	
+	},{
+		.msg_type = REQUEST_CACHE_PARTITION_INFO,
+		.func = _slurm_rpc_dump_cache_partitions,
+	},{
+		.msg_type = REQUEST_CACHE_NODE_INFO,
+		.func = _slurm_rpc_dump_cache_nodes,
+	},{
+		.msg_type = REQUEST_CACHE_NODE_INFO_SINGLE,
+		.func = _slurm_rpc_dump_cache_node_single,
+#endif
 	},{	/* terminate the array. this must be last. */
 		.msg_type = 0,
 		.func = NULL,
@@ -6817,3 +7258,85 @@ void slurmctld_req(slurm_msg_t *msg)
 		slurm_send_rc_msg(msg, EINVAL);
 	}
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+/*
+ * slurmctld_query_req  - Process an individual RPC request
+ * IN/OUT msg - the request message, data associated with the message is freed
+ */
+void slurmctld_query_req(slurm_msg_t *msg)
+{
+	DEF_TIMERS;
+	slurmctld_rpc_t *this_rpc = NULL;
+
+	if (msg->conn_fd >= 0)
+		fd_set_nonblocking(msg->conn_fd);
+
+#ifndef NDEBUG
+	if ((msg->flags & SLURM_DROP_PRIV))
+		drop_priv = true;
+#endif
+
+	if (!msg->auth_uid_set)
+		fatal("%s: received message without previously validated auth",
+		      __func__);
+	
+	uint16_t msg_type;   
+	if (msg->msg_type == REQUEST_JOB_INFO){
+		msg_type = REQUEST_CACHE_JOB_INFO;
+	}else if(msg->msg_type == REQUEST_JOB_USER_INFO){
+		msg_type = REQUEST_CACHE_JOB_USER_INFO;
+	}else if(msg->msg_type == REQUEST_JOB_STEP_INFO){
+		msg_type = REQUEST_CACHE_JOB_STEP_INFO;
+	}else if(msg->msg_type == REQUEST_JOB_INFO_SINGLE){
+		msg_type = REQUEST_CACHE_JOB_INFO_SINGLE;
+	}else if(msg->msg_type == REQUEST_PARTITION_INFO){
+		msg_type = REQUEST_CACHE_PARTITION_INFO;
+	}else if(msg->msg_type == REQUEST_NODE_INFO){
+		msg_type = REQUEST_CACHE_NODE_INFO;
+	}else if(msg->msg_type == REQUEST_NODE_INFO_SINGLE){
+		msg_type = REQUEST_CACHE_NODE_INFO_SINGLE;
+	}else{
+		msg_type = msg->msg_type;
+	}
+
+	/* Debug the protocol layer.
+	 */
+	START_TIMER;
+	if (slurm_conf.debug_flags & DEBUG_FLAG_PROTOCOL) {
+		char *p = rpc_num2string(msg_type);
+		if (msg->conn) {
+			info("%s: received opcode %s from persist conn on (%s)%s uid %u",
+			     __func__, p, msg->conn->cluster_name,
+			     msg->conn->rem_host, msg->auth_uid);
+		} else {
+			slurm_addr_t cli_addr;
+			(void) slurm_get_peer_addr(msg->conn_fd, &cli_addr);
+			info("%s: received opcode %s from %pA uid %u",
+			     __func__, p, &cli_addr, msg->auth_uid);
+		}
+	}
+
+	debug2("Processing RPC: %s from UID=%u",
+	       rpc_num2string(msg_type), msg->auth_uid);
+	
+	for (int i = 0; slurmctld_rpcs[i].msg_type; i++) {
+		if (slurmctld_rpcs[i].msg_type != msg_type)
+			continue;
+
+		xassert(slurmctld_rpcs[i].func);
+		this_rpc = &slurmctld_rpcs[i];
+		break;
+	}
+
+	if (this_rpc) {
+		(*(this_rpc->func))(msg);
+		END_TIMER;
+		record_cache_rpc_stats(msg_type, msg, DELTA_TIMER);
+	} else {
+		error("invalid RPC msg_type=%u", msg->msg_type);
+		slurm_send_rc_msg(msg, EINVAL);
+	}
+}
+#endif

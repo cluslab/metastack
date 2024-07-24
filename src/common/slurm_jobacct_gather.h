@@ -184,4 +184,9 @@ extern void jobacctinfo_2_stats(slurmdb_stats_t *stats, jobacctinfo_t *jobacct);
 extern void jobacct_common_free_jobacct(void *object);
 
 extern long jobacct_gather_get_clk_tck();
+
+//#ifdef __METASTACK_OPT_CACHE_QUERY
+//extern jobacctinfo_t *jobacctinfo_extract(jobacctinfo_t *src_jobacct);
+//#endif
+
 #endif /*__SLURM_JOBACCT_GATHER_H__*/

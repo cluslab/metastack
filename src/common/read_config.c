@@ -395,6 +395,11 @@ s_p_options_t slurm_conf_options[] = {
 	{"SlurmctldPidFile", S_P_STRING},
 	{"SlurmctldPlugstack", S_P_STRING},
 	{"SlurmctldPort", S_P_STRING},
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	{"CacheQueryPort", S_P_STRING},
+	{"CacheDupInterval", S_P_UINT16},
+	{"CacheQuery", S_P_STRING},
+#endif	
 	{"SlurmctldPrimaryOffProg", S_P_STRING},
 	{"SlurmctldPrimaryOnProg", S_P_STRING},
 	{"SlurmctldSyslogDebug", S_P_STRING},
@@ -3095,6 +3100,12 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	xfree (ctl_conf_ptr->bb_type);
 	xfree(ctl_conf_ptr->bcast_exclude);
 	xfree(ctl_conf_ptr->bcast_parameters);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	ctl_conf_ptr->cachedup_interval = 0;
+	ctl_conf_ptr->cache_query = 0;
+	ctl_conf_ptr->query_port = 0;
+	ctl_conf_ptr->query_port_count = 0;
+#endif
 	xfree(ctl_conf_ptr->cli_filter_plugins);
 	xfree (ctl_conf_ptr->cluster_name);
 	xfree (ctl_conf_ptr->comm_params);
@@ -5143,7 +5154,59 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 		conf->slurmctld_port = SLURMCTLD_PORT;
 		conf->slurmctld_port_count = SLURMCTLD_PORT_COUNT;
 	}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if (s_p_get_string(&temp_str, "CacheQueryPort", hashtbl)) {
+		char *end_ptr = NULL;
+		long port_long;
+		slurm_seterrno(0);
+		port_long = strtol(temp_str, &end_ptr, 10);
+		if ((port_long == LONG_MIN) || (port_long == LONG_MAX) ||
+		    (port_long <= 0) || errno) {
+			error("Invalid CacheQueryPort %s", temp_str);
+			return SLURM_ERROR;
+		}
+		conf->query_port = port_long;
+		if (end_ptr[0] == '-') {
+			port_long = strtol(end_ptr+1, NULL, 10);
+			if ((port_long == LONG_MIN) ||
+			    (port_long == LONG_MAX) ||
+			    (port_long <= conf->query_port) || errno) {
+				error("Invalid CacheQueryPort %s", temp_str);
+				return SLURM_ERROR;
+			}
+			conf->query_port_count = port_long + 1 -
+						     conf->query_port;
+		} else if (end_ptr[0] != '\0') {
+			error("Invalid CacheQueryPort %s", temp_str);
+			return SLURM_ERROR;
+		} else {
+			conf->query_port_count = 1;
+		}
+		xfree(temp_str);
+	}else{
+		conf->query_port = 6820;
+		conf->query_port_count = 1;
+	}
+	if (!s_p_get_uint16(&conf->cachedup_interval, "CacheDupInterval", hashtbl)) {
+		conf->cachedup_interval = DEFAULT_CACHEDUP_INTERVAL;
+	}else if (conf->cachedup_interval < 5) {
+		error("CacheDupInterval value less than 5 seconds, replace with default value of %u seconds.", DEFAULT_CACHEDUP_INTERVAL);
+		conf->cachedup_interval = DEFAULT_CACHEDUP_INTERVAL;
+	}
+	if (s_p_get_string(&temp_str, "CacheQuery", hashtbl)) {
+		if(!xstrcmp(temp_str,"enable")){
+			conf->cache_query = 1;
+		}else if(!xstrcmp(temp_str,"cache")){
+			conf->cache_query = 2;
+		}else{
+			conf->cache_query = 0;
+		}
+		xfree(temp_str);
+	}else{
+		conf->cache_query = 0;
+	}
 
+#endif	
 	(void) s_p_get_string(&conf->slurmctld_primary_off_prog,
 			      "SlurmctldPrimaryOffProg", hashtbl);
 	(void) s_p_get_string(&conf->slurmctld_primary_on_prog,
@@ -6373,3 +6436,31 @@ extern void slurm_conf_remove_node(char *node_name)
 	_internal_conf_remove_node(node_name);
 	slurm_conf_unlock();
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern bool update_client_port(bool cache_query)
+{
+
+	if(conf_ptr->cache_query==2){
+		if(conf_ptr->query_port_count != 1){
+			printf ("CacheQueryPort configuration error, please contact the administrator!\n");
+			return SLURM_ERROR;
+		}
+		conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+		conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+	}else if(conf_ptr->cache_query == 1){
+		if (cache_query){
+			if(conf_ptr->query_port_count != 1){
+				printf ("CacheQueryPort configuration error, please contact the administrator!\n");
+				return SLURM_ERROR;
+			}
+			conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+			conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+		}
+	}else if (cache_query){
+		printf ("Parameter error, cache query function not enabled!\n");
+		return SLURM_ERROR;
+	}
+	return SLURM_SUCCESS;
+}
+#endif

@@ -59,6 +59,13 @@ int slurm_ctl_conf_to_hv(slurm_conf_t *conf, HV *hv)
 
 	STORE_FIELD(hv, conf, boot_time, time_t);
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	STORE_FIELD(hv, conf, cachedup_interval, uint16_t);
+	STORE_FIELD(hv, conf, cache_query, uint16_t);
+	STORE_FIELD(hv, conf, query_port, uint32_t);
+	STORE_FIELD(hv, conf, query_port_count, uint16_t);
+#endif
+
 	if (conf->cli_filter_plugins)
 		STORE_FIELD(hv, conf, cli_filter_plugins, charp);
 
@@ -419,6 +426,12 @@ int hv_to_slurm_ctl_conf(HV *hv, slurm_conf_t *conf)
 	FETCH_FIELD(hv, conf, batch_start_timeout, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, bb_type, charp, FALSE);
 	FETCH_FIELD(hv, conf, boot_time, time_t, TRUE);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	FETCH_FIELD(hv, conf, cachedup_interval, uint16_t, FALSE);
+	FETCH_FIELD(hv, conf, cache_query, uint16_t, FALSE);
+	FETCH_FIELD(hv, conf, query_port, uint32_t, FALSE);
+	FETCH_FIELD(hv, conf, query_port_count, uint16_t, FALSE);
+#endif
 	FETCH_FIELD(hv, conf, cli_filter_plugins, charp, FALSE);
 	FETCH_FIELD(hv, conf, cluster_name, charp, FALSE);
 	FETCH_FIELD(hv, conf, complete_wait, uint16_t, TRUE);

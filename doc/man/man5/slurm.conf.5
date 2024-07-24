@@ -603,6 +603,55 @@ plugin was developed to provide system administrators with a way to do any task
 .IP
 
 .TP
+\fBCacheDupInterval\fR
+The interval between copying cached data twice. This option is only applicable 
+when \fBCacheQuery\fR is set to "\fBenable\fR" or "\fBcache\fR". The value range
+is 5 to 65533 seconds. The default value is 30 seconds.
+.IP
+
+.TP
+\fBCacheQuery\fR
+Used to control the intensity of the cache query feature. If not specified, it 
+is disabled by default. The currently acceptable values are:
+.IP
+
+.RS
+.TP 9
+\fBenable\fR
+Enable the cache query feature, but require client commands to specify the 
+\fB--cache\fR parameter to query cached data. For example, \fBsqueue --cache\fR, 
+\fBsinfo --cache\fR, \fBscontrol show job/part/node/step --cache\fR.
+.IP
+
+.TP
+\fBcache\fR
+Enable the cache query feature. Client commands do not need to specify any 
+parameters and will query cached data by default.
+.IP
+
+.TP
+\fBdisable\fR
+Disable the cache query feature and do not perform any cache data copying.
+.RE
+.IP
+
+\fBNOTE:\fR Modifying this parameter requires restarting slurmctld to take 
+effect. If the cache query feature is enabled, the \fBCacheQueryPort\fR must 
+be configured.
+.IP
+
+.TP
+\fBCacheQueryPort\fR
+The slurmctld controller listens on a port for cache data queries, and only one
+port can be configured. If not configured, the default port number is 6820.
+.IP
+
+\fBNOTE:\fR Modifying this parameter requires restarting slurmctld to take 
+effect. The \fBSlurmctldPort\fR, \fBSlurmdPort\fR, and \fBCacheQueryPort\fR 
+values must be different.
+.IP
+
+.TP
 \fBCliFilterPlugins\fR
 A comma\-delimited list of command line interface option filter/modification
 plugins. The specified plugins will be executed in the order listed.

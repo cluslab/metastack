@@ -71,4 +71,19 @@ extern void shutdown_state_save(void);
  */
 extern void *slurmctld_state_save(void *no_data);
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+/* shutdown the shutdown_state_copy thread */
+extern void shutdown_state_copy(void);
+
+/* Perform a status copy immediately */
+extern void real_time_state_copy(void);
+
+/*
+ * Run as pthread to copy slurmctld state information as needed,
+ * no_data IN - unused
+ * RET - NULL
+ */
+extern void *slurmctld_state_copy(void *no_data);
+#endif
 #endif

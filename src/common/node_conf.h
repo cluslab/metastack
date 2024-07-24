@@ -194,6 +194,20 @@ struct node_record {
 				 * this node before be borrowed */
 #endif							
 };
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern List copy_config_list;	/* list of copy_config_record entries */
+extern List cache_config_list;	/* list of cache_config_record entries */
+extern node_record_t **copy_node_record_table_ptr;	/* node records */
+extern xhash_t* copy_node_hash_table;
+extern int copy_node_record_count;		/* count in copy_node_record_table_ptr */
+extern node_record_t **cache_node_record_table_ptr;	/* node records */
+extern xhash_t* cache_node_hash_table;
+extern int cache_node_record_count;		/* count in cache_node_record_table_ptr */
+extern int copy_last_node_index;		/* index of last node in copy tabe */
+extern int cache_last_node_index;		/* index of last node in cache tabe */
+#endif
+
 extern node_record_t **node_record_table_ptr;  /* ptr to node records */
 extern int node_record_count;		/* count in node_record_table_ptr */
 extern xhash_t* node_hash_table;	/* hash table for node records */
@@ -286,6 +300,38 @@ extern config_record_t *config_record_from_conf_node(
  * Grow the node_record_table_ptr.
  */
 extern void grow_node_record_table_ptr();
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+extern void init_node_record_table_ptr();
+
+/*
+ * find_cache_node_record - find a record for node with specified name
+ * IN: name - name of the desired node
+ * RET: pointer to node record or NULL if not found
+ * NOTE: Logs an error if the node name is NOT found
+ */
+extern node_record_t *find_cache_node_record(char *name);
+/*
+ * Delete node from node_record_table_ptr.
+ *
+ * IN node_ptr - node_ptr to delete
+ */
+extern void delete_cache_node_record(node_record_t *node_ptr);
+/*
+ * Return the next non-null node_record_t * in the node_record_table_ptr.
+ *
+ * IN/OUT index - index to start iterating node_record_table_ptr from.
+ *                Should be used in the following form so that i will increment
+ *                to the next slot and i == node_ptr->index.
+ *                e.g.
+ *                for (int i = 0; (node_ptr = next_node(&i); i++)
+ * RET - next non-null node_record_t * or NULL if finished iterating.
+ */
+extern node_record_t *next_cache_node(int *index, int node_record_count, node_record_t **node_record_table_ptr);
+
+
+#endif
 
 /*
  * create_node_record - create a node record and set its values to defaults

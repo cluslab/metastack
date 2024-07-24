@@ -5131,6 +5131,29 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case REQUEST_BUILD_INFO:
 		slurm_free_last_update_msg(data);
 		break;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	case REQUEST_CACHE_JOB_INFO:
+		slurm_free_job_info_request_msg(data);
+		break;
+	case REQUEST_CACHE_JOB_USER_INFO:
+		slurm_free_job_user_id_msg(data);
+		break;
+	case REQUEST_CACHE_JOB_STEP_INFO:
+		slurm_free_job_step_info_request_msg(data);
+		break;
+	case REQUEST_CACHE_JOB_INFO_SINGLE:	
+		slurm_free_job_id_msg(data);
+		break;
+	case REQUEST_CACHE_PARTITION_INFO:
+		slurm_free_part_info_request_msg(data);
+		break;
+	case REQUEST_CACHE_NODE_INFO:
+		slurm_free_node_info_request_msg(data);
+		break;
+	case REQUEST_CACHE_NODE_INFO_SINGLE:
+		slurm_free_node_info_single_msg(data);
+		break;	
+#endif
 	case REQUEST_JOB_INFO:
 		slurm_free_job_info_request_msg(data);
 		break;
@@ -5755,6 +5778,23 @@ rpc_num2string(uint16_t opcode)
 		return "REQUEST_BURST_BUFFER_STATUS";
 	case RESPONSE_BURST_BUFFER_STATUS:
 		return "RESPONSE_BURST_BUFFER_STATUS";
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	case REQUEST_CACHE_JOB_INFO:
+		return "REQUEST_CACHE_JOB_INFO";
+	case REQUEST_CACHE_JOB_USER_INFO:
+		return "REQUEST_CACHE_JOB_USER_INFO";
+	case REQUEST_CACHE_JOB_STEP_INFO:
+		return "REQUEST_CACHE_JOB_STEP_INFO";
+	case REQUEST_CACHE_JOB_INFO_SINGLE:
+		return "REQUEST_CACHE_JOB_INFO_SINGLE";
+	case REQUEST_CACHE_PARTITION_INFO:
+		return "REQUEST_CACHE_PARTITION_INFO";
+	case REQUEST_CACHE_NODE_INFO:
+		return "REQUEST_CACHE_NODE_INFO";
+	case REQUEST_CACHE_NODE_INFO_SINGLE:
+		return "REQUEST_CACHE_NODE_INFO_SINGLE";
+		
+#endif
 
 	case REQUEST_CRONTAB:					/* 2200 */
 		return "REQUEST_CRONTAB";

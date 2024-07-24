@@ -78,6 +78,9 @@ const char *node_select_syms[] = {
 	"select_p_step_pick_nodes",
 	"select_p_step_start",
 	"select_p_step_finish",
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+	"select_p_select_nodeinfo_copy",
+#endif
 	"select_p_select_nodeinfo_pack",
 	"select_p_select_nodeinfo_unpack",
 	"select_p_select_nodeinfo_alloc",
@@ -417,6 +420,23 @@ extern int other_step_finish(step_record_t *step_ptr, bool killing_step)
 	return (*(ops.step_finish))
 		(step_ptr, killing_step);
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* copy a select node credential
+ * IN nodeinfo - the select node credential to be copied
+ * RET        - the copy or NULL on failure
+ * NOTE: returned value must be freed using select_g_free_nodeinfo
+ */
+
+extern select_nodeinfo_t *other_select_nodeinfo_copy(select_nodeinfo_t *nodeinfo)
+{
+	if (other_select_init() < 0)
+		return NULL;
+
+	return (*(ops.nodeinfo_copy))(nodeinfo);
+}
+
+#endif
 
 extern int other_select_nodeinfo_pack(select_nodeinfo_t *nodeinfo,
 				      buf_t *buffer,

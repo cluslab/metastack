@@ -134,4 +134,12 @@ extern int report_locks_set(void);
 extern void lock_state_files ( void );
 extern void unlock_state_files ( void );
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern void lock_cache_query(slurmctld_lock_t lock_levels);
+extern void unlock_cache_query(slurmctld_lock_t lock_levels);
+#ifndef NDEBUG
+extern bool cache_verify_lock(lock_datatype_t datatype, lock_level_t level);
+#endif
+#endif
+
 #endif

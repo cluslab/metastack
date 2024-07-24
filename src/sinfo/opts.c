@@ -61,6 +61,9 @@
 #define OPT_LONG_FEDR      0x105
 #define OPT_LONG_JSON      0x106
 #define OPT_LONG_YAML      0x107
+#ifdef __METASTACK_OPT_CACHE_QUERY
+#define OPT_LONG_CACHE     0x108
+#endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define OPT_LONG_BORROW    0x110
 #endif
@@ -336,7 +339,10 @@ extern void parse_command_line(int argc, char **argv)
 		{"all",       no_argument,       0, 'a'},
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		{"borrow",    no_argument,       0, OPT_LONG_BORROW},
-#endif			
+#endif	
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		{"cache",	   no_argument, 	  0, OPT_LONG_CACHE},
+#endif		
 		{"dead",      no_argument,       0, 'd'},
 		{"exact",     no_argument,       0, 'e'},
 		{"federation",no_argument,       0, OPT_LONG_FEDR},
@@ -559,6 +565,11 @@ extern void parse_command_line(int argc, char **argv)
 			data_init(MIME_TYPE_YAML_PLUGIN, NULL);
 			break;
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		case OPT_LONG_CACHE:
+			params.cache_query = true;
+			break;	
+#endif
 	}
 
 	if (params.long_output && params.format)

@@ -51,7 +51,9 @@
 #define OPT_LONG_LOCAL   0x103
 #define OPT_LONG_SIBLING 0x104
 #define OPT_LONG_FEDR    0x105
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+#define OPT_LONG_CACHE   0x106
+#endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define OPT_LONG_BORROW  0x108
 #endif
@@ -61,6 +63,9 @@ List clusters = NULL;
 int all_flag = 0;	/* display even hidden partitions */
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 int borrow_flag = 0;	/* display information related to standby nodes using '--borrow' */
+#endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+bool cache_flag = false;  /*Display cache data information*/
 #endif
 int detail_flag = 0;	/* display additional details */
 int future_flag = 0;	/* display future nodes */
@@ -118,7 +123,10 @@ int main(int argc, char **argv)
 		{"all",      0, 0, 'a'},
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		{"borrow",   0, 0, OPT_LONG_BORROW},
-#endif			
+#endif	
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		{"cache",	 0, 0, OPT_LONG_CACHE},
+#endif		
 		{"cluster",  1, 0, 'M'},
 		{"clusters", 1, 0, 'M'},
 		{"details",  0, 0, 'd'},
@@ -264,6 +272,11 @@ int main(int argc, char **argv)
 			_print_version();
 			exit(exit_code);
 			break;
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		case OPT_LONG_CACHE:
+			cache_flag = true;
+			break;	
+#endif
 		default:
 			exit_code = 1;
 			fprintf(stderr, "getopt error, returned %c\n",

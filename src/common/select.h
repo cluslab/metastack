@@ -99,6 +99,9 @@ typedef struct {
 	int             (*step_start)           (step_record_t *step_ptr);
 	int             (*step_finish)          (step_record_t *step_ptr,
 						 bool killing_step);
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+	select_nodeinfo_t *(*nodeinfo_copy)	(select_nodeinfo_t *nodeinfo);
+#endif
 	int		(*nodeinfo_pack)	(select_nodeinfo_t *nodeinfo,
 						 buf_t *buffer,
 						 uint16_t protocol_version);
@@ -239,6 +242,15 @@ extern int select_g_reconfigure(void);
  * returned value
  */
 extern dynamic_plugin_data_t *select_g_select_nodeinfo_alloc(void);
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* copy a select node credential
+ * IN nodeinfo - the select node credential to be copied
+ * RET        - the copy or NULL on failure
+ * NOTE: returned value must be freed using select_g_free_nodeinfo
+ */
+extern dynamic_plugin_data_t *select_g_select_nodeinfo_copy(	dynamic_plugin_data_t *nodeinfo);
+#endif
 
 /*
  * Pack a select plugin node record into a buffer.
