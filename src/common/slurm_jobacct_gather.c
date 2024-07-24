@@ -260,6 +260,9 @@ static void _init_tres_usage(struct jobacctinfo *jobacct,
 			jobacct->tres_usage_out_min_nodeid[i] = INFINITE64;
 		}
 	}
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	jobacct->pjobs = NULL;
+#endif
 }
 
 static void _free_tres_usage(struct jobacctinfo *jobacct)
@@ -293,6 +296,10 @@ static void _free_tres_usage(struct jobacctinfo *jobacct)
 		xfree(jobacct->tres_usage_out_min_nodeid);
 		xfree(jobacct->tres_usage_out_min_taskid);
 		xfree(jobacct->tres_usage_out_tot);
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+        if(jobacct->pjobs) 
+			FREE_NULL_LIST(jobacct->pjobs);
+#endif
 	}
 }
 

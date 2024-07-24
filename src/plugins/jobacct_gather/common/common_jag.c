@@ -388,7 +388,9 @@ static int _get_process_data_line(int in, jag_prec_t *prec) {
 	*tmp = '\0';
 
 	/* parse these two strings separately, skipping the leading "(". */
-	
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
+	memset(cmd, 0, sizeof(cmd));
+#endif	
 	nvals = sscanf(sbuf, "%d (%39c", &prec->pid, cmd);
 
 	if (nvals < 2)
@@ -419,7 +421,9 @@ static int _get_process_data_line(int in, jag_prec_t *prec) {
 	 */
 	if (_is_a_lwp(prec->pid))
 		return 0;
-
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
+	prec->command = xstrdup(cmd);
+#endif
 	/* Copy the values that slurm records into our data structure */
 	prec->ppid  = ppid;
 
@@ -578,7 +582,9 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 	FILE *io_fp = NULL;
 	int fd, fd2;
 	jag_prec_t *prec = NULL;
-
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	time_t ct_pid;
+#endif
 	if (no_share_data == -1) {
 		if (xstrcasestr(slurm_conf.job_acct_gather_params, "NoShare"))
 			no_share_data = 1;
@@ -624,7 +630,11 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 				  sizeof(acct_gather_data_t));
 
 	(void)_init_tres(prec, NULL);
-
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	ct_pid = time(NULL);
+	prec->command = NULL;
+	prec->now_time = ct_pid;
+#endif
 	if (!_get_process_data_line(fd, prec)) {
 		fclose(stat_fp);
 		goto bail_out;
@@ -674,6 +684,24 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 	} 
 #endif
 
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+    if (acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_TASK) && prec_list) {
+        jag_prec_t *prec_jobacct = NULL;
+        if ((prec_jobacct = list_find_first(prec_list, _find_prec, &prec->pid))) {
+            if (prec_jobacct->last_time > 0) {
+                int et = prec->now_time - prec_jobacct->last_time;
+                if (et > 1) {
+                    if(conv_units <= 0)
+                        conv_units = 100;
+                    prec->cpu_util = ((prec->usec + prec->ssec) - prec_jobacct->last_total_calc) * 
+                                                    100 /et/(double)conv_units ;
+                }
+            }
+        }
+        prec->last_time = prec->now_time;
+        prec->last_total_calc = prec->usec + prec->ssec;
+    }
+#endif
 	destroy_jag_prec(list_remove_first(prec_list, _find_prec, &prec->pid));
 	list_append(prec_list, prec);
 	xfree(proc_file);
@@ -681,6 +709,10 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 
 bail_out:
 	xfree(prec->tres_data);
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+    if(prec->command != NULL)
+		xfree(prec->command);
+#endif
 	xfree(prec);
 	return;
 }
@@ -939,8 +971,19 @@ static void _record_profile(struct jobacctinfo *jobacct)
 	log_flag(PROFILE, "PROFILE-Task: %s",
 		 acct_gather_profile_dataset_str(dataset, data, str,
 						 sizeof(str)));
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	struct data_pack{
+			void *data;
+			List process;
+	} pdata;
+	pdata.data = (void*) data;
+	pdata.process = jobacct->pjobs;
+	acct_gather_profile_g_add_sample_data(jobacct->dataset_id,
+										  (void *)&pdata, jobacct->cur_time);
+#else
 	acct_gather_profile_g_add_sample_data(jobacct->dataset_id,
 	                                      (void *)data, jobacct->cur_time);
+#endif
 }
 
 extern void jag_common_init(long plugin_units)
@@ -977,11 +1020,51 @@ extern void destroy_jag_prec(void *object)
 
 	if (!prec)
 		return;
-
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	xfree(prec->command);
+#endif
 	xfree(prec->tres_data);
 	xfree(prec);
 	return;
 }
+
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
+static void _get_son_process(List prec_list,
+                    jag_prec_t *ancestor, struct jobacctinfo *jobacct){
+    jag_prec_t *prec = NULL;
+    jag_prec_t *prec_tmp = NULL;
+    List tmp_list = NULL;
+
+    ListIterator itr = list_iterator_create(prec_list);
+    while((prec = list_next(itr))){
+        prec->ppid_flag = false;
+    }
+    list_iterator_destroy(itr);
+
+    prec = ancestor;
+    prec->ppid_flag = true;
+
+    tmp_list = list_create(NULL);
+    list_append(tmp_list, prec);
+
+    jobacct->pjobs = list_create(NULL);
+    list_append(jobacct->pjobs, prec);
+
+    while ((prec_tmp = list_dequeue(tmp_list))) {
+        ListIterator itrin = list_iterator_create(prec_list);
+        while((prec = list_next(itrin))){
+            if((prec->ppid == prec_tmp->pid) && (false == prec->ppid_flag)) {
+                list_append(jobacct->pjobs, prec);
+                list_append(tmp_list, prec);
+                prec->ppid_flag = true;
+            }
+        }
+        list_iterator_destroy(itrin);
+    }
+    FREE_NULL_LIST(tmp_list);
+    return;
+}
+#endif
 
 static void _print_jag_prec(jag_prec_t *prec)
 {
@@ -1347,7 +1430,9 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		if (profile &&
 		    acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_TASK)) {
 			jobacct->cur_time = ct;
-
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
+		    _get_son_process(prec_list, prec, jobacct);
+#endif
 			_record_profile(jobacct);
 
 			jobacct->last_tres_usage_in_tot =
@@ -1358,6 +1443,10 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				jobacct->tres_usage_in_tot[TRES_ARRAY_CPU];
 
 			jobacct->last_time = jobacct->cur_time;
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
+			if(jobacct->pjobs)
+				FREE_NULL_LIST(jobacct->pjobs);
+#endif
 		}
 	}
 	list_iterator_destroy(itr);

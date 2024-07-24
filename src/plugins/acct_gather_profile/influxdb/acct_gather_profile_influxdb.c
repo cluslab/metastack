@@ -59,6 +59,9 @@
 
 #include "src/common/slurm_xlator.h"
 #include "src/common/fd.h"
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+#include "src/plugins/jobacct_gather/common/common_jag.h"
+#endif
 #include "src/common/macros.h"
 #include "src/common/slurm_acct_gather_profile.h"
 #include "src/common/slurm_protocol_api.h"
@@ -880,12 +883,39 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	table_t *table = &tables[table_id];
 	int i = 0;
 	char *str = NULL;
-
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	enum {
+		FIELD_CPUFREQ,
+		FIELD_CPUTIME,
+		FIELD_CPUUTIL,
+		FIELD_RSS,
+		FIELD_VMSIZE,
+		FIELD_PAGES,
+		FIELD_READ,
+		FIELD_WRITE,
+		FIELD_CNT
+	};
+	struct data_pack{
+			void *data;
+			List process;
+	};
+	struct data_pack * pdata = (struct data_pack*)data;
+#endif
 	debug3("%s %s called", plugin_type, __func__);
 
 	for(; i < table->size; i++) {
 		switch (table->types[i]) {
 		case PROFILE_FIELD_UINT64:
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+			xstrfmtcat(str, "%s,job=%d,step=%d,task=%s,"
+				"host=%s,username=%s value=%"PRIu64" "
+				"%"PRIu64"\n", table->names[i],
+				g_job->step_id.job_id, g_job->step_id.step_id,
+				table->name, g_job->node_name, g_job->user_name,
+				((union data_t*)(pdata->data))[i].u,
+				(uint64_t)sample_time);
+
+#else 
 			xstrfmtcat(str, "%s,job=%d,step=%d,task=%s,"
 				   "host=%s value=%"PRIu64" "
 				   "%"PRIu64"\n", table->names[i],
@@ -894,8 +924,19 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 				   table->name, g_job->node_name,
 				   ((union data_t*)data)[i].u,
 				   (uint64_t)sample_time);
+#endif
 			break;
 		case PROFILE_FIELD_DOUBLE:
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+			xstrfmtcat(str, "%s,job=%d,step=%d,task=%s,"
+				   "host=%s,username=%s value=%.2f %"PRIu64""
+				   "\n", table->names[i],
+				   g_job->step_id.job_id, g_job->step_id.step_id,
+				   table->name, g_job->node_name, g_job->user_name,
+				   ((union data_t*)(pdata->data))[i].d,
+				   (uint64_t)sample_time);
+
+#else
 			xstrfmtcat(str, "%s,job=%d,step=%d,task=%s,"
 				   "host=%s value=%.2f %"PRIu64""
 				   "\n", table->names[i],
@@ -904,12 +945,30 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 				   table->name, g_job->node_name,
 				   ((union data_t*)data)[i].d,
 				   (uint64_t)sample_time);
+#endif
 			break;
 		case PROFILE_FIELD_NOT_SET:
 			break;
 		}
 	}
-
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	if(pdata->process != NULL  ) {
+		ListIterator itr = list_iterator_create(pdata->process);
+		jag_prec_t *prec;
+		while((prec = list_next(itr))) {
+            xstrfmtcat(str, "Command,job=%d,step=%d,task=%s,"
+                "host=%s,pid=%d,ppid=%d,command='%s',username='%s',"
+                "rss=%"PRIu64",vmsize=%"PRIu64" value=%.2f %"PRIu64"\n",
+                g_job->step_id.job_id, g_job->step_id.step_id,
+                table->name, g_job->node_name,
+                prec->pid, prec->ppid, prec->command, g_job->user_name,
+                ((union data_t*)(pdata->data))[FIELD_RSS].u,
+                ((union data_t*)(pdata->data))[FIELD_VMSIZE].u,prec->cpu_util,
+                (uint64_t)sample_time);
+		}
+		list_iterator_destroy(itr);
+	}
+#endif
 	_send_data(str);
 	xfree(str);
 

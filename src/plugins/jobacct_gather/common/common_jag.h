@@ -54,6 +54,14 @@ typedef struct jag_prec {	/* process record */
 	int     tres_count; /* count of tres in the tres_data */
 	acct_gather_data_t *tres_data; /* array of tres data */
 	double  usec; /* user cpu time: To normalize divide by system hertz */
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
+	char   *command;
+	time_t last_time;
+	time_t now_time;
+	bool   ppid_flag;
+	double cpu_util;
+	double last_total_calc;
+#endif
 #ifdef __METASTACK_LOAD_ABNORMAL
     int flag;/*Use different numbers to represent different states*/
 #endif

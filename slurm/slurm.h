@@ -340,6 +340,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_LOAD_ABNORMAL
 #endif
 
+#ifndef __METASTACK_OPT_INFLUXDB_ENFORCE
+#define __METASTACK_OPT_INFLUXDB_ENFORCE
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/

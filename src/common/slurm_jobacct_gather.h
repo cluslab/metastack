@@ -162,6 +162,9 @@ struct jobacctinfo {
     uint64_t timer;
 	uint32_t cpu_threshold;	
 #endif
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+    List pjobs;
+#endif
 };
 
 #ifdef __METASTACK_LOAD_ABNORMAL
