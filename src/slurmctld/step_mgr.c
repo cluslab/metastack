@@ -5675,3 +5675,229 @@ static step_record_t *_build_interactive_step(
 
 	return step_ptr;
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+/*
+ * pack_ctld_cache_job_step_info_response_msg - packs job step info
+ * IN step_id - specific id or NO_VAL/NO_VAL for all
+ * IN uid - user issuing request
+ * IN show_flags - job step filtering options
+ * OUT buffer - location to store data, pointers automatically advanced
+ * RET - 0 or error code
+ * NOTE: MUST free_buf buffer
+ */
+extern int pack_ctld_cache_job_step_info_response_msg(
+        slurm_step_id_t *step_id, uid_t uid, uint16_t show_flags,
+        buf_t *buffer, uint16_t protocol_version)
+{
+        int error_code = 0;
+        uint32_t tmp_offset;
+        time_t now = time(NULL);
+
+#ifdef __METASTACK_OPT_PART_VISIBLE
+        pack_step_args_t args = {
+                .step_id = step_id,
+                .show_flags = show_flags,
+                .uid = uid,
+                .steps_packed = 0,
+                .buffer = buffer,
+                .proto_version = protocol_version,
+                .valid_job = false,
+                .user_rec.uid = (uint32_t)uid,
+        };
+
+        assoc_mgr_lock_t locks = { .assoc = READ_LOCK, .user = READ_LOCK,
+                                   .qos = READ_LOCK };
+        assoc_mgr_lock(&locks);
+        /* get user_rec->coord_accts for _pack_job_steps coord check
+         * && user_rec->admin_level for validate_operator_user_rec
+         */
+        assoc_mgr_fill_in_user(acct_db_conn, &args.user_rec,
+                               accounting_enforce, NULL, true);
+
+        bool privileged = validate_operator_user_rec(&args.user_rec);
+        bool skip_visible_parts = (show_flags & SHOW_ALL) || privileged;
+        args.privileged = privileged;
+    /**
+     * args.user_rec.assoc_list may have been changed in func: assoc_mgr_fill_in_user
+     */
+    args.user_rec.assoc_list = NULL;
+        /* also return user_rec.assoc_list */
+        args.visible_parts = build_visible_cache_parts_user(&args.user_rec, skip_visible_parts, true);
+#else
+        bool privileged = validate_operator(uid);
+        bool skip_visible_parts = (show_flags & SHOW_ALL) || privileged;
+        pack_step_args_t args = {
+                .step_id = step_id,
+                .show_flags = show_flags,
+                .uid = uid,
+                .steps_packed = 0,
+                .buffer = buffer,
+                .privileged = privileged,
+                .proto_version = protocol_version,
+                .valid_job = false,
+                .visible_parts = build_visible_cache_parts(uid, skip_visible_parts),
+        };
+#endif
+        if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+                pack32(args.steps_packed, buffer);/* steps_packed placeholder */
+                pack_time(now, buffer);
+        } else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+                pack_time(now, buffer);
+                pack32(args.steps_packed, buffer);/* steps_packed placeholder */
+        }
+
+        list_for_each_ro(cache_job_list, _pack_job_steps, &args);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+        /* if (skip_visible_parts) 
+         * assoc_list == NULL */
+        if (args.user_rec.assoc_list)
+                list_destroy(args.user_rec.assoc_list);
+        assoc_mgr_unlock(&locks);
+#endif
+
+        if (list_count(cache_job_list) && !args.valid_job && !args.steps_packed)
+                error_code = ESLURM_INVALID_JOB_ID;
+
+        /* put the real record count in the message body header */
+        tmp_offset = get_buf_offset(buffer);
+        set_buf_offset(buffer, 0);
+        if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+                pack32(args.steps_packed, buffer);
+        } else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+                pack_time(now, buffer);
+                pack32(args.steps_packed, buffer);
+        }
+        set_buf_offset(buffer, tmp_offset);
+        xfree(args.visible_parts);
+
+        return error_code;
+}
+
+/* free_copy_step_record - delete a step record's data structures */
+extern void free_copy_step_record(void *x)
+{
+	step_record_t *step_ptr = (step_record_t *) x;
+	xassert(step_ptr);
+	xassert(step_ptr->magic == STEP_MAGIC);
+/*
+ * FIXME: If job step record is preserved after completion,
+ * the switch_g_job_step_complete() must be called upon completion
+ * and not upon record purging. Presently both events occur simultaneously.
+ */
+//	if (step_ptr->switch_job) {
+//		if (step_ptr->step_layout)
+//			switch_g_job_step_complete(
+//				step_ptr->switch_job,
+//				step_ptr->step_layout->node_list);
+//		switch_g_free_jobinfo (step_ptr->switch_job);
+//	}
+//	resv_port_free(step_ptr);
+
+	xfree(step_ptr->container);
+	xfree(step_ptr->host);
+	xfree(step_ptr->name);
+	slurm_step_layout_destroy(step_ptr->step_layout);
+	FREE_NULL_BITMAP(step_ptr->step_node_bitmap);
+	xfree(step_ptr->resv_ports);
+	xfree(step_ptr->network);
+	select_g_select_jobinfo_free(step_ptr->select_jobinfo);
+	xfree(step_ptr->tres_fmt_alloc_str);
+	xfree(step_ptr->cpus_per_tres);
+	xfree(step_ptr->mem_per_tres);
+	xfree(step_ptr->submit_line);
+	xfree(step_ptr->tres_bind);
+	xfree(step_ptr->tres_freq);
+	xfree(step_ptr->tres_per_step);
+	xfree(step_ptr->tres_per_node);
+	xfree(step_ptr->tres_per_socket);
+	xfree(step_ptr->tres_per_task);
+//	jobacctinfo_destroy(step_ptr->jobacct);
+//	FREE_NULL_BITMAP(step_ptr->core_bitmap_job);
+//	FREE_NULL_BITMAP(step_ptr->exit_node_bitmap);
+//	xfree(step_ptr->resv_port_array);
+//	FREE_NULL_LIST(step_ptr->gres_list_alloc);
+//	FREE_NULL_LIST(step_ptr->gres_list_req);
+//	xfree(step_ptr->tres_alloc_str);
+//	xfree(step_ptr->ext_sensors);
+//	xfree(step_ptr->memory_allocated);
+//	step_ptr->magic = ~STEP_MAGIC;
+	xfree(step_ptr);
+}
+
+static int copy_job_step_state(step_record_t *src_step_ptr, step_record_t *des_step_ptr)
+{
+//	int i;
+	if(!src_step_ptr || !des_step_ptr)
+		return 0;
+	memcpy(des_step_ptr, src_step_ptr, sizeof(step_record_t));
+
+	des_step_ptr->container = xstrdup(src_step_ptr->container);
+	if(src_step_ptr->step_node_bitmap)
+		des_step_ptr->step_node_bitmap = bit_copy(src_step_ptr->step_node_bitmap);
+	des_step_ptr->host = xstrdup(src_step_ptr->host);
+	des_step_ptr->resv_ports = xstrdup(src_step_ptr->resv_ports);
+	des_step_ptr->name = xstrdup(src_step_ptr->name);
+	des_step_ptr->network = xstrdup(src_step_ptr->network);
+	des_step_ptr->step_layout = slurm_step_layout_copy(src_step_ptr->step_layout);
+	des_step_ptr->select_jobinfo = select_g_select_jobinfo_copy(src_step_ptr->select_jobinfo);
+	des_step_ptr->tres_fmt_alloc_str = xstrdup(src_step_ptr->tres_fmt_alloc_str);
+	des_step_ptr->cpus_per_tres = xstrdup(src_step_ptr->cpus_per_tres);
+	des_step_ptr->mem_per_tres = xstrdup(src_step_ptr->mem_per_tres);
+	des_step_ptr->submit_line = xstrdup(src_step_ptr->submit_line);
+	des_step_ptr->tres_bind = xstrdup(src_step_ptr->tres_bind);
+	des_step_ptr->tres_freq = xstrdup(src_step_ptr->tres_freq);
+	des_step_ptr->tres_per_step = xstrdup(src_step_ptr->tres_per_step);
+	des_step_ptr->tres_per_node = xstrdup(src_step_ptr->tres_per_node);
+	des_step_ptr->tres_per_socket  = xstrdup(src_step_ptr->tres_per_socket);
+	des_step_ptr->tres_per_task = xstrdup(src_step_ptr->tres_per_task);
+//	if (des_step_ptr->exit_code != NO_VAL && src_step_ptr->exit_node_bitmap) {
+//		des_step_ptr->exit_node_bitmap = bit_copy(src_step_ptr->exit_node_bitmap);
+//	}
+//	if(src_step_ptr->core_bitmap_job)
+//		des_step_ptr->core_bitmap_job = bit_copy(src_step_ptr->core_bitmap_job);
+//	des_step_ptr->gres_list_req = gres_step_state_list_dup(src_step_ptr->gres_list_req);
+//	des_step_ptr->gres_list_alloc = gres_step_state_list_dup(src_step_ptr->gres_list_alloc);
+//	if (des_step_ptr->switch_job)
+//		switch_g_duplicate_jobinfo(src_step_ptr->switch_job,  &des_step_ptr->switch_job);
+//	des_step_ptr->tres_alloc_str = xstrdup(src_step_ptr->tres_alloc_str);
+//	if(src_step_ptr->jobacct)
+//		des_step_ptr->jobacct = jobacctinfo_extract(src_step_ptr->jobacct);
+
+//	if (src_step_ptr->memory_allocated && des_step_ptr->step_layout &&  des_step_ptr->step_layout->node_cnt)
+//	{
+//		i = sizeof(uint64_t) * des_step_ptr->step_layout->node_cnt;
+//		des_step_ptr->memory_allocated = xmalloc(i);
+//		memcpy(des_step_ptr->memory_allocated,src_step_ptr->memory_allocated, i);
+//	}
+
+	des_step_ptr->core_bitmap_job = NULL;
+	des_step_ptr->exit_node_bitmap = NULL;
+	des_step_ptr->ext_sensors = NULL;
+	des_step_ptr->gres_list_req = NULL;
+	des_step_ptr->gres_list_alloc = NULL;
+	des_step_ptr->job_ptr = NULL;
+	des_step_ptr->jobacct = NULL;
+	des_step_ptr->memory_allocated = NULL;
+	des_step_ptr->resv_port_array = NULL;
+	des_step_ptr->switch_job = NULL;
+	des_step_ptr->tres_alloc_str = NULL;
+	return 0;
+}
+
+extern int _copy_job_step_state(void *x, void *arg)
+{
+	step_record_t *src_step_ptr = (step_record_t *) x;
+	step_record_t *des_step_ptr = NULL;
+	job_record_t *des_job_ptr = (job_record_t *) arg;
+
+	if (src_step_ptr->state < JOB_RUNNING)
+		return 0;
+	des_step_ptr = xmalloc(sizeof(*des_step_ptr));
+	copy_job_step_state(src_step_ptr, des_step_ptr);
+	des_step_ptr->job_ptr   = des_job_ptr;
+	list_append(des_job_ptr->step_list, des_step_ptr);
+	return 0;
+}
+#endif

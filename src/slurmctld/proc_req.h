@@ -98,4 +98,12 @@ extern char **xduparray(uint32_t size, char ** array);
 extern resource_allocation_response_msg_t *build_alloc_msg(
 	job_record_t *job_ptr, int error_code, char *job_submit_user_msg);
 
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+
+/*
+ * slurmctld_query_req  - Process an individual RPC request
+ * IN/OUT msg - the request message, data associated with the message is freed
+ */
+void slurmctld_query_req(slurm_msg_t *msg);
+#endif
 #endif /* !_HAVE_PROC_REQ_H */

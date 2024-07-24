@@ -90,6 +90,11 @@ typedef struct {
 #endif
 } _foreach_pack_part_info_t;
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+List   copy_part_list = NULL;		/* copy partition list */
+List   cache_part_list = NULL;      /* cache partition list */
+#endif
+
 /* Global variables */
 List part_list = NULL;			/* partition list */
 char *default_part_name = NULL;		/* name of default partition */
@@ -2012,7 +2017,12 @@ void init_part_conf(void)
 		list_flush(part_list);
 	else
 		part_list = list_create(_list_delete_part);
-
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+	if (cache_part_list)		/* delete defunct partitions */
+		list_flush(cache_part_list);
+	else
+		cache_part_list = list_create(_list_delete_part);
+#endif
 	xfree(default_part_name);
 	default_part_loc = NULL;
 }
@@ -2253,7 +2263,11 @@ cleanup:
 static bool _part_is_visible_assoc(part_record_t *part_ptr, 
 			slurmdb_user_rec_t *user)
 {
-	xassert(verify_lock(PART_LOCK, READ_LOCK));
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    xassert(verify_lock(PART_LOCK, READ_LOCK) || cache_verify_lock(PART_LOCK, READ_LOCK));
+#else
+    xassert(verify_lock(PART_LOCK, READ_LOCK));
+#endif
 	xassert(user->uid != 0);
 
 	if (part_ptr->flags & PART_FLAG_HIDDEN)
@@ -2313,7 +2327,11 @@ extern List fill_assoc_list(uid_t uid, bool locked)
 /* partition is visible to the user */
 static bool _part_is_visible(part_record_t *part_ptr, uid_t uid)
 {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	xassert(verify_lock(PART_LOCK, READ_LOCK) || cache_verify_lock(PART_LOCK, READ_LOCK));
+#else
 	xassert(verify_lock(PART_LOCK, READ_LOCK));
+#endif
 	xassert(uid != 0);
 
 	if (part_ptr->flags & PART_FLAG_HIDDEN)
@@ -2941,7 +2959,17 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		part_ptr->flags &= (~PART_FLAG_LLS);
 	}
 #endif
-
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	if (part_desc->meta_flags & PART_METAFLAG_HETPART) {
+		info("%s: setting HetPart for partition %s", __func__,
+		     part_desc->name);
+		part_ptr->meta_flags |= PART_METAFLAG_HETPART;
+	} else if (part_desc->meta_flags & PART_METAFLAG_HETPART_CLR) {
+		info("%s: clearing HetPart for partition %s", __func__,
+		     part_desc->name);
+		part_ptr->meta_flags &= (~PART_METAFLAG_HETPART);
+	}
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 	if (part_desc->meta_flags & PART_METAFLAG_RBN) {
 		info("%s: setting RBN for partition %s", __func__,
@@ -3632,6 +3660,9 @@ void load_part_uid_allow_list(int force)
 void part_fini (void)
 {
 	FREE_NULL_LIST(part_list);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	FREE_NULL_LIST(cache_part_list);
+#endif
 	default_part_loc = NULL;
 }
 
@@ -3874,3 +3905,297 @@ extern int part_policy_valid_qos(part_record_t *part_ptr,
 
 	return SLURM_SUCCESS;
 }
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+/*
+ * find_copy_part_record - find a record for partition with specified name
+ * IN name - name of the desired partition
+ * RET pointer to partition or NULL if not found
+ */
+extern part_record_t *find_copy_part_record(char *name, List part_list)
+{
+	if (!part_list) {
+		error("part_list is NULL");
+		return NULL;
+	}
+	return list_find_first(part_list, &list_find_part, name);
+}
+
+
+static int copy_job_defaults_list(List src_send_list,   List des_send_list)
+{
+	uint32_t count = 0;
+	int rc = SLURM_SUCCESS;
+	job_defaults_t *src_object = NULL, *des_object = NULL;
+
+	count = list_count(src_send_list);
+
+	if (count) {
+			ListIterator itr = list_iterator_create(src_send_list);
+			while ((src_object = list_next(itr))) {
+					des_object = xmalloc(sizeof(job_defaults_t));
+					des_object->type  = src_object->type;
+					des_object->value = src_object->value;
+					list_append(des_send_list, des_object);
+			}
+			list_iterator_destroy(itr);
+	}
+	return rc;
+}
+
+static void _copy_list_delete_part(void *part_entry)
+{
+	part_record_t *part_ptr = NULL;
+
+	part_ptr = (part_record_t *) part_entry;
+
+	xfree(part_ptr->allow_accounts);
+	xfree(part_ptr->allow_alloc_nodes);
+	xfree(part_ptr->allow_groups);
+	xfree(part_ptr->allow_qos);
+	xfree(part_ptr->allow_uids);
+	FREE_NULL_BITMAP(part_ptr->allow_qos_bitstr);
+	FREE_NULL_BITMAP(part_ptr->deny_qos_bitstr);
+	accounts_list_free(&part_ptr->allow_account_array);
+	xfree(part_ptr->alternate);
+	xfree(part_ptr->orig_nodes);
+	xfree(part_ptr->billing_weights_str);
+	xfree(part_ptr->deny_accounts);
+	accounts_list_free(&part_ptr->deny_account_array);
+	xfree(part_ptr->deny_qos);
+	FREE_NULL_LIST(part_ptr->job_defaults_list);
+	xfree(part_ptr->name);
+	xfree(part_ptr->nodes);
+	xfree(part_ptr->nodesets);
+	FREE_NULL_BITMAP(part_ptr->node_bitmap);
+	xfree(part_ptr->qos_char);
+	xfree(part_ptr->tres_fmt_str);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES	
+	standby_nodes_free(part_ptr->standby_nodes);
+	part_ptr->standby_nodes = NULL;
+#endif
+	xfree(part_entry);
+}
+
+static int copy_part(part_record_t *src_part_ptr, part_record_t *des_part_ptr)
+{
+	if(!src_part_ptr || !des_part_ptr)
+		return 0;
+	memcpy(des_part_ptr, src_part_ptr, sizeof(part_record_t));
+
+	des_part_ptr->name = xstrdup(src_part_ptr->name);
+	des_part_ptr->allow_accounts = xstrdup(src_part_ptr->allow_accounts);
+	des_part_ptr->allow_groups = xstrdup(src_part_ptr->allow_groups);
+	des_part_ptr->allow_alloc_nodes = xstrdup(src_part_ptr->allow_alloc_nodes);
+	des_part_ptr->allow_qos = xstrdup(src_part_ptr->allow_qos);
+	des_part_ptr->qos_char = xstrdup(src_part_ptr->qos_char);
+	des_part_ptr->alternate = xstrdup(src_part_ptr->alternate);
+	des_part_ptr->deny_accounts = xstrdup(src_part_ptr->deny_accounts);
+	des_part_ptr->deny_qos = xstrdup(src_part_ptr->deny_qos);
+	des_part_ptr->nodes = xstrdup(src_part_ptr->nodes);
+	des_part_ptr->nodesets = xstrdup(src_part_ptr->nodesets);
+	des_part_ptr->orig_nodes = xstrdup(src_part_ptr->orig_nodes);
+	if(src_part_ptr->node_bitmap)
+		des_part_ptr->node_bitmap = bit_copy(src_part_ptr->node_bitmap);
+	if(src_part_ptr->allow_qos_bitstr)
+		des_part_ptr->allow_qos_bitstr = bit_copy(src_part_ptr->allow_qos_bitstr);
+	if(src_part_ptr->deny_qos_bitstr)
+		des_part_ptr->deny_qos_bitstr = bit_copy(src_part_ptr->deny_qos_bitstr);
+	des_part_ptr->billing_weights_str = xstrdup(src_part_ptr->billing_weights_str);
+	des_part_ptr->tres_fmt_str = xstrdup(src_part_ptr->tres_fmt_str);
+	if(src_part_ptr->job_defaults_list){
+		des_part_ptr->job_defaults_list = list_create(xfree_ptr);
+		(void)copy_job_defaults_list(src_part_ptr->job_defaults_list, des_part_ptr->job_defaults_list);
+	}
+	des_part_ptr->allow_account_array = NULL;
+	des_part_ptr->deny_account_array = NULL;
+	accounts_list_build(des_part_ptr->allow_accounts, &des_part_ptr->allow_account_array);
+	accounts_list_build(des_part_ptr->deny_accounts,  &des_part_ptr->deny_account_array);
+	des_part_ptr->allow_uids = get_groups_members(des_part_ptr->allow_groups);
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	if(src_part_ptr->standby_nodes){
+		des_part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
+		des_part_ptr->standby_nodes->borrowed_nodes = xstrdup(src_part_ptr->standby_nodes->borrowed_nodes);
+		des_part_ptr->standby_nodes->nodes = xstrdup(src_part_ptr->standby_nodes->nodes);
+		des_part_ptr->standby_nodes->parameters = xstrdup(src_part_ptr->standby_nodes->parameters);
+		des_part_ptr->standby_nodes->standby_node_bitmap = NULL;
+		des_part_ptr->standby_nodes->borrowed_node_bitmap = NULL;
+	}
+#endif
+	des_part_ptr->billing_weights = NULL;
+	des_part_ptr->qos_ptr = NULL;
+	des_part_ptr->tres_cnt = NULL;
+	des_part_ptr->bf_data = NULL;
+	return 0;
+}
+static int _copy_part(void *object, void *arg)
+{
+	part_record_t *src_part_ptr = object;
+	part_record_t *des_part_ptr = xmalloc(sizeof(part_record_t));
+	copy_part(src_part_ptr,des_part_ptr);
+	list_append(copy_part_list, des_part_ptr);
+	return SLURM_SUCCESS;
+}
+
+void copy_all_part_state()
+{
+	slurmctld_lock_t config_read_lock = {
+			NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+	copy_part_list = list_create(_copy_list_delete_part);
+	lock_slurmctld(config_read_lock);
+	if(part_list)
+			list_for_each_ro(part_list, _copy_part, NULL);
+	unlock_slurmctld(config_read_lock);
+}
+
+void update_part_cache_data()
+{
+	FREE_NULL_LIST(cache_part_list);
+	cache_part_list = copy_part_list;
+	copy_part_list = NULL;
+}
+
+
+#ifdef __METASTACK_OPT_PART_VISIBLE
+extern part_record_t **build_visible_cache_parts_user(slurmdb_user_rec_t *user_ret, 
+				bool skip, bool locked)
+{
+	part_record_t **visible_parts_save = NULL;
+	part_record_t **visible_parts = NULL;
+	build_visible_parts_arg_t args = {0};
+
+	/*
+	 * if return, user_ret->assoc_list == NULL;
+	 */
+	if (skip)
+		return NULL;
+
+	visible_parts = xcalloc(list_count(cache_part_list) + 1,
+				sizeof(part_record_t *));
+	args.uid = user_ret->uid;
+	args.visible_parts = visible_parts;
+	args.user_rec.uid = user_ret->uid;
+
+	assoc_mgr_lock_t locks = { .assoc = READ_LOCK, .user = READ_LOCK };
+	if (!locked)
+		assoc_mgr_lock(&locks);
+	
+	args.user_rec.assoc_list = fill_assoc_list(user_ret->uid, true);
+
+	/*
+	 * Save start pointer to start of the list so can point to start
+	 * after appending to the list.
+	 */
+	visible_parts_save = visible_parts;
+	list_for_each(cache_part_list, _build_visible_parts_foreach, &args);
+
+	/* user_ret->assoc_list */
+	// list_destroy(args.user_rec.assoc_list);
+	user_ret->assoc_list = args.user_rec.assoc_list;
+	args.user_rec.assoc_list = NULL;
+
+	if (!locked)
+		assoc_mgr_unlock(&locks);
+
+	return visible_parts_save;
+}
+#endif
+
+extern part_record_t **build_visible_cache_parts(uid_t uid, bool skip)
+{
+	part_record_t **visible_parts_save = NULL;
+	part_record_t **visible_parts = NULL;
+	build_visible_parts_arg_t args = {0};
+
+	/*
+	 * The array of visible parts isn't used for privileged (i.e. operators)
+	 * users or when SHOW_ALL is requested, so no need to create list.
+	 */
+	if (skip)
+		return NULL;
+
+	visible_parts = xcalloc(list_count(cache_part_list) + 1,
+				sizeof(part_record_t *));
+	args.uid = uid;
+	args.visible_parts = visible_parts;
+
+	/*
+	 * Save start pointer to start of the list so can point to start
+	 * after appending to the list.
+	 */
+	visible_parts_save = visible_parts;
+	list_for_each(cache_part_list, _build_visible_parts_foreach, &args);
+
+	return visible_parts_save;
+}
+
+/*
+ * pack_all_cache_part - dump all partition information for all partitions in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - partition filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * global: part_list - global list of partition records
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ * NOTE: change slurm_load_part() in api/part_info.c if data format changes
+ */
+extern void pack_all_cache_part(char **buffer_ptr, int *buffer_size,
+                          uint16_t show_flags, uid_t uid,
+                          uint16_t protocol_version)
+{
+        int tmp_offset;
+        time_t now = time(NULL);
+        bool privileged = validate_operator(uid);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+        _foreach_pack_part_info_t pack_info = {
+                .buffer = init_buf(BUF_SIZE),
+                .parts_packed = 0,
+                .privileged = privileged,
+                .protocol_version = protocol_version,
+                .show_flags = show_flags,
+                .uid = uid,
+                .user_rec.uid = (uint32_t)uid,
+        };
+
+    pack_info.user_rec.assoc_list = NULL;
+        /* also return user_rec.assoc_list */
+        pack_info.visible_parts = build_visible_cache_parts_user(&pack_info.user_rec, privileged, false);
+#else
+        _foreach_pack_part_info_t pack_info = {
+                .buffer = init_buf(BUF_SIZE),
+                .parts_packed = 0,
+                .privileged = privileged,
+                .protocol_version = protocol_version,
+                .show_flags = show_flags,
+                .uid = uid,
+                .visible_parts = build_visible_cache_parts(uid, privileged),
+        };
+#endif
+
+        buffer_ptr[0] = NULL;
+        *buffer_size = 0;
+
+        /* write header: version and time */
+        pack32(0, pack_info.buffer);
+        pack_time(now, pack_info.buffer);
+        list_for_each_ro(cache_part_list, _pack_part, &pack_info);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+        /* if (privileged) 
+         * assoc_list == NULL */
+        if (pack_info.user_rec.assoc_list)
+                list_destroy(pack_info.user_rec.assoc_list);
+#endif
+
+        /* put the real record count in the message body header */
+        tmp_offset = get_buf_offset(pack_info.buffer);
+        set_buf_offset(pack_info.buffer, 0);
+        pack32(pack_info.parts_packed, pack_info.buffer);
+        set_buf_offset(pack_info.buffer, tmp_offset);
+
+        *buffer_size = get_buf_offset(pack_info.buffer);
+        buffer_ptr[0] = xfer_buf_data(pack_info.buffer);
+        xfree(pack_info.visible_parts);
+}				
+#endif

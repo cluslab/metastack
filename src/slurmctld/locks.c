@@ -54,7 +54,16 @@ static pthread_rwlock_t slurmctld_locks[5] = {
 	PTHREAD_RWLOCK_INITIALIZER,
 	PTHREAD_RWLOCK_INITIALIZER,
 };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+static pthread_rwlock_t cache_query_locks[5] = {
+	PTHREAD_RWLOCK_INITIALIZER,
+	PTHREAD_RWLOCK_INITIALIZER,
+	PTHREAD_RWLOCK_INITIALIZER,
+	PTHREAD_RWLOCK_INITIALIZER,
+	PTHREAD_RWLOCK_INITIALIZER,
+};
 
+#endif
 #ifndef NDEBUG
 /*
  * Used to protect against double-locking within a single thread. Calling
@@ -106,6 +115,50 @@ extern bool verify_lock(lock_datatype_t datatype, lock_level_t level)
 {
 	return (((lock_level_t *) &thread_locks)[datatype] >= level);
 }
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+static __thread bool cache_locked = false;
+
+/*
+ * Used to detect any location where the acquired locks differ from the
+ * release locks.
+ */
+
+static __thread slurmctld_lock_t query_thread_locks;
+
+static bool _cache_store_locks(slurmctld_lock_t lock_levels)
+{
+	if (cache_locked)
+		return false;
+	cache_locked = true;
+
+	memcpy((void *) &query_thread_locks, (void *) &lock_levels,
+	       sizeof(slurmctld_lock_t));
+
+	return true;
+}
+
+static bool _cache_clear_locks(slurmctld_lock_t lock_levels)
+{
+	if (!cache_locked)
+		return false;
+	cache_locked = false;
+
+	if (memcmp((void *) &query_thread_locks, (void *) &lock_levels,
+		       sizeof(slurmctld_lock_t)))
+		return false;
+
+	memset((void *) &query_thread_locks, 0, sizeof(slurmctld_lock_t));
+
+	return true;
+}
+
+extern bool cache_verify_lock(lock_datatype_t datatype, lock_level_t level)
+{
+	return (((lock_level_t *) &query_thread_locks)[datatype] >= level);
+}
+
+#endif
 #endif
 
 /* lock_slurmctld - Issue the required lock requests in a well defined order */
@@ -160,6 +213,61 @@ extern void unlock_slurmctld(slurmctld_lock_t lock_levels)
 	if (lock_levels.conf)
 		slurm_rwlock_unlock(&slurmctld_locks[CONF_LOCK]);
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* lock_slurmctld - Issue the required lock requests in a well defined order */
+extern void lock_cache_query(slurmctld_lock_t lock_levels)
+{
+	xassert(_cache_store_locks(lock_levels));
+
+	if (lock_levels.conf == READ_LOCK)
+		slurm_rwlock_rdlock(&cache_query_locks[CONF_LOCK]);
+	else if (lock_levels.conf == WRITE_LOCK)
+		slurm_rwlock_wrlock(&cache_query_locks[CONF_LOCK]);
+
+	if (lock_levels.job == READ_LOCK)
+		slurm_rwlock_rdlock(&cache_query_locks[JOB_LOCK]);
+	else if (lock_levels.job == WRITE_LOCK)
+		slurm_rwlock_wrlock(&cache_query_locks[JOB_LOCK]);
+
+	if (lock_levels.node == READ_LOCK)
+		slurm_rwlock_rdlock(&cache_query_locks[NODE_LOCK]);
+	else if (lock_levels.node == WRITE_LOCK)
+		slurm_rwlock_wrlock(&cache_query_locks[NODE_LOCK]);
+
+	if (lock_levels.part == READ_LOCK)
+		slurm_rwlock_rdlock(&cache_query_locks[PART_LOCK]);
+	else if (lock_levels.part == WRITE_LOCK)
+		slurm_rwlock_wrlock(&cache_query_locks[PART_LOCK]);
+
+	if (lock_levels.fed == READ_LOCK)
+		slurm_rwlock_rdlock(&cache_query_locks[FED_LOCK]);
+	else if (lock_levels.fed == WRITE_LOCK)
+		slurm_rwlock_wrlock(&cache_query_locks[FED_LOCK]);
+}
+
+/* unlock_slurmctld - Issue the required unlock requests in a well
+ *	defined order */
+extern void unlock_cache_query(slurmctld_lock_t lock_levels)
+{
+	xassert(_cache_clear_locks(lock_levels));
+
+	if (lock_levels.fed)
+		slurm_rwlock_unlock(&cache_query_locks[FED_LOCK]);
+
+	if (lock_levels.part)
+		slurm_rwlock_unlock(&cache_query_locks[PART_LOCK]);
+
+	if (lock_levels.node)
+		slurm_rwlock_unlock(&cache_query_locks[NODE_LOCK]);
+
+	if (lock_levels.job)
+		slurm_rwlock_unlock(&cache_query_locks[JOB_LOCK]);
+
+	if (lock_levels.conf)
+		slurm_rwlock_unlock(&cache_query_locks[CONF_LOCK]);
+}
+#endif
 
 /*
  * _report_lock_set - report whether the read or write lock is set

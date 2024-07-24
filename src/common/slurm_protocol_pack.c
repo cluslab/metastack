@@ -4632,6 +4632,12 @@ _pack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t * build_ptr, buf_t *buffer,
 
 		pack16(build_ptr->wait_time, buffer);
 		packstr(build_ptr->x11_params, buffer);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            pack16(build_ptr->cachedup_interval, buffer);
+            pack16(build_ptr->cache_query, buffer);
+            pack32(build_ptr->query_port, buffer);
+            pack16(build_ptr->query_port_count, buffer);
+#endif
 	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		pack_time(build_ptr->last_update, buffer);
 
@@ -5359,6 +5365,12 @@ _unpack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t **build_buffer_ptr,
 		safe_unpack16(&build_ptr->wait_time, buffer);
 		safe_unpackstr_xmalloc(&build_ptr->x11_params,
 		                       &uint32_tmp, buffer);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            safe_unpack16(&build_ptr->cachedup_interval, buffer);
+            safe_unpack16(&build_ptr->cache_query, buffer);
+            safe_unpack32(&build_ptr->query_port, buffer);
+            safe_unpack16(&build_ptr->query_port_count, buffer);
+#endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		/* unpack timestamp of snapshot */
 		safe_unpack_time(&build_ptr->last_update, buffer);
@@ -13095,6 +13107,41 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 				       buffer,
 				       msg->protocol_version);
 		break;
+#ifdef __METASTACK_OPT_CACHE_QUERY		
+	case REQUEST_CACHE_JOB_INFO:
+		_pack_job_info_request_msg((job_info_request_msg_t *)
+					   msg->data, buffer,
+					   msg->protocol_version);
+		break;
+	case REQUEST_CACHE_JOB_USER_INFO:
+		_pack_job_user_msg((job_user_id_msg_t *)msg->data, buffer,
+				   msg->protocol_version);
+		break;
+	case REQUEST_CACHE_JOB_STEP_INFO:
+		_pack_job_step_info_req_msg((job_step_info_request_msg_t
+					     *) msg->data, buffer,
+					    msg->protocol_version);
+		break;
+	case REQUEST_CACHE_JOB_INFO_SINGLE:
+		_pack_job_ready_msg((job_id_msg_t *)msg->data, buffer,
+				    msg->protocol_version);
+		break;
+	case REQUEST_CACHE_PARTITION_INFO:
+		_pack_part_info_request_msg((part_info_request_msg_t *)
+					    msg->data, buffer,
+					    msg->protocol_version);
+		break;
+	case REQUEST_CACHE_NODE_INFO:
+		_pack_node_info_request_msg((node_info_request_msg_t *)
+					    msg->data, buffer,
+					    msg->protocol_version);
+		break;
+	case REQUEST_CACHE_NODE_INFO_SINGLE:
+		_pack_node_info_single_msg((node_info_single_msg_t *)
+					   msg->data, buffer,
+					   msg->protocol_version);
+		break;	
+#endif
 	case REQUEST_JOB_STEP_INFO:
 		_pack_job_step_info_req_msg((job_step_info_request_msg_t
 					     *) msg->data, buffer,
@@ -13742,6 +13789,44 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 					      (msg->data), buffer,
 					      msg->protocol_version);
 		break;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	case REQUEST_CACHE_JOB_INFO:
+		rc = _unpack_job_info_request_msg((job_info_request_msg_t**)
+						  & (msg->data), buffer,
+						  msg->protocol_version);
+		break;
+	case REQUEST_CACHE_JOB_USER_INFO:
+		rc = _unpack_job_user_msg((job_user_id_msg_t **)
+					  &msg->data, buffer,
+					  msg->protocol_version);
+		break;	
+	case REQUEST_CACHE_JOB_STEP_INFO:
+		rc = _unpack_job_step_info_req_msg(
+			(job_step_info_request_msg_t **)
+			& (msg->data), buffer,
+			msg->protocol_version);
+		break;	
+	case REQUEST_CACHE_JOB_INFO_SINGLE:
+		rc = _unpack_job_ready_msg((job_id_msg_t **)
+					   & msg->data, buffer,
+					   msg->protocol_version);
+		break;
+	case REQUEST_CACHE_PARTITION_INFO:
+		rc = _unpack_part_info_request_msg((part_info_request_msg_t **)
+						   & (msg->data), buffer,
+						   msg->protocol_version);
+		break;
+	case REQUEST_CACHE_NODE_INFO:
+		rc = _unpack_node_info_request_msg((node_info_request_msg_t **)
+						   & (msg->data), buffer,
+						   msg->protocol_version);
+		break;
+	case REQUEST_CACHE_NODE_INFO_SINGLE:
+		rc = _unpack_node_info_single_msg((node_info_single_msg_t **)
+						  & (msg->data), buffer,
+						  msg->protocol_version);
+		break;
+#endif
 	case REQUEST_JOB_STEP_INFO:
 		rc = _unpack_job_step_info_req_msg(
 			(job_step_info_request_msg_t **)

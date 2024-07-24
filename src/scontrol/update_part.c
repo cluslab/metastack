@@ -179,6 +179,21 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			}
 			(*update_cnt_ptr)++;
 		}
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		else if (xstrncasecmp(tag, "HetPart", MAX(taglen, 1)) == 0) {
+			if (xstrncasecmp(val, "NO", MAX(vallen, 1)) == 0)
+				part_msg_ptr->meta_flags |= PART_METAFLAG_HETPART_CLR;
+			else if (xstrncasecmp(val, "YES", MAX(vallen, 1)) == 0)
+				part_msg_ptr->meta_flags |= PART_METAFLAG_HETPART;
+			else {
+				exit_code = 1;
+				error("Invalid input: %s", argv[i]);
+				error("Acceptable HetPart values are YES and NO");
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 		else if (xstrncasecmp(tag, "RBN", MAX(taglen, 1)) == 0) {
 			if (xstrncasecmp(val, "NO", MAX(vallen, 1)) == 0)

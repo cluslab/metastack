@@ -1033,6 +1033,10 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 	if (part->lls_flag)
 		part_ptr->flags |= PART_FLAG_LLS;
 #endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	if (part->hetpart_flag)
+		part_ptr->meta_flags |= PART_METAFLAG_HETPART;
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 	if (part->rbn_flag)
 		part_ptr->meta_flags |= PART_METAFLAG_RBN;
@@ -3842,3 +3846,75 @@ unpack_error:
 
 	return SLURM_ERROR;
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+
+/*
+ * Validate heterogeneous jobs
+ *
+ * Make sure that every active (not yet complete) job has all of its components
+ * and they are all in the same state. Also rebuild het_job_list.
+ * If hetjob is corrupted, aborts and removes it from job_list.
+ */
+extern void _validate_copy_het_jobs(void)
+{
+	ListIterator job_iterator;
+	job_record_t *job_ptr = NULL, *het_job_ptr = NULL;
+	hostset_t hs;
+	char *job_id_str = NULL;
+	uint32_t job_id;
+	bool het_job_valid;
+
+	list_for_each(copy_job_list, _mark_het_job_unused, NULL);
+
+	job_iterator = list_iterator_create(copy_job_list);
+	while ((job_ptr = list_next(job_iterator))) {
+		/* Checking for corrupted hetjob components */
+		if (job_ptr->het_job_offset != 0) {
+			het_job_ptr = find_hash_job_record(job_ptr->het_job_id, 1);
+			if (!het_job_ptr) {
+				continue;
+			}
+		}
+		if ((job_ptr->het_job_id == 0) ||
+		    (job_ptr->het_job_offset != 0))
+			continue;
+		/* active het job leader found */
+		FREE_NULL_LIST(job_ptr->het_job_list);
+		job_id_str = NULL;
+		/* Need to wrap numbers with brackets for hostset functions */
+		xstrfmtcat(job_id_str, "[%s]", job_ptr->het_job_id_set);
+		hs = hostset_create(job_id_str);
+		xfree(job_id_str);
+		if (!hs) {
+			continue;
+		}
+		job_ptr->het_job_list = list_create(NULL);
+		het_job_valid = true;	/* assume valid for now */
+		while (het_job_valid && (job_id_str = hostset_shift(hs))) {
+			job_id = (uint32_t) strtoll(job_id_str, NULL, 10);
+			het_job_ptr = find_hash_job_record(job_id, 1);
+			if (!het_job_ptr) {
+				error("Could not find JobId=%u, part of hetjob JobId=%u",
+				      job_id, job_ptr->job_id);
+				het_job_valid = false;
+			} else if (het_job_ptr->het_job_id !=
+				   job_ptr->job_id) {
+				error("Invalid state of JobId=%u, part of hetjob JobId=%u",
+				      job_id, job_ptr->job_id);
+				het_job_valid = false;
+			} else {
+				list_append(job_ptr->het_job_list,
+					    het_job_ptr);
+			}
+			free(job_id_str);
+		}
+		hostset_destroy(hs);
+		if (het_job_valid) {
+			list_for_each(job_ptr->het_job_list, _mark_het_job_used,
+				      NULL);
+		}
+	}
+	list_iterator_destroy(job_iterator);
+}
+#endif

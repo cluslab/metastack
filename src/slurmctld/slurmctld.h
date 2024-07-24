@@ -154,6 +154,13 @@ typedef struct slurmctld_config {
 	pthread_t thread_id_power;
 	pthread_t thread_id_purge_files;
 	pthread_t thread_id_rpc;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	int query_thread_count;
+	pthread_cond_t query_thread_count_cond;
+	pthread_mutex_t query_thread_count_lock;
+	pthread_t thread_id_copy;
+	pthread_t thread_id_query;
+#endif
 } slurmctld_config_t;
 
 /* Job scheduling statistics */
@@ -474,7 +481,10 @@ extern void free_para_sched_resource(void);
 extern void get_para_sched_part_names(void);
 extern int _get_job_part_index(char** part_names, part_record_t *part_ptr);
 #endif
-
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+extern List copy_part_list;			/* list of copy_part_record entries */
+extern List cache_part_list;		/* list of cache_part_record entries */
+#endif
 extern List part_list;			/* list of part_record entries */
 extern time_t last_part_update;		/* time of last part_list update */
 extern part_record_t default_part;	/* default configuration values */
@@ -742,6 +752,14 @@ typedef struct {
 	uint32_t priority;		/* whole hetjob calculated priority */
 } het_job_details_t;
 
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+typedef struct {
+	time_t preemptable;
+	bool qos;
+	char *qos_name;
+} job_cache_data_t;
+#endif
+
 /*
  * NOTE: When adding fields to the job_record, or any underlying structures,
  * be sure to sync with job_array_split.
@@ -909,6 +927,9 @@ struct job_record {
 					 * see SLURM_POWER_FLAGS_ */
 	time_t pre_sus_time;		/* time job ran prior to last suspend */
 	time_t preempt_time;		/* job preemption signal time */
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+	job_cache_data_t *job_cache_data; /*Holds values from multiple structs*/
+#endif
 	bool preempt_in_progress;	/* Premption of other jobs in progress
 					 * in order to start this job,
 					 * (Internal use only, don't save) */
@@ -936,6 +957,9 @@ struct job_record {
 					 * DON'T PACK. */
 	char *resv_name;		/* reservation name */
 	slurmctld_resv_t *resv_ptr;	/* reservation structure pointer */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	bitstr_t *resv_bitmap; /*A reservation node in a partition*/
+#endif
 	uint32_t requid;	    	/* requester user ID */
 	char *resp_host;		/* host for srun communications */
 	char *sched_nodes;		/* list of nodes scheduled for job */
@@ -1144,6 +1168,10 @@ typedef struct {
 	slurmctld_resv_t *resv_ptr;
 } job_queue_req_t;
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern List cache_job_list;   /* list of cache_job_record entries */
+extern List copy_job_list;    /* list of copy_job_record entries */
+#endif
 extern List job_list;			/* list of job_record entries */
 extern List purge_files_list;		/* list of job ids to purge files of */
 
@@ -1364,6 +1392,58 @@ extern int dump_all_node_state ( void );
 
 /* dump_all_part_state - save the state of all partitions to file */
 extern int dump_all_part_state ( void );
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* copy_all_part_state - copy the state of all partitions */
+extern void copy_all_part_state();
+
+/* copy_all_job_state - copy the state of all jobs
+ * RET 0 or error code */
+extern void copy_all_job_state();
+
+/* dump_all_node_state - save the state of all nodes to file */
+extern void copy_all_node_state();
+
+extern void update_job_cache_data();
+extern void update_node_cache_data();
+extern void update_part_cache_data();
+
+
+
+/*
+ * _copy_job_step_state - copy the state of a specific job step ,
+ *	load with load_step_state
+ * IN step_ptr - pointer to job step for which information is to be dumped
+ * IN/OUT buffer - location to store data, pointers automatically advanced
+ */
+int _copy_job_step_state(void *x, void *arg);
+
+/*
+ * find_hash_job_record - return a pointer to the job record with the given job_id
+ * IN job_id - requested job's id
+ * IN type - The data table to be queried, 1:copy data 2:cache data
+ * RET pointer to the job's record, NULL on error
+ */
+extern job_record_t *find_hash_job_record(uint32_t job_id, int type);
+
+/*
+ * find_copy_part_record - find a record for partition with specified name
+ * IN name - name of the desired partition
+ * RET pointer to partition or NULL if not found
+ */
+extern part_record_t *find_copy_part_record(char *name, List part_list);
+
+/*
+ * cache_find_step_record - return a pointer to the step record with the given
+ *	job_id and step_id
+ * IN job_ptr - pointer to job table entry to have step record added
+ * IN step_id - id+het_comp of the desired job step
+ * RET pointer to the job step's record, NULL on error
+ */
+extern step_record_t *cache_find_step_record(job_record_t *job_ptr,
+				       slurm_step_id_t *step_id);
+
+#endif
 
 /*
  * dump_job_desc - dump the incoming job submit request message
@@ -2090,6 +2170,143 @@ extern void node_no_resp_msg(void);
 /* For a given job ID return the number of PENDING tasks which have their
  * own separate job_record (do not count tasks in pending META job record) */
 extern int num_pending_job_array_tasks(uint32_t array_job_id);
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/*
+ * pack_all_cache_jobs - dump all job information for all jobs in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - job filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * IN filter_uid - pack only jobs belonging to this user if not NO_VAL
+ * IN protocol_version - slurm protocol version of client
+ * global: job_list - global list of job records
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ * NOTE: change _unpack_job_desc_msg() in common/slurm_protocol_pack.c
+ *      whenever the data format changes
+ */
+extern void pack_all_cache_jobs(char **buffer_ptr, int *buffer_size,
+                          uint16_t show_flags, uid_t uid, uint32_t filter_uid,
+                          uint16_t protocol_version);
+/*
+ * pack_spec_cache_jobs - dump job information for specified jobs in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - job filtering options
+ * IN job_ids - list of job_ids to pack
+ * IN uid - uid of user making request (for partition filtering)
+ * IN filter_uid - pack only jobs belonging to this user if not NO_VAL
+ * global: job_list - global list of job records
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ * NOTE: change _unpack_job_desc_msg() in common/slurm_protocol_pack.c
+ *      whenever the data format changes
+ */
+extern void pack_spec_cache_jobs(char **buffer_ptr, int *buffer_size, List job_ids,
+                           uint16_t show_flags, uid_t uid, uint32_t filter_uid,
+                           uint16_t protocol_version);
+/*
+ * pack_one_cache_job - dump information for one jobs in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN job_id - ID of job that we want info for
+ * IN show_flags - job filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ * NOTE: change _unpack_job_desc_msg() in common/slurm_protocol_pack.c
+ *      whenever the data format changes
+ */
+extern int pack_one_cache_job(char **buffer_ptr, int *buffer_size,
+                        uint32_t job_id, uint16_t show_flags, uid_t uid,
+                        uint16_t protocol_version);
+/*
+ * pack_ctld_cache_job_step_info_response_msg - packs job step info
+ * IN step_id - specific id or NO_VAL/NO_VAL for all
+ * IN uid - user issuing request
+ * IN show_flags - job step filtering options
+ * OUT buffer - location to store data, pointers automatically advanced
+ * IN protocol_version - slurm protocol version of client
+ * RET - 0 or error code
+ * NOTE: MUST free_buf buffer
+ */
+extern int pack_ctld_cache_job_step_info_response_msg(
+        slurm_step_id_t *step_id, uid_t uid, uint16_t show_flags,
+        buf_t *buffer, uint16_t protocol_version);
+/*
+ * pack_all_cache_part - dump all partition information for all partitions in
+ *      machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - partition filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * IN protocol_version - slurm protocol version of client
+ * global: part_list - global list of partition records
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ * NOTE: change slurm_load_part() in api/part_info.c if data format changes
+ */
+extern void pack_all_cache_part(char **buffer_ptr, int *buffer_size,
+                          uint16_t show_flags, uid_t uid,
+                          uint16_t protocol_version);
+/*
+ * pack_one_cache_node - dump all configuration and node information for one node
+ *      in machine independent form (for network transmission)
+ * OUT buffer_ptr - pointer to the stored data
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - node filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * IN node_name - name of node for which information is desired,
+ *                use first node if name is NULL
+ * IN protocol_version - slurm protocol version of client
+ * global: node_record_table_ptr - pointer to global node table
+ * NOTE: the caller must xfree the buffer at *buffer_ptr
+ * NOTE: change slurm_load_node() in api/node_info.c when data format changes
+ * NOTE: READ lock_slurmctld config before entry
+ */
+extern void pack_one_cache_node (char **buffer_ptr, int *buffer_size,
+                           uint16_t show_flags, uid_t uid, char *node_name,
+                           uint16_t protocol_version);
+/*
+ * pack_all_cache_node - dump all configuration and node information for all nodes
+ *      in machine independent form (for network transmission)
+ * OUT buffer_ptr - pointer to the stored data
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN show_flags - node filtering options
+ * IN uid - uid of user making request (for partition filtering)
+ * IN protocol_version - slurm protocol version of client
+ * global: node_record_table_ptr - pointer to global node table
+ * NOTE: the caller must xfree the buffer at *buffer_ptr
+ * NOTE: change slurm_load_node() in api/node_info.c when data format changes
+ * NOTE: READ lock_slurmctld config before entry
+ */
+extern void pack_all_cache_node (char **buffer_ptr, int *buffer_size,
+                           uint16_t show_flags, uid_t uid,
+                           uint16_t protocol_version);
+#ifdef __METASTACK_OPT_PART_VISIBLE
+
+/* free_step_record - delete a step record's data structures */
+extern void free_copy_step_record(void *x);
+
+/*  */
+extern part_record_t **build_visible_cache_parts_user(slurmdb_user_rec_t *user_ret, 
+				bool skip, bool locked);
+#endif
+
+/*
+ * build_visible_parts - returns an array with pointers to partitions visible
+ * to user based on partition Hidden and AllowedGroups properties.
+ */
+extern part_record_t **build_visible_cache_parts(uid_t uid, bool privileged);
+
+/* Decrement slurmctld thread count (as applies to thread limit) */
+extern void query_thread_decr(void);
+
+/* Increment slurmctld thread count (as applies to thread limit) */
+extern void query_thread_incr(void);
+
+
+#endif
 
 /*
  * pack_all_jobs - dump all job information for all jobs in

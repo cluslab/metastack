@@ -1768,6 +1768,30 @@ extern int select_p_select_nodeinfo_free(select_nodeinfo_t *nodeinfo)
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* copy a select node credential
+ * IN nodeinfo - the select node credential to be copied
+ * RET        - the copy or NULL on failure
+ * NOTE: returned value must be freed using select_g_free_nodeinfo
+ */
+extern select_nodeinfo_t *select_p_select_nodeinfo_copy(select_nodeinfo_t *nodeinfo)
+{
+	select_nodeinfo_t *nodeinfo_empty = NULL;
+
+	if (!nodeinfo) {
+		return nodeinfo_empty;
+	}else{
+		nodeinfo_empty = xmalloc(sizeof(struct select_nodeinfo));
+		nodeinfo_empty->magic = nodeinfo->magic;
+		nodeinfo_empty->nid = nodeinfo->nid;
+		nodeinfo_empty->blade_id = nodeinfo->blade_id;
+		nodeinfo_empty->other_nodeinfo = other_select_nodeinfo_copy(nodeinfo->other_nodeinfo);
+	}
+	return nodeinfo_empty;
+}
+
+#endif
+
 extern int select_p_select_nodeinfo_pack(select_nodeinfo_t *nodeinfo,
 					 buf_t *buffer, uint16_t protocol_version)
 {

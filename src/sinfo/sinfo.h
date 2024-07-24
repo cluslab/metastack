@@ -214,6 +214,9 @@ struct sinfo_parameters {
    bool format_field_flag;
    bool right_flag;
 #endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+   bool cache_query;		
+#endif
 };
 
 extern struct sinfo_parameters params;

@@ -76,6 +76,9 @@
 extern char *command_name;
 extern List clusters;
 extern int all_flag;	/* display even hidden partitions */
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern bool cache_flag;  /*display cache data information*/
+#endif
 extern int detail_flag;	/* display additional details */
 extern int future_flag;	/* display future nodes */
 extern int exit_code;	/* scontrol's exit code, =1 on any error at any time */

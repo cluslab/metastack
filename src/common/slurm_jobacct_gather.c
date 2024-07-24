@@ -1404,3 +1404,23 @@ extern long jobacct_gather_get_clk_tck()
 
 	return hertz;
 }
+
+//#ifdef __METASTACK_OPT_CACHE_QUERY
+/*
+extern jobacctinfo_t *jobacctinfo_extract(jobacctinfo_t *src_jobacct)
+{
+	int i;
+	jobacctinfo_t *des_jobacct = NULL;
+	_copy_tres_usage(&des_jobacct, src_jobacct);
+
+	if (src_jobacct->tres_ids) {
+		i = sizeof(uint32_t) * des_jobacct->tres_count;
+		des_jobacct->tres_ids = xmalloc(i);
+		memcpy(des_jobacct->tres_ids,src_jobacct->tres_ids, i);
+	}
+	des_jobacct->tres_list = slurmdb_copy_tres_list(src_jobacct->tres_list);
+
+	return des_jobacct;
+}
+*/
+//#endif

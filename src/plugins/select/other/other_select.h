@@ -300,6 +300,16 @@ extern char *other_select_jobinfo_xstrdup(select_jobinfo_t *jobinfo,
  * NODE-SPECIFIC SELECT CREDENTIAL MANAGEMENT FUNCIONS *
 \*******************************************************/
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+/* copy a select node credential
+ * IN nodeinfo - the select node credential to be copied
+ * RET        - the copy or NULL on failure
+ * NOTE: returned value must be freed using select_g_free_nodeinfo
+ */
+
+extern select_nodeinfo_t *other_select_nodeinfo_copy(select_nodeinfo_t *nodeinfo);
+#endif
+
 extern int other_select_nodeinfo_pack(select_nodeinfo_t *nodeinfo,
 				      buf_t *buffer,
 				      uint16_t protocol_version);

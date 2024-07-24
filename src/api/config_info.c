@@ -429,6 +429,10 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 
 		if (p[i].flags & PART_FLAG_ROOT_ONLY)
 	                fprintf(fp, " RootOnly=YES");
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		if (p[i].meta_flags & PART_METAFLAG_HETPART)
+	                fprintf(fp, " HetPart=YES");
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 		if (p[i].meta_flags & PART_METAFLAG_RBN)
 					fprintf(fp, " RBN=YES");
@@ -1633,6 +1637,41 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->name = xstrdup("SlurmctldPort");
 	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if (slurm_ctl_conf_ptr->query_port_count > 1) {
+		uint32_t high_port = slurm_ctl_conf_ptr->query_port;
+		high_port += (slurm_ctl_conf_ptr->query_port_count - 1);
+		snprintf(tmp_str, sizeof(tmp_str), "%u-%u",
+			 slurm_ctl_conf_ptr->query_port, high_port);
+	} else {
+		snprintf(tmp_str, sizeof(tmp_str), "%u",
+			 slurm_ctl_conf_ptr->query_port);
+	}
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("CacheQueryPort");
+	key_pair->value = xstrdup(tmp_str);
+	list_append(ret_list, key_pair);
+	
+	snprintf(tmp_str, sizeof(tmp_str), "%u sec",
+		 slurm_ctl_conf_ptr->cachedup_interval);
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("CacheDupInterval");
+	key_pair->value = xstrdup(tmp_str);
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("CacheQuery");
+	if (slurm_ctl_conf_ptr->cache_query == 1) {
+		key_pair->value = xstrdup("enable");
+	} else if (slurm_ctl_conf_ptr->cache_query == 2){
+		key_pair->value = xstrdup("cache");
+	}else{
+		key_pair->value = xstrdup("disable");
+	}
+	list_append(ret_list, key_pair);
+
+#endif
 
 	snprintf(tmp_str, sizeof(tmp_str), "%s",
 		 log_num2string(slurm_ctl_conf_ptr->slurmctld_syslog_debug));

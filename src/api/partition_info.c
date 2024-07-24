@@ -628,6 +628,13 @@ char *slurm_sprint_partition_info ( partition_info_t * part_ptr,
 		xstrcat(out, " LLS=NO");
 #endif
 
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	if (part_ptr->meta_flags & PART_METAFLAG_HETPART)
+		xstrcat(out, " HetPart=YES");
+	else
+		xstrcat(out, " HetPart=NO");
+#endif
+
 #ifdef __METASTACK_NEW_PART_RBN
 	if (part_ptr->meta_flags & PART_METAFLAG_RBN)
 		xstrcat(out, " RBN=YES");

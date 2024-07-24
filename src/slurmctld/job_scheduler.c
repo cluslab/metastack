@@ -1368,12 +1368,27 @@ static bool _is_resources_equal(job_record_t *job_ptr, RR_job_record_t **job_res
 	if(job_ptr->details)
 	{
 		job_resource_ptr = xcalloc(1, sizeof(RR_job_record_t));
-		job_resource_ptr->job_resource_str = xstrdup_printf("%u %u %u %s %s %hu %u %u %d %u %hu %hu %u %u %lu %s",
-			job_ptr->user_id, job_ptr->assoc_id, job_ptr->qos_id, job_ptr->partition, job_ptr->tres_req_str,
-			job_ptr->details->cpus_per_task, job_ptr->details->max_nodes, job_ptr->details->min_cpus,
-			job_ptr->details->min_gres_cpu, job_ptr->details->min_nodes, job_ptr->details->ntasks_per_node,
-			job_ptr->details->ntasks_per_tres, job_ptr->details->num_tasks, job_ptr->details->pn_min_cpus,
-			job_ptr->details->pn_min_memory, job_ptr->details->req_nodes);
+		if(job_ptr->details->mc_ptr){
+			job_resource_ptr->job_resource_str = xstrdup_printf("%u %u %u %s %s %s %s %s %s %s %hu %hu %u %u %d %u %hu %hu %u %u %lu %s %hu %hu %hu %hu %hu",
+				job_ptr->user_id, job_ptr->assoc_id, job_ptr->qos_id, job_ptr->partition, job_ptr->tres_req_str,
+				job_ptr->tres_per_job, job_ptr->tres_per_node, job_ptr->tres_per_socket, job_ptr->tres_per_task,
+				job_ptr->mem_per_tres, job_ptr->details->ntasks_per_tres, job_ptr->details->cpus_per_task, 
+				job_ptr->details->max_nodes, job_ptr->details->min_cpus, job_ptr->details->min_gres_cpu, 
+				job_ptr->details->min_nodes, job_ptr->details->ntasks_per_node, job_ptr->details->ntasks_per_tres, 
+				job_ptr->details->num_tasks, job_ptr->details->pn_min_cpus, job_ptr->details->pn_min_memory, 
+				job_ptr->details->req_nodes, job_ptr->details->mc_ptr->cores_per_socket,
+				job_ptr->details->mc_ptr->sockets_per_node, job_ptr->details->mc_ptr->threads_per_core, 
+				job_ptr->details->mc_ptr->ntasks_per_socket, job_ptr->details->mc_ptr->ntasks_per_core);
+		}else{
+			job_resource_ptr->job_resource_str = xstrdup_printf("%u %u %u %s %s %s %s %s %s %s %hu %hu %u %u %d %u %hu %hu %u %u %lu %s",
+				job_ptr->user_id, job_ptr->assoc_id, job_ptr->qos_id, job_ptr->partition, job_ptr->tres_req_str,
+				job_ptr->tres_per_job, job_ptr->tres_per_node, job_ptr->tres_per_socket, job_ptr->tres_per_task,
+				job_ptr->mem_per_tres, job_ptr->details->ntasks_per_tres, job_ptr->details->cpus_per_task,
+				job_ptr->details->max_nodes, job_ptr->details->min_cpus,job_ptr->details->min_gres_cpu, 
+				job_ptr->details->min_nodes, job_ptr->details->ntasks_per_node, job_ptr->details->ntasks_per_tres, 
+				job_ptr->details->num_tasks, job_ptr->details->pn_min_cpus, job_ptr->details->pn_min_memory, 
+				job_ptr->details->req_nodes);
+		}
 		*job_resource_pptr = job_resource_ptr;
 
 		for (i = (pending_job_cnt - 1); (i >= 0) && (i >= (pending_job_cnt-pending_job_num)) && 
@@ -1399,6 +1414,23 @@ static bool _is_resources_equal(job_record_t *job_ptr, RR_job_record_t **job_res
 	}
 	return false;
 }
+
+static void _add_failed_jobs(int part_repeat_job_template, RR_job_record_t **job_resource_ptr, RR_job_record_t ***pending_job_ptr, 
+				int part_index, int *pending_job_cnt, job_record_t *job_ptr){
+	if(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]){
+		xfree(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]->job_resource_str);
+		xfree(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]);
+	}
+	(*job_resource_ptr)->job_id = job_ptr->job_id;
+	if ((job_ptr->state_reason == WAIT_RESOURCES) && (pending_job_cnt[part_index] > 0)){
+		job_ptr->state_reason = WAIT_PRIORITY;
+	}
+	(*job_resource_ptr)->state_reason = job_ptr->state_reason;
+	pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)] = (*job_resource_ptr);
+	pending_job_cnt[part_index]++;
+	(*job_resource_ptr) = NULL;
+}
+
 #endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -2457,11 +2489,64 @@ next_task:
 			continue;
 		}
 
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		if (!job_ptr->part_ptr) {
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			do_sched_assoc_lock_unlock(false, job_ptr);
+			do_sched_job_lock_unlock(false, job_ptr);
+#endif
+			continue;
+		}
+
+		FREE_NULL_BITMAP(job_ptr->resv_bitmap);	
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		if (para_sched) {
+			if(para_sched_avail_node_bitmap[index]){
+				char *avail_tmp_str = NULL, *part_tmp_str = NULL;
+				avail_tmp_str = bit_fmt_hexmask(para_sched_avail_node_bitmap[index]);
+				part_tmp_str = bit_fmt_hexmask(job_ptr->part_ptr->node_bitmap);
+				debug2("%pJ. HetPart: _schedule avail_node_bitmap=%s. part_node_bitmap=%s", job_ptr, avail_tmp_str, part_tmp_str);
+				xfree(avail_tmp_str);
+				xfree(part_tmp_str);
+			}
+		}else{
+			if(avail_node_bitmap){
+				char *avail_tmp_str = NULL, *part_tmp_str = NULL;
+				avail_tmp_str = bit_fmt_hexmask(avail_node_bitmap);
+				part_tmp_str = bit_fmt_hexmask(job_ptr->part_ptr->node_bitmap);
+				debug2("%pJ. HetPart: _schedule avail_node_bitmap=%s. part_node_bitmap=%s", job_ptr, avail_tmp_str, part_tmp_str);
+				xfree(avail_tmp_str);
+				xfree(part_tmp_str);
+			}
+		}
+#else
+		if(avail_node_bitmap){
+			char *avail_tmp_str = NULL, *part_tmp_str = NULL;
+			avail_tmp_str = bit_fmt_hexmask(avail_node_bitmap);
+			part_tmp_str = bit_fmt_hexmask(job_ptr->part_ptr->node_bitmap);
+			debug2("%pJ. HetPart: _schedule avail_node_bitmap=%s. part_node_bitmap=%s", job_ptr, avail_tmp_str, part_tmp_str);
+			xfree(avail_tmp_str);
+			xfree(part_tmp_str);
+		}
+#endif		
+#endif
+
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		if (para_sched) {
 			if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
 					job_ptr->details && job_ptr->details->req_node_bitmap &&
 					(!bit_super_set(job_ptr->details->req_node_bitmap, para_sched_avail_node_bitmap[index]))) {
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+						/*The requested node is added to the blacklist to ensure the priority*/
+				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+					bit_and_not(para_sched_avail_node_bitmap[index],job_ptr->details->req_node_bitmap);
+					if(!bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+						fail_by_part = true;
+						do_sched_assoc_lock_unlock(false, job_ptr);
+						goto fail_this_part;
+					}
+				}
+#endif
 				do_sched_assoc_lock_unlock(false, job_ptr);						
 				do_sched_job_lock_unlock(false, job_ptr);
 				continue;				
@@ -2470,6 +2555,16 @@ next_task:
 			if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
 					job_ptr->details && job_ptr->details->req_node_bitmap &&
 					(!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap))) {
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+						/*The requested node is added to the blacklist to ensure the priority*/
+				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+					bit_and_not(avail_node_bitmap,job_ptr->details->req_node_bitmap);
+					if(!bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						fail_by_part = true;
+						goto fail_this_part;
+					}
+				}
+#endif
 				continue;
 			}
 		}
@@ -2477,10 +2572,21 @@ next_task:
 		if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
 		    	job_ptr->details && job_ptr->details->req_node_bitmap &&				
 		    	!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap)) {				
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+						/*The requested node is added to the blacklist to ensure the priority*/
+				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+					bit_and_not(avail_node_bitmap,job_ptr->details->req_node_bitmap);
+					if(!bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						fail_by_part = true;
+						goto fail_this_part;
+					}
+				}
+#endif	
 			continue;
 		}
 #endif
 
+#ifndef __METASTACK_NEW_HETPART_SUPPORT
 		if (!job_ptr->part_ptr) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
@@ -2488,6 +2594,7 @@ next_task:
 #endif
 			continue;
 		}
+#endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		if(para_sched)
@@ -2522,6 +2629,88 @@ next_task:
 				     job_reason_string(job_ptr->state_reason),
 				     job_ptr->priority, job_ptr->partition);
 			fail_by_part = true;
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+#ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
+				if(part_repeat_job_template && job_resource_ptr) {
+					_add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
+				}
+#endif
+
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+				/*Call "test only" to get the nodes available to the job*/
+				error_code = select_nodes(job_ptr, true, NULL, NULL, false,
+					  	SLURMDB_JOB_FLAG_SCHED, true, index);
+				if(para_sched){
+					if (job_ptr->details->req_node_bitmap &&
+					(bit_set_count(job_ptr->details->req_node_bitmap) >=
+					job_ptr->details->min_nodes)) {
+						/* Do not schedule more jobs on nodes required by this
+						* job, but don't block the entire queue/partition. */
+						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->details->req_node_bitmap);
+						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+                            do_sched_assoc_lock_unlock(false, job_ptr);
+			                do_sched_job_lock_unlock(false, job_ptr);
+							continue;
+						}
+					}else if (job_ptr->resv_bitmap && ((error_code == ESLURM_NODES_BUSY) || (error_code == ESLURM_NODE_NOT_AVAIL))){
+						/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
+						bit_and_not(para_sched_avail_node_bitmap[index],	job_ptr->resv_bitmap);
+						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+                            do_sched_assoc_lock_unlock(false, job_ptr);
+			                do_sched_job_lock_unlock(false, job_ptr);
+							continue;
+						}
+					}else{
+                        do_sched_assoc_lock_unlock(false, job_ptr);
+			            do_sched_job_lock_unlock(false, job_ptr);
+						continue;
+					}
+				}else{
+					if (job_ptr->details->req_node_bitmap &&
+					(bit_set_count(job_ptr->details->req_node_bitmap) >=
+					job_ptr->details->min_nodes)) {
+						/* Do not schedule more jobs on nodes required by this
+						* job, but don't block the entire queue/partition. */
+						bit_and_not(avail_node_bitmap, job_ptr->details->req_node_bitmap);
+						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+							continue;
+						}
+					}else if (job_ptr->resv_bitmap && ((error_code == ESLURM_NODES_BUSY) || (error_code == ESLURM_NODE_NOT_AVAIL))){
+						/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
+						bit_and_not(avail_node_bitmap,	job_ptr->resv_bitmap);
+						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+							continue;
+						}
+					}else{
+						continue;
+					}
+				}
+#else
+				/*Call "test only" to get the nodes available to the job*/
+				error_code = select_nodes(job_ptr, true, NULL, NULL, false,
+						SLURMDB_JOB_FLAG_SCHED);
+				if (job_ptr->details->req_node_bitmap &&
+				(bit_set_count(job_ptr->details->req_node_bitmap) >=
+				job_ptr->details->min_nodes)) {
+					/* Do not schedule more jobs on nodes required by this
+					* job, but don't block the entire queue/partition. */
+					bit_and_not(avail_node_bitmap, job_ptr->details->req_node_bitmap);
+					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						continue;
+					}
+				}else if (job_ptr->resv_bitmap && ((error_code == ESLURM_NODES_BUSY) || (error_code == ESLURM_NODE_NOT_AVAIL))){
+					/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
+					bit_and_not(avail_node_bitmap,	job_ptr->resv_bitmap);
+					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						continue;
+					}
+				}else{
+					continue;
+				}
+#endif
+			}	
+#endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
 #endif				
@@ -2645,18 +2834,8 @@ skip_start:
 			job_ptr->time_limit = save_time_limit;
 		if (error_code == ESLURM_NODES_BUSY) {
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
-			if(part_repeat_job_template) {
-				if (job_resource_ptr){
-					if(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]){
-						xfree(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]->job_resource_str);
-						xfree(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]);
-					}
-					job_resource_ptr->job_id = job_ptr->job_id;
-					job_resource_ptr->state_reason = job_ptr->state_reason;
-					pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)] = job_resource_ptr;
-					pending_job_cnt[part_index]++;
-					job_resource_ptr = NULL;
-				}
+			if(part_repeat_job_template && job_resource_ptr) {
+				_add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
 			}
 #endif
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u. Partition=%s.",
@@ -2670,6 +2849,33 @@ skip_start:
 			/* The job request license and resources is Insufficient then this job goto fail_this_parts */ 
 			if (job_ptr->license_list) {
 				goto fail_this_part;
+			}
+#endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){	
+				/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/	
+				if (job_ptr->resv_bitmap && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
+				(bit_set_count(job_ptr->details->req_node_bitmap) < job_ptr->details->min_nodes))){
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+					if(para_sched){
+						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->resv_bitmap);
+						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+                            do_sched_job_lock_unlock(false, job_ptr);
+							continue;
+						}
+					}else{
+						bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
+						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+							continue;
+						}
+					}
+#else
+					bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
+					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						continue;
+					}
+#endif
+				}
 			}
 #endif
 		} else if (error_code == ESLURM_BURST_BUFFER_WAIT) {
@@ -2807,18 +3013,8 @@ skip_start:
 			      slurm_strerror(error_code));
 		} else if (error_code == ESLURM_ACCOUNTING_POLICY) {
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
-			if(part_repeat_job_template) {
-				if (job_resource_ptr){
-					if(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]){
-						xfree(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]->job_resource_str);
-						xfree(pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)]);
-					}
-					job_resource_ptr->job_id = job_ptr->job_id;
-					job_resource_ptr->state_reason = job_ptr->state_reason;
-					pending_job_ptr[part_index][pending_job_cnt[part_index]%(part_repeat_job_template)] = job_resource_ptr;
-					pending_job_cnt[part_index]++;
-					job_resource_ptr = NULL;
-				}	
+			if(part_repeat_job_template && job_resource_ptr) {
+				_add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
 			}
 #endif
 			sched_debug3("%pJ delayed for accounting policy",
@@ -2846,6 +3042,40 @@ skip_start:
 			       __func__, job_ptr,
 			       job_reason_string(job_ptr->state_reason),
 			       slurm_strerror(error_code));
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		}else if (error_code == ESLURM_NODE_NOT_AVAIL) {
+			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+#ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
+			if(part_repeat_job_template && job_resource_ptr) {
+				_add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
+			}
+#endif
+				/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
+				if (job_ptr->resv_bitmap && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
+				(bit_set_count(job_ptr->details->req_node_bitmap) < job_ptr->details->min_nodes))){
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+					if(para_sched){
+						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->resv_bitmap);
+						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+                            do_sched_job_lock_unlock(false, job_ptr);
+							continue;
+						}
+					}else{
+						bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
+						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+							continue;
+						}
+					}
+#else
+					bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
+					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						continue;
+					}
+#endif
+				}
+				fail_by_part = true;
+			}
+#endif
 		}
 
 		if (job_ptr->details && job_ptr->details->req_node_bitmap &&

@@ -176,6 +176,9 @@ typedef struct node_record node_record_t;
 #define DEFAULT_SUSPEND_RATE        60
 #define DEFAULT_SUSPEND_TIME        0
 #define DEFAULT_SUSPEND_TIMEOUT     30
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+#define DEFAULT_CACHEDUP_INTERVAL   30
+#endif
 #if defined HAVE_NATIVE_CRAY
 #  define DEFAULT_SWITCH_TYPE         "switch/cray_aries"
 #else
@@ -263,6 +266,9 @@ typedef struct slurm_conf_partition {
 				    * if NO_VAL8, use global default */
 	uint16_t exclusive_user; /* 1 if node allocations by user */
 	uint32_t grace_time;	/* default grace time for partition */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	bool     hetpart_flag;	/* 1 if heterogeneous partition */
+#endif	
 #ifdef __METASTACK_NEW_PART_RBN
 	bool     rbn_flag;	/* 1 if nodes are selected in RBN order */
 #endif
@@ -724,5 +730,9 @@ extern void slurm_conf_add_node(node_record_t *node_ptr);
  * Remove node from node conf hash tables.
  */
 extern void slurm_conf_remove_node(char *node_name);
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern bool update_client_port(bool cache_query);
+#endif
 
 #endif /* !_READ_CONFIG_H */

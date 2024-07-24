@@ -268,6 +268,12 @@ static bool         _verify_clustername(void);
 static bool         _wait_for_server_thread(void);
 static void *       _wait_primary_prog(void *arg);
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+static bool         _wait_for_query_thread(void);
+static void *       _slurmctld_query_mgr(void *no_data);
+static void *       _query_connection(void *arg);
+#endif
+
 /* main - slurmctld main function, start various threads and process RPCs */
 int main(int argc, char **argv)
 {
@@ -608,6 +614,9 @@ int main(int argc, char **argv)
 			sched_g_fini();	/* make sure shutdown */
 			_run_primary_prog(false);
 			run_backup();
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			real_time_state_copy();
+#endif
 			agent_init();	/* Killed at any previous shutdown */
 			(void) _shutdown_backup_controller();
 			if (slurm_acct_storage_init() != SLURM_SUCCESS)
@@ -685,7 +694,9 @@ int main(int argc, char **argv)
 			}
 			unlock_slurmctld(config_write_lock);
 			select_g_select_nodeinfo_set_all();
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			real_time_state_copy();
+#endif
 			if (recover == 0) {
 				slurmctld_init_db = 1;
 				_accounting_mark_all_nodes_down("cold-start");
@@ -751,6 +762,15 @@ int main(int argc, char **argv)
 		slurm_thread_create(&slurmctld_config.thread_id_rpc,
 				    _slurmctld_rpc_mgr, NULL);
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		/*
+		 * create attached thread to process cache query RPCs
+		 */
+		query_thread_incr();
+		slurm_thread_create(&slurmctld_config.thread_id_query,
+				    _slurmctld_query_mgr, NULL);
+#endif	
+
 		/*
 		 * create attached thread for signal handling
 		 */
@@ -762,6 +782,14 @@ int main(int argc, char **argv)
 		 */
 		slurm_thread_create(&slurmctld_config.thread_id_save,
 				    slurmctld_state_save, NULL);
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		/*
+		 * create attached thread for copy data
+		 */
+		slurm_thread_create(&slurmctld_config.thread_id_copy,
+				    slurmctld_state_copy, NULL);
+#endif
 
 		/*
 		 * create attached thread for node power management
@@ -795,10 +823,18 @@ int main(int argc, char **argv)
 		pthread_join(slurmctld_config.thread_id_sig,  NULL);
 		pthread_join(slurmctld_config.thread_id_rpc,  NULL);
 		pthread_join(slurmctld_config.thread_id_save, NULL);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		pthread_join(slurmctld_config.thread_id_query, NULL);
+		pthread_join(slurmctld_config.thread_id_copy, NULL);
+#endif
 		slurmctld_config.thread_id_purge_files = (pthread_t) 0;
 		slurmctld_config.thread_id_sig  = (pthread_t) 0;
 		slurmctld_config.thread_id_rpc  = (pthread_t) 0;
 		slurmctld_config.thread_id_save = (pthread_t) 0;
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		slurmctld_config.thread_id_query = (pthread_t) 0;
+		slurmctld_config.thread_id_copy = (pthread_t) 0;
+#endif
 
 		/* kill all scripts running by the slurmctld */
 		track_script_flush();
@@ -1090,6 +1126,9 @@ static void  _init_config(void)
 	slurmctld_config.thread_id_main    = (pthread_t) 0;
 	slurmctld_config.thread_id_sig     = (pthread_t) 0;
 	slurmctld_config.thread_id_rpc     = (pthread_t) 0;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	slurmctld_config.thread_id_query   = (pthread_t) 0;
+#endif
 }
 
 /* Read configuration file.
@@ -1142,6 +1181,9 @@ static void _reconfigure_slurm(void)
 			fatal("Failed to reconfigure MPI plugins.");
 	}
 	trigger_reconfig();
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	real_time_state_copy();
+#endif
 	priority_g_reconfig(true);	/* notify priority plugin too */
 	save_all_state();		/* Has own locking */
 	queue_job_scheduler();
@@ -1425,6 +1467,235 @@ cleanup:
 
 	return NULL;
 }
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+
+/*
+ * _slurmctld_query_mgr - Read incoming RPCs and create pthread for each
+ */
+static void *_slurmctld_query_mgr(void *no_data)
+{
+	int *newsockfd;
+	struct pollfd *fds;
+	slurm_addr_t cli_addr, srv_addr;
+	int fd_next = 0, i, nports;
+	/* Locks: Read config */
+	slurmctld_lock_t config_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	int sigarray[] = {SIGUSR1, 0};
+
+#if HAVE_SYS_PRCTL_H
+	if (prctl(PR_SET_NAME, "querymgr", NULL, NULL, NULL) < 0) {
+		error("%s: cannot set my name to %s %m", __func__, "querymgr");
+	}
+#endif
+
+	(void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	(void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	debug3("%s pid = %u", __func__, getpid());
+
+	/* initialize ports for RPCs */
+	lock_slurmctld(config_read_lock);
+	if(!slurm_conf.cache_query){
+		info("%s: cache_query is not enabled, and the query monitoring thread is closed ", __func__);
+		unlock_slurmctld(config_read_lock);
+		return NULL;
+	}	
+	nports = slurm_conf.query_port_count;
+	if (nports != 1) {
+		unlock_slurmctld(config_read_lock);
+		fatal("Check the CacheQueryPort configuration !");
+		return NULL;	/* Fix CLANG false positive */
+	}
+	
+	fds = xcalloc(nports, sizeof(struct pollfd));
+	for (i = 0; i < nports; i++) {
+		fds[i].fd = slurm_init_msg_engine_port(
+			slurm_conf.query_port + i);
+		fds[i].events = POLLIN;
+		if (fds[i].fd == SLURM_ERROR) {
+			fatal("slurm_init_msg_engine_port error %m");
+			return NULL;	/* Fix CLANG false positive */
+		}
+		if (slurm_get_stream_addr(fds[i].fd, &srv_addr)) {
+			error("slurm_get_stream_addr error %m");
+		} else {
+			debug2("slurmctld listening on %pA", &srv_addr);
+		}
+	}
+	unlock_slurmctld(config_read_lock);
+
+	/*
+	 * Prepare to catch SIGUSR1 to interrupt accept().
+	 * This signal is generated by the slurmctld signal
+	 * handler thread upon receipt of SIGABRT, SIGINT,
+	 * or SIGTERM. That thread does all processing of
+	 * all signals.
+	 */
+	xsignal(SIGUSR1, _sig_handler);
+	xsignal_unblock(sigarray);
+
+	/*
+	 * Process incoming RPCs until told to shutdown
+	 */
+	while (_wait_for_query_thread()) {
+		if (poll(fds, nports, -1) == -1) {
+			if (errno != EINTR)
+				error("slurm_accept_msg_conn poll: %m");
+			query_thread_decr();
+			continue;
+		}
+
+		/* find one to process */
+		for (i = 0; i < nports; i++) {
+			if (fds[(fd_next + i) % nports].revents) {
+				i = (fd_next + i) % nports;
+				break;
+			}
+		}
+		fd_next = (i + 1) % nports;
+
+		newsockfd = xmalloc(sizeof(*newsockfd));
+		if ((*newsockfd = slurm_accept_msg_conn(fds[i].fd, &cli_addr))
+		    == SLURM_ERROR) {
+			if (errno != EINTR)
+				error("slurm_accept_msg_conn: %m");
+			query_thread_decr();
+			xfree(newsockfd);
+			continue;
+		}
+
+		log_flag(PROTOCOL, "%s: accept() connection from %pA",
+			 __func__, &cli_addr);
+
+		if (slurmctld_config.shutdown_time) {
+			_query_connection(newsockfd);
+		} else {
+			slurm_thread_create_detached(NULL, _query_connection,
+						     newsockfd);
+		}
+	}
+
+	debug3("%s shutting down", __func__);
+	for (i = 0; i < nports; i++)
+		close(fds[i].fd);
+	xfree(fds);
+
+	query_thread_decr();
+	pthread_exit((void *) 0);
+	return NULL;
+}
+
+/*
+ * _query_connection - service the RPC
+ * IN/OUT arg - really just the connection's file descriptor, freed
+ *	upon completion
+ * RET - NULL
+ */
+static void *_query_connection(void *arg)
+{
+	int fd = *((int *) arg);
+	slurm_msg_t *msg = xmalloc(sizeof *msg);
+	xfree(arg);
+
+#if HAVE_SYS_PRCTL_H
+	if (prctl(PR_SET_NAME, "querycn", NULL, NULL, NULL) < 0) {
+		error("%s: cannot set my name to %s %m", __func__, "querycn");
+	}
+#endif
+	slurm_msg_t_init(msg);
+	msg->flags |= SLURM_MSG_KEEP_BUFFER;
+	/*
+	 * slurm_receive_msg sets msg connection fd to accepted fd. This allows
+	 * possibility for slurmctld_req() to close accepted connection.
+	 */
+	if (slurm_receive_msg(fd, msg, 0)) {
+		slurm_addr_t cli_addr;
+		(void) slurm_get_peer_addr(fd, &cli_addr);
+		error("slurm_receive_msg [%pA]: %m", &cli_addr);
+		/* close the new socket */
+		close(fd);
+		goto cleanup;
+	}
+	
+	/* process the request */
+	slurmctld_query_req(msg);
+
+	if ((msg->conn_fd >= 0) && (close(msg->conn_fd) < 0))
+		error("close(%d): %m", msg->conn_fd);
+
+cleanup:
+	slurm_free_msg(msg);
+	query_thread_decr();
+
+	return NULL;
+}
+
+
+/* Increment slurmctld_config.server_thread_count and don't return
+ * until its value is no larger than MAX_SERVER_THREADS,
+ * RET true unless shutdown in progress */
+static bool _wait_for_query_thread(void)
+{
+	bool print_it = true;
+	bool rc = true;
+
+	slurm_mutex_lock(&slurmctld_config.query_thread_count_lock);
+	while (1) {
+		if (slurmctld_config.shutdown_time) {
+			rc = false;
+			break;
+		}
+		if (slurmctld_config.query_thread_count < max_server_threads) {
+			slurmctld_config.query_thread_count++;
+			break;
+		} else {
+			/* wait for state change and retry,
+			 * just a delay and not an error.
+			 * This can happen when the epilog completes
+			 * on a bunch of nodes at the same time, which
+			 * can easily happen for highly parallel jobs. */
+			if (print_it) {
+				static time_t last_print_time = 0;
+				time_t now = time(NULL);
+				if (difftime(now, last_print_time) > 2) {
+					verbose("server_thread_count over "
+						"limit (%d), waiting",
+						slurmctld_config.
+						query_thread_count);
+					last_print_time = now;
+				}
+				print_it = false;
+			}
+			slurm_cond_wait(&slurmctld_config.query_thread_count_cond,
+					&slurmctld_config.query_thread_count_lock);
+		}
+	}
+	slurm_mutex_unlock(&slurmctld_config.query_thread_count_lock);
+	return rc;
+}
+
+/* Decrement cache query thread count (as applies to thread limit) */
+extern void query_thread_decr(void)
+{
+	slurm_mutex_lock(&slurmctld_config.query_thread_count_lock);
+	if (slurmctld_config.query_thread_count > 0)
+		slurmctld_config.query_thread_count--;
+	else
+		error("slurmctld_config.server_thread_count underflow");
+	slurm_cond_broadcast(&slurmctld_config.query_thread_count_cond);
+	slurm_mutex_unlock(&slurmctld_config.query_thread_count_lock);
+}
+
+/* Increment cache query thread count (as applies to thread limit) */
+extern void query_thread_incr(void)
+{
+	slurm_mutex_lock(&slurmctld_config.query_thread_count_lock);
+	slurmctld_config.query_thread_count++;
+	slurm_mutex_unlock(&slurmctld_config.query_thread_count_lock);
+}
+
+#endif
 
 /* Increment slurmctld_config.server_thread_count and don't return
  * until its value is no larger than MAX_SERVER_THREADS,
@@ -2698,6 +2969,13 @@ extern void set_cluster_tres(bool assoc_mgr_locked)
 int slurmctld_shutdown(void)
 {
 	sched_debug("slurmctld terminating");
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		if (slurmctld_config.thread_id_query) {
+			pthread_kill(slurmctld_config.thread_id_query, SIGUSR1);
+		} else {
+			error("thread_id_rpc not set");
+		}
+#endif
 	if (slurmctld_config.thread_id_rpc) {
 		pthread_kill(slurmctld_config.thread_id_rpc, SIGUSR1);
 		return SLURM_SUCCESS;

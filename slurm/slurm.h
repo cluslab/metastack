@@ -241,9 +241,18 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_LOG_OUTPUT
 #endif
 
+/* Macro definitions that control heterogeneous partitioning capabilities */
+#ifndef __METASTACK_NEW_HETPART_SUPPORT
+#define __METASTACK_NEW_HETPART_SUPPORT
+#endif
+
 /* Macro definition that controls random selection of continuous node blocks */
 #ifndef __METASTACK_NEW_PART_RBN
 #define __METASTACK_NEW_PART_RBN
+#endif
+
+#ifndef __METASTACK_OPT_CACHE_QUERY
+#define __METASTACK_OPT_CACHE_QUERY
 #endif
 
 #ifndef __METASTACK_BUG_CR_CORE
@@ -2594,6 +2603,11 @@ typedef struct job_defaults {
 #define PART_FLAG_LLS_CLR	    0x8000	/* Clear LLS partition flag */
 #endif
 
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+#define PART_METAFLAG_HETPART		0x0001	/* Set if Heterogeneous partition */
+#define PART_METAFLAG_HETPART_CLR	0x0100	/* Clear HETPART partition flag */
+#endif
+
 #ifdef __METASTACK_NEW_PART_RBN
 #define PART_METAFLAG_RBN 	0x0002  /* Set if random block nodes selection is desired */
 #define PART_METAFLAG_RBN_CLR 	0x0200  /* Clear RBN partition flag */
@@ -3282,6 +3296,12 @@ typedef struct {
 	uint16_t vsize_factor;	/* virtual memory limit size factor */
 	uint16_t wait_time;	/* default job --wait time */
 	char *x11_params;	/* X11Parameters */
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	uint32_t query_port;  /* The default communication port for caching queries */
+	uint16_t query_port_count; /* Cache query number of communication ports */
+	uint16_t cachedup_interval; /*Data copy time interval*/ 
+	uint16_t cache_query; /*High Performance Query Switch*/
+#endif
 } slurm_conf_t;
 
 typedef struct slurmd_status_msg {
