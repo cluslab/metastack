@@ -263,6 +263,9 @@ typedef struct slurm_conf_partition {
 				    * if NO_VAL8, use global default */
 	uint16_t exclusive_user; /* 1 if node allocations by user */
 	uint32_t grace_time;	/* default grace time for partition */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	bool     hetpart_flag;	/* 1 if heterogeneous partition */
+#endif	
 #ifdef __METASTACK_NEW_PART_RBN
 	bool     rbn_flag;	/* 1 if nodes are selected in RBN order */
 #endif

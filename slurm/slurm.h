@@ -241,6 +241,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_LOG_OUTPUT
 #endif
 
+/* Macro definitions that control heterogeneous partitioning capabilities */
+#ifndef __METASTACK_NEW_HETPART_SUPPORT
+#define __METASTACK_NEW_HETPART_SUPPORT
+#endif
+
 /* Macro definition that controls random selection of continuous node blocks */
 #ifndef __METASTACK_NEW_PART_RBN
 #define __METASTACK_NEW_PART_RBN
@@ -2592,6 +2597,11 @@ typedef struct job_defaults {
 #define PART_FLAG_EXC_USER_CLR	0x4000	/* Clear EXCLUSIVE_USER flag */
 #ifdef __METASTACK_NEW_PART_LLS
 #define PART_FLAG_LLS_CLR	    0x8000	/* Clear LLS partition flag */
+#endif
+
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+#define PART_METAFLAG_HETPART		0x0001	/* Set if Heterogeneous partition */
+#define PART_METAFLAG_HETPART_CLR	0x0100	/* Clear HETPART partition flag */
 #endif
 
 #ifdef __METASTACK_NEW_PART_RBN

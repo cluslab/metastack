@@ -1587,6 +1587,9 @@ static int _dump_job_state(void *object, void *arg)
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
 	packbool(dump_job_ptr->repeat_job, buffer);
 #endif
+#ifdef __METASTACK_NEW_PENDING_ORDER
+    pack32(dump_job_ptr->pending_order, buffer);
+#endif
 	return 0;
 }
 
@@ -1897,6 +1900,9 @@ static int _load_job_state(buf_t *buffer, uint16_t protocol_version)
 
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
 		safe_unpackbool(&job_ptr->repeat_job, buffer);
+#endif
+#ifdef __METASTACK_NEW_PENDING_ORDER
+		safe_unpack32(&job_ptr->pending_order, buffer);
 #endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		safe_unpack32(&array_job_id, buffer);
@@ -4834,6 +4840,9 @@ extern job_record_t *job_array_split(job_record_t *job_ptr)
 	job_ptr_pend->name = xstrdup(job_ptr->name);
 	job_ptr_pend->network = xstrdup(job_ptr->network);
 	job_ptr_pend->node_bitmap = NULL;
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	job_ptr_pend->resv_bitmap =NULL;
+#endif
 	job_ptr_pend->node_bitmap_cg = NULL;
 	job_ptr_pend->node_bitmap_pr = NULL;
 	job_ptr_pend->nodes = NULL;
@@ -10105,6 +10114,9 @@ static void _list_delete_job(void *job_entry)
 	//NOTE: for stdout/stderr, no new fields added
 #ifdef __METASTACK_OPT_RESC_NODEDETAIL
 	xfree(job_ptr->resource_node_detail);
+#endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	FREE_NULL_BITMAP(job_ptr->resv_bitmap);
 #endif
 	xfree(job_ptr->cpus_per_tres);
 	free_job_fed_details(&job_ptr->fed_details);

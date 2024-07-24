@@ -1314,6 +1314,9 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 		{"DisableRootJobs", S_P_BOOLEAN}, /* YES or NO */
 		{"ExclusiveUser", S_P_BOOLEAN}, /* YES or NO */
 		{"GraceTime", S_P_UINT32},
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		{"HetPart", S_P_BOOLEAN}, /* YES or NO */
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 		{"RBN", S_P_BOOLEAN}, /* YES or NO */
 #endif
@@ -1566,7 +1569,11 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 
 		if (!s_p_get_boolean(&p->req_resv_flag, "ReqResv", tbl))
 			s_p_get_boolean(&p->req_resv_flag, "ReqResv", dflt);
-
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		if (!s_p_get_boolean(&p->hetpart_flag, "HetPart", tbl) &&
+		    !s_p_get_boolean(&p->hetpart_flag, "HetPart", dflt))
+			p->hetpart_flag = false;
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 		if (!s_p_get_boolean(&p->rbn_flag, "RBN", tbl) &&
 		    !s_p_get_boolean(&p->rbn_flag, "RBN", dflt))

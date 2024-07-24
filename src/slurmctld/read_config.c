@@ -1033,6 +1033,10 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 	if (part->lls_flag)
 		part_ptr->flags |= PART_FLAG_LLS;
 #endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	if (part->hetpart_flag)
+		part_ptr->meta_flags |= PART_METAFLAG_HETPART;
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 	if (part->rbn_flag)
 		part_ptr->meta_flags |= PART_METAFLAG_RBN;

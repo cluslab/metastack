@@ -936,6 +936,9 @@ struct job_record {
 					 * DON'T PACK. */
 	char *resv_name;		/* reservation name */
 	slurmctld_resv_t *resv_ptr;	/* reservation structure pointer */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	bitstr_t *resv_bitmap; /*A reservation node in a partition*/
+#endif
 	uint32_t requid;	    	/* requester user ID */
 	char *resp_host;		/* host for srun communications */
 	char *sched_nodes;		/* list of nodes scheduled for job */
