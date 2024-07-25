@@ -78,6 +78,68 @@ static slurmdb_assoc_rec_t **assoc_hash_id = NULL;
 static slurmdb_assoc_rec_t **assoc_hash = NULL;
 static int *assoc_mgr_tres_old_pos = NULL;
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+/* 
+ * Given a slurmdb update type number return its string
+ * description mapping the slurmdb_update_type_t to its name.
+*/
+static char *update_type2str(uint16_t update_type)
+{
+	switch (update_type) {
+	case SLURMDB_UPDATE_NOTSET:
+		return "SLURMDB_UPDATE_NOTSET";
+	case SLURMDB_ADD_USER:
+		return "SLURMDB_ADD_USER";
+	case SLURMDB_ADD_ASSOC:
+		return "SLURMDB_ADD_ASSOC";
+	case SLURMDB_ADD_COORD:
+		return "SLURMDB_ADD_COORD";
+	case SLURMDB_MODIFY_USER:
+		return "SLURMDB_MODIFY_USER";
+	case SLURMDB_MODIFY_ASSOC:
+		return "SLURMDB_MODIFY_ASSOC";
+	case SLURMDB_REMOVE_USER:
+		return "SLURMDB_REMOVE_USER";
+	case SLURMDB_REMOVE_ASSOC:
+		return "SLURMDB_REMOVE_ASSOC";
+	case SLURMDB_REMOVE_COORD:
+		return "SLURMDB_REMOVE_COORD";
+	case SLURMDB_ADD_QOS:
+		return "SLURMDB_ADD_QOS";
+	case SLURMDB_REMOVE_QOS:
+		return "SLURMDB_REMOVE_QOS";
+	case SLURMDB_MODIFY_QOS:
+		return "SLURMDB_MODIFY_QOS";
+	case SLURMDB_ADD_WCKEY:
+		return "SLURMDB_ADD_WCKEY";
+	case SLURMDB_REMOVE_WCKEY:
+		return "SLURMDB_REMOVE_WCKEY";
+	case SLURMDB_MODIFY_WCKEY:
+		return "SLURMDB_MODIFY_WCKEY";
+	case SLURMDB_ADD_CLUSTER:
+		return "SLURMDB_ADD_CLUSTER";
+	case SLURMDB_REMOVE_CLUSTER:
+		return "SLURMDB_REMOVE_CLUSTER";
+	case SLURMDB_REMOVE_ASSOC_USAGE:
+		return "SLURMDB_REMOVE_ASSOC_USAGE";
+	case SLURMDB_ADD_RES:
+		return "SLURMDB_ADD_RES";
+	case SLURMDB_REMOVE_RES:
+		return "SLURMDB_REMOVE_RES";
+	case SLURMDB_MODIFY_RES:
+		return "SLURMDB_MODIFY_RES";
+	case SLURMDB_REMOVE_QOS_USAGE:
+		return "SLURMDB_REMOVE_QOS_USAGE";
+	case SLURMDB_ADD_TRES:
+		return "SLURMDB_ADD_TRES";
+	case SLURMDB_UPDATE_FEDS:
+		return "SLURMDB_UPDATE_FEDS";
+	default:
+		return "unknown type";
+	}
+}
+#endif
+
 static bool _running_cache(void)
 {
 	if (init_setup.running_cache &&
@@ -3755,11 +3817,23 @@ extern int assoc_mgr_update(List update_list, bool locked)
 	ListIterator itr = NULL;
 	slurmdb_update_object_t *object = NULL;
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	char *update_type = NULL;
+	DEF_TIMERS;
+	
+	START_TIMER;
+#endif
 	xassert(update_list);
 	itr = list_iterator_create(update_list);
 	while ((object = list_next(itr))) {
 		if (!object->objects || !list_count(object->objects))
 			continue;
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		if (update_type)
+			xstrfmtcat(update_type, ", ");
+		xstrfmtcat(update_type, "%s", update_type2str(object->type));
+#endif
 
 		switch(object->type) {
 		case SLURMDB_MODIFY_USER:
@@ -3812,6 +3886,16 @@ extern int assoc_mgr_update(List update_list, bool locked)
 		}
 	}
 	list_iterator_destroy(itr);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	END_TIMER;
+	if (running_in_slurmctld()) {
+		debug("types of updating include: %s. processing time is: %s", update_type, TIME_STR);
+	}
+	
+	if (update_type) {
+		xfree(update_type);
+	}
+#endif
 	return rc;
 }
 
@@ -3837,6 +3921,11 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 			assoc_mgr_unlock(&locks);
 		return SLURM_SUCCESS;
 	}
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	DEF_TIMERS;
+	START_TIMER;
+#endif
 
 	while ((object = list_pop(update->objects))) {
 		bool update_jobs = false;
@@ -4376,6 +4465,13 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 	if (run_update_resvs && init_setup.update_resvs)
 		init_setup.update_resvs();
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	END_TIMER;
+	if (running_in_slurmctld()) {
+		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+	}
+#endif
+
 	return rc;
 }
 
@@ -4395,6 +4491,11 @@ extern int assoc_mgr_update_wckeys(slurmdb_update_object_t *update, bool locked)
 			assoc_mgr_unlock(&locks);
 		return SLURM_SUCCESS;
 	}
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	DEF_TIMERS;
+	START_TIMER;
+#endif
 
 	itr = list_iterator_create(assoc_mgr_wckey_list);
 	while ((object = list_pop(update->objects))) {
@@ -4497,6 +4598,13 @@ extern int assoc_mgr_update_wckeys(slurmdb_update_object_t *update, bool locked)
 	if (!locked)
 		assoc_mgr_unlock(&locks);
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	END_TIMER;
+	if (running_in_slurmctld()) {
+		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+	}
+#endif
+
 	return rc;
 }
 
@@ -4518,6 +4626,12 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 			assoc_mgr_unlock(&locks);
 		return SLURM_SUCCESS;
 	}
+
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	DEF_TIMERS;
+	START_TIMER;
+#endif
 
 	itr = list_iterator_create(assoc_mgr_user_list);
 	while ((object = list_pop(update->objects))) {
@@ -4621,6 +4735,13 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 	if (!locked)
 		assoc_mgr_unlock(&locks);
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	END_TIMER;
+	if (running_in_slurmctld()) {
+		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+	}
+#endif
+
 	return rc;
 }
 
@@ -4646,6 +4767,11 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 			assoc_mgr_unlock(&locks);
 		return SLURM_SUCCESS;
 	}
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	DEF_TIMERS;
+	START_TIMER;
+#endif
 
 	itr = list_iterator_create(assoc_mgr_qos_list);
 	while ((object = list_pop(update->objects))) {
@@ -5074,6 +5200,13 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 	if (resize_qos_bitstr && init_setup.resize_qos_notify)
 		init_setup.resize_qos_notify();
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	END_TIMER;
+	if (running_in_slurmctld()) {
+		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+	}
+#endif
+
 	return rc;
 }
 
@@ -5096,6 +5229,11 @@ extern int assoc_mgr_update_res(slurmdb_update_object_t *update, bool locked)
 			assoc_mgr_unlock(&locks);
 		return SLURM_SUCCESS;
 	}
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	DEF_TIMERS;
+	START_TIMER;
+#endif
 
 	itr = list_iterator_create(assoc_mgr_res_list);
 	while ((object = list_pop(update->objects))) {
@@ -5226,6 +5364,14 @@ extern int assoc_mgr_update_res(slurmdb_update_object_t *update, bool locked)
 	list_iterator_destroy(itr);
 	if (!locked)
 		assoc_mgr_unlock(&locks);
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	END_TIMER;
+	if (running_in_slurmctld()) {
+		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+	}
+#endif
+
 	return rc;
 }
 
@@ -5242,6 +5388,11 @@ extern int assoc_mgr_update_tres(slurmdb_update_object_t *update, bool locked)
 				   .tres = WRITE_LOCK };
 	if (!locked)
 		assoc_mgr_lock(&locks);
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	DEF_TIMERS;
+	START_TIMER;
+#endif
 
 	if (!assoc_mgr_tres_list) {
 		tmp_list = list_create(slurmdb_destroy_tres_rec);
@@ -5297,6 +5448,14 @@ extern int assoc_mgr_update_tres(slurmdb_update_object_t *update, bool locked)
 
 	if (!locked)
 		assoc_mgr_unlock(&locks);
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+	END_TIMER;
+	if (running_in_slurmctld()) {
+		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+	}
+#endif
+
 	return rc;
 }
 
