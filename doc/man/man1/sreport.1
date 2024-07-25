@@ -692,17 +692,6 @@ procedure calls to \fBslurmdbd\fR from loops in shell scripts or other programs.
 Ensure that programs limit calls to \fBsreport\fR to the minimum necessary for
 the information you are trying to gather.
 
-.SH "SREPORT_EXTEND"
-.PP
-The import format for the SREPORT_EXTEND environment variable is as follows:
-export SREPORT_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
-where '.' indicates left indentation and no '.' indicates right indentation.
-The '-' sign after the colon represents left alignment.
-The number represents the length of the print format. 
-.PP
-The supported fields for left and right indentation are as follows, 
-Account, Associations, Cluster, Flags, Login, Name, Nodes, Reported, TRES Name, User, WCKey.
-
 .SH "ENVIRONMENT VARIABLES"
 .PP
 Some \fBsreport\fR options may be set via environment variables. These
@@ -733,6 +722,19 @@ Same as \fB\-t, \-\-tres\fR
 .TP
 \fBSLURM_CONF\fR
 The location of the Slurm configuration file.
+.IP
+
+.TP
+\fBSREPORT_EXTEND\fR
+The import format for the SREPORT_EXTEND environment variable is as follows:
+export SREPORT_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
+where '.' indicates left indentation and no '.' indicates right indentation.
+The '-' sign after the colon represents left alignment.
+The number represents the length of the print format. 
+
+The supported fields for left and right indentation are as follows, 
+Account, Associations, Cluster, Flags, Login, Name, Nodes, Reported, TRES Name, User, WCKey.
+.IP
 
 .in 0
 .SH "EXAMPLES"

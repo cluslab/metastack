@@ -1429,14 +1429,14 @@ A valid strftime() format can also be specified. For example, a value of
 "%a %T" will report the day of the week and a time stamp (e.g. "Mon 12:34:56").
 .IP
 
-.SH "SACCT_EXTEND"
-.PP
+.TP
+\fBSACCT_EXTEND\fR
 The import format for the SACCT_EXTEND environment variable is as follows:
 export SACCT_EXTEND=field:[.][-]number,field:[.][-]number.'.' represents the print format, 
 where '.' indicates left indentation and no '.' indicates right indentation.
 The '-' sign after the colon represents left alignment.
 The number represents the length of the print format. 
-.PP
+
 The supported fields for left and right indentation are as follows, 
 Account, AdminComment, AllocNodes, AllocTRES, AveCPU, AveCPUFreq, AveDiskRead, 
 AveDiskWrite, AvePages, AveRSS, AveVMSize, BlockID, Cluster, Comment, Constraints, 
@@ -1449,6 +1449,7 @@ SystemCPU, Timelimit, TimelimitRaw, TotalCPU, TRESUsageInAve, TRESUsageInMax,
 TRESUsageInMaxNode, TRESUsageInMaxTask, TRESUsageInMin, TRESUsageInMinNode, TRESUsageInMinTask, 
 TRESUsageInTot, TRESUsageOutAve, TRESUsageOutMax, TRESUsageOutMaxNode, TRESUsageOutMaxTask, 
 TRESUsageOutMin, TRESUsageOutMinNode, TRESUsageOutMinTask, TRESUsageOutTot, User, UserCPU, WCKey, WorkDir, ResourceNodeDetail, Command, Stdout, Stderr.
+.IP
 
 .SH "EXAMPLES"
 This example illustrates the default invocation of the \f3sacct\fP

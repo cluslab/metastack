@@ -230,16 +230,17 @@ Specify debug flags for sshare to use. See DebugFlags in the
 variable takes precedence over the setting in the slurm.conf.
 .IP
 
-.SH "SHARE_EXTEND"
-.PP
+.TP
+\fBSHARE_EXTEND\fR
 The import format for the SHARE_EXTEND environment variable is as follows:
 export SHARE_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
 where '.' indicates left indentation and no '.' indicates right indentation.
 The '-' sign after the colon represents left alignment.
 The number represents the length of the print format. 
-.PP
+
 The supported fields for left and right indentation are as follows, 
 Account, Cluster, GrpTRESMins, GrpTRESRaw, Partition, TRESRunMins, User.
+.IP
 
 .SH "EXAMPLES"
 

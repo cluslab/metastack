@@ -372,25 +372,6 @@ calls to \fBslurmctld\fR from loops in shell scripts or other programs. Ensure
 that programs limit calls to \fBsstat\fR to the minimum necessary for the
 information you are trying to gather.
 
-.SH "SSTAT_EXTEND"
-.PP
-The import format for the SSTAT_EXTEND environment variable is as follows:
-export SSTAT_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
-where '.' indicates left indentation and no '.' indicates right indentation.
-The '-' sign after the colon represents left alignment.
-The number represents the length of the print format. 
-.PP
-The supported fields for left and right indentation are as follows, 
-AveCPU, AveCPUFreq, AveDiskRead, AveDiskWrite, AvePages, AveRSS, 
-AveVMSize, ConsumedEnergy, JobID, MaxDiskRead, MaxDiskReadNode, 
-MaxDiskWrite, MaxDiskWriteNode, MaxPages, MaxPagesNode, MaxRSS, 
-MaxRSSNode, MaxVMSize, MaxVMSizeNode, MinCPU, MinCPUNode, Nodelist, 
-Pids, ReqCPUFreq, ReqCPUFreqMin, ReqCPUFreqMax, ReqCPUFreqGov, TRESUsageInAve, 
-TRESUsageInMax, TRESUsageInMaxNode, TRESUsageInMaxTask, TRESUsageInMin, 
-TRESUsageInMinNode, TRESUsageInMinTask, TRESUsageInTot, TRESUsageOutAve, 
-TRESUsageOutMax, TRESUsageOutMaxNode, TRESUsageOutMaxTask, TRESUsageOutMin, 
-TRESUsageOutMinNode, TRESUsageOutMinTask, TRESUsageOutTot.
-
 .SH "ENVIRONMENT VARIABLES"
 .PP
 Some \fBsstat\fR options may be set via environment variables. These
@@ -407,6 +388,26 @@ The location of the Slurm configuration file.
 Specify debug flags for sstat to use. See DebugFlags in the
 \fBslurm.conf\fR(5) man page for a full list of flags. The environment
 variable takes precedence over the setting in the slurm.conf.
+.IP
+
+.TP
+\fBSSTAT_EXTEND\fR
+The import format for the SSTAT_EXTEND environment variable is as follows:
+export SSTAT_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
+where '.' indicates left indentation and no '.' indicates right indentation.
+The '-' sign after the colon represents left alignment.
+The number represents the length of the print format. 
+
+The supported fields for left and right indentation are as follows, 
+AveCPU, AveCPUFreq, AveDiskRead, AveDiskWrite, AvePages, AveRSS, 
+AveVMSize, ConsumedEnergy, JobID, MaxDiskRead, MaxDiskReadNode, 
+MaxDiskWrite, MaxDiskWriteNode, MaxPages, MaxPagesNode, MaxRSS, 
+MaxRSSNode, MaxVMSize, MaxVMSizeNode, MinCPU, MinCPUNode, Nodelist, 
+Pids, ReqCPUFreq, ReqCPUFreqMin, ReqCPUFreqMax, ReqCPUFreqGov, TRESUsageInAve, 
+TRESUsageInMax, TRESUsageInMaxNode, TRESUsageInMaxTask, TRESUsageInMin, 
+TRESUsageInMinNode, TRESUsageInMinTask, TRESUsageInTot, TRESUsageOutAve, 
+TRESUsageOutMax, TRESUsageOutMaxNode, TRESUsageOutMaxTask, TRESUsageOutMin, 
+TRESUsageOutMinNode, TRESUsageOutMinTask, TRESUsageOutTot.
 .IP
 
 .SH "EXAMPLES"

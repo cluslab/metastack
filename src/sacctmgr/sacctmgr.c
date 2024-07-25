@@ -131,6 +131,13 @@ int main(int argc, char **argv)
 	log_init("sacctmgr", opts, SYSLOG_FACILITY_DAEMON, NULL);
 
 #ifdef __METASTACK_OPT_LIST_USER
+	if (getenv("SACCTMGR_NO_PARENTLIMITS")) {
+		no_get_parent_limits = 1;
+	}
+	if (getenv("SACCTMGR_NO_SORT")) {
+		no_sort_assoc = 1;
+	}
+
 	while((opt_char = getopt_long(argc, argv, "hionpPQrsvVyz",
 			long_options, &option_index)) != -1) {
 #else

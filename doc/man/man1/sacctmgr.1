@@ -3250,20 +3250,31 @@ Specify debug flags for sacctmgr to use. See DebugFlags in the
 variable takes precedence over the setting in the slurm.conf.
 .IP
 
-.SH "SACCTMGR_EXTEND"
-.PP
+.TP
+\fBSACCTMGR_NO_PARENTLIMITS\fR
+\fB\-y, \-\-noparentlimits\fR
+.IP
+
+.TP
+\fBSACCTMGR_NO_SORT\fR
+\fB\-z, \-\-nosort\fR
+.IP
+
+.TP
+\fBSACCTMGR_EXTEND\fR
 The import format for the SACCTMGR_EXTEND environment variable is as follows:
 export SACCTMGR_EXTEND=field:[.][-]number,field:[.][-]number.'.' represents the print format, 
 where '.' indicates left indentation and no '.' indicates right indentation.
 The '-' sign after the colon represents left alignment.
 The number represents the length of the print format. 
-.PP
+
 The supported fields for left and right indentation are as follows, 
 Account, Action, Actor, Admin, Assocs, TRES, Class, Cluster, Cluster, Coord Accounts, ControlHost, CPU Cnt, 
 Def Acct, Def QOS, Def WCKey, Descr, Event, Features, Federation, FedState, Flags, GrpTRES, GrpTRESMins, GrpTRESRunMins, 
 Info, ServerType, MaxTRES, MaxTRESPerNode, MaxTRESMins, MaxTRESRunMinsPA, MaxTRESRunMinsPU, MaxTRESPA, MaxTRESPU, MinTRES, 
 Name, NodeInx, NodeName, Org, ParentName, Partition, PreemptMode, Preempt, Problem, QOS, QOS_RAW, Reason, Server, State, TRES, 
 Type, User, WCKeys, Where.
+.IP
 
 .SH "EXAMPLES"
 \fBNOTE:\fR There is an order to set up accounting associations.
