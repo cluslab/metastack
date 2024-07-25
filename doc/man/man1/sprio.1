@@ -320,19 +320,19 @@ Same as \fB\-\-local\fR
 Same as \fB\-\-sibling\fR
 .IP
 
-.SH "SPRIO_EXTEND"
-.PP
+.TP
+\fBSPRIO_EXTEND\fR
 The import format for the SPRIO_EXTEND environment variable is as follows:
 export SPRIO_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
 where '.' indicates left indentation and no '.' indicates right indentation.
 The '-' sign after the colon represents left alignment.
 The number represents the length of the print format. 
-.PP
+
 The supported fields for left and right indentation are as follows, 
 AGE, "AGE TRAN", ASSOC, "ASSOC TRAN", CLUSTER, FAIRSHARE, "FAIRSHARE TRAN", JOBID, 
 JOBSIZE, "JOBSIZE TRAN", NICE, PARTITIONWEIGHTED, "PARTITIONWEIGHTED TRAN", PARTITIONNAME, SITE, 
 QOS, "QOS TRAN", USER, PRIORITY, "PRIORITY TRAN", TRES, "TRES TRAN".
-
+.IP
 
 .SH "EXAMPLES"
 

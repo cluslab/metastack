@@ -1865,32 +1865,6 @@ released for other jobs.
 Job terminated upon reaching its time limit.
 .IP
 
-.SH "SQUEUE_EXTEND"
-.PP
-The import format for the SQUEUE_EXTEND environment variable is as follows:
-export SQUEUE_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
-where '.' indicates left indentation and no '.' indicates right indentation.
-The '-' sign after the colon represents left alignment.
-The number represents the length of the print format. 
-.PP
-Fields for stepd as follow,
-numtasks, gres/tres-per-node, stepid, stepname, timelimit, 
-timeused, nodes, partition, starttime, userid, username. 
-Fields for Job as follow,
-account, jobid,gres/tres-per-node, batchhost, mincpus, numcpus, mintmpdisk, numnodes, 
-endtime, dependency, feature, arrayjobid, groupname, groupid, oversubscribe/shared, sockets, 
-jobarrayid, cores, name, threads, comment, arraytaskid, timelimit, timeleft, minmemory, timeused, 
-reqnodes, nodelist, command, contiguous, priority, partition, qos, prioritylong, reason, reasonlist, 
-selectjobinfo, starttime, statecompact, state, userid, username, reservation, submittime, wckey, licenses, 
-EXCNODES, corespec, nice, schednodes, sct, workdir, accruetime, admin_comment, allocnodes, allocsid, 
-associd, batchflag, boardspernode, burstbuffer, burstbufferstate, cluster, clusterfeature, container, 
-cpuspertask, cpus-per-tres, deadline, delayboot, derivedec, eligibletime, exit_code, lastschedeval, maxcpus, 
-maxnodes, mcslabel, mem-per-tres, mintime, network, ntperboard, ntpercore, ntpernode, ntpersocket, numtasks, 
-origin, originraw, order, packjobid, packjobidset, packjoboffset, pendingtime, preempttime, prefer, profile, 
-reboot, reqswitch, requeue, resizetime, restartcnt, siblingsactive, siblingsactiveraw, siblingsviable, 
-siblingsviableraw, sperboard, stderr, stdin, stdout, system_comment, tres, 
-tres-bind, tres-freq, tres-per-job, tres-per-node, tres-per-socket, tres-per-task, wait4switch.
-
 .SH "PERFORMANCE"
 .PP
 Executing \fBsqueue\fR sends a remote procedure call to \fBslurmctld\fR. If
@@ -2029,6 +2003,33 @@ A valid strftime() format can also be specified. For example, a value of
 .TP
 \fBSQUEUE_USERS\fR
 \fB\-u <user_list>, \-\-users=<user_list>\fR
+.IP
+
+.TP
+\fBSQUEUE_EXTEND\fR
+The import format for the SQUEUE_EXTEND environment variable is as follows:
+export SQUEUE_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
+where '.' indicates left indentation and no '.' indicates right indentation.
+The '-' sign after the colon represents left alignment.
+The number represents the length of the print format. 
+
+Fields for stepd as follow,
+numtasks, gres/tres-per-node, stepid, stepname, timelimit, 
+timeused, nodes, partition, starttime, userid, username. 
+Fields for Job as follow,
+account, jobid,gres/tres-per-node, batchhost, mincpus, numcpus, mintmpdisk, numnodes, 
+endtime, dependency, feature, arrayjobid, groupname, groupid, oversubscribe/shared, sockets, 
+jobarrayid, cores, name, threads, comment, arraytaskid, timelimit, timeleft, minmemory, timeused, 
+reqnodes, nodelist, command, contiguous, priority, partition, qos, prioritylong, reason, reasonlist, 
+selectjobinfo, starttime, statecompact, state, userid, username, reservation, submittime, wckey, licenses, 
+EXCNODES, corespec, nice, schednodes, sct, workdir, accruetime, admin_comment, allocnodes, allocsid, 
+associd, batchflag, boardspernode, burstbuffer, burstbufferstate, cluster, clusterfeature, container, 
+cpuspertask, cpus-per-tres, deadline, delayboot, derivedec, eligibletime, exit_code, lastschedeval, maxcpus, 
+maxnodes, mcslabel, mem-per-tres, mintime, network, ntperboard, ntpercore, ntpernode, ntpersocket, numtasks, 
+origin, originraw, order, packjobid, packjobidset, packjoboffset, pendingtime, preempttime, prefer, profile, 
+reboot, reqswitch, requeue, resizetime, restartcnt, siblingsactive, siblingsactiveraw, siblingsviable, 
+siblingsviableraw, sperboard, stderr, stdin, stdout, system_comment, tres, 
+tres-bind, tres-freq, tres-per-job, tres-per-node, tres-per-socket, tres-per-task, wait4switch.
 .IP
 
 .SH "EXAMPLES"

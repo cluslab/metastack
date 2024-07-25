@@ -1230,14 +1230,14 @@ A valid strftime() format can also be specified. For example, a value of
 "%a %T" will report the day of the week and a time stamp (e.g. "Mon 12:34:56").
 .IP
 
-.SH "SINFO_EXTEND"
-.PP
+.TP
+\fBSINFO_EXTEND\fR
 The import format for the SINFO_EXTEND environment variable is as follows:
 export SINFO_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
 where '.' indicates left indentation and no '.' indicates right indentation.
 The '-' sign after the colon represents left alignment.
 The number represents the length of the print format. 
-.PP
+
 The supported fields for left and right indentation are as follows, 
 allocmem, allocnodes, available, cluster, comment, cpus, cpusload, freemem, 
 cpusstate, cores, defaulttime, disk, extra, features, features_act, groups, 
@@ -1246,6 +1246,7 @@ nodehost, nodelist, partition, partitionname, port, preemptmode,
 priorityjobfactor, prioritytier, reason, root, oversubscribe, 
 size, statecompact, statecomplete, statelong, sockets, socketcorethread, 
 time, timestamp, threads, user, userlong, version, weight.
+.IP
 
 .SH "EXAMPLES"
 
