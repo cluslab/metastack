@@ -3938,105 +3938,204 @@ extern void slurmdb_pack_job_rec(void *object, uint16_t protocol_version,
 	slurmdb_step_rec_t *step = NULL;
 	uint32_t count = 0;
 
+#ifdef __META_PROTOCOL
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
-		packstr(job->account, buffer);
-		packstr(job->admin_comment, buffer);
-		pack32(job->alloc_nodes, buffer);
-		pack32(job->array_job_id, buffer);
-		pack32(job->array_max_tasks, buffer);
-		pack32(job->array_task_id, buffer);
-		packstr(job->array_task_str, buffer);
+        if (protocol_version >= META_2_0_PROTOCOL_VERSION) {
+            packstr(job->account, buffer);
+            packstr(job->admin_comment, buffer);
+            pack32(job->alloc_nodes, buffer);
+            pack32(job->array_job_id, buffer);
+            pack32(job->array_max_tasks, buffer);
+            pack32(job->array_task_id, buffer);
+            packstr(job->array_task_str, buffer);
 
-		pack32(job->associd, buffer);
-		packstr(job->blockid, buffer);
-		packstr(job->cluster, buffer);
-		packstr(job->constraints, buffer);
-		packstr(job->container, buffer);
-		pack64(job->db_index, buffer);
-		pack32((uint32_t)job->derived_ec, buffer);
-		packstr(job->derived_es, buffer);
-		pack32(job->elapsed, buffer);
-		pack_time(job->eligible, buffer);
-		pack_time(job->end, buffer);
-		packstr(job->env, buffer);
-		pack32((uint32_t)job->exitcode, buffer);
-		pack32(job->flags, buffer);
-		/* the first_step_ptr
-		   is set up on the client side so does
-		   not need to be packed */
-		pack32(job->gid, buffer);
-		pack32(job->jobid, buffer);
-		packstr(job->jobname, buffer);
-		pack32(job->lft, buffer);
-		packstr(job->mcs_label, buffer);
-		packstr(job->nodes, buffer);
-		pack32(job->het_job_id, buffer);
-		pack32(job->het_job_offset, buffer);
-		packstr(job->partition, buffer);
-		pack32(job->priority, buffer);
-		pack32(job->qosid, buffer);
-		pack32(job->req_cpus, buffer);
-		pack64(job->req_mem, buffer);
-		pack32(job->requid, buffer);
-		packstr(job->resv_name, buffer);
-		pack32(job->resvid, buffer);
-		packstr(job->script, buffer);
-		pack32(job->show_full, buffer);
-		pack_time(job->start, buffer);
-		pack32(job->state, buffer);
-		pack32(job->state_reason_prev, buffer);
+            pack32(job->associd, buffer);
+            packstr(job->blockid, buffer);
+            packstr(job->cluster, buffer);
+            packstr(job->constraints, buffer);
+            packstr(job->container, buffer);
+            pack64(job->db_index, buffer);
+            pack32((uint32_t)job->derived_ec, buffer);
+            packstr(job->derived_es, buffer);
+            pack32(job->elapsed, buffer);
+            pack_time(job->eligible, buffer);
+            pack_time(job->end, buffer);
+            packstr(job->env, buffer);
+            pack32((uint32_t)job->exitcode, buffer);
+            pack32(job->flags, buffer);
+            /* the first_step_ptr
+            is set up on the client side so does
+            not need to be packed */
+            pack32(job->gid, buffer);
+            pack32(job->jobid, buffer);
+            packstr(job->jobname, buffer);
+            pack32(job->lft, buffer);
+            packstr(job->mcs_label, buffer);
+            packstr(job->nodes, buffer);
+            pack32(job->het_job_id, buffer);
+            pack32(job->het_job_offset, buffer);
+            packstr(job->partition, buffer);
+            pack32(job->priority, buffer);
+            pack32(job->qosid, buffer);
+            pack32(job->req_cpus, buffer);
+            pack64(job->req_mem, buffer);
+            pack32(job->requid, buffer);
+            packstr(job->resv_name, buffer);
+            pack32(job->resvid, buffer);
+            packstr(job->script, buffer);
+            pack32(job->show_full, buffer);
+            pack_time(job->start, buffer);
+            pack32(job->state, buffer);
+            pack32(job->state_reason_prev, buffer);
 
-		if (job->steps)
-			count = list_count(job->steps);
-		else
-			count = 0;
+            if (job->steps)
+                count = list_count(job->steps);
+            else
+                count = 0;
 
-		pack32(count, buffer);
-		if (count) {
-			itr = list_iterator_create(job->steps);
-			while ((step = list_next(itr))) {
-				slurmdb_pack_step_rec(step, protocol_version,
-						      buffer);
-			}
-			list_iterator_destroy(itr);
-		}
-		pack_time(job->submit, buffer);
-		packstr(job->submit_line, buffer);
-		pack32(job->suspended, buffer);
-		packstr(job->system_comment, buffer);
-		pack64(job->sys_cpu_sec, buffer);
-		pack64(job->sys_cpu_usec, buffer);
-		pack32(job->timelimit, buffer);
-		pack64(job->tot_cpu_sec, buffer);
-		pack64(job->tot_cpu_usec, buffer);
+            pack32(count, buffer);
+            if (count) {
+                itr = list_iterator_create(job->steps);
+                while ((step = list_next(itr))) {
+                    slurmdb_pack_step_rec(step, protocol_version,
+                                buffer);
+                }
+                list_iterator_destroy(itr);
+            }
+            pack_time(job->submit, buffer);
+            packstr(job->submit_line, buffer);
+            pack32(job->suspended, buffer);
+            packstr(job->system_comment, buffer);
+            pack64(job->sys_cpu_sec, buffer);
+            pack64(job->sys_cpu_usec, buffer);
+            pack32(job->timelimit, buffer);
+            pack64(job->tot_cpu_sec, buffer);
+            pack64(job->tot_cpu_usec, buffer);
 
-		packstr(job->tres_alloc_str, buffer);
-		packstr(job->tres_req_str, buffer);
+            packstr(job->tres_alloc_str, buffer);
+            packstr(job->tres_req_str, buffer);
 
-		pack32(job->uid, buffer);
-		packstr(job->user, buffer);
-		pack64(job->user_cpu_sec, buffer);
-		pack64(job->user_cpu_usec, buffer);
-		packstr(job->wckey, buffer);
-		pack32(job->wckeyid, buffer);
-		packstr(job->work_dir, buffer);
+            pack32(job->uid, buffer);
+            packstr(job->user, buffer);
+            pack64(job->user_cpu_sec, buffer);
+            pack64(job->user_cpu_usec, buffer);
+            packstr(job->wckey, buffer);
+            pack32(job->wckeyid, buffer);
+            packstr(job->work_dir, buffer);
 
 #ifdef __METASTACK_OPT_SACCT_COMMAND
-//		struct job_details *detail_ptr = job_ptr->details;
-//		char *command = NULL;
-//		get_command_str(detail_ptr, &command);
-//		packstr(command, buffer);
-//		xfree(command);
-		packstr(job->command, buffer);
+            // struct job_details *detail_ptr = job_ptr->details;
+            // char *command = NULL;
+            // get_command_str(detail_ptr, &command);
+            // packstr(command, buffer);
+            // xfree(command);
+            packstr(job->command, buffer);
 #endif
 #ifdef __METASTACK_OPT_SACCT_OUTPUT
-		packstr(job->stdout, buffer);
-		packstr(job->stderr, buffer);
+            packstr(job->stdout, buffer);
+            packstr(job->stderr, buffer);
 #endif
 #ifdef __METASTACK_OPT_RESC_NODEDETAIL
-		packstr(job->resource_node_detail, buffer);
+            packstr(job->resource_node_detail, buffer);
 #endif
+        } else {
+            packstr(job->account, buffer);
+            packstr(job->admin_comment, buffer);
+            pack32(job->alloc_nodes, buffer);
+            pack32(job->array_job_id, buffer);
+            pack32(job->array_max_tasks, buffer);
+            pack32(job->array_task_id, buffer);
+            packstr(job->array_task_str, buffer);
 
+            pack32(job->associd, buffer);
+            packstr(job->blockid, buffer);
+            packstr(job->cluster, buffer);
+            packstr(job->constraints, buffer);
+            packstr(job->container, buffer);
+            pack64(job->db_index, buffer);
+            pack32((uint32_t)job->derived_ec, buffer);
+            packstr(job->derived_es, buffer);
+            pack32(job->elapsed, buffer);
+            pack_time(job->eligible, buffer);
+            pack_time(job->end, buffer);
+            packstr(job->env, buffer);
+            pack32((uint32_t)job->exitcode, buffer);
+            pack32(job->flags, buffer);
+            /* the first_step_ptr
+            is set up on the client side so does
+            not need to be packed */
+            pack32(job->gid, buffer);
+            pack32(job->jobid, buffer);
+            packstr(job->jobname, buffer);
+            pack32(job->lft, buffer);
+            packstr(job->mcs_label, buffer);
+            packstr(job->nodes, buffer);
+            pack32(job->het_job_id, buffer);
+            pack32(job->het_job_offset, buffer);
+            packstr(job->partition, buffer);
+            pack32(job->priority, buffer);
+            pack32(job->qosid, buffer);
+            pack32(job->req_cpus, buffer);
+            pack64(job->req_mem, buffer);
+            pack32(job->requid, buffer);
+            packstr(job->resv_name, buffer);
+            pack32(job->resvid, buffer);
+            packstr(job->script, buffer);
+            pack32(job->show_full, buffer);
+            pack_time(job->start, buffer);
+            pack32(job->state, buffer);
+            pack32(job->state_reason_prev, buffer);
+
+            if (job->steps)
+                count = list_count(job->steps);
+            else
+                count = 0;
+
+            pack32(count, buffer);
+            if (count) {
+                itr = list_iterator_create(job->steps);
+                while ((step = list_next(itr))) {
+                    slurmdb_pack_step_rec(step, protocol_version,
+                                buffer);
+                }
+                list_iterator_destroy(itr);
+            }
+            pack_time(job->submit, buffer);
+            packstr(job->submit_line, buffer);
+            pack32(job->suspended, buffer);
+            packstr(job->system_comment, buffer);
+            pack64(job->sys_cpu_sec, buffer);
+            pack64(job->sys_cpu_usec, buffer);
+            pack32(job->timelimit, buffer);
+            pack64(job->tot_cpu_sec, buffer);
+            pack64(job->tot_cpu_usec, buffer);
+
+            packstr(job->tres_alloc_str, buffer);
+            packstr(job->tres_req_str, buffer);
+
+            pack32(job->uid, buffer);
+            packstr(job->user, buffer);
+            pack64(job->user_cpu_sec, buffer);
+            pack64(job->user_cpu_usec, buffer);
+            packstr(job->wckey, buffer);
+            pack32(job->wckeyid, buffer);
+            packstr(job->work_dir, buffer);
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+            // struct job_details *detail_ptr = job_ptr->details;
+            // char *command = NULL;
+            // get_command_str(detail_ptr, &command);
+            // packstr(command, buffer);
+            // xfree(command);
+            packstr(job->command, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+            packstr(job->stdout, buffer);
+            packstr(job->stderr, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+            packstr(job->resource_node_detail, buffer);
+#endif
+        }
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		packstr(job->account, buffer);
 		packstr(job->admin_comment, buffer);
@@ -4123,24 +4222,8 @@ extern void slurmdb_pack_job_rec(void *object, uint16_t protocol_version,
 		pack32(job->wckeyid, buffer);
 		packstr(job->work_dir, buffer);
 
-#ifdef __METASTACK_OPT_SACCT_COMMAND
-//		struct job_details *detail_ptr = job_ptr->details;
-//		char *command = NULL;
-//		get_command_str(detail_ptr, &command);
-//		packstr(command, buffer);
-//		xfree(command);
-		packstr(job->command, buffer);
-#endif
-#ifdef __METASTACK_OPT_SACCT_OUTPUT
-		packstr(job->stdout, buffer);
-		packstr(job->stderr, buffer);
-#endif
-#ifdef __METASTACK_OPT_RESC_NODEDETAIL
-		packstr(job->resource_node_detail, buffer);
-#endif
-
 	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
-		packstr(job->account, buffer);
+        packstr(job->account, buffer);
 		packstr(job->admin_comment, buffer);
 		pack32(job->alloc_nodes, buffer);
 		pack32(job->array_job_id, buffer);
@@ -4238,7 +4321,315 @@ extern void slurmdb_pack_job_rec(void *object, uint16_t protocol_version,
 		packstr(job->wckey, buffer);
 		pack32(job->wckeyid, buffer);
 		packstr(job->work_dir, buffer);
-	} else {
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+        packstr(job->command, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+        packstr(job->stdout, buffer);
+        packstr(job->stderr, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+        packstr(job->resource_node_detail, buffer);
+#endif
+    }
+#else
+    if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+        packstr(job->account, buffer);
+        packstr(job->admin_comment, buffer);
+        pack32(job->alloc_nodes, buffer);
+        pack32(job->array_job_id, buffer);
+        pack32(job->array_max_tasks, buffer);
+        pack32(job->array_task_id, buffer);
+        packstr(job->array_task_str, buffer);
+
+        pack32(job->associd, buffer);
+        packstr(job->blockid, buffer);
+        packstr(job->cluster, buffer);
+        packstr(job->constraints, buffer);
+        packstr(job->container, buffer);
+        pack64(job->db_index, buffer);
+        pack32((uint32_t)job->derived_ec, buffer);
+        packstr(job->derived_es, buffer);
+        pack32(job->elapsed, buffer);
+        pack_time(job->eligible, buffer);
+        pack_time(job->end, buffer);
+        packstr(job->env, buffer);
+        pack32((uint32_t)job->exitcode, buffer);
+        pack32(job->flags, buffer);
+        /* the first_step_ptr
+        is set up on the client side so does
+        not need to be packed */
+        pack32(job->gid, buffer);
+        pack32(job->jobid, buffer);
+        packstr(job->jobname, buffer);
+        pack32(job->lft, buffer);
+        packstr(job->mcs_label, buffer);
+        packstr(job->nodes, buffer);
+        pack32(job->het_job_id, buffer);
+        pack32(job->het_job_offset, buffer);
+        packstr(job->partition, buffer);
+        pack32(job->priority, buffer);
+        pack32(job->qosid, buffer);
+        pack32(job->req_cpus, buffer);
+        pack64(job->req_mem, buffer);
+        pack32(job->requid, buffer);
+        packstr(job->resv_name, buffer);
+        pack32(job->resvid, buffer);
+        packstr(job->script, buffer);
+        pack32(job->show_full, buffer);
+        pack_time(job->start, buffer);
+        pack32(job->state, buffer);
+        pack32(job->state_reason_prev, buffer);
+
+        if (job->steps)
+            count = list_count(job->steps);
+        else
+            count = 0;
+
+        pack32(count, buffer);
+        if (count) {
+            itr = list_iterator_create(job->steps);
+            while ((step = list_next(itr))) {
+                slurmdb_pack_step_rec(step, protocol_version,
+                            buffer);
+            }
+            list_iterator_destroy(itr);
+        }
+        pack_time(job->submit, buffer);
+        packstr(job->submit_line, buffer);
+        pack32(job->suspended, buffer);
+        packstr(job->system_comment, buffer);
+        pack64(job->sys_cpu_sec, buffer);
+        pack64(job->sys_cpu_usec, buffer);
+        pack32(job->timelimit, buffer);
+        pack64(job->tot_cpu_sec, buffer);
+        pack64(job->tot_cpu_usec, buffer);
+
+        packstr(job->tres_alloc_str, buffer);
+        packstr(job->tres_req_str, buffer);
+
+        pack32(job->uid, buffer);
+        packstr(job->user, buffer);
+        pack64(job->user_cpu_sec, buffer);
+        pack64(job->user_cpu_usec, buffer);
+        packstr(job->wckey, buffer);
+        pack32(job->wckeyid, buffer);
+        packstr(job->work_dir, buffer);
+
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+        // struct job_details *detail_ptr = job_ptr->details;
+        // char *command = NULL;
+        // get_command_str(detail_ptr, &command);
+        // packstr(command, buffer);
+        // xfree(command);
+        packstr(job->command, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+        packstr(job->stdout, buffer);
+        packstr(job->stderr, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+		packstr(job->resource_node_detail, buffer);
+#endif
+
+	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
+		packstr(job->account, buffer);
+		packstr(job->admin_comment, buffer);
+		pack32(job->alloc_nodes, buffer);
+		pack32(job->array_job_id, buffer);
+		pack32(job->array_max_tasks, buffer);
+		pack32(job->array_task_id, buffer);
+		packstr(job->array_task_str, buffer);
+
+		pack32(job->associd, buffer);
+		packstr(job->blockid, buffer);
+		packstr(job->cluster, buffer);
+		packstr(job->constraints, buffer);
+		packstr(job->container, buffer);
+		pack64(job->db_index, buffer);
+		pack32((uint32_t)job->derived_ec, buffer);
+		packstr(job->derived_es, buffer);
+		pack32(job->elapsed, buffer);
+		pack_time(job->eligible, buffer);
+		pack_time(job->end, buffer);
+		packstr(job->env, buffer);
+		pack32((uint32_t)job->exitcode, buffer);
+		pack32(job->flags, buffer);
+		/* the first_step_ptr
+		   is set up on the client side so does
+		   not need to be packed */
+		pack32(job->gid, buffer);
+		pack32(job->jobid, buffer);
+		packstr(job->jobname, buffer);
+		pack32(job->lft, buffer);
+		packstr(job->mcs_label, buffer);
+		packstr(job->nodes, buffer);
+		pack32(job->het_job_id, buffer);
+		pack32(job->het_job_offset, buffer);
+		packstr(job->partition, buffer);
+		pack32(job->priority, buffer);
+		pack32(job->qosid, buffer);
+		pack32(job->req_cpus, buffer);
+		pack64(job->req_mem, buffer);
+		pack32(job->requid, buffer);
+		packstr(job->resv_name, buffer);
+		pack32(job->resvid, buffer);
+		packstr(job->script, buffer);
+		pack32(job->show_full, buffer);
+		pack_time(job->start, buffer);
+		pack32(job->state, buffer);
+		pack32(job->state_reason_prev, buffer);
+		/* job->stats removed in 22.05 */
+		_pack_slurmdb_stats(NULL, protocol_version, buffer);
+
+		if (job->steps)
+			count = list_count(job->steps);
+		else
+			count = 0;
+
+		pack32(count, buffer);
+		if (count) {
+			itr = list_iterator_create(job->steps);
+			while ((step = list_next(itr))) {
+				slurmdb_pack_step_rec(step, protocol_version,
+						      buffer);
+			}
+			list_iterator_destroy(itr);
+		}
+		pack_time(job->submit, buffer);
+		packstr(job->submit_line, buffer);
+		pack32(job->suspended, buffer);
+		packstr(job->system_comment, buffer);
+		pack64(job->sys_cpu_sec, buffer);
+		pack64(job->sys_cpu_usec, buffer);
+		pack32(job->timelimit, buffer);
+		pack64(job->tot_cpu_sec, buffer);
+		pack64(job->tot_cpu_usec, buffer);
+		pack16(1, buffer); /* job->track_steps removed in 22.05 */
+
+		packstr(job->tres_alloc_str, buffer);
+		packstr(job->tres_req_str, buffer);
+
+		pack32(job->uid, buffer);
+		packstr(job->user, buffer);
+		pack64(job->user_cpu_sec, buffer);
+		pack64(job->user_cpu_usec, buffer);
+		packstr(job->wckey, buffer);
+		pack32(job->wckeyid, buffer);
+		packstr(job->work_dir, buffer);
+
+	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+        packstr(job->account, buffer);
+		packstr(job->admin_comment, buffer);
+		pack32(job->alloc_nodes, buffer);
+		pack32(job->array_job_id, buffer);
+		pack32(job->array_max_tasks, buffer);
+		pack32(job->array_task_id, buffer);
+		packstr(job->array_task_str, buffer);
+
+		pack32(job->associd, buffer);
+		packstr(job->blockid, buffer);
+		packstr(job->cluster, buffer);
+		packstr(job->constraints, buffer);
+		pack64(job->db_index, buffer);
+		pack32((uint32_t)job->derived_ec, buffer);
+		packstr(job->derived_es, buffer);
+		pack32(job->elapsed, buffer);
+		pack_time(job->eligible, buffer);
+		pack_time(job->end, buffer);
+		pack32((uint32_t)job->exitcode, buffer);
+		pack32(job->flags, buffer);
+		/* the first_step_ptr
+		   is set up on the client side so does
+		   not need to be packed */
+		pack32(job->gid, buffer);
+		pack32(job->jobid, buffer);
+		packstr(job->jobname, buffer);
+		pack32(job->lft, buffer);
+		packstr(job->mcs_label, buffer);
+		packstr(job->nodes, buffer);
+		pack32(job->het_job_id, buffer);
+		pack32(job->het_job_offset, buffer);
+		packstr(job->partition, buffer);
+		pack32(job->priority, buffer);
+		pack32(job->qosid, buffer);
+		pack32(job->req_cpus, buffer);
+		pack64(job->req_mem, buffer);
+		pack32(job->requid, buffer);
+		packstr(job->resv_name, buffer);
+		pack32(job->resvid, buffer);
+		pack32(job->show_full, buffer);
+		pack_time(job->start, buffer);
+		pack32(job->state, buffer);
+		pack32(job->state_reason_prev, buffer);
+		/* job->stats removed in 22.05 */
+		_pack_slurmdb_stats(NULL, protocol_version, buffer);
+
+		if (job->steps)
+			count = list_count(job->steps);
+		else
+			count = 0;
+
+		pack32(count, buffer);
+		if (count) {
+			itr = list_iterator_create(job->steps);
+			while ((step = list_next(itr))) {
+				slurmdb_pack_step_rec(step, protocol_version,
+						      buffer);
+			}
+			list_iterator_destroy(itr);
+		}
+		pack_time(job->submit, buffer);
+		pack32(job->suspended, buffer);
+		packstr(job->system_comment, buffer);
+		if (job->sys_cpu_sec > NO_VAL)
+			pack32(NO_VAL, buffer);
+		else
+			pack32(job->sys_cpu_sec, buffer);
+		if (job->sys_cpu_usec > NO_VAL)
+			pack32(NO_VAL, buffer);
+		else
+			pack32(job->sys_cpu_usec, buffer);
+		pack32(job->timelimit, buffer);
+		if (job->tot_cpu_sec > NO_VAL)
+			pack32(NO_VAL, buffer);
+		else
+			pack32(job->tot_cpu_sec, buffer);
+		if (job->tot_cpu_usec > NO_VAL)
+			pack32(NO_VAL, buffer);
+		else
+			pack32(job->tot_cpu_usec, buffer);
+		pack16(1, buffer); /* job->track_steps removed in 22.05 */
+
+		packstr(job->tres_alloc_str, buffer);
+		packstr(job->tres_req_str, buffer);
+
+		pack32(job->uid, buffer);
+		packstr(job->user, buffer);
+		if (job->user_cpu_sec > NO_VAL)
+			pack32(NO_VAL, buffer);
+		else
+			pack32(job->user_cpu_sec, buffer);
+		if (job->user_cpu_usec > NO_VAL)
+			pack32(NO_VAL, buffer);
+		else
+			pack32(job->user_cpu_usec, buffer);
+		packstr(job->wckey, buffer);
+		pack32(job->wckeyid, buffer);
+		packstr(job->work_dir, buffer);
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+        packstr(job->command, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+        packstr(job->stdout, buffer);
+        packstr(job->stderr, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+        packstr(job->resource_node_detail, buffer);
+#endif
+    }
+#endif
+	else {
 		error("%s: protocol_version %hu not supported",
 		      __func__, protocol_version);
 	}
@@ -4256,111 +4647,220 @@ extern int slurmdb_unpack_job_rec(void **job, uint16_t protocol_version,
 
 	*job = job_ptr;
 
+#ifdef __META_PROTOCOL
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
-		safe_unpackstr_xmalloc(&job_ptr->account, &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->admin_comment, &uint32_tmp,
-				       buffer);
-		safe_unpack32(&job_ptr->alloc_nodes, buffer);
-		safe_unpack32(&job_ptr->array_job_id, buffer);
-		safe_unpack32(&job_ptr->array_max_tasks, buffer);
-		safe_unpack32(&job_ptr->array_task_id, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->array_task_str,
-				       &uint32_tmp, buffer);
-		safe_unpack32(&job_ptr->associd, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->blockid, &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->cluster, &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->constraints,
-				       &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->container,
-				       &uint32_tmp, buffer);
-		safe_unpack64(&job_ptr->db_index, buffer);
-		safe_unpack32(&uint32_tmp, buffer);
-		job_ptr->derived_ec = (int32_t)uint32_tmp;
-		safe_unpackstr_xmalloc(&job_ptr->derived_es, &uint32_tmp,
-				       buffer);
-		safe_unpack32(&job_ptr->elapsed, buffer);
-		safe_unpack_time(&job_ptr->eligible, buffer);
-		safe_unpack_time(&job_ptr->end, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->env,
-				       &uint32_tmp, buffer);
-		safe_unpack32(&uint32_tmp, buffer);
-		job_ptr->exitcode = (int32_t)uint32_tmp;
-		safe_unpack32(&job_ptr->flags, buffer);
+        if (protocol_version >= META_2_0_PROTOCOL_VERSION) {
+            // meta 2.0.x
+            safe_unpackstr_xmalloc(&job_ptr->account, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->admin_comment, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->alloc_nodes, buffer);
+            safe_unpack32(&job_ptr->array_job_id, buffer);
+            safe_unpack32(&job_ptr->array_max_tasks, buffer);
+            safe_unpack32(&job_ptr->array_task_id, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->array_task_str,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->associd, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->blockid, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->cluster, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->constraints,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->container,
+                        &uint32_tmp, buffer);
+            safe_unpack64(&job_ptr->db_index, buffer);
+            safe_unpack32(&uint32_tmp, buffer);
+            job_ptr->derived_ec = (int32_t)uint32_tmp;
+            safe_unpackstr_xmalloc(&job_ptr->derived_es, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->elapsed, buffer);
+            safe_unpack_time(&job_ptr->eligible, buffer);
+            safe_unpack_time(&job_ptr->end, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->env,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&uint32_tmp, buffer);
+            job_ptr->exitcode = (int32_t)uint32_tmp;
+            safe_unpack32(&job_ptr->flags, buffer);
 
-		safe_unpack32(&job_ptr->gid, buffer);
-		safe_unpack32(&job_ptr->jobid, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->jobname, &uint32_tmp, buffer);
-		safe_unpack32(&job_ptr->lft, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->mcs_label,
-				       &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->nodes, &uint32_tmp, buffer);
-		safe_unpack32(&job_ptr->het_job_id, buffer);
-		safe_unpack32(&job_ptr->het_job_offset, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->partition, &uint32_tmp,
-				       buffer);
-		safe_unpack32(&job_ptr->priority, buffer);
-		safe_unpack32(&job_ptr->qosid, buffer);
-		safe_unpack32(&job_ptr->req_cpus, buffer);
-		safe_unpack64(&job_ptr->req_mem, buffer);
-		safe_unpack32(&job_ptr->requid, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->resv_name, &uint32_tmp,
-				       buffer);
-		safe_unpack32(&job_ptr->resvid, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->script,
-				       &uint32_tmp, buffer);
-		safe_unpack32(&job_ptr->show_full, buffer);
-		safe_unpack_time(&job_ptr->start, buffer);
-		safe_unpack32(&uint32_tmp, buffer);
-		job_ptr->state = uint32_tmp;
-		safe_unpack32(&job_ptr->state_reason_prev, buffer);
+            safe_unpack32(&job_ptr->gid, buffer);
+            safe_unpack32(&job_ptr->jobid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->jobname, &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->lft, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->mcs_label,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->nodes, &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->het_job_id, buffer);
+            safe_unpack32(&job_ptr->het_job_offset, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->partition, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->priority, buffer);
+            safe_unpack32(&job_ptr->qosid, buffer);
+            safe_unpack32(&job_ptr->req_cpus, buffer);
+            safe_unpack64(&job_ptr->req_mem, buffer);
+            safe_unpack32(&job_ptr->requid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->resv_name, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->resvid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->script,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->show_full, buffer);
+            safe_unpack_time(&job_ptr->start, buffer);
+            safe_unpack32(&uint32_tmp, buffer);
+            job_ptr->state = uint32_tmp;
+            safe_unpack32(&job_ptr->state_reason_prev, buffer);
 
-		safe_unpack32(&count, buffer);
-		job_ptr->steps = list_create(slurmdb_destroy_step_rec);
-		for (i = 0; i < count; i++) {
-			if (slurmdb_unpack_step_rec(&step, protocol_version,
-						    buffer)
-			    == SLURM_ERROR)
-				goto unpack_error;
+            safe_unpack32(&count, buffer);
+            job_ptr->steps = list_create(slurmdb_destroy_step_rec);
+            for (i = 0; i < count; i++) {
+                if (slurmdb_unpack_step_rec(&step, protocol_version,
+                                buffer)
+                    == SLURM_ERROR)
+                    goto unpack_error;
 
-			step->job_ptr = job_ptr;
-			if (!job_ptr->first_step_ptr)
-				job_ptr->first_step_ptr = step;
-			list_append(job_ptr->steps, step);
-		}
+                step->job_ptr = job_ptr;
+                if (!job_ptr->first_step_ptr)
+                    job_ptr->first_step_ptr = step;
+                list_append(job_ptr->steps, step);
+            }
 
-		safe_unpack_time(&job_ptr->submit, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->submit_line,
-				       &uint32_tmp, buffer);
-		safe_unpack32(&job_ptr->suspended, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->system_comment, &uint32_tmp,
-				       buffer);
-		safe_unpack64(&job_ptr->sys_cpu_sec, buffer);
-		safe_unpack64(&job_ptr->sys_cpu_usec, buffer);
-		safe_unpack32(&job_ptr->timelimit, buffer);
-		safe_unpack64(&job_ptr->tot_cpu_sec, buffer);
-		safe_unpack64(&job_ptr->tot_cpu_usec, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->tres_alloc_str,
-				       &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->tres_req_str,
-				       &uint32_tmp, buffer);
-		safe_unpack32(&job_ptr->uid, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->user, &uint32_tmp, buffer);
-		safe_unpack64(&job_ptr->user_cpu_sec, buffer);
-		safe_unpack64(&job_ptr->user_cpu_usec, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->wckey, &uint32_tmp, buffer);
-		safe_unpack32(&job_ptr->wckeyid, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
+            safe_unpack_time(&job_ptr->submit, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->submit_line,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->suspended, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->system_comment, &uint32_tmp,
+                        buffer);
+            safe_unpack64(&job_ptr->sys_cpu_sec, buffer);
+            safe_unpack64(&job_ptr->sys_cpu_usec, buffer);
+            safe_unpack32(&job_ptr->timelimit, buffer);
+            safe_unpack64(&job_ptr->tot_cpu_sec, buffer);
+            safe_unpack64(&job_ptr->tot_cpu_usec, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->tres_alloc_str,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->tres_req_str,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->uid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->user, &uint32_tmp, buffer);
+            safe_unpack64(&job_ptr->user_cpu_sec, buffer);
+            safe_unpack64(&job_ptr->user_cpu_usec, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->wckey, &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->wckeyid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
 
 #ifdef __METASTACK_OPT_SACCT_COMMAND
-		safe_unpackstr_xmalloc(&job_ptr->command, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->command, &uint32_tmp, buffer);
 #endif
 #ifdef __METASTACK_OPT_SACCT_OUTPUT
-		safe_unpackstr_xmalloc(&job_ptr->stdout, &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->stderr, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->stdout, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->stderr, &uint32_tmp, buffer);
 #endif
 #ifdef __METASTACK_OPT_RESC_NODEDETAIL
-		safe_unpackstr_xmalloc(&job_ptr->resource_node_detail, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->resource_node_detail, &uint32_tmp, buffer);
 #endif
+        } else {
+            // meta 2.0.x(x<=2) version
+            safe_unpackstr_xmalloc(&job_ptr->account, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->admin_comment, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->alloc_nodes, buffer);
+            safe_unpack32(&job_ptr->array_job_id, buffer);
+            safe_unpack32(&job_ptr->array_max_tasks, buffer);
+            safe_unpack32(&job_ptr->array_task_id, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->array_task_str,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->associd, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->blockid, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->cluster, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->constraints,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->container,
+                        &uint32_tmp, buffer);
+            safe_unpack64(&job_ptr->db_index, buffer);
+            safe_unpack32(&uint32_tmp, buffer);
+            job_ptr->derived_ec = (int32_t)uint32_tmp;
+            safe_unpackstr_xmalloc(&job_ptr->derived_es, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->elapsed, buffer);
+            safe_unpack_time(&job_ptr->eligible, buffer);
+            safe_unpack_time(&job_ptr->end, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->env,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&uint32_tmp, buffer);
+            job_ptr->exitcode = (int32_t)uint32_tmp;
+            safe_unpack32(&job_ptr->flags, buffer);
+
+            safe_unpack32(&job_ptr->gid, buffer);
+            safe_unpack32(&job_ptr->jobid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->jobname, &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->lft, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->mcs_label,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->nodes, &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->het_job_id, buffer);
+            safe_unpack32(&job_ptr->het_job_offset, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->partition, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->priority, buffer);
+            safe_unpack32(&job_ptr->qosid, buffer);
+            safe_unpack32(&job_ptr->req_cpus, buffer);
+            safe_unpack64(&job_ptr->req_mem, buffer);
+            safe_unpack32(&job_ptr->requid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->resv_name, &uint32_tmp,
+                        buffer);
+            safe_unpack32(&job_ptr->resvid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->script,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->show_full, buffer);
+            safe_unpack_time(&job_ptr->start, buffer);
+            safe_unpack32(&uint32_tmp, buffer);
+            job_ptr->state = uint32_tmp;
+            safe_unpack32(&job_ptr->state_reason_prev, buffer);
+
+            safe_unpack32(&count, buffer);
+            job_ptr->steps = list_create(slurmdb_destroy_step_rec);
+            for (i = 0; i < count; i++) {
+                if (slurmdb_unpack_step_rec(&step, protocol_version,
+                                buffer)
+                    == SLURM_ERROR)
+                    goto unpack_error;
+
+                step->job_ptr = job_ptr;
+                if (!job_ptr->first_step_ptr)
+                    job_ptr->first_step_ptr = step;
+                list_append(job_ptr->steps, step);
+            }
+
+            safe_unpack_time(&job_ptr->submit, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->submit_line,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->suspended, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->system_comment, &uint32_tmp,
+                        buffer);
+            safe_unpack64(&job_ptr->sys_cpu_sec, buffer);
+            safe_unpack64(&job_ptr->sys_cpu_usec, buffer);
+            safe_unpack32(&job_ptr->timelimit, buffer);
+            safe_unpack64(&job_ptr->tot_cpu_sec, buffer);
+            safe_unpack64(&job_ptr->tot_cpu_usec, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->tres_alloc_str,
+                        &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->tres_req_str,
+                        &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->uid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->user, &uint32_tmp, buffer);
+            safe_unpack64(&job_ptr->user_cpu_sec, buffer);
+            safe_unpack64(&job_ptr->user_cpu_usec, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->wckey, &uint32_tmp, buffer);
+            safe_unpack32(&job_ptr->wckeyid, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+            safe_unpackstr_xmalloc(&job_ptr->command, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+            safe_unpackstr_xmalloc(&job_ptr->stdout, &uint32_tmp, buffer);
+            safe_unpackstr_xmalloc(&job_ptr->stderr, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+            safe_unpackstr_xmalloc(&job_ptr->resource_node_detail, &uint32_tmp, buffer);
+#endif
+        }
 
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		slurmdb_stats_t stats = {0};
@@ -4466,16 +4966,6 @@ extern int slurmdb_unpack_job_rec(void **job, uint16_t protocol_version,
 		safe_unpack32(&job_ptr->wckeyid, buffer);
 		safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
 
-#ifdef __METASTACK_OPT_SACCT_COMMAND
-		safe_unpackstr_xmalloc(&job_ptr->command, &uint32_tmp, buffer);
-#endif
-#ifdef __METASTACK_OPT_SACCT_OUTPUT
-		safe_unpackstr_xmalloc(&job_ptr->stdout, &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&job_ptr->stderr, &uint32_tmp, buffer);
-#endif
-#ifdef __METASTACK_OPT_RESC_NODEDETAIL
-		safe_unpackstr_xmalloc(&job_ptr->resource_node_detail, &uint32_tmp, buffer);
-#endif
 	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		slurmdb_stats_t stats = {0};
 
@@ -4577,7 +5067,343 @@ extern int slurmdb_unpack_job_rec(void **job, uint16_t protocol_version,
 		safe_unpackstr_xmalloc(&job_ptr->wckey, &uint32_tmp, buffer);
 		safe_unpack32(&job_ptr->wckeyid, buffer);
 		safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
-	} else {
+
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+		safe_unpackstr_xmalloc(&job_ptr->command, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+		safe_unpackstr_xmalloc(&job_ptr->stdout, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->stderr, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+		safe_unpackstr_xmalloc(&job_ptr->resource_node_detail, &uint32_tmp, buffer);
+#endif
+    }
+#else
+    if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+        safe_unpackstr_xmalloc(&job_ptr->account, &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->admin_comment, &uint32_tmp,
+                    buffer);
+        safe_unpack32(&job_ptr->alloc_nodes, buffer);
+        safe_unpack32(&job_ptr->array_job_id, buffer);
+        safe_unpack32(&job_ptr->array_max_tasks, buffer);
+        safe_unpack32(&job_ptr->array_task_id, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->array_task_str,
+                    &uint32_tmp, buffer);
+        safe_unpack32(&job_ptr->associd, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->blockid, &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->cluster, &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->constraints,
+                    &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->container,
+                    &uint32_tmp, buffer);
+        safe_unpack64(&job_ptr->db_index, buffer);
+        safe_unpack32(&uint32_tmp, buffer);
+        job_ptr->derived_ec = (int32_t)uint32_tmp;
+        safe_unpackstr_xmalloc(&job_ptr->derived_es, &uint32_tmp,
+                    buffer);
+        safe_unpack32(&job_ptr->elapsed, buffer);
+        safe_unpack_time(&job_ptr->eligible, buffer);
+        safe_unpack_time(&job_ptr->end, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->env,
+                    &uint32_tmp, buffer);
+        safe_unpack32(&uint32_tmp, buffer);
+        job_ptr->exitcode = (int32_t)uint32_tmp;
+        safe_unpack32(&job_ptr->flags, buffer);
+
+        safe_unpack32(&job_ptr->gid, buffer);
+        safe_unpack32(&job_ptr->jobid, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->jobname, &uint32_tmp, buffer);
+        safe_unpack32(&job_ptr->lft, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->mcs_label,
+                    &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->nodes, &uint32_tmp, buffer);
+        safe_unpack32(&job_ptr->het_job_id, buffer);
+        safe_unpack32(&job_ptr->het_job_offset, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->partition, &uint32_tmp,
+                    buffer);
+        safe_unpack32(&job_ptr->priority, buffer);
+        safe_unpack32(&job_ptr->qosid, buffer);
+        safe_unpack32(&job_ptr->req_cpus, buffer);
+        safe_unpack64(&job_ptr->req_mem, buffer);
+        safe_unpack32(&job_ptr->requid, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->resv_name, &uint32_tmp,
+                    buffer);
+        safe_unpack32(&job_ptr->resvid, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->script,
+                    &uint32_tmp, buffer);
+        safe_unpack32(&job_ptr->show_full, buffer);
+        safe_unpack_time(&job_ptr->start, buffer);
+        safe_unpack32(&uint32_tmp, buffer);
+        job_ptr->state = uint32_tmp;
+        safe_unpack32(&job_ptr->state_reason_prev, buffer);
+
+        safe_unpack32(&count, buffer);
+        job_ptr->steps = list_create(slurmdb_destroy_step_rec);
+        for (i = 0; i < count; i++) {
+            if (slurmdb_unpack_step_rec(&step, protocol_version,
+                            buffer)
+                == SLURM_ERROR)
+                goto unpack_error;
+
+            step->job_ptr = job_ptr;
+            if (!job_ptr->first_step_ptr)
+                job_ptr->first_step_ptr = step;
+            list_append(job_ptr->steps, step);
+        }
+
+        safe_unpack_time(&job_ptr->submit, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->submit_line,
+                    &uint32_tmp, buffer);
+        safe_unpack32(&job_ptr->suspended, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->system_comment, &uint32_tmp,
+                    buffer);
+        safe_unpack64(&job_ptr->sys_cpu_sec, buffer);
+        safe_unpack64(&job_ptr->sys_cpu_usec, buffer);
+        safe_unpack32(&job_ptr->timelimit, buffer);
+        safe_unpack64(&job_ptr->tot_cpu_sec, buffer);
+        safe_unpack64(&job_ptr->tot_cpu_usec, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->tres_alloc_str,
+                    &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->tres_req_str,
+                    &uint32_tmp, buffer);
+        safe_unpack32(&job_ptr->uid, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->user, &uint32_tmp, buffer);
+        safe_unpack64(&job_ptr->user_cpu_sec, buffer);
+        safe_unpack64(&job_ptr->user_cpu_usec, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->wckey, &uint32_tmp, buffer);
+        safe_unpack32(&job_ptr->wckeyid, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
+
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+        safe_unpackstr_xmalloc(&job_ptr->command, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+        safe_unpackstr_xmalloc(&job_ptr->stdout, &uint32_tmp, buffer);
+        safe_unpackstr_xmalloc(&job_ptr->stderr, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+        safe_unpackstr_xmalloc(&job_ptr->resource_node_detail, &uint32_tmp, buffer);
+#endif
+	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
+		slurmdb_stats_t stats = {0};
+
+		safe_unpackstr_xmalloc(&job_ptr->account, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->admin_comment, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->alloc_nodes, buffer);
+		safe_unpack32(&job_ptr->array_job_id, buffer);
+		safe_unpack32(&job_ptr->array_max_tasks, buffer);
+		safe_unpack32(&job_ptr->array_task_id, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->array_task_str,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->associd, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->blockid, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->cluster, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->constraints,
+				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->container,
+				       &uint32_tmp, buffer);
+		safe_unpack64(&job_ptr->db_index, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->derived_ec = (int32_t)uint32_tmp;
+		safe_unpackstr_xmalloc(&job_ptr->derived_es, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->elapsed, buffer);
+		safe_unpack_time(&job_ptr->eligible, buffer);
+		safe_unpack_time(&job_ptr->end, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->env,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->exitcode = (int32_t)uint32_tmp;
+		safe_unpack32(&job_ptr->flags, buffer);
+
+		safe_unpack32(&job_ptr->gid, buffer);
+		safe_unpack32(&job_ptr->jobid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->jobname, &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->lft, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->mcs_label,
+				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->nodes, &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->het_job_id, buffer);
+		safe_unpack32(&job_ptr->het_job_offset, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->partition, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->priority, buffer);
+		safe_unpack32(&job_ptr->qosid, buffer);
+		safe_unpack32(&job_ptr->req_cpus, buffer);
+		safe_unpack64(&job_ptr->req_mem, buffer);
+		safe_unpack32(&job_ptr->requid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->resv_name, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->resvid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->script,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->show_full, buffer);
+		safe_unpack_time(&job_ptr->start, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->state = uint32_tmp;
+		safe_unpack32(&job_ptr->state_reason_prev, buffer);
+		/* job->stats removed in 22.05 */
+		if (_unpack_slurmdb_stats(&stats, protocol_version, buffer)
+		    != SLURM_SUCCESS)
+			goto unpack_error;
+		slurmdb_free_slurmdb_stats_members(&stats);
+
+		safe_unpack32(&count, buffer);
+		job_ptr->steps = list_create(slurmdb_destroy_step_rec);
+		for (i = 0; i < count; i++) {
+			if (slurmdb_unpack_step_rec(&step, protocol_version,
+						    buffer)
+			    == SLURM_ERROR)
+				goto unpack_error;
+
+			step->job_ptr = job_ptr;
+			if (!job_ptr->first_step_ptr)
+				job_ptr->first_step_ptr = step;
+			list_append(job_ptr->steps, step);
+		}
+
+		safe_unpack_time(&job_ptr->submit, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->submit_line,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->suspended, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->system_comment, &uint32_tmp,
+				       buffer);
+		safe_unpack64(&job_ptr->sys_cpu_sec, buffer);
+		safe_unpack64(&job_ptr->sys_cpu_usec, buffer);
+		safe_unpack32(&job_ptr->timelimit, buffer);
+		safe_unpack64(&job_ptr->tot_cpu_sec, buffer);
+		safe_unpack64(&job_ptr->tot_cpu_usec, buffer);
+		/* job->track_steps removed in 22.05 */
+		safe_unpack16(&uint16_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->tres_alloc_str,
+				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->tres_req_str,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->uid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->user, &uint32_tmp, buffer);
+		safe_unpack64(&job_ptr->user_cpu_sec, buffer);
+		safe_unpack64(&job_ptr->user_cpu_usec, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->wckey, &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->wckeyid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
+
+	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		slurmdb_stats_t stats = {0};
+
+		safe_unpackstr_xmalloc(&job_ptr->account, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->admin_comment, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->alloc_nodes, buffer);
+		safe_unpack32(&job_ptr->array_job_id, buffer);
+		safe_unpack32(&job_ptr->array_max_tasks, buffer);
+		safe_unpack32(&job_ptr->array_task_id, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->array_task_str,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->associd, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->blockid, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->cluster, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->constraints,
+				       &uint32_tmp, buffer);
+		safe_unpack64(&job_ptr->db_index, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->derived_ec = (int32_t)uint32_tmp;
+		safe_unpackstr_xmalloc(&job_ptr->derived_es, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->elapsed, buffer);
+		safe_unpack_time(&job_ptr->eligible, buffer);
+		safe_unpack_time(&job_ptr->end, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->exitcode = (int32_t)uint32_tmp;
+		safe_unpack32(&job_ptr->flags, buffer);
+
+		safe_unpack32(&job_ptr->gid, buffer);
+		safe_unpack32(&job_ptr->jobid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->jobname, &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->lft, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->mcs_label,
+				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->nodes, &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->het_job_id, buffer);
+		safe_unpack32(&job_ptr->het_job_offset, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->partition, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->priority, buffer);
+		safe_unpack32(&job_ptr->qosid, buffer);
+		safe_unpack32(&job_ptr->req_cpus, buffer);
+		safe_unpack64(&job_ptr->req_mem, buffer);
+		safe_unpack32(&job_ptr->requid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->resv_name, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&job_ptr->resvid, buffer);
+		safe_unpack32(&job_ptr->show_full, buffer);
+		safe_unpack_time(&job_ptr->start, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->state = uint32_tmp;
+		safe_unpack32(&job_ptr->state_reason_prev, buffer);
+		/* job->stats removed in 22.05 */
+		if (_unpack_slurmdb_stats(&stats, protocol_version, buffer)
+		    != SLURM_SUCCESS)
+			goto unpack_error;
+		slurmdb_free_slurmdb_stats_members(&stats);
+
+		safe_unpack32(&count, buffer);
+		job_ptr->steps = list_create(slurmdb_destroy_step_rec);
+		for (i = 0; i < count; i++) {
+			if (slurmdb_unpack_step_rec(&step, protocol_version,
+						    buffer)
+			    == SLURM_ERROR)
+				goto unpack_error;
+
+			step->job_ptr = job_ptr;
+			if (!job_ptr->first_step_ptr)
+				job_ptr->first_step_ptr = step;
+			list_append(job_ptr->steps, step);
+		}
+
+		safe_unpack_time(&job_ptr->submit, buffer);
+		safe_unpack32(&job_ptr->suspended, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->system_comment, &uint32_tmp,
+				       buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->sys_cpu_sec = uint32_tmp;
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->sys_cpu_usec = uint32_tmp;
+		safe_unpack32(&job_ptr->timelimit, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->tot_cpu_sec = uint32_tmp;
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->tot_cpu_usec = uint32_tmp;
+		/* job->track_steps removed in 22.05 */
+		safe_unpack16(&uint16_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->tres_alloc_str,
+				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->tres_req_str,
+				       &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->uid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->user, &uint32_tmp, buffer);
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->user_cpu_sec = uint32_tmp;
+		safe_unpack32(&uint32_tmp, buffer);
+		job_ptr->user_cpu_usec = uint32_tmp;
+		safe_unpackstr_xmalloc(&job_ptr->wckey, &uint32_tmp, buffer);
+		safe_unpack32(&job_ptr->wckeyid, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->work_dir, &uint32_tmp, buffer);
+
+#ifdef __METASTACK_OPT_SACCT_COMMAND
+		safe_unpackstr_xmalloc(&job_ptr->command, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+		safe_unpackstr_xmalloc(&job_ptr->stdout, &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&job_ptr->stderr, &uint32_tmp, buffer);
+#endif
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+		safe_unpackstr_xmalloc(&job_ptr->resource_node_detail, &uint32_tmp, buffer);
+#endif
+    }
+#endif
+	else {
 		error("%s: protocol_version %hu not supported",
 		      __func__, protocol_version);
 		goto unpack_error;

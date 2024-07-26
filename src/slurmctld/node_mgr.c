@@ -1046,7 +1046,7 @@ extern void pack_all_node(char **buffer_ptr, int *buffer_size,
 		/* write header: count and time */
 		pack32(nodes_packed, buffer);
 		pack_time(now, buffer);
-
+	
 		/* write node records */
 		for (inx = 0; inx < node_record_count; inx++) {
 			if (!node_record_table_ptr[inx])
@@ -1059,7 +1059,7 @@ extern void pack_all_node(char **buffer_ptr, int *buffer_size,
 			 * We can't avoid packing node records without breaking
 			 * the node index pointers. So pack a node with a name
 			 * of NULL and let the caller deal with it.
-			 */
+			 */		
 			hidden = false;
 			if (((show_flags & SHOW_ALL) == 0) &&
 			    !privileged &&
@@ -1241,7 +1241,7 @@ static void _pack_node(node_record_t *dump_node_ptr, buf_t *buffer,
 		pack32(dump_node_ptr->next_state, buffer);
 		pack32(dump_node_ptr->node_state, buffer);
 		packstr(dump_node_ptr->version, buffer);
-
+		
 		/* Only data from config_record used for scheduling */
 		pack16(dump_node_ptr->config_ptr->cpus, buffer);
 		pack16(dump_node_ptr->config_ptr->boards, buffer);
@@ -1533,6 +1533,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	char *old_node_reason = NULL;
 #endif
+
 	if (update_node_msg->node_names == NULL ) {
 		info("%s: invalid node name", __func__);
 		return ESLURM_INVALID_NODE_NAME;
@@ -1733,7 +1734,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 		    (update_node_msg -> reason[0])) {
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			old_node_reason = xstrdup(node_ptr->reason);
-#endif				
+#endif
 			xfree(node_ptr->reason);
 			node_ptr->reason = xstrdup(update_node_msg->reason);
 			node_ptr->reason_time = now;
@@ -1774,7 +1775,6 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 					(~NODE_STATE_REBOOT_REQUESTED);
 				node_ptr->node_state &=
 					(~NODE_STATE_REBOOT_ISSUED);
-
 				if (IS_NODE_POWERING_DOWN(node_ptr)) {
 					node_ptr->node_state &=
 						(~NODE_STATE_INVALID_REG);
@@ -1850,7 +1850,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 					node_ptr->reason_uid = auth_uid;
 					xfree(new_reason);	
 				}
-#endif					
+#endif				
 				_make_node_down(node_ptr, now);
 				kill_running_job_by_node_name (this_node_name);
 				if (state_val == NODE_STATE_FUTURE) {
@@ -1901,7 +1901,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 					acct_updated = true;
 				}	/* else already fully available */
 				node_ptr->node_state &= (~NODE_STATE_DRAIN);
-				node_ptr->node_state &= (~NODE_STATE_FAIL);
+				node_ptr->node_state &= (~NODE_STATE_FAIL);			
 				if (!IS_NODE_NO_RESPOND(node_ptr) ||
 				     IS_NODE_POWERED_DOWN(node_ptr))
 					make_node_avail(node_ptr);
@@ -1921,6 +1921,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 			} else if ((state_val == NODE_STATE_DRAIN) ||
 				   (state_val == NODE_STATE_FAIL)) {
 				uint32_t new_state = state_val;
+
 				if ((IS_NODE_ALLOCATED(node_ptr) ||
 				     IS_NODE_MIXED(node_ptr)) &&
 				    (IS_NODE_POWERED_DOWN(node_ptr) ||
@@ -1942,6 +1943,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 						node_ptr, now, NULL,
 						node_ptr->reason_uid);
 				}
+
 				if ((new_state == NODE_STATE_FAIL) &&
 				    (nonstop_ops.node_fail))
 					(nonstop_ops.node_fail)(NULL, node_ptr);
@@ -2104,7 +2106,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 						(node_ptr->node_state &
 						 NODE_STATE_FLAGS);				
 				}
-#else				
+#else			
 				node_ptr->node_state = state_val |
 						(node_ptr->node_state &
 						 NODE_STATE_FLAGS);
@@ -2121,7 +2123,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 			}
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			xfree(old_node_reason);
-#endif			
+#endif
 		}
 
 		if (!acct_updated && !IS_NODE_DOWN(node_ptr) &&
@@ -4437,7 +4439,7 @@ static void _make_node_down(node_record_t *node_ptr, time_t event_time)
 	last_node_update = time (NULL);
 	clusteracct_storage_g_node_down(acct_db_conn,
 					node_ptr, event_time, NULL,
-					node_ptr->reason_uid);
+					node_ptr->reason_uid);		
 	/*
 	 * check all reservations since node may have been in a reservation with
 	 * floating count of nodes that needs to be updated
@@ -4642,45 +4644,43 @@ extern int send_nodes_to_accounting(time_t event_time)
 extern void free_para_sched_resource(void)
 {
 	int i;
-	if (para_sched) {
-		if (original_part_node_bitmap) {
-			for (i=0; i<part_count; i++)
-				FREE_NULL_BITMAP(original_part_node_bitmap[i]);
-		}
-
-		if (para_sched_node_bitmap) {
-			for (i=0; i<resource_count; i++)	
-				FREE_NULL_BITMAP(para_sched_node_bitmap[i]);
-		}
-
-		if (original_part_ptr) {
-			for (i=0; i<part_count; i++)
-				xfree(original_part_ptr[i]);		
-		}
-
-		if (para_sched_part_ptr) {
-			for (i=0; i<resource_count; i++)
-				xfree(para_sched_part_ptr[i]);			
-		}
-
-		if (para_sched_part_names) {
-			for (i=0; i<resource_count; i++)
-				xfree(para_sched_part_names[i]);
-		}
-		/* for partitions */
-		xfree(original_part_ptr);		
-		xfree(para_sched_part_ptr);
-		xfree(para_sched_part_names);
-		/* for nodes */
-		xfree(original_part_node_bitmap);					
-		xfree(para_sched_node_bitmap);
-		/* do FREE_NULL_BITMAP(para_sched_****_node_bitmap[i]) in func _sched_agent  */
-		xfree(para_sched_avail_node_bitmap);
-		xfree(para_sched_share_node_bitmap);
-		xfree(para_sched_idle_node_bitmap);		
-
-		debug("free para_sched resource");
+	if (original_part_node_bitmap) {
+		for (i=0; i<part_count; i++)
+			FREE_NULL_BITMAP(original_part_node_bitmap[i]);
 	}
+
+	if (para_sched_node_bitmap) {
+		for (i=0; i<resource_count; i++)	
+			FREE_NULL_BITMAP(para_sched_node_bitmap[i]);
+	}
+
+	if (original_part_ptr) {
+		for (i=0; i<part_count; i++)
+			xfree(original_part_ptr[i]);		
+	}
+
+	if (para_sched_part_ptr) {
+		for (i=0; i<resource_count; i++)
+			xfree(para_sched_part_ptr[i]);			
+	}
+
+	if (para_sched_part_names) {
+		for (i=0; i<resource_count; i++)
+			xfree(para_sched_part_names[i]);
+	}
+	/* for partitions */
+	xfree(original_part_ptr);		
+	xfree(para_sched_part_ptr);
+	xfree(para_sched_part_names);
+	/* for nodes */
+	xfree(original_part_node_bitmap);					
+	xfree(para_sched_node_bitmap);
+	/* do FREE_NULL_BITMAP(para_sched_****_node_bitmap[i]) in func _sched_agent  */
+	xfree(para_sched_avail_node_bitmap);
+	xfree(para_sched_share_node_bitmap);
+	xfree(para_sched_idle_node_bitmap);		
+
+	debug("free para_sched resource");
 }
 #endif
 
@@ -4834,7 +4834,7 @@ static int _foreach_build_part_bitmap(void *x, void *arg)
 {
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	build_part_bitmap(x, false);
-#else	
+#else
 	build_part_bitmap(x);
 #endif	
 	return SLURM_SUCCESS;

@@ -20164,7 +20164,12 @@ then :
 	if test -d $withval ; then
 	  PAM_DIR="$withval"
 	else
-	  as_fn_error $? "bad value \"$withval\" for --with-pam_dir" "$LINENO" 5
+      mkdir -p $withval
+      if test -d $withval ; then
+        PAM_DIR="$withval"
+      else
+        as_fn_error $? "bad value \"$withval\" for --with-pam_dir" "$LINENO" 5
+      fi
 	fi
 
 else $as_nop
@@ -23152,6 +23157,22 @@ SpankMakeFile=contribs/spank/Makefile
 if test -f "$SpankMakeFile"; then
     sed -i '/^PREFIX/d' $SpankMakeFile
     sed -i '1i\PREFIX ?= '$prefix''  $SpankMakeFile
+fi
+
+# Update contribs/sjinfoexit/Makefile if this file exists
+SjinfoMakeFile=contribs/sjinfo/Makefile
+SjinfoHeadFile=contribs/sjinfo/sjinfo.h
+SjaesHeadFile=contribs/sjinfo/sjaes.h
+if test -f "$SjinfoMakeFile"; then
+    sed -i '/^PREFIX/d' $SjinfoMakeFile
+    sed -i '1i\PREFIX ?= '$prefix''  $SjinfoMakeFile
+fi
+
+if test -f "$SjinfoHeadFile"; then
+  sed -i 's|^#define KEYDIR .*$|#define KEYDIR '\"$prefix\"'|' "$SjinfoHeadFile"
+fi
+if test -f "$SjaesHeadFile"; then
+  sed -i 's|^#define KEYDIR .*$|#define KEYDIR '\"$prefix\"'|' "$SjaesHeadFile"
 fi
 
   _x_ac_hwloc_dirs="/usr /usr/local"

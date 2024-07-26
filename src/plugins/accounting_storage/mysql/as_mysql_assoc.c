@@ -1240,9 +1240,6 @@ static int _setup_assoc_cond_limits(
 
 #ifdef __METASTACK_OPT_LIST_USER
 	if (assoc_cond->acct_list && list_count(assoc_cond->acct_list) && !list_all) {
-#else
-	if (assoc_cond->acct_list && list_count(assoc_cond->acct_list)) {
-#endif
 		set = 0;
 		xstrcat(*extra, " && (");
 		itr = list_iterator_create(assoc_cond->acct_list);
@@ -1255,6 +1252,21 @@ static int _setup_assoc_cond_limits(
 		list_iterator_destroy(itr);
 		xstrcat(*extra, ")");
 	}
+#else
+	if (assoc_cond->acct_list && list_count(assoc_cond->acct_list)) {
+		set = 0;
+		xstrcat(*extra, " && (");
+		itr = list_iterator_create(assoc_cond->acct_list);
+		while ((object = list_next(itr))) {
+			if (set)
+				xstrcat(*extra, " || ");
+			xstrfmtcat(*extra, "%s.acct='%s'", prefix, object);
+			set = 1;
+		}
+		list_iterator_destroy(itr);
+		xstrcat(*extra, ")");
+	}
+#endif
 
 	if (assoc_cond->def_qos_id_list
 	    && list_count(assoc_cond->def_qos_id_list)) {
@@ -1971,6 +1983,7 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 			       char *cluster_name,
 			       char *fields, char *sent_extra,
 			       bool is_admin, List sent_list)
+
 {
 	List assoc_list;
 	List delta_qos_list = NULL;
@@ -2000,7 +2013,7 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 
 	/* needed if we don't have an assoc_cond */
 	uint16_t without_parent_info = 0;
-	uint16_t without_parent_limits = 0;
+	uint16_t without_parent_limits = 0; 
 	uint16_t with_usage = 0;
 	uint16_t with_raw_qos = 0;
 
@@ -2014,6 +2027,7 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 		without_parent_limits = assoc_cond->without_parent_limits;
 #endif
 		without_parent_info = assoc_cond->without_parent_info;
+
 	}
 
 	/* this is here to make sure we are looking at only this user
@@ -3127,6 +3141,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
     slurm_mutex_lock(&assoc_lock);
 #endif
+
 	itr = list_iterator_create(assoc_list);
 	while ((object = list_next(itr))) {
 		if (!object->cluster || !object->cluster[0]
@@ -3318,7 +3333,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 					"order by rgt for update;",
 					object->cluster, assoc_table,
 					parent);
-#else
+#else 
 				char *sel_query = xstrdup_printf(
 					"SELECT lft FROM \"%s_%s\" WHERE "
 					"acct = '%s' and user = '' "
@@ -3589,6 +3604,8 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 	list_iterator_destroy(itr);
 	xfree(user_name);
 
+	
+
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 	if (rc != SLURM_SUCCESS){
 		slurm_mutex_unlock(&assoc_lock);
@@ -3596,8 +3613,9 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 	}
 #else
 	if (rc != SLURM_SUCCESS)
-		goto end_it;
+		goto end_it;	
 #endif
+	
 
 	if (incr) {
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
@@ -3640,6 +3658,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 	slurm_mutex_unlock(&assoc_lock);
 #endif
+
 
 	/* Since we are already removed all the items from assoc_list
 	 * we need to work off the update_list from here on out.
@@ -3707,6 +3726,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 #else
 		assoc_list_tmp = NULL;
 #endif
+
 	}
 
 	if (query) {
@@ -3821,8 +3841,9 @@ end_it:
 		 * coordinators of parent accounts are also assigned to
 		 * subaccounts potentially added here.
 		 */
+
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-  		/* We don't need to refresh the assoc_mgr_user_list. */
+  		/* We don't  need to refresh the assoc_mgr_user_list. */
 			
 #else
 		if (acct_added) {
@@ -3833,6 +3854,7 @@ end_it:
 			}
 		}
 #endif
+
 	} else {
 		FREE_NULL_LIST(added_user_list);
 		xfree(txn_query);
@@ -3910,7 +3932,6 @@ is_same_user:
 	if ((assoc_cond->qos_list && list_count(assoc_cond->qos_list))
 	    || assoc_cond->with_sub_accts)
 		prefix = "t2";
-
 #ifdef __METASTACK_OPT_LIST_USER
 	(void) _setup_assoc_cond_limits(assoc_cond, prefix, &extra, false);
 #else
@@ -4006,6 +4027,7 @@ is_same_user:
 			break;
 		}
 	}
+
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 	slurm_mutex_unlock(&assoc_lock);
 #endif
@@ -4073,7 +4095,6 @@ extern List as_mysql_remove_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 	if ((assoc_cond->qos_list && list_count(assoc_cond->qos_list))
 	    || assoc_cond->with_sub_accts)
 		prefix = "t2";
-
 #ifdef __METASTACK_OPT_LIST_USER
 	(void)_setup_assoc_cond_limits(assoc_cond, prefix, &extra, false);
 #else
@@ -4093,6 +4114,7 @@ extern List as_mysql_remove_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 		use_cluster_list = list_shallow_copy(as_mysql_cluster_list);
 		locked = true;
 	}
+
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 	slurm_mutex_lock(&assoc_lock);
 #endif
@@ -4167,6 +4189,7 @@ extern List as_mysql_remove_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			break;
 		}
 	}
+
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 	slurm_mutex_unlock(&assoc_lock);
 #endif

@@ -6548,7 +6548,13 @@ static int _advance_resv_time(slurmctld_resv_t *resv_ptr)
 	int day_cnt = 0, hour_cnt = 0;
 	int rc = SLURM_ERROR;
 	/* Make sure we have node write locks. */
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	if (!para_sched) {		
+		xassert(verify_lock(NODE_LOCK, WRITE_LOCK));
+	}
+#else
 	xassert(verify_lock(NODE_LOCK, WRITE_LOCK));
+#endif
 
 	if (resv_ptr->flags & RESERVE_FLAG_TIME_FLOAT)
 		return rc;		/* Not applicable */

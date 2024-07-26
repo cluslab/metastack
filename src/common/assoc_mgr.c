@@ -85,58 +85,58 @@ static int *assoc_mgr_tres_old_pos = NULL;
 */
 static char *update_type2str(uint16_t update_type)
 {
-	switch (update_type) {
-	case SLURMDB_UPDATE_NOTSET:
-		return "SLURMDB_UPDATE_NOTSET";
-	case SLURMDB_ADD_USER:
-		return "SLURMDB_ADD_USER";
-	case SLURMDB_ADD_ASSOC:
-		return "SLURMDB_ADD_ASSOC";
-	case SLURMDB_ADD_COORD:
-		return "SLURMDB_ADD_COORD";
-	case SLURMDB_MODIFY_USER:
-		return "SLURMDB_MODIFY_USER";
-	case SLURMDB_MODIFY_ASSOC:
-		return "SLURMDB_MODIFY_ASSOC";
-	case SLURMDB_REMOVE_USER:
-		return "SLURMDB_REMOVE_USER";
-	case SLURMDB_REMOVE_ASSOC:
-		return "SLURMDB_REMOVE_ASSOC";
-	case SLURMDB_REMOVE_COORD:
-		return "SLURMDB_REMOVE_COORD";
-	case SLURMDB_ADD_QOS:
-		return "SLURMDB_ADD_QOS";
-	case SLURMDB_REMOVE_QOS:
-		return "SLURMDB_REMOVE_QOS";
-	case SLURMDB_MODIFY_QOS:
-		return "SLURMDB_MODIFY_QOS";
-	case SLURMDB_ADD_WCKEY:
-		return "SLURMDB_ADD_WCKEY";
-	case SLURMDB_REMOVE_WCKEY:
-		return "SLURMDB_REMOVE_WCKEY";
-	case SLURMDB_MODIFY_WCKEY:
-		return "SLURMDB_MODIFY_WCKEY";
-	case SLURMDB_ADD_CLUSTER:
-		return "SLURMDB_ADD_CLUSTER";
-	case SLURMDB_REMOVE_CLUSTER:
-		return "SLURMDB_REMOVE_CLUSTER";
-	case SLURMDB_REMOVE_ASSOC_USAGE:
-		return "SLURMDB_REMOVE_ASSOC_USAGE";
-	case SLURMDB_ADD_RES:
-		return "SLURMDB_ADD_RES";
-	case SLURMDB_REMOVE_RES:
-		return "SLURMDB_REMOVE_RES";
-	case SLURMDB_MODIFY_RES:
-		return "SLURMDB_MODIFY_RES";
-	case SLURMDB_REMOVE_QOS_USAGE:
-		return "SLURMDB_REMOVE_QOS_USAGE";
-	case SLURMDB_ADD_TRES:
-		return "SLURMDB_ADD_TRES";
-	case SLURMDB_UPDATE_FEDS:
-		return "SLURMDB_UPDATE_FEDS";
-	default:
-		return "unknown type";
-	}
+    switch (update_type) {
+    case SLURMDB_UPDATE_NOTSET:
+        return "SLURMDB_UPDATE_NOTSET";
+    case SLURMDB_ADD_USER:
+        return "SLURMDB_ADD_USER";
+    case SLURMDB_ADD_ASSOC:
+        return "SLURMDB_ADD_ASSOC";
+    case SLURMDB_ADD_COORD:
+        return "SLURMDB_ADD_COORD";
+    case SLURMDB_MODIFY_USER:
+        return "SLURMDB_MODIFY_USER";
+    case SLURMDB_MODIFY_ASSOC:
+        return "SLURMDB_MODIFY_ASSOC";
+    case SLURMDB_REMOVE_USER:
+        return "SLURMDB_REMOVE_USER";
+    case SLURMDB_REMOVE_ASSOC:
+        return "SLURMDB_REMOVE_ASSOC";
+    case SLURMDB_REMOVE_COORD:
+        return "SLURMDB_REMOVE_COORD";
+    case SLURMDB_ADD_QOS:
+        return "SLURMDB_ADD_QOS";
+    case SLURMDB_REMOVE_QOS:
+        return "SLURMDB_REMOVE_QOS";
+    case SLURMDB_MODIFY_QOS:
+        return "SLURMDB_MODIFY_QOS";
+    case SLURMDB_ADD_WCKEY:
+        return "SLURMDB_ADD_WCKEY";
+    case SLURMDB_REMOVE_WCKEY:
+        return "SLURMDB_REMOVE_WCKEY";
+    case SLURMDB_MODIFY_WCKEY:
+        return "SLURMDB_MODIFY_WCKEY";
+    case SLURMDB_ADD_CLUSTER:
+        return "SLURMDB_ADD_CLUSTER";
+    case SLURMDB_REMOVE_CLUSTER:
+        return "SLURMDB_REMOVE_CLUSTER";
+    case SLURMDB_REMOVE_ASSOC_USAGE:
+        return "SLURMDB_REMOVE_ASSOC_USAGE";
+    case SLURMDB_ADD_RES:
+        return "SLURMDB_ADD_RES";
+    case SLURMDB_REMOVE_RES:
+        return "SLURMDB_REMOVE_RES";
+    case SLURMDB_MODIFY_RES:
+        return "SLURMDB_MODIFY_RES";
+    case SLURMDB_REMOVE_QOS_USAGE:
+        return "SLURMDB_REMOVE_QOS_USAGE";
+    case SLURMDB_ADD_TRES:
+        return "SLURMDB_ADD_TRES";
+    case SLURMDB_UPDATE_FEDS:
+        return "SLURMDB_UPDATE_FEDS";
+    default:
+        return "unknown type";
+    }
 }
 #endif
 
@@ -2262,9 +2262,9 @@ extern int assoc_mgr_init(void *db_conn, assoc_init_args_t *args,
 			list_iterator_create(assoc_mgr_assoc_list);
 		while ((assoc = list_next(itr))) {
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-                        if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
+            if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
 			    log_assoc_rec(assoc, assoc_mgr_qos_list);
-#else			
+#else
 			log_assoc_rec(assoc, assoc_mgr_qos_list);
 #endif
 		}
@@ -3819,10 +3819,11 @@ extern int assoc_mgr_update(List update_list, bool locked)
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 	char *update_type = NULL;
-	DEF_TIMERS;
+    DEF_TIMERS;
 	
-	START_TIMER;
+    START_TIMER;
 #endif
+
 	xassert(update_list);
 	itr = list_iterator_create(update_list);
 	while ((object = list_next(itr))) {
@@ -3830,9 +3831,9 @@ extern int assoc_mgr_update(List update_list, bool locked)
 			continue;
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-		if (update_type)
-			xstrfmtcat(update_type, ", ");
-		xstrfmtcat(update_type, "%s", update_type2str(object->type));
+        if (update_type)
+            xstrfmtcat(update_type, ", ");
+        xstrfmtcat(update_type, "%s", update_type2str(object->type));
 #endif
 
 		switch(object->type) {
@@ -3887,11 +3888,10 @@ extern int assoc_mgr_update(List update_list, bool locked)
 	}
 	list_iterator_destroy(itr);
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	END_TIMER;
-	if (running_in_slurmctld()) {
-		debug("types of updating include: %s. processing time is: %s", update_type, TIME_STR);
-	}
-	
+    END_TIMER;
+    if (running_in_slurmctld()) {
+        debug("types of updating include: %s. processing time is: %s", update_type, TIME_STR);
+    }
 	if (update_type) {
 		xfree(update_type);
 	}
@@ -3923,10 +3923,9 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 	}
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	DEF_TIMERS;
-	START_TIMER;
+    DEF_TIMERS;
+    START_TIMER;
 #endif
-
 	while ((object = list_pop(update->objects))) {
 		bool update_jobs = false;
 		if (object->cluster && !slurmdbd_conf) {
@@ -4198,12 +4197,11 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 
 			if (!slurmdbd_conf && !parents_changed) {
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-                                log_flag(ASSOC, "updating assoc %u", rec->id);
-                                if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
+                log_flag(ASSOC, "updating assoc %u", rec->id);
+                if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
 				    log_assoc_rec(rec, assoc_mgr_qos_list);
 #else
-				
-				debug("updating assoc %u", rec->id);
+                debug("updating assoc %u", rec->id);
 				log_assoc_rec(rec, assoc_mgr_qos_list);
 #endif
 			}
@@ -4429,9 +4427,9 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 			while ((object = list_next(itr))) {
 				assoc_mgr_normalize_assoc_shares(object);
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-                                if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
+                if (slurm_conf.debug_flags & DEBUG_FLAG_ASSOC)
 				    log_assoc_rec(object, assoc_mgr_qos_list);
-#else				
+#else
 				log_assoc_rec(object, assoc_mgr_qos_list);
 #endif
 			}
@@ -4466,10 +4464,10 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 		init_setup.update_resvs();
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	END_TIMER;
-	if (running_in_slurmctld()) {
-		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
-	}
+    END_TIMER;
+    if (running_in_slurmctld()) {
+        debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+    }
 #endif
 
 	return rc;
@@ -4493,10 +4491,9 @@ extern int assoc_mgr_update_wckeys(slurmdb_update_object_t *update, bool locked)
 	}
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	DEF_TIMERS;
-	START_TIMER;
+    DEF_TIMERS;
+    START_TIMER;
 #endif
-
 	itr = list_iterator_create(assoc_mgr_wckey_list);
 	while ((object = list_pop(update->objects))) {
 		if (object->cluster && !slurmdbd_conf) {
@@ -4595,15 +4592,14 @@ extern int assoc_mgr_update_wckeys(slurmdb_update_object_t *update, bool locked)
 		slurmdb_destroy_wckey_rec(object);
 	}
 	list_iterator_destroy(itr);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+    END_TIMER;
+    if (running_in_slurmctld()) {
+        debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+    }
+#endif
 	if (!locked)
 		assoc_mgr_unlock(&locks);
-
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	END_TIMER;
-	if (running_in_slurmctld()) {
-		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
-	}
-#endif
 
 	return rc;
 }
@@ -4627,12 +4623,10 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 		return SLURM_SUCCESS;
 	}
 
-
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	DEF_TIMERS;
-	START_TIMER;
+    DEF_TIMERS;
+    START_TIMER;
 #endif
-
 	itr = list_iterator_create(assoc_mgr_user_list);
 	while ((object = list_pop(update->objects))) {
 		list_iterator_reset(itr);
@@ -4734,12 +4728,12 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 	list_iterator_destroy(itr);
 	if (!locked)
 		assoc_mgr_unlock(&locks);
-
+	
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	END_TIMER;
-	if (running_in_slurmctld()) {
-		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
-	}
+    END_TIMER;
+    if (running_in_slurmctld()) {
+        debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+    }
 #endif
 
 	return rc;
@@ -4769,10 +4763,9 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 	}
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	DEF_TIMERS;
-	START_TIMER;
+    DEF_TIMERS;
+    START_TIMER;
 #endif
-
 	itr = list_iterator_create(assoc_mgr_qos_list);
 	while ((object = list_pop(update->objects))) {
 		bool update_jobs = false;
@@ -5201,10 +5194,10 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 		init_setup.resize_qos_notify();
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	END_TIMER;
-	if (running_in_slurmctld()) {
-		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
-	}
+    END_TIMER;
+    if (running_in_slurmctld()) {
+        debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+    }
 #endif
 
 	return rc;
@@ -5231,10 +5224,9 @@ extern int assoc_mgr_update_res(slurmdb_update_object_t *update, bool locked)
 	}
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	DEF_TIMERS;
-	START_TIMER;
+    DEF_TIMERS;
+    START_TIMER;
 #endif
-
 	itr = list_iterator_create(assoc_mgr_res_list);
 	while ((object = list_pop(update->objects))) {
 		/* If this doesn't already have a clus_res_rec and no
@@ -5362,16 +5354,16 @@ extern int assoc_mgr_update_res(slurmdb_update_object_t *update, bool locked)
 		slurmdb_destroy_res_rec(object);
 	}
 	list_iterator_destroy(itr);
-	if (!locked)
-		assoc_mgr_unlock(&locks);
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	END_TIMER;
-	if (running_in_slurmctld()) {
-		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
-	}
+    END_TIMER;
+    if (running_in_slurmctld()) {
+        debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+    }
 #endif
 
+	if (!locked)
+		assoc_mgr_unlock(&locks);
 	return rc;
 }
 
@@ -5390,10 +5382,9 @@ extern int assoc_mgr_update_tres(slurmdb_update_object_t *update, bool locked)
 		assoc_mgr_lock(&locks);
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	DEF_TIMERS;
-	START_TIMER;
+    DEF_TIMERS;
+    START_TIMER;
 #endif
-
 	if (!assoc_mgr_tres_list) {
 		tmp_list = list_create(slurmdb_destroy_tres_rec);
 		freeit = true;
@@ -5446,16 +5437,15 @@ extern int assoc_mgr_update_tres(slurmdb_update_object_t *update, bool locked)
 	else
 		assoc_mgr_tres_list = tmp_list;
 
-	if (!locked)
-		assoc_mgr_unlock(&locks);
-
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-	END_TIMER;
-	if (running_in_slurmctld()) {
-		debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
-	}
+    END_TIMER;
+    if (running_in_slurmctld()) {
+        debug2("processing time of %s is: %s", update_type2str(update->type), TIME_STR);
+    }
 #endif
 
+	if (!locked)
+		assoc_mgr_unlock(&locks);
 	return rc;
 }
 
@@ -6047,7 +6037,17 @@ extern int load_assoc_usage(void)
 
 	safe_unpack16(&ver, buffer);
 	debug3("Version in assoc_usage header is %u", ver);
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+    /**
+     * ver shoule gather than (orig_version | meta) and
+     * less than min_orig_version. 
+     * (ver > 22_05 | META) || (ver < 20_11)
+     */
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#else
+	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#endif
+    {
 		if (!ignore_state_errors)
 			fatal("Can not recover assoc_usage state, incompatible version, got %u need >= %u <= %u, start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.",
 			      ver, SLURM_MIN_PROTOCOL_VERSION,
@@ -6157,7 +6157,17 @@ extern int load_qos_usage(void)
 
 	safe_unpack16(&ver, buffer);
 	debug3("Version in qos_usage header is %u", ver);
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+    /**
+     * ver shoule gather than (orig_version | meta) and
+     * less than min_orig_version. 
+     * (ver > 22_05 | META) || (ver < 20_11)
+     */
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#else
+	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#endif
+    {
 		if (!ignore_state_errors)
 			fatal("Can not recover qos_usage state, incompatible version, "
 			      "got %u need >= %u <= %u, start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.",
@@ -6249,7 +6259,17 @@ extern int load_assoc_mgr_last_tres(void)
 
 	safe_unpack16(&ver, buffer);
 	debug3("Version in last_tres header is %u", ver);
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+    /**
+     * ver shoule gather than (orig_version | meta) and
+     * less than min_orig_version. 
+     * (ver > 22_05 | META) || (ver < 20_11)
+     */
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#else
+	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#endif
+    {
 		if (!ignore_state_errors)
 			fatal("Can not recover last_tres state, incompatible version, got %u need >= %u <= %u, start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.",
 			      ver, SLURM_MIN_PROTOCOL_VERSION, SLURM_PROTOCOL_VERSION);
@@ -6325,7 +6345,17 @@ extern int load_assoc_mgr_state(bool only_tres)
 
 	safe_unpack16(&ver, buffer);
 	debug3("Version in assoc_mgr_state header is %u", ver);
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+    /**
+     * ver shoule gather than (orig_version | meta) and
+     * less than min_orig_version. 
+     * (ver > 22_05 | META) || (ver < 20_11)
+     */
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#else
+	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#endif
+    {
 		if (!ignore_state_errors)
 			fatal("Can not recover assoc_mgr state, incompatible version, "
 			      "got %u need >= %u <= %u, start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.",

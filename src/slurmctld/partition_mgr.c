@@ -905,7 +905,7 @@ extern int build_part_bitmap(part_record_t *part_ptr)
 				continue;
 			}
 		}
-#endif		
+#endif
 		part_ptr->total_nodes++;
 		part_ptr->total_cpus += node_ptr->cpus;
 		part_ptr->max_cpu_cnt = MAX(part_ptr->max_cpu_cnt,
@@ -921,7 +921,7 @@ extern int build_part_bitmap(part_record_t *part_ptr)
 			node_ptr->part_cnt++;
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			_build_node_partitions(node_ptr, part_ptr, true);
-#endif			
+#endif
 			xrecalloc(node_ptr->part_pptr, node_ptr->part_cnt,
 				  sizeof(part_record_t *));
 			node_ptr->part_pptr[node_ptr->part_cnt-1] = part_ptr;
@@ -999,7 +999,7 @@ static void _unlink_free_nodes(bitstr_t *old_bitmap, part_record_t *part_ptr)
 				}
 				continue;
 			}
-#endif				
+#endif					
 			node_ptr->part_cnt--;
 			for (k=j; k<node_ptr->part_cnt; k++) {
 				node_ptr->part_pptr[k] =
@@ -1198,12 +1198,7 @@ static int _dump_part_state(void *x, void *arg)
 	pack16(part_ptr->priority_tier,  buffer);
 
 	pack16(part_ptr->state_up,       buffer);
-#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
-	pack32(part_ptr->suspend_idle,	 buffer);
-#endif
-#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
-		pack16(part_ptr->meta_flags,      buffer);
-#endif
+
 	pack16(part_ptr->cr_type,        buffer);
 
 	packstr(part_ptr->allow_accounts, buffer);
@@ -1216,6 +1211,9 @@ static int _dump_part_state(void *x, void *arg)
 	packstr(part_ptr->deny_qos,      buffer);
 	/* Save orig_nodes as nodes will be built from orig_nodes */
 	packstr(part_ptr->orig_nodes, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+	pack32(part_ptr->suspend_idle,	 buffer);
+#endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
 #endif
@@ -1313,6 +1311,276 @@ int load_all_part_state(void)
 	safe_unpack_time(&time, buffer);
 
 	while (remaining_buf(buffer) > 0) {
+#ifdef __META_PROTOCOL
+        if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+            if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			    safe_unpackstr_xmalloc(&borrowed_nodes, &name_len, buffer);
+#endif	
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }
+            } else if (protocol_version >= META_2_0_PROTOCOL_VERSION) {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }
+            } else {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }
+            }
+        } else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
+            safe_unpack32(&cpu_bind, buffer);
+			safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+			safe_unpack32(&grace_time, buffer);
+			safe_unpack32(&max_time, buffer);
+			safe_unpack32(&default_time, buffer);
+			safe_unpack32(&max_cpus_per_node, buffer);
+			safe_unpack32(&max_nodes, buffer);
+			safe_unpack32(&min_nodes, buffer);
+
+			safe_unpack16(&flags,        buffer);
+			safe_unpack16(&max_share,    buffer);
+			safe_unpack16(&over_time_limit, buffer);
+			safe_unpack16(&preempt_mode, buffer);
+
+			safe_unpack16(&priority_job_factor, buffer);
+			safe_unpack16(&priority_tier, buffer);
+			if (priority_job_factor > part_max_priority)
+				part_max_priority = priority_job_factor;
+
+			safe_unpack16(&state_up, buffer);
+			safe_unpack16(&cr_type, buffer);
+
+			safe_unpackstr_xmalloc(&allow_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_groups,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&qos_char,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+					       buffer);
+			safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+			if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+			    (flags & PART_FLAG_EXC_USER_CLR)  ||
+			    (flags & PART_FLAG_HIDDEN_CLR)    ||
+			    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+			    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+			    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+			    (flags & PART_FLAG_LLN_CLR)) {
+				error("Invalid data for partition %s: flags=%u",
+				      part_name, flags);
+				error_code = EINVAL;
+			}
+        } else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+			safe_unpack32(&cpu_bind, buffer);
+			safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+			safe_unpack32(&grace_time, buffer);
+			safe_unpack32(&max_time, buffer);
+			safe_unpack32(&default_time, buffer);
+			safe_unpack32(&max_cpus_per_node, buffer);
+			safe_unpack32(&max_nodes, buffer);
+			safe_unpack32(&min_nodes, buffer);
+
+			safe_unpack16(&flags,        buffer);
+			safe_unpack16(&max_share,    buffer);
+			safe_unpack16(&over_time_limit, buffer);
+			safe_unpack16(&preempt_mode, buffer);
+
+			safe_unpack16(&priority_job_factor, buffer);
+			safe_unpack16(&priority_tier, buffer);
+			if (priority_job_factor > part_max_priority)
+				part_max_priority = priority_job_factor;
+
+			safe_unpack16(&state_up, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+            safe_unpack32(&suspend_idle, buffer);
+#endif
+			safe_unpack16(&cr_type, buffer);
+
+			safe_unpackstr_xmalloc(&allow_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_groups,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&qos_char,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+					       buffer);
+			safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_accounts,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&deny_qos,
+					       &name_len, buffer);
+			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+			if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+			    (flags & PART_FLAG_EXC_USER_CLR)  ||
+			    (flags & PART_FLAG_HIDDEN_CLR)    ||
+			    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+			    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+			    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+			    (flags & PART_FLAG_LLN_CLR)) {
+				error("Invalid data for partition %s: flags=%u",
+				      part_name, flags);
+				error_code = EINVAL;
+			}
+        }
+#else
 		if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 			safe_unpack32(&cpu_bind, buffer);
 			safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
@@ -1357,7 +1625,7 @@ int load_all_part_state(void)
 			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			safe_unpackstr_xmalloc(&borrowed_nodes, &name_len, buffer);
-#endif				
+#endif						
 			if ((flags & PART_FLAG_DEFAULT_CLR)   ||
 			    (flags & PART_FLAG_EXC_USER_CLR)  ||
 			    (flags & PART_FLAG_HIDDEN_CLR)    ||
@@ -1369,7 +1637,9 @@ int load_all_part_state(void)
 				      part_name, flags);
 				error_code = EINVAL;
 			}
-		} else {
+		}
+#endif 
+        else {
 			error("%s: protocol_version %hu not supported",
 			      __func__, protocol_version);
 			goto unpack_error;
@@ -1395,7 +1665,7 @@ int load_all_part_state(void)
 			xfree(nodes);
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			xfree(borrowed_nodes);
-#endif				
+#endif			
 			error_code = EINVAL;
 			break;
 		}
@@ -1489,8 +1759,7 @@ int load_all_part_state(void)
 			part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
 		}
 		part_ptr->standby_nodes->borrowed_nodes = borrowed_nodes;
-#endif
-
+#endif	
 		xfree(part_name);
 	}
 
@@ -1922,7 +2191,6 @@ unpack_error:
 	return EFAULT;
 }
 #endif
-
 /*
  * find_part_record - find a record for partition with specified name
  * IN name - name of the desired partition
@@ -2017,6 +2285,7 @@ void init_part_conf(void)
 		list_flush(part_list);
 	else
 		part_list = list_create(_list_delete_part);
+	
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 	if (cache_part_list)		/* delete defunct partitions */
 		list_flush(cache_part_list);
@@ -2568,7 +2837,266 @@ extern void pack_all_part(char **buffer_ptr, int *buffer_size,
  */
 void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version)
 {
+#ifdef __META_PROTOCOL
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+        if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+            if (default_part_loc == part_ptr)
+                part_ptr->flags |= PART_FLAG_DEFAULT;
+            else
+                part_ptr->flags &= (~PART_FLAG_DEFAULT);
+
+            packstr(part_ptr->name, buffer);
+            pack32(part_ptr->cpu_bind, buffer);
+            pack32(part_ptr->grace_time, buffer);
+            pack32(part_ptr->max_time, buffer);
+            pack32(part_ptr->default_time, buffer);
+            pack32(part_ptr->max_nodes_orig, buffer);
+            pack32(part_ptr->min_nodes_orig, buffer);
+            pack32(part_ptr->total_nodes, buffer);
+            pack32(part_ptr->total_cpus, buffer);
+            pack64(part_ptr->def_mem_per_cpu, buffer);
+            pack32(part_ptr->max_cpus_per_node, buffer);
+            pack64(part_ptr->max_mem_per_cpu, buffer);
+
+            pack16(part_ptr->flags,      buffer);
+            pack16(part_ptr->max_share,  buffer);
+            pack16(part_ptr->over_time_limit, buffer);
+            pack16(part_ptr->preempt_mode, buffer);
+            pack16(part_ptr->priority_job_factor, buffer);
+            pack16(part_ptr->priority_tier, buffer);
+            pack16(part_ptr->state_up, buffer);
+
+            pack16(part_ptr->cr_type, buffer);
+            pack16(part_ptr->resume_timeout, buffer);
+            pack16(part_ptr->suspend_timeout, buffer);
+            pack32(part_ptr->suspend_time, buffer);
+
+            packstr(part_ptr->allow_accounts, buffer);
+            packstr(part_ptr->allow_groups, buffer);
+            packstr(part_ptr->allow_alloc_nodes, buffer);
+            packstr(part_ptr->allow_qos, buffer);
+            packstr(part_ptr->qos_char, buffer);
+            packstr(part_ptr->alternate, buffer);
+            packstr(part_ptr->deny_accounts, buffer);
+            packstr(part_ptr->deny_qos, buffer);
+            packstr(part_ptr->nodes, buffer);
+            packstr(part_ptr->nodesets, buffer);
+            pack_bit_str_hex(part_ptr->node_bitmap, buffer);
+            packstr(part_ptr->billing_weights_str, buffer);
+            packstr(part_ptr->tres_fmt_str, buffer);
+            (void)slurm_pack_list(part_ptr->job_defaults_list,
+                        job_defaults_pack, buffer,
+                        protocol_version);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+            pack32(part_ptr->suspend_idle, buffer);
+#endif
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+		pack16(part_ptr->meta_flags,      buffer);
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+            packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
+            packstr(part_ptr->standby_nodes->nodes, buffer);
+            packstr(part_ptr->standby_nodes->parameters, buffer);
+#endif	
+        } else if (protocol_version >= META_2_0_PROTOCOL_VERSION) {
+            if (default_part_loc == part_ptr)
+                part_ptr->flags |= PART_FLAG_DEFAULT;
+            else
+                part_ptr->flags &= (~PART_FLAG_DEFAULT);
+
+            packstr(part_ptr->name, buffer);
+            pack32(part_ptr->cpu_bind, buffer);
+            pack32(part_ptr->grace_time, buffer);
+            pack32(part_ptr->max_time, buffer);
+            pack32(part_ptr->default_time, buffer);
+            pack32(part_ptr->max_nodes_orig, buffer);
+            pack32(part_ptr->min_nodes_orig, buffer);
+            pack32(part_ptr->total_nodes, buffer);
+            pack32(part_ptr->total_cpus, buffer);
+            pack64(part_ptr->def_mem_per_cpu, buffer);
+            pack32(part_ptr->max_cpus_per_node, buffer);
+            pack64(part_ptr->max_mem_per_cpu, buffer);
+
+            pack16(part_ptr->flags,      buffer);
+            pack16(part_ptr->max_share,  buffer);
+            pack16(part_ptr->over_time_limit, buffer);
+            pack16(part_ptr->preempt_mode, buffer);
+            pack16(part_ptr->priority_job_factor, buffer);
+            pack16(part_ptr->priority_tier, buffer);
+            pack16(part_ptr->state_up, buffer);
+
+            pack16(part_ptr->cr_type, buffer);
+            pack16(part_ptr->resume_timeout, buffer);
+            pack16(part_ptr->suspend_timeout, buffer);
+            pack32(part_ptr->suspend_time, buffer);
+
+            packstr(part_ptr->allow_accounts, buffer);
+            packstr(part_ptr->allow_groups, buffer);
+            packstr(part_ptr->allow_alloc_nodes, buffer);
+            packstr(part_ptr->allow_qos, buffer);
+            packstr(part_ptr->qos_char, buffer);
+            packstr(part_ptr->alternate, buffer);
+            packstr(part_ptr->deny_accounts, buffer);
+            packstr(part_ptr->deny_qos, buffer);
+            packstr(part_ptr->nodes, buffer);
+            packstr(part_ptr->nodesets, buffer);
+            pack_bit_str_hex(part_ptr->node_bitmap, buffer);
+            packstr(part_ptr->billing_weights_str, buffer);
+            packstr(part_ptr->tres_fmt_str, buffer);
+            (void)slurm_pack_list(part_ptr->job_defaults_list,
+                        job_defaults_pack, buffer,
+                        protocol_version);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+            pack32(part_ptr->suspend_idle, buffer);
+#endif
+        } else {
+            if (default_part_loc == part_ptr)
+                part_ptr->flags |= PART_FLAG_DEFAULT;
+            else
+                part_ptr->flags &= (~PART_FLAG_DEFAULT);
+
+            packstr(part_ptr->name, buffer);
+            pack32(part_ptr->cpu_bind, buffer);
+            pack32(part_ptr->grace_time, buffer);
+            pack32(part_ptr->max_time, buffer);
+            pack32(part_ptr->default_time, buffer);
+            pack32(part_ptr->max_nodes_orig, buffer);
+            pack32(part_ptr->min_nodes_orig, buffer);
+            pack32(part_ptr->total_nodes, buffer);
+            pack32(part_ptr->total_cpus, buffer);
+            pack64(part_ptr->def_mem_per_cpu, buffer);
+            pack32(part_ptr->max_cpus_per_node, buffer);
+            pack64(part_ptr->max_mem_per_cpu, buffer);
+
+            pack16(part_ptr->flags,      buffer);
+            pack16(part_ptr->max_share,  buffer);
+            pack16(part_ptr->over_time_limit, buffer);
+            pack16(part_ptr->preempt_mode, buffer);
+            pack16(part_ptr->priority_job_factor, buffer);
+            pack16(part_ptr->priority_tier, buffer);
+            pack16(part_ptr->state_up, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+            pack32(part_ptr->suspend_idle, buffer);
+#endif
+
+            pack16(part_ptr->cr_type, buffer);
+            pack16(part_ptr->resume_timeout, buffer);
+            pack16(part_ptr->suspend_timeout, buffer);
+            pack32(part_ptr->suspend_time, buffer);
+
+            packstr(part_ptr->allow_accounts, buffer);
+            packstr(part_ptr->allow_groups, buffer);
+            packstr(part_ptr->allow_alloc_nodes, buffer);
+            packstr(part_ptr->allow_qos, buffer);
+            packstr(part_ptr->qos_char, buffer);
+            packstr(part_ptr->alternate, buffer);
+            packstr(part_ptr->deny_accounts, buffer);
+            packstr(part_ptr->deny_qos, buffer);
+            packstr(part_ptr->nodes, buffer);
+            packstr(part_ptr->nodesets, buffer);
+            pack_bit_str_hex(part_ptr->node_bitmap, buffer);
+            packstr(part_ptr->billing_weights_str, buffer);
+            packstr(part_ptr->tres_fmt_str, buffer);
+            (void)slurm_pack_list(part_ptr->job_defaults_list,
+                        job_defaults_pack, buffer,
+                        protocol_version);
+        }
+    } else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
+        if (default_part_loc == part_ptr)
+            part_ptr->flags |= PART_FLAG_DEFAULT;
+        else
+            part_ptr->flags &= (~PART_FLAG_DEFAULT);
+
+        packstr(part_ptr->name, buffer);
+        pack32(part_ptr->cpu_bind, buffer);
+        pack32(part_ptr->grace_time, buffer);
+        pack32(part_ptr->max_time, buffer);
+        pack32(part_ptr->default_time, buffer);
+        pack32(part_ptr->max_nodes_orig, buffer);
+        pack32(part_ptr->min_nodes_orig, buffer);
+        pack32(part_ptr->total_nodes, buffer);
+        pack32(part_ptr->total_cpus, buffer);
+        pack64(part_ptr->def_mem_per_cpu, buffer);
+        pack32(part_ptr->max_cpus_per_node, buffer);
+        pack64(part_ptr->max_mem_per_cpu, buffer);
+
+        pack16(part_ptr->flags,      buffer);
+        pack16(part_ptr->max_share,  buffer);
+        pack16(part_ptr->over_time_limit, buffer);
+        pack16(part_ptr->preempt_mode, buffer);
+        pack16(part_ptr->priority_job_factor, buffer);
+        pack16(part_ptr->priority_tier, buffer);
+        pack16(part_ptr->state_up, buffer);
+        
+        pack16(part_ptr->cr_type, buffer);
+        pack16(part_ptr->resume_timeout, buffer);
+        pack16(part_ptr->suspend_timeout, buffer);
+        pack32(part_ptr->suspend_time, buffer);
+
+        packstr(part_ptr->allow_accounts, buffer);
+        packstr(part_ptr->allow_groups, buffer);
+        packstr(part_ptr->allow_alloc_nodes, buffer);
+        packstr(part_ptr->allow_qos, buffer);
+        packstr(part_ptr->qos_char, buffer);
+        packstr(part_ptr->alternate, buffer);
+        packstr(part_ptr->deny_accounts, buffer);
+        packstr(part_ptr->deny_qos, buffer);
+        packstr(part_ptr->nodes, buffer);
+        pack_bit_str_hex(part_ptr->node_bitmap, buffer);
+        packstr(part_ptr->billing_weights_str, buffer);
+        packstr(part_ptr->tres_fmt_str, buffer);
+        (void)slurm_pack_list(part_ptr->job_defaults_list,
+                    job_defaults_pack, buffer,
+                    protocol_version);
+    } else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+        if (default_part_loc == part_ptr)
+            part_ptr->flags |= PART_FLAG_DEFAULT;
+        else
+            part_ptr->flags &= (~PART_FLAG_DEFAULT);
+
+        packstr(part_ptr->name, buffer);
+        pack32(part_ptr->cpu_bind, buffer);
+        pack32(part_ptr->grace_time, buffer);
+        pack32(part_ptr->max_time, buffer);
+        pack32(part_ptr->default_time, buffer);
+        pack32(part_ptr->max_nodes_orig, buffer);
+        pack32(part_ptr->min_nodes_orig, buffer);
+        pack32(part_ptr->total_nodes, buffer);
+        pack32(part_ptr->total_cpus, buffer);
+        pack64(part_ptr->def_mem_per_cpu, buffer);
+        pack32(part_ptr->max_cpus_per_node, buffer);
+        pack64(part_ptr->max_mem_per_cpu, buffer);
+
+        pack16(part_ptr->flags,      buffer);
+        pack16(part_ptr->max_share,  buffer);
+        pack16(part_ptr->over_time_limit, buffer);
+        pack16(part_ptr->preempt_mode, buffer);
+        pack16(part_ptr->priority_job_factor, buffer);
+        pack16(part_ptr->priority_tier, buffer);
+        pack16(part_ptr->state_up, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+        pack32(part_ptr->suspend_idle, buffer);
+#endif
+        pack16(part_ptr->cr_type, buffer);
+
+        packstr(part_ptr->allow_accounts, buffer);
+        packstr(part_ptr->allow_groups, buffer);
+        packstr(part_ptr->allow_alloc_nodes, buffer);
+        packstr(part_ptr->allow_qos, buffer);
+        packstr(part_ptr->qos_char, buffer);
+        packstr(part_ptr->alternate, buffer);
+        packstr(part_ptr->deny_accounts, buffer);
+        packstr(part_ptr->deny_qos, buffer);
+        packstr(part_ptr->nodes, buffer);
+        pack_bit_str_hex(part_ptr->node_bitmap, buffer);
+        packstr(part_ptr->billing_weights_str, buffer);
+        packstr(part_ptr->tres_fmt_str, buffer);
+        (void)slurm_pack_list(part_ptr->job_defaults_list,
+                    job_defaults_pack, buffer,
+                    protocol_version);
+    }
+#else
+    if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
 		if (default_part_loc == part_ptr)
 			part_ptr->flags |= PART_FLAG_DEFAULT;
 		else
@@ -2622,9 +3150,9 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 		pack16(part_ptr->meta_flags,      buffer);
 #endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
-            packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
-            packstr(part_ptr->standby_nodes->nodes, buffer);
-            packstr(part_ptr->standby_nodes->parameters, buffer);
+		packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
+		packstr(part_ptr->standby_nodes->nodes, buffer);
+		packstr(part_ptr->standby_nodes->parameters, buffer);
 #endif	
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		if (default_part_loc == part_ptr)
@@ -2650,11 +3178,9 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 		pack16(part_ptr->over_time_limit, buffer);
 		pack16(part_ptr->preempt_mode, buffer);
 		pack16(part_ptr->priority_job_factor, buffer);
-		pack16(part_ptr->priority_tier, buffer);
+		pack16(part_ptr->priority_tier, buffer);	
 		pack16(part_ptr->state_up, buffer);
-#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
-        pack32(part_ptr->suspend_idle, buffer);
-#endif
+
 		pack16(part_ptr->cr_type, buffer);
 		pack16(part_ptr->resume_timeout, buffer);
 		pack16(part_ptr->suspend_timeout, buffer);
@@ -2671,7 +3197,7 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 		packstr(part_ptr->nodes, buffer);
 		pack_bit_str_hex(part_ptr->node_bitmap, buffer);
 		packstr(part_ptr->billing_weights_str, buffer);
-		packstr(part_ptr->tres_fmt_str, buffer);
+		packstr(part_ptr->tres_fmt_str, buffer);	
 		(void)slurm_pack_list(part_ptr->job_defaults_list,
 				      job_defaults_pack, buffer,
 				      protocol_version);
@@ -2699,7 +3225,7 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 		pack16(part_ptr->over_time_limit, buffer);
 		pack16(part_ptr->preempt_mode, buffer);
 		pack16(part_ptr->priority_job_factor, buffer);
-		pack16(part_ptr->priority_tier, buffer);
+		pack16(part_ptr->priority_tier, buffer);	
 		pack16(part_ptr->state_up, buffer);
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
         pack32(part_ptr->suspend_idle, buffer);
@@ -2717,11 +3243,13 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 		packstr(part_ptr->nodes, buffer);
 		pack_bit_str_hex(part_ptr->node_bitmap, buffer);
 		packstr(part_ptr->billing_weights_str, buffer);
-		packstr(part_ptr->tres_fmt_str, buffer);
+		packstr(part_ptr->tres_fmt_str, buffer);		
 		(void)slurm_pack_list(part_ptr->job_defaults_list,
 				      job_defaults_pack, buffer,
 				      protocol_version);
-	} else {
+    } 
+#endif
+	else {
 		error("%s: protocol_version %hu not supported",
 		      __func__, protocol_version);
 	}
@@ -2981,7 +3509,6 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		part_ptr->meta_flags &= (~PART_METAFLAG_RBN);
 	}
 #endif
-
 	if (part_desc->state_up != NO_VAL16) {
 		info("%s: setting state_up to %u for partition %s", __func__,
 		     part_desc->state_up, part_desc->name);
@@ -3277,10 +3804,7 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		if (part_desc->nodes[0] == '\0')
 			part_ptr->nodes = NULL;	/* avoid empty string */
 		else {
-			int i;
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-			update_part_node = true;
-#endif			
+			int i;		
 			part_ptr->nodes = xstrdup(part_desc->nodes);
 			for (i = 0; part_ptr->nodes[i]; i++) {
 				if (isspace(part_ptr->nodes[i]))
@@ -3289,7 +3813,6 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		}
 		xfree(part_ptr->orig_nodes);
 		part_ptr->orig_nodes = xstrdup(part_ptr->nodes);
-
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		error_code = build_part_bitmap(part_ptr, true);
 #else
@@ -3304,11 +3827,11 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 			xfree(backup_node_list);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			update_part_node = true;
-#endif
+#endif				
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			/* update borrowed node's orig partitions */
 			_build_borrow_nodes_partitions(part_ptr);
-#endif					
+#endif
 		}
 		update_part_nodes_in_resv(part_ptr);
 		power_save_set_timeouts(NULL);
@@ -3403,7 +3926,7 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		/* The nodes in the partition have changed or a partition has been created */
 		if (update_part_node || create_flag)
 			build_sched_resource();
-#endif		
+#endif
 	}
 
 	return error_code;
@@ -3905,6 +4428,7 @@ extern int part_policy_valid_qos(part_record_t *part_ptr,
 
 	return SLURM_SUCCESS;
 }
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 
 /*

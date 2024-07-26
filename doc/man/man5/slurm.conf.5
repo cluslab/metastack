@@ -1463,6 +1463,15 @@ the highest available frequency.
 .IP
 
 .TP
+\fBHealthCheckCarryNode\fR
+Boolean yes or no. Carry nodes to computer nodes or not.
+Used to carry nodes to health check script. In health check script, use
+the environment variables SLURMD_NODE_STATE and SLURMD_NODE_REASON to
+get the status and reason information of the current node respectively.
+The Default value is no.
+.IP
+
+.TP
 \fBHealthCheckInterval\fR
 The interval in seconds between executions of \fBHealthCheckProgram\fR.
 The default value is zero, which disables execution.
@@ -1597,6 +1606,35 @@ may be specified. Supported datatypes are as follows:
 where \fI<interval>\fR is the task sampling interval in seconds
 for the jobacct_gather plugins and for task
 profiling by the acct_gather_profile plugin.
+.IP
+
+.TP
+\fBtime_window=\fI<interval>\fR
+where \fI<interval>\fR is the step sampling interval in minutes
+for the jobacct_gather plugins and specify detection time
+.IP
+
+.TP
+\fBavecpuutil=\fI<threshold>\fR
+The minimum threshold of low average CPU utilization within the 
+designated detection time (already normalized). An anomaly event 
+occurs if all CPU utilization samples collected within the 
+specified detection time consistently remain below the set avecpuutil.
+The value range is from 0 to 100.
+.IP
+
+.TP
+\fBcollect_step=\fI<number>\fR
+Enable or disable threshold-based judgment for setting job steps. 
+Currently supports batch and numeric job step detection, but not 
+extern. 0 represents turning off anomaly detection for all job steps,  
+1 enables only numeric job steps, 2 enables only batch job steps, 
+and 3 enables both batch and numeric job steps simultaneously.
+.IP
+
+.TP
+\fBdisable_job_monitor\fR
+This is to forcefully disable the anomaly collection function.
 .IP
 
 .TP
@@ -2196,14 +2234,14 @@ A restart of slurmctld is required for changes to this parameter to take effect.
 .TP
 \fBMaxJobId\fR
 The maximum job id to be used for jobs submitted to Slurm without a specific
-requested value. Job ids are unsigned 32bit integers with the first 26 bits
-reserved for local job ids and the remaining 6 bits reserved for a cluster id
+requested value. Job ids are unsigned 32bit integers with the first 29 bits
+reserved for local job ids and the remaining 3 bits reserved for a cluster id
 to identify a federated job's origin. The maximum allowed local job id is
-67,108,863 (0x3FFFFFF). The default value is 67,043,328 (0x03ff0000).
+536,870,912 (0x1FFFFFF). The default value is 536,805,376 (0x1fff0000).
 \fBMaxJobId\fR only applies to the local job id and not the federated job id.
 Job id values generated will be incremented by 1 for each subsequent job. Once
 \fBMaxJobId\fR is reached, the next job will be assigned \fBFirstJobId\fR.
-Federated jobs will always have a job ID of 67,108,865 or higher.
+Federated jobs will always have a job ID of 536,870,912 or higher.
 Also see \fBFirstJobId\fR.
 .IP
 
@@ -4719,6 +4757,12 @@ time.
 .IP
 
 .TP
+\fBnode_borrow_interval\fR
+The time interval for performing node borrowing and return checks on all partitions.
+The default value is 5 seconds.  The value is greater than 1 and not exceed 65533.
+.IP
+
+.TP
 \fBnode_reg_mem_percent=#\fR
 Percentage of memory a node is allowed to register with without being marked as
 invalid with low memory. Default is 100. For State=CLOUD nodes, the default is
@@ -4823,6 +4867,20 @@ For example, if rl_refill_period=1,rl_retry_max_period=60 is set, after the rate
 The interval at which the client sends a request to the server is 1s..3s....57s..59s..60s.
 .IP
 
+.TP
+\fBstep_pendlist_dedup\fR
+Reduce duplicate job step creation request records to improve server response performance.
+The same srun process periodically retries when there are not enough resources to create a job step.
+During retries, only the latest request information is kept in the job's step_list to reduce the 
+number of messages that need to be sent upon job completion.
+.IP
+
+.TP
+\fBstep_timeout_enhance\fR
+When the srun process successfully requests the creation of a job step but the server's response to 
+the corresponding resource request times out, the server marks the job step status as CANCELLED. 
+The srun process then re-initiates the job step creation request.
+.IP
 
 .TP
 \fBuser_resv_delete\fR
@@ -5851,6 +5909,12 @@ For use with Slurm's built\-in X11 forwarding implementation.
 If set, xauth data on the compute node will be placed in \fB~/.Xauthority\fR
 rather than in a temporary file under \fBTmpFS\fR.
 .RE
+.IP
+
+.TP
+\fBDownNodeToReg\fR
+Boolean yes or no. exclude some down* and unknown* nodes to node registration.
+Used to avoid node registration rpc message bursts. Default value is yes.
 .IP
 
 .SH "NODE CONFIGURATION"

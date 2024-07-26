@@ -181,7 +181,7 @@ static int _feature_set_state(const plugin_feature_t *feature)
 
 static List _feature_get_state(const plugin_feature_t *feature)
 {
-	char *tmp, *saveptr;
+	char *tmp = NULL, *saveptr = NULL;
 	char *output = NULL;
 	int rc = 0;
 	List result = list_create(xfree_ptr);
@@ -232,7 +232,7 @@ static int _exclusive_register(const char *listp)
 {
 	List data_list = list_create(xfree_ptr);
 	char *input = xstrdup(listp);
-	char *entry, *saveptr;
+	char *entry = NULL, *saveptr = NULL;
 
 	for (entry = strtok_r(input, ",", &saveptr); entry;
 	     entry = strtok_r(NULL, ",", &saveptr)) {
@@ -495,7 +495,7 @@ extern int node_features_p_job_valid(char *job_features)
 
 extern int node_features_p_node_set(char *active_features)
 {
-	char *tmp, *saveptr;
+	char *tmp = NULL, *saveptr = NULL;
 	char *input = NULL;
 	const plugin_feature_t *feature = NULL;
 	int rc = SLURM_ERROR;

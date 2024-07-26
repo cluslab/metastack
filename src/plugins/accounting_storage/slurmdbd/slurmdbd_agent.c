@@ -339,6 +339,11 @@ static void _load_dbd_state(void)
 				buffer = _load_dbd_rec(fd);
 			if (buffer == NULL)
 				break;
+            /**
+             * __META_PROTOCOL
+             * rpc_version is dbd.state version
+             * read old buffer and write new buffer
+             */
 			if (rpc_version != SLURM_PROTOCOL_VERSION) {
 				/* unpack and repack with new
 				 * PROTOCOL_VERSION just so we keep

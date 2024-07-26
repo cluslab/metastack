@@ -44,7 +44,6 @@
 #endif
 
 #include <pthread.h>
-
 #include "src/common/macros.h"
 #include "src/slurmctld/front_end.h"
 #include "src/slurmctld/reservation.h"
@@ -70,6 +69,7 @@ static int copy_nodes = 0;
 //static int copy_front_end = 0, copy_triggers = 0, copy_resv = 0, copy_nodes = 0, copy_parts = 0;
 static bool run_copy_thread = true;
 #endif
+
 static pthread_mutex_t state_save_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  state_save_cond = PTHREAD_COND_INITIALIZER;
 static int save_jobs = 0, save_nodes = 0, save_parts = 0;
@@ -101,6 +101,25 @@ static void copy_job_update(void)
 {
 	slurm_mutex_lock(&state_copy_lock);
 	copy_jobs++;
+	slurm_cond_broadcast(&state_copy_cond);
+	slurm_mutex_unlock(&state_copy_lock);
+}
+#endif
+
+/* Perform a status copy immediately */
+extern void real_time_state_copy(void)
+{
+	slurm_mutex_lock(&state_copy_lock);
+	copy_all_data++;
+	slurm_cond_broadcast(&state_copy_cond);
+	slurm_mutex_unlock(&state_copy_lock);
+}
+
+/* shutdown the slurmctld_state_save thread */
+extern void shutdown_state_copy(void)
+{
+	slurm_mutex_lock(&state_copy_lock);
+	run_copy_thread = false;
 	slurm_cond_broadcast(&state_copy_cond);
 	slurm_mutex_unlock(&state_copy_lock);
 }

@@ -121,6 +121,35 @@ applications having less than 10,000 tasks.
 .RE
 
 .TP
+\fB\-\-job\-monitor\fR=<\fIdatatype\fR>=<\fIinterval\fR>[,<\fIdatatype\fR>=<\threshold\fR>...]
+.RS
+.TP 12
+\fBtime_window=\fI<interval>\fR
+where \fI<interval>\fR is the step sampling interval in minutes
+for the jobacct_gather plugins and specify detection time
+.IP
+
+.TP
+\fBavecpuutil=\fI<threshold>\fR
+The minimum threshold of low average CPU utilization within the 
+designated detection time (already normalized). An anomaly event 
+occurs if all CPU utilization samples collected within the 
+specified detection time consistently remain below the set avecpuutil.
+The value range is from 0 to 100.
+.IP
+
+.TP
+\fBcollect_step=\fI<number>\fR
+Enable or disable threshold-based judgment for setting job steps. 
+Currently supports batch and numeric job step detection, but not 
+extern. 0 represents turning off anomaly detection for all job steps,  
+1 enables only numeric job steps, 2 enables only batch job steps, 
+and 3 enables both batch and numeric job steps simultaneously.
+.IP
+.RE
+.IP
+
+.TP
 \fB\-\-bb\fR=<\fIspec\fR>
 Burst buffer specification. The form of the specification is system dependent.
 Note the burst buffer may not be accessible from a login node, but require

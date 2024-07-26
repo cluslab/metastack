@@ -62,29 +62,6 @@ extern "C" {
 #include <time.h>		/* for time_t definitions */
 #include <unistd.h>
 
-/* opt: add part's visible based on account, not only group 
- * also mcs_account perf.
- */
-#ifndef __METASTACK_OPT_PART_VISIBLE
-#define __METASTACK_OPT_PART_VISIBLE
-#endif
-
-/* scontrol show job with user_list, do not pack all jobs in slurmctld. */
-#ifndef __METASTACK_OPT_SCONTROL_JOBUSER
-#define __METASTACK_OPT_SCONTROL_JOBUSER
-#endif
-
-#ifndef __METASTACK_BUG_DEBUG_GRPNODELIMIT
-#define __METASTACK_BUG_DEBUG_GRPNODELIMIT
-#endif
-
-#ifndef __METASTACK_BUG_PREEMPT_JOBCG
-#define __METASTACK_BUG_PREEMPT_JOBCG
-#endif
-
-#ifndef __METASTACK_BUG_BACKFILL_ENDLESS_LOOP
-#define __METASTACK_BUG_BACKFILL_ENDLESS_LOOP
-#endif
 /* Define slurm_addr_t below to avoid including extraneous slurm headers */
 typedef struct sockaddr_storage slurm_addr_t;
 
@@ -144,6 +121,34 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define HOST_NAME_MAX 64
 #endif
 
+#ifndef __META_PROTOCOL
+#define __META_PROTOCOL
+#endif
+
+/* opt: add part's visible based on account, not only group 
+ * also mcs_account perf.
+ */
+#ifndef __METASTACK_OPT_PART_VISIBLE
+#define __METASTACK_OPT_PART_VISIBLE
+#endif
+
+/* scontrol show job with user_list, do not pack all jobs in slurmctld. */
+#ifndef __METASTACK_OPT_SCONTROL_JOBUSER
+#define __METASTACK_OPT_SCONTROL_JOBUSER
+#endif
+
+#ifndef __METASTACK_BUG_DEBUG_GRPNODELIMIT
+#define __METASTACK_BUG_DEBUG_GRPNODELIMIT
+#endif
+
+#ifndef __METASTACK_BUG_PREEMPT_JOBCG
+#define __METASTACK_BUG_PREEMPT_JOBCG
+#endif
+
+#ifndef __METASTACK_BUG_BACKFILL_ENDLESS_LOOP
+#define __METASTACK_BUG_BACKFILL_ENDLESS_LOOP
+#endif
+
 #ifndef __METASTACK_ASSOC_HASH
 #define __METASTACK_ASSOC_HASH
 #endif
@@ -168,7 +173,6 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_OPT_RPC_USER_FIX
 #define __METASTACK_OPT_RPC_USER_FIX
 #endif
-
 #ifndef __METASTACK_OPT_PROLOG_SLURMCTLD
 #define __METASTACK_OPT_PROLOG_SLURMCTLD
 #endif
@@ -299,6 +303,15 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_RPC_RATE_LIMIT
 #endif
 
+#ifndef __METASTACK_OPT_ENV_WRITE
+#define __METASTACK_OPT_ENV_WRITE
+#endif
+
+/* Please Note to comment out same Macro in slurm_errno.h if you want to disable this feature*/
+#ifndef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#endif
+
 #ifndef __METASTACK_OPT_SACCTMGR_ADD_USER
 #define __METASTACK_OPT_SACCTMGR_ADD_USER
 #endif
@@ -311,29 +324,16 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_LIST_USER
 #endif
 
-#ifndef __METASTACK_QOS_HASH
-#define __METASTACK_QOS_HASH
-#endif
-
 #ifndef __METASTACK_BUG_MSGSIZE_FIX
 #define __METASTACK_BUG_MSGSIZE_FIX
 #endif
 
-#ifndef __METASTACK_OPT_ENV_WRITE
-#define __METASTACK_OPT_ENV_WRITE
-#endif
-
-/* Please Note to comment out same Macro in slurm_errno.h if you want to disable this feature*/
-#ifndef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
-#define __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#ifndef __METASTACK_QOS_HASH
+#define __METASTACK_QOS_HASH
 #endif
 
 #ifndef __METASTACK_OPT_REGISTRATION_FIX
 #define __METASTACK_OPT_REGISTRATION_FIX
-#endif
-
-#ifndef __METASTACK_NEW_STATE_TO_NHC
-#define __METASTACK_NEW_STATE_TO_NHC
 #endif
 
 #if (!defined __METASTACK_LOAD_ABNORMAL) && (defined __METASTACK_OPT_SSTAT_CPUUTIL)
@@ -344,6 +344,21 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_INFLUXDB_ENFORCE
 #endif
 
+#ifndef __METASTACK_MAX_JOB_ID
+#define __METASTACK_MAX_JOB_ID
+#endif
+
+#ifndef __METASTACK_BUG_GRES_BIND
+#define __METASTACK_BUG_GRES_BIND
+#endif
+
+#ifndef __METASTACK_NEW_STATE_TO_NHC
+#define __METASTACK_NEW_STATE_TO_NHC
+#endif
+
+#ifndef __METASTACK_OPT_SRUN_STEP_CREATE
+#define __METASTACK_OPT_SRUN_STEP_CREATE
+#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -360,8 +375,13 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define NO_VAL64   (0xfffffffffffffffe)
 #define NO_CONSUME_VAL64 (0xfffffffffffffffd)
 #define MAX_TASKS_PER_NODE 512
+#ifdef __METASTACK_MAX_JOB_ID
+#define MAX_JOB_ID (0x1FFFFFFF) /* bits 0-28 */
+#define MAX_FED_CLUSTERS 7
+#else
 #define MAX_JOB_ID (0x03FFFFFF) /* bits 0-25 */
 #define MAX_FED_CLUSTERS 63
+#endif
 
 /*
  * Max normal step id leaving a few for special steps like the batch and extern
@@ -2657,7 +2677,7 @@ typedef struct partition_info {
 	int32_t *node_inx;	/* list index pairs into node_table:
 				 * start_range_1, end_range_1,
 				 * start_range_2, .., -1  */
-	char *nodes;		/* list names of nodes in partition */
+	char *nodes;		/* list names of nodes in partition */	
 	char *nodesets;		/* list of nodesets used by partition */
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
 	uint16_t meta_flags;		/* see PART_NEWFLAG_* above */
@@ -2669,7 +2689,7 @@ typedef struct partition_info {
 	uint16_t priority_tier;	/* tier for scheduling and preemption */
 	char *qos_char;	        /* The partition QOS name */
 	uint16_t resume_timeout; /* time required in order to perform a node
-				  * resume operation */
+				  * resume operation */					 
 	uint16_t state_up;	/* see PARTITION_ states above */
 	uint32_t suspend_time;  /* node idle for this long before power save
 				 * mode */
@@ -4757,6 +4777,15 @@ extern int slurm_load_partitions2(time_t update_time,
  */
 extern void slurm_free_partition_info_msg(partition_info_msg_t *part_info_ptr);
 
+/*
+ * slurm_print_partition_info_msg - output information about all Slurm
+ *	partitions based upon message as loaded using slurm_load_partitions
+ * IN out - file to write to
+ * IN part_info_ptr - partitions information message pointer
+ * IN one_liner - print as a single line if true
+ */
+extern void slurm_print_partition_info_msg(FILE *out, partition_info_msg_t *part_info_ptr, int one_liner);
+
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 /*
  * slurm_print_partition_info - output information about a specific Slurm
@@ -4781,16 +4810,6 @@ extern void _slurm_print_partition_info(FILE *out,
 extern char *_slurm_sprint_partition_info(partition_info_t *part_ptr,
 					 int one_liner, int borrow_flag);
 #endif
-
-/*
- * slurm_print_partition_info_msg - output information about all Slurm
- *	partitions based upon message as loaded using slurm_load_partitions
- * IN out - file to write to
- * IN part_info_ptr - partitions information message pointer
- * IN one_liner - print as a single line if true
- */
-extern void slurm_print_partition_info_msg(FILE *out, partition_info_msg_t *part_info_ptr, int one_liner);
-
 /*
  * slurm_print_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions
@@ -4800,8 +4819,7 @@ extern void slurm_print_partition_info_msg(FILE *out, partition_info_msg_t *part
  */
 extern void slurm_print_partition_info(FILE *out,
 				       partition_info_t *part_ptr,
-				       int one_liner);
-
+				       int one_liner);			 					   
 /*
  * slurm_sprint_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions
@@ -4812,7 +4830,6 @@ extern void slurm_print_partition_info(FILE *out,
  */
 extern char *slurm_sprint_partition_info(partition_info_t *part_ptr,
 					 int one_liner);
-
 /*
  * slurm_create_partition - create a new partition, only usable by user root
  * IN part_msg - description of partition configuration

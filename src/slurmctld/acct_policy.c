@@ -4942,9 +4942,17 @@ extern time_t acct_policy_get_preemptable_time(job_record_t *job_ptr)
 	slurmdb_qos_rec_t *qos_ptr_1, *qos_ptr_2;
 	uint32_t min1, min2, conf_min;
 	time_t start = job_ptr->start_time;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	if (!para_sched) {
+		xassert(verify_lock(CONF_LOCK, READ_LOCK));
+		xassert(verify_lock(JOB_LOCK, READ_LOCK));
+	}
+	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
+#else
 	xassert(verify_lock(CONF_LOCK, READ_LOCK));
 	xassert(verify_lock(JOB_LOCK, READ_LOCK));
 	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
+#endif
 
 	acct_policy_set_qos_order(job_ptr, &qos_ptr_1, &qos_ptr_2);
 	min1 = (qos_ptr_1) ? qos_ptr_1->preempt_exempt_time : INFINITE;

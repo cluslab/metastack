@@ -431,7 +431,12 @@ static int count_nodes(bitstr_t *node_bitmap)
 {
 	int i, i_first, i_last, node_nums=0;
 	i_first = bit_ffs(node_bitmap);
-	i_last = bit_fls(node_bitmap);
+
+	if (i_first >= 0) {
+		i_last = bit_fls(node_bitmap);
+	} else {
+		i_last = i_first - 1;
+	}
 
 	for (i = i_first; i <= i_last; i++) {
 		if (bit_test(node_bitmap, i))
@@ -1130,7 +1135,7 @@ static void *_sched_agent(void *args)
 
 		lock_slurmctld(job_write_lock);		
 		if(para_sched) {
-			int i;
+			int i;			
 			para_sched_job_count = 0;
 			List* job_queues = xcalloc(resource_count, sizeof(List));
 			para_sched_parms = xcalloc(resource_count, sizeof(para_sched_parms_t));
@@ -1260,7 +1265,7 @@ extern bool deadline_ok(job_record_t *job_ptr, char *func)
 		_last_job_update(now);
 #else
 		last_job_update = now;
-#endif
+#endif		
 		job_ptr->job_state = JOB_DEADLINE;
 		job_ptr->exit_code = 1;
 		job_ptr->state_reason = FAIL_DEADLINE;
@@ -1309,7 +1314,7 @@ extern void fill_array_reasons(job_record_t *job_ptr,
 		_last_job_update(time(NULL));
 #else
 		last_job_update = time(NULL);
-#endif
+#endif		
 		debug3("%s: Setting reason of array task %pJ to %s",
 		       __func__, job_ptr,
 		       job_reason_string(job_ptr->state_reason));
@@ -1791,7 +1796,7 @@ static int _schedule(bool full_queue)
 			_last_job_update(now);
 #else
 			last_job_update = now;
-#endif
+#endif			
 		}
 		list_iterator_destroy(job_iterator);
 
@@ -1824,7 +1829,7 @@ static int _schedule(bool full_queue)
 		bit_or(avail_node_bitmap, rs_node_bitmap);
 	}
 #else
-	save_avail_node_bitmap = bit_copy(avail_node_bitmap);
+	save_avail_node_bitmap = bit_copy(avail_node_bitmap);		
 	bit_or(avail_node_bitmap, rs_node_bitmap);
 #endif	
 
@@ -2251,7 +2256,7 @@ next_task:
 					_last_job_update(now);
 #else
 					last_job_update = now;
-#endif
+#endif					
 				}
 				if (job_ptr->part_ptr == skip_part_ptr) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -2379,7 +2384,7 @@ next_task:
 				_last_job_update(now);
 #else
 				last_job_update = now;
-#endif
+#endif				
 			} else {
 				/*
 				 * Log job can not run even though we are not
@@ -2442,7 +2447,7 @@ next_task:
 				_last_job_update(now);
 #else
 				last_job_update = now;
-#endif	
+#endif				
 			}
 			assoc_mgr_unlock(&locks);
 		}
@@ -2488,7 +2493,6 @@ next_task:
 #endif			
 			continue;
 		}
-
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 		if (!job_ptr->part_ptr) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -2547,7 +2551,7 @@ next_task:
 					}
 				}
 #endif
-				do_sched_assoc_lock_unlock(false, job_ptr);						
+				do_sched_assoc_lock_unlock(false, job_ptr);	
 				do_sched_job_lock_unlock(false, job_ptr);
 				continue;				
 			}
@@ -2571,7 +2575,7 @@ next_task:
 #else
 		if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
 		    	job_ptr->details && job_ptr->details->req_node_bitmap &&				
-		    	!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap)) {				
+		    	!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap)) {		
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 						/*The requested node is added to the blacklist to ensure the priority*/
 				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
@@ -2581,10 +2585,10 @@ next_task:
 						goto fail_this_part;
 					}
 				}
-#endif	
+#endif		
 			continue;
 		}
-#endif
+#endif		
 
 #ifndef __METASTACK_NEW_HETPART_SUPPORT
 		if (!job_ptr->part_ptr) {
@@ -2629,6 +2633,7 @@ next_task:
 				     job_reason_string(job_ptr->state_reason),
 				     job_ptr->priority, job_ptr->partition);
 			fail_by_part = true;
+
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
@@ -2711,6 +2716,7 @@ next_task:
 #endif
 			}	
 #endif
+
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
 #endif				
@@ -2722,7 +2728,7 @@ next_task:
 		    SLURM_SUCCESS) {
 			job_ptr->state_reason = WAIT_LICENSES;
 			xfree(job_ptr->state_desc);
-			
+
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u.",
 				     job_ptr,
 				     job_state_string(job_ptr->job_state),
@@ -2742,7 +2748,7 @@ next_task:
 		    SLURM_SUCCESS) {
 			job_ptr->state_reason = WAIT_LICENSES;
 			xfree(job_ptr->state_desc);
-			
+
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u.",
 				     job_ptr,
 				     job_state_string(job_ptr->job_state),
@@ -2756,7 +2762,7 @@ next_task:
 				do_sched_job_lock_unlock(false, job_ptr);
 				_last_job_update(now);
 #else
-				last_job_update = now;
+				last_job_update = now;				
 #endif							
 				break;
 			}
@@ -2775,7 +2781,7 @@ next_task:
 			 * the time we consider running it. It should be
 			 * very rare. */
 			sched_info("%pJ has invalid account", job_ptr);
-			
+
 			job_ptr->state_reason = FAIL_ACCOUNT;
 			xfree(job_ptr->state_desc);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -2844,13 +2850,13 @@ skip_start:
 				     job_reason_string(job_ptr->state_reason),
 				     job_ptr->priority, job_ptr->partition);
 			fail_by_part = true;
-
 #ifdef __METASTACK_OPT_MAIN_SCHED_LICENSE			
 			/* The job request license and resources is Insufficient then this job goto fail_this_parts */ 
 			if (job_ptr->license_list) {
 				goto fail_this_part;
 			}
 #endif
+
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){	
 				/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/	
@@ -2878,6 +2884,7 @@ skip_start:
 				}
 			}
 #endif
+
 		} else if (error_code == ESLURM_BURST_BUFFER_WAIT) {
 			if (job_ptr->start_time == 0) {
 				job_ptr->start_time = last_job_sched_start;
@@ -2941,9 +2948,9 @@ skip_start:
 			xfree(job_ptr->state_desc);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			_last_job_update(now);
-#else	
+#else			
 			last_job_update = now;
-#endif
+#endif			
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u. Partition=%s.",
 				     job_ptr,
 				     job_state_string(job_ptr->job_state),
@@ -2962,9 +2969,9 @@ skip_start:
 			sched_debug3("%pJ initiated", job_ptr);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			_last_job_update(now);
-#else	
+#else			
 			last_job_update = now;
-#endif
+#endif			
 
 			/* Clear assumed rejected array status */
 			reject_array_job = NULL;
@@ -3030,9 +3037,9 @@ skip_start:
 				   job_ptr, slurm_strerror(error_code));
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			_last_job_update(now);
-#else	
+#else				   
 			last_job_update = now;
-#endif	
+#endif			
 			job_ptr->job_state = JOB_PENDING;
 			job_ptr->state_reason = FAIL_BAD_CONSTRAINTS;
 			xfree(job_ptr->state_desc);
@@ -3295,7 +3302,7 @@ extern int sort_job_queue2(void *x, void *y)
 #ifndef __METASTACK_NEW_PART_PARA_SCHED	
 	static time_t config_update = 0;
 	static bool preemption_enabled = true;
-#endif
+#endif	
 	uint32_t job_id1, job_id2;
 	uint32_t p1, p2;
 
@@ -3579,10 +3586,11 @@ static batch_job_launch_msg_t *_build_launch_job_msg(job_record_t *job_ptr,
 	return launch_msg_ptr;
 
 job_failed:
-	/* fatal or kill the job as it can never be recovered */
+	/* fatal as it can never be recovered */
 	// if (!ignore_state_errors)
 	//	fatal("%s: %s for %pJ. Check file system serving StateSaveLocation as that directory may be missing or corrupted. Start with '-i' to ignore this error and kill the afflicted jobs.",
 	//	      __func__, fail_why, job_ptr);
+	
 
 	/*kill the job as it can never be recovered */
 	error("%s: %s for %pJ. %pJ will be killed due to system error.",
@@ -3595,11 +3603,11 @@ job_failed:
 	_last_job_update(time(NULL));
 #else	
 	last_job_update = time(NULL);
-#endif
+#endif	
 	slurm_free_job_launch_msg(launch_msg_ptr);
 	/* ignore the return as job is in an unknown state anyway */
-	job_complete(job_ptr->job_id, slurm_conf.slurm_user_id, false, true, NO_VAL);
 	// job_complete(job_ptr->job_id, slurm_conf.slurm_user_id, false, false, 1);
+	job_complete(job_ptr->job_id, slurm_conf.slurm_user_id, false, true, NO_VAL);
 	return NULL;
 }
 
@@ -5492,7 +5500,13 @@ next_part:
  */
 extern void epilog_slurmctld(job_record_t *job_ptr)
 {
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	if (!para_sched) {	
+		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+	}
+#else
 	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+#endif
 
 	prep_g_epilog_slurmctld(job_ptr);
 }
@@ -5649,7 +5663,7 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 	bitstr_t *boot_node_bitmap = NULL, *feature_node_bitmap = NULL;
 	char *reboot_features = NULL;
 	uint16_t protocol_version = SLURM_PROTOCOL_VERSION;
-#ifndef __METASTACK_NEW_PART_PARA_SCHED
+#ifndef __METASTACK_NEW_PART_PARA_SCHED	
 	static bool power_save_on = false;
 	static time_t sched_update = 0;
 
@@ -5665,7 +5679,7 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 	if (!p_power_save_on &&
 #else
 	if (!power_save_on &&
-#endif
+#endif	
 	    ((slurm_conf.reboot_program == NULL) ||
 	     (slurm_conf.reboot_program[0] == '\0')))
 		return;
@@ -5747,8 +5761,8 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 		_do_reboot(p_power_save_on, feature_node_bitmap, job_ptr,
 #else
 		_do_reboot(power_save_on, feature_node_bitmap, job_ptr,
-#endif
-			reboot_features, protocol_version);
+#endif		
+			   reboot_features, protocol_version);
 
 		/*
 		 * Update node features now to avoid a race where a
@@ -5775,8 +5789,8 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 		_do_reboot(p_power_save_on, boot_node_bitmap, job_ptr, NULL,
 #else
 		_do_reboot(power_save_on, boot_node_bitmap, job_ptr, NULL,
-#endif
-			protocol_version);
+#endif		
+			   protocol_version);
 	}
 
 	xfree(reboot_features);
@@ -5833,7 +5847,13 @@ static void *_start_prolog_slurmctld_thread(void *x)
 extern void prolog_slurmctld(job_record_t *job_ptr)
 {
 	uint32_t *job_id;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	if (!para_sched) {		
+		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+	}
+#else
 	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+#endif
 
 	if (!prep_g_required(PREP_PROLOG_SLURMCTLD))
 		return;

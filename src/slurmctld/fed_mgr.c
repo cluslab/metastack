@@ -61,7 +61,11 @@
 #include "src/slurmdbd/read_config.h"
 
 #define FED_MGR_STATE_FILE       "fed_mgr_state"
+#ifdef __METASTACK_MAX_JOB_ID
+#define FED_MGR_CLUSTER_ID_BEGIN 29
+#else
 #define FED_MGR_CLUSTER_ID_BEGIN 26
+#endif
 #define TEST_REMOTE_DEP_FREQ 30 /* seconds */
 
 #define FED_SIBLING_BIT(x) ((uint64_t)1 << (x - 1))
@@ -3414,7 +3418,17 @@ static slurmdb_federation_rec_t *_state_load(char *state_save_location)
 	safe_unpack16(&ver, buffer);
 
 	debug3("Version in fed_mgr_state header is %u", ver);
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+    /**
+     * ver shoule gather than (orig_version | meta) and
+     * less than min_orig_version. 
+     * (ver > 22_05 | META) || (ver < 20_11)
+     */
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#else
+	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#endif
+    {
 		if (!ignore_state_errors)
 			fatal("Can not recover fed_mgr state, incompatible version, got %u need > %u <= %u, start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.",
 			      ver, SLURM_MIN_PROTOCOL_VERSION,
@@ -3515,6 +3529,9 @@ unpack_error:
  * Returns federated job id (<local id> + <cluster id>.
  * Bits  0-25: Local job id
  * Bits 26-31: Cluster id
+ * if __METASTACK_MAX_JOB_ID defined, then
+ * Bits  0-28: Local job id
+ * Bits 29-31: Cluster id
  */
 extern uint32_t fed_mgr_get_job_id(uint32_t orig)
 {

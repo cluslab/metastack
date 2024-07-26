@@ -1073,7 +1073,7 @@ extern void license_set_job_tres_cnt(List license_list,
 #else
 	static bool first_run = 1;
 	static slurmdb_tres_rec_t tres_rec;
-#endif
+#endif	
 	int tres_pos;
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
 
@@ -1118,6 +1118,48 @@ extern void license_set_job_tres_cnt(List license_list,
 static void _pack_license(licenses_t *lic, buf_t *buffer,
 			  uint16_t protocol_version)
 {
+#ifdef __META_PROTOCOL
+    if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+        if (protocol_version >= META_2_0_PROTOCOL_VERSION) {
+            packstr(lic->name, buffer);
+            pack32(lic->total, buffer);
+            pack32(lic->used, buffer);
+
+            pack32(lic->reserved, buffer);
+            pack8(lic->remote, buffer);
+#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
+            pack32(lic->occupied, buffer);
+#endif
+        } else {
+            packstr(lic->name, buffer);
+            pack32(lic->total, buffer);
+            pack32(lic->used, buffer);
+#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
+            pack32(lic->occupied, buffer);
+#endif
+            pack32(lic->reserved, buffer);
+            pack8(lic->remote, buffer);
+        }
+    } else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
+        packstr(lic->name, buffer);
+		pack32(lic->total, buffer);
+		pack32(lic->used, buffer);
+		pack32(lic->reserved, buffer);
+		pack8(lic->remote, buffer);
+    } else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		packstr(lic->name, buffer);
+		pack32(lic->total, buffer);
+		pack32(lic->used, buffer);
+#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
+		pack32(lic->occupied, buffer);
+#endif
+		pack32(lic->reserved, buffer);
+		pack8(lic->remote, buffer);
+	} else {
+		error("%s: protocol_version %hu not supported",
+		      __func__, protocol_version);
+	}
+#else
 	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		packstr(lic->name, buffer);
 		pack32(lic->total, buffer);
@@ -1131,6 +1173,7 @@ static void _pack_license(licenses_t *lic, buf_t *buffer,
 		error("%s: protocol_version %hu not supported",
 		      __func__, protocol_version);
 	}
+#endif
 }
 
 static void _bf_license_free_rec(void *x)

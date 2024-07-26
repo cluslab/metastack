@@ -199,6 +199,7 @@ extern void record_cache_rpc_stats(uint16_t msg_type, slurm_msg_t *msg, long del
 	slurm_mutex_unlock(&rpc_mutex);
 }
 #endif
+
 extern void record_rpc_stats(slurm_msg_t *msg, long delta)
 {
 	slurm_mutex_lock(&rpc_mutex);
@@ -346,7 +347,6 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->query_port          = conf->query_port;
 	conf_ptr->query_port_count    = conf->query_port_count;
 #endif
-
 	if (strstr(conf->job_acct_gather_type, "cgroup") ||
 	    strstr(conf->proctrack_type, "cgroup") ||
 	    strstr(conf->task_plugin, "cgroup"))
@@ -1575,6 +1575,7 @@ static void _slurm_rpc_dump_conf(slurm_msg_t * msg)
 		free_slurm_conf(&config_tbl, false);
 	}
 }
+
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 /* _slurm_rpc_dump_cache_jobs - process RPC for job state information */
 static void _slurm_rpc_dump_cache_jobs(slurm_msg_t * msg)
@@ -1961,6 +1962,7 @@ static void _slurm_rpc_dump_cache_node_single(slurm_msg_t * msg)
 }
 
 #endif
+
 /* _slurm_rpc_dump_jobs - process RPC for job state information */
 static void _slurm_rpc_dump_jobs(slurm_msg_t * msg)
 {
@@ -2438,7 +2440,6 @@ static void  _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 	}
 
 	END_TIMER2("_slurm_rpc_epilog_complete");
-
 	/* Functions below provide their own locking */
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING) && run_scheduler) {
 		/*
@@ -2815,6 +2816,63 @@ static void  _slurm_rpc_dump_batch_script(slurm_msg_t *msg)
 	}
 }
 
+#ifdef __METASTACK_OPT_SRUN_STEP_CREATE
+static bool step_timeout_enhance_conf_init(void) {
+	static time_t conf_update = 0;
+	static bool step_timeout_enhance = false;	
+
+	if (conf_update != slurm_conf.last_update) {
+		if (xstrcasestr(slurm_conf.slurmctld_params, "step_timeout_enhance")) {
+			step_timeout_enhance = true;
+			debug("%s: enable step_timeout_enhance", __func__);
+		} else {
+			step_timeout_enhance = false;
+			debug("%s: disable step_timeout_enhance", __func__);
+		}
+		conf_update = slurm_conf.last_update;
+	}
+	return step_timeout_enhance;
+}
+
+/* When a resource is requested in the job step but the response to the client's srun process
+ * timeout occurs, cancel the job step on server.
+ */
+static void _kill_step_on_msg_fail(step_complete_msg_t *req, slurm_msg_t *msg)
+{
+	static int active_rpc_cnt = 0;
+	int rc, rem;
+	uint32_t step_rc;
+	DEF_TIMERS;
+	/* Same locks as _slurm_rpc_step_complete */
+	slurmctld_lock_t job_write_lock = {
+		.job = WRITE_LOCK,
+		.node = WRITE_LOCK,
+		.fed = READ_LOCK
+	};
+
+	/* init */
+	START_TIMER;
+	error("Step creation timed out: Deallocating %ps nodes %u-%u",
+	      &req->step_id, req->range_first, req->range_last);
+
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
+		_throttle_start(&active_rpc_cnt);
+		lock_slurmctld(job_write_lock);
+	}
+
+	rc = step_partial_comp(req, msg->auth_uid, true, &rem, &step_rc);
+
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
+		unlock_slurmctld(job_write_lock);
+		_throttle_fini(&active_rpc_cnt);
+	}
+
+	END_TIMER2(__func__);
+	log_flag(STEPS, "%s: %ps rc:%s %s",
+		 __func__, &req->step_id, slurm_strerror(rc), TIME_STR);
+}
+#endif
+
 /* _slurm_rpc_job_step_create - process RPC to create/register a job step
  *	with the step_mgr */
 static void _slurm_rpc_job_step_create(slurm_msg_t * msg)
@@ -2941,6 +2999,9 @@ static void _slurm_rpc_job_step_create(slurm_msg_t * msg)
 						   &switch_job);
 		job_step_resp.switch_job = switch_job;
 
+#ifdef __METASTACK_OPT_SRUN_STEP_CREATE
+		bool step_timeout_enhance = step_timeout_enhance_conf_init();
+#endif
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
 			unlock_slurmctld(job_write_lock);
 			_throttle_fini(&active_rpc_cnt);
@@ -2950,7 +3011,25 @@ static void _slurm_rpc_job_step_create(slurm_msg_t * msg)
 		resp.protocol_version = step_rec->start_protocol_ver;
 		resp.data = &job_step_resp;
 
+#ifdef __METASTACK_OPT_SRUN_STEP_CREATE
+		if (step_timeout_enhance) {
+			if (slurm_send_node_msg(msg->conn_fd, &resp) < 0) {
+				step_complete_msg_t req;
+
+				memset(&req, 0, sizeof(req));
+				req.step_id = step_rec->step_id;
+				req.jobacct = step_rec->jobacct;
+				req.step_rc = SIGKILL;
+				req.range_first = 0;
+				req.range_last = step_layout->node_cnt - 1;
+				_kill_step_on_msg_fail(&req, msg);
+			}
+		} else {
+			slurm_send_node_msg(msg->conn_fd, &resp);
+		}
+#else
 		slurm_send_node_msg(msg->conn_fd, &resp);
+#endif		
 
 		slurm_cred_destroy(slurm_cred);
 		slurm_step_layout_destroy(step_layout);
@@ -3263,10 +3342,17 @@ static void _slurm_rpc_node_registration(slurm_msg_t *msg)
 		      msg->auth_uid);
 	}
 
-	if (msg->protocol_version != SLURM_PROTOCOL_VERSION)
+	if (msg->protocol_version != SLURM_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+        if (SLURM_PROTOCOL_VERSION & BASE_PROTOCOL_VERSION) {
+            info ("Slurmctld is META version: %u, node is: %u", 
+                        SLURM_PROTOCOL_VERSION, msg->protocol_version);
+        }
+#endif
 		info("Node %s appears to have a different version "
 		     "of Slurm than ours.  Please update at your earliest "
 		     "convenience.", node_reg_stat_msg->node_name);
+    }
 
 	if (error_code == SLURM_SUCCESS) {
 		/* do RPC call */
@@ -3849,7 +3935,7 @@ static void _slurm_rpc_reconfigure_controller(slurm_msg_t * msg)
 		}
 		in_progress = false;
 		gs_reconfig();
-		unlock_slurmctld(config_write_lock);
+		unlock_slurmctld(config_write_lock);	
 		cgroup_conf_reinit();
 		assoc_mgr_set_missing_uids();
 		slurmscriptd_reconfig();
@@ -6395,6 +6481,11 @@ static void _slurm_rpc_persist_init(slurm_msg_t *msg)
 
 	START_TIMER;
 
+    /**
+     * __META_PROTOCOL
+     * ctld connect with dbd.
+     * set conn version(persist_init->version) with ctld version(SLURM_PROTOCOL_VERSION).
+     */
 	if (persist_init->version > SLURM_PROTOCOL_VERSION)
 		persist_init->version = SLURM_PROTOCOL_VERSION;
 
