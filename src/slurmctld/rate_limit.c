@@ -58,10 +58,10 @@ static user_bucket_t *user_buckets = NULL;
 static bool rate_limit_enabled = false;
 static pthread_mutex_t rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* 
- * 30 tokens max, bucket refills 2 tokens per 1 second.
+/*
+ * 30 tokens max, bucket refills 2 tokens per 1 second
  * retry_max_period - The maximum period for the client to send a RPC request to the server when rate limit.
- * */
+ */
 static int bucket_size = 30;
 static int refill_rate = 2;
 static int refill_period = 1;
@@ -119,7 +119,6 @@ extern void rate_limit_init(void)
 			retry_max_period = tmp;
 		}
 	}
-
 
 	rate_limit_enabled = true;
 	user_buckets = xcalloc(table_size, sizeof(user_bucket_t));

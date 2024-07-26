@@ -173,7 +173,7 @@ extern void build_sched_resource(void)
 	
 	/* replace operation in func sort_job_queue2 */
 	p_preemption_enabled = slurm_preemption_enabled();
-	
+
 	/* check whether config para_sched */
 	if (!xstrcasestr(slurm_conf.sched_params, "para_sched")) 
 		return;
@@ -208,7 +208,8 @@ extern void build_sched_resource(void)
 					if(original_part_ptr[j][0] != NULL){
 						original_part_ptr[i][j] = original_part_ptr[j][0];
 						original_part_ptr[j][0] = NULL;
-						original_part_node_bitmap[j] = NULL;
+						FREE_NULL_BITMAP(original_part_node_bitmap[j]);
+						//original_part_node_bitmap[j] = NULL;
 					}
 				}
 				if((j == part_count-1) && (!check_over)){
@@ -609,6 +610,7 @@ extern int valid_standby_node_parameters(part_record_t *part_ptr)
 	}
 }
 #endif
+
 /*
  * _build_bitmaps_pre_select - recover some state for jobs and nodes prior to
  *	calling the select_* functions
@@ -635,11 +637,11 @@ static void _build_bitmaps_pre_select(void)
 			part_ptr->standby_nodes->enable = false;
 			debug("partition %s standby_nodes disable", part_ptr->name);
 		}
-#else		
+#else
 		if (build_part_bitmap(part_ptr) == ESLURM_INVALID_NODE_NAME)
 			fatal("Invalid node names in partition %s",
-					part_ptr->name);
-#endif					
+					part_ptr->name);		
+#endif
 	}
 	list_iterator_destroy(part_iterator);
 
@@ -1032,7 +1034,7 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 #ifdef __METASTACK_NEW_PART_LLS
 	if (part->lls_flag)
 		part_ptr->flags |= PART_FLAG_LLS;
-#endif
+#endif	
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 	if (part->hetpart_flag)
 		part_ptr->meta_flags |= PART_METAFLAG_HETPART;
@@ -1075,7 +1077,7 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	part_ptr->standby_nodes->parameters = xstrdup(part->standby_node_parameters);
 	part_ptr->standby_nodes->nodes = xstrdup(part->standby_nodes);
-#endif	
+#endif
 	part_ptr->orig_nodes = xstrdup(part->nodes);
 
 	if (part->billing_weights_str) {
@@ -1980,7 +1982,8 @@ int read_slurm_conf(int recover, bool reconfig)
 
 		/* store new config */
 		if (!test_config)
-			dump_config_state_lite(); }
+			dump_config_state_lite(); 
+	}
 	update_logging();
 	jobcomp_g_init(slurm_conf.job_comp_loc);
 	if (sched_g_init() != SLURM_SUCCESS) {
@@ -2085,7 +2088,7 @@ int read_slurm_conf(int recover, bool reconfig)
 		(void) load_all_front_end_state(true);
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES		
 		(void) load_all_part_borrow_nodes();
-#endif			
+#endif				
 		load_job_ret = load_all_job_state();
 		sync_job_priorities();
 	} else if (recover > 1) {	/* Load node, part & job state files */
@@ -2126,12 +2129,11 @@ int read_slurm_conf(int recover, bool reconfig)
 	error_code = MAX(error_code, rc);	/* not fatal */
 
 	(void) _sync_nodes_to_jobs(reconfig);
-	(void) sync_job_files();
+	(void) sync_job_files();	
 	_purge_old_node_state(old_node_table_ptr, old_node_record_count);
 #ifndef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES	
 	_purge_old_part_state(old_part_list, old_def_part_name);
 #endif	
-	_purge_old_part_state(old_part_list, old_def_part_name);
 	FREE_NULL_LIST(old_config_list);
 
 	reserve_port_config(slurm_conf.mpi_params);
@@ -3094,7 +3096,7 @@ static int  _restore_part_state(List old_part_list, char *old_def_part_name,
 				else
 					part_ptr->meta_flags &= (~PART_METAFLAG_RBN);
 			}
-#endif	
+#endif			
 			if (part_ptr->grace_time != old_part_ptr->grace_time) {
 				error("Partition %s GraceTime differs from slurm.conf",
 				      part_ptr->name);
@@ -3810,7 +3812,17 @@ extern int load_config_state_lite(void)
 
 	safe_unpack16(&ver, buffer);
 	debug3("Version in last_conf_lite header is %u", ver);
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+    /**
+     * ver shoule gather than (orig_version | meta) and
+     * less than min_orig_version. 
+     * (ver > 22_05 | META) || (ver < 20_11)
+     */
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#else
+	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+#endif
+    {
 		if (!ignore_state_errors)
 			fatal("Can not recover last_conf_lite, incompatible version, (%u not between %d and %d), start with '-i' to ignore this. Warning: using -i will lose the data that can't be recovered.",
 			      ver, SLURM_MIN_PROTOCOL_VERSION,
@@ -3918,3 +3930,4 @@ extern void _validate_copy_het_jobs(void)
 	list_iterator_destroy(job_iterator);
 }
 #endif
+

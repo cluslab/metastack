@@ -110,6 +110,7 @@ extern void destroy_qos_hash(qos_hash_t **qos_hash) {
 }
 #endif
 
+
 static void _free_clus_res_rec_members(slurmdb_clus_res_rec_t *clus_res)
 {
 	if (clus_res) {
@@ -2701,6 +2702,7 @@ extern void log_assoc_rec(slurmdb_assoc_rec_t *assoc_ptr,
 			  List qos_list)
 {
 	xassert(assoc_ptr);
+
 	if (get_log_level() < LOG_LEVEL_DEBUG2)
 		return;
 
@@ -3233,6 +3235,11 @@ extern int slurmdb_send_accounting_update(List update_list, char *cluster,
 	int i, rc;
 
 	// Set highest version that we can use
+    /**
+     * __META_PROTOCOL
+     * dbd send update msg to ctld.
+     * rpc_version(ctld) should never > dbd version(SLURM_PROTOCOL_VERSION)
+     */
 	if (rpc_version > SLURM_PROTOCOL_VERSION) {
 		rpc_version = SLURM_PROTOCOL_VERSION;
 	}

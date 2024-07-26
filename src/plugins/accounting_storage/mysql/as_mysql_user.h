@@ -60,10 +60,6 @@ extern List as_mysql_remove_coord(mysql_conn_t *mysql_conn, uint32_t uid,
 extern List as_mysql_get_users(mysql_conn_t *mysql_conn, uid_t uid,
 			    slurmdb_user_cond_t *user_cond);
 
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-extern int _get_user_coords(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user);
-#endif
-
 #ifdef __METASTACK_ASSOC_HASH
 
 #include "uthash.h"
@@ -85,6 +81,10 @@ extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key);
 
 /** delete hash */
 extern void destroy_assoc_hash(assoc_hash_t **assoc_hash);
+#endif
+
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+extern int _get_user_coords(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user);
 #endif
 
 #endif

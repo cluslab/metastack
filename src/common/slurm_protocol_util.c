@@ -64,9 +64,27 @@ int check_header_version(header_t * header)
 		check_version = working_cluster_rec->rpc_version;
 
 	if (slurmdbd_conf) {
+#ifdef __META_PROTOCOL
+        /**
+         * if meta 3.0
+         * != SLURM_PROTOCOL_VERSION && 
+         * != META_2_x_PROTOCOL_VERSION &&
+         * != SLURM_23_11_PROTOCOL_VERSION
+         * != SLURM_23_02_PROTOCOL_VERSION
+         * != SLURM_22_05_PROTOCOL_VERSION
+         * should check all supported META_PROTOCOL_VERSION and official version.
+         */
 		if ((header->version != SLURM_PROTOCOL_VERSION)     &&
+            (header->version != META_2_0_PROTOCOL_VERSION)  &&
+		    (header->version != SLURM_22_05_PROTOCOL_VERSION)     &&
 		    (header->version != SLURM_ONE_BACK_PROTOCOL_VERSION) &&
-		    (header->version != SLURM_MIN_PROTOCOL_VERSION)) {
+		    (header->version != SLURM_MIN_PROTOCOL_VERSION))
+#else
+        if ((header->version != SLURM_PROTOCOL_VERSION)     &&
+		    (header->version != SLURM_ONE_BACK_PROTOCOL_VERSION) &&
+		    (header->version != SLURM_MIN_PROTOCOL_VERSION))
+#endif
+        {
 			debug("unsupported RPC version %hu msg type %s(%u)",
 			      header->version, rpc_num2string(header->msg_type),
 			      header->msg_type);
@@ -87,14 +105,33 @@ int check_header_version(header_t * header)
 				break;
 			}
 		default:
+#ifdef __META_PROTOCOL
+            /**
+             * if meta 3.0
+             * != SLURM_PROTOCOL_VERSION && 
+             * != META_2_x_PROTOCOL_VERSION &&
+             * != SLURM_23_11_PROTOCOL_VERSION
+             * != SLURM_23_02_PROTOCOL_VERSION
+             * != SLURM_22_05_PROTOCOL_VERSION
+             * should check all supported META_PROTOCOL_VERSION and official version.
+             */
+			if ((header->version != SLURM_PROTOCOL_VERSION)     &&
+                (header->version != META_2_0_PROTOCOL_VERSION)  &&
+				(header->version != SLURM_22_05_PROTOCOL_VERSION)     &&
+				(header->version != SLURM_ONE_BACK_PROTOCOL_VERSION) &&
+				(header->version != SLURM_MIN_PROTOCOL_VERSION)) 
+#else
 			if ((header->version != SLURM_PROTOCOL_VERSION)     &&
 			    (header->version !=
 			     SLURM_ONE_BACK_PROTOCOL_VERSION) &&
-			    (header->version != SLURM_MIN_PROTOCOL_VERSION)) {
+			    (header->version != SLURM_MIN_PROTOCOL_VERSION)) 
+#endif
+            {
 				debug("Unsupported RPC version %hu "
 				      "msg type %s(%u)", header->version,
 				      rpc_num2string(header->msg_type),
 				      header->msg_type);
+
 				slurm_seterrno_ret(
 					SLURM_PROTOCOL_VERSION_ERROR);
 			}

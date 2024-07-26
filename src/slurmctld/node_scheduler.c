@@ -2342,6 +2342,11 @@ try_sched:
 		error_code = ESLURM_REQUESTED_NODE_CONFIG_UNAVAILABLE;
 	} else if (!runable_avail && !nodes_busy) {
 		error_code = ESLURM_NODE_NOT_AVAIL;
+#ifdef __METASTACK_BUG_GRES_BIND
+	} else if (!runable_avail && !bit_overlap(possible_bitmap, up_node_bitmap)) {
+		debug("%s: JobId=%u bit_overlap mismatch, unable to run", __func__, job_ptr->job_id);
+		error_code = ESLURM_NODE_NOT_AVAIL;
+#endif		
 	} else if (job_ptr->details->req_node_bitmap &&
 		   bit_overlap_any(job_ptr->details->req_node_bitmap,
 				   rs_node_bitmap)) {

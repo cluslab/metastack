@@ -1792,6 +1792,7 @@ extern select_nodeinfo_t *select_p_select_nodeinfo_copy(select_nodeinfo_t *nodei
 
 #endif
 
+
 extern int select_p_select_nodeinfo_pack(select_nodeinfo_t *nodeinfo,
 					 buf_t *buffer, uint16_t protocol_version)
 {
@@ -1841,7 +1842,7 @@ extern int select_p_select_nodeinfo_set_all(void)
 {
 	int i;
 	static time_t last_set_all = 0;
-	node_record_t *node_ptr;
+	node_record_t *node_ptr = NULL;
 
 	if (scheduling_disabled)
 		return other_select_nodeinfo_set_all();

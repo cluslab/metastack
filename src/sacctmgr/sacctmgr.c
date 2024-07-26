@@ -98,6 +98,10 @@ int main(int argc, char **argv)
 		{"help",     0, 0, 'h'},
 		{"usage",    0, 0, 'h'},
 		{"immediate",0, 0, 'i'},
+#ifdef __METASTACK_OPT_LIST_USER
+		{"noparentlimits",0, 0, 'y'},
+		{"nosort",0, 0, 'z'},
+#endif
 		{"noheader",0, 0, 'n'},
 		{"oneliner", 0, 0, 'o'},
 		{"parsable", 0, 0, 'p'},
@@ -107,10 +111,6 @@ int main(int argc, char **argv)
 		{"associations", 0, 0, 's'},
 		{"verbose",  0, 0, 'v'},
 		{"version",  0, 0, 'V'},
-#ifdef __METASTACK_OPT_LIST_USER
-		{"noparentlimits",0, 0, 'y'},
-		{"nosort",0, 0, 'z'},
-#endif
 		{NULL,       0, 0, 0}
 	};
 
@@ -131,6 +131,7 @@ int main(int argc, char **argv)
 	log_init("sacctmgr", opts, SYSLOG_FACILITY_DAEMON, NULL);
 
 #ifdef __METASTACK_OPT_LIST_USER
+
 	if (getenv("SACCTMGR_NO_PARENTLIMITS")) {
 		no_get_parent_limits = 1;
 	}
@@ -157,6 +158,14 @@ int main(int argc, char **argv)
 		case (int)'i':
 			rollback_flag = 0;
 			break;
+#ifdef __METASTACK_OPT_LIST_USER
+		case (int)'y':
+			no_get_parent_limits = 1;
+			break;
+		case (int)'z':
+			no_sort_assoc = 1;
+			break;
+#endif
 		case (int)'o':
 			one_liner = 1;
 			break;
@@ -188,14 +197,6 @@ int main(int argc, char **argv)
 			_print_version();
 			exit(exit_code);
 			break;
-#ifdef __METASTACK_OPT_LIST_USER
-		case (int)'y':
-			no_get_parent_limits = 1;
-			break;
-		case (int)'z':
-			no_sort_assoc = 1;
-			break;
-#endif
 		default:
 			exit_code = 1;
 			fprintf(stderr, "getopt error, returned %c\n",
@@ -745,7 +746,7 @@ static void _show_it(int argc, char **argv)
 	} else if (xstrncasecmp(argv[0], "Borrow",
 				MAX(command_len, 2)) == 0) {
 		error_code = sacctmgr_list_borrow((argc - 1), &argv[1]);
-#endif		
+#endif
 	} else if (xstrncasecmp(argv[0], "Clusters",
 				MAX(command_len, 2)) == 0) {
 		error_code = sacctmgr_list_cluster((argc - 1), &argv[1]);
@@ -791,7 +792,7 @@ static void _show_it(int argc, char **argv)
 		fprintf(stderr, "\"Account\", \"Association\", "
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			"\"Borrow\", "
-#endif		
+#endif
 			"\"Cluster\", \"Configuration\",\n\"Event\", "
 			"\"Federation\", \"Problem\", \"QOS\", \"Resource\", "
 			"\"Reservation\",\n\"RunAwayJobs\", \"Stats\", "
@@ -1194,7 +1195,7 @@ sacctmgr [<OPTION>] [<COMMAND>]                                            \n\
                                                                            \n\
   All commands entitys, and options are case-insensitive.               \n\n");
 #else
-	printf ("\
+		printf ("\
 sacctmgr [<OPTION>] [<COMMAND>]                                            \n\
     Valid <OPTION> values are:                                             \n\
      -h or --help: equivalent to \"help\" command                          \n\

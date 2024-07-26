@@ -470,21 +470,6 @@ extern void run_health_check(void)
 #endif
 	char *host_str = NULL;
 	agent_arg_t *check_agent_args = NULL;
-#ifdef __METASTACK_NEW_STATE_TO_NHC
-	node_rec_state_array_split_t **node_rec_state_array_split = xmalloc(sizeof(node_rec_state_array_split_t *));
-	node_rec_state_array_split_t *node_rec_state_array_split_args = xmalloc(sizeof(node_rec_state_array_split_t));
-	node_rec_state_array_split_args->data_size = 1;
-	node_rec_state_array_split_args->node_rec_state_array_data = xmalloc(node_rec_state_array_split_args->data_size * sizeof(node_rec_state_array_t *));
-	node_rec_state_array_t *node_rec_state_slurmd = xmalloc(sizeof(node_rec_state_array_t));
-	int actual_size = 0;
-	if (slurm_conf.conf_flags & CTL_CONF_HCN)
-	{
-		node_rec_state_slurmd->array_size = node_record_count;
-		node_rec_state_slurmd->node_rec_state_info_array = xmalloc(node_record_count * sizeof(node_rec_state_info_t));
-	} else {
-		node_rec_state_slurmd->array_size = 0;
-	}
-#endif
 
 	/* Sync plugin internal data with
 	 * node select_nodeinfo. This is important
@@ -546,6 +531,21 @@ extern void run_health_check(void)
 	check_agent_args->retry = 0;
 	check_agent_args->protocol_version = SLURM_PROTOCOL_VERSION;
 	check_agent_args->hostlist = hostlist_create(NULL);
+#ifdef __METASTACK_NEW_STATE_TO_NHC
+	node_rec_state_array_split_t **node_rec_state_array_split = xmalloc(sizeof(node_rec_state_array_split_t *));
+	node_rec_state_array_split_t *node_rec_state_array_split_args = xmalloc(sizeof(node_rec_state_array_split_t));
+	node_rec_state_array_split_args->data_size = 1;
+	node_rec_state_array_split_args->node_rec_state_array_data = xmalloc(node_rec_state_array_split_args->data_size * sizeof(node_rec_state_array_t *));
+	node_rec_state_array_t *node_rec_state_slurmd = xmalloc(sizeof(node_rec_state_array_t));
+	int actual_size = 0;
+	if (slurm_conf.conf_flags & CTL_CONF_HCN)
+	{
+		node_rec_state_slurmd->array_size = node_record_count;
+		node_rec_state_slurmd->node_rec_state_info_array = xmalloc(node_record_count * sizeof(node_rec_state_info_t));
+	} else {
+		node_rec_state_slurmd->array_size = 0;
+	}
+#endif
 	for (; base_node_loc < node_record_count; base_node_loc++) {
 		if (!(node_ptr = node_record_table_ptr[base_node_loc]))
 			continue;
@@ -696,3 +696,4 @@ extern void update_nodes_acct_gather_data(void)
 		agent_queue_request(agent_args);
 	}
 }
+

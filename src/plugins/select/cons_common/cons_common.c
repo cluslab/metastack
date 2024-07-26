@@ -1777,7 +1777,7 @@ unpack_error:
 extern int select_p_select_nodeinfo_set_all(void)
 {
 	static time_t last_set_all = 0;
-	part_res_record_t *p_ptr;
+	part_res_record_t *p_ptr = NULL;
 	node_record_t *node_ptr = NULL;
 	int i, n;
 	uint32_t alloc_cpus, alloc_cores, total_node_cores, efctv_node_cores;

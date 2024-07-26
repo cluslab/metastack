@@ -67,7 +67,6 @@
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define OPT_LONG_BORROW    0x110
 #endif
-
 /* FUNCTIONS */
 static List  _build_state_list( char* str );
 static List  _build_all_states_list( void );
@@ -339,10 +338,10 @@ extern void parse_command_line(int argc, char **argv)
 		{"all",       no_argument,       0, 'a'},
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		{"borrow",    no_argument,       0, OPT_LONG_BORROW},
-#endif	
+#endif		
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 		{"cache",	   no_argument, 	  0, OPT_LONG_CACHE},
-#endif		
+#endif
 		{"dead",      no_argument,       0, 'd'},
 		{"exact",     no_argument,       0, 'e'},
 		{"federation",no_argument,       0, OPT_LONG_FEDR},
@@ -430,7 +429,7 @@ extern void parse_command_line(int argc, char **argv)
 		case OPT_LONG_BORROW:
 			params.borrow_flag = true;
 			break;			
-#endif				
+#endif			
 		case (int)'d':
 			params.dead_nodes = true;
 			break;
@@ -564,12 +563,13 @@ extern void parse_command_line(int argc, char **argv)
 			params.mimetype = MIME_TYPE_YAML;
 			data_init(MIME_TYPE_YAML_PLUGIN, NULL);
 			break;
-		}
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 		case OPT_LONG_CACHE:
 			params.cache_query = true;
 			break;	
 #endif
+
+		}
 	}
 
 	if (params.long_output && params.format)

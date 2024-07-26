@@ -41,6 +41,12 @@ in the partition, including configuration and nodes already borrowed.
 .IP
 
 .TP
+\fB\-\-cache\fR
+When CacheQuery is configured as enable, it will cause the \fIshow\fR command
+to query partition, node, job, and step information from the cache data.
+.IP
+
+.TP
 \fB\-M\fR, \fB\-\-clusters\fR=<\fIstring\fR>
 The cluster to issue commands to. Only one cluster name may be specified.
 Note that the SlurmDBD must be up for this option to work properly.
@@ -2752,7 +2758,7 @@ Command line options will always override these settings.)
 
 .TP
 \fBSCONTROL_JOBUSERS\fR
-\fB\-F, \-\-future\fR
+\fB\-J, \-\-jobusers\fR
 .IP
 
 .TP

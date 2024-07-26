@@ -1199,7 +1199,15 @@ void slurm_cred_pack(slurm_cred_t *cred, buf_t *buffer,
 	slurm_rwlock_rdlock(&cred->mutex);
 
 	xassert(cred->buffer);
+#ifdef __META_PROTOCOL
+    /**
+     * cred->buf_version is command version (high or low)
+     * protocol_version is slurmd version
+     */
 	xassert(cred->buf_version == protocol_version);
+#else
+	xassert(cred->buf_version == protocol_version);
+#endif
 	packbuf(cred->buffer, buffer);
 
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {

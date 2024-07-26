@@ -190,6 +190,104 @@ static int _opt_node_cnt(uint32_t step_min_nodes, uint32_t step_max_nodes,
 	return target_node_cnt;
 }
 
+#ifdef __METASTACK_OPT_SRUN_STEP_CREATE
+static bool step_pendlist_dedup_conf_init(void) {
+	static time_t conf_update = 0;
+	static bool step_pendlist_dedup = false;	
+
+	if (conf_update != slurm_conf.last_update) {
+		if (xstrcasestr(slurm_conf.slurmctld_params, "step_pendlist_dedup")) {
+			step_pendlist_dedup = true;
+			debug("%s: enable step_pendlist_dedup", __func__);
+		} else {
+			step_pendlist_dedup = false;
+			debug("%s: disable step_pendlist_dedup", __func__);
+		}
+		conf_update = slurm_conf.last_update;
+	}
+	return step_pendlist_dedup;
+}
+
+/*
+ * _create_step_record_no_list - create an empty step_record for the specified job and do not add it to the step_list.
+ * IN job_ptr - pointer to job table entry to have step record added
+ * IN protocol_version - slurm protocol version of client
+ * RET a pointer to the record or NULL if error
+ * NOTE: allocates memory that should be xfreed with delete_step_record
+ */
+static step_record_t *_create_step_record_no_list(job_record_t *job_ptr,
+					  uint16_t protocol_version)
+{
+	step_record_t *step_ptr = NULL;
+
+	xassert(job_ptr);
+	/* NOTE: Reserve highest step ID values for
+	 * SLURM_EXTERN_CONT and SLURM_BATCH_SCRIPT and any other
+	 * special step that may come our way. */
+	if (job_ptr->next_step_id >= SLURM_MAX_NORMAL_STEP_ID) {
+		/* avoid step records in the accounting database */
+		info("%pJ has reached step id limit", job_ptr);
+		return NULL;
+	}
+
+	step_ptr = xmalloc(sizeof(*step_ptr));
+
+	last_job_update = time(NULL);
+	step_ptr->job_ptr    = job_ptr;
+	step_ptr->exit_code  = NO_VAL;
+	step_ptr->time_limit = INFINITE;
+	step_ptr->jobacct    = jobacctinfo_create(NULL);
+	step_ptr->requid     = -1;
+	if (protocol_version)
+		step_ptr->start_protocol_ver = protocol_version;
+	else
+		step_ptr->start_protocol_ver = job_ptr->start_protocol_ver;
+
+	step_ptr->magic = STEP_MAGIC;
+	/* Before adding to the step_list, delete the step_ptr previously created by the same srun */
+	//(void) list_append (job_ptr->step_list, step_ptr);
+
+	return step_ptr;
+}
+
+/*
+ * _find_step_record - Find specific step_record entry in the step list,
+ *		   see common/list.h for documentation
+ * - object - the step_record_t in step_list from a job_record_t
+ * - key - step_record_t
+ */
+static int _find_step_record(void *object, void *key)
+{
+	step_record_t *object_step_ptr = (step_record_t *)object;
+	step_record_t *key_step_ptr = (step_record_t *)key;
+
+	if (object_step_ptr == NULL || key_step_ptr == NULL) {
+		return 0;
+	}
+
+	if (object_step_ptr->step_id.step_id != SLURM_PENDING_STEP) {
+		return 0;
+	}
+
+	if (object_step_ptr->step_id.job_id != key_step_ptr->step_id.job_id) {
+		return 0;
+	}
+
+	/*
+	 * Based on the host/srun_pid and step_id, see if request from the same srun 
+	 * already exist in the step_list. If it exists, delete the previous record 
+	 * and add the new record to the step_list.
+	 */
+	if ((object_step_ptr->srun_pid == key_step_ptr->srun_pid) &&
+		!xstrcasecmp(key_step_ptr->host, object_step_ptr->host) &&
+		(object_step_ptr->step_id.step_id == key_step_ptr->step_id.step_id)) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+#endif
+
 /*
  * _create_step_record - create an empty step_record for the specified job.
  * IN job_ptr - pointer to job table entry to have step record added
@@ -269,7 +367,17 @@ static void _build_pending_step(job_record_t *job_ptr,
 	if ((step_specs->host == NULL) || (step_specs->port == 0))
 		return;
 
+#ifdef __METASTACK_OPT_SRUN_STEP_CREATE
+	bool step_pendlist_dedup = step_pendlist_dedup_conf_init();
+	if (step_pendlist_dedup) {
+		step_ptr = _create_step_record_no_list(job_ptr, 0);
+	} else {	
+		step_ptr = _create_step_record(job_ptr, 0);
+	}
+#else
 	step_ptr = _create_step_record(job_ptr, 0);
+#endif
+
 	if (step_ptr == NULL)
 		return;
 
@@ -283,6 +391,14 @@ static void _build_pending_step(job_record_t *job_ptr,
 	step_ptr->step_id.step_het_comp = NO_VAL;
 	step_ptr->submit_line = xstrdup(step_specs->submit_line);
 
+#ifdef __METASTACK_OPT_SRUN_STEP_CREATE
+	if (step_pendlist_dedup) {
+		list_delete_first(job_ptr->step_list, _find_step_record, step_ptr);
+		(void) list_append (job_ptr->step_list, step_ptr);
+	}
+#endif
+	debug2("%s: job:%u step_list count:%d", __func__, job_ptr->job_id, list_count(job_ptr->step_list));
+	
 	if (job_ptr->node_bitmap)
 		step_ptr->step_node_bitmap = bit_copy(job_ptr->node_bitmap);
 	step_ptr->time_last_active = time(NULL);
@@ -4533,7 +4649,13 @@ extern void step_set_alloc_tres(step_record_t *step_ptr, uint32_t node_count,
 	job_record_t *job_ptr = step_ptr->job_ptr;
 
 	xassert(step_ptr);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	if (!para_sched) {		
+		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+	}
+#else
 	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+#endif
 
 	xfree(step_ptr->tres_alloc_str);
 	xfree(step_ptr->tres_fmt_alloc_str);

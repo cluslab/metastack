@@ -4910,6 +4910,11 @@ static int _process_archive_data(char **data_in, uint32_t data_size,
 	 * older versions around here just to support super old
 	 * archive files since they don't get regenerated all the time.
 	 */
+    /**
+     * __META_PROTOCOL
+     * ver shoule gather than (orig_version | meta)
+     * (ver > 22_05 | META) || (ver < 20_11)
+     */
 	if (ver > SLURM_PROTOCOL_VERSION) {
 		error("***********************************************");
 		error("Can not recover archive file, incompatible version, got %u need <= %u",

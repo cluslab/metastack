@@ -125,7 +125,7 @@ void slurm_send_kill_job_step_message(void)
 		/* Select node for communication */
 		uint32_t comm_distance = (uint32_t)sqrt(pmixp_info_nodes());
 		uint32_t comm_nodeid = (pmixp_info_nodeid()/comm_distance)*comm_distance;
-		char* comm_hostname;
+		char* comm_hostname = NULL;
 		
 		/* Build message */
 		slurm_msg_t msg;
@@ -141,10 +141,13 @@ void slurm_send_kill_job_step_message(void)
 		msg.data        = &req;
 		slurm_msg_set_r_uid(&msg, SLURM_AUTH_UID_ANY);
 
-		if(_pmixp_job_info.hostname)
+		if(_pmixp_job_info.hostname) {
 			comm_hostname = pmixp_info_step_host(comm_nodeid);
-		else
+		}
+		
+		if ((!_pmixp_job_info.hostname) || (!comm_hostname)) {
 			goto send_to_slurmctld;
+		}
 
 		/* Get address for communication node */
 		if (slurm_conf_get_addr(comm_hostname, &msg.address, 1) == SLURM_ERROR) {
@@ -158,11 +161,13 @@ void slurm_send_kill_job_step_message(void)
 		if (!msg_rc && !rc){
 			PMIXP_DEBUG("nodes: %d, send REQUEST_CANCEL_JOB_STEP to %s succeed",
 					pmixp_info_nodes(), comm_hostname);
+			xfree(comm_hostname);				
 			return;
 		}
 		PMIXP_ERROR("nodes: %d, send REQUEST_CANCEL_JOB_STEP to %s failed, rc: %d",
 					pmixp_info_nodes(), comm_hostname, rc);
 send_to_slurmctld:
+		xfree(comm_hostname);
 		PMIXP_DEBUG("send REQUEST_CANCEL_JOB_STEP to slurmctld directly");
 		slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);
 }	

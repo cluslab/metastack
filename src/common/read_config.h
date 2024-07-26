@@ -127,7 +127,11 @@ typedef struct node_record node_record_t;
 #define DEFAULT_MAX_ARRAY_SIZE      1001
 #define DEFAULT_MAX_DBD_MSGS        10000
 #define DEFAULT_MAX_JOB_COUNT       10000
+#ifdef __METASTACK_MAX_JOB_ID
+#define DEFAULT_MAX_JOB_ID          0x1fff0000
+#else
 #define DEFAULT_MAX_JOB_ID          0x03ff0000
+#endif
 #define DEFAULT_MAX_STEP_COUNT      40000
 #define DEFAULT_MCS_PLUGIN          "mcs/none"
 #define DEFAULT_MEM_PER_CPU         0
@@ -268,7 +272,7 @@ typedef struct slurm_conf_partition {
 	uint32_t grace_time;	/* default grace time for partition */
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 	bool     hetpart_flag;	/* 1 if heterogeneous partition */
-#endif	
+#endif
 #ifdef __METASTACK_NEW_PART_RBN
 	bool     rbn_flag;	/* 1 if nodes are selected in RBN order */
 #endif
@@ -734,5 +738,6 @@ extern void slurm_conf_remove_node(char *node_name);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 extern bool update_client_port(bool cache_query);
 #endif
+
 
 #endif /* !_READ_CONFIG_H */

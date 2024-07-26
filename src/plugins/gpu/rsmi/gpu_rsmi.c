@@ -982,7 +982,7 @@ extern void gpu_p_step_hardware_init(bitstr_t *usable_gpus, char *tres_freq)
 #ifdef __METASTACK_NEW_GRES_DCU
 log_flag(GRES, "__METASTACK_NEW_GRES_DCU, tres_freq: %s", tres_freq);
 	if (strstr(tres_freq, "dcu:"))
-		return
+		return;
 #endif
 	tmp = strstr(tres_freq, "gpu:");
 	if (!tmp)
