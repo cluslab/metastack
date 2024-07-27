@@ -1,65 +1,69 @@
-metastack2.0版本发布说明
+metastack2.1版本发布说明
 
 重要提示：
-metastack 是基于 Slurm 的功能增强和性能优化的版本，metastack2.0基于Slurm-22.05.8版本进行开发。
+metastack 是基于 Slurm 的功能增强和性能优化的版本，metastack2.1基于Slurm-22.05.8版本进行开发。
 
 如果使用 slurmdbd（Slurm 数据库守护进程），则必须先更新此版本。
 
-注意：如果使用备份DBD，则必须首先启动主数据库才能进行任何数据库转换，在此之前不会启动备份。
+注意：如果使用主备DBD，则必须首先启动主数据库才能进行任何数据库转换。
 
-metastack2.0的 slurmdbd 将与 Slurm-20.11 及以上版本的 Slurm 守护程序兼容。您不需要同时更新所有集群，但是在更新其他使用slurmdbd的集群之前，首先更新slurmdbd并使其运行是非常重要的。
+metastack2.1的slurmdbd将与metastack2.0及以上版本、Slurm-20.11及以上版本的Slurm守护程序兼容。不需同时更新所有集群，但是在更新其他使用slurmdbd的集群之前，需首先更新slurmdbd并使其运行。
 
-metastack2.0可以从Slurm-20.11或Slurm-21.08版本直接升级到该版本，而不会丢失作业或其他状态信息。直接从早期版本的 Slurm 升级将导致状态信息的丢失。
+metastack2.1可以从metastack2.0及以上版本、Slurm-20.11或Slurm-21.08版本直接升级到该版本，不会丢失作业或其他状态信息。直接从早期版本的 Slurm 升级将导致状态信息的丢失。
 
-在从Slurm-22.05以及之前的任何 Slurm 版本升级到metastack2.0时，所有SPANK插件必须重新编译。
+从其他版本升级到metastack2.1时，所有SPANK插件必须重新编译。
+
 
 要点
 =====================================================================
--- 支持作业启动时间预测及启动顺序查看。
--- 支持按照分区并行调度排队作业。
--- 通过前后省略方式，自动处理默认显示的命令输出字段过长问题。
--- 修复异构作业节点乱序问题。在PMIx服务端取消hetjob组件之间节点列表重排，确保异构作业在openmpi和intelmpi下不同规模的稳定运行。
--- 通过避免重复调度（如资源配额限制）提高作业的调度效率，在多队列、多用户场景下，能支持作业数量不均衡的场景，包括队列间的作业不均衡和队列内部用户间的不均衡。
--- 优化调度流程， 配置license调度参数：“SchedulerType=sched/backfill”，“SchedulerParameters = bf_licenses”时，不影响主调度中其他作业的正常调度。
--- 将Slurm23版本新增的RPC RATE LIMIT功能迁移到metastack2.0，实现用户请求的流控机制，设定在单位时间内单用户请求量的最大值，并增加如下功能：1）当流控发生时，command端提示客户已超过流控；2）配置参数非法字符的有效性检查。
--- 支持单节点单核心作业NUMA内均衡分布。
--- 修复分区配置SelectTypeParameters=CR_CORE时，srun 指定--mem无法创建作业步的问题。
--- 支持MLU插件。
--- 新增license查询字段occupied。
--- 修复抢占策略开启时，作业退出长时间CG影响同队列后续作业正常运行的问题。
--- 修复slurmctld实时的assoc数据中，用户已用节点和实际已用节点数据不符的问题。
--- job_comp文件中添加字段Dependency、 McsLabel、 TaskCnt、 PreemptTime、 SuspendTime、 TotalSuspTime、PreSuspTime、StdIn、 StdOut、StdErr、Command、Shared、 Comment、AdminComment和ResourceNodeDetail。
--- 提取job_comp信息时，考虑处于completing状态的作业进行requeue操作。
--- 修复添加用户rpc堆积问题。
--- 对PMIx作业失败时，大量的REQUEST_CANCEL_JOB_STEP消息进行优化。
--- 支持节能队列保持部分idle节点。
--- 节能插件不会将down、drain和resv等状态节点纳入节能范围。
--- lua插件实现核存比匹配的过滤。
--- 新增spank_env插件，支持在prolog/epilog中获取自定义的环境变量。
--- 支持设置NHC超时时间。
--- slurmctld prolog重复失败5次后作业取消。
--- 支持设置IB环境变量。
--- PMIx-dUCX支持。
--- 兼容hwloc1.x版本，将L3cache等效为Socket。
--- 修复slurmstepd启动失败时日志打印丢失问题。
+-- 支持作业运行信息采集，如CPU利用率、内存使用情况等
+-- 支持异常负载作业识别与监控
+-- 支持计算节点随机调度，均衡计算节点使用率
+-- 支持分区节点资源动态调整
+-- 支持调度/查询服务分离，应对服务高负载场景
+-- 支持低版本兼容，兼容metastack低版本与slurm官方版本
+-- 优化账号/用户相关的添加、查询性能问题
+-- 优化单位时间内用户请求流量控制功能
+-- 优化部分RPC高负载场景
+-- 优化分区异构资源调度支持
+-- 优化作业提交性能
+-- 优化大批量小作业场景下作业吞吐效率
+-- 优化srun创建作业步超时场景处理
+-- 修复bug若干
 
-配置文件更改（详见相应的手册页面）
-=====================================================================
--- slurm.conf - 添加SchedulerParameters=part_repeat_job_template=N，控制避免重复调度每个分区作业模板的数量，如果设置为0或者不设置，为不启用。仅针对主调度算法。
--- slurm.conf - 添加SchedulerParameters=para_sched，控制分区之间并行调度。若所有分区节点资源不重叠，所有分区的作业可以进行各自调度；某些分区有节点资源重叠，将有节点资源重叠分区的作业放在一起做串行调度，其他分区各自调度。
--- slurm_partition.conf - 添加配置项LLS（Least Loaded Socket）。若启用该配置，LLS=YES，则在计算节点内，基于空闲的CPU数量，将各socket中的CPU均衡分配给串行作业；若不启用，LLS=NO或不配置该项，则节点内按照slurm默认分配规则进行CPU分配。
--- slurm.conf - 添加PrivateData=part_extend，以修改队列对用户的可见性。
--- slurm.conf和slurm_partition.conf - 添加配置项SuspendDefIdlePerPart=N。Slurm.conf中该配置项不仅控制每个队列默认的要保留为idle节点的数目，还控制节能功能的开关。一般情况下，如果N>0时表示配置的数值；N=0时，如果slurm_partition.conf中队列单独配置了数值，根据该数值为队列保留idle节点，否则，关闭节能；N<0时，关闭节能。
--- slurm.conf - 添加SlurmctldParameters=exclude_down_drain。不改变原SlurmctldParameters字段，在其后追加。
 
-命令更改（详见手册）
+配置文件更改（详见man page帮助手册）
 =====================================================================
--- sinfo - 统计idle节点及cpu时会将unk或者unk*状态的节点排除并放入A/I/O/T的O中。
--- sacct - 添加数据查询字段：stdout 、stderr、command和resource_node_detail。
--- sstat - 添加查询字段：CPUREALUTIL（cpu实时利用率）、CPUUTILAVE（cpu平均利用率）、MAXCPUUTIL(cpu最大利用率)、MINCPUUTIL（cpu最小利用率）。
--- squeue - 添加选项：-o %od/-O ORDER，以支持查看排队作业在队列排第几位，即知道某个排队作业之前还有多少作业在排队。
+-- slurm.conf
+    - JobAcctGatherFrequency新增配置子项time_window、avecpuutil、collect_step、disable_job_monitor
+    - SlurmctldParameters新增配置子项rl_enable、rl_retry_max_period、node_borrow_interval、step_pendlist_dedup、step_timeout_enhance
+    - DebugFlags新增配置子项Assoc
+    - 新增配置项CacheQuery、CacheQueryPort、CacheDupInterval
+    - 新增配置项DownNodeToReg、HealthCheckCarryNode
+    - 分区配置新增配置子项RBN
+    - 分区配置新增配置子项HetPart
+    - 分区配置新增配置子项StandbyNodes、StandbyNodeParameters，其中StandbyNodeParameters包含配置子项nodes_can_borrow、offline_node_state
+-- acct_gather.conf
+    - 新增配置项ProfileInfluxDBDefault，可配置task,jobmonitor
+    - 新增配置项ProfileInfluxDBWorkdir
 
-API更改
+
+命令更改（详见man page帮助手册）
 =====================================================================
--- 添加spank_env插件。
--- 添加validate_account、validate_qos函数。
+-- sinfo
+    - 新增--borrow参数
+    - 新增--cache参数
+-- squeue
+    - 新增--cache参数
+-- scontrol 
+    - 分区查询新增--borrow参数
+    - 作业/分区/节点/作业步查询新增--cache参数
+-- sacctmgr 
+    - 查询新增borrow参数
+    - 新增-y、-z参数，分别对应环境变量SACCTMGR_NO_PARENTLIMITS、SACCTMGR_NO_SORT
+-- sbatch
+    - 新增--job-monitor参数，参数可配置子项time_window、avecpuutil、collect_step
+-- sstat
+    - 新增-d参数
+-- sjinfo
+    - 新增命令sjinfo，可选参数-j、-e、-o、-m等
