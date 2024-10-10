@@ -208,6 +208,20 @@ static void _push_to_hashtbls(char *alias, char *hostname, char *address,
 			      uint64_t mem_spec_limit, slurm_addr_t *addr,
 			      bool initialized);
 
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+static int _parse_rl_config(void **dest, slurm_parser_enum_t type,
+			   const char *key, const char *value,
+			   const char *line, char **leftover);
+
+static void _destroy_rl_config(void *ptr);
+
+static int _parse_rl_users(void **dest, slurm_parser_enum_t type,
+			   const char *key, const char *value,
+			   const char *line, char **leftover);
+
+static void _destroy_rl_users(void *ptr);
+#endif
+
 s_p_options_t slurm_conf_options[] = {
 	{"AccountingStorageTRES", S_P_STRING},
 	{"AccountingStorageEnforce", S_P_STRING},
@@ -455,7 +469,10 @@ s_p_options_t slurm_conf_options[] = {
 	 _destroy_partitionname},
 	{"SlurmctldHost", S_P_ARRAY, _parse_slurmctld_host,
 	 _destroy_slurmctld_host},
-
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	{"RlConfig", S_P_ARRAY, _parse_rl_config, _destroy_rl_config},
+	{"RlUsers", S_P_ARRAY, _parse_rl_users, _destroy_rl_users},
+#endif
 	{NULL}
 };
 
@@ -540,6 +557,458 @@ static void _set_node_prefix(const char *nodenames)
 	}
 	debug3("Prefix is %s %s %d", conf_ptr->node_prefix, nodenames, i);
 }
+
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+xhash_t* rl_config_hash_table = NULL;
+rl_user_hash_t *rl_user_hash = NULL;
+
+static int _find_rl_config(void *x, void *key)
+{
+	config_key_pair_t *req = (config_key_pair_t *)x;
+	char *name = (char *)key;
+	return (!xstrcasecmp(req->name, name));
+}
+
+static int _find_rl_users(void *x, void *key)
+{
+	config_key_pair_t *req = (config_key_pair_t *)x;
+	char *usernames = (char *)key;
+	return (!xstrcasecmp(req->name, usernames));
+}
+
+static int slurm_conf_rlconfig_array(rl_config_t **config_array[])
+{
+	int count = 0;
+	rl_config_t **ptr;
+
+	if (s_p_get_array((void ***)&ptr, &count, "RlConfig", conf_hashtbl)) {
+		*config_array = ptr;
+		return count;
+	} else {
+		*config_array = NULL;
+		return 0;
+	}
+}
+
+static int slurm_conf_rlusers_array(rl_users_t **users_array[])
+{
+	int count = 0;
+	rl_users_t **ptr;
+
+	if (s_p_get_array((void ***)&ptr, &count, "RlUsers", conf_hashtbl)) {
+		*users_array = ptr;
+		return count;
+	} else {
+		*users_array = NULL;
+		return 0;
+	}
+}
+
+List rl_config_get_conf_list()
+{
+	char* key_pair_name = NULL;
+	int i, rl_config_count = 0;
+	rl_config_t *rl_config = NULL, **rl_config_array;
+	ListIterator iter = NULL;
+	List rl_config_list = NULL;
+	config_key_pair_t *key_pair = NULL;
+
+	rl_config_count = slurm_conf_rlconfig_array(&rl_config_array);
+	if (rl_config_count == 0) {
+		return NULL;
+	}	
+
+	rl_config_list = list_create(destroy_config_key_pair);
+	iter = list_iterator_create(rl_config_list);
+
+	for (i = 0; i < rl_config_count; i++) {
+		rl_config = rl_config_array[i];
+		/* incomplete configuration, not displayed */
+		if (!rl_config || (!rl_config->name) || (!rl_config->parameters)) {
+			continue;
+		}		
+		/* remove same name rl_config from rl_config_list */
+		list_iterator_reset(iter);
+
+		xstrfmtcat(key_pair_name, "RlConfig=%s", rl_config->name);
+		key_pair = (config_key_pair_t *)list_find(iter, _find_rl_config, key_pair_name);
+		if (key_pair != NULL) {
+			list_delete_ptr(rl_config_list, key_pair);
+		}
+		xfree(key_pair_name);
+		/* add to rl_config_list for show config*/
+		key_pair = xmalloc(sizeof(config_key_pair_t));
+		xstrfmtcat(key_pair->name, "RlConfig=%s", rl_config->name);
+		xstrfmtcat(key_pair->value, "Parameters=%s", rl_config->parameters);
+		list_append(rl_config_list, key_pair);
+	}
+	list_iterator_destroy(iter);
+	
+	if (!rl_config_list || (list_count(rl_config_list) == 0)) {
+		return NULL;
+	}
+
+	return rl_config_list;
+}
+
+List rl_users_get_conf_list()
+{
+	char *key_pair_name = NULL;
+	int i, rl_users_count = 0;
+	rl_users_t *rl_users = NULL, **rl_users_array;
+	ListIterator iter = NULL;
+	List rl_users_list = NULL;
+	config_key_pair_t *key_pair = NULL;
+
+	rl_users_count = slurm_conf_rlusers_array(&rl_users_array);
+	if (rl_users_count == 0) {
+		return NULL;
+	}	
+
+	rl_users_list = list_create(destroy_config_key_pair);
+	iter = list_iterator_create(rl_users_list);
+
+	for (i = 0; i < rl_users_count; i++) {
+		rl_users = rl_users_array[i];
+		/* incomplete configuration, not displayed */
+		if (!rl_users || (!rl_users->usernames) || (!rl_users->rl_config)) {
+			continue;
+		}
+		xstrfmtcat(key_pair_name, "RlUsers=%s", rl_users->usernames);		
+		/* remove same name rl_users from rl_users_list */
+		list_iterator_reset(iter);
+		key_pair = (config_key_pair_t *)list_find(iter, _find_rl_users, key_pair_name);
+		if (key_pair != NULL) {
+			list_delete_ptr(rl_users_list, key_pair);
+		}
+		xfree(key_pair_name);
+		/* add to rl_users_list for show config*/
+		key_pair = xmalloc(sizeof(config_key_pair_t));
+		xstrfmtcat(key_pair->name, "RlUsers=%s", rl_users->usernames);
+		xstrfmtcat(key_pair->value, "RlConfig=%s", rl_users->rl_config);
+		list_append(rl_users_list, key_pair);
+	}
+	list_iterator_destroy(iter);
+
+	if (!rl_users_list || (list_count(rl_users_list) == 0)) {
+		return NULL;
+	}
+
+	return rl_users_list;
+}
+
+
+static void _rl_config_record_hash_identity (void* item, const char** key,
+					uint32_t* key_len)
+{
+	rl_config_record_t *config_ptr = (rl_config_record_t *) item;
+	*key = config_ptr->name;
+	*key_len = strlen(config_ptr->name);
+}
+
+/* Free item from xhash_t. Called from function ptr */
+static void _rl_config_record_free(void *item)
+{
+	rl_config_record_t *rl_record = (rl_config_record_t *)item;
+
+	if (!rl_record)
+		return;
+
+	xfree(rl_record->name);
+	xfree(rl_record);
+}
+
+static void insert_rl_user_hash(rl_user_hash_t **user_hash, rl_user_record_t *rl_user, uint32_t user_id)
+{
+    rl_user_hash_t *entry = NULL;
+
+    if (!user_id) {
+        return;
+	}
+
+	/* find and remove the same one */
+	if (user_hash && (*user_hash)) {
+		HASH_FIND_INT(*user_hash, &user_id, entry);
+
+		if (entry) {
+			HASH_DEL(*user_hash, entry);
+			error("RlUser %s specified RlConfig more than once, latest value used", rl_user->username);
+			if (entry->rl_user) {
+				xfree(entry->rl_user->username);
+			}
+			xfree(entry->rl_user);
+			xfree(entry);
+		}
+	}
+
+	/* add to hash table */
+	entry = xmalloc(sizeof(rl_user_hash_t));
+	entry->uid = user_id;
+	entry->rl_user = rl_user;
+	HASH_ADD_INT(*user_hash, uid, entry);	
+}
+
+extern rl_user_record_t *find_rl_user_hash(rl_user_hash_t **user_hash, uint32_t user_id)
+{
+    rl_user_hash_t *entry = NULL;
+
+	if (!user_hash || !(*user_hash)) {
+		return NULL;
+	}
+
+    HASH_FIND_INT(*user_hash, &user_id, entry);
+
+	if (entry) {
+		return entry->rl_user;
+	}
+
+    return NULL;	
+}
+
+extern void destroy_rl_user_hash(rl_user_hash_t **user_hash) {
+    rl_user_hash_t *entry = NULL, *tmp = NULL;
+
+	if (!user_hash || !(*user_hash)) {
+		return;
+	}
+
+    HASH_ITER(hh, *user_hash, entry, tmp) {
+        HASH_DEL(*user_hash, entry);
+		if (entry->rl_user) {
+			xfree(entry->rl_user->username);
+		}
+		xfree(entry->rl_user);
+		xfree(entry);
+    }
+}
+
+extern char* get_limit_type_str(int limit_type)
+{
+	char* limit_type_str = NULL;
+	switch (limit_type) {
+		case 1:
+			limit_type_str = "none";
+			break;
+		case 2:
+			limit_type_str = "query";
+			break;
+		case 3:
+			limit_type_str = "all";	
+			break;
+	}
+	return limit_type_str;
+}
+
+extern void parse_limit_type(const char *parameters, int global_limit_type, int* limit_type)
+{
+	*limit_type = global_limit_type;
+	char *tmp_ptr = NULL, *tmp = NULL, *tok = NULL, *save_ptr = NULL;
+	if ((tmp_ptr = xstrcasestr(parameters, "limit_type="))) {
+		tmp = tmp_ptr + 11;
+		tok = strtok_r(tmp, ",", &save_ptr);
+		if (!tok) {
+			info("limit_type not configured, use global configuration value");
+		} else {
+			if (!strcasecmp(tok, "none")) {
+				*limit_type = 1;
+			} else if (!strcasecmp(tok, "query")) {
+				*limit_type = 2;
+			} else if (!strcasecmp(tok, "all")) {
+				*limit_type = 3;
+			} else {
+				info("limit_type configured invalid value, use global configuration value");
+			}
+		}
+	} else {
+		info("limit_type not configured, use global configuration value");
+	}
+}
+
+extern void add_rl_config_to_hash(int limit_type, int bucket_size, int refill_rate)
+{
+	int i, rl_config_count = 0;
+	char *tmp_ptr = NULL, *limit_type_str = NULL;
+	rl_config_t **rl_config_array, *rl_config = NULL;
+	rl_config_record_t *rl_record = NULL, *tmp_rl_record = NULL;
+
+	rl_config_hash_table = xhash_init(_rl_config_record_hash_identity, _rl_config_record_free);
+	rl_config_count = slurm_conf_rlconfig_array(&rl_config_array);
+	
+	for (i = 0; i < rl_config_count; i++) {
+		rl_config = rl_config_array[i];
+		/* incomplete configuration, not add to hash */
+		if (!rl_config || (!rl_config->name) || (!rl_config->parameters)) {
+			continue;
+		}
+
+		rl_record = xmalloc(sizeof(rl_config_record_t));
+		rl_record->name = xstrdup(rl_config->name);
+
+		/* Data init */
+		rl_record->bucket_size = bucket_size;
+		rl_record->refill_rate = refill_rate;
+		
+		if ((tmp_ptr = xstrcasestr(rl_config->parameters, "rl_bucket_size="))) {
+			int tmp = atoi(tmp_ptr + 15);
+			if (tmp <= 0 ) {
+				info("%s: rl_bucket_size configured invalid value, use global configuration value %d", rl_config->name, bucket_size);
+			} else {
+				rl_record->bucket_size = tmp;
+			}
+		}
+
+		if ((tmp_ptr = xstrcasestr(rl_config->parameters, "rl_refill_rate="))) {
+			int tmp = atoi(tmp_ptr + 15);
+			if (tmp <= 0 ) {
+				info("%s: rl_refill_rate configured invalid value, use global configuration value %d", rl_config->name, refill_rate);
+			} else {
+				rl_record->refill_rate = tmp;
+			}
+		}
+
+		parse_limit_type(rl_config->parameters, limit_type, &(rl_record->limit_type));
+		limit_type_str = get_limit_type_str(rl_record->limit_type);
+		/*  find from hash and remove */
+		if ((tmp_rl_record = xhash_get_str(rl_config_hash_table, rl_record->name))) {
+			xhash_delete_str(rl_config_hash_table, rl_record->name);
+			error("RlConfig %s specified more than once, latest value used", rl_record->name);
+		}
+
+		/* add to hash */
+		xhash_add(rl_config_hash_table, rl_record);
+
+		debug("RlConfig:%s, rl_bucket_size=%d, rl_refill_rate=%d, limit_type=%s",
+			rl_record->name, rl_record->bucket_size, rl_record->refill_rate, limit_type_str);
+	}
+}
+
+extern void add_rl_user_to_hash(void)
+{
+	uid_t pw_uid;
+	int i, rl_users_count = 0;
+	rl_config_record_t *rl_record = NULL;
+	rl_user_record_t *rl_user_record = NULL;
+	rl_users_t **rl_users_array, *rl_users = NULL;
+	char *tmp = NULL, *name = NULL, *save_ptr = NULL, *limit_type_str = NULL;
+
+	if ((rl_config_hash_table == NULL) || (xhash_count(rl_config_hash_table) == 0)) {
+		error("There are no entities in rl_config_hash_table, skip the parsing of RlUsers");
+		return;
+	}
+
+	rl_users_count = slurm_conf_rlusers_array(&rl_users_array);
+
+	for (i = 0; i < rl_users_count; i++) {
+		rl_users = rl_users_array[i];
+		/* incomplete configuration, not add to hash */
+		if (!rl_users || (!rl_users->usernames) || (!rl_users->rl_config)) {
+			continue;
+		}
+
+		rl_record = xhash_get_str(rl_config_hash_table, rl_users->rl_config);
+		if (rl_record == NULL) {
+			error("Can't find RlConfig %s for users %s, skip", rl_users->rl_config, rl_users->usernames);
+			continue;
+		}
+
+		tmp = xstrdup(rl_users->usernames);
+		name = strtok_r(tmp, ",", &save_ptr);
+		while (name) {
+			if (uid_from_string(name, &pw_uid) < 0) {
+				error("get uid for user %s failed, skip rate limit settings", name);
+			} else {
+				//debug("username: %s, uid: %u", name, pw_uid);
+				rl_user_record = xmalloc(sizeof(rl_user_record_t));
+				rl_user_record->uid = pw_uid;
+				rl_user_record->username = xstrdup(name);
+				rl_user_record->limit_type = rl_record->limit_type;
+				rl_user_record->bucket_size = rl_record->bucket_size;
+				rl_user_record->refill_rate = rl_record->refill_rate;
+				/* add to hash */
+				insert_rl_user_hash(&rl_user_hash, rl_user_record, pw_uid);
+
+				/* for log */
+				limit_type_str = get_limit_type_str(rl_user_record->limit_type);
+				debug("RlUser:%s, rl_bucket_size=%d, rl_refill_rate=%d, limit_type=%s",
+					rl_user_record->username, rl_user_record->bucket_size, rl_user_record->refill_rate, limit_type_str);
+			}
+			name = strtok_r(NULL, ",", &save_ptr);
+		}
+		xfree(tmp);
+	}
+}
+
+static int _parse_rl_config(void **dest, slurm_parser_enum_t type,
+			   const char *key, const char *value,
+			   const char *line, char **leftover)
+{
+	s_p_hashtbl_t *tbl = NULL;
+	rl_config_t *config = NULL;
+
+	static s_p_options_t _rl_config_options[] = {
+		{"Parameters", S_P_STRING},
+		{NULL}
+	};
+
+	tbl = s_p_hashtbl_create(_rl_config_options);
+	s_p_parse_line(tbl, *leftover, leftover);
+
+	config = xmalloc(sizeof(rl_config_t));
+	config->name = xstrdup(value);
+
+	s_p_get_string(&config->parameters, "Parameters", tbl);
+
+	s_p_hashtbl_destroy(tbl);
+	*dest = (void *)config;
+
+	return 1;	
+}
+
+static void _destroy_rl_config(void *ptr)
+{
+	rl_config_t *rl_config = (rl_config_t *)ptr;
+	if (rl_config) {
+		xfree(rl_config->name);
+		xfree(rl_config->parameters);
+		xfree(ptr);
+	}
+}
+
+static int _parse_rl_users(void **dest, slurm_parser_enum_t type,
+			   const char *key, const char *value,
+			   const char *line, char **leftover)
+{
+	s_p_hashtbl_t *tbl = NULL;
+	rl_users_t *rl_users = NULL;
+	static s_p_options_t _rl_config_options[] = {
+		{"RlConfig", S_P_STRING},
+		{NULL}
+	};
+
+	tbl = s_p_hashtbl_create(_rl_config_options);
+	s_p_parse_line(tbl, *leftover, leftover);
+
+	rl_users = xmalloc(sizeof(rl_users_t));
+	rl_users->usernames = xstrdup(value);
+
+	s_p_get_string(&rl_users->rl_config, "RlConfig", tbl);
+
+	s_p_hashtbl_destroy(tbl);
+	*dest = (void *)rl_users;
+
+	return 1;	
+}
+
+static void _destroy_rl_users(void *ptr)
+{
+	rl_users_t *rl_users = (rl_users_t *)ptr;
+	if (rl_users) {
+		xfree(rl_users->usernames);
+		xfree(rl_users->rl_config);
+		xfree(ptr);
+	}
+}
+#endif
 
 static int _parse_frontend(void **dest, slurm_parser_enum_t type,
 			   const char *key, const char *value,
@@ -3071,6 +3540,10 @@ extern void free_slurm_conf(slurm_conf_t *ctl_conf_ptr, bool purge_node_hash)
 
 	if (purge_node_hash)
 		_free_name_hashtbl();
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	FREE_NULL_LIST(ctl_conf_ptr->rl_config);
+	FREE_NULL_LIST(ctl_conf_ptr->rl_users);
+#endif
 }
 
 /*
@@ -3276,6 +3749,10 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->wait_time			= NO_VAL16;
 	xfree (ctl_conf_ptr->x11_params);
 	ctl_conf_ptr->prolog_epilog_timeout = NO_VAL16;
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	ctl_conf_ptr->rl_config = NULL;
+	ctl_conf_ptr->rl_users  = NULL;
+#endif
 
 	_free_name_hashtbl();
 
