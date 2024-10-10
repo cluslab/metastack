@@ -49,7 +49,9 @@
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/parse_config.h"
 #include "src/common/run_in_daemon.h"
-
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+#include "src/common/xhash.h"
+#endif
 extern slurm_conf_t slurm_conf;
 extern char *default_slurm_config_file;
 extern char *default_plugin_path;
@@ -203,6 +205,55 @@ typedef struct node_record node_record_t;
 /* MAX_TASKS_PER_NODE is defined in slurm.h
  */
 #define DEFAULT_MAX_TASKS_PER_NODE  MAX_TASKS_PER_NODE
+
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+typedef struct {
+	char *name;		  /* name of rate limit parameters */  
+	char *parameters; /* name of rate limit parameters */       
+} rl_config_t;
+
+typedef struct {
+    char *name;		 	/* name of rate limit parameters */    
+    int limit_type;  	/* 1: all requests no limit */
+                    	/* 2: only limit query requests */
+                     	/* 3: limit all requests */
+    int bucket_size; 	/* size of the token bucket */
+    int refill_rate; 	/* how many tokens to add to the bucket on each period. */	     
+} rl_config_record_t;
+         
+
+typedef struct {
+    char *usernames;	/* uid of this rate limit parameters */
+    char *rl_config;	/* name of rate limit parameters */   
+} rl_users_t;
+
+typedef struct {
+    uid_t uid;	
+	char *username; 		
+    int limit_type;  	/* 1: all requests no limit */
+                    	/* 2: only limit query requests */
+                     	/* 3: limit all requests */
+    int bucket_size; 	/* size of the token bucket */
+    int refill_rate; 	/* how many tokens to add to the bucket on each period. */	     
+} rl_user_record_t;
+
+typedef struct {
+    uint32_t uid;
+	rl_user_record_t *rl_user;
+    UT_hash_handle hh;
+} rl_user_hash_t;
+
+extern rl_user_hash_t *rl_user_hash;
+extern xhash_t* rl_config_hash_table;
+extern List rl_config_get_conf_list();
+extern List rl_users_get_conf_list();
+extern void add_rl_user_to_hash(void);
+extern char *get_limit_type_str(int limit_type);
+extern void destroy_rl_user_hash(rl_user_hash_t **user_hash);
+extern void add_rl_config_to_hash(int limit_type, int bucket_size, int refill_rate);
+extern void parse_limit_type(const char *parameters, int global_limit_type, int* limit_type);
+extern rl_user_record_t *find_rl_user_hash(rl_user_hash_t **user_hash, uint32_t user_id);
+#endif
 
 typedef struct slurm_conf_frontend {
 	char *allow_groups;		/* allowed group string */

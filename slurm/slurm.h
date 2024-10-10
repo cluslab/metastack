@@ -3333,6 +3333,10 @@ typedef struct {
 	uint16_t cachedup_interval; /*Data copy time interval*/ 
 	uint16_t cache_query; /*High Performance Query Switch*/
 #endif
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	void *rl_config;
+	void *rl_users;
+#endif
 } slurm_conf_t;
 
 typedef struct slurmd_status_msg {

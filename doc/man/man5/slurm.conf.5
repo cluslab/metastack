@@ -4838,6 +4838,28 @@ steady\-state RPC load established by the refill period and rate.
 .IP
 
 .TP
+\fBlimit_type\fR
+Control the RPC rate limit request type.
+.IP
+
+.RS
+.TP
+\fBquery\fR
+RPC rate limit query requests
+.IP
+
+.TP
+\fBall\fR
+RPC rate limit all requests, default value
+.IP
+
+.TP
+\fBnone\fR
+RPC rate limit nothing
+.RE
+.IP
+
+.TP
 \fBrl_refill_period=\fR
 How frequently, in seconds, in which additional tokens are added to each user
 bucket.
@@ -7344,6 +7366,41 @@ number of allocated CPUs.
 currently not used for the size of the job. If you want TRES' to play a role in
 the job's priority then refer to the PriorityWeightTRES option.
 .RE
+.IP
+
+.SH "USER RPC RATE LIMIT CONFIGURATION"
+user RPC rate limit configuration takes effect when rl_enable is set in 
+\fBSlurmctldParameters\fR. It allows defining a combination of RPC rate limit 
+parameters and applying some users to this configuration, which takes precedence
+over the corresponding RPC rate limit configuration items in \fBSlurmctldParameters\fR.
+The user RPC rate limit configuration contains the following information:
+
+.TP
+\fBRlConfig\fR
+The name of a user RPC rate limit configuration, which needs to be used together 
+with \fBParameters\fR. The items that can be set in \fBParameters\fR include 
+rl_bucket_size, rl_refill_rate, and limit_type. If any value is missing, the corresponding
+value configured in \fBSlurmctldParameters\fR or the default value will be used. Refer to 
+\fBSlurmctldParameters\fR for configuration format. If multiple configurations of the same
+user RPC rate limit configuration name exist, use the last one. Also see \fBRlUsers\fR.
+.IP
+
+.TP
+\fBRlUsers\fR
+The usernames that will use the user RPC rate limit configuration. Multiple usernames are
+separated by commas. This needs to be used together with \fBRlConfig\fR to specify the 
+corresponding user RPC rate limit configuration. If the specified configuration does not 
+exist, the value configured in \fBSlurmctldParameters\fR or the default value will be used.
+If the same user is configured with multiple user RPC rate limit configuration, use the last one.
+.nf
+Configuration example:
+.fi
+.nf
+RlConfig=rl1 Parameters=rl_bucket_size=120,rl_refill_rate=10,limit_type=query
+.fi
+.nf
+RlUsers=test1,test2 RlConfig=rl1
+.fi
 .IP
 
 .SH "PROLOG AND EPILOG SCRIPTS"

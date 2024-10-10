@@ -510,6 +510,51 @@ static void _print_config_plugin_params_list(FILE* out, List l, char *title)
 	list_iterator_destroy(itr);
 }
 
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+static void slurm_print_rl_pairs(FILE* out, void *rl_config, void *rl_users, char *title)
+{
+	bool print_rl_config = false;
+	bool print_rl_users = false;
+	ListIterator iter = NULL;
+	config_key_pair_t *key_pair = NULL;
+
+	List rl_config_list = (List)rl_config;
+	List rl_user_list = (List)rl_users;
+	
+	if (rl_config_list && list_count(rl_config_list)) {
+		print_rl_config = true;
+	}	
+
+	if (rl_user_list && list_count(rl_user_list)) {
+		print_rl_users = true;
+	}
+
+	if (!(print_rl_config || print_rl_users)) {
+		return;
+	}
+	/* show title */
+	fprintf(out, "%s", title);
+	
+	/* show RlConfig */
+	if (print_rl_config) {
+		iter = list_iterator_create(rl_config_list);
+		while ((key_pair = list_next(iter))) {
+			fprintf(out, "%-23s %s\n", key_pair->name, key_pair->value);
+		}
+		list_iterator_destroy(iter);
+	}
+
+	/* show RlUsers */
+	if (print_rl_users) {
+		iter = list_iterator_create(rl_user_list);
+		while ((key_pair = list_next(iter))) {
+			fprintf(out, "%-23s %s\n", key_pair->name, key_pair->value);
+		}
+		list_iterator_destroy(iter);
+	}
+}
+#endif
+
 /*
  * slurm_print_ctl_conf - output the contents of slurm control configuration
  *	message as loaded using slurm_load_ctl_conf()
@@ -541,6 +586,11 @@ void slurm_print_ctl_conf ( FILE* out,
 		slurm_print_key_pairs(out, ret_list, tmp_str);
 		FREE_NULL_LIST(ret_list);
 	}
+
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	slurm_print_rl_pairs(out, slurm_ctl_conf_ptr->rl_config, slurm_ctl_conf_ptr->rl_users,
+			      "\nUser RPC Rate Limit Configuration:\n");	  
+#endif
 
 	slurm_print_key_pairs(out, slurm_ctl_conf_ptr->acct_gather_conf,
 			      "\nAccount Gather Configuration:\n");
@@ -1981,6 +2031,35 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->x11_params);
 	list_append(ret_list, key_pair);
 
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+     List rl_users_list = (List)slurm_ctl_conf_ptr->rl_users;
+     List rl_config_list = (List)slurm_ctl_conf_ptr->rl_config;
+     ListIterator iter = NULL;
+     config_key_pair_t *config_key_pair = NULL;
+
+     if (rl_config_list && list_count(rl_config_list)) {
+		iter = list_iterator_create(rl_config_list);
+		while ((config_key_pair = list_next(iter))) {
+			key_pair = xmalloc(sizeof(config_key_pair_t));
+			key_pair->name = xstrdup(config_key_pair->name);
+			key_pair->value = xstrdup(config_key_pair->value);
+			list_append(ret_list, key_pair);                        
+		}
+		list_iterator_destroy(iter);
+     }
+
+     if (rl_users_list && list_count(rl_users_list)) {
+		iter = list_iterator_create(rl_users_list);
+		while ((config_key_pair = list_next(iter))) {
+			key_pair = xmalloc(sizeof(config_key_pair_t));
+			key_pair->name = xstrdup(config_key_pair->name);
+			key_pair->value = xstrdup(config_key_pair->value);
+			list_append(ret_list, key_pair);                        
+		}
+		list_iterator_destroy(iter);
+     }
+#endif
+
 	return (void *)ret_list;
 }
 
@@ -2187,6 +2266,9 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 	List proepilog_list;
 	List resconf_list;
 	List proctrac_list;
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	List rl_config_list;
+#endif
 
 	if (!config_list)
 		return;
@@ -2203,6 +2285,9 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 	proepilog_list = list_create(xfree_ptr);
 	resconf_list = list_create(xfree_ptr);
 	proctrac_list = list_create(xfree_ptr);
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	rl_config_list = list_create(xfree_ptr);
+#endif
 
 	iter = list_iterator_create(config_list);
 	while ((key_pair = list_next(iter))) {
@@ -2254,6 +2339,10 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 			    (!xstrcasecmp(key_pair->name, "SuspendProgram")) ||
 			    (!xstrcasecmp(key_pair->name, "TaskEpilog")) ||
 			    (!xstrcasecmp(key_pair->name, "TaskProlog")) ||
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+				(xstrcasestr(key_pair->name, "RlConfig")) ||
+				(xstrcasestr(key_pair->name, "RlUsers"))  ||
+#endif				
 			    (!xstrcasecmp(key_pair->name,
 					  "UnkillableStepProgram"))) {
 				/* Exceptions not be tokenized in the output */
@@ -2269,10 +2358,27 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 			if (strchr(temp, ' '))
 				temp = xstrdup_printf("%s=\"%s\"",
 						      key_pair->name, temp);
-			else
+			else {
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+				if ((xstrcasestr(key_pair->name, "RlConfig")) ||
+					(xstrcasestr(key_pair->name, "RlUsers"))) {
+					temp = xstrdup_printf("%s %s",
+								key_pair->name, temp);
+				} else
+
+#endif				
 				temp = xstrdup_printf("%s=%s",
 						      key_pair->name, temp);
+			}
 		}
+
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+		if ((xstrcasestr(key_pair->name, "RlConfig")) ||
+			(xstrcasestr(key_pair->name, "RlUsers"))) {
+			list_append(rl_config_list, temp);
+			continue;
+		}	
+#endif
 
 		if (!xstrcasecmp(key_pair->name, "ControlMachine") ||
 		    !xstrcasecmp(key_pair->name, "ControlAddr") ||
@@ -2476,6 +2582,15 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 	list_iterator_destroy(iter);
 	FREE_NULL_LIST(resconf_list);
 
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	_write_group_header (out, "USER RPC RATE LIMIT");
+	iter = list_iterator_create(rl_config_list);
+	while ((temp = list_next(iter)))
+		fprintf(out, "%s\n", temp);
+	list_iterator_destroy(iter);
+	FREE_NULL_LIST(rl_config_list);
+#endif
+
 	_write_group_header (out, "OTHER");
 	iter = list_iterator_create(other_list);
 	while ((temp = list_next(iter)))
@@ -2504,6 +2619,11 @@ extern void slurm_print_key_pairs(FILE* out, void *key_pairs, char *title)
 	fprintf(out, "%s", title);
 	iter = list_iterator_create(config_list);
 	while ((key_pair = list_next(iter))) {
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+		if (xstrcasestr(key_pair->name, "RlConfig") || xstrcasestr(key_pair->name, "RlUsers")) {
+			continue;
+		}
+#endif		
 		fprintf(out, "%-23s = %s\n", key_pair->name, key_pair->value);
 	}
 	list_iterator_destroy(iter);
