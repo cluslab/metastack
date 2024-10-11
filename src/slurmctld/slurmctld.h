@@ -980,6 +980,9 @@ struct job_record {
 	char *state_desc;		/* optional details for state_reason */
 	uint32_t state_reason;		/* reason job still pending or failed
 					 * see slurm.h:enum job_state_reason */
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    char *reason_detail;
+#endif
 	uint32_t state_reason_prev_db;	/* Previous state_reason that isn't
 					 * priority or resources, only stored in
 					 * the database. */

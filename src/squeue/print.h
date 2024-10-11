@@ -113,6 +113,10 @@ int job_format_add_function(List list, int width, bool right_justify,
         job_format_add_function(list,wid,right,prefix,_print_job_reason)
 #define job_format_add_reason_list(list,wid,right,prefix) \
 	job_format_add_function(list,wid,right,prefix,_print_job_reason_list)
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+#define job_format_add_reason_detail(list,wid,right,prefix) \
+	job_format_add_function(list,wid,right,prefix,_print_job_reason_detail)
+#endif
 #define job_format_add_name(list,wid,right,suffix) \
 	job_format_add_function(list,wid,right,suffix,_print_job_name)
 #define job_format_add_licenses(list,wid,right,suffix) \
@@ -379,6 +383,10 @@ int _print_job_reason(job_info_t * job, int width, bool right_justify,
 			char* suffix);
 int _print_job_reason_list(job_info_t * job, int width, bool right_justify,
 			char* suffix);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+int _print_job_reason_detail(job_info_t * job, int width, bool right_justify, 
+            char* suffix);
+#endif
 int _print_job_name(job_info_t * job, int width, bool right_justify,
 			char* suffix);
 int _print_job_licenses(job_info_t * job, int width, bool right_justify,

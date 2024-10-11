@@ -101,6 +101,10 @@ List avail_feature_list;	/* list of available features_records */
 bool node_features_updated = true;
 bool slurmctld_init_db = true;
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+bool enable_reason_detail = false;
+#endif
+
 static void _acct_restore_active_jobs(void);
 static void _add_config_feature(List feature_list, char *feature,
 				bitstr_t *node_bitmap);
@@ -1922,6 +1926,11 @@ int read_slurm_conf(int recover, bool reconfig)
 		cgroup_conf_init();
 
 	cgroup_mem_confinement = cgroup_memcg_job_confinement();
+
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    if (xstrcasestr(slurm_conf.slurmctld_params, "enable_reason_detail"))
+        enable_reason_detail = true;
+#endif
 
 	if (slurm_conf.job_acct_oom_kill && cgroup_mem_confinement)
 		fatal("Jobs memory is being constrained by both TaskPlugin cgroup and JobAcctGather plugin. This enables two incompatible memory enforcement mechanisms, one of them must be disabled.");

@@ -1236,6 +1236,9 @@ extern void slurm_free_job_info_members(job_info_t * job)
 		xfree(job->selinux_context);
 		xfree(job->state_desc);
 		xfree(job->std_err);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+        xfree(job->reason_detail);
+#endif
 		xfree(job->std_in);
 		xfree(job->std_out);
 		xfree(job->tres_alloc_str);

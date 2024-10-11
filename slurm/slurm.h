@@ -359,6 +359,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_OPT_SRUN_STEP_CREATE
 #define __METASTACK_OPT_SRUN_STEP_CREATE
 #endif
+
+#ifndef __METASTACK_OPT_MSG_OUTPUT
+#define __METASTACK_OPT_MSG_OUTPUT
+#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -1970,6 +1974,9 @@ typedef struct job_descriptor {	/* For submit, allocate, and update requests */
 	char *x11_magic_cookie;	/* automatically stolen from submit node */
 	char *x11_target;	/* target hostname, or unix socket if port == 0 */
 	uint16_t x11_target_port; /* target tcp port, 6000 + the display number */
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    char *reason_detail;
+#endif
 } job_desc_msg_t;
 
 typedef struct job_info {
@@ -2103,6 +2110,9 @@ typedef struct job_info {
 	char *state_desc;	/* optional details for state_reason */
 	uint16_t state_reason;	/* reason job still pending or failed, see
 				 * slurm.h:enum job_state_reason */
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    char *reason_detail;
+#endif
 	char *std_err;		/* pathname of job's stderr file */
 	char *std_in;		/* pathname of job's stdin file */
 	char *std_out;		/* pathname of job's stdout file */
@@ -3113,6 +3123,9 @@ typedef struct {
 				    * epilog complete message */
 	char *epilog_slurmctld;	/* pathname of job epilog run by slurmctld */
 	char *ext_sensors_type; /* external sensors plugin type */
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    char *extra_msg_file;
+#endif
 	uint16_t ext_sensors_freq; /* secs between ext sensors sampling */
 	void *ext_sensors_conf; /* external sensors config file*/
 	char *fed_params;       /* Federation parameters */

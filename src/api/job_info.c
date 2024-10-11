@@ -453,6 +453,14 @@ slurm_sprint_job_info ( job_info_t * job_ptr, int one_liner )
 	xstrfmtcat(out, "Dependency=%s", job_ptr->dependency);
 	xstrcat(out, line_end);
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    /****** Extra line (optional) ******/
+    if (job_ptr->reason_detail && (job_ptr->show_flags & SHOW_DETAIL)) {
+        xstrfmtcat(out, "ReasonDetail=%s", job_ptr->reason_detail);
+        xstrcat(out, line_end);
+    }
+#endif
+
 	/****** Line 5 ******/
 	xstrfmtcat(out, "Requeue=%u Restarts=%u BatchFlag=%u Reboot=%u ",
 		 job_ptr->requeue, job_ptr->restart_cnt, job_ptr->batch_flag,
