@@ -67,6 +67,9 @@ extern bool validate_all_partitions_borrow_nodes(List part_list);
 extern bool validate_partition_borrow_nodes(part_record_t *part_ptr);
 #endif
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+extern bool enable_reason_detail;
+#endif
 /*
  * Free the global response_cluster_rec
  */

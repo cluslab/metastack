@@ -452,6 +452,13 @@ int main(int argc, char **argv)
 			error_exit = immediate_exit;
 		} else {
 			error("Job submit/allocate failed: %m");
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+            char *tmp_msg = get_err_msg(slurm_conf.extra_msg_file, errno);
+            if (tmp_msg) {
+                info("======= Tips: %s =======", tmp_msg);
+                xfree(tmp_msg);
+            }
+#endif
 		}
 		if (msg_thr)
 			slurm_allocation_msg_thr_destroy(msg_thr);

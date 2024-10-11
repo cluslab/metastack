@@ -741,6 +741,20 @@ int _print_job_reason(job_info_t * job, int width, bool right, char* suffix)
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+int _print_job_reason_detail(job_info_t * job, int width, bool right, char* suffix)
+{
+	if (job == NULL) 
+		_print_str("REASONDETAIL", width, right, true);
+	else {
+		_print_str(job->reason_detail, width, right, true);
+	}
+	if (suffix)
+		printf("%s", suffix);
+	return SLURM_SUCCESS;
+}
+#endif
+
 int _print_job_name(job_info_t * job, int width, bool right, char* suffix)
 {
 	if (job == NULL)	/* Print the Header instead */

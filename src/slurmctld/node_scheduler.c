@@ -2497,6 +2497,9 @@ static void _end_null_job(job_record_t *job_ptr)
 	job_ptr->start_time = now;
 	job_ptr->state_reason = WAIT_NO_REASON;
 	xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    xfree(job_ptr->reason_detail);
+#endif
 	job_ptr->time_last_active = now;
 	if (!job_ptr->step_list)
 		job_ptr->step_list = list_create(free_step_record);
@@ -2992,6 +2995,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	/* assign the nodes and stage_in the job */
 	job_ptr->state_reason = WAIT_NO_REASON;
 	xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    xfree(job_ptr->reason_detail);
+#endif
 
 	if (job_ptr->job_resrcs && job_ptr->job_resrcs->nodes) {
 		job_ptr->nodes = xstrdup(job_ptr->job_resrcs->nodes);

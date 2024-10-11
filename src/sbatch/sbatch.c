@@ -301,6 +301,13 @@ int main(int argc, char **argv)
 			msg = NULL;
 		if ((msg == NULL) || (retries >= MAX_RETRIES)) {
 			error("Batch job submission failed: %m");
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+            char *tmp_msg = get_err_msg(slurm_conf.extra_msg_file, errno);
+            if (tmp_msg) {
+                info("======= Tips: %s =======", tmp_msg);
+                xfree(tmp_msg);
+            }
+#endif
 			exit(error_exit);
 		}
 

@@ -112,6 +112,11 @@ int slurm_ctl_conf_to_hv(slurm_conf_t *conf, HV *hv)
 	if (conf->ext_sensors_type)
 		STORE_FIELD(hv, conf, ext_sensors_type, charp);
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    if (conf->extra_msg_file)
+        STORE_FIELD(hv, conf, extra_msg_file, charp);
+#endif
+
 	STORE_FIELD(hv, conf, conf_flags, uint32_t);
 
 	STORE_FIELD(hv, conf, first_job_id, uint32_t);
@@ -480,6 +485,9 @@ int hv_to_slurm_ctl_conf(HV *hv, slurm_conf_t *conf)
 	FETCH_FIELD(hv, conf, ext_sensors_conf, charp, FALSE);
 	FETCH_FIELD(hv, conf, ext_sensors_freq, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, ext_sensors_type, charp, FALSE);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    FETCH_FIELD(hv, conf, extra_msg_file, charp, FALSE);
+#endif
 
 	FETCH_FIELD(hv, conf, conf_flags, uint32_t, TRUE);
 	FETCH_FIELD(hv, conf, first_job_id, uint32_t, TRUE);

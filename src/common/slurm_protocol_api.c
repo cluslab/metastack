@@ -99,6 +99,43 @@ static bool  _is_port_ok(int, uint16_t, bool);
 /* define slurmdbd_conf here so we can treat its existence as a flag */
 slurmdbd_conf_t *slurmdbd_conf = NULL;
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+extern char *get_err_msg(char *conf_path, int err_code) {
+    char *err_msg = NULL;
+    
+    if (!slurm_conf.extra_msg_file) 
+        return NULL;
+    
+    FILE *fp = fopen(slurm_conf.extra_msg_file, "r");
+    if (fp == NULL) {
+        // error ("Unable to read ExtraMsgFile: %s", slurm_conf.extra_msg_file);
+        return NULL;
+    }
+
+    char buf[512];
+    char *key = NULL, *value = NULL;
+
+    while (fgets(buf, 512, fp)) {
+        key = strtok(buf, "=");
+        value = strtok(NULL, "\n");
+
+        if (!key || !value) {
+            // error("config line error, key=%s, value=%s", key, value);
+            continue;
+        }
+
+        if (atoi(key) == err_code) {
+            err_msg = xstrdup(value);
+            break;
+        }
+    }
+
+    fclose(fp);
+
+    return err_msg;
+}
+#endif
+
 /**********************************************************************\
  * protocol configuration functions
 \**********************************************************************/

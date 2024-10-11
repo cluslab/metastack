@@ -383,6 +383,9 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	ext_sensors_g_get_config(&conf_ptr->ext_sensors_conf);
 	conf_ptr->ext_sensors_type    = xstrdup(conf->ext_sensors_type);
 	conf_ptr->ext_sensors_freq    = conf->ext_sensors_freq;
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    conf_ptr->extra_msg_file      = xstrdup(conf->extra_msg_file);
+#endif
 
 	conf_ptr->fed_params          = xstrdup(conf->fed_params);
 	conf_ptr->first_job_id        = conf->first_job_id;
@@ -1219,6 +1222,18 @@ static void _slurm_rpc_allocate_het_job(slurm_msg_t * msg)
 		error_code = job_allocate(job_desc_msg, false, false, NULL,
 					  true, msg->auth_uid, false, &job_ptr,
 					  &err_msg, msg->protocol_version);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+        if (enable_reason_detail && job_desc_msg->reason_detail) {
+            /** error_code = SLURM_ERROR */
+            char *tmp_err_msg = err_msg;
+            err_msg = job_desc_msg->reason_detail;
+            job_desc_msg->reason_detail = NULL;
+            if (tmp_err_msg) {
+                xstrfmtcat(err_msg, "\n%s", tmp_err_msg);
+                xfree(tmp_err_msg);
+            }
+        } 
+#endif
 		if (!job_ptr) {
 			if (error_code == SLURM_SUCCESS)
 				error_code = SLURM_ERROR;
@@ -1479,6 +1494,19 @@ static void _slurm_rpc_allocate_resources(slurm_msg_t * msg)
 		else
 			error_code = SLURM_ERROR;
 	}
+
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    if (enable_reason_detail && job_desc_msg->reason_detail) {
+        /** error_code = SLURM_ERROR */
+        char *tmp_err_msg = err_msg;
+        err_msg = job_desc_msg->reason_detail;
+        job_desc_msg->reason_detail = NULL;
+        if (tmp_err_msg) {
+            xstrfmtcat(err_msg, "\n%s", tmp_err_msg);
+            xfree(tmp_err_msg);
+        }
+    }
+#endif
 
 send_msg:
 
@@ -3167,6 +3195,18 @@ static void _slurm_rpc_job_will_run(slurm_msg_t * msg)
 							  &job_ptr,
 							  &err_msg,
 							  msg->protocol_version);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+                if (enable_reason_detail && job_desc_msg->reason_detail) {
+                    /** error_code = SLURM_ERROR */
+                    char *tmp_err_msg = err_msg;
+                    err_msg = job_desc_msg->reason_detail;
+                    job_desc_msg->reason_detail = NULL;
+                    if (tmp_err_msg) {
+                        xstrfmtcat(err_msg, "\n%s", tmp_err_msg);
+                        xfree(tmp_err_msg);
+                    }
+                }
+#endif
 			} else {	/* existing job test */
 				job_ptr = find_job_record(job_desc_msg->job_id);
 				error_code = job_start_data(job_ptr, &resp);
@@ -4367,6 +4407,19 @@ static void _slurm_rpc_submit_batch_job(slurm_msg_t *msg)
 		}
 	}
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    if (enable_reason_detail && job_desc_msg->reason_detail) {
+        /** error_code = SLURM_ERROR */
+        char *tmp_err_msg = err_msg;
+        err_msg = job_desc_msg->reason_detail;
+        job_desc_msg->reason_detail = NULL;
+        if (tmp_err_msg) {
+            xstrfmtcat(err_msg, "\n%s", tmp_err_msg);
+            xfree(tmp_err_msg);
+        }
+    }
+#endif
+
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
 		unlock_slurmctld(job_write_lock);
 		_throttle_fini(&active_rpc_cnt);
@@ -4617,8 +4670,21 @@ static void _slurm_rpc_submit_batch_het_job(slurm_msg_t *msg)
 			error_code = ESLURM_CAN_NOT_START_IMMEDIATELY;
 			reject_job = true;
 		}
-		if (reject_job)
-			break;
+		if (reject_job) {
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+            if (enable_reason_detail && job_desc_msg->reason_detail) {
+                /** error_code = SLURM_ERROR */
+                char *tmp_err_msg = err_msg;
+                err_msg = job_desc_msg->reason_detail;
+                job_desc_msg->reason_detail = NULL;
+                if (tmp_err_msg) {
+                    xstrfmtcat(err_msg, "\n%s", tmp_err_msg);
+                    xfree(tmp_err_msg);
+                }
+            }
+#endif
+            break;
+        }
 	}
 	list_iterator_destroy(iter);
 	xfree(script);

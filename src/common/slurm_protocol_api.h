@@ -73,6 +73,16 @@ enum {
 	UNIT_UNKNOWN
 };
 
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+/**********************************************************************\
+ * command functions
+\**********************************************************************/
+/** 
+ * validate extra_msg_file && get err_msg 
+ */
+extern char *get_err_msg(char *conf_path, int err_code);
+#endif
+
 /**********************************************************************\
  * protocol configuration functions
 \**********************************************************************/

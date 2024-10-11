@@ -288,6 +288,9 @@ s_p_options_t slurm_conf_options[] = {
 	{"EpilogSlurmctld", S_P_STRING},
 	{"ExtSensorsType", S_P_STRING},
 	{"ExtSensorsFreq", S_P_UINT16},
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    {"ExtraMsgFile", S_P_STRING},
+#endif
 	{"FairShareDampeningFactor", S_P_UINT16},
 	{"FastSchedule", S_P_UINT16},
 	{"FederationParameters", S_P_STRING},
@@ -3441,6 +3444,9 @@ extern void free_slurm_conf(slurm_conf_t *ctl_conf_ptr, bool purge_node_hash)
 	xfree (ctl_conf_ptr->epilog_slurmctld);
 	FREE_NULL_LIST(ctl_conf_ptr->ext_sensors_conf);
 	xfree (ctl_conf_ptr->ext_sensors_type);
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    xfree (ctl_conf_ptr->extra_msg_file);
+#endif
 	xfree (ctl_conf_ptr->fed_params);
 	xfree (ctl_conf_ptr->gres_plugins);
 	xfree (ctl_conf_ptr->gpu_freq_def);
@@ -3604,6 +3610,9 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->enforce_part_limits       = 0;
 	xfree (ctl_conf_ptr->epilog);
 	ctl_conf_ptr->epilog_msg_time		= NO_VAL;
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    xfree (ctl_conf_ptr->extra_msg_file);
+#endif
 	xfree(ctl_conf_ptr->fed_params);
 	ctl_conf_ptr->first_job_id		= NO_VAL;
 	ctl_conf_ptr->get_env_timeout		= 0;
@@ -4636,6 +4645,10 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	if (!s_p_get_uint16(&conf->ext_sensors_freq,
 			    "ExtSensorsFreq", hashtbl))
 		conf->ext_sensors_freq = 0;
+
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+    (void) s_p_get_string(&conf->extra_msg_file, "ExtraMsgFile", hashtbl);
+#endif
 
 	if (!s_p_get_uint16(&conf->fs_dampening_factor,
 			    "FairShareDampeningFactor", hashtbl))

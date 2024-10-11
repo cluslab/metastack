@@ -1714,6 +1714,13 @@ extern int parse_long_format( char* format_long )
 							    field_size,
 							    right_justify,
 							    suffix );
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+            else if (!xstrcasecmp(token, "reasondetail"))
+                job_format_add_reason_detail( params.format_list,
+                                field_size,
+                                right_justify,
+                                suffix );
+#endif
 			else if (!xstrcasecmp(token, "selectjobinfo"))
 				job_format_add_select_jobinfo(
 					params.format_list,
