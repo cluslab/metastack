@@ -64,6 +64,7 @@ int slurm_ctl_conf_to_hv(slurm_conf_t *conf, HV *hv)
 	STORE_FIELD(hv, conf, cache_query, uint16_t);
 	STORE_FIELD(hv, conf, query_port, uint32_t);
 	STORE_FIELD(hv, conf, query_port_count, uint16_t);
+	STORE_FIELD(hv, conf, cachedup_abs_realtime, uint16_t);
 #endif
 
 	if (conf->cli_filter_plugins)
@@ -436,6 +437,7 @@ int hv_to_slurm_ctl_conf(HV *hv, slurm_conf_t *conf)
 	FETCH_FIELD(hv, conf, cache_query, uint16_t, FALSE);
 	FETCH_FIELD(hv, conf, query_port, uint32_t, FALSE);
 	FETCH_FIELD(hv, conf, query_port_count, uint16_t, FALSE);
+	FETCH_FIELD(hv, conf, cachedup_abs_realtime, uint16_t, FALSE);
 #endif
 	FETCH_FIELD(hv, conf, cli_filter_plugins, charp, FALSE);
 	FETCH_FIELD(hv, conf, cluster_name, charp, FALSE);

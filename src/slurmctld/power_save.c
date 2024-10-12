@@ -890,6 +890,10 @@ static void _do_power_work(time_t now)
 				bit_set(failed_node_bitmap, node_ptr->index);
 			}
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 	}
 	FREE_NULL_BITMAP(avoid_node_bitmap);
 	if (power_save_debug && ((now - last_log) > 600) && (susp_total > 0)) {

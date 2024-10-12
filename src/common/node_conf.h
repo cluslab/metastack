@@ -206,6 +206,10 @@ extern xhash_t* cache_node_hash_table;
 extern int cache_node_record_count;		/* count in cache_node_record_table_ptr */
 extern int copy_last_node_index;		/* index of last node in copy tabe */
 extern int cache_last_node_index;		/* index of last node in cache tabe */
+extern int copy_node_record_table_size;
+extern int cache_node_record_table_size;
+extern bool borrow_cache_nodes;
+
 #endif
 
 extern node_record_t **node_record_table_ptr;  /* ptr to node records */
@@ -318,6 +322,8 @@ extern node_record_t *find_cache_node_record(char *name);
  * IN node_ptr - node_ptr to delete
  */
 extern void delete_cache_node_record(node_record_t *node_ptr);
+
+extern void delete_cache_one_node_record(node_record_t *node_ptr);
 /*
  * Return the next non-null node_record_t * in the node_record_table_ptr.
  *
@@ -329,6 +335,37 @@ extern void delete_cache_node_record(node_record_t *node_ptr);
  * RET - next non-null node_record_t * or NULL if finished iterating.
  */
 extern node_record_t *next_cache_node(int *index, int node_record_count, node_record_t **node_record_table_ptr);
+typedef struct {
+	char *name;			/* name of the node. NULL==defunct */
+	bool only_state;
+	uint32_t node_state;		/* enum node_states, ORed with
+					 * NODE_STATE_NO_RESPOND if not
+					 * responding */
+//	dynamic_plugin_data_t *select_nodeinfo; /* opaque data structure,
+//						 * use select_g_get_nodeinfo()
+//						 * to access contents */
+	time_t reason_time; 	/* Time stamp when reason was
+						 * set, ignore if no reason is set. */
+	uint32_t reason_uid;		/* User that set the reason, ignore if
+					 * no reason is set. */
+	uint16_t resume_timeout;	/* time required in order to perform a
+					 * node resume operation */
+	char *reason;
+	uint16_t cpus_efctv;
+	uint16_t part_cnt;
+	void **part_pptr;
+}node_state_record_t;
+
+
+extern int _del_cache_node(char *node_name);
+extern void rehash_cache_node(void);
+extern void _del_hash_cache_node(char *node_name);
+
+extern node_record_t * _add_queue_node_to_cache(node_record_t *des_node_ptr);
+extern void _list_delete_copy_config (config_record_t *config_ptr);
+extern void purge_cache_node_rec(node_record_t *node_ptr);
+extern void del_cache_node_state_record(node_state_record_t *src_node_ptr);
+extern void del_cache_node_info_record(dynamic_plugin_data_t **select_nodeinfo, int node_record_count);
 
 
 #endif

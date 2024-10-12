@@ -70,6 +70,7 @@
 #define OPT_LONG_YAML         0x111
 #ifdef __METASTACK_OPT_CACHE_QUERY
 #define OPT_LONG_CACHE        0x112
+#define OPT_LONG_NOCACHE        0x113
 #endif
 
 /* FUNCTIONS */
@@ -417,7 +418,10 @@ parse_command_line( int argc, char* *argv )
 		{"clusters",   required_argument, 0, 'M'},
 		{"me",         no_argument,       0, OPT_LONG_ME},
 		{"name",       required_argument, 0, 'n'},
-                {"noconvert",  no_argument,       0, OPT_LONG_NOCONVERT},
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		{"nocache",	   no_argument, 	  0, OPT_LONG_NOCACHE},
+#endif
+        {"noconvert",  no_argument,       0, OPT_LONG_NOCONVERT},
 		{"node",       required_argument, 0, 'w'},
 		{"nodes",      required_argument, 0, 'w'},
 		{"nodelist",   required_argument, 0, 'w'},
@@ -471,8 +475,17 @@ parse_command_line( int argc, char* *argv )
 		params.priority_flag = true;
 	if (getenv("SQUEUE_SIB") || getenv("SQUEUE_SIBLING"))
 		params.sibling_flag = true;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    if ((env_val = getenv("SQUEUE_CACHE_QUERY"))){
+        if(!xstrcmp(env_val, "cache")){
+            params.cache_query = true;
+        }else if(!xstrcmp(env_val, "nocache")){
+            params.nocache_query = true;
+        }
+    }
+#endif
 	while ((opt_char = getopt_long(argc, argv,
-				       "A:ahi:j::lL:n:M:O:o:p:Pq:R:rs::S:t:u:U:vVw:",
+					   "A:ahi:j::lL:n:M:O:o:p:Pq:R:rs::S:t:u:U:vVw:",
 				       long_options, &option_index)) != -1) {
 		switch (opt_char) {
 		case (int)'?':
@@ -671,7 +684,12 @@ parse_command_line( int argc, char* *argv )
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 		case OPT_LONG_CACHE:
 			params.cache_query = true;
-			break;	
+            params.nocache_query =false;
+			break;
+        case OPT_LONG_NOCACHE:
+			params.nocache_query = true;
+            params.cache_query = false;
+			break;
 #endif
 		}
 	}
@@ -1716,10 +1734,10 @@ extern int parse_long_format( char* format_long )
 							    suffix );
 #ifdef __METASTACK_OPT_MSG_OUTPUT
             else if (!xstrcasecmp(token, "reasondetail"))
-                job_format_add_reason_detail( params.format_list,
-                                field_size,
-                                right_justify,
-                                suffix );
+				job_format_add_reason_detail( params.format_list,
+						       field_size,
+						       right_justify,
+						       suffix );
 #endif
 			else if (!xstrcasecmp(token, "selectjobinfo"))
 				job_format_add_select_jobinfo(
@@ -2542,6 +2560,7 @@ Usage: squeue [OPTIONS]\n\
   -a, --all                       display jobs in hidden partitions\n\
       --array-unique              display one unique pending job array\n\
                                   element per line\n\
+      --cache                     retrieve job information from the cache\n\
       --federation                Report federated information if a member\n\
                                   of one\n\
   -h, --noheader                  no headers on output\n\
@@ -2558,6 +2577,7 @@ Usage: squeue [OPTIONS]\n\
                                   current cluster.  cluster with no name will\n\
                                   reset to default. Implies --local.\n\
   -n, --name=job_name(s)          comma separated list of job names to view\n\
+      --nocache                   retrieve job information from the source data\n\
       --noconvert                 don't convert units from their original type\n\
                                   (e.g. 2048M won't be converted to 2G).\n\
   -o, --format=format             format specification\n\

@@ -85,5 +85,11 @@ extern void real_time_state_copy(void);
  * RET - NULL
  */
 extern void *slurmctld_state_copy(void *no_data);
+extern void cache_queue_init();
+/* shutdown the shutdown_state_copy thread */
+extern void cache_queue_shutdown();
+extern void update_all_cache_state(void);
+extern bool cache_enqueue(slurm_cache_date_t *msg);
+
 #endif
 #endif

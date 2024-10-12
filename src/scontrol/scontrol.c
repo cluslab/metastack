@@ -53,6 +53,7 @@
 #define OPT_LONG_FEDR    0x105
 #ifdef __METASTACK_OPT_CACHE_QUERY
 #define OPT_LONG_CACHE   0x106
+#define OPT_LONG_NOCACHE   0x107
 #endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define OPT_LONG_BORROW  0x108
@@ -66,6 +67,7 @@ int borrow_flag = 0;	/* display information related to standby nodes using '--bo
 #endif
 #ifdef __METASTACK_OPT_CACHE_QUERY
 bool cache_flag = false;  /*Display cache data information*/
+bool nocache_flag = false;  /*Display cache data information*/
 #endif
 int detail_flag = 0;	/* display additional details */
 int future_flag = 0;	/* display future nodes */
@@ -123,10 +125,10 @@ int main(int argc, char **argv)
 		{"all",      0, 0, 'a'},
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		{"borrow",   0, 0, OPT_LONG_BORROW},
-#endif	
+#endif		
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 		{"cache",	 0, 0, OPT_LONG_CACHE},
-#endif		
+#endif
 		{"cluster",  1, 0, 'M'},
 		{"clusters", 1, 0, 'M'},
 		{"details",  0, 0, 'd'},
@@ -138,6 +140,9 @@ int main(int argc, char **argv)
 		{"jobusers",  1, 0, 'J'},
 #endif
 		{"local",    0, 0, OPT_LONG_LOCAL},
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		{"nocache",	 0, 0, OPT_LONG_NOCACHE},
+#endif
 		{"oneliner", 0, 0, 'o'},
 		{"quiet",    0, 0, 'Q'},
 		{"sibling",  0, 0, OPT_LONG_SIBLING},
@@ -206,7 +211,7 @@ int main(int argc, char **argv)
 		case OPT_LONG_BORROW:
 			borrow_flag = 1;
 			break;		
-#endif			
+#endif
 		case (int)'d':
 			detail_flag = 1;
 			break;
@@ -275,7 +280,12 @@ int main(int argc, char **argv)
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 		case OPT_LONG_CACHE:
 			cache_flag = true;
+            nocache_flag = false;
 			break;	
+		case OPT_LONG_NOCACHE:
+			nocache_flag = true;
+            cache_flag = false;
+			break;
 #endif
 		default:
 			exit_code = 1;
@@ -293,7 +303,7 @@ int main(int argc, char **argv)
 			params.sctl_uid = *uid_ptr;
 		}
 		list_iterator_destroy(itr);
-	}
+	}	
 #endif
 
 	if (clusters && (list_count(clusters) > 1))
@@ -1866,7 +1876,7 @@ static void _show_it(int argc, char **argv)
 		   xstrncasecmp(tag, "partitionname", MAX(tag_len, 2)) == 0) {
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		scontrol_print_part (val, borrow_flag);
-#else			
+#else
 		scontrol_print_part (val);
 #endif		
 	} else if (xstrncasecmp(tag, "reservations", MAX(tag_len, 1)) == 0 ||
@@ -2058,6 +2068,7 @@ void _usage(void)
 scontrol [<OPTION>] [<COMMAND>]                                            \n\
     Valid <OPTION> values are:                                             \n\
      -a, --all      Equivalent to \"all\" command                          \n\
+         --cache    retrieve job information from the cache                \n\
      -d, --details  Equivalent to \"details\" command                      \n\
      --federation   Report federated job information if a member of a  one \n\
      -F, --future   Report information about nodes in \"FUTURE\" state.    \n\
@@ -2068,6 +2079,7 @@ scontrol [<OPTION>] [<COMMAND>]                                            \n\
      -J, --jobusers Equivalent to \"jobusers\" command					   \n\
      -M, --cluster  Equivalent to \"cluster\" command. Implies --local.    \n\
                     NOTE: SlurmDBD must be up.                             \n\
+         --nocache  retrieve job information from the source data          \n\
      -o, --oneliner Equivalent to \"oneliner\" command                     \n\
      -Q, --quiet    Equivalent to \"quiet\" command                        \n\
      --sibling      Report information about all sibling jobs on a         \n\
@@ -2199,6 +2211,7 @@ scontrol [<OPTION>] [<COMMAND>]                                            \n\
 scontrol [<OPTION>] [<COMMAND>]                                            \n\
     Valid <OPTION> values are:                                             \n\
      -a, --all      Equivalent to \"all\" command                          \n\
+         --cache    retrieve job information from the cache                \n\
      -d, --details  Equivalent to \"details\" command                      \n\
      --federation   Report federated job information if a member of a  one \n\
      -F, --future   Report information about nodes in \"FUTURE\" state.    \n\
@@ -2208,6 +2221,7 @@ scontrol [<OPTION>] [<COMMAND>]                                            \n\
 	            Overrides --federation.                                \n\
      -M, --cluster  Equivalent to \"cluster\" command. Implies --local.    \n\
                     NOTE: SlurmDBD must be up.                             \n\
+         --nocache  retrieve job information from the source data          \n\
      -o, --oneliner Equivalent to \"oneliner\" command                     \n\
      -Q, --quiet    Equivalent to \"quiet\" command                        \n\
      --sibling      Report information about all sibling jobs on a         \n\

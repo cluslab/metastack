@@ -346,6 +346,7 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->cache_query         = conf->cache_query;
 	conf_ptr->query_port          = conf->query_port;
 	conf_ptr->query_port_count    = conf->query_port_count;
+    conf_ptr->cachedup_abs_realtime = conf->cachedup_abs_realtime;
 #endif
 	if (strstr(conf->job_acct_gather_type, "cgroup") ||
 	    strstr(conf->proctrack_type, "cgroup") ||
@@ -598,7 +599,7 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	conf_ptr->rl_config           = rl_config_get_conf_list();
 	conf_ptr->rl_users            = rl_users_get_conf_list();
-#endif	
+#endif
 }
 
 /*
@@ -907,7 +908,9 @@ static int _het_job_cancel(void *x, void *arg)
 	job_ptr->exit_code	= 1;
 	job_completion_logger(job_ptr, false);
 	fed_mgr_job_complete(job_ptr, 0, now);
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 	return 0;
 }
 
@@ -1110,6 +1113,15 @@ static void _slurm_rpc_allocate_het_job(slurm_msg_t * msg)
 	/* Locks: Read config, write job, write node, read partition */
 	slurmctld_lock_t job_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurm_cache_date_t *cache_msg = NULL;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+	List submit_cache_job_list = NULL;
+	job_record_t *cache_job_ptr = NULL;
+#endif
+
 	gid_t gid = auth_g_get_gid(msg->auth_cred);
 	uint32_t job_uid = NO_VAL;
 	job_record_t *job_ptr, *first_job_ptr = NULL;
@@ -1165,7 +1177,21 @@ static void _slurm_rpc_allocate_het_job(slurm_msg_t * msg)
 	job_submit_user_msg = xmalloc(sizeof(char *) * het_job_cnt);
 	submit_job_list = list_create(NULL);
 	_throttle_start(&active_rpc_cnt);
-	lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    if(cachedup_realtime == 1){
+        lock_cache_query(job_cache_write_lock);
+        local_job_cachedup = true;
+    }
+#endif	
+    lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    if(local_job_cachedup){
+        job_cachedup_realtime = 1;
+    }else if(cachedup_realtime == 2){
+        job_cachedup_realtime = 2;
+    }
+#endif
+
 	inx = 0;
 	iter = list_iterator_create(job_req_list);
 	while ((job_desc_msg = list_next(iter))) {
@@ -1277,11 +1303,49 @@ static void _slurm_rpc_allocate_het_job(slurm_msg_t * msg)
 
 	if (first_job_ptr)
 		first_job_ptr->het_job_list = submit_job_list;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(!error_code){
+		submit_cache_job_list = list_create(NULL);
+	}
+#endif
+
 	iter = list_iterator_create(submit_job_list);
 	while ((job_ptr = list_next(iter))) {
 		job_ptr->het_job_id_set = xstrdup(het_job_id_set);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(!error_code){
+			if(job_cachedup_realtime == 1){
+				cache_job_ptr = _add_cache_job(job_ptr);
+				list_append(submit_cache_job_list, cache_job_ptr);
+				if ((cache_job_ptr->het_job_id != 0) && (cache_job_ptr->het_job_offset == 0)){
+					cache_job_ptr->het_job_list = submit_cache_job_list;
+				}
+			}else if(job_cachedup_realtime == 2){
+				cache_job_ptr = _add_job_to_queue(job_ptr);
+				list_append(submit_cache_job_list, cache_job_ptr);
+				if ((cache_job_ptr->het_job_id != 0) && (cache_job_ptr->het_job_offset == 0)){
+					cache_job_ptr->het_job_list = submit_cache_job_list;
+				}
+			}
+		}
+#endif		
 	}
 	list_iterator_destroy(iter);
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+	if(!error_code){
+		if(job_cachedup_realtime == 2 && cache_queue){
+			iter = list_iterator_create(submit_cache_job_list);
+			while ((job_ptr = list_next(iter))) {
+				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+				cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+				cache_msg->job_ptr = job_ptr;
+				cache_enqueue(cache_msg);
+			}
+			list_iterator_destroy(iter);
+		}
+	}	
+#endif
+
 	xfree(het_job_id_set);
 
 	if (error_code) {
@@ -1304,7 +1368,18 @@ static void _slurm_rpc_allocate_het_job(slurm_msg_t * msg)
 		}
 		list_iterator_destroy(iter);
 	}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	job_cachedup_realtime = 0;
+
+#endif
+				
 	unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(local_job_cachedup){
+		unlock_cache_query(job_cache_write_lock);
+		local_job_cachedup = false;
+	}
+#endif
 	_throttle_fini(&active_rpc_cnt);
 	END_TIMER2("_slurm_rpc_allocate_het_job");
 
@@ -1387,6 +1462,11 @@ static void _slurm_rpc_allocate_resources(slurm_msg_t * msg)
 	/* Locks: Read config, write job, write node, read partition */
 	slurmctld_lock_t job_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+#endif
 	gid_t gid = auth_g_get_gid(msg->auth_cred);
 	int immediate = job_desc_msg->immediate;
 	bool do_unlock = false;
@@ -1457,8 +1537,21 @@ static void _slurm_rpc_allocate_resources(slurm_msg_t * msg)
 		dump_job_desc(job_desc_msg);
 		do_unlock = true;
 		_throttle_start(&active_rpc_cnt);
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(cachedup_realtime == 1){
+			lock_cache_query(job_cache_write_lock);
+			local_job_cachedup = true;
+		}
+#endif	
 		lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(local_job_cachedup){
+			job_cachedup_realtime = 1;
+		}else if(cachedup_realtime == 2){
+            job_cachedup_realtime = 2;
+        }
+#endif
+
 		if (fed_mgr_fed_rec) {
 			uint32_t job_id;
 			if (fed_mgr_job_allocate(msg, job_desc_msg, true,
@@ -1485,6 +1578,19 @@ static void _slurm_rpc_allocate_resources(slurm_msg_t * msg)
 			if (!job_ptr ||
 			    (error_code && job_ptr->job_state == JOB_FAILED))
 				reject_job = true;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if (!reject_job) {
+				if(job_cachedup_realtime == 1){
+					_add_cache_job(job_ptr);
+				}else if(job_cachedup_realtime == 2 && cache_queue){
+					slurm_cache_date_t *cache_msg = NULL;
+					cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+					cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+					cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+					cache_enqueue(cache_msg);
+				}
+			}
+#endif			
 		}
 		END_TIMER2("_slurm_rpc_allocate_resources");
 	} else {
@@ -1523,7 +1629,17 @@ send_msg:
 		 * to be more complete.
 		 */
 		if (do_unlock) {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    	job_cachedup_realtime = 0;
+
+#endif
 			unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_job_cachedup){
+				unlock_cache_query(job_cache_write_lock);
+				local_job_cachedup = false;
+			}
+#endif
 			_throttle_fini(&active_rpc_cnt);
 		}
 
@@ -1546,7 +1662,17 @@ send_msg:
 		slurm_free_resource_allocation_response_msg(alloc_msg);
 	} else {	/* allocate error */
 		if (do_unlock) {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			job_cachedup_realtime = 0;
+#endif			
 			unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_job_cachedup){
+				unlock_cache_query(job_cache_write_lock);
+				local_job_cachedup = false;
+			}
+#endif
+
 			_throttle_fini(&active_rpc_cnt);
 		}
 		info("%s: %s ", __func__, slurm_strerror(error_code));
@@ -1902,7 +2028,7 @@ static void _slurm_rpc_dump_cache_nodes(slurm_msg_t * msg)
 		slurm_send_rc_msg(msg, ESLURM_ACCESS_DENIED);
 		return;
 	}
-
+	
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
 		lock_cache_query(node_cache_read_lock);
 		lock_slurmctld(node_write_lock);
@@ -3143,6 +3269,12 @@ static void _slurm_rpc_job_will_run(slurm_msg_t * msg)
 	/* Locks: Read config, write job, write node, read partition, read fed*/
 	slurmctld_lock_t job_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+#endif
+
 	gid_t gid = auth_g_get_gid(msg->auth_cred);
 	slurm_addr_t resp_addr;
 	will_run_response_msg_t *resp = NULL;
@@ -3186,7 +3318,21 @@ static void _slurm_rpc_job_will_run(slurm_msg_t * msg)
 				 INET6_ADDRSTRLEN);
 		dump_job_desc(job_desc_msg);
 		if (error_code == SLURM_SUCCESS) {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(cachedup_realtime == 1){
+				lock_cache_query(job_cache_write_lock);
+				local_job_cachedup = true;
+			}
+#endif	
 			lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_job_cachedup){
+				job_cachedup_realtime = 1;
+			}else if(cachedup_realtime == 2){
+                job_cachedup_realtime = 2;
+            }
+#endif
+
 			if (job_desc_msg->job_id == NO_VAL) {
 				job_desc_msg->het_job_offset = NO_VAL;
 				error_code = job_allocate(job_desc_msg, false,
@@ -3207,11 +3353,31 @@ static void _slurm_rpc_job_will_run(slurm_msg_t * msg)
                     }
                 }
 #endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				if(job_cachedup_realtime == 1){
+					_add_cache_job(job_ptr);
+				}else if(job_cachedup_realtime == 2 && cache_queue){
+					slurm_cache_date_t *cache_msg = NULL;
+					cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+					cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+					cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+					cache_enqueue(cache_msg);
+				}
+#endif
 			} else {	/* existing job test */
 				job_ptr = find_job_record(job_desc_msg->job_id);
 				error_code = job_start_data(job_ptr, &resp);
 			}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			job_cachedup_realtime = 0;
+#endif
 			unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_job_cachedup){
+				unlock_cache_query(job_cache_write_lock);
+				local_job_cachedup = false;
+			}
+#endif
 			END_TIMER2("_slurm_rpc_job_will_run");
 		}
 	} else if (errno)
@@ -3330,7 +3496,9 @@ static void _find_avail_future_node(slurm_msg_t *msg)
 
 			clusteracct_storage_g_node_up(acct_db_conn, node_ptr,
 						      now);
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            _add_node_state_to_queue(node_ptr, true);
+#endif
 			break;
 		}
 	} else {
@@ -3378,6 +3546,11 @@ static void _slurm_rpc_node_registration(slurm_msg_t *msg)
 		.part = WRITE_LOCK,
 		.fed = READ_LOCK
 	};
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		bool local_node_cachedup = false;
+		slurmctld_lock_t node_cache_write_lock = {
+			NO_LOCK, NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
+#endif
 
 	START_TIMER;
 	if (!validate_slurm_user(msg->auth_uid)) {
@@ -3411,8 +3584,22 @@ static void _slurm_rpc_node_registration(slurm_msg_t *msg)
 			      "set DebugFlags=NO_CONF_HASH in your slurm.conf.",
 			      node_reg_stat_msg->node_name);
 		}
-		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(cachedup_realtime == 1){
+				lock_cache_query(node_cache_write_lock);
+				local_node_cachedup = true;
+			}
+#endif
 			lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_node_cachedup){
+				node_cachedup_realtime = 1;
+			}else if(cachedup_realtime == 2){
+                node_cachedup_realtime = 2;
+            }
+#endif
+		}
 
 		if (node_reg_stat_msg->dynamic_type &&
 		    (node_reg_stat_msg->flags & SLURMD_REG_FLAG_RESP)) {
@@ -3431,8 +3618,19 @@ static void _slurm_rpc_node_registration(slurm_msg_t *msg)
 				 */
 				_find_avail_future_node(msg);
 
-				if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+				if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+					node_cachedup_realtime = 0;
+#endif
 					unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+					if(local_node_cachedup){
+						unlock_cache_query(node_cache_write_lock);
+						local_node_cachedup = false;
+					}
+#endif
+				}
 
 				goto send_resp;
 			} else if (find_node_record2(
@@ -3451,8 +3649,21 @@ static void _slurm_rpc_node_registration(slurm_msg_t *msg)
 		validate_jobs_on_node(node_reg_stat_msg);
 		error_code = validate_node_specs(msg, &newly_up);
 #endif
-		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			node_cachedup_realtime = 0;
+#endif
 			unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_node_cachedup){
+				unlock_cache_query(node_cache_write_lock);
+				local_node_cachedup = false;
+			}
+
+#endif
+		}
+
 		END_TIMER2("_slurm_rpc_node_registration");
 		if (newly_up) {
 			queue_job_scheduler();
@@ -3993,7 +4204,7 @@ static void _slurm_rpc_reconfigure_controller(slurm_msg_t * msg)
 		}
 		trigger_reconfig();
 #ifdef __METASTACK_OPT_CACHE_QUERY
-		real_time_state_copy();
+		update_all_cache_state();
 #endif
 	}
 	END_TIMER2("_slurm_rpc_reconfigure_controller");
@@ -4316,6 +4527,11 @@ static void _slurm_rpc_submit_batch_job(slurm_msg_t *msg)
 	 * federation */
 	slurmctld_lock_t job_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+#endif		
 	gid_t gid = auth_g_get_gid(msg->auth_cred);
 	char *err_msg = NULL, *job_submit_user_msg = NULL;
 	bool reject_job = false;
@@ -4376,7 +4592,20 @@ static void _slurm_rpc_submit_batch_job(slurm_msg_t *msg)
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
 		_throttle_start(&active_rpc_cnt);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(cachedup_realtime == 1){
+			lock_cache_query(job_cache_write_lock);
+			local_job_cachedup = true;
+		}
+#endif
 		lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(local_job_cachedup){
+			job_cachedup_realtime = 1;
+		}else if(cachedup_realtime == 2){
+            job_cachedup_realtime = 2;
+        }
+#endif
 	}
 	START_TIMER;	/* Restart after we have locks */
 
@@ -4405,6 +4634,19 @@ static void _slurm_rpc_submit_batch_job(slurm_msg_t *msg)
 			error_code = ESLURM_CAN_NOT_START_IMMEDIATELY;
 			reject_job = true;
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if (!reject_job) {
+			if(job_cachedup_realtime == 1){
+				_add_cache_job(job_ptr);
+			}else if(job_cachedup_realtime == 2 && cache_queue){
+				slurm_cache_date_t *cache_msg = NULL;
+				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+				cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+				cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+				cache_enqueue(cache_msg);
+			}
+		}
+#endif
 	}
 
 #ifdef __METASTACK_OPT_MSG_OUTPUT
@@ -4421,7 +4663,16 @@ static void _slurm_rpc_submit_batch_job(slurm_msg_t *msg)
 #endif
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		job_cachedup_realtime = 0;
+#endif
 		unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(local_job_cachedup){
+			unlock_cache_query(job_cache_write_lock);
+			local_job_cachedup = false;
+		}
+#endif
 		_throttle_fini(&active_rpc_cnt);
 	}
 
@@ -4490,6 +4741,15 @@ static void _slurm_rpc_submit_batch_het_job(slurm_msg_t *msg)
 	/* Locks: Read config, write job, write node, read partition, read fed */
 	slurmctld_lock_t job_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurm_cache_date_t *cache_msg = NULL;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+	List submit_cache_job_list = NULL;
+	job_record_t *cache_job_ptr = NULL;
+#endif
+
 	List job_req_list = (List) msg->data;
 	gid_t gid = auth_g_get_gid(msg->auth_cred);
 	uint32_t job_uid = NO_VAL;
@@ -4608,7 +4868,20 @@ static void _slurm_rpc_submit_batch_het_job(slurm_msg_t *msg)
 	submit_job_list = list_create(NULL);
 	het_job_offset = 0;
 	_throttle_start(&active_rpc_cnt);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(cachedup_realtime == 1){
+		lock_cache_query(job_cache_write_lock);
+		local_job_cachedup = true;
+	}
+#endif	
 	lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(local_job_cachedup){
+		job_cachedup_realtime = 1;
+	}else if(cachedup_realtime == 2){
+        job_cachedup_realtime = 2;
+    }
+#endif
 	START_TIMER;	/* Restart after we have locks */
 	iter = list_iterator_create(job_req_list);
 	while ((job_desc_msg = list_next(iter))) {
@@ -4709,17 +4982,62 @@ static void _slurm_rpc_submit_batch_het_job(slurm_msg_t *msg)
 			       &het_job_id_set);
 	if (first_job_ptr)
 		first_job_ptr->het_job_list = submit_job_list;
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(!reject_job){
+		submit_cache_job_list = list_create(NULL);
+	}
+#endif
 	iter = list_iterator_create(submit_job_list);
 	while ((job_ptr = list_next(iter))) {
 		job_ptr->het_job_id_set = xstrdup(het_job_id_set);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(!reject_job){
+			if(job_cachedup_realtime == 1){
+				cache_job_ptr = _add_cache_job(job_ptr);
+				list_append(submit_cache_job_list, cache_job_ptr);
+				if ((cache_job_ptr->het_job_id != 0) && (cache_job_ptr->het_job_offset == 0)){
+					cache_job_ptr->het_job_list = submit_cache_job_list;
+				}
+			}else if(job_cachedup_realtime == 2){
+				cache_job_ptr = _add_job_to_queue(job_ptr);
+				list_append(submit_cache_job_list, cache_job_ptr);
+				if ((cache_job_ptr->het_job_id != 0) && (cache_job_ptr->het_job_offset == 0)){
+					cache_job_ptr->het_job_list = submit_cache_job_list;
+				}
+			}	
+		}
+#endif
 		if (error_code == SLURM_SUCCESS)
 			log_flag(HETJOB, "Submit %pJ", job_ptr);
 	}
 	list_iterator_destroy(iter);
-	xfree(het_job_id_set);
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		if(!reject_job){
+			if(job_cachedup_realtime == 2 && cache_queue){
+				iter = list_iterator_create(submit_cache_job_list);
+				while ((job_ptr = list_next(iter))) {
+					cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+					cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+					cache_msg->job_ptr = job_ptr;
+					cache_enqueue(cache_msg);
+				}
+				list_iterator_destroy(iter);
+			}
+		}	
+#endif
 
+	xfree(het_job_id_set);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	job_cachedup_realtime = 0;
+#endif		
 	unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    if(local_job_cachedup){
+        unlock_cache_query(job_cache_write_lock);
+        local_job_cachedup = false;
+    }
+#endif
+
 	_throttle_fini(&active_rpc_cnt);
 
 send_msg:
@@ -5080,6 +5398,11 @@ static void _slurm_rpc_update_partition(slurm_msg_t * msg)
 	 * NOTE: job write lock due to gang scheduler support */
 	slurmctld_lock_t part_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_part_cachedup = false;
+	slurmctld_lock_t part_cache_write_lock = {
+		NO_LOCK, NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
+#endif
 
 	START_TIMER;
 	if (!validate_super_user(msg->auth_uid)) {
@@ -5091,9 +5414,31 @@ static void _slurm_rpc_update_partition(slurm_msg_t * msg)
 	if (error_code == SLURM_SUCCESS) {
 		/* do RPC call */
 		if (msg->msg_type == REQUEST_CREATE_PARTITION) {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(cachedup_realtime == 1){
+				lock_cache_query(part_cache_write_lock);
+				local_part_cachedup = true;
+			}
+#endif
 			lock_slurmctld(part_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_part_cachedup){
+				part_cachedup_realtime = 1;
+			}else if(cachedup_realtime == 2){
+                part_cachedup_realtime = 2;
+            }
+#endif
 			error_code = update_part(part_desc_ptr, true);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			part_cachedup_realtime = 0;
+#endif
 			unlock_slurmctld(part_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(local_part_cachedup){
+				unlock_cache_query(part_cache_write_lock);
+				local_part_cachedup = false;
+			}
+#endif
 		} else {
 			lock_slurmctld(part_write_lock);
 			error_code = update_part(part_desc_ptr, false);
@@ -5141,7 +5486,11 @@ static void _slurm_rpc_delete_partition(slurm_msg_t * msg)
 	/* Locks: write job, write node, write partition */
 	slurmctld_lock_t part_write_lock = {
 		NO_LOCK, WRITE_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_part_cachedup = false;
+	slurmctld_lock_t part_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
+#endif
 	START_TIMER;
 	if (!validate_super_user(msg->auth_uid)) {
 		error_code = ESLURM_USER_ID_MISSING;
@@ -5151,9 +5500,33 @@ static void _slurm_rpc_delete_partition(slurm_msg_t * msg)
 
 	if (error_code == SLURM_SUCCESS) {
 		/* do RPC call */
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(cachedup_realtime == 1){
+			lock_cache_query(part_cache_write_lock);
+			local_part_cachedup = true;
+		}
+#endif
+
 		lock_slurmctld(part_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(local_part_cachedup){
+			part_cachedup_realtime = 1;
+		}else if(cachedup_realtime == 2){
+            part_cachedup_realtime = 2;
+        }
+#endif
 		error_code = delete_partition(part_desc_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		part_cachedup_realtime = 0;
+#endif
 		unlock_slurmctld(part_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(local_part_cachedup){
+			unlock_cache_query(part_cache_write_lock);
+			local_part_cachedup = false;
+		}
+#endif
+
 		END_TIMER2("_slurm_rpc_delete_partition");
 	}
 
@@ -6183,6 +6556,10 @@ static void _slurm_rpc_reboot_nodes(slurm_msg_t *msg)
 				node_ptr->reason_uid = msg->auth_uid;
 			}
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 		want_nodes_reboot = true;
 	}
 
@@ -6951,6 +7328,12 @@ static void _slurm_rpc_update_crontab(slurm_msg_t *msg)
 	/* probably need to mirror _slurm_rpc_dump_batch_script() */
 	slurmctld_lock_t job_write_lock =
 		{ READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+#endif
+
 	gid_t gid = auth_g_get_gid(msg->auth_cred);
 
 	START_TIMER;
@@ -6967,7 +7350,21 @@ static void _slurm_rpc_update_crontab(slurm_msg_t *msg)
 	resp_msg.failed_lines = NULL;
 	resp_msg.return_code = SLURM_SUCCESS;
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(cachedup_realtime == 1){
+		lock_cache_query(job_cache_write_lock);
+		local_job_cachedup = true;
+	}
+#endif
+
 	lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(local_job_cachedup){
+		job_cachedup_realtime = 1;
+	}else if(cachedup_realtime == 2){
+        job_cachedup_realtime = 2;
+    }
+#endif
 
 	if (((req_msg->uid != msg->auth_uid) || (req_msg->gid != gid)) &&
 	    !validate_slurm_user(msg->auth_uid)) {
@@ -6984,8 +7381,17 @@ static void _slurm_rpc_update_crontab(slurm_msg_t *msg)
 				       msg->protocol_version);
 		xfree(alloc_node);
 	}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	job_cachedup_realtime = 0;
+#endif
 
 	unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(local_job_cachedup){
+		unlock_cache_query(job_cache_write_lock);
+		local_job_cachedup = false;
+	}
+#endif
 	END_TIMER2(__func__);
 
 	response_init(&response_msg, msg);

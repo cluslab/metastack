@@ -602,6 +602,9 @@ int main(int argc, char **argv)
 			fatal("Failed to initialize serialization plugins.");
 	}
 	agent_init();
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+	cache_queue_init();
+#endif
 
 	while (1) {
 		/* initialization for each primary<->backup switch */
@@ -615,7 +618,7 @@ int main(int argc, char **argv)
 			_run_primary_prog(false);
 			run_backup();
 #ifdef __METASTACK_OPT_CACHE_QUERY
-			real_time_state_copy();
+			update_all_cache_state();
 #endif
 			agent_init();	/* Killed at any previous shutdown */
 			(void) _shutdown_backup_controller();
@@ -695,7 +698,7 @@ int main(int argc, char **argv)
 			unlock_slurmctld(config_write_lock);
 			select_g_select_nodeinfo_set_all();
 #ifdef __METASTACK_OPT_CACHE_QUERY
-			real_time_state_copy();
+			update_all_cache_state();
 #endif
 			if (recover == 0) {
 				slurmctld_init_db = 1;
@@ -761,7 +764,7 @@ int main(int argc, char **argv)
 		server_thread_incr();
 		slurm_thread_create(&slurmctld_config.thread_id_rpc,
 				    _slurmctld_rpc_mgr, NULL);
-
+		
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		/*
 		 * create attached thread to process cache query RPCs
@@ -769,7 +772,7 @@ int main(int argc, char **argv)
 		query_thread_incr();
 		slurm_thread_create(&slurmctld_config.thread_id_query,
 				    _slurmctld_query_mgr, NULL);
-#endif	
+#endif		
 
 		/*
 		 * create attached thread for signal handling
@@ -1182,7 +1185,7 @@ static void _reconfigure_slurm(void)
 	}
 	trigger_reconfig();
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	real_time_state_copy();
+	update_all_cache_state();
 #endif
 	priority_g_reconfig(true);	/* notify priority plugin too */
 	save_all_state();		/* Has own locking */
@@ -2240,6 +2243,10 @@ static void _queue_reboot_msg(void)
 
 		clusteracct_storage_g_node_down(acct_db_conn, node_ptr, now,
 		                                NULL, slurm_conf.slurm_user_id);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 	}
 	if (reboot_agent_args != NULL) {
 		hostlist_uniq(reboot_agent_args->hostlist);
@@ -2289,6 +2296,9 @@ static void *_slurmctld_background(void *no_data)
 	slurmctld_lock_t node_write_lock3 = {
 		READ_LOCK, NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };	
 #endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	static time_t last_update_cache_time;
+#endif
 
 	/* Locks: Read config */
 	slurmctld_lock_t config_read_lock = {
@@ -2323,6 +2333,12 @@ static void *_slurmctld_background(void *no_data)
 		.conf = READ_LOCK, .job = WRITE_LOCK,
 		.node = WRITE_LOCK, .fed = READ_LOCK
 	};
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+#endif
+
 
 	/* Let the dust settle before doing work */
 	now = time(NULL);
@@ -2330,12 +2346,16 @@ static void *_slurmctld_background(void *no_data)
 	last_checkpoint_time = last_group_time = now;
 	last_purge_job_time = last_trigger = last_health_check_time = now;
 	last_timelimit_time = last_assert_primary_time = now;
-	last_no_resp_msg_time = last_resv_time = last_ctld_bu_ping = now;
+	last_no_resp_msg_time = last_resv_time = last_ctld_bu_ping = now;	
 	last_uid_update = now;
 	last_acct_gather_node_time = last_ext_sensors_time = now;
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	last_borrow_time = now;
 #endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	last_update_cache_time = now;
+#endif
+
 
 	last_ping_srun_time = now;
 	last_node_acct = now;
@@ -2543,12 +2563,37 @@ static void *_slurmctld_background(void *no_data)
 			 */
 			slurm_mutex_lock(&check_bf_running_lock);
 			if (!slurmctld_diag_stats.bf_active) {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				if(cachedup_realtime  == 1){
+					lock_cache_query(job_cache_write_lock);
+					local_job_cachedup = true;
+				}
+#endif				
 				lock_slurmctld(purge_job_locks);
 				now = time(NULL);
 				last_purge_job_time = now;
 				debug2("Performing purge of old job records");
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				if(local_job_cachedup){
+					purge_old_cache_job = true;
+					job_cachedup_realtime = 1;
+				}else if(cachedup_realtime == 2){
+                    purge_old_cache_job = true;
+                    job_cachedup_realtime = 2;
+                }
+#endif
 				purge_old_job();
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				purge_old_cache_job = false;
+				job_cachedup_realtime = 0;
+#endif
 				unlock_slurmctld(purge_job_locks);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				if(local_job_cachedup){
+					unlock_cache_query(job_cache_write_lock);
+					local_job_cachedup = false;
+				}
+#endif
 			}
 			slurm_mutex_unlock(&check_bf_running_lock);
 		}
@@ -2598,11 +2643,27 @@ static void *_slurmctld_background(void *no_data)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		if (difftime(now, last_borrow_time) >= node_borrow_interval) {
 			lock_slurmctld(node_write_lock3);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			borrow_cache_nodes = true;
+#endif
 			validate_all_partitions_borrow_nodes(part_list);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			borrow_cache_nodes = false;
+#endif
 			last_borrow_time = now;
 			unlock_slurmctld(node_write_lock3);
 		}
 #endif
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if (slurm_conf.cache_query && difftime(now, last_update_cache_time) >=
+			 slurm_conf.cachedup_interval) {
+			now = time(NULL);
+			last_update_cache_time = now;
+			debug2("Performing full system state copy");
+			update_all_cache_state();
+		}
+#endif					
 
 		if (difftime(now, last_checkpoint_time) >=
 		    PERIODIC_CHECKPOINT) {

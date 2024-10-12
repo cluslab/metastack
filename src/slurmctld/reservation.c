@@ -684,6 +684,10 @@ static int _foreach_clear_job_resv(void *x, void *key)
 		debug("%s: Holding %pJ, reservation %s was deleted",
 		      __func__, job_ptr, resv_ptr->name);
 		job_ptr->priority = 0;	/* Hold job */
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
+
 	}
 
 	return 0;
@@ -7123,6 +7127,10 @@ static void _set_nodes_flags(slurmctld_resv_t *resv_ptr, time_t now,
 				node_ptr, now, NULL,
 				slurm_conf.slurm_user_id);
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 	}
 	FREE_NULL_BITMAP(maint_node_bitmap);
 }

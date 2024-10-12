@@ -343,7 +343,7 @@ static List _query_server(bool clear_old)
 	List sinfo_list = NULL;
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(update_client_port(params.cache_query)){
+	if(update_client_port(params.cache_query, params.nocache_query)){
 		return NULL;
 	}
 #endif

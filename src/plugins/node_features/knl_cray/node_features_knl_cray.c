@@ -1387,6 +1387,10 @@ static void _make_node_down(node_record_t *node_ptr)
 		node_ptr->reason = xstrdup("Invalid KNL modes");
 		node_ptr->reason_time = time(NULL);
 		node_ptr->reason_uid = getuid();
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 	} else {
 		(void) drain_nodes(node_ptr->name, "Invalid KNL modes",
 				   getuid());
@@ -2117,6 +2121,10 @@ static void _check_node_status(void)
 		node_ptr->reason_uid = slurm_conf.slurm_user_id;
 		if (avail_node_bitmap)
 			bit_clear(avail_node_bitmap, node_ptr->index);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 	}
 	FREE_NULL_BITMAP(capmc_node_bitmap);
 }

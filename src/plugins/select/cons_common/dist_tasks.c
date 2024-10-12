@@ -1169,6 +1169,9 @@ static int _cyclic_sync_core_bitmap(job_record_t *job_ptr,
 				      core_str, sock_str, vpus);
 				xfree(core_str);
 				xfree(sock_str);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	            _add_job_state_to_queue(job_ptr);
+#endif
 			}
 			error_code = SLURM_ERROR;
 			goto fini;
