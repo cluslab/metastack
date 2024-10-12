@@ -227,6 +227,12 @@ static void _proc_msg(int new_fd, char *msg, slurm_addr_t cli_addr)
 	/* Locks: Write job, write node, read partition */
 	slurmctld_lock_t job_write_lock2 = {
 		NO_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+#endif
+
 	/* Locks: Write job, write node data */
 	slurmctld_lock_t node_write_lock = {
 		NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK };
@@ -280,9 +286,33 @@ static void _proc_msg(int new_fd, char *msg, slurm_addr_t cli_addr)
 		resp = fail_nodes(cmd_ptr, cmd_uid, protocol_version);
 		unlock_slurmctld(job_read_lock);
 	} else if (xstrncmp(cmd_ptr, "REPLACE_NODE:JOBID:", 19) == 0) {
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(cachedup_realtime == 1){
+			lock_cache_query(job_cache_write_lock);
+			local_job_cachedup = true;
+		}
+#endif
 		lock_slurmctld(job_write_lock2);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(local_job_cachedup){
+			job_cachedup_realtime = 1;
+		}else if(cachedup_realtime == 2){
+            job_cachedup_realtime = 2;
+        }
+#endif
 		resp = replace_node(cmd_ptr, cmd_uid, protocol_version);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		job_cachedup_realtime = 0;
+#endif
+		
 		unlock_slurmctld(job_write_lock2);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(local_job_cachedup){
+			unlock_cache_query(job_cache_write_lock);
+			local_job_cachedup = false;
+		}
+#endif
+
 	} else if (xstrncmp(cmd_ptr, "SHOW_CONFIG", 11) == 0) {
 		resp = show_config(cmd_ptr, cmd_uid, protocol_version);
 	} else if (xstrncmp(cmd_ptr, "SHOW_JOB:JOBID:", 15) == 0) {

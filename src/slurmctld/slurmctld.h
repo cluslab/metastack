@@ -1174,6 +1174,7 @@ typedef struct {
 #ifdef __METASTACK_OPT_CACHE_QUERY
 extern List cache_job_list;   /* list of cache_job_record entries */
 extern List copy_job_list;    /* list of copy_job_record entries */
+extern bool purge_old_cache_job;
 #endif
 extern List job_list;			/* list of job_record entries */
 extern List purge_files_list;		/* list of job ids to purge files of */
@@ -1399,17 +1400,161 @@ extern int dump_all_part_state ( void );
 #ifdef __METASTACK_OPT_CACHE_QUERY
 /* copy_all_part_state - copy the state of all partitions */
 extern void copy_all_part_state();
+extern void replace_cache_part_data();
+extern void purge_cache_part_data();
+
 
 /* copy_all_job_state - copy the state of all jobs
  * RET 0 or error code */
 extern void copy_all_job_state();
+extern void replace_cache_job_data();
+extern void purge_cache_job_data();
 
 /* dump_all_node_state - save the state of all nodes to file */
 extern void copy_all_node_state();
+extern void replace_cache_node_data();
+extern void purge_cache_node_data();
 
 extern void update_job_cache_data();
 extern void update_node_cache_data();
 extern void update_part_cache_data();
+
+typedef enum {
+	CREATE_CACHE_JOB_RECORD = 1,
+	CREATE_CACHE_NODE_RECORD,
+	CREATE_CACHE_PART_RECORD,
+	UPDATE_CACHE_JOB_RECORD,
+	UPDATE_CACHE_NODE_RECORD,
+	UPDATE_CACHE_NODE_INFO,
+	UPDATE_CACHE_PART_RECORD,
+	DELETE_CACHE_JOB_RECORD,
+	DELETE_CACHE_NODE_RECORD,
+	DELETE_CACHE_PART_RECORD
+} slurm_update_cache_types_t;
+
+
+typedef struct {
+	bool copy_all_data;
+	bool shutdown;
+
+	pthread_cond_t cond;
+	pthread_mutex_t mutex;
+
+	List work;
+} slurmctld_cache_t;
+
+typedef struct {
+	uint32_t job_id;		/* job ID */
+	uint32_t job_state;		/* state of the job */
+	uint32_t state_reason;
+	uint16_t restart_cnt;		/* count of restarts */
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	uint16_t predict_job;  /* Marks the job that executes the time prediction function */
+#endif
+	time_t start_time;
+	time_t end_time;
+	time_t suspend_time;		/* time job last suspended or resumed */
+	time_t pre_sus_time;		/* time job ran prior to last suspend */
+	char *state_desc;
+	char *nodes;
+	char *sched_nodes;
+	char *batch_host;
+#ifdef __METASTACK_OPT_MSG_OUTPUT
+	char *reason_detail;
+#endif
+	bitstr_t *node_bitmap_cg;	/* bitmap of nodes completing job */
+	uint32_t node_cnt;
+	bitstr_t *node_bitmap;
+	uint32_t total_nodes;
+	uint32_t node_cnt_wag;
+	bool details_ptr;
+	uint32_t de_max_nodes;
+	uint16_t de_ntasks_per_node;
+	uint32_t de_num_tasks;
+	uint32_t de_min_nodes;
+	uint16_t de_cpus_per_task;
+	time_t de_submit_time;		/* time of submission */
+	time_t de_begin_time;		/* start at this time (srun --begin),
+					 * resets to time first eligible
+					 * (all dependencies satisfied) */
+	bool de_mc_ptr;
+	uint16_t de_mc_ntasks_per_core;
+}job_state_record_t;
+
+typedef struct {
+	char *name;		/* name of the partition */
+	uint16_t state_up;	/* See PARTITION_* states in slurm.h */
+	char *nodes;
+	char *nodesets;
+	char *orig_nodes;
+	bitstr_t *node_bitmap;
+	uint16_t flags; 	/* see PART_FLAG_* in slurm.h */
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+	uint16_t meta_flags;		/* see PART_NEWFLAG_* above */
+#endif
+	char *tres_fmt_str; /* str of configured TRES in partition */
+	char *allow_accounts;	/* comma delimited list of accounts,
+					 * NULL indicates all */
+	uint16_t priority_tier; /* tier for scheduling and preemption */
+	uint32_t total_nodes;	/* total number of nodes in the partition */
+	uint32_t total_cpus;	/* total number of cpus in the partition */
+	uint32_t max_cpu_cnt;	/* max # of cpus on a node in the partition */
+	uint32_t max_core_cnt;	/* max # of cores on a node in the partition */
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	bool     standby_nodes_ptr;
+	char     *st_borrowed_nodes;	
+	char     *st_nodes; 
+	char     *st_parameters;
+#endif
+
+}part_state_record_t;
+
+typedef struct {
+	uint16_t msg_type;
+	job_record_t *job_ptr;
+	node_record_t *node_ptr;
+	int node_record_count;
+	part_record_t *part_ptr;
+	job_state_record_t *job_state_ptr;
+	node_state_record_t *node_state_ptr;
+	dynamic_plugin_data_t **select_nodeinfo;
+	part_state_record_t *part_state_ptr;
+	uint32_t job_id;
+	char *node_name;
+	char *part_name;
+}slurm_cache_date_t;
+
+
+extern part_record_t *_add_cache_part(part_record_t *src_part_ptr);
+extern int _del_cache_part(char *part_name);
+extern part_record_t *_add_part_to_queue(part_record_t *src_part_ptr);
+extern part_record_t *_add_queue_part_to_cache(part_record_t *des_part_ptr);
+extern void _list_delete_cache_part(part_record_t *part_ptr);
+extern void del_cache_part_state_record(part_state_record_t *src_part_ptr);
+extern int update_cache_part_record(part_state_record_t *src_part_ptr);
+extern List get_cache_part_list(char *name);
+extern void _add_part_state_to_queue(part_record_t *part_ptr);
+
+
+extern job_record_t *_add_cache_job(job_record_t *src_job_ptr);
+extern int _del_cache_job(uint32_t job_id);
+extern int kill_cache_job_by_cache_part_name(char *part_name);
+extern job_record_t *_add_job_to_queue(job_record_t *src_job_ptr);
+extern job_record_t *_add_queue_job_to_cache(job_record_t *des_job_ptr);
+extern void _list_delete_copy_job(void *job_entry);
+extern void del_cache_job_state_record(job_state_record_t *src_job_ptr);
+extern int update_cache_job_record(job_state_record_t *src_job_ptr);
+extern void _add_job_state_to_queue(job_record_t *src_job_ptr);
+extern void _delete_copy_job_state(job_record_t *job_ptr);
+
+extern node_record_t *_add_cache_node(node_record_t *src_node_ptr);
+extern node_record_t * _add_node_to_queue(node_record_t *src_node_ptr, bool add_config_ptr);
+extern int update_cache_node_record(node_state_record_t *src_node_ptr);
+extern void reset_cache_node_record_table_ptr(int node_record_count);
+extern void _add_node_state_to_queue(node_record_t *src_node_ptr, bool only_state);
+extern void _add_node_info_to_queue();
+extern int update_cache_node_info(dynamic_plugin_data_t **select_nodeinfo, int node_record_count);
+extern void _update_node_info();
 
 
 

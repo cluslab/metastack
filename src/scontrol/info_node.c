@@ -146,7 +146,16 @@ scontrol_print_node_list (char *node_list)
 		show_flags |= SHOW_FUTURE;
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(update_client_port(cache_flag)){
+	    char *env_val = NULL;
+    if ((env_val = getenv("SCONTROL_NODE_CACHE_QUERY"))){
+        if(!cache_flag && !nocache_flag){
+            if(!xstrcmp(env_val, "cache"))
+                cache_flag = true;
+            else if(!xstrcmp(env_val, "nocache"))
+                nocache_flag = true;
+        }
+    }
+	if(update_client_port(cache_flag, nocache_flag)){
 		return;
 	}
 #endif

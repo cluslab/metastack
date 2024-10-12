@@ -705,6 +705,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		info("Invalid burst buffer spec for %pJ (%s)",
 		     job_ptr, job_ptr->burst_buffer);
 		bb_job_del(&bb_state, job_ptr->job_id);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    _add_job_state_to_queue(job_ptr);
+#endif
 		return NULL;
 	}
 	if (!bb_job->job_pool)
@@ -1587,6 +1590,9 @@ static void *_start_stage_in(void *x)
 		} else {
 			_queue_teardown(job_ptr->job_id, job_ptr->user_id,true);
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    _add_job_state_to_queue(job_ptr);
+#endif
 	}
 	unlock_slurmctld(job_write_lock);
 
@@ -1709,6 +1715,9 @@ static void *_start_stage_out(void *x)
 				   plugin_type, resp_msg);
 			bb_update_system_comment(job_ptr, "post_run",
 						 resp_msg, 1);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	        _add_job_state_to_queue(job_ptr);
+#endif
 		}
 	}
 	if (!job_ptr) {
@@ -1773,6 +1782,9 @@ static void *_start_stage_out(void *x)
 					   plugin_type, resp_msg);
 				bb_update_system_comment(job_ptr, "data_out",
 							 resp_msg, 1);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	            _add_job_state_to_queue(job_ptr);
+#endif
 			}
 			unlock_slurmctld(job_write_lock);
 		}
@@ -1789,6 +1801,9 @@ static void *_start_stage_out(void *x)
 			xfree(job_ptr->state_desc);
 			xstrfmtcat(job_ptr->state_desc, "%s: %s: %s",
 				   plugin_type, op, resp_msg);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	        _add_job_state_to_queue(job_ptr);
+#endif
 		} else {
 			job_ptr->job_state &= (~JOB_STAGE_OUT);
 			xfree(job_ptr->state_desc);
@@ -1979,6 +1994,9 @@ static void *_start_teardown(void *x)
 				   plugin_type, resp_msg);
 			bb_update_system_comment(job_ptr, "teardown",
 						 resp_msg, 0);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	        _add_job_state_to_queue(job_ptr);
+#endif
 		}
 		unlock_slurmctld(job_write_lock);
 
@@ -2590,6 +2608,10 @@ static void _pre_queue_stage_out(job_record_t *job_ptr, bb_job_t *bb_job)
 	xstrfmtcat(job_ptr->state_desc, "%s: Stage-out in progress",
 		   plugin_type);
 	_queue_stage_out(job_ptr, bb_job);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
+
 }
 
 /*
@@ -3511,6 +3533,9 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
 		_queue_teardown(job_ptr->job_id, job_ptr->user_id, true);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    _add_job_state_to_queue(job_ptr);
+#endif
 		return SLURM_ERROR;
 	}
 	do_pre_run = _have_dw_cmd_opts(bb_job);
@@ -3523,6 +3548,9 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
 		_queue_teardown(job_ptr->job_id, job_ptr->user_id, true);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    _add_job_state_to_queue(job_ptr);
+#endif
 		return SLURM_ERROR;
 	}
 
@@ -3614,6 +3642,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		if (job_ptr->details) {	/* Defer launch until completion */
 			job_ptr->details->prolog_running++;
 			job_ptr->job_state |= JOB_CONFIGURING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+
 		}
 
 		slurm_thread_create_detached(NULL, _start_pre_run,
@@ -3642,6 +3674,9 @@ static void _kill_job(job_record_t *job_ptr, bool hold_job)
 	job_ptr->job_state  = JOB_REQUEUE;
 	job_completion_logger(job_ptr, true);
 	job_ptr->job_state = JOB_PENDING | JOB_COMPLETING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 
 	deallocate_nodes(job_ptr, false, false, false);
 }
@@ -3745,8 +3780,12 @@ static void *_start_pre_run(void *x)
 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_RUNNING);
 	}
 	if (job_ptr) {
-		if (run_kill_job)
+		if (run_kill_job){
 			job_ptr->job_state &= ~JOB_CONFIGURING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+		}
 		prolog_running_decr(job_ptr);
 	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -4033,6 +4072,9 @@ static int _create_bufs(job_record_t *job_ptr, bb_job_t *bb_job,
 						job_ptr, "create_persistent",
 						"Duplicate buffer name", 0);
 				rc++;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	            _add_job_state_to_queue(job_ptr);
+#endif
 				break;
 			} else if (bb_alloc) {
 				/* Duplicate create likely result of requeue */
@@ -4093,6 +4135,9 @@ static int _create_bufs(job_record_t *job_ptr, bb_job_t *bb_job,
 					   "denied",
 					   plugin_type, buf_ptr->name);
 				job_ptr->priority = 0;  /* Hold job */
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	            _add_job_state_to_queue(job_ptr);
+#endif
 				continue;
 			}
 
@@ -4328,6 +4373,9 @@ static void *_create_persistent(void *x)
 				   resp_msg);
 			bb_update_system_comment(job_ptr, "create_persistent",
 						 resp_msg, 0);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	        _add_job_state_to_queue(job_ptr);
+#endif
 		}
 		slurm_mutex_lock(&bb_state.bb_mutex);
 		_reset_buf_state(create_args->user_id, create_args->job_id,
@@ -4490,6 +4538,9 @@ static void *_destroy_persistent(void *x)
 			xfree(job_ptr->state_desc);
 			xstrfmtcat(job_ptr->state_desc, "%s",
 				   resp_msg);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	        _add_job_state_to_queue(job_ptr);
+#endif
 		}
 		slurm_mutex_lock(&bb_state.bb_mutex);
 		_reset_buf_state(destroy_args->user_id, destroy_args->job_id,

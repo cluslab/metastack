@@ -106,6 +106,14 @@ strong_alias(sort_key_pairs, slurm_sort_key_pairs);
 slurm_conf_t slurm_conf;
 bool ignore_state_errors = false;
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+uint16_t cachedup_realtime = 0;
+uint16_t job_cachedup_realtime = 0;
+uint16_t node_cachedup_realtime = 0;
+uint16_t part_cachedup_realtime = 0;
+time_t last_node_info = 0;
+#endif
+
 #ifndef NDEBUG
 uint16_t drop_priv_flag = 0;
 #endif
@@ -220,6 +228,10 @@ static int _parse_rl_users(void **dest, slurm_parser_enum_t type,
 			   const char *line, char **leftover);
 
 static void _destroy_rl_users(void *ptr);
+#endif
+
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+static int _parse_jobsize_maxvalue(double *js_maxcpu, char *item_str);
 #endif
 
 s_p_options_t slurm_conf_options[] = {
@@ -416,7 +428,8 @@ s_p_options_t slurm_conf_options[] = {
 	{"CacheQueryPort", S_P_STRING},
 	{"CacheDupInterval", S_P_UINT16},
 	{"CacheQuery", S_P_STRING},
-#endif	
+    {"CacheDupAbsRealTime", S_P_STRING},
+#endif
 	{"SlurmctldPrimaryOffProg", S_P_STRING},
 	{"SlurmctldPrimaryOnProg", S_P_STRING},
 	{"SlurmctldSyslogDebug", S_P_STRING},
@@ -2045,7 +2058,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			s_p_get_boolean(&p->root_only_flag, "RootOnly", dflt);
 
 		if (!s_p_get_boolean(&p->req_resv_flag, "ReqResv", tbl))
-			s_p_get_boolean(&p->req_resv_flag, "ReqResv", dflt);
+			s_p_get_boolean(&p->req_resv_flag, "ReqResv", dflt);			
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 		if (!s_p_get_boolean(&p->hetpart_flag, "HetPart", tbl) &&
 		    !s_p_get_boolean(&p->hetpart_flag, "HetPart", dflt))
@@ -2297,7 +2310,7 @@ static void _destroy_partitionname(void *ptr)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	xfree(p->standby_nodes);
 	xfree(p->standby_node_parameters);
-#endif	
+#endif
 	xfree(ptr);
 }
 
@@ -3584,6 +3597,7 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->cache_query = 0;
 	ctl_conf_ptr->query_port = 0;
 	ctl_conf_ptr->query_port_count = 0;
+    ctl_conf_ptr->cachedup_abs_realtime = 0;
 #endif
 	xfree(ctl_conf_ptr->cli_filter_plugins);
 	xfree (ctl_conf_ptr->cluster_name);
@@ -3839,7 +3853,16 @@ static int _init_slurm_conf(const char *file_name)
 		no_addr_cache = true;
 
 	conf_initialized = true;
-
+	
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(conf_ptr->cachedup_abs_realtime && conf_ptr->cache_query){
+		cachedup_realtime = 1;
+	}else if(conf_ptr->cache_query){
+		cachedup_realtime = 2;
+	}else{
+		cachedup_realtime = 0;
+	}
+#endif
 	return rc;
 }
 
@@ -5696,6 +5719,17 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 		conf->cache_query = 0;
 	}
 
+    if (s_p_get_string(&temp_str, "CacheDupAbsRealTime", hashtbl)) {
+		if(!xstrcmp(temp_str,"YES")){
+			conf->cachedup_abs_realtime = 1;
+		}else{
+			conf->cachedup_abs_realtime = 0;
+		}
+		xfree(temp_str);
+	}else{
+		conf->cachedup_abs_realtime = 0;
+	}
+
 #endif	
 	(void) s_p_get_string(&conf->slurmctld_primary_off_prog,
 			      "SlurmctldPrimaryOffProg", hashtbl);
@@ -6522,7 +6556,7 @@ extern int debug_str2flags(char *debug_flags, uint64_t *flags_out)
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
 		else if (xstrcasecmp(tok, "Assoc") == 0)
 			(*flags_out) |= DEBUG_FLAG_ASSOC;
-#endif		
+#endif
 		else {
 			error("Invalid DebugFlag: %s", tok);
 			(*flags_out) = 0;
@@ -6928,25 +6962,31 @@ extern void slurm_conf_remove_node(char *node_name)
 }
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-extern bool update_client_port(bool cache_query)
+extern bool update_client_port(bool cache_query, bool nocache_query)
 {
 
+    if(cache_query && nocache_query){
+        printf ("The --cache and --nocache options cannot be used simultaneously!\n");
+			return SLURM_ERROR;
+    }
 	if(conf_ptr->cache_query==2){
 		if(conf_ptr->query_port_count != 1){
 			printf ("CacheQueryPort configuration error, please contact the administrator!\n");
 			return SLURM_ERROR;
 		}
-		conf_ptr->slurmctld_port =  conf_ptr->query_port; 
-		conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+        if (!nocache_query){
+		    conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+		    conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+        }
 	}else if(conf_ptr->cache_query == 1){
-		if (cache_query){
-			if(conf_ptr->query_port_count != 1){
-				printf ("CacheQueryPort configuration error, please contact the administrator!\n");
-				return SLURM_ERROR;
-			}
-			conf_ptr->slurmctld_port =  conf_ptr->query_port; 
-			conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
-		}
+        if(conf_ptr->query_port_count != 1){
+            printf ("CacheQueryPort configuration error, please contact the administrator!\n");
+            return SLURM_ERROR;
+        }
+        if (cache_query){
+            conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+            conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+        }
 	}else if (cache_query){
 		printf ("Parameter error, cache query function not enabled!\n");
 		return SLURM_ERROR;

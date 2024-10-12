@@ -603,6 +603,13 @@ plugin was developed to provide system administrators with a way to do any task
 .IP
 
 .TP
+\fBCacheDupAbsRealTime\fR
+If set to "YES", the cached data will be updated in real-time when the source data
+is added or deleted. This option is only applicable when the \fBCacheQuery\fR is
+configured as "\fBenable\fR" or "\fBcache\fR". The default is "NO".
+.IP
+
+.TP
 \fBCacheDupInterval\fR
 The interval between copying cached data twice. This option is only applicable 
 when \fBCacheQuery\fR is set to "\fBenable\fR" or "\fBcache\fR". The value range

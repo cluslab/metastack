@@ -1142,6 +1142,9 @@ static void *_thread_per_group_rpc(void *args)
 
 				if (job_ptr)
 					job_ptr->job_state &= ~JOB_SIGNALING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				_add_job_state_to_queue(job_ptr);
+#endif
 
 				unlock_slurmctld(job_write_lock);
 			}

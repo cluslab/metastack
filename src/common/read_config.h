@@ -56,6 +56,14 @@ extern slurm_conf_t slurm_conf;
 extern char *default_slurm_config_file;
 extern char *default_plugin_path;
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+extern uint16_t cachedup_realtime;
+extern uint16_t job_cachedup_realtime;
+extern uint16_t node_cachedup_realtime;
+extern uint16_t part_cachedup_realtime;
+extern time_t last_node_info;
+#endif
+
 #ifndef NDEBUG
 extern uint16_t drop_priv_flag;
 #endif
@@ -787,7 +795,7 @@ extern void slurm_conf_add_node(node_record_t *node_ptr);
 extern void slurm_conf_remove_node(char *node_name);
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-extern bool update_client_port(bool cache_query);
+extern bool update_client_port(bool cache_query, bool nocache_query);
 #endif
 
 

@@ -1235,6 +1235,10 @@ extern int select_p_job_init(List job_list)
 					slurm_thread_create_detached(NULL,
 								     ccm_begin,
 								     job_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+					_add_job_state_to_queue(job_ptr);
+#endif
+
 				}
 			}
 #endif
@@ -1527,6 +1531,10 @@ extern int select_p_job_begin(job_record_t *job_ptr)
 				debug("CCM %pJ setting JOB_CONFIGURING",
 				      job_ptr);
 				job_ptr->job_state |= JOB_CONFIGURING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				_add_job_state_to_queue(job_ptr);
+#endif
+
 				slurm_thread_create_detached(NULL, ccm_begin,
 							     job_ptr);
 			}
@@ -1867,6 +1875,10 @@ extern int select_p_select_nodeinfo_set_all(void)
 			node_ptr->node_state |= NODE_STATE_NET;
 		else
 			node_ptr->node_state &= (~NODE_STATE_NET);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 	}
 
 	slurm_mutex_unlock(&blade_mutex);
