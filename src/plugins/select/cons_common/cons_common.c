@@ -1685,10 +1685,12 @@ extern select_nodeinfo_t *select_p_select_nodeinfo_copy(select_nodeinfo_t *nodei
 	nodeinfo_empty->tres_alloc_weighted = nodeinfo->tres_alloc_weighted;
 	nodeinfo_empty->magic = nodeinfo->magic;
 	nodeinfo_empty->tres_alloc_fmt_str = xstrdup(nodeinfo->tres_alloc_fmt_str);
-	if(nodeinfo->tres_alloc_cnt){
-		nodeinfo_empty->tres_alloc_cnt = xcalloc(slurmctld_tres_cnt,sizeof(uint64_t));
-		memcpy(nodeinfo_empty->tres_alloc_cnt, nodeinfo->tres_alloc_cnt, sizeof(uint64_t) * slurmctld_tres_cnt);
-	}
+    nodeinfo->tres_alloc_cnt = NULL;
+	nodeinfo_empty->tres_alloc_cnt = NULL;
+//	if(nodeinfo->tres_alloc_cnt){
+//		nodeinfo_empty->tres_alloc_cnt = xcalloc(slurmctld_tres_cnt,sizeof(uint64_t));
+//		memcpy(nodeinfo_empty->tres_alloc_cnt, nodeinfo->tres_alloc_cnt, sizeof(uint64_t) * slurmctld_tres_cnt);
+//	}
 
 	return nodeinfo_empty;
 }

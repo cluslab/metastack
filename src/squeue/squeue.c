@@ -142,7 +142,7 @@ static int _multi_cluster(List clusters)
 static int _get_info(bool clear_old, bool log_cluster_name )
 {
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(update_client_port(params.cache_query)){
+		if(update_client_port(params.cache_query, params.nocache_query)){
 		return SLURM_ERROR;
 	}
 #endif

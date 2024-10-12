@@ -3345,6 +3345,7 @@ typedef struct {
 	uint16_t query_port_count; /* Cache query number of communication ports */
 	uint16_t cachedup_interval; /*Data copy time interval*/ 
 	uint16_t cache_query; /*High Performance Query Switch*/
+	uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
 #endif
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	void *rl_config;

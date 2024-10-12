@@ -450,6 +450,10 @@ extern void deallocate_nodes(job_record_t *job_ptr, bool timeout,
 		node_count++;
 	}
 #endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
+
 	if (job_ptr->details->prolog_running) {
 		/*
 		 * Job was configuring when it was cancelled and epilog wasn't
@@ -973,8 +977,8 @@ static void _filter_by_node_feature(job_record_t *job_ptr,
 				bit_and_not(avail_node_bitmap,
 					    node_set_ptr[i].my_bitmap);
 #else			
-			bit_and_not(avail_node_bitmap,
-				    node_set_ptr[i].my_bitmap);
+				bit_and_not(avail_node_bitmap,
+					    node_set_ptr[i].my_bitmap);
 #endif					
 		}
 	}
@@ -1240,7 +1244,7 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 		else
 			filter_by_node_mcs(job_ptr, mcs_select, share_node_bitmap);
 #else		
-		filter_by_node_mcs(job_ptr, mcs_select, share_node_bitmap);
+			filter_by_node_mcs(job_ptr, mcs_select, share_node_bitmap);
 #endif
 	}
 
@@ -1936,8 +1940,8 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 						bit_and(node_set_map,
 							idle_node_bitmap);
 #else					
-					bit_and(node_set_map,
-						idle_node_bitmap);
+						bit_and(node_set_map,
+							idle_node_bitmap);
 #endif						
 				}
 
@@ -1992,8 +1996,8 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 					bit_and(node_set_ptr[i].my_bitmap,
 						idle_node_bitmap);				
 #else							   
-				bit_and(node_set_ptr[i].my_bitmap,
-					idle_node_bitmap);
+					bit_and(node_set_ptr[i].my_bitmap,
+						idle_node_bitmap);				
 #endif					
 				count2 = bit_set_count(node_set_ptr[i].
 						       my_bitmap);
@@ -2007,7 +2011,7 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 			else
 				bit_and(node_set_ptr[i].my_bitmap, avail_node_bitmap);
 #else
-			bit_and(node_set_ptr[i].my_bitmap, avail_node_bitmap);
+				bit_and(node_set_ptr[i].my_bitmap, avail_node_bitmap);
 #endif			
 			if (!nodes_busy) {
 				count1 = bit_set_count(node_set_ptr[i].
@@ -2140,7 +2144,7 @@ try_sched:
 				else
 					bit_and(avail_bitmap, avail_node_bitmap);
 #else				
-				bit_and(avail_bitmap, avail_node_bitmap);
+					bit_and(avail_bitmap, avail_node_bitmap);
 #endif				
 				bit_and(avail_bitmap, total_bitmap);
 				preemptee_cand = preemptee_candidates;
@@ -2252,7 +2256,7 @@ try_sched:
  				else
 					bit_and(avail_bitmap, avail_node_bitmap);
 #else				
-				bit_and(avail_bitmap, avail_node_bitmap);
+					bit_and(avail_bitmap, avail_node_bitmap);
 #endif
 				job_ptr->details->pn_min_memory = orig_req_mem;
 				pick_code = select_g_job_test(job_ptr,
@@ -2669,6 +2673,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 		    && (job_ptr->state_reason != WAIT_HELD_USER)
 		    && (job_ptr->state_reason != WAIT_MAX_REQUEUE)) {
 			job_ptr->state_reason = WAIT_HELD;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		    _add_job_state_to_queue(job_ptr);
+#endif
 		}
 		return ESLURM_JOB_HELD;
 	}
@@ -2684,6 +2691,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			job_ptr->state_reason = WAIT_BURST_BUFFER_STAGING;
 		else
 			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 		return ESLURM_BURST_BUFFER_WAIT;
 	}
 
@@ -2691,8 +2701,12 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	    (job_ptr->details->max_nodes == 0)) {
 		if (!job_ptr->burst_buffer)
 			return ESLURM_INVALID_NODE_COUNT;
-		if (!test_only)
+		if (!test_only){
 			_end_null_job(job_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+		}
 		return SLURM_SUCCESS;
 	}
 
@@ -2869,7 +2883,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			else
 				unavail_bitmap = bit_copy(avail_node_bitmap);
 #else			
-			unavail_bitmap = bit_copy(avail_node_bitmap);
+				unavail_bitmap = bit_copy(avail_node_bitmap);
 #endif
 			filter_by_node_owner(job_ptr, unavail_bitmap);
 			bit_not(unavail_bitmap);
@@ -3129,6 +3143,11 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	}
 
 cleanup:
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
+
 	if (job_ptr->array_recs && job_ptr->array_recs->task_id_bitmap &&
 	    !IS_JOB_STARTED(job_ptr) &&
 	    (bit_ffs(job_ptr->array_recs->task_id_bitmap) != -1)) {
@@ -4738,6 +4757,9 @@ extern void re_kill_job(job_record_t *job_ptr)
 			agent_args->node_count++;
 		}
 	}
+#endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
 #endif
 
 	if (agent_args->node_count == 0) {

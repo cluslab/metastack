@@ -1418,6 +1418,9 @@ static int _remove_sibling_bit(job_record_t *job_ptr,
 		job_ptr->job_state &= ~JOB_REVOKED;
 
 	update_job_fed_details(job_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 
 	return SLURM_SUCCESS;
 }
@@ -1490,6 +1493,9 @@ static void _cleanup_removed_origin_jobs(void)
 		job_ptr->start_time = now;
 		job_ptr->end_time   = now;
 		job_completion_logger(job_ptr, false);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 	}
 	list_iterator_destroy(job_itr);
 
@@ -1589,6 +1595,9 @@ static void _cleanup_removed_cluster_jobs(slurmdb_cluster_rec_t *cluster)
 				job_ptr->state_reason = WAIT_NO_REASON;
 				xfree(job_ptr->state_desc);
 				job_completion_logger(job_ptr, false);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		    	_add_job_state_to_queue(job_ptr);
+#endif
 			}
 		}
 	}
@@ -1710,6 +1719,19 @@ static int _fed_mgr_job_allocate_sib(char *sib_name, job_desc_msg_t *job_desc,
 	if (job_desc->immediate &&
 	    (error_code != SLURM_SUCCESS))
 		error_code = ESLURM_CAN_NOT_START_IMMEDIATELY;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if (!reject_job){
+		if(job_cachedup_realtime == 1){
+			_add_cache_job(job_ptr);
+		}else if(job_cachedup_realtime == 2 && cache_queue){
+			slurm_cache_date_t *cache_msg = NULL;
+			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+			cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+			cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+			cache_enqueue(cache_msg);
+		}
+	}
+#endif
 
 send_msg:
 	/* Send response back about origin jobid if an error occured. */
@@ -1717,9 +1739,13 @@ send_msg:
 		_persist_fed_job_response(sibling, job_desc->job_id, error_code);
 	else {
 		if (!(job_ptr->fed_details->siblings_viable &
-		      FED_SIBLING_BIT(fed_mgr_cluster_rec->fed.id)))
-			job_ptr->job_state |= JOB_REVOKED;
+		      FED_SIBLING_BIT(fed_mgr_cluster_rec->fed.id))){
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
 
+			job_ptr->job_state |= JOB_REVOKED;
+		}
 		add_fed_job_info(job_ptr);
 		schedule_job_save();	/* Has own locks */
 		schedule_node_save();	/* Has own locks */
@@ -1741,6 +1767,10 @@ static void _do_fed_job_complete(job_record_t *job_ptr, uint32_t job_state,
 		 * states. */
 		job_ptr->job_state &= ~(JOB_PENDING | JOB_COMPLETING);
 		batch_requeue_fini(job_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
+
 	} else {
 		fed_mgr_job_revoke(job_ptr, true, job_state, exit_code,
 				   start_time);
@@ -1962,6 +1992,11 @@ static void _handle_fed_job_submission(fed_job_update_info_t *job_update_info)
 
 	slurmctld_lock_t job_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool local_job_cachedup = false;
+	slurmctld_lock_t job_cache_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
+#endif
 
 	log_flag(FEDR, "%s: submitting %s sibling JobId=%u from %s",
 		 __func__, (interactive_job) ? "interactive" : "batch",
@@ -1971,7 +2006,21 @@ static void _handle_fed_job_submission(fed_job_update_info_t *job_update_info)
 
 	/* do this outside the job write lock */
 	delete_job_desc_files(job_update_info->job_id);
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(cachedup_realtime == 1){
+		lock_cache_query(job_cache_write_lock);
+		local_job_cachedup = true;
+	}
+#endif
 	lock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(local_job_cachedup){
+		job_cachedup_realtime = 1;
+	}else if(cachedup_realtime == 2){
+        job_cachedup_realtime = 2;
+    }
+#endif
 
 	if ((job_ptr = find_job_record(job_update_info->job_id))) {
 		debug("Found existing fed %pJ, going to requeue/unlink it",
@@ -1993,7 +2042,17 @@ static void _handle_fed_job_submission(fed_job_update_info_t *job_update_info)
 	_fed_mgr_job_allocate_sib(job_update_info->submit_cluster,
 				  job_update_info->submit_desc,
 				  interactive_job);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	job_cachedup_realtime = 0;
+#endif
 	unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    if(local_job_cachedup){
+        unlock_cache_query(job_cache_write_lock);
+        local_job_cachedup = false;
+    }
+#endif
+
 }
 
 static void _handle_fed_job_update(fed_job_update_info_t *job_update_info)
@@ -3426,7 +3485,7 @@ static slurmdb_federation_rec_t *_state_load(char *state_save_location)
      */
     if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
 #else
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
 #endif
     {
 		if (!ignore_state_errors)
@@ -4362,7 +4421,17 @@ extern int fed_mgr_job_allocate(slurm_msg_t *msg, job_desc_msg_t *job_desc,
 
 	job_ptr->fed_details->siblings_active = job_desc->fed_siblings_active;
 	update_job_fed_details(job_ptr);
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(job_cachedup_realtime == 1){
+		_add_cache_job(job_ptr);
+	}else if(job_cachedup_realtime == 2 && cache_queue){
+		slurm_cache_date_t *cache_msg = NULL;
+		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+		cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+		cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+		cache_enqueue(cache_msg);
+	}
+#endif
 	/* Add record to fed job table */
 	add_fed_job_info(job_ptr);
 
@@ -4934,6 +5003,9 @@ extern int fed_mgr_job_revoke(job_record_t *job_ptr, bool job_complete,
 	job_ptr->exit_code = exit_code;
 	if (job_hold_requeue(job_ptr)) {
 		batch_requeue_fini(job_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 		return SLURM_SUCCESS;
 	}
 	/*
@@ -4952,6 +5024,9 @@ extern int fed_mgr_job_revoke(job_record_t *job_ptr, bool job_complete,
 	job_ptr->end_time   = start_time;
 	job_ptr->state_reason = WAIT_NO_REASON;
 	xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 
 	/*
 	 * Since the job is purged/revoked quickly on the non-origin side it's
@@ -5131,6 +5206,10 @@ extern int fed_mgr_job_requeue(job_record_t *job_ptr)
 			job_info->cluster_lock = 0;
 
 		slurm_mutex_unlock(&fed_job_list_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
+
 		return SLURM_SUCCESS;
 	}
 
@@ -5167,6 +5246,9 @@ extern int fed_mgr_job_requeue(job_record_t *job_ptr)
 			job_ptr->fed_details->siblings_active;
 	}
 	slurm_mutex_unlock(&fed_job_list_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 
 	return rc;
 }
@@ -5516,6 +5598,9 @@ static int _reconcile_fed_job(job_record_t *job_ptr, reconcile_sib_t *rec_sib)
 			job_ptr->state_reason = WAIT_NO_REASON;
 			xfree(job_ptr->state_desc);
 			job_completion_logger(job_ptr, false);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
 		} else if (IS_JOB_PENDING(job_ptr) &&
 			   (IS_JOB_RUNNING(remote_job) ||
 			    IS_JOB_COMPLETING(remote_job))) {
@@ -5659,7 +5744,9 @@ static int _reconcile_fed_job(job_record_t *job_ptr, reconcile_sib_t *rec_sib)
 				job_ptr->state_reason = WAIT_NO_REASON;
 				xfree(job_ptr->state_desc);
 				job_completion_logger(job_ptr, false);
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			    _add_job_state_to_queue(job_ptr);
+#endif
 			} else if (IS_JOB_COMPLETED(remote_job)) {
 				info("%s: %pJ is completed on sibling %s but the origin cluster wasn't part of starting the job, must have been started while the origin was down",
 				     __func__, job_ptr, sibling_name);

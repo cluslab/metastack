@@ -90,6 +90,9 @@ xhash_t* cache_node_hash_table = NULL;
 int cache_node_record_count = 0;		/* count in cache_node_record_table_ptr */
 int copy_last_node_index = -1;		/* index of last node in copy tabe */
 int cache_last_node_index = -1;		/* index of last node in cache tabe */
+int copy_node_record_table_size = 0; /* size of node_record_table_ptr */
+int cache_node_record_table_size = 0; /* size of node_record_table_ptr */
+bool borrow_cache_nodes = false;
 #endif
 
 /* Global variables */
@@ -112,10 +115,6 @@ static void	_dump_hash (void);
 #endif
 static node_record_t *_find_node_record(char *name, bool test_alias,
 					bool log_missing);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-static node_record_t *_find_cache_node_record(char *name, bool test_alias,
-					bool log_missing);
-#endif		
 static void	_list_delete_config (void *config_entry);
 static void _node_record_hash_identity (void* item, const char** key,
 					uint32_t* key_len);
@@ -767,6 +766,14 @@ extern void grow_node_record_table_ptr(void)
 				     slurm_conf.max_node_cnt);
 	xrealloc(node_record_table_ptr,
 		 node_record_table_size * sizeof(node_record_t *));
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(!cache_node_record_table_ptr){
+		cache_node_record_table_ptr = xcalloc(node_record_table_size, sizeof(node_record_t *));
+	}
+	if(!cache_node_hash_table){
+		cache_node_hash_table = xhash_init(_node_record_hash_identity, NULL);
+	}
+#endif
 	/*
 	 * You need to rehash the hash after we realloc or we will have
 	 * only bad memory references in the hash.
@@ -1030,9 +1037,9 @@ extern void init_node_conf(void)
 	xhash_free(node_hash_table);
 
 #ifdef __METASTACK_OPT_CACHE_QUERY	
-		if (!cache_config_list){
-			cache_config_list	 = list_create (_list_delete_config);
-		}
+	if (!cache_config_list){
+		cache_config_list = list_create (_list_delete_config);
+	}
 #endif
 	if (config_list)	/* delete defunct configuration entries */
 		_delete_config_record();
@@ -1442,9 +1449,8 @@ extern void node_conf_set_all_active_bits(bitstr_t *b)
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 extern node_record_t *next_cache_node(int *index, int node_record_count, node_record_t **node_record_table_ptr)
-{
-	xassert(index);
-
+{ 
+	
 	if (*index >= node_record_count)
 		return NULL;
 
@@ -1456,12 +1462,13 @@ extern node_record_t *next_cache_node(int *index, int node_record_count, node_re
 			return NULL;
 	}
 
-	xassert(node_record_table_ptr[*index]->index == *index);
+	if(node_record_table_ptr[*index]->index != *index)
+		return NULL;
 
 	return node_record_table_ptr[*index];
 }
 
-static void purge_cache_node_rec(node_record_t *node_ptr)
+extern void purge_cache_node_rec(node_record_t *node_ptr)
 {
 
 	if (!node_ptr)
@@ -1493,7 +1500,36 @@ static void purge_cache_node_rec(node_record_t *node_ptr)
 	xfree(node_ptr);
 }
 
-extern void delete_cache_node_record(node_record_t *node_ptr)
+/* Only delete config_ptr if isn't referenced by another node. */
+static void _delete_cache_node_config_ptr(node_record_t *node_ptr)
+{
+	bool delete = true;
+	node_record_t *tmp_ptr;
+	config_record_t *this_config_ptr;
+
+	if (!node_ptr || !node_ptr->config_ptr)
+		return;
+
+	/* clear in case config_ptr is still referenced by other nodes */
+	if (node_ptr->config_ptr->node_bitmap)
+		bit_clear(node_ptr->config_ptr->node_bitmap, node_ptr->index);
+
+	this_config_ptr = node_ptr->config_ptr;
+	node_ptr->config_ptr = NULL;
+
+	for (int i = 0; (tmp_ptr = next_cache_node(&i, cache_node_record_count, cache_node_record_table_ptr)); i++) {
+		if (tmp_ptr->config_ptr == this_config_ptr) {
+			delete = false;
+			break;
+		}
+	}
+	if (delete){
+		list_delete_ptr(cache_config_list, this_config_ptr);
+	}
+}
+
+/*delete_cache_one_node_record: Use this when deleting a node from the cache.*/
+extern void delete_cache_one_node_record(node_record_t *node_ptr)
 {
 	xassert(node_ptr);
 
@@ -1510,7 +1546,131 @@ extern void delete_cache_node_record(node_record_t *node_ptr)
 		if (i < 0)
 			cache_last_node_index = -1;
 	}
+	_delete_cache_node_config_ptr(node_ptr);
 	purge_cache_node_rec(node_ptr);
+}
+
+/*delete_cache_node_record: Use this when deleting all nodes from the cache.*/
+extern void delete_cache_node_record(node_record_t *node_ptr)
+{
+	xassert(node_ptr);
+
+	cache_node_record_table_ptr[node_ptr->index] = NULL;
+
+	if (node_ptr->index == cache_last_node_index) {
+		int i = 0;
+		for (i = cache_last_node_index - 1; i >=0; i--) {
+			if (cache_node_record_table_ptr[i]) {
+				cache_last_node_index = i;
+				break;
+			}
+		}
+		if (i < 0)
+			cache_last_node_index = -1;
+	}	
+	purge_cache_node_rec(node_ptr);
+}
+
+/*del_cache_node_state_record: Clear the memory of node status 
+ *update messages in the message queue.*/
+extern void del_cache_node_state_record(node_state_record_t *src_node_ptr)
+{	
+	int i;
+	xfree(src_node_ptr->name);
+//	select_g_select_nodeinfo_free(src_node_ptr->select_nodeinfo);
+	xfree(src_node_ptr->reason);
+	if(!src_node_ptr->only_state){
+		if(src_node_ptr->part_pptr){
+			char **part_pptr_t = (char **)src_node_ptr->part_pptr;
+			for (i = 0; i < src_node_ptr->part_cnt; i++) {
+				xfree(part_pptr_t[i]);
+			}
+			xfree(src_node_ptr->part_pptr);
+		}
+	}
+	xfree(src_node_ptr);
+}
+
+/*del_cache_node_info_record: Clear the memory of node_info status
+ *update messages in the message queue.*/
+extern void del_cache_node_info_record(dynamic_plugin_data_t **select_nodeinfo, int node_record_count)
+{	int n;
+	dynamic_plugin_data_t *des_select_nodeinfo = NULL;
+	for (n = 0; n < node_record_count; n++) {
+		if (!(des_select_nodeinfo = select_nodeinfo[n]))
+			continue;
+		select_g_select_nodeinfo_free(des_select_nodeinfo);
+	}
+	xfree(select_nodeinfo);
+}
+
+/* _list_delete_copy_config - delete an entry from the config list,
+ *	see list.h for documentation */
+extern void _list_delete_copy_config (config_record_t *config_ptr)
+{
+	if(!config_ptr)
+		return;
+	_list_delete_config(config_ptr);
+}
+extern int _del_cache_node(char *node_name)
+{
+//	int i;
+	node_record_t *node_ptr = NULL;
+//	node_record_t *part_node_ptr = NULL;
+//	part_record_t *part_ptr = NULL;
+//	hostlist_t alias_list;
+//	char *alias = NULL;
+	debug2("%s CACHE_QUERY  delete node %s ", __func__, node_name);
+	node_ptr = find_cache_node_record(node_name);
+	if(!node_ptr){
+		return SLURM_SUCCESS;
+	}
+/*
+	for (i = 0; i < node_ptr->part_cnt; i++) {
+		part_ptr = node_ptr->part_pptr[i];
+		if(bit_test(part_ptr->node_bitmap, node_ptr->index)){
+			part_ptr->total_nodes--;
+			part_ptr->total_cpus -= node_ptr->cpus;
+			bit_clear(part_ptr->node_bitmap, node_ptr->index);
+			xfree(part_ptr->nodes);
+			part_ptr->nodes = bitmap2node_name(part_ptr->node_bitmap);
+			alias_list = hostlist_create(part_ptr->nodes);
+			while ((alias = hostlist_shift(alias_list))){
+				part_node_ptr = find_cache_node_record(alias);
+				part_ptr->max_cpu_cnt = MAX(part_ptr->max_cpu_cnt,
+							    part_node_ptr->cpus);
+				part_ptr->max_core_cnt = MAX(part_ptr->max_core_cnt,
+							     part_node_ptr->tot_cores);
+				free(alias);
+			}
+			if (alias_list)
+				hostlist_destroy(alias_list);
+		}
+	}
+*/
+	delete_cache_one_node_record(node_ptr);
+	return SLURM_SUCCESS;
+}
+
+extern void _del_hash_cache_node(char *node_name)
+{
+	xhash_delete_str(cache_node_hash_table, node_name);
+}
+
+extern void rehash_cache_node(void)
+{
+	int i;
+	node_record_t *node_ptr;
+
+	xhash_free(cache_node_hash_table);
+	cache_node_hash_table = xhash_init(_node_record_hash_identity, NULL);
+	for (i = 0; (node_ptr = next_cache_node(&i, cache_node_record_count, cache_node_record_table_ptr)); i++) {
+		if ((node_ptr->name == NULL) || (node_ptr->name[0] == '\0'))
+			continue;	/* vestigial record */
+		xhash_add(cache_node_hash_table, node_ptr);
+	}
+
+	return;
 }
 
 /*
@@ -1520,19 +1680,6 @@ extern void delete_cache_node_record(node_record_t *node_ptr)
  * NOTE: Logs an error if the node name is NOT found
  */
 extern node_record_t *find_cache_node_record(char *name)
-{
-	return _find_cache_node_record(name, true, true);
-}
-
-/*
- * _find_cache_node_record - find a record for node with specified name
- * IN: name - name of the desired node
- * IN: test_alias - if set, also test NodeHostName value
- * IN: log_missing - if set, then print an error message if the node is not found
- * RET: pointer to node record or NULL if not found
- */
-static node_record_t *_find_cache_node_record(char *name, bool test_alias,
-					bool log_missing)
 {
 	node_record_t *node_ptr = NULL;
 
@@ -1555,37 +1702,17 @@ static node_record_t *_find_cache_node_record(char *name, bool test_alias,
 	    (xstrcmp(cache_node_record_table_ptr[0]->name, "localhost") == 0))
 		return (cache_node_record_table_ptr[0]);
 
-	if (log_missing)
-		error("%s: lookup failure for node \"%s\"",
-		      __func__, name);
-
-	if (test_alias) {
-		char *alias = slurm_conf_get_nodename(name);
-		/* look for the alias node record if the user put this in
-	 	 * instead of what slurm sees the node name as */
-		if (!alias)
-			return NULL;
-
-		node_ptr = xhash_get_str(cache_node_hash_table, alias);
-		if (log_missing)
-			error("%s: lookup failure for node \"%s\", alias \"%s\"",
-			      __func__, name, alias);
-		xfree(alias);
-		return node_ptr;
-	}
-
 	return NULL;
 }
-					
+
 /*Initialize information about the copy node*/
 extern void init_node_record_table_ptr(void)
 {
-	int node_table_size;
 	copy_node_record_table_ptr = NULL;
 	copy_node_record_count = node_record_count;
 	copy_last_node_index = last_node_index;
-	node_table_size = MAX(copy_node_record_count + 100, slurm_conf.max_node_cnt);
-	copy_node_record_table_ptr = xcalloc(node_table_size, sizeof(node_record_t *));
+	copy_node_record_table_size = MAX(copy_node_record_count + 100, slurm_conf.max_node_cnt);
+	copy_node_record_table_ptr = xcalloc(copy_node_record_table_size, sizeof(node_record_t *));
 	copy_node_hash_table = xhash_init(_node_record_hash_identity, NULL);
 	copy_config_list    = list_create (_list_delete_config);
 }

@@ -49,6 +49,9 @@
 #include "src/common/xstring.h"
 
 #include "src/slurmctld/slurmctld.h"
+#ifdef __METASTACK_OPT_CACHE_QUERY
+#include "src/slurmctld/state_save.h"
+#endif
 
 typedef struct {
 	char *alloc_node;
@@ -140,6 +143,18 @@ static int _handle_job(void *x, void *y)
 
 		info("Added %pJ from crontab entry from uid=%u, next start is %lu",
 		     job_ptr, job->user_id, job->begin_time);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		if(job_cachedup_realtime == 1){
+			_add_cache_job(job_ptr);
+		}else if(job_cachedup_realtime == 2 && cache_queue){
+			slurm_cache_date_t *cache_msg = NULL;
+			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+			cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+			cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+			cache_enqueue(cache_msg);
+		}
+#endif
+
 	}
 
 	return 0;
@@ -149,6 +164,18 @@ static int _purge_job(void *x, void *ignored)
 {
 	job_record_t *job_ptr = (job_record_t *) x;
 	purge_job_record(job_ptr->job_id);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(job_cachedup_realtime == 1){
+		_del_cache_job(job_ptr->job_id);
+	}else if(job_cachedup_realtime == 2 && cache_queue){
+		slurm_cache_date_t *cache_msg = NULL;
+		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+		cache_msg->msg_type = DELETE_CACHE_JOB_RECORD;
+		cache_msg->job_id = job_ptr->job_id;
+		cache_enqueue(cache_msg);
+	}
+#endif
+
 	return 0;
 }
 
@@ -172,6 +199,10 @@ static int _clear_requeue_cron(void *x, void *y)
 			job_ptr->end_time = now;
 			job_ptr->exit_code = 1;
 			job_completion_logger(job_ptr, false);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+
 		}
 	}
 

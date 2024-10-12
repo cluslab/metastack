@@ -63,6 +63,7 @@
 #define OPT_LONG_YAML      0x107
 #ifdef __METASTACK_OPT_CACHE_QUERY
 #define OPT_LONG_CACHE     0x108
+#define OPT_LONG_NOCACHE     0x109
 #endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define OPT_LONG_BORROW    0x110
@@ -352,6 +353,9 @@ extern void parse_command_line(int argc, char **argv)
 		{"long",      no_argument,       0, 'l'},
 		{"cluster",   required_argument, 0, 'M'},
 		{"clusters",  required_argument, 0, 'M'},
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+		{"nocache",	   no_argument, 	  0, OPT_LONG_NOCACHE},
+#endif
 		{"nodes",     required_argument, 0, 'n'},
 		{"noconvert", no_argument,       0, OPT_LONG_NOCONVERT},
 		{"noheader",  no_argument,       0, 'h'},
@@ -407,6 +411,15 @@ extern void parse_command_line(int argc, char **argv)
 		working_cluster_rec = list_peek(params.clusters);
 		params.local = true;
 	}
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+    if ((env_val = getenv("SINFO_CACHE_QUERY"))){
+        if(!xstrcmp(env_val, "cache")){
+            params.cache_query = true;
+        }else if(!xstrcmp(env_val, "nocache")){
+            params.nocache_query = true;
+        }
+    }
+#endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	params.borrow_flag = false;
 #endif
@@ -566,7 +579,12 @@ extern void parse_command_line(int argc, char **argv)
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 		case OPT_LONG_CACHE:
 			params.cache_query = true;
+			params.nocache_query = false;
 			break;	
+		case OPT_LONG_NOCACHE:
+			params.nocache_query = true;
+            params.cache_query = false;
+			break;
 #endif
 
 		}
@@ -1745,6 +1763,7 @@ static void _help( void )
 Usage: sinfo [OPTIONS]\n\
   -a, --all                  show all partitions (including hidden and those\n\
 			     not accessible)\n\
+      --cache                retrieve job information from the cache\n\
   -d, --dead                 show only non-responding nodes\n\
   -e, --exact                group nodes only on exact match of configuration\n\
       --federation           Report federated information if a member of one\n\
@@ -1757,6 +1776,7 @@ Usage: sinfo [OPTIONS]\n\
   -l, --long                 long output - displays more information\n\
   -M, --clusters=names       clusters to issue commands to. Implies --local.\n\
                              NOTE: SlurmDBD must be up.\n\
+      --nocache              retrieve job information from the source data\n\
   -n, --nodes=NODES          report on specific node(s)\n\
   --noconvert                don't convert units from their original type\n\
 			     (e.g. 2048M won't be converted to 2G).\n\

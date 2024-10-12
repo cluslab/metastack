@@ -722,6 +722,10 @@ static void _validate_slurmd_addr(void)
 		node_ptr->reason = xstrdup("NO NETWORK ADDRESS FOUND");
 		node_ptr->reason_time = time(NULL);
 		node_ptr->reason_uid = slurm_conf.slurm_user_id;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
+
 	}
 
 	END_TIMER2("_validate_slurmd_addr");
@@ -847,8 +851,12 @@ static int _handle_downnodes_line(slurm_conf_downnodes_t *down)
 		}
 
 		if ((state_val != NO_VAL) &&
-		    (state_val != NODE_STATE_UNKNOWN))
+		    (state_val != NODE_STATE_UNKNOWN)){
 			node_rec->node_state = state_val;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            _add_node_state_to_queue(node_rec, true);
+#endif
+		  }
 		if (down->reason) {
 			xfree(node_rec->reason);
 			node_rec->reason = xstrdup(down->reason);
@@ -1381,6 +1389,9 @@ static int _foreach_requeue_job_node_failed(void *x, void *arg)
 	}
 
 	job_ptr->job_state &= (~JOB_REQUEUE);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 
 	return rc;
 }
@@ -1409,6 +1420,10 @@ static void _abort_job(job_record_t *job_ptr, uint32_t job_state,
 		/* build_cg_bitmap() may clear JOB_COMPLETING */
 		epilog_slurmctld(job_ptr);
 	}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
+
 }
 
 static int _mark_het_job_unused(void *x, void *arg)
@@ -1796,6 +1811,10 @@ void _sync_jobs_to_conf(void)
 				job_ptr->node_cnt = bit_set_count(
 					job_ptr->node_bitmap_cg);
 			}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+
 		}
 	}
 
@@ -2789,6 +2808,9 @@ static int _restore_node_state(int recover,
 			else
 				hs = hostset_create(node_ptr->name);
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+        _add_node_state_to_queue(node_ptr, true);
+#endif
 
 		if (IS_NODE_DYNAMIC_FUTURE(node_ptr) ||
 		    (IS_NODE_CLOUD(node_ptr) &&
@@ -3443,6 +3465,9 @@ static int _sync_nodes_to_comp_job(void)
 			 * reconfiguration, do not log completion again.
 			 * job_completion_logger(job_ptr, false); */
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif		
 	}
 	list_iterator_destroy(job_iterator);
 	if (update_cnt)
@@ -3536,6 +3561,10 @@ static int _sync_nodes_to_active_job(job_record_t *job_ptr)
 			cnt++;
 			node_ptr->node_state = NODE_STATE_ALLOCATED |
 					       node_flags;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            _add_node_state_to_queue(node_ptr, true);
+#endif
+
 		}
 	}
 
@@ -3829,7 +3858,7 @@ extern int load_config_state_lite(void)
      */
     if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
 #else
-	if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
+    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
 #endif
     {
 		if (!ignore_state_errors)

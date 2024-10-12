@@ -1062,6 +1062,9 @@ static void *_start_stage_out(void *x)
 						stage_out_args->uid,
 						false);
 			}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	        _add_job_state_to_queue(job_ptr);
+#endif
 		} else {
 			job_ptr->job_state &= (~JOB_STAGE_OUT);
 			xfree(job_ptr->state_desc);
@@ -1468,6 +1471,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		info("Invalid burst buffer spec for %pJ (%s)",
 		     job_ptr, job_ptr->burst_buffer);
 		bb_job_del(&bb_state, job_ptr->job_id);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    _add_job_state_to_queue(job_ptr);
+#endif
 		return NULL;
 	}
 
@@ -2376,6 +2382,9 @@ static void *_start_teardown(void *x)
 					bb_update_system_comment(job_ptr,
 								 "teardown",
 								 resp_msg, 0);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	                _add_job_state_to_queue(job_ptr);
+#endif
 				}
 				unlock_slurmctld(job_write_lock);
 				sleep(sleep_time);
@@ -2672,6 +2681,9 @@ static void *_start_stage_in(void *x)
 			_queue_teardown(job_ptr->job_id,
 					job_ptr->user_id, true);
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    _add_job_state_to_queue(job_ptr);
+#endif
 	}
 	stage_in_cnt--;
 	slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -2964,6 +2976,9 @@ static void _kill_job(job_record_t *job_ptr, bool hold_job)
 	job_ptr->job_state  = JOB_REQUEUE;
 	job_completion_logger(job_ptr, true);
 	job_ptr->job_state = JOB_PENDING | JOB_COMPLETING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 
 	deallocate_nodes(job_ptr, false, false, false);
 }
@@ -3058,8 +3073,12 @@ static void *_start_pre_run(void *x)
 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_RUNNING);
 	}
 	if (job_ptr) {
-		if (run_kill_job)
+		if (run_kill_job){
 			job_ptr->job_state &= ~JOB_CONFIGURING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+		}
 		prolog_running_decr(job_ptr);
 	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -3126,6 +3145,9 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
 		_queue_teardown(job_ptr->job_id, job_ptr->user_id, true);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	    _add_job_state_to_queue(job_ptr);
+#endif
 		return SLURM_ERROR;
 	}
 	xstrfmtcat(job_dir, "%s/hash.%d/job.%u",
@@ -3173,6 +3195,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	if (job_ptr->details) { /* Defer launch until completion */
 		job_ptr->details->prolog_running++;
 		job_ptr->job_state |= JOB_CONFIGURING;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
+
 	}
 
 	slurm_thread_create_detached(&tid, _start_pre_run, pre_run_args);

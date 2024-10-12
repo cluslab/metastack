@@ -1174,7 +1174,7 @@ static int _yield_locks(int64_t usec)
 			verbose("continuing to yield locks, %d RPCs pending",
 				slurmctld_config.server_thread_count);
 			slurm_mutex_unlock(&slurmctld_config.thread_count_lock);			
-		}	
+		} 
 #else
 		slurm_mutex_lock(&slurmctld_config.thread_count_lock);
 		if ((max_rpc_cnt == 0) ||
@@ -1737,12 +1737,20 @@ static void _handle_planned(bool set)
 			if (!IS_NODE_ALLOCATED(node_ptr)) {
 				node_ptr->node_state |= NODE_STATE_PLANNED;
 				node_update = true;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+                _add_node_state_to_queue(node_ptr, true);
+#endif
+
 			} else
 				bit_clear(planned_bitmap, n);
 		} else {
 			node_ptr->node_state &= ~NODE_STATE_PLANNED;
 			node_update = true;
 			bit_clear(planned_bitmap, n);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            _add_node_state_to_queue(node_ptr, true);
+#endif
+
 		}
 
 		log_flag(BACKFILL, "%s: %s state is %s",
@@ -2020,6 +2028,9 @@ static void _attempt_backfill(void)
 		    (job_ptr->state_reason == WAIT_NO_REASON)) {
 			xfree(job_ptr->state_desc);
 			job_ptr->state_reason = WAIT_RESOURCES;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	        _add_job_state_to_queue(job_ptr);
+#endif
 		}
 
 		if (!_job_runnable_now(job_ptr))
@@ -2066,6 +2077,9 @@ static void _attempt_backfill(void)
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason = WAIT_NO_REASON;
 				last_job_update = now;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	            _add_job_state_to_queue(job_ptr);
+#endif
 			}
 			assoc_mgr_unlock(&locks);
 		}
@@ -2690,6 +2704,9 @@ next_task:
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason =
 					WAIT_BURST_BUFFER_RESOURCE;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	            _add_job_state_to_queue(job_ptr);
+#endif
 			} else {	/* bb == 0 */
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason=WAIT_BURST_BUFFER_STAGING;
@@ -2698,6 +2715,9 @@ next_task:
 				 * future.
 				 */
 				job_ptr->start_time = now + 1;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	            _add_job_state_to_queue(job_ptr);
+#endif
 			}
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u.",
 				     job_ptr,
@@ -2803,7 +2823,7 @@ skip_start:
 					hard_limit = YEAR_SECONDS;
 				else
 					hard_limit = job_ptr->time_limit * 60;
-				job_ptr->end_time = job_ptr->start_time +
+					job_ptr->end_time = job_ptr->start_time +
 						    hard_limit;
 				/*
 				 * Only set if start_time. end_time must be set
@@ -3343,7 +3363,7 @@ static void _reset_job_time_limit(job_record_t *job_ptr, time_t now,
 	new_time_limit = MAX(job_ptr->time_min, job_ptr->time_limit);
 	acct_policy_alter_job(job_ptr, new_time_limit);
 	job_ptr->time_limit = new_time_limit;
-	job_ptr->end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
+		job_ptr->end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
 
 	job_time_adj_resv(job_ptr);
 
@@ -3843,6 +3863,10 @@ static bool _het_job_limit_check(het_job_map_t *map, time_t now)
 			job_ptr->job_state = job_state;
 			xfree(job_ptr->tres_alloc_cnt);
 			job_ptr->tres_alloc_cnt = tres_alloc_save[fini_jobs++];
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+
 		}
 	}
 	list_iterator_destroy(iter);
@@ -3998,6 +4022,9 @@ static void _het_job_kill_now(het_job_map_t *map)
 		if (!job_ptr->node_bitmap_cg ||
 		    (bit_set_count(job_ptr->node_bitmap_cg) == 0))
 			batch_requeue_fini(job_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 	}
 	list_iterator_destroy(iter);
 }

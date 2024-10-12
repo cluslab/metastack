@@ -376,7 +376,17 @@ extern void scontrol_print_job(char * job_id_str)
 			het_job_offset = strtol(end_ptr + 1, &end_ptr, 10);
 	}
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(update_client_port(cache_flag)){
+	char *env_val = NULL;
+    if ((env_val = getenv("SCONTROL_JOB_CACHE_QUERY"))){
+        if(!cache_flag && !nocache_flag){
+            if(!xstrcmp(env_val, "cache"))
+                cache_flag = true;
+            else if(!xstrcmp(env_val, "nocache"))
+                nocache_flag = true;
+        }
+    }
+	if(update_client_port(cache_flag, nocache_flag)){
+
 		return;
 	}
 #endif
@@ -479,7 +489,16 @@ scontrol_print_step (char *job_step_id_str)
 		show_flags |= SHOW_LOCAL;
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(update_client_port(cache_flag)){
+	char *env_val = NULL;
+    if ((env_val = getenv("SCONTROL_STEP_CACHE_QUERY"))){
+        if(!cache_flag && !nocache_flag){
+            if(!xstrcmp(env_val, "cache"))
+                cache_flag = true;
+            else if(!xstrcmp(env_val, "nocache"))
+                nocache_flag = true;
+        }
+    }
+	if(update_client_port(cache_flag, nocache_flag)){
 		return;
 	}
 #endif
