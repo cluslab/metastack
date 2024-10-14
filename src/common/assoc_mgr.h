@@ -107,6 +107,10 @@ typedef struct {
 	void (*update_resvs) ();
 } assoc_init_args_t;
 
+#ifdef __METASTACK_QOS_HASH
+extern qos_hash_t *qos_hash;
+#endif
+
 extern List assoc_mgr_tres_list;
 extern slurmdb_tres_rec_t **assoc_mgr_tres_array;
 extern char **assoc_mgr_tres_name_array;

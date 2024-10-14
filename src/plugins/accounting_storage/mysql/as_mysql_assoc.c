@@ -1453,8 +1453,14 @@ static int _process_modify_assoc_results(mysql_conn_t *mysql_conn,
 				char *requested_qos;
 
 				assoc_mgr_lock(&locks);
-				requested_qos = get_qos_complete_str(
-					assoc_mgr_qos_list, assoc->qos_list);
+#ifdef __METASTACK_QOS_HASH
+				if ((qos_hash != NULL) && HASH_COUNT(qos_hash))
+					requested_qos = get_qos_complete_str1(
+						    qos_hash, assoc->qos_list);
+				else if ((qos_hash == NULL) || !HASH_COUNT(qos_hash) || !requested_qos)
+					requested_qos = get_qos_complete_str(
+						    assoc_mgr_qos_list, assoc->qos_list);
+#endif
 				assoc_mgr_unlock(&locks);
 				error("Coordinator %s(%d) does not have the "
 				      "access to all the qos requested (%s), "
@@ -3196,8 +3202,14 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 			char *requested_qos;
 
 			assoc_mgr_lock(&locks);
-			requested_qos = get_qos_complete_str(
-				assoc_mgr_qos_list, object->qos_list);
+#ifdef __METASTACK_QOS_HASH
+			if ((qos_hash != NULL) && HASH_COUNT(qos_hash))
+				requested_qos = get_qos_complete_str1(
+						qos_hash, object->qos_list);
+			else if ((qos_hash == NULL) || !HASH_COUNT(qos_hash) || !requested_qos)
+				requested_qos = get_qos_complete_str(
+						assoc_mgr_qos_list, object->qos_list);
+#endif
 			assoc_mgr_unlock(&locks);
 			error("Coordinator %s(%d) does not have the "
 			      "access to all the qos requested (%s), "

@@ -2015,11 +2015,13 @@ extern int setup_assoc_limits(slurmdb_assoc_rec_t *assoc,
 	} else if ((assoc->def_qos_id != NO_VAL)
 		   && ((int32_t)assoc->def_qos_id > 0)) {
 		assoc_mgr_lock(&locks);
-		if (!list_find_first(assoc_mgr_qos_list,
+#ifdef __METASTACK_QOS_HASH
+		if (!find_qos_hash(&qos_hash, assoc->def_qos_id) || !list_find_first(assoc_mgr_qos_list,
 		    slurmdb_find_qos_in_list, &(assoc->def_qos_id))) {
 			assoc_mgr_unlock(&locks);
 			return ESLURM_INVALID_QOS;
 		}
+#endif
 		assoc_mgr_unlock(&locks);
 		xstrcat(*cols, ", def_qos_id");
 		xstrfmtcat(*vals, ", %u", assoc->def_qos_id);

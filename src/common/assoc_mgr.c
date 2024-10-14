@@ -69,6 +69,10 @@ List assoc_mgr_qos_list = NULL;
 List assoc_mgr_user_list = NULL;
 List assoc_mgr_wckey_list = NULL;
 
+#ifdef __METASTACK_QOS_HASH
+qos_hash_t *qos_hash = NULL;
+#endif
+
 static int setup_children = 0;
 static pthread_rwlock_t assoc_mgr_locks[ASSOC_MGR_ENTITY_COUNT];
 static pthread_mutex_t assoc_lock_init = PTHREAD_MUTEX_INITIALIZER;
@@ -1246,6 +1250,10 @@ static int _post_qos_list(List qos_list)
 	g_qos_count = 0;
 	g_qos_max_priority = 0;
 
+#ifdef __METASTACK_QOS_HASH
+	destroy_qos_hash(&qos_hash);
+#endif
+
 	while ((qos = list_next(itr))) {
 		if (qos->flags & QOS_FLAG_NOTSET)
 			qos->flags = 0;
@@ -1260,6 +1268,9 @@ static int _post_qos_list(List qos_list)
 			g_qos_max_priority = qos->priority;
 
 		assoc_mgr_set_qos_tres_cnt(qos);
+#ifdef __METASTACK_QOS_HASH
+		insert_qos_hash(&qos_hash, qos, qos->id);
+#endif
 	}
 	/* Since in the database id's don't start at 1
 	   instead of 0 we need to ignore the 0 bit and start
@@ -2300,6 +2311,10 @@ extern int assoc_mgr_fini(bool save_state)
 		dump_assoc_mgr_state();
 
 	assoc_mgr_lock(&locks);
+
+#ifdef __METASTACK_QOS_HASH
+	 destroy_qos_hash(&qos_hash);
+#endif
 
 	FREE_NULL_LIST(assoc_mgr_assoc_list);
 	FREE_NULL_LIST(assoc_mgr_tres_list);
@@ -4758,6 +4773,10 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 	List update_list = NULL;
 	assoc_mgr_lock_t locks = { .assoc = WRITE_LOCK, .qos = WRITE_LOCK };
 
+#ifdef __METASTACK_QOS_HASH
+	qos_hash_t *entry = NULL;
+#endif
+
 	if (!locked)
 		assoc_mgr_lock(&locks);
 	if (!assoc_mgr_qos_list) {
@@ -4779,12 +4798,22 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 				break;
 			}
 		}
-
+#ifdef __METASTACK_QOS_HASH
+		if (object->id )
+			HASH_FIND_INT(qos_hash, &(object->id), entry);
+#endif
 		//info("%d qos %s", update->type, object->name);
 		switch(update->type) {
 		case SLURMDB_ADD_QOS:
 			if (rec) {
 				//rc = SLURM_ERROR;
+#ifdef __METASTACK_QOS_HASH
+				if (entry) {
+					entry->value_qos_rec = rec;
+				} else {
+					insert_qos_hash(&qos_hash, rec, rec->id);
+				}
+#endif
 				break;
 			}
 
@@ -4799,6 +4828,13 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 #endif	
 
 			list_append(assoc_mgr_qos_list, object);
+#ifdef __METASTACK_QOS_HASH
+			if (entry) {
+				entry->value_qos_rec = object;
+			} else {
+				insert_qos_hash(&qos_hash, object, object->id);
+			}
+#endif
 /* 			char *tmp = get_qos_complete_str_bitstr( */
 /* 				assoc_mgr_qos_list, */
 /* 				object->preempt_bitstr); */
@@ -4828,6 +4864,11 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 			if (!rec) {
 				error("SLURMDB_MODIFY_QOS: qos %u(%s) not found, unable to update.",
 				      object->id, object->name);
+#ifdef __METASTACK_QOS_HASH
+				if (entry) {
+					remove_qos_hash(&qos_hash, object->id);
+				}
+#endif
 				rc = SLURM_ERROR;
 				break;
 			}
@@ -5076,9 +5117,19 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 					update_list = list_create(NULL);
 				list_append(update_list, rec);
 			}
-
+#ifdef __METASTACK_QOS_HASH
+			if (entry) {
+				entry->value_qos_rec = rec;
+			} else {
+				insert_qos_hash(&qos_hash, rec, rec->id);
+			}
+#endif
 			break;
 		case SLURMDB_REMOVE_QOS:
+#ifdef __METASTACK_QOS_HASH
+			if (entry)
+				remove_qos_hash(&qos_hash, object->id);
+#endif
 			if (!rec) {
 				//rc = SLURM_ERROR;
 				break;
@@ -5131,9 +5182,20 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 		case SLURMDB_REMOVE_QOS_USAGE:
 			if (!rec) {
 				//rc = SLURM_ERROR;
+#ifdef __METASTACK_QOS_HASH
+				if (entry)
+					remove_qos_hash(&qos_hash, object->id);
+#endif
 				break;
 			}
 			assoc_mgr_remove_qos_usage(rec);
+#ifdef __METASTACK_QOS_HASH
+			if (entry) {
+				entry->value_qos_rec = rec;
+			} else {
+				insert_qos_hash(&qos_hash, rec, rec->id);
+			}
+#endif
 			break;
 		default:
 			break;
@@ -6188,33 +6250,60 @@ extern int load_qos_usage(void)
 
 	safe_unpack_time(&buf_time, buffer);
 
-	itr = list_iterator_create(assoc_mgr_qos_list);
-	while (remaining_buf(buffer) > 0) {
-		uint32_t qos_id = 0;
-		uint32_t grp_used_wall = 0;
-		uint32_t tmp32;
-		long double usage_raw = 0;
-		slurmdb_qos_rec_t *qos = NULL;
+#ifdef __METASTACK_QOS_HASH
+	if ((qos_hash != NULL) && HASH_COUNT(qos_hash)) {
+		while (remaining_buf(buffer) > 0) {
+			uint32_t qos_id = 0;
+			uint32_t grp_used_wall = 0;
+			uint32_t tmp32;
+			long double usage_raw = 0;
+			slurmdb_qos_rec_t *qos = NULL;
 
-		safe_unpack32(&qos_id, buffer);
-		safe_unpacklongdouble(&usage_raw, buffer);
-		safe_unpackstr_xmalloc(&tmp_str, &tmp32, buffer);
-		safe_unpack32(&grp_used_wall, buffer);
+			safe_unpack32(&qos_id, buffer);
+			safe_unpacklongdouble(&usage_raw, buffer);
+			safe_unpackstr_xmalloc(&tmp_str, &tmp32, buffer);
+			safe_unpack32(&grp_used_wall, buffer);
 
-		while ((qos = list_next(itr)))
-			if (qos->id == qos_id)
-				break;
-		if (qos) {
-			qos->usage->grp_used_wall = grp_used_wall;
-			qos->usage->usage_raw = usage_raw;
-			_set_usage_tres_raw(qos->usage->usage_tres_raw,
-					    tmp_str);
+			qos = find_qos_hash(&qos_hash, qos_id);
+			if (qos) {
+				qos->usage->grp_used_wall = grp_used_wall;
+				qos->usage->usage_raw = usage_raw;
+				_set_usage_tres_raw(qos->usage->usage_tres_raw,
+							tmp_str);
+			}
+
+			xfree(tmp_str);
 		}
+	} else {
+		itr = list_iterator_create(assoc_mgr_qos_list);
+		while (remaining_buf(buffer) > 0) {
+			uint32_t qos_id = 0;
+			uint32_t grp_used_wall = 0;
+			uint32_t tmp32;
+			long double usage_raw = 0;
+			slurmdb_qos_rec_t *qos = NULL;
 
-		xfree(tmp_str);
-		list_iterator_reset(itr);
+			safe_unpack32(&qos_id, buffer);
+			safe_unpacklongdouble(&usage_raw, buffer);
+			safe_unpackstr_xmalloc(&tmp_str, &tmp32, buffer);
+			safe_unpack32(&grp_used_wall, buffer);
+
+			while ((qos = list_next(itr)))
+				if (qos->id == qos_id)
+					break;
+			if (qos) {
+				qos->usage->grp_used_wall = grp_used_wall;
+				qos->usage->usage_raw = usage_raw;
+				_set_usage_tres_raw(qos->usage->usage_tres_raw,
+							tmp_str);
+			}
+
+			xfree(tmp_str);
+			list_iterator_reset(itr);
+		}
+		list_iterator_destroy(itr);
 	}
-	list_iterator_destroy(itr);
+#endif
 	assoc_mgr_unlock(&locks);
 
 	free_buf(buffer);

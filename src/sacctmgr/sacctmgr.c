@@ -64,9 +64,6 @@ int with_assoc_flag = 0;
 void *db_conn = NULL;
 uint32_t my_uid = 0;
 List g_qos_list = NULL;
-#ifdef __METASTACK_QOS_HASH
-qos_hash_t *qos_hash;
-#endif
 List g_res_list = NULL;
 List g_tres_list = NULL;
 
@@ -273,10 +270,6 @@ int main(int argc, char **argv)
 	FREE_NULL_LIST(g_qos_list);
 	FREE_NULL_LIST(g_res_list);
 	FREE_NULL_LIST(g_tres_list);
-
-#ifdef __METASTACK_QOS_HASH
-	destroy_qos_hash(&qos_hash);
-#endif
 
 	exit(exit_code);
 }
