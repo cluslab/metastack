@@ -76,6 +76,9 @@ typedef struct {
 	lock_level_t tres;
 	lock_level_t user;
 	lock_level_t wckey;
+#ifdef __METASTACK_ASSOC_HASH
+	lock_level_t uid;
+#endif
 } assoc_mgr_lock_t;
 
 typedef enum {
@@ -86,6 +89,9 @@ typedef enum {
 	TRES_LOCK,
 	USER_LOCK,
 	WCKEY_LOCK,
+#ifdef __METASTACK_ASSOC_HASH
+	UID_LOCK,
+#endif
 	ASSOC_MGR_ENTITY_COUNT
 } assoc_mgr_lock_datatype_t;
 
@@ -109,6 +115,23 @@ typedef struct {
 
 #ifdef __METASTACK_QOS_HASH
 extern qos_hash_t *qos_hash;
+#endif
+
+#ifdef __METASTACK_ASSOC_HASH
+typedef struct struct_str_key_hash {
+	char *key;
+	void *value;
+	UT_hash_handle hh;
+} str_key_hash_t;
+
+extern void insert_str_key_hash(str_key_hash_t **str_key_hash, void *insert_value, char *str_key);
+extern void *find_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
+extern void remove_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
+extern void destroy_str_key_hash(str_key_hash_t **str_key_hash);
+extern void update_user_hash(slurmdb_user_rec_t *user, str_key_hash_t *rec_user_entry, str_key_hash_t *rec_user_uid_entry);
+
+extern str_key_hash_t *user_hash;
+extern str_key_hash_t *user_uid_hash;
 #endif
 
 extern List assoc_mgr_tres_list;

@@ -1275,6 +1275,9 @@ typedef struct {
 	uint16_t with_deleted;
 	uint16_t with_wckeys;
 	uint16_t without_defaults;
+#ifdef __METASTACK_ASSOC_HASH
+	uint16_t is_ctld;
+#endif
 } slurmdb_user_cond_t;
 
 enum {

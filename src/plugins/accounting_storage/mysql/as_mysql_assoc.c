@@ -2091,6 +2091,14 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 
 	qos_extra = _setup_assoc_cond_qos(assoc_cond, cluster_name);
 
+#ifdef __METASTACK_ASSOC_HASH
+	/* If flag is true, all assoc records that "delete=0" are queried.*/
+	bool flag = false;
+	if (!strcmp(qos_extra, " where") && !strcmp(extra, " t1.deleted=0")) {
+		flag = true;
+	}
+	str_key_hash_t *acct_hash = NULL;
+#endif
 
 	//START_TIMER;
 	query = xstrdup_printf("select distinct %s from \"%s_%s\" as t1%s%s "
@@ -2117,299 +2125,77 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 
 	assoc_list = list_create(slurmdb_destroy_assoc_rec);
 	delta_qos_list = list_create(xfree_ptr);
-#ifdef __METASTACK_OPT_LIST_USER
-	if (assoc_cond->without_parent_limits == 2) {
-		while ((row = mysql_fetch_row(result))) {
-			slurmdb_assoc_rec_t *assoc =
-				xmalloc(sizeof(slurmdb_assoc_rec_t));
+	while ((row = mysql_fetch_row(result))) {
+		slurmdb_assoc_rec_t *assoc =
+			xmalloc(sizeof(slurmdb_assoc_rec_t));
+		MYSQL_RES *result2 = NULL;
+		MYSQL_ROW row2;
+		uint16_t deleted = slurm_atoul(row[ASSOC_REQ_DELETED]);
+		list_append(assoc_list, assoc);
+		assoc->id = slurm_atoul(row[ASSOC_REQ_ID]);
+		assoc->is_def = slurm_atoul(row[ASSOC_REQ_DEFAULT]);
 
-			uint16_t deleted = slurm_atoul(row[ASSOC_REQ_DELETED]);
-			list_append(assoc_list, assoc);
-			assoc->id = slurm_atoul(row[ASSOC_REQ_ID]);
-			assoc->is_def = slurm_atoul(row[ASSOC_REQ_DEFAULT]);
+		if (deleted)
+			assoc->flags |= ASSOC_FLAG_DELETED;
 
-			if (deleted)
-				assoc->flags |= ASSOC_FLAG_DELETED;
+		assoc->lft = slurm_atoul(row[ASSOC_REQ_LFT]);
+		assoc->rgt = slurm_atoul(row[ASSOC_REQ_RGT]);
 
-			assoc->lft = slurm_atoul(row[ASSOC_REQ_LFT]);
-			assoc->rgt = slurm_atoul(row[ASSOC_REQ_RGT]);
+		if (row[ASSOC_REQ_USER][0])
+			assoc->user = xstrdup(row[ASSOC_REQ_USER]);
+		assoc->acct = xstrdup(row[ASSOC_REQ_ACCT]);
+		assoc->cluster = xstrdup(cluster_name);
 
-			if (row[ASSOC_REQ_USER][0])
-				assoc->user = xstrdup(row[ASSOC_REQ_USER]);
-			assoc->acct = xstrdup(row[ASSOC_REQ_ACCT]);
-			assoc->cluster = xstrdup(cluster_name);
+		if (row[ASSOC_REQ_GJ])
+			assoc->grp_jobs = slurm_atoul(row[ASSOC_REQ_GJ]);
+		else
+			assoc->grp_jobs = INFINITE;
 
-			if (row[ASSOC_REQ_GJ])
-				assoc->grp_jobs = slurm_atoul(row[ASSOC_REQ_GJ]);
-			else
-				assoc->grp_jobs = INFINITE;
+		if (row[ASSOC_REQ_GJA])
+			assoc->grp_jobs_accrue =
+				slurm_atoul(row[ASSOC_REQ_GJA]);
+		else
+			assoc->grp_jobs_accrue = INFINITE;
 
-			if (row[ASSOC_REQ_GJA])
-				assoc->grp_jobs_accrue =
-					slurm_atoul(row[ASSOC_REQ_GJA]);
-			else
-				assoc->grp_jobs_accrue = INFINITE;
+		if (row[ASSOC_REQ_GSJ])
+			assoc->grp_submit_jobs =
+				slurm_atoul(row[ASSOC_REQ_GSJ]);
+		else
+			assoc->grp_submit_jobs = INFINITE;
 
-			if (row[ASSOC_REQ_GSJ])
-				assoc->grp_submit_jobs =
-					slurm_atoul(row[ASSOC_REQ_GSJ]);
-			else
-				assoc->grp_submit_jobs = INFINITE;
+		if (row[ASSOC_REQ_GW])
+			assoc->grp_wall = slurm_atoul(row[ASSOC_REQ_GW]);
+		else
+			assoc->grp_wall = INFINITE;
 
-			if (row[ASSOC_REQ_GW])
-				assoc->grp_wall = slurm_atoul(row[ASSOC_REQ_GW]);
-			else
-				assoc->grp_wall = INFINITE;
+		if (row[ASSOC_REQ_GT][0])
+			assoc->grp_tres = xstrdup(row[ASSOC_REQ_GT]);
+		if (row[ASSOC_REQ_GTM][0])
+			assoc->grp_tres_mins = xstrdup(row[ASSOC_REQ_GTM]);
+		if (row[ASSOC_REQ_GTRM][0])
+			assoc->grp_tres_run_mins = xstrdup(row[ASSOC_REQ_GTRM]);
 
-			if (row[ASSOC_REQ_GT][0])
-				assoc->grp_tres = xstrdup(row[ASSOC_REQ_GT]);
-			if (row[ASSOC_REQ_GTM][0])
-				assoc->grp_tres_mins = xstrdup(row[ASSOC_REQ_GTM]);
-			if (row[ASSOC_REQ_GTRM][0])
-				assoc->grp_tres_run_mins = xstrdup(row[ASSOC_REQ_GTRM]);
-
-			parent_acct = row[ASSOC_REQ_ACCT];
-			if (!without_parent_info
-				&& row[ASSOC_REQ_PARENT][0]) {
-				assoc->parent_acct = xstrdup(row[ASSOC_REQ_PARENT]);
-				parent_acct = row[ASSOC_REQ_PARENT];
-			} else if (!assoc->user) {
-				/* This is the root association so we have no
-				parent id */
-				parent_acct = NULL;
-				parent_id = 0;
-			}
-
-			if (row[ASSOC_REQ_PART][0])
-				assoc->partition = xstrdup(row[ASSOC_REQ_PART]);
-			if (row[ASSOC_REQ_FS])
-				assoc->shares_raw = slurm_atoul(row[ASSOC_REQ_FS]);
-			else
-				assoc->shares_raw = 1;
-
-			if (row[ASSOC_REQ_DEF_QOS])
-				assoc->def_qos_id = slurm_atoul(row[ASSOC_REQ_DEF_QOS]);
-			else
-				assoc->def_qos_id = parent_def_qos_id;
-
-			if (row[ASSOC_REQ_MJ])
-				assoc->max_jobs = slurm_atoul(row[ASSOC_REQ_MJ]);
-			else
-				assoc->max_jobs = parent_mj;
-
-			if (row[ASSOC_REQ_MJA])
-				assoc->max_jobs_accrue =
-					slurm_atoul(row[ASSOC_REQ_MJA]);
-			else
-				assoc->max_jobs_accrue = parent_mja;
-
-			if (row[ASSOC_REQ_MPT])
-				assoc->min_prio_thresh = slurm_atoul(
-					row[ASSOC_REQ_MPT]);
-			else
-				assoc->min_prio_thresh = parent_mpt;
-
-			if (row[ASSOC_REQ_MSJ])
-				assoc->max_submit_jobs = slurm_atoul(
-					row[ASSOC_REQ_MSJ]);
-			else
-				assoc->max_submit_jobs = parent_msj;
-
-			if (row[ASSOC_REQ_MWPJ])
-				assoc->max_wall_pj = slurm_atoul(row[ASSOC_REQ_MWPJ]);
-			else
-				assoc->max_wall_pj = parent_mwpj;
-
-			if (row[ASSOC_REQ_PRIO])
-				assoc->priority = slurm_atoul(row[ASSOC_REQ_PRIO]);
-			else
-				assoc->priority = parent_prio;
-
-			if (row[ASSOC_REQ_MTPJ][0])
-				assoc->max_tres_pj = xstrdup(row[ASSOC_REQ_MTPJ]);
-
-			if (row[ASSOC_REQ_MTPN][0])
-				assoc->max_tres_pn = xstrdup(row[ASSOC_REQ_MTPN]);
-
-			if (row[ASSOC_REQ_MTMPJ][0])
-				assoc->max_tres_mins_pj = xstrdup(row[ASSOC_REQ_MTMPJ]);
-
-			if (row[ASSOC_REQ_MTRM][0])
-				assoc->max_tres_run_mins = xstrdup(row[ASSOC_REQ_MTRM]);
-
-			/* For the tres limits we just concatted the limits going up
-			* the hierarchy slurmdb_tres_list_from_string will just skip
-			* over any reoccuring limit to give us the first one per
-			* TRES.
-			*/
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_pj, parent_mtpj,
-				TRES_STR_FLAG_SORT_ID);
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_pn, parent_mtpn,
-				TRES_STR_FLAG_SORT_ID);
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_mins_pj, parent_mtmpj,
-				TRES_STR_FLAG_SORT_ID);
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_run_mins, parent_mtrm,
-				TRES_STR_FLAG_SORT_ID);
-
-			assoc->qos_list = list_create(xfree_ptr);
-
-			/* do a plus 1 since a comma is the first thing there
-			* in the list.  Also you can never have both a qos
-			* and a delta qos so if you have a qos don't worry
-			* about the delta.
-			*/
-
-			if (row[ASSOC_REQ_QOS][0])
-				slurm_addto_char_list(assoc->qos_list,
-							row[ASSOC_REQ_QOS]+1);
-			else {
-				/* if qos is set on the association itself do
-				not worry about the deltas
-				*/
-
-				/* add the parents first */
-				if (parent_qos)
-					slurm_addto_char_list(assoc->qos_list,
-								parent_qos+1);
-
-				/* then add the parents delta */
-				if (parent_delta_qos)
-					slurm_addto_char_list(delta_qos_list,
-								parent_delta_qos+1);
-
-				/* now add the associations */
-				if (row[ASSOC_REQ_DELTA_QOS][0])
-					slurm_addto_char_list(
-						delta_qos_list,
-						row[ASSOC_REQ_DELTA_QOS]+1);
-			}
-
-			/* Sometimes we want to see exactly what is here in
-			the database instead of a complete list.  This will
-			give it to us.
-			*/
-			if (with_raw_qos && list_count(delta_qos_list)) {
-				list_transfer(assoc->qos_list, delta_qos_list);
-				list_flush(delta_qos_list);
-			} else if (list_count(delta_qos_list)) {
-				ListIterator curr_qos_itr =
-					list_iterator_create(assoc->qos_list);
-				ListIterator new_qos_itr =
-					list_iterator_create(delta_qos_list);
-				char *new_qos = NULL, *curr_qos = NULL;
-
-				while ((new_qos = list_next(new_qos_itr))) {
-					if (new_qos[0] == '-') {
-						while ((curr_qos =
-							list_next(curr_qos_itr))) {
-							if (!xstrcmp(curr_qos,
-									new_qos+1)) {
-								list_delete_item(
-									curr_qos_itr);
-								break;
-							}
-						}
-						list_iterator_reset(curr_qos_itr);
-					} else if (new_qos[0] == '+') {
-						while ((curr_qos =
-							list_next(curr_qos_itr))) {
-							if (!xstrcmp(curr_qos,
-									new_qos+1)) {
-								break;
-							}
-						}
-						if (!curr_qos) {
-							list_append(assoc->qos_list,
-									xstrdup(new_qos+1));
-						}
-						list_iterator_reset(curr_qos_itr);
-					}
-				}
-
-				list_iterator_destroy(new_qos_itr);
-				list_iterator_destroy(curr_qos_itr);
-				list_flush(delta_qos_list);
-			}
-
-			assoc->parent_id = parent_id;
-
-			//info("parent id is %d", assoc->parent_id);
-			//log_assoc_rec(assoc);
+		parent_acct = row[ASSOC_REQ_ACCT];
+		if (!without_parent_info
+			&& row[ASSOC_REQ_PARENT][0]) {
+			assoc->parent_acct = xstrdup(row[ASSOC_REQ_PARENT]);
+			parent_acct = row[ASSOC_REQ_PARENT];
+		} else if (!assoc->user) {
+			/* This is the root association so we have no
+			parent id */
+			parent_acct = NULL;
+			parent_id = 0;
 		}
-	} else {
-		while ((row = mysql_fetch_row(result))) {
-			slurmdb_assoc_rec_t *assoc =
-				xmalloc(sizeof(slurmdb_assoc_rec_t));
-			MYSQL_RES *result2 = NULL;
-			MYSQL_ROW row2;
-			uint16_t deleted = slurm_atoul(row[ASSOC_REQ_DELETED]);
-			list_append(assoc_list, assoc);
-			assoc->id = slurm_atoul(row[ASSOC_REQ_ID]);
-			assoc->is_def = slurm_atoul(row[ASSOC_REQ_DEFAULT]);
 
-			if (deleted)
-				assoc->flags |= ASSOC_FLAG_DELETED;
+		if (row[ASSOC_REQ_PART][0])
+			assoc->partition = xstrdup(row[ASSOC_REQ_PART]);
+		if (row[ASSOC_REQ_FS])
+			assoc->shares_raw = slurm_atoul(row[ASSOC_REQ_FS]);
+		else
+			assoc->shares_raw = 1;
 
-			assoc->lft = slurm_atoul(row[ASSOC_REQ_LFT]);
-			assoc->rgt = slurm_atoul(row[ASSOC_REQ_RGT]);
-
-			if (row[ASSOC_REQ_USER][0])
-				assoc->user = xstrdup(row[ASSOC_REQ_USER]);
-			assoc->acct = xstrdup(row[ASSOC_REQ_ACCT]);
-			assoc->cluster = xstrdup(cluster_name);
-
-			if (row[ASSOC_REQ_GJ])
-				assoc->grp_jobs = slurm_atoul(row[ASSOC_REQ_GJ]);
-			else
-				assoc->grp_jobs = INFINITE;
-
-			if (row[ASSOC_REQ_GJA])
-				assoc->grp_jobs_accrue =
-					slurm_atoul(row[ASSOC_REQ_GJA]);
-			else
-				assoc->grp_jobs_accrue = INFINITE;
-
-			if (row[ASSOC_REQ_GSJ])
-				assoc->grp_submit_jobs =
-					slurm_atoul(row[ASSOC_REQ_GSJ]);
-			else
-				assoc->grp_submit_jobs = INFINITE;
-
-			if (row[ASSOC_REQ_GW])
-				assoc->grp_wall = slurm_atoul(row[ASSOC_REQ_GW]);
-			else
-				assoc->grp_wall = INFINITE;
-
-			if (row[ASSOC_REQ_GT][0])
-				assoc->grp_tres = xstrdup(row[ASSOC_REQ_GT]);
-			if (row[ASSOC_REQ_GTM][0])
-				assoc->grp_tres_mins = xstrdup(row[ASSOC_REQ_GTM]);
-			if (row[ASSOC_REQ_GTRM][0])
-				assoc->grp_tres_run_mins = xstrdup(row[ASSOC_REQ_GTRM]);
-
-			parent_acct = row[ASSOC_REQ_ACCT];
-			if (!without_parent_info
-				&& row[ASSOC_REQ_PARENT][0]) {
-				assoc->parent_acct = xstrdup(row[ASSOC_REQ_PARENT]);
-				parent_acct = row[ASSOC_REQ_PARENT];
-			} else if (!assoc->user) {
-				/* This is the root association so we have no
-				parent id */
-				parent_acct = NULL;
-				parent_id = 0;
-			}
-
-			if (row[ASSOC_REQ_PART][0])
-				assoc->partition = xstrdup(row[ASSOC_REQ_PART]);
-			if (row[ASSOC_REQ_FS])
-				assoc->shares_raw = slurm_atoul(row[ASSOC_REQ_FS]);
-			else
-				assoc->shares_raw = 1;
-
+#ifdef __METASTACK_ASSOC_HASH
+		if (!flag && (assoc_cond->without_parent_limits != 2)) {
 			if (!without_parent_info && parent_acct &&
 				(!last_acct || !last_cluster
 				|| xstrcmp(parent_acct, last_acct)
@@ -2515,337 +2301,8 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 			no_parent_limits:
 				mysql_free_result(result2);
 			}
-
-			if (row[ASSOC_REQ_DEF_QOS])
-				assoc->def_qos_id = slurm_atoul(row[ASSOC_REQ_DEF_QOS]);
-			else
-				assoc->def_qos_id = parent_def_qos_id;
-
-			if (row[ASSOC_REQ_MJ])
-				assoc->max_jobs = slurm_atoul(row[ASSOC_REQ_MJ]);
-			else
-				assoc->max_jobs = parent_mj;
-
-			if (row[ASSOC_REQ_MJA])
-				assoc->max_jobs_accrue =
-					slurm_atoul(row[ASSOC_REQ_MJA]);
-			else
-				assoc->max_jobs_accrue = parent_mja;
-
-			if (row[ASSOC_REQ_MPT])
-				assoc->min_prio_thresh = slurm_atoul(
-					row[ASSOC_REQ_MPT]);
-			else
-				assoc->min_prio_thresh = parent_mpt;
-
-			if (row[ASSOC_REQ_MSJ])
-				assoc->max_submit_jobs = slurm_atoul(
-					row[ASSOC_REQ_MSJ]);
-			else
-				assoc->max_submit_jobs = parent_msj;
-
-			if (row[ASSOC_REQ_MWPJ])
-				assoc->max_wall_pj = slurm_atoul(row[ASSOC_REQ_MWPJ]);
-			else
-				assoc->max_wall_pj = parent_mwpj;
-
-			if (row[ASSOC_REQ_PRIO])
-				assoc->priority = slurm_atoul(row[ASSOC_REQ_PRIO]);
-			else
-				assoc->priority = parent_prio;
-
-			if (row[ASSOC_REQ_MTPJ][0])
-				assoc->max_tres_pj = xstrdup(row[ASSOC_REQ_MTPJ]);
-
-			if (row[ASSOC_REQ_MTPN][0])
-				assoc->max_tres_pn = xstrdup(row[ASSOC_REQ_MTPN]);
-
-			if (row[ASSOC_REQ_MTMPJ][0])
-				assoc->max_tres_mins_pj = xstrdup(row[ASSOC_REQ_MTMPJ]);
-
-			if (row[ASSOC_REQ_MTRM][0])
-				assoc->max_tres_run_mins = xstrdup(row[ASSOC_REQ_MTRM]);
-
-			/* For the tres limits we just concatted the limits going up
-			* the hierarchy slurmdb_tres_list_from_string will just skip
-			* over any reoccuring limit to give us the first one per
-			* TRES.
-			*/
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_pj, parent_mtpj,
-				TRES_STR_FLAG_SORT_ID);
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_pn, parent_mtpn,
-				TRES_STR_FLAG_SORT_ID);
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_mins_pj, parent_mtmpj,
-				TRES_STR_FLAG_SORT_ID);
-			slurmdb_combine_tres_strings(
-				&assoc->max_tres_run_mins, parent_mtrm,
-				TRES_STR_FLAG_SORT_ID);
-
-			assoc->qos_list = list_create(xfree_ptr);
-
-			/* do a plus 1 since a comma is the first thing there
-			* in the list.  Also you can never have both a qos
-			* and a delta qos so if you have a qos don't worry
-			* about the delta.
-			*/
-
-			if (row[ASSOC_REQ_QOS][0])
-				slurm_addto_char_list(assoc->qos_list,
-							row[ASSOC_REQ_QOS]+1);
-			else {
-				/* if qos is set on the association itself do
-				not worry about the deltas
-				*/
-
-				/* add the parents first */
-				if (parent_qos)
-					slurm_addto_char_list(assoc->qos_list,
-								parent_qos+1);
-
-				/* then add the parents delta */
-				if (parent_delta_qos)
-					slurm_addto_char_list(delta_qos_list,
-								parent_delta_qos+1);
-
-				/* now add the associations */
-				if (row[ASSOC_REQ_DELTA_QOS][0])
-					slurm_addto_char_list(
-						delta_qos_list,
-						row[ASSOC_REQ_DELTA_QOS]+1);
-			}
-
-			/* Sometimes we want to see exactly what is here in
-			the database instead of a complete list.  This will
-			give it to us.
-			*/
-			if (with_raw_qos && list_count(delta_qos_list)) {
-				list_transfer(assoc->qos_list, delta_qos_list);
-				list_flush(delta_qos_list);
-			} else if (list_count(delta_qos_list)) {
-				ListIterator curr_qos_itr =
-					list_iterator_create(assoc->qos_list);
-				ListIterator new_qos_itr =
-					list_iterator_create(delta_qos_list);
-				char *new_qos = NULL, *curr_qos = NULL;
-
-				while ((new_qos = list_next(new_qos_itr))) {
-					if (new_qos[0] == '-') {
-						while ((curr_qos =
-							list_next(curr_qos_itr))) {
-							if (!xstrcmp(curr_qos,
-									new_qos+1)) {
-								list_delete_item(
-									curr_qos_itr);
-								break;
-							}
-						}
-						list_iterator_reset(curr_qos_itr);
-					} else if (new_qos[0] == '+') {
-						while ((curr_qos =
-							list_next(curr_qos_itr))) {
-							if (!xstrcmp(curr_qos,
-									new_qos+1)) {
-								break;
-							}
-						}
-						if (!curr_qos) {
-							list_append(assoc->qos_list,
-									xstrdup(new_qos+1));
-						}
-						list_iterator_reset(curr_qos_itr);
-					}
-				}
-
-				list_iterator_destroy(new_qos_itr);
-				list_iterator_destroy(curr_qos_itr);
-				list_flush(delta_qos_list);
-			}
-
-			assoc->parent_id = parent_id;
-
-			//info("parent id is %d", assoc->parent_id);
-			//log_assoc_rec(assoc);
 		}
-	}
-#else
-	while ((row = mysql_fetch_row(result))) {
-		slurmdb_assoc_rec_t *assoc =
-			xmalloc(sizeof(slurmdb_assoc_rec_t));
-		MYSQL_RES *result2 = NULL;
-		MYSQL_ROW row2;
-		uint16_t deleted = slurm_atoul(row[ASSOC_REQ_DELETED]);
-		list_append(assoc_list, assoc);
-		assoc->id = slurm_atoul(row[ASSOC_REQ_ID]);
-		assoc->is_def = slurm_atoul(row[ASSOC_REQ_DEFAULT]);
-
-		if (deleted)
-			assoc->flags |= ASSOC_FLAG_DELETED;
-
-		assoc->lft = slurm_atoul(row[ASSOC_REQ_LFT]);
-		assoc->rgt = slurm_atoul(row[ASSOC_REQ_RGT]);
-
-		if (row[ASSOC_REQ_USER][0])
-			assoc->user = xstrdup(row[ASSOC_REQ_USER]);
-		assoc->acct = xstrdup(row[ASSOC_REQ_ACCT]);
-		assoc->cluster = xstrdup(cluster_name);
-
-		if (row[ASSOC_REQ_GJ])
-			assoc->grp_jobs = slurm_atoul(row[ASSOC_REQ_GJ]);
-		else
-			assoc->grp_jobs = INFINITE;
-
-		if (row[ASSOC_REQ_GJA])
-			assoc->grp_jobs_accrue =
-				slurm_atoul(row[ASSOC_REQ_GJA]);
-		else
-			assoc->grp_jobs_accrue = INFINITE;
-
-		if (row[ASSOC_REQ_GSJ])
-			assoc->grp_submit_jobs =
-				slurm_atoul(row[ASSOC_REQ_GSJ]);
-		else
-			assoc->grp_submit_jobs = INFINITE;
-
-		if (row[ASSOC_REQ_GW])
-			assoc->grp_wall = slurm_atoul(row[ASSOC_REQ_GW]);
-		else
-			assoc->grp_wall = INFINITE;
-
-		if (row[ASSOC_REQ_GT][0])
-			assoc->grp_tres = xstrdup(row[ASSOC_REQ_GT]);
-		if (row[ASSOC_REQ_GTM][0])
-			assoc->grp_tres_mins = xstrdup(row[ASSOC_REQ_GTM]);
-		if (row[ASSOC_REQ_GTRM][0])
-			assoc->grp_tres_run_mins = xstrdup(row[ASSOC_REQ_GTRM]);
-
-		parent_acct = row[ASSOC_REQ_ACCT];
-		if (!without_parent_info
-		    && row[ASSOC_REQ_PARENT][0]) {
-			assoc->parent_acct = xstrdup(row[ASSOC_REQ_PARENT]);
-			parent_acct = row[ASSOC_REQ_PARENT];
-		} else if (!assoc->user) {
-			/* This is the root association so we have no
-			   parent id */
-			parent_acct = NULL;
-			parent_id = 0;
-		}
-
-		if (row[ASSOC_REQ_PART][0])
-			assoc->partition = xstrdup(row[ASSOC_REQ_PART]);
-		if (row[ASSOC_REQ_FS])
-			assoc->shares_raw = slurm_atoul(row[ASSOC_REQ_FS]);
-		else
-			assoc->shares_raw = 1;
-
-		if (!without_parent_info && parent_acct &&
-		    (!last_acct || !last_cluster
-		     || xstrcmp(parent_acct, last_acct)
-		     || xstrcmp(cluster_name, last_cluster))) {
-			query = xstrdup_printf(
-				"call get_parent_limits('%s', "
-				"'%s', '%s', %u); %s",
-				assoc_table, parent_acct,
-				cluster_name,
-				without_parent_limits,
-				get_parent_limits_select);
-			debug4("%d(%s:%d) query\n%s",
-			       mysql_conn->conn, THIS_FILE, __LINE__, query);
-			if (!(result2 = mysql_db_query_ret(
-				      mysql_conn, query, 1))) {
-				xfree(query);
-				break;
-			}
-			xfree(query);
-
-			if (!(row2 = mysql_fetch_row(result2))) {
-				parent_id = 0;
-				goto no_parent_limits;
-			}
-
-			parent_id = slurm_atoul(row2[ASSOC2_REQ_PARENT_ID]);
-			if (!without_parent_limits) {
-				if (row2[ASSOC2_REQ_DEF_QOS])
-					parent_def_qos_id = slurm_atoul(
-						row2[ASSOC2_REQ_DEF_QOS]);
-				else
-					parent_def_qos_id = 0;
-
-				if (row2[ASSOC2_REQ_MJ])
-					parent_mj = slurm_atoul(
-						row2[ASSOC2_REQ_MJ]);
-				else
-					parent_mj = INFINITE;
-
-				if (row2[ASSOC2_REQ_MJA])
-					parent_mja = slurm_atoul(
-						row2[ASSOC2_REQ_MJA]);
-				else
-					parent_mja = INFINITE;
-
-				if (row2[ASSOC2_REQ_MPT])
-					parent_mpt = slurm_atoul(
-						row2[ASSOC2_REQ_MPT]);
-				else
-					parent_mpt = INFINITE;
-
-				if (row2[ASSOC2_REQ_MSJ])
-					parent_msj = slurm_atoul(
-						row2[ASSOC2_REQ_MSJ]);
-				else
-					parent_msj = INFINITE;
-
-				if (row2[ASSOC2_REQ_MWPJ])
-					parent_mwpj = slurm_atoul(
-						row2[ASSOC2_REQ_MWPJ]);
-				else
-					parent_mwpj = INFINITE;
-
-
-				if (row2[ASSOC2_REQ_PRIO])
-					parent_prio = slurm_atoul(
-						row2[ASSOC2_REQ_PRIO]);
-				else
-					parent_prio = INFINITE;
-
-				xfree(parent_mtpj);
-				if (row2[ASSOC2_REQ_MTPJ][0])
-					parent_mtpj = xstrdup(
-						row2[ASSOC2_REQ_MTPJ]);
-
-				xfree(parent_mtpn);
-				if (row2[ASSOC2_REQ_MTPN][0])
-					parent_mtpn = xstrdup(
-						row2[ASSOC2_REQ_MTPN]);
-
-				xfree(parent_mtmpj);
-				if (row2[ASSOC2_REQ_MTMPJ][0])
-					parent_mtmpj = xstrdup(
-						row2[ASSOC2_REQ_MTMPJ]);
-
-				xfree(parent_mtrm);
-				if (row2[ASSOC2_REQ_MTRM][0])
-					parent_mtrm = xstrdup(
-						row2[ASSOC2_REQ_MTRM]);
-
-				xfree(parent_qos);
-				if (row2[ASSOC2_REQ_QOS][0])
-					parent_qos =
-						xstrdup(row2[ASSOC2_REQ_QOS]);
-
-				xfree(parent_delta_qos);
-				if (row2[ASSOC2_REQ_DELTA_QOS][0])
-					parent_delta_qos = xstrdup(
-						row2[ASSOC2_REQ_DELTA_QOS]);
-			}
-			last_acct = parent_acct;
-			last_cluster = cluster_name;
-		no_parent_limits:
-			mysql_free_result(result2);
-		}
-
+#endif
 		if (row[ASSOC_REQ_DEF_QOS])
 			assoc->def_qos_id = slurm_atoul(row[ASSOC_REQ_DEF_QOS]);
 		else
@@ -2897,10 +2354,10 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 			assoc->max_tres_run_mins = xstrdup(row[ASSOC_REQ_MTRM]);
 
 		/* For the tres limits we just concatted the limits going up
-		 * the hierarchy slurmdb_tres_list_from_string will just skip
-		 * over any reoccuring limit to give us the first one per
-		 * TRES.
-		 */
+		* the hierarchy slurmdb_tres_list_from_string will just skip
+		* over any reoccuring limit to give us the first one per
+		* TRES.
+		*/
 		slurmdb_combine_tres_strings(
 			&assoc->max_tres_pj, parent_mtpj,
 			TRES_STR_FLAG_SORT_ID);
@@ -2917,28 +2374,28 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 		assoc->qos_list = list_create(xfree_ptr);
 
 		/* do a plus 1 since a comma is the first thing there
-		 * in the list.  Also you can never have both a qos
-		 * and a delta qos so if you have a qos don't worry
-		 * about the delta.
-		 */
+		* in the list.  Also you can never have both a qos
+		* and a delta qos so if you have a qos don't worry
+		* about the delta.
+		*/
 
 		if (row[ASSOC_REQ_QOS][0])
 			slurm_addto_char_list(assoc->qos_list,
-					      row[ASSOC_REQ_QOS]+1);
+						row[ASSOC_REQ_QOS]+1);
 		else {
 			/* if qos is set on the association itself do
-			   not worry about the deltas
+			not worry about the deltas
 			*/
 
 			/* add the parents first */
 			if (parent_qos)
 				slurm_addto_char_list(assoc->qos_list,
-						      parent_qos+1);
+							parent_qos+1);
 
 			/* then add the parents delta */
 			if (parent_delta_qos)
 				slurm_addto_char_list(delta_qos_list,
-						      parent_delta_qos+1);
+							parent_delta_qos+1);
 
 			/* now add the associations */
 			if (row[ASSOC_REQ_DELTA_QOS][0])
@@ -2948,8 +2405,8 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 		}
 
 		/* Sometimes we want to see exactly what is here in
-		   the database instead of a complete list.  This will
-		   give it to us.
+		the database instead of a complete list.  This will
+		give it to us.
 		*/
 		if (with_raw_qos && list_count(delta_qos_list)) {
 			list_transfer(assoc->qos_list, delta_qos_list);
@@ -2966,7 +2423,7 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 					while ((curr_qos =
 						list_next(curr_qos_itr))) {
 						if (!xstrcmp(curr_qos,
-							     new_qos+1)) {
+								new_qos+1)) {
 							list_delete_item(
 								curr_qos_itr);
 							break;
@@ -2977,13 +2434,13 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 					while ((curr_qos =
 						list_next(curr_qos_itr))) {
 						if (!xstrcmp(curr_qos,
-							     new_qos+1)) {
+								new_qos+1)) {
 							break;
 						}
 					}
 					if (!curr_qos) {
 						list_append(assoc->qos_list,
-							    xstrdup(new_qos+1));
+								xstrdup(new_qos+1));
 					}
 					list_iterator_reset(curr_qos_itr);
 				}
@@ -2996,10 +2453,189 @@ static int _cluster_get_assocs(mysql_conn_t *mysql_conn,
 
 		assoc->parent_id = parent_id;
 
+#ifdef __METASTACK_ASSOC_HASH
+		if (flag && (assoc_cond->without_parent_limits != 2) && !assoc->user) {
+			insert_str_key_hash(&acct_hash, assoc, assoc->acct);
+		}
+#endif
 		//info("parent id is %d", assoc->parent_id);
 		//log_assoc_rec(assoc);
 	}
+
+#ifdef __METASTACK_ASSOC_HASH
+	if (flag && (assoc_cond->without_parent_limits != 2) && !without_parent_info) {
+		slurmdb_assoc_rec_t *assoc;
+		List parent_qos_list = NULL;
+		itr = list_iterator_create(assoc_list);
+		slurmdb_assoc_rec_t *tmp_parent = NULL;
+		while ((assoc = list_next(itr))) {
+			if (assoc->user) {
+				parent_acct = assoc->acct;
+			} else if (assoc->parent_acct) {
+				parent_acct = assoc->parent_acct;
+			} else {
+				continue;
+			}
+
+			cluster_name = assoc->cluster;
+			tmp_parent = find_str_key_hash(&acct_hash, parent_acct);
+			if (tmp_parent) {
+				assoc->parent_id = tmp_parent->id;
+			} else {
+				continue;
+			}
+
+			if (!without_parent_limits && (!last_acct || !last_cluster
+			 	|| xstrcmp(parent_acct, last_acct)
+			 	|| xstrcmp(cluster_name, last_cluster))) {
+				
+				parent_def_qos_id = 0;
+				parent_mj = INFINITE;
+				parent_mja = INFINITE;
+				parent_mpt = INFINITE;
+				parent_msj = INFINITE;
+				parent_mwpj = INFINITE;
+				parent_prio = INFINITE;
+				xfree(parent_mtpj);
+				parent_mtpj = NULL;
+				xfree(parent_mtpn);
+				parent_mtpn = NULL;
+				xfree(parent_mtmpj);
+				parent_mtmpj = NULL;
+				xfree(parent_mtrm);
+				parent_mtrm = NULL;
+				if (parent_qos_list) {
+					FREE_NULL_LIST(parent_qos_list);
+				}
+				parent_qos_list = NULL;
+
+				while (tmp_parent && tmp_parent->acct && strlen(tmp_parent->acct)) {
+
+					if ((parent_def_qos_id == 0) && tmp_parent->def_qos_id) {
+						parent_def_qos_id = tmp_parent->def_qos_id;
+					}
+
+					if ((parent_mj == INFINITE) && (tmp_parent->max_jobs != INFINITE)) {
+						parent_mj = tmp_parent->max_jobs;
+					}
+					
+					if ((parent_mja  == INFINITE) && (tmp_parent->max_jobs_accrue != INFINITE) ) {
+						parent_mja = tmp_parent->max_jobs_accrue;
+					}
+
+					if ((parent_mpt  == INFINITE) && (tmp_parent->min_prio_thresh != INFINITE)) {
+						parent_mpt = tmp_parent->min_prio_thresh;
+					}
+
+					if ((parent_msj  == INFINITE) && (tmp_parent->max_submit_jobs != INFINITE)) {
+						parent_msj = tmp_parent->max_submit_jobs;
+					}
+
+					if ((parent_mwpj  == INFINITE) && (tmp_parent->max_wall_pj != INFINITE)) {
+						parent_mwpj = tmp_parent->max_wall_pj;
+					}
+
+					if ((parent_prio  == INFINITE) && (tmp_parent->priority != INFINITE) ) {
+						parent_prio = tmp_parent->priority;
+					}
+
+					if ((!parent_qos_list || list_count(parent_qos_list) == 0) && (tmp_parent->qos_list && list_count(tmp_parent->qos_list))) {
+                        parent_qos_list = list_shallow_copy(tmp_parent->qos_list);
+                    }		
+					
+					if (tmp_parent->max_tres_pj) {
+						if (parent_mtpj) {
+							xstrcat(parent_mtpj, ",");
+						}
+						xstrcat(parent_mtpj, tmp_parent->max_tres_pj);
+					}
+
+					if (tmp_parent->max_tres_pn) {
+						if (parent_mtpn) {
+							xstrcat(parent_mtpn, ",");
+						}
+						xstrcat(parent_mtpn, tmp_parent->max_tres_pn);
+					}
+
+					if (tmp_parent->max_tres_mins_pj) {
+						if (parent_mtmpj) {
+							xstrcat(parent_mtmpj, ",");
+						}
+						xstrcat(parent_mtmpj, tmp_parent->max_tres_mins_pj);
+					}
+
+					if (tmp_parent->max_tres_run_mins) {
+						if (parent_mtrm) {
+							xstrcat(parent_mtrm, ",");
+						}
+						xstrcat(parent_mtrm, tmp_parent->max_tres_run_mins);
+					}
+					
+					if (tmp_parent->parent_acct) {
+						tmp_parent = find_str_key_hash(&acct_hash, tmp_parent->parent_acct);
+					} else {
+						break;
+					}
+				}
+				last_acct = parent_acct;
+				last_cluster = cluster_name;
+			}
+
+			if ((assoc->def_qos_id == 0) && parent_def_qos_id) {
+				assoc->def_qos_id = parent_def_qos_id;
+			}
+
+			if ((assoc->max_jobs == INFINITE) && (parent_mj != INFINITE)) {
+				assoc->max_jobs = parent_mj;
+			}
+			
+			if ((assoc->max_jobs_accrue  == INFINITE) && (parent_mja != INFINITE) ) {
+				assoc->max_jobs_accrue = parent_mja;
+			}
+
+			if ((assoc->min_prio_thresh  == INFINITE) && (parent_mpt != INFINITE)) {
+				assoc->min_prio_thresh = parent_mpt;
+			}
+
+			if ((assoc->max_submit_jobs  == INFINITE) && (parent_msj != INFINITE)) {
+				assoc->max_submit_jobs = parent_msj;
+			}
+
+			if ((assoc->max_wall_pj  == INFINITE) && (parent_mwpj != INFINITE)) {
+				assoc->max_wall_pj = parent_mwpj;
+			}
+
+			if ((assoc->priority  == INFINITE) && (parent_prio != INFINITE) ) {
+				assoc->priority = parent_prio;
+			}
+
+			if ((!assoc->qos_list || list_count(assoc->qos_list) == 0) && (parent_qos_list && list_count(parent_qos_list))) {
+				FREE_NULL_LIST(assoc->qos_list);
+				assoc->qos_list = list_shallow_copy(parent_qos_list);
+			}
+
+			slurmdb_combine_tres_strings(
+				&assoc->max_tres_pj, parent_mtpj,
+				TRES_STR_FLAG_SORT_ID);
+			slurmdb_combine_tres_strings(
+				&assoc->max_tres_pn, parent_mtpn,
+				TRES_STR_FLAG_SORT_ID);
+			slurmdb_combine_tres_strings(
+				&assoc->max_tres_mins_pj, parent_mtmpj,
+				TRES_STR_FLAG_SORT_ID);
+			slurmdb_combine_tres_strings(
+				&assoc->max_tres_run_mins, parent_mtrm,
+				TRES_STR_FLAG_SORT_ID);
+		}
+		list_iterator_destroy(itr);
+		if (acct_hash) {
+			destroy_str_key_hash(&acct_hash);
+		}
+		
+		FREE_NULL_LIST(parent_qos_list);
+	}
 #endif
+
 	xfree(parent_mtpj);
 	xfree(parent_mtpn);
 	xfree(parent_mtmpj);
@@ -3145,7 +2781,7 @@ extern int as_mysql_add_assocs(mysql_conn_t *mysql_conn, uint32_t uid,
 	list_sort(assoc_list, (ListCmpF)_assoc_sort_cluster);
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-    slurm_mutex_lock(&assoc_lock);
+	slurm_mutex_lock(&assoc_lock);
 #endif
 
 	itr = list_iterator_create(assoc_list);
