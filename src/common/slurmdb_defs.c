@@ -439,7 +439,7 @@ extern void slurmdb_job_cond_def_start_end(slurmdb_job_cond_t *job_cond)
 			job_cond->usage_start = now;
 
 		if (job_cond->usage_start && !job_cond->usage_end)
-			job_cond->usage_end = job_cond->usage_start;
+			job_cond->usage_end = now;
 	} else if (!job_cond->step_list || !list_count(job_cond->step_list)) {
 		if (!job_cond->usage_start) {
 			struct tm start_tm;
