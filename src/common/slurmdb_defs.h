@@ -114,13 +114,14 @@ typedef enum {
 #include "uthash.h"
 
 typedef struct struct_qos_hash {
-    uint32_t key;
-    char *qos_name;
-    UT_hash_handle hh;
+	uint32_t key;	/* id of qos */
+	slurmdb_qos_rec_t *value_qos_rec;
+	UT_hash_handle hh;
 } qos_hash_t;
 
-extern void insert_qos(qos_hash_t **qos_hash, slurmdb_qos_rec_t *qos);
-extern char *find_qos_hash(qos_hash_t **qos_hash, uint32_t key);
+extern void insert_qos_hash(qos_hash_t **qos_hash, slurmdb_qos_rec_t *qos, uint32_t qos_id);
+extern slurmdb_qos_rec_t *find_qos_hash(qos_hash_t **qos_hash, uint32_t key);
+extern void remove_qos_hash(qos_hash_t **qos_hash, uint32_t key);
 extern void destroy_qos_hash(qos_hash_t **qos_hash);
 
 #endif

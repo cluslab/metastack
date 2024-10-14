@@ -67,46 +67,56 @@ strong_alias(get_qos_complete_str_bitstr, slurmdb_get_qos_complete_str_bitstr);
  * IN:  hash table, qos
  * OUT: qos_hash
  */
-extern void insert_qos(qos_hash_t **qos_hash, slurmdb_qos_rec_t *qos) {
-    qos_hash_t *entry = NULL;
+extern void insert_qos_hash(qos_hash_t **qos_hash, slurmdb_qos_rec_t *qos, uint32_t qos_id) {
+	qos_hash_t *entry = NULL;
 
-    if (!qos)
-        return;
+	if (!qos_id)
+		return;
 
-    HASH_FIND_INT(*qos_hash, &(qos->id), entry);
+	HASH_FIND_INT(*qos_hash, &qos_id, entry);
 
-    if (entry == NULL) {
-        entry = xmalloc(sizeof(qos_hash_t));
-        entry->key = qos->id;
-        entry->qos_name = xstrdup(qos->name);
-        HASH_ADD_INT(*qos_hash, key, entry);
-    }
-
+	if (entry == NULL) {
+		entry = xmalloc(sizeof(qos_hash_t));
+		entry->key = qos_id;
+		entry->value_qos_rec = qos;
+		HASH_ADD_INT(*qos_hash, key, entry);
+	}
 
 }
 
-/** find entry->qos_name */ 
-extern char *find_qos_hash(qos_hash_t **qos_hash, uint32_t key) {
-    qos_hash_t *entry = NULL;
+/** find entry->qos */ 
+extern slurmdb_qos_rec_t *find_qos_hash(qos_hash_t **qos_hash, uint32_t key) {
+	qos_hash_t *entry = NULL;
+	
 	HASH_FIND_INT(*qos_hash, &key, entry);
 
-    if (entry)
-        return entry->qos_name;
+	if (entry)
+		return entry->value_qos_rec;
 
-    return NULL;
+	return NULL;
+}
+
+/** remove entry->qos */
+extern void remove_qos_hash(qos_hash_t **qos_hash, uint32_t key) {
+	qos_hash_t *entry = NULL;
+
+	HASH_FIND_INT(*qos_hash, &key, entry);
+
+	if (entry) {
+		HASH_DEL(*qos_hash, entry);
+		xfree(entry);
+	}
 }
 
 /** delete hash */
 extern void destroy_qos_hash(qos_hash_t **qos_hash) {
-    qos_hash_t *current_entry, *tmp;
+	qos_hash_t *current_entry, *tmp;
 
-    HASH_ITER(hh, *qos_hash, current_entry, tmp) {
-        HASH_DEL(*qos_hash, current_entry);
+	HASH_ITER(hh, *qos_hash, current_entry, tmp) {
+		HASH_DEL(*qos_hash, current_entry);
         
-        if (current_entry->qos_name)
-            xfree(current_entry->qos_name);
 		xfree(current_entry);
-    }
+	}
 }
 #endif
 
@@ -429,7 +439,7 @@ extern void slurmdb_job_cond_def_start_end(slurmdb_job_cond_t *job_cond)
 			job_cond->usage_start = now;
 
 		if (job_cond->usage_start && !job_cond->usage_end)
-			job_cond->usage_end = job_cond->usage_start;
+			job_cond->usage_end = now;
 	} else if (!job_cond->step_list || !list_count(job_cond->step_list)) {
 		if (!job_cond->usage_start) {
 			struct tm start_tm;
@@ -1804,7 +1814,15 @@ extern char *slurmdb_qos_str(List qos_list, uint32_t level)
 		return "";
 	}
 
-	qos = list_find_first(qos_list, slurmdb_find_qos_in_list, &level);
+#ifdef __METASTACK_QOS_HASH
+	qos = find_qos_hash(&qos_hash, level);
+	if (!qos) {
+		qos = list_find_first(qos_list, slurmdb_find_qos_in_list, &level);
+		if (qos)
+			insert_qos_hash(&qos_hash, qos, level);
+	}
+#endif
+
 	if (qos)
 		return qos->name;
 	else
@@ -2493,6 +2511,7 @@ extern List get_qos_name_list1(qos_hash_t *qos_hash, List num_qos_list)
 	char *temp_char;
 	ListIterator itr;
 	int option;
+	slurmdb_qos_rec_t *qos = NULL;
 
 	if ((qos_hash == NULL) || !HASH_COUNT(qos_hash)
 	    || !num_qos_list || !list_count(num_qos_list))
@@ -2507,7 +2526,14 @@ extern List get_qos_name_list1(qos_hash_t *qos_hash, List num_qos_list)
 			option = temp_char[0];
 			temp_char++;
 		}
-		temp_char = find_qos_hash(&qos_hash, (uint32_t) atoi(temp_char));
+
+		qos = find_qos_hash(&qos_hash, (uint32_t) atoi(temp_char));
+		if (qos) {
+			temp_char = qos->name;
+		} else {
+			temp_char = NULL;
+		}
+		
 		if (temp_char) {
 			if (option)
 				list_append(temp_list, xstrdup_printf(

@@ -40,6 +40,10 @@
 
 #include "src/sacctmgr/sacctmgr.h"
 
+#ifdef __METASTACK_QOS_HASH
+#include "src/common/assoc_mgr.h"
+#endif
+
 static int _set_cond(int *start, int argc, char **argv,
 		     slurmdb_assoc_cond_t *assoc_cond,
 		     List format_list)
@@ -803,21 +807,24 @@ extern void sacctmgr_print_assoc_rec(slurmdb_assoc_rec_t *assoc,
 		field->print_routine(field, assoc->priority, last);
 		break;
 	case PRINT_QOS:
+#ifdef __METASTACK_QOS_HASH
+		if ((qos_hash == NULL) || !HASH_COUNT(qos_hash)) {
+			if (!g_qos_list)
+				g_qos_list = slurmdb_qos_get(
+					db_conn, NULL);
+			slurmdb_qos_rec_t *qos = NULL;
+			ListIterator qos_itr = list_iterator_create(g_qos_list);
+			while ((qos = list_next(qos_itr))) {
+				insert_qos_hash(&qos_hash, qos, qos->id);
+			}
+			list_iterator_destroy(qos_itr);
+		} 	
+		field->print_routine(field, qos_hash, assoc->qos_list, last);
+#else
 		if (!g_qos_list)
 			g_qos_list = slurmdb_qos_get(
 				db_conn, NULL);
 
-#ifdef __METASTACK_QOS_HASH
-		if ((qos_hash == NULL) && g_qos_list) {
-			slurmdb_qos_rec_t *qos = NULL;
-			ListIterator qos_itr = list_iterator_create(g_qos_list);
-			while ((qos = list_next(qos_itr))) {
-				insert_qos(&qos_hash, qos);
-			}
-			list_iterator_destroy(qos_itr);
-		}	
-		field->print_routine(field, qos_hash, assoc->qos_list, last);
-#else
 		field->print_routine(field, g_qos_list, assoc->qos_list, last);
 #endif
 		break;

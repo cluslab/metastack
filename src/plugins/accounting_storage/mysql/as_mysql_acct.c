@@ -527,7 +527,7 @@ extern List as_mysql_remove_accts(mysql_conn_t *mysql_conn, uint32_t uid,
 	cluster_list_tmp = list_shallow_copy(as_mysql_cluster_list);
 	itr = list_iterator_create(cluster_list_tmp);
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-    slurm_mutex_lock(&assoc_lock);
+	slurm_mutex_lock(&assoc_lock);
 #endif
 	while ((object = list_next(itr))) {
 		if ((rc = remove_common(mysql_conn, DBD_REMOVE_ACCOUNTS, now,
@@ -538,7 +538,7 @@ extern List as_mysql_remove_accts(mysql_conn_t *mysql_conn, uint32_t uid,
 			break;
 	}
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-    slurm_mutex_unlock(&assoc_lock);
+	slurm_mutex_unlock(&assoc_lock);
 #endif
 	list_iterator_destroy(itr);
 	FREE_NULL_LIST(cluster_list_tmp);
@@ -578,7 +578,7 @@ extern List as_mysql_get_accts(mysql_conn_t *mysql_conn, uid_t uid,
 
 #ifdef __METASTACK_OPT_LIST_USER
 	bool list_all = true;
-#endif
+#endif 
 
 	/* if this changes you will need to edit the corresponding enum */
 	char *acct_req_inx[] = {
@@ -762,7 +762,7 @@ empty:
 		ListIterator assoc_itr = NULL;
 		slurmdb_account_rec_t *acct = NULL;
 		slurmdb_assoc_rec_t *assoc = NULL;
-
+		
 #ifdef __METASTACK_OPT_LIST_USER
 		List assoc_list = as_mysql_get_assocs(
 			mysql_conn, uid, acct_cond->assoc_cond, list_all);

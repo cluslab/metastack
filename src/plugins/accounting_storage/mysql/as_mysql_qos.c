@@ -38,6 +38,10 @@
 
 #include "as_mysql_qos.h"
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+#include "as_mysql_usage.h"
+#endif
+
 static char *mqos_req_inx[] = {
 	"id",
 	"name",
@@ -1162,6 +1166,9 @@ extern List as_mysql_remove_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 	slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
 	cluster_list_tmp = list_shallow_copy(as_mysql_cluster_list);
 	if (list_count(cluster_list_tmp)) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		slurm_mutex_lock(&assoc_lock);
+#endif
 		itr = list_iterator_create(cluster_list_tmp);
 		while ((object = list_next(itr))) {
 			/*
@@ -1188,6 +1195,9 @@ extern List as_mysql_remove_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 				break;
 		}
 		list_iterator_destroy(itr);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+		slurm_mutex_unlock(&assoc_lock);
+#endif
 	} else
 		rc = remove_common(mysql_conn, DBD_REMOVE_QOS, now,
 				   user_name, qos_table, name_char,

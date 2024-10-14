@@ -45,6 +45,11 @@
 #endif
 
 #ifdef __METASTACK_ASSOC_HASH
+
+#include "src/common/assoc_mgr.h"
+
+static assoc_hash_t *sub_acct_hash = NULL;
+
 /** build hash table, assign assoc to entry according to key. 
  * IN:  hash table, assoc
  * OUT: assoc_hash
@@ -209,6 +214,90 @@ no_wckeys:
 	return ret_list;
 }
 
+#ifdef __METASTACK_ASSOC_HASH
+/** build a sub_acct_hash: key is the name of parent account, value is the list of sub accounts */
+static void get_all_accts(mysql_conn_t *mysql_conn)
+{
+	char *query = NULL;
+	ListIterator itr = NULL;
+	MYSQL_RES *result = NULL;
+	MYSQL_ROW row;
+	slurmdb_assoc_rec_t *assoc;
+	
+	if (as_mysql_cluster_list && list_count(as_mysql_cluster_list)) {
+		slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
+		itr = list_iterator_create(as_mysql_cluster_list);
+		char *cluster_name = NULL;
+		while ((cluster_name = list_next(itr))){
+			if (query)
+				xstrcat(query, " union ");
+			query = xstrdup_printf("select distinct acct,user,parent_acct,deleted from \"%s_%s\" "
+								"where user='' && deleted=0", 
+								cluster_name, assoc_table);
+		}
+		list_iterator_destroy(itr);
+		slurm_rwlock_unlock(&as_mysql_cluster_list_lock);
+
+		DB_DEBUG(DB_ASSOC, mysql_conn->conn, "query\n%s", query);
+		if (!(result = mysql_db_query_ret(
+					mysql_conn, query, 0))) {
+			xfree(query);
+			return;
+		}
+		xfree(query);
+
+		if (sub_acct_hash) 
+			destroy_assoc_hash(&sub_acct_hash);
+
+		while ((row = mysql_fetch_row(result))) {
+			assoc = xmalloc(sizeof(slurmdb_assoc_rec_t));
+
+			if (row[2]) {
+				assoc->acct = xstrdup(row[0]);
+				assoc->parent_acct = xstrdup(row[2]);
+			}
+			
+			insert_assoc_hash(&sub_acct_hash, assoc, assoc->parent_acct);
+		}
+		mysql_free_result(result);
+	}
+}
+
+/** get all its subaccounts by account name */
+static void _get_sub_accts(char *parent_acct, assoc_hash_t *sub_acct_hash, slurmdb_user_rec_t *user)
+{
+	List sub_acct_list = NULL;
+	slurmdb_assoc_rec_t *sub_acct = NULL;
+	assoc_hash_t *entry = NULL;
+	slurmdb_coord_rec_t *coord = NULL;
+
+	if (!user) {
+		error("We need a user to fill in.");
+	}
+
+	entry = find_assoc_entry(&sub_acct_hash, parent_acct);
+
+	if (entry) {
+		sub_acct_list = entry->value_assoc_list;
+	}
+
+	if (sub_acct_list) {
+		ListIterator itr = list_iterator_create(sub_acct_list);
+		while ((sub_acct = list_next(itr))) {
+			if (sub_acct) {
+				coord = xmalloc(sizeof(slurmdb_coord_rec_t));
+				list_append(user->coord_accts, coord);
+				coord->name = xstrdup(sub_acct->acct);
+				coord->direct = 0;
+
+				_get_sub_accts(sub_acct->acct, sub_acct_hash, user);
+			}
+		}
+		list_iterator_destroy(itr);
+	}
+}
+#endif
+
 /* Fill in all the accounts this user is coordinator over.  This
  * will fill in all the sub accounts they are coordinator over also.
  */
@@ -255,71 +344,80 @@ static int _get_user_coords(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user)
 	if (!list_count(user->coord_accts))
 		return SLURM_SUCCESS;
 
-	slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
-	itr2 = list_iterator_create(as_mysql_cluster_list);
-	itr = list_iterator_create(user->coord_accts);
-	while ((cluster_name = list_next(itr2))) {
-		int set = 0;
-		if (query)
-			xstrcat(query, " union ");
-
+#ifdef __METASTACK_ASSOC_HASH
+	if (sub_acct_hash) {
+		itr = list_iterator_create(user->coord_accts);
 		while ((coord = list_next(itr))) {
-			if (set)
-				xstrcat(query, " || ");
-			else
-				xstrfmtcat(query,
-					   "select distinct t1.acct from "
-					   "\"%s_%s\" as t1, \"%s_%s\" "
-					   "as t2 where t1.deleted=0 && (",
-					   cluster_name, assoc_table,
-					   cluster_name, assoc_table);
-			/* Make sure we don't get the same
-			 * account back since we want to keep
-			 * track of the sub-accounts.
-			 */
-			xstrfmtcat(query, "(t2.acct='%s' "
-				   "&& t1.lft between t2.lft "
-				   "and t2.rgt && t1.user='' "
-				   "&& t1.acct!='%s')",
-				   coord->name, coord->name);
-			set = 1;
+			_get_sub_accts(coord->name, sub_acct_hash, user);
 		}
-		list_iterator_reset(itr);
-		if (set)
-			xstrcat(query, ")");
+	} else {
+		slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
+		itr2 = list_iterator_create(as_mysql_cluster_list);
+		itr = list_iterator_create(user->coord_accts);
+		while ((cluster_name = list_next(itr2))) {
+			int set = 0;
+			if (query)
+				xstrcat(query, " union ");
 
-	}
-	list_iterator_destroy(itr2);
-	slurm_rwlock_unlock(&as_mysql_cluster_list_lock);
-
-	if (query) {
-		debug4("%d(%s:%d) query\n%s",
-		       mysql_conn->conn, THIS_FILE, __LINE__, query);
-		if (!(result = mysql_db_query_ret(
-			      mysql_conn, query, 0))) {
-			xfree(query);
-			return SLURM_ERROR;
-		}
-		xfree(query);
-
-		while ((row = mysql_fetch_row(result))) {
-			list_iterator_reset(itr);
 			while ((coord = list_next(itr))) {
-				if (!xstrcmp(coord->name, row[0]))
-					break;
+				if (set)
+					xstrcat(query, " || ");
+				else
+					xstrfmtcat(query,
+						"select distinct t1.acct from "
+						"\"%s_%s\" as t1, \"%s_%s\" "
+						"as t2 where t1.deleted=0 && (",
+						cluster_name, assoc_table,
+						cluster_name, assoc_table);
+				/* Make sure we don't get the same
+				* account back since we want to keep
+				* track of the sub-accounts.
+				*/
+				xstrfmtcat(query, "(t2.acct='%s' "
+					"&& t1.lft between t2.lft "
+					"and t2.rgt && t1.user='' "
+					"&& t1.acct!='%s')",
+					coord->name, coord->name);
+				set = 1;
 			}
+			list_iterator_reset(itr);
+			if (set)
+				xstrcat(query, ")");
 
-			if (coord)
-				continue;
-
-			coord = xmalloc(sizeof(slurmdb_coord_rec_t));
-			list_append(user->coord_accts, coord);
-			coord->name = xstrdup(row[0]);
-			coord->direct = 0;
 		}
-		mysql_free_result(result);
+		list_iterator_destroy(itr2);
+		slurm_rwlock_unlock(&as_mysql_cluster_list_lock);
+
+		if (query) {
+			debug4("%d(%s:%d) query\n%s",
+				mysql_conn->conn, THIS_FILE, __LINE__, query);
+			if (!(result = mysql_db_query_ret(
+					mysql_conn, query, 0))) {
+				xfree(query);
+				return SLURM_ERROR;
+			}
+			xfree(query);
+
+			while ((row = mysql_fetch_row(result))) {
+				list_iterator_reset(itr);
+				while ((coord = list_next(itr))) {
+					if (!xstrcmp(coord->name, row[0]))
+						break;
+				}
+
+				if (coord)
+					continue;
+
+				coord = xmalloc(sizeof(slurmdb_coord_rec_t));
+				list_append(user->coord_accts, coord);
+				coord->name = xstrdup(row[0]);
+				coord->direct = 0;
+			}
+			mysql_free_result(result);
+		}
+		list_iterator_destroy(itr);
 	}
-	list_iterator_destroy(itr);
+#endif
 
 	return SLURM_SUCCESS;
 }
@@ -623,6 +721,15 @@ extern int as_mysql_add_coord(mysql_conn_t *mysql_conn, uint32_t uid,
 			error("Couldn't add cluster hour rollup");
 			return rc;
 		}
+
+#ifdef __METASTACK_ASSOC_HASH
+		/* get all accounts to build a sub_acct_hash*/
+		if (sub_acct_hash) 
+			destroy_assoc_hash(&sub_acct_hash);
+		if (user_cond->assoc_cond->user_list && list_count(user_cond->assoc_cond->user_list))
+			get_all_accts(mysql_conn);
+#endif
+
 		/* get the update list set */
 		itr = list_iterator_create(user_cond->assoc_cond->user_list);
 		while ((user = list_next(itr))) {
@@ -635,6 +742,10 @@ extern int as_mysql_add_coord(mysql_conn_t *mysql_conn, uint32_t uid,
 				slurmdb_destroy_user_rec(user_rec);
 		}
 		list_iterator_destroy(itr);
+#ifdef __METASTACK_ASSOC_HASH
+		if (sub_acct_hash)
+			destroy_assoc_hash(&sub_acct_hash);
+#endif
 	}
 
 	return SLURM_SUCCESS;
@@ -1081,7 +1192,7 @@ no_user_table:
 	slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
 	itr = list_iterator_create(as_mysql_cluster_list);
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-    slurm_mutex_lock(&assoc_lock);
+	slurm_mutex_lock(&assoc_lock);
 #endif
 	while ((object = list_next(itr))) {
 
@@ -1102,7 +1213,7 @@ no_user_table:
 			break;
 	}
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-    slurm_mutex_unlock(&assoc_lock);
+	slurm_mutex_unlock(&assoc_lock);
 #endif
 	list_iterator_destroy(itr);
 	slurm_rwlock_unlock(&as_mysql_cluster_list_lock);
@@ -1290,7 +1401,13 @@ extern List as_mysql_remove_coord(mysql_conn_t *mysql_conn, uint32_t uid,
 		errno = SLURM_ERROR;
 		return NULL;
 	}
-
+#ifdef __METASTACK_ASSOC_HASH
+		/* get all accounts to build a sub_acct_hash*/
+		if (sub_acct_hash) 
+			destroy_assoc_hash(&sub_acct_hash);
+		if (user_list && list_count(user_list))
+			get_all_accts(mysql_conn);
+#endif
 	/* get the update list set */
 	itr = list_iterator_create(user_list);
 	while ((last_user = list_next(itr))) {
@@ -1303,6 +1420,10 @@ extern List as_mysql_remove_coord(mysql_conn_t *mysql_conn, uint32_t uid,
 			slurmdb_destroy_user_rec(user_rec);
 	}
 	list_iterator_destroy(itr);
+#ifdef __METASTACK_ASSOC_HASH
+	if (sub_acct_hash)
+		destroy_assoc_hash(&sub_acct_hash);
+#endif
 	FREE_NULL_LIST(user_list);
 
 	return ret_list;
@@ -1435,6 +1556,14 @@ empty:
 
 	user_list = list_create(slurmdb_destroy_user_rec);
 
+#ifdef __METASTACK_ASSOC_HASH
+	if (sub_acct_hash) 
+		destroy_assoc_hash(&sub_acct_hash);
+	if (user_cond && user_cond->with_coords && !user_hash) {
+		get_all_accts(mysql_conn);
+	}
+#endif
+
 	while ((row = mysql_fetch_row(result))) {
 		slurmdb_user_rec_t *user = xmalloc(sizeof(slurmdb_user_rec_t));
 
@@ -1446,10 +1575,24 @@ empty:
 		if (slurm_atoul(row[USER_REQ_DELETED]))
 			user->flags |= SLURMDB_USER_FLAG_DELETED;
 
-		if (user_cond && user_cond->with_coords)
-			_get_user_coords(mysql_conn, user);
+#ifdef __METASTACK_ASSOC_HASH
+			slurmdb_user_rec_t *value = NULL;
+			if (user_hash && user->name) {
+				value = find_str_key_hash(&user_hash, user->name);
+				if (value && value->coord_accts && list_count(value->coord_accts)) {
+					user->coord_accts = list_shallow_copy(value->coord_accts);
+				}
+			} 
+			if (!value) {
+				_get_user_coords(mysql_conn, user);
+			}
+#endif
 	}
 	mysql_free_result(result);
+#ifdef __METASTACK_ASSOC_HASH
+	if (sub_acct_hash)
+		destroy_assoc_hash(&sub_acct_hash);	
+#endif
 
 	if (user_cond && (user_cond->with_assocs
 			  || (user_cond->assoc_cond
