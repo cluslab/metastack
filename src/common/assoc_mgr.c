@@ -1177,7 +1177,11 @@ static int _post_assoc_list(void)
 
 	_calculate_assoc_norm_priorities(true);
 
-	slurmdb_sort_hierarchical_assoc_list(assoc_mgr_assoc_list, true);
+#ifdef __METASTACK_OPT_RPC_USER_FIX
+	if (slurm_conf.conf_flags & CTL_CONF_ASS) {
+		slurmdb_sort_hierarchical_assoc_list(assoc_mgr_assoc_list, true);
+	}
+#endif
 
 	//END_TIMER2("load_associations");
 	return SLURM_SUCCESS;
