@@ -301,6 +301,21 @@ optional in v1.x InfluxDB.
 The InfluxDB v1.x retention policy name for the database configured in
 ProfileInfluxDBDatabase option. The InfluxDB v2.x retention policy bucket name
 for the database configured in ProfileInfluxDBDatabase option.
+.br
+Allows configuring multiple retention policies for different types of data to be written to the specified retention policies. Supported sub-options include NATIVERP, EVENTRP, and STEPDRP.If each child is not configured, the configuration is applied to all data types.
+
+1. \fBNATIVERP\fR - The retention policy for data types : CPUFrequency, CPUTime, CPUUtilization, Command, Pages, RSS, ReadMB, VMSize, WriteMB.
+.br
+2. \fBEVENTRP\fR - The retention policy for data of type Event.
+.br
+3. \fBSTEPDRP\fR - The retention policy for data of type Stepd.
+
+Example:
+.br
+\fBProfileInfluxDBRTPolicy=autogen\fR
+.br
+\fBProfileInfluxDBRTPolicy=NATIVERP=rp1,EVENTRP=rp2,STEPDRP=rp3\fR
+
 .IP
 
 .TP
@@ -327,6 +342,29 @@ ProfileInfluxDBWorkdir=/opt/jobcomp
 .fi
 .nf
 If you want to disable this feature, set this value to \fBnone\fR:
+.fi
+.IP
+
+.TP
+\fBProfileInfluxDBSeriesReduce\fR
+ProfileInfluxDBSeriesReduce is used to reduce the number of indexes for the measurements CPUFrequency, CPUTime, 
+CPUUtilization, Command, Pages, RSS, ReadMB, VMSize, WriteMB. Since InfluxDB is a temporal database, high-base 
+issues (such as index growth caused by fields like job, step, task, etc. as tags) can significantly increase 
+memory usage.
+
+
+If you wish to keep these fields as tags, it is recommended that you reduce the expiration time of the data through 
+a retention policy. If you want to keep as much data as possible, you can set ProfileInfluxDBSeriesReduce to yes,  
+so that job, step, task will be used as fields instead of tags, thus reducing index growth, but it may affect query 
+performance. Choose the setting according to the specific usage scenario.
+
+
+Example:
+.nf
+ProfileInfluxDBSeriesReduce=yes
+.fi
+.nf
+If you do not want to modify the table structure, you can either leave this option unconfigured or set it to a non-yes value
 .fi
 .IP
 
