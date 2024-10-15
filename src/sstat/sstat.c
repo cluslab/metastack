@@ -417,8 +417,7 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	list_iterator_destroy(itr);
 #ifdef __METASTACK_LOAD_ABNORMAL
  	char arrTest1[] = "batch";
-	if((params.opt_event == 1)) {
-
+	if((params.opt_event == 1) && total_jobacct) {
 		if(step.step_id.step_id == -5) {
 			printf("\n*********************************************************************************\n");
 			printf("Resource Consumption Information of %d.%s\n", step.step_id.job_id, arrTest1);

@@ -766,6 +766,9 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		FIELD_STEPMEM,	
 		FIELD_STEPVMEM,		
 		FIELD_STEPPAGES,
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+		FIELD_TIMER,
+#endif
 		/*EVENT*/
 		FIELD_FLAG,
 		FIELD_CPUTHRESHOLD,
@@ -831,6 +834,9 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 	data[FIELD_STEPPAGES].u64 = jobacct->step_pages;
 
 	data[FIELD_FLAG].u64 = send->load_flag;
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+	data[FIELD_TIMER].u64 = send->timer;
+#endif
 
 	if(send->load_flag & LOAD_LOW) { 
 		data[FIELD_EVENTTYPE1START].u64 = send->cpu_start;
@@ -838,13 +844,17 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 	}
 
 	if(send->load_flag & PROC_AB) { 
-		data[FIELD_EVENTTYPE2START].u64 = send->pid_start;
-		data[FIELD_EVENTTYPE2END].u64 = send->pid_end;
+		/*
+			Since the acquisition period is a fixed interval, there is no need to record the start
+			and end time of each anomaly, only one copy is needed.
+		*/
+		data[FIELD_EVENTTYPE1START].u64 = send->pid_start;
+		data[FIELD_EVENTTYPE1END].u64 = send->pid_end;
 	}
 
 	if(send->load_flag & JNODE_STAT) { 
-		data[FIELD_EVENTTYPE3START].u64 = send->node_start;
-		data[FIELD_EVENTTYPE3END].u64 = send->node_end;
+		data[FIELD_EVENTTYPE1START].u64 = send->node_start;
+		data[FIELD_EVENTTYPE1END].u64 = send->node_end;
 	}	
 
 	log_flag(PROFILE, "PROFILE-Task: %s",
