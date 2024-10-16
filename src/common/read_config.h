@@ -187,6 +187,7 @@ typedef struct node_record node_record_t;
 #define DEFAULT_STORAGE_USER        "root"
 #define DEFAULT_STORAGE_PORT        0
 #define DEFAULT_MYSQL_PORT          3306
+#define DEFAULT_KINGBASE_PORT       54321
 #define DEFAULT_SUSPEND_RATE        60
 #define DEFAULT_SUSPEND_TIME        0
 #define DEFAULT_SUSPEND_TIMEOUT     30
