@@ -153,15 +153,25 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 am__DEPENDENCIES_1 =
+@WITH_KINGBASE_TRUE@libslurm_kingbase_la_DEPENDENCIES =  \
+@WITH_KINGBASE_TRUE@	$(am__DEPENDENCIES_1)
+@WITH_KINGBASE_TRUE@am_libslurm_kingbase_la_OBJECTS =  \
+@WITH_KINGBASE_TRUE@	libslurm_kingbase_la-kingbase_common.lo
+libslurm_kingbase_la_OBJECTS = $(am_libslurm_kingbase_la_OBJECTS)
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
+libslurm_kingbase_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(libslurm_kingbase_la_CFLAGS) $(CFLAGS) \
+	$(libslurm_kingbase_la_LDFLAGS) $(LDFLAGS) -o $@
+@WITH_KINGBASE_TRUE@am_libslurm_kingbase_la_rpath =
 @WITH_MYSQL_TRUE@libslurm_mysql_la_DEPENDENCIES =  \
 @WITH_MYSQL_TRUE@	$(am__DEPENDENCIES_1)
 @WITH_MYSQL_TRUE@am_libslurm_mysql_la_OBJECTS =  \
 @WITH_MYSQL_TRUE@	libslurm_mysql_la-mysql_common.lo
 libslurm_mysql_la_OBJECTS = $(am_libslurm_mysql_la_OBJECTS)
-AM_V_lt = $(am__v_lt_@AM_V@)
-am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
-am__v_lt_0 = --silent
-am__v_lt_1 = 
 libslurm_mysql_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(libslurm_mysql_la_CFLAGS) $(CFLAGS) \
@@ -182,7 +192,9 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir) -I$(top_builddir)/slurm
 depcomp = $(SHELL) $(top_srcdir)/auxdir/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/libslurm_mysql_la-mysql_common.Plo
+am__depfiles_remade =  \
+	./$(DEPDIR)/libslurm_kingbase_la-kingbase_common.Plo \
+	./$(DEPDIR)/libslurm_mysql_la-mysql_common.Plo
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -202,7 +214,9 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libslurm_mysql_la_SOURCES) \
+SOURCES = $(libslurm_kingbase_la_SOURCES) \
+	$(EXTRA_libslurm_kingbase_la_SOURCES) \
+	$(libslurm_mysql_la_SOURCES) \
 	$(EXTRA_libslurm_mysql_la_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
@@ -287,6 +301,7 @@ GTK_CFLAGS = @GTK_CFLAGS@
 GTK_LIBS = @GTK_LIBS@
 H5CC = @H5CC@
 H5FC = @H5FC@
+HAVEKINGBASECONFIG = @HAVEKINGBASECONFIG@
 HAVEMYSQLCONFIG = @HAVEMYSQLCONFIG@
 HAVE_MAN2HTML = @HAVE_MAN2HTML@
 HDF5_CC = @HDF5_CC@
@@ -315,6 +330,8 @@ JSON_CPPFLAGS = @JSON_CPPFLAGS@
 JSON_LDFLAGS = @JSON_LDFLAGS@
 JWT_CPPFLAGS = @JWT_CPPFLAGS@
 JWT_LDFLAGS = @JWT_LDFLAGS@
+KINGBASE_CFLAGS = @KINGBASE_CFLAGS@
+KINGBASE_LIBS = @KINGBASE_LIBS@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
 LIBCURL = @LIBCURL@
@@ -501,7 +518,14 @@ AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/src/common
 @WITH_MYSQL_TRUE@libslurm_mysql_la_LDFLAGS = $(LIB_LDFLAGS)
 @WITH_MYSQL_TRUE@libslurm_mysql_la_CFLAGS = $(MYSQL_CFLAGS) $(AM_CFLAGS)
 @WITH_MYSQL_FALSE@EXTRA_libslurm_mysql_la_SOURCES = mysql_common.c mysql_common.h
-noinst_LTLIBRARIES = $(MYSQL_LIB)
+@WITH_KINGBASE_FALSE@KINGBASE_LIB = 
+@WITH_KINGBASE_TRUE@KINGBASE_LIB = libslurm_kingbase.la
+@WITH_KINGBASE_TRUE@libslurm_kingbase_la_SOURCES = kingbase_common.c kingbase_common.h
+@WITH_KINGBASE_TRUE@libslurm_kingbase_la_LIBADD = $(KINGBASE_LIBS)
+@WITH_KINGBASE_TRUE@libslurm_kingbase_la_LDFLAGS = $(LIB_LDFLAGS)
+@WITH_KINGBASE_TRUE@libslurm_kingbase_la_CFLAGS = $(KINGBASE_CFLAGS) $(AM_CFLAGS)
+@WITH_KINGBASE_FALSE@EXTRA_libslurm_kingbase_la_SOURCES = kingbase_common.c kingbase_common.h
+noinst_LTLIBRARIES = $(MYSQL_LIB) $(KINGBASE_LIB)
 all: all-am
 
 .SUFFIXES:
@@ -547,6 +571,9 @@ clean-noinstLTLIBRARIES:
 	  rm -f $${locs}; \
 	}
 
+libslurm_kingbase.la: $(libslurm_kingbase_la_OBJECTS) $(libslurm_kingbase_la_DEPENDENCIES) $(EXTRA_libslurm_kingbase_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(libslurm_kingbase_la_LINK) $(am_libslurm_kingbase_la_rpath) $(libslurm_kingbase_la_OBJECTS) $(libslurm_kingbase_la_LIBADD) $(LIBS)
+
 libslurm_mysql.la: $(libslurm_mysql_la_OBJECTS) $(libslurm_mysql_la_DEPENDENCIES) $(EXTRA_libslurm_mysql_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(libslurm_mysql_la_LINK) $(am_libslurm_mysql_la_rpath) $(libslurm_mysql_la_OBJECTS) $(libslurm_mysql_la_LIBADD) $(LIBS)
 
@@ -556,6 +583,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libslurm_kingbase_la-kingbase_common.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libslurm_mysql_la-mysql_common.Plo@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
@@ -584,6 +612,13 @@ am--depfiles: $(am__depfiles_remade)
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LTCOMPILE) -c -o $@ $<
+
+libslurm_kingbase_la-kingbase_common.lo: kingbase_common.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libslurm_kingbase_la_CFLAGS) $(CFLAGS) -MT libslurm_kingbase_la-kingbase_common.lo -MD -MP -MF $(DEPDIR)/libslurm_kingbase_la-kingbase_common.Tpo -c -o libslurm_kingbase_la-kingbase_common.lo `test -f 'kingbase_common.c' || echo '$(srcdir)/'`kingbase_common.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libslurm_kingbase_la-kingbase_common.Tpo $(DEPDIR)/libslurm_kingbase_la-kingbase_common.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kingbase_common.c' object='libslurm_kingbase_la-kingbase_common.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libslurm_kingbase_la_CFLAGS) $(CFLAGS) -c -o libslurm_kingbase_la-kingbase_common.lo `test -f 'kingbase_common.c' || echo '$(srcdir)/'`kingbase_common.c
 
 libslurm_mysql_la-mysql_common.lo: mysql_common.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libslurm_mysql_la_CFLAGS) $(CFLAGS) -MT libslurm_mysql_la-mysql_common.lo -MD -MP -MF $(DEPDIR)/libslurm_mysql_la-mysql_common.Tpo -c -o libslurm_mysql_la-mysql_common.lo `test -f 'mysql_common.c' || echo '$(srcdir)/'`mysql_common.c
@@ -689,7 +724,8 @@ clean-am: clean-generic clean-libtool clean-noinstLTLIBRARIES \
 	mostlyclean-am
 
 distclean: distclean-am
-		-rm -f ./$(DEPDIR)/libslurm_mysql_la-mysql_common.Plo
+		-rm -f ./$(DEPDIR)/libslurm_kingbase_la-kingbase_common.Plo
+	-rm -f ./$(DEPDIR)/libslurm_mysql_la-mysql_common.Plo
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -735,7 +771,8 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-am
-		-rm -f ./$(DEPDIR)/libslurm_mysql_la-mysql_common.Plo
+		-rm -f ./$(DEPDIR)/libslurm_kingbase_la-kingbase_common.Plo
+	-rm -f ./$(DEPDIR)/libslurm_mysql_la-mysql_common.Plo
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
