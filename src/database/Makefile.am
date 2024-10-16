@@ -15,4 +15,15 @@ MYSQL_LIB =
 EXTRA_libslurm_mysql_la_SOURCES = mysql_common.c mysql_common.h
 endif
 
-noinst_LTLIBRARIES = $(MYSQL_LIB)
+if WITH_KINGBASE
+KINGBASE_LIB = libslurm_kingbase.la
+libslurm_kingbase_la_SOURCES = kingbase_common.c kingbase_common.h
+libslurm_kingbase_la_LIBADD   = $(KINGBASE_LIBS)
+libslurm_kingbase_la_LDFLAGS  = $(LIB_LDFLAGS)
+libslurm_kingbase_la_CFLAGS = $(KINGBASE_CFLAGS) $(AM_CFLAGS)
+else
+KINGBASE_LIB =
+EXTRA_libslurm_kingbase_la_SOURCES = kingbase_common.c kingbase_common.h
+endif
+
+noinst_LTLIBRARIES = $(MYSQL_LIB) $(KINGBASE_LIB)

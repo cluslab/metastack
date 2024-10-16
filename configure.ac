@@ -435,6 +435,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/accounting_storage/mysql/Makefile
 		 src/plugins/accounting_storage/none/Makefile
 		 src/plugins/accounting_storage/slurmdbd/Makefile
+         src/plugins/accounting_storage/kingbase/Makefile
 		 src/plugins/acct_gather_energy/Makefile
 		 src/plugins/acct_gather_energy/gpu/Makefile
 		 src/plugins/acct_gather_energy/ibmaem/Makefile

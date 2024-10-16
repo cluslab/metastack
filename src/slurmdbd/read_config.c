@@ -658,6 +658,14 @@ extern int read_slurmdbd_conf(void)
 		if (!slurmdbd_conf->storage_loc)
 			slurmdbd_conf->storage_loc =
 				xstrdup(DEFAULT_ACCOUNTING_DB);
+	} else if (!xstrcmp(slurm_conf.accounting_storage_type,
+	             "accounting_storage/kingbase")) {
+		if (!slurm_conf.accounting_storage_port)
+			slurm_conf.accounting_storage_port =
+				DEFAULT_KINGBASE_PORT;
+		if (!slurmdbd_conf->storage_loc)
+			slurmdbd_conf->storage_loc =
+				xstrdup(DEFAULT_ACCOUNTING_DB);		
 	} else {
 		if (!slurm_conf.accounting_storage_port)
 			slurm_conf.accounting_storage_port =
