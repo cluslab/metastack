@@ -262,6 +262,7 @@ GTK_CFLAGS = @GTK_CFLAGS@
 GTK_LIBS = @GTK_LIBS@
 H5CC = @H5CC@
 H5FC = @H5FC@
+HAVEKINGBASECONFIG = @HAVEKINGBASECONFIG@
 HAVEMYSQLCONFIG = @HAVEMYSQLCONFIG@
 HAVE_MAN2HTML = @HAVE_MAN2HTML@
 HDF5_CC = @HDF5_CC@
@@ -290,6 +291,8 @@ JSON_CPPFLAGS = @JSON_CPPFLAGS@
 JSON_LDFLAGS = @JSON_LDFLAGS@
 JWT_CPPFLAGS = @JWT_CPPFLAGS@
 JWT_LDFLAGS = @JWT_LDFLAGS@
+KINGBASE_CFLAGS = @KINGBASE_CFLAGS@
+KINGBASE_LIBS = @KINGBASE_LIBS@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
 LIBCURL = @LIBCURL@
@@ -467,7 +470,7 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = common mysql none slurmdbd
+SUBDIRS = common mysql none slurmdbd kingbase
 all: all-recursive
 
 .SUFFIXES:
