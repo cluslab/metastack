@@ -112,6 +112,17 @@ int slurm_get_auth_ttl(void);
  */
 double *slurm_get_tres_weight_array(char *weights_str, int tres_cnt, bool fail);
 
+/* slurm_get_jobsize_maxvalue
+ * IN jobsize_maxvalue_str - string of jobsize_maxvalue to be parsed.
+ * IN tres_cnt - count of how many tres' are on the system (e.g.
+ * 		slurmctld_tres_cnt).
+ * IN fail - whether to fatal or not if there are parsing errors.
+ *  * RET double* of jobsize maxvalue.
+ */
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+double *slurm_get_jobsize_maxvalue(char *jobsize_maxvalue_str, int tres_cnt, bool fail);
+#endif
+
 /* slurm_get_stepd_loc
  * get path to the slurmstepd
  * RET char * - absolute path to the slurmstepd, MUST be xfreed by caller

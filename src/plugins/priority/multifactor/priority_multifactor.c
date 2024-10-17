@@ -147,6 +147,10 @@ static uint32_t flags;       /* Priority Flags */
 static time_t g_last_ran = 0; /* when the last poll ran */
 static double decay_factor = 1; /* The decay factor when decaying time. */
 
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+static double *js_maxvalue = NULL;
+#endif
+
 /* variables defined in priority_multifactor.h */
 
 static void _priority_p_set_assoc_usage_debug(slurmdb_assoc_rec_t *assoc);
@@ -1540,6 +1544,10 @@ static void _internal_setup(void)
 	weight_js = slurm_conf.priority_weight_js;
 	weight_part = slurm_conf.priority_weight_part;
 	weight_qos = slurm_conf.priority_weight_qos;
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+	xfree(js_maxvalue);
+	js_maxvalue = slurm_get_jobsize_maxvalue(slurm_conf.priority_jobsize_maxvalue, slurmctld_tres_cnt, false);
+#endif
 	xfree(weight_tres);
 	weight_tres = slurm_get_tres_weight_array(
 		slurm_conf.priority_weight_tres, slurmctld_tres_cnt, true);
@@ -1788,7 +1796,9 @@ int fini ( void )
 		slurm_cond_signal(&decay_cond);
 
 	xfree(weight_tres);
-
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+	xfree(js_maxvalue);
+#endif
 	slurm_mutex_unlock(&decay_lock);
 
 	/* Now join outside the lock */
@@ -2120,6 +2130,13 @@ extern void set_priority_factors(time_t start_time, job_record_t *job_ptr)
 	/* FIXME: this should work off the product of TRESBillingWeights */
 	if (weight_js) {
 		uint32_t cpu_cnt = 0, min_nodes = 1;
+#ifdef __METASTACK_PRIORITY_JOBSIZE		
+		uint32_t js_max_cpu = 0, js_max_node = 0;
+		if(js_maxvalue && js_maxvalue[TRES_ARRAY_CPU]) 
+			js_max_cpu = (uint32_t)js_maxvalue[TRES_ARRAY_CPU];
+		if(js_maxvalue && js_maxvalue[TRES_ARRAY_NODE])
+			js_max_node = (uint32_t)js_maxvalue[TRES_ARRAY_NODE];
+#endif
 		/* On the initial run of this we don't have total_cpus
 		   so go off the requesting.  After the first shot
 		   total_cpus should be filled in.
@@ -2131,8 +2148,44 @@ extern void set_priority_factors(time_t start_time, job_record_t *job_ptr)
 			cpu_cnt = job_ptr->details->max_cpus;
 		else if (job_ptr->details && job_ptr->details->min_cpus)
 			cpu_cnt = job_ptr->details->min_cpus;
-		if (job_ptr->details)
-			min_nodes = job_ptr->details->min_nodes;
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+		if (js_max_cpu) {
+			/*min_nodes values prediction
+				1)Job Submission Format: -N a(--nodes=a)  or  -N a-b (--nodes=a-b),
+					At this point, both job_ptr->details->min_nodes and job_ptr->details->max_nodes are true.
+					**min_nodes = job_ptr->details->min_nodes;**
+
+				2)Job Submission Format: -n --ntasks-per-node
+					At this point, both job_ptr->details->num_tasks and job_ptr->details->ntasks_per_node are true.
+					**min_nodes = (uint32_t)ceil((double)job_ptr->details->num_tasks / (double)job_ptr->details->ntasks_per_node);**
+
+				3)Job Submission Format: -w node_list(node_number > 1)
+					At this point,estimate the min_nodes value using the number of cores requested by the job and 
+					the maximum number of CPU cores per node in the job's partition.
+					**min_nodes = (uint32_t)ceil((double)cpu_cnt / (double)job_ptr->part_ptr->max_core_cnt);**
+					**min_nodes = MAX(min_nodes, job_ptr->details->min_nodes);**
+
+				4)Job Submission Format: -n + other parameters  or -w node_list(node_number = 1)
+					**min_nodes = (uint32_t)ceil((double)cpu_cnt / (double)job_ptr->part_ptr->max_core_cnt);**
+			*/
+			if (job_ptr->details && job_ptr->details->min_nodes && !job_ptr->details->max_nodes) {
+				if (job_ptr->details->num_tasks && job_ptr->details->ntasks_per_node) {
+					min_nodes = (uint32_t)ceil((double)job_ptr->details->num_tasks / (double)job_ptr->details->ntasks_per_node);
+				} else if (job_ptr->details->min_nodes > 1) {
+					min_nodes = (uint32_t)ceil((double)cpu_cnt / (double)job_ptr->part_ptr->max_core_cnt);
+					min_nodes = MAX(min_nodes, job_ptr->details->min_nodes);
+				} else {
+					min_nodes = (uint32_t)ceil((double)cpu_cnt / (double)job_ptr->part_ptr->max_core_cnt);
+				}
+			} else if (job_ptr->details && job_ptr->details->min_nodes) {
+				min_nodes = job_ptr->details->min_nodes;
+			}		
+		} else {
+			/* PriorityJobSizeMaxValue configuration item not in effect or not configured. */
+			if (job_ptr->details)
+					min_nodes = job_ptr->details->min_nodes;
+		}	
+#endif	
 
 		if (flags & PRIORITY_FLAGS_SIZE_RELATIVE) {
 			uint32_t time_limit = 1;
@@ -2159,23 +2212,70 @@ extern void set_priority_factors(time_t start_time, job_record_t *job_ptr)
 					job_ptr->prio_factors->priority_js;
 			}
 		} else if (slurm_conf.priority_favor_small) {
-			job_ptr->prio_factors->priority_js =
-				(double)(node_record_count - min_nodes)
-				/ (double)node_record_count;
-			if (cpu_cnt) {
-				job_ptr->prio_factors->priority_js +=
-					(double)(cluster_cpus - cpu_cnt)
-					/ (double)cluster_cpus;
-				job_ptr->prio_factors->priority_js /= 2;
-			}
+#ifdef __METASTACK_PRIORITY_JOBSIZE	
+			if (js_max_cpu) {
+				if (js_max_node) {
+					if (js_max_node < min_nodes)
+						min_nodes = js_max_node;
+					job_ptr->prio_factors->priority_js =
+						(double)(js_max_node - min_nodes)
+						/ (double)js_max_node;
+					if (cpu_cnt) {
+						if (js_max_cpu < cpu_cnt)
+							cpu_cnt = js_max_cpu;
+						job_ptr->prio_factors->priority_js +=
+							(double)(js_max_cpu - cpu_cnt)
+							/ (double)js_max_cpu;
+						job_ptr->prio_factors->priority_js /= 2;
+					}
+				} else {
+					if (js_max_cpu < cpu_cnt)
+						cpu_cnt = js_max_cpu;
+					job_ptr->prio_factors->priority_js =
+						(double)(js_max_cpu - cpu_cnt)
+						/ (double)js_max_cpu;
+				}		
+			} else {
+				job_ptr->prio_factors->priority_js =
+					(double)(node_record_count - min_nodes)
+					/ (double)node_record_count;
+				if (cpu_cnt) {
+					job_ptr->prio_factors->priority_js +=
+						(double)(cluster_cpus - cpu_cnt)
+						/ (double)cluster_cpus;
+					job_ptr->prio_factors->priority_js /= 2;
+				}
+			}				
+#endif	
 		} else {	/* favor large */
-			job_ptr->prio_factors->priority_js =
-				(double)min_nodes / (double)node_record_count;
-			if (cpu_cnt) {
-				job_ptr->prio_factors->priority_js +=
-					(double)cpu_cnt / (double)cluster_cpus;
-				job_ptr->prio_factors->priority_js /= 2;
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+			if (js_max_cpu) {
+				if (js_max_node) {
+					if (js_max_node < min_nodes)
+						min_nodes = js_max_node;
+					job_ptr->prio_factors->priority_js =
+						(double)min_nodes / (double)js_max_node;
+					if (cpu_cnt) {
+						if (js_max_cpu < cpu_cnt)
+							cpu_cnt = js_max_cpu;
+						job_ptr->prio_factors->priority_js +=
+							(double)cpu_cnt/(double)js_max_cpu;
+						job_ptr->prio_factors->priority_js /= 2;
+					}
+				} else {
+					job_ptr->prio_factors->priority_js =
+						(double)cpu_cnt/(double)js_max_cpu;
+				}
+			} else {
+				job_ptr->prio_factors->priority_js =
+					(double)min_nodes / (double)node_record_count;
+				if (cpu_cnt) {
+					job_ptr->prio_factors->priority_js +=
+						(double)cpu_cnt / (double)cluster_cpus;
+					job_ptr->prio_factors->priority_js /= 2;
+				}
 			}
+#endif
 		}
 		if (job_ptr->prio_factors->priority_js < .0)
 			job_ptr->prio_factors->priority_js = 0.0;
