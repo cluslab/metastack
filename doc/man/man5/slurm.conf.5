@@ -3028,6 +3028,30 @@ The default values are 0.
 .IP
 
 .TP
+\fBPriorityJobSizeMaxValue\fR
+A comma\-separated list of JobSize calculation types and maximum values, 
+used to customize the maximum number of CPU cores and nodes when calculating job size priority.
+.br
+The CPU must be set; if only the node is set, the configuration item will not take effect.
+
+.IP
+.nf
+e.g.
+PriorityJobSizeMaxValue=cpu=128
+PriorityJobSizeMaxValue=cpu=128,node=10
+.fi
+
+PriorityJobSizeMaxValue=cpu=128 means that the job's size is measured based 
+on the number of CPU cores. 
+PriorityJobSizeMaxValue=cpu=128,node=10 means that the job's size is measured 
+based on both the number of CPU cores and the number of nodes.
+.br
+Once this configuration is enabled, the job size priority calculation will use the customized maximum CPU cores and nodes. 
+If this configuration is not enabled, the job size priority will be calculated based on the total number of CPU cores and nodes in the cluster. 
+The default value is null.
+.IP
+
+.TP
 \fBPrivateData\fR
 This controls what type of information is hidden from regular users.
 By default, all information is visible to all users.
