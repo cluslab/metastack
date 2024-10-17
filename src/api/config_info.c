@@ -1514,6 +1514,14 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 		key_pair->value =
 			xstrdup(slurm_ctl_conf_ptr->priority_weight_tres);
 		list_append(ret_list, key_pair);
+
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+		key_pair = xmalloc(sizeof(config_key_pair_t));
+		key_pair->name = xstrdup("PriorityJobSizeMaxValue");
+		key_pair->value =
+			xstrdup(slurm_ctl_conf_ptr->priority_jobsize_maxvalue);
+		list_append(ret_list, key_pair);
+#endif		
 	}
 
 

@@ -488,6 +488,9 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->priority_weight_part= conf->priority_weight_part;
 	conf_ptr->priority_weight_qos = conf->priority_weight_qos;
 	conf_ptr->priority_weight_tres = xstrdup(conf->priority_weight_tres);
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+	conf_ptr->priority_jobsize_maxvalue = xstrdup(conf->priority_jobsize_maxvalue);
+#endif	
 
 	conf_ptr->private_data        = conf->private_data;
 	conf_ptr->proctrack_type      = xstrdup(conf->proctrack_type);

@@ -368,6 +368,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_OPT_MSG_OUTPUT
 #define __METASTACK_OPT_MSG_OUTPUT
 #endif
+
+/* Macro definitions that control the size of Jobsize */
+#ifndef __METASTACK_PRIORITY_JOBSIZE
+#define __METASTACK_PRIORITY_JOBSIZE
+#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -3237,6 +3242,9 @@ typedef struct {
 	uint32_t priority_weight_part; /* weight for Partition factor */
 	uint32_t priority_weight_qos; /* weight for QOS factor */
 	char    *priority_weight_tres; /* weights (str) for different TRES' */
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+	char    *priority_jobsize_maxvalue; /* maxvalue (str) for JobSize' */
+#endif
 	uint16_t private_data;	/* block viewing of information,
 				 * see PRIVATE_DATA_* */
 	char *proctrack_type;	/* process tracking plugin type */

@@ -4840,6 +4840,9 @@ _pack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t * build_ptr, buf_t *buffer,
             pack_key_pair_list(build_ptr->rl_users, protocol_version,
                             buffer);							
 #endif
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+            packstr(build_ptr->priority_jobsize_maxvalue, buffer);
+#endif
         } else if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
             pack_time(build_ptr->last_update, buffer);
 

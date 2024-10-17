@@ -331,6 +331,70 @@ static int _get_tres_id(char *type, char *name)
 	return assoc_mgr_find_tres_pos(&tres_rec, false);
 }
 
+#ifdef __METASTACK_PRIORITY_JOBSIZE
+static int _jobsize_maxvalue_item(double *jobsize_maxvalue, char *item_str)
+{
+    char *type = NULL, *value_str = NULL, *name = NULL;
+    int tres_id = 0;
+    double max_value = 0;
+
+    type = strtok_r(item_str, "=", &value_str);
+
+    if (strchr(type, '/'))
+        type = strtok_r(type, "/", &name);
+
+    if ((tres_id = _get_tres_id(type, name)) == -1) {
+        error("JobSize '%s%s%s' is not a configured JobSize type.",
+		      type, (name) ? ":" : "", (name) ? name : "");
+        return SLURM_ERROR;
+	}
+	
+    errno = 0;
+    max_value = strtod(value_str, NULL);
+    if (errno) { 
+        error("%s: Unable to convert %s value to double",
+                __func__, value_str);
+        return SLURM_ERROR;
+    }
+
+    jobsize_maxvalue[tres_id] = max_value;
+
+    return SLURM_SUCCESS;
+}
+
+double *slurm_get_jobsize_maxvalue(char *jobsize_maxvalue_str, int tres_cnt, bool fail)
+{
+    double *jobsize_maxvalue = NULL;
+    char *tmp_str = NULL;
+    char *token = NULL, *last = NULL;
+
+    if (!jobsize_maxvalue_str || !*jobsize_maxvalue_str || !tres_cnt) {
+        return NULL;
+    }
+    tmp_str = xstrdup(jobsize_maxvalue_str); 
+    jobsize_maxvalue = xcalloc(tres_cnt, sizeof(double));
+
+    token = strtok_r(tmp_str, ",", &last);
+    while (token) {
+        if (_jobsize_maxvalue_item(jobsize_maxvalue, token) != SLURM_SUCCESS) {
+            xfree(jobsize_maxvalue);
+            xfree(tmp_str);
+            if (fail)
+                fatal("failed to parse JobSize maxvalue str '%s'",
+                    jobsize_maxvalue_str);
+            else	
+                error("failed to parse JobSize maxvalue str '%s'",
+                    jobsize_maxvalue_str);
+            return NULL;
+        }
+        token = strtok_r(NULL, ",", &last);
+    }
+	
+    xfree(tmp_str);
+    return jobsize_maxvalue;
+}
+#endif
+
 static int _tres_weight_item(double *weights, char *item_str)
 {
 	char *type = NULL, *value_str = NULL, *val_unit = NULL, *name = NULL;
