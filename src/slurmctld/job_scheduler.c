@@ -151,6 +151,10 @@ static pthread_mutex_t _do_diag_stats_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t schedule_cycle_depth = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+static bitstr_t *main_planned_bitmap = NULL;
+#endif
+
 static int _find_singleton_job (void *x, void *key)
 {
 	job_record_t *qjob_ptr = (job_record_t *) x;
@@ -1113,6 +1117,9 @@ static void *_sched_agent(void *args)
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	DEF_TIMERS;
 #endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	main_planned_bitmap = bit_alloc(node_record_count);
+#endif
 
 #if HAVE_SYS_PRCTL_H
 	if (prctl(PR_SET_NAME, "sched_agent", NULL, NULL, NULL) < 0) {
@@ -1125,6 +1132,9 @@ static void *_sched_agent(void *args)
 		slurm_mutex_lock(&sched_mutex);
 		while (1) {
 			if (slurmctld_config.shutdown_time) {
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+				FREE_NULL_BITMAP(main_planned_bitmap);
+#endif
 				slurm_mutex_unlock(&sched_mutex);
 				return NULL;
 			}
@@ -1255,6 +1265,10 @@ static void *_sched_agent(void *args)
 			schedule_job_save();		/* Has own locking */
 		}
 	}
+
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	FREE_NULL_BITMAP(main_planned_bitmap);
+#endif
 
 	return NULL;
 }
@@ -1485,6 +1499,97 @@ static void _add_failed_jobs(int part_repeat_job_template, RR_job_record_t **job
 	(*job_resource_ptr) = NULL;
 }
 
+#endif
+
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+static void _handle_main_planned(bool set, int index)
+{
+	int n_first, n_last, n;
+	node_record_t *node_ptr = NULL;
+
+	if (para_sched) {
+		if (!para_sched_main_planned_bitmap || !para_sched_main_planned_bitmap[index]) {
+			return;
+		}
+
+		n_first = bit_ffs(para_sched_main_planned_bitmap[index]);
+		if (n_first == -1) {
+			return;
+		}
+
+		n_last = bit_fls(para_sched_main_planned_bitmap[index]);
+
+		for (n = n_first; n <= n_last; n++) {
+			if (!bit_test(para_sched_main_planned_bitmap[index], n)) {
+				continue;
+			}
+			node_ptr = node_record_table_ptr[n];
+			if (!node_ptr) {
+			    continue;
+			}
+			if (set) {
+				/*
+				* If the node is allocated ignore this flag. This only
+				* really matters for IDLE and MIXED.
+				*/
+				if (IS_NODE_IDLE(node_ptr)) {
+					node_ptr->main_planned_flag = true;
+				} else {
+					bit_clear(para_sched_main_planned_bitmap[index], n);
+				}
+			} else {
+				node_ptr->main_planned_flag = false;
+				bit_clear(para_sched_main_planned_bitmap[index], n);
+			}
+
+			sched_debug3("%s: %s: planned on %s",
+				__func__,
+				set ? "set" : "cleared",
+				node_ptr->name);
+		}
+	} else {
+		if (!main_planned_bitmap) {
+			return;
+		}
+
+		n_first = bit_ffs(main_planned_bitmap);
+		if (n_first == -1) {
+			return;
+		}
+
+		n_last = bit_fls(main_planned_bitmap);
+
+		for (n = n_first; n <= n_last; n++) {
+			if (!bit_test(main_planned_bitmap, n)) {
+				continue;
+			}
+			node_ptr = node_record_table_ptr[n];
+			if (!node_ptr) {
+			    continue;
+			}
+			if (set) {
+				/*
+				* If the node is allocated ignore this flag. This only
+				* really matters for IDLE and MIXED.
+				*/
+				if (IS_NODE_IDLE(node_ptr)) {
+					node_ptr->main_planned_flag = true;
+				} else {
+					bit_clear(main_planned_bitmap, n);
+				}
+			} else {
+				node_ptr->main_planned_flag = false;
+				bit_clear(main_planned_bitmap, n);
+			}
+
+			sched_debug3("%s: %s: planned on %s",
+				__func__,
+				set ? "set" : "cleared",
+				node_ptr->name);
+		}
+	}
+
+}
 #endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -1830,6 +1935,9 @@ static int _schedule(bool full_queue)
 	sched_start = now;
 	last_job_sched_start = now;
 	START_TIMER;
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	_handle_main_planned(false, index);
+#endif
 	if (!avail_front_end(NULL)) {
 		ListIterator job_iterator = list_iterator_create(job_list);
 		while ((job_ptr = list_next(job_iterator))) {
@@ -3238,6 +3346,15 @@ fail_this_part:	if (fail_by_part) {
 			 */
 			failed_parts[failed_part_cnt++] = job_ptr->part_ptr;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED	
+			if (para_sched) {
+				bit_or(para_sched_main_planned_bitmap[index], job_ptr->part_ptr->node_bitmap);
+				bit_and(para_sched_main_planned_bitmap[index], para_sched_avail_node_bitmap[index]);
+			} else {
+				bit_or(main_planned_bitmap, job_ptr->part_ptr->node_bitmap);
+				bit_and(main_planned_bitmap, avail_node_bitmap);
+			}
+#endif
 			if(para_sched)
 				bit_and_not(para_sched_avail_node_bitmap[index],
 				    job_ptr->part_ptr->node_bitmap);
@@ -3253,6 +3370,9 @@ fail_this_part:	if (fail_by_part) {
 		do_sched_job_lock_unlock(false, job_ptr);
 #endif			
 	}
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	_handle_main_planned(true, index);
+#endif
 
 	if (bb_wait_cnt)
 		(void) bb_g_job_try_stage_in();

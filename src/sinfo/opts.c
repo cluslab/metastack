@@ -68,6 +68,10 @@
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define OPT_LONG_BORROW    0x110
 #endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+#define OPT_LONG_MPLANNED  0x111
+#define OPT_LONG_NOMPLANNED  0x112
+#endif
 /* FUNCTIONS */
 static List  _build_state_list( char* str );
 static List  _build_all_states_list( void );
@@ -358,11 +362,17 @@ extern void parse_command_line(int argc, char **argv)
 #endif
 		{"nodes",     required_argument, 0, 'n'},
 		{"noconvert", no_argument,       0, OPT_LONG_NOCONVERT},
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		{"noplanned",no_argument,	 0, OPT_LONG_NOMPLANNED},
+#endif	
 		{"noheader",  no_argument,       0, 'h'},
 		{"Node",      no_argument,       0, 'N'},
 		{"format",    required_argument, 0, 'o'},
 		{"Format",    required_argument, 0, 'O'},
 		{"partition", required_argument, 0, 'p'},
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		{"planned",	  no_argument,	   	 0, OPT_LONG_MPLANNED},
+#endif
 		{"responding",no_argument,       0, 'r'},
 		{"list-reasons", no_argument,    0, 'R'},
 		{"summarize", no_argument,       0, 's'},
@@ -419,6 +429,14 @@ extern void parse_command_line(int argc, char **argv)
             params.nocache_query = true;
         }
     }
+#endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	if (getenv("SLURM_MAIN_PLANNED")) {
+		if(!xstrcasecmp(getenv("SLURM_MAIN_PLANNED"), "true"))
+			params.mplanned = true;
+		else if(!xstrcasecmp(getenv("SLURM_MAIN_PLANNED"), "false"))
+			params.no_mplanned = true;
+	}
 #endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	params.borrow_flag = false;
@@ -586,6 +604,14 @@ extern void parse_command_line(int argc, char **argv)
             params.cache_query = false;
 			break;
 #endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		case OPT_LONG_MPLANNED:
+			params.mplanned = true;
+			break;
+		case OPT_LONG_NOMPLANNED:
+			params.no_mplanned = true;
+			break;
+#endif
 
 		}
 	}
@@ -598,6 +624,14 @@ extern void parse_command_line(int argc, char **argv)
 		      "Please choose one or the other.");
 		exit(1);
 	}
+
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	if (params.mplanned && params.no_mplanned) {
+		error("Conflicting options, --planned and --noplanned, specified. "
+									"Please choose one or the other."); 
+		exit(1);
+	}	
+#endif
 
 	params.cluster_flags = slurmdb_setup_cluster_flags();
 

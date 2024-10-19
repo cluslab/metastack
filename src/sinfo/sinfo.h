@@ -63,6 +63,9 @@
 typedef struct {
 	uint16_t port;
 	uint32_t node_state;
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	bool main_planned_flag; 
+#endif
 
 	uint32_t nodes_alloc;
 	uint32_t nodes_idle;
@@ -216,6 +219,10 @@ struct sinfo_parameters {
 #endif
 #ifdef __METASTACK_OPT_CACHE_QUERY
    bool cache_query;		
+#endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	bool mplanned;
+	bool no_mplanned;
 #endif
 };
 

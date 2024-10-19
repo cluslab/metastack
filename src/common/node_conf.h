@@ -148,6 +148,11 @@ struct node_record {
 	uint16_t part_cnt;		/* number of associated partitions */
 	void **part_pptr;		/* array of pointers to partitions
 					 * associated with this node*/
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	bool main_planned_flag; /* If true, when the main scheduler pulls 
+							 * the node into the blacklist, the node 
+							 * status will be displayed as planned */
+#endif	
 	uint16_t port;			/* TCP port number of the slurmd */
 	power_mgmt_data_t *power;	/* power management data */
 	time_t power_save_req_time;	/* Time of power_save request */

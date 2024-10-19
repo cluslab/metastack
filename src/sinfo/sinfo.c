@@ -1041,6 +1041,12 @@ static void _update_sinfo(sinfo_data_t *sinfo_ptr, node_info_t *node_ptr)
 	base_state = node_ptr->node_state & NODE_STATE_BASE;
 
 	if (sinfo_ptr->nodes_total == 0) {	/* first node added */
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		if (params.mplanned || ((!params.no_mplanned) && (slurm_conf.private_data & PRIVATE_DATA_PLANNED))) 
+			sinfo_ptr->main_planned_flag = node_ptr->main_planned_flag;
+		else
+			sinfo_ptr->main_planned_flag = false;
+#endif
 		sinfo_ptr->node_state = node_ptr->node_state;
 		sinfo_ptr->features   = node_ptr->features;
 		sinfo_ptr->features_act = node_ptr->features_act;

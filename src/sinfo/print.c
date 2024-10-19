@@ -1101,6 +1101,14 @@ int _print_state_compact(sinfo_data_t * sinfo_data, int width,
 		my_state = sinfo_data->node_state;
 		upper_state = node_state_string_compact(my_state);
 		lower_state = _str_tolower(upper_state);
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+        char *pos = NULL;
+		if (sinfo_data->main_planned_flag && (pos = xstrstr(lower_state, "idle")) != NULL) {
+			xfree(lower_state);
+    		lower_state = xstrdup("plnd");
+		}
+		pos = NULL;
+#endif
 		_print_str(lower_state, width, right_justify, true);
 		xfree(lower_state);
 	} else if (sinfo_data)
@@ -1122,6 +1130,20 @@ int _print_state_complete(sinfo_data_t * sinfo_data, int width,
 
 		my_state = sinfo_data->node_state;
 		state = xstrtolower(node_state_string_complete(my_state));
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		if (sinfo_data->main_planned_flag) {
+    		char *buffer = NULL, *pos = NULL;
+			if ((pos = xstrstr(state, "idle")) != NULL && xstrstr(state, "planned") == NULL) {
+				xstrncat(buffer, state, pos - state + strlen("idle"));
+    			xstrcat(buffer, "+planned");
+    			xstrcat(buffer, pos + strlen("idle"));
+    			xfree(state);
+				state = xstrdup(buffer);
+				xfree(buffer);
+			}
+			pos = NULL;
+		}
+#endif
 		_print_str(state, width, right_justify, true);
 		xfree(state);
 	} else if (sinfo_data)
@@ -1144,6 +1166,14 @@ int _print_state_long(sinfo_data_t * sinfo_data, int width,
 		my_state = sinfo_data->node_state;
 		upper_state = node_state_string(my_state);
 		lower_state = _str_tolower(upper_state);
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		char *pos = NULL;
+		if (sinfo_data->main_planned_flag && (pos = xstrstr(lower_state, "idle")) != NULL) {
+			xfree(lower_state);
+			lower_state = xstrdup("planned");
+		}
+		pos = NULL;
+#endif
 		_print_str(lower_state, width, right_justify, true);
 		xfree(lower_state);
 	} else if (sinfo_data)

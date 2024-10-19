@@ -58,6 +58,10 @@
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define OPT_LONG_BORROW  0x108
 #endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+#define OPT_LONG_MPLANNED  0x111
+#define OPT_LONG_NOMPLANNED  0x112
+#endif
 /* Global externs from scontrol.h */
 char *command_name;
 List clusters = NULL;
@@ -76,6 +80,11 @@ int exit_flag = 0;	/* program to terminate if =1 */
 int federation_flag = 0;/* show federated jobs */
 int local_flag = 0;     /* show only local jobs -- not remote remote sib jobs */
 int one_liner = 0;	/* one record per line if =1 */
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+bool mplanned_flag = false; /* show planned state set by main sched */
+bool no_mplanned_flag = false; /* do not show planned state set by main sched */
+bool private_data_planned_flag = false; /* show planned state setting from private data in slurm.conf */
+#endif
 int quiet_flag = 0;	/* quiet=1, verbose=-1, normal=0 */
 int sibling_flag = 0;   /* show sibling jobs (if any fed job). */
 int verbosity = 0;	/* count of "-v" options */
@@ -143,7 +152,13 @@ int main(int argc, char **argv)
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 		{"nocache",	 0, 0, OPT_LONG_NOCACHE},
 #endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		{"noplanned",  0, 0, OPT_LONG_NOMPLANNED},
+#endif
 		{"oneliner", 0, 0, 'o'},
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		{"planned",  0, 0, OPT_LONG_MPLANNED},
+#endif
 		{"quiet",    0, 0, 'Q'},
 		{"sibling",  0, 0, OPT_LONG_SIBLING},
 		{"uid",	     1, 0, 'u'},
@@ -184,6 +199,16 @@ int main(int argc, char **argv)
 #endif
 	if (getenv("SCONTROL_SIB") || getenv("SCONTROL_SIBLING"))
 		sibling_flag = 1;
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	if (getenv("SLURM_MAIN_PLANNED")) {
+		if(!xstrcasecmp(getenv("SLURM_MAIN_PLANNED"), "true"))
+			mplanned_flag = true;
+		else if(!xstrcasecmp(getenv("SLURM_MAIN_PLANNED"), "false"))
+			no_mplanned_flag = true;
+	}
+	if (slurm_conf.private_data & PRIVATE_DATA_PLANNED)
+		private_data_planned_flag = true;
+#endif
 
 	while (1) {
 		if ((optind < argc) &&
@@ -257,6 +282,14 @@ int main(int argc, char **argv)
 		case (int)'o':
 			one_liner = 1;
 			break;
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		case OPT_LONG_MPLANNED:
+			mplanned_flag = true;
+			break;
+		case OPT_LONG_NOMPLANNED:
+			no_mplanned_flag = true;
+			break;
+#endif
 		case (int)'Q':
 			quiet_flag = 1;
 			break;
@@ -303,6 +336,14 @@ int main(int argc, char **argv)
 			params.sctl_uid = *uid_ptr;
 		}
 		list_iterator_destroy(itr);
+	}	
+#endif
+
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	if (mplanned_flag && no_mplanned_flag) {
+		error("Conflicting options, --planned and --noplanned, specified. "
+									"Please choose one or the other."); 
+		exit(1);
 	}	
 #endif
 

@@ -4188,6 +4188,13 @@ extern void private_data_string(uint16_t private_data, char *str, int str_len)
 		strcat(str, "part_extend");  //11 len
 	}
 #endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	if (private_data & PRIVATE_DATA_PLANNED) {
+		if (str[0])
+            strcat(str, ",");
+        strcat(str, "planned"); //8 len
+	}
+#endif
 	if (private_data & PRIVATE_DATA_RESERVATIONS) {
 		if (str[0])
 			strcat(str, ",");

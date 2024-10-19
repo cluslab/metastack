@@ -475,6 +475,9 @@ extern bitstr_t **para_sched_node_bitmap;       /* A collection of bitmaps for a
 extern bitstr_t **para_sched_avail_node_bitmap; /* A collection of bitmaps for available nodes in each resource area */
 extern bitstr_t **para_sched_share_node_bitmap; /* A collection of bitmaps for sharable nodes in each resource area */
 extern bitstr_t **para_sched_idle_node_bitmap;  /* A collection of bitmaps for idle nodes in each resource area */
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+extern bitstr_t **para_sched_main_planned_bitmap;
+#endif
 
 extern void build_sched_resource(void);
 extern void free_para_sched_resource(void);

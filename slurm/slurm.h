@@ -369,6 +369,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_MSG_OUTPUT
 #endif
 
+#ifndef __METASTACK_NEW_MAIN_SCHED_PLANNED
+#define __METASTACK_NEW_MAIN_SCHED_PLANNED
+#endif
+
 /* Macro definitions that control the size of Jobsize */
 #ifndef __METASTACK_PRIORITY_JOBSIZE
 #define __METASTACK_PRIORITY_JOBSIZE
@@ -1308,6 +1312,9 @@ enum node_states {
 #define PRIVATE_CLOUD_NODES       SLURM_BIT(7) /* hide powered down nodes in
 						* cloud */
 #define PRIVATE_DATA_EVENTS       SLURM_BIT(8) /* events are private */
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+#define PRIVATE_DATA_PLANNED       SLURM_BIT(9)	/* planned node state is private */
+#endif
 #ifdef __METASTACK_OPT_PART_VISIBLE
 #define PRIVATE_DATA_PART_EXTEND  SLURM_BIT(15)	/* part's visible with account */
 #endif
@@ -2523,6 +2530,9 @@ typedef struct node_info {
 	char *node_addr;	/* communication name (optional) */
 	char *node_hostname;	/* node's hostname (optional) */
 	uint32_t node_state;	/* see enum node_states */
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	bool main_planned_flag; 
+#endif
 	char *os;		/* operating system currently running */
 	uint32_t owner;		/* User allowed to use this node or NO_VAL */
 	char *partitions;	/* Comma separated list of partitions containing
