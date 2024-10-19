@@ -100,6 +100,10 @@ scontrol_print_node(char *node_name, node_info_msg_t *node_buffer_ptr)
 			continue;
 		else
 			i = j;
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		if ((!mplanned_flag) && (no_mplanned_flag || (!private_data_planned_flag)))
+			node_buffer_ptr->node_array[i].main_planned_flag = false;
+#endif
 		print_cnt++;
 		slurm_print_node_table (stdout,
 					& node_buffer_ptr->node_array[i],

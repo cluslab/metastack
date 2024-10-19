@@ -88,6 +88,11 @@ extern int federation_flag; /* show federated jobs */
 extern int input_words;	/* number of words of input permitted */
 extern int local_flag;	/* show only local jobs -- not remote remote sib jobs */
 extern int one_liner;	/* one record per line if =1 */
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+bool mplanned_flag; /* show planned state set by main sched */
+bool no_mplanned_flag; /* do not show planned state set by main sched */
+bool private_data_planned_flag; /* show planned state setting from private data in slurm.conf */
+#endif
 extern int quiet_flag;	/* quiet=1, verbose=-1, normal=0 */
 extern int sibling_flag; /* show sibling jobs (if any fed job). */
 extern uint32_t cluster_flags; /* what type of cluster are we talking to */

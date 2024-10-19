@@ -325,6 +325,20 @@ char *slurm_sprint_node_table(node_info_t *node_ptr, int one_liner)
 
 	/****** Line ******/
 	complete_state = node_state_string_complete(my_state);
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		if (node_ptr->main_planned_flag) {
+			char *buffer = NULL, *pos = NULL;
+			if ((pos = xstrstr(complete_state, "IDLE")) != NULL && xstrstr(complete_state, "PLANNED") == NULL) {
+				xstrncat(buffer, complete_state, pos - complete_state + strlen("IDLE"));
+    			xstrcat(buffer, "+PLANNED");
+    			xstrcat(buffer, pos + strlen("IDLE"));
+				xfree(complete_state);
+				complete_state = xstrdup(buffer);
+				xfree(buffer);
+			}
+			pos = NULL;
+		}
+#endif
 	xstrfmtcat(out, "State=%s ThreadsPerCore=%u TmpDisk=%u Weight=%u ",
 		   complete_state, node_ptr->threads, node_ptr->tmp_disk,
 		   node_ptr->weight);

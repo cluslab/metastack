@@ -157,6 +157,9 @@ bitstr_t **para_sched_node_bitmap = NULL;       /* A collection of bitmaps for a
 bitstr_t **para_sched_avail_node_bitmap = NULL; /* A collection of bitmaps for available nodes in each resource area */
 bitstr_t **para_sched_share_node_bitmap = NULL; /* A collection of bitmaps for sharable nodes in each resource area */
 bitstr_t **para_sched_idle_node_bitmap = NULL;  /* A collection of bitmaps for idle nodes in each resource area */
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+bitstr_t **para_sched_main_planned_bitmap = NULL;
+#endif
 
 /*
  * build_sched_resource - build the resource array required for parallel scheduling
@@ -237,11 +240,17 @@ extern void build_sched_resource(void)
 			para_sched_avail_node_bitmap = xcalloc(resource_count, sizeof(bitstr_t *));
 			para_sched_share_node_bitmap = xcalloc(resource_count, sizeof(bitstr_t *));
 			para_sched_idle_node_bitmap  = xcalloc(resource_count, sizeof(bitstr_t *));
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+			para_sched_main_planned_bitmap = xcalloc(resource_count, sizeof(bitstr_t *));
+#endif
 
 			/* build para_sched node bitmap */
 			for (i = 0, j = 0; i < part_count && j < resource_count; i++) {
 				if(original_part_node_bitmap[i] != NULL){
 					para_sched_node_bitmap[j] = bit_copy(original_part_node_bitmap[i]);
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+					para_sched_main_planned_bitmap[j] = bit_alloc(node_record_count);
+#endif
 					/* doing other bitmap assignment during scheduling */
 					/* para_sched_idle_node_bitmap */
 					/* para_sched_avail_node_bitmap */

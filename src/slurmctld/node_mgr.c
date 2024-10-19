@@ -1237,6 +1237,8 @@ static void _pack_node(node_record_t *dump_node_ptr, buf_t *buffer,
 	xassert(verify_lock(CONF_LOCK, READ_LOCK));
 
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+		if (protocol_version >= META_2_2_PROTOCOL_VERSION) {
 			packstr(dump_node_ptr->name, buffer);
 			packstr(dump_node_ptr->node_hostname, buffer);
 			packstr(dump_node_ptr->comm_name, buffer);
@@ -1308,6 +1310,83 @@ static void _pack_node(node_record_t *dump_node_ptr, buf_t *buffer,
 						protocol_version);
 
 			packstr(dump_node_ptr->tres_fmt_str, buffer);
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+			packbool(dump_node_ptr->main_planned_flag, buffer);
+#endif
+		} else {
+			packstr(dump_node_ptr->name, buffer);
+			packstr(dump_node_ptr->node_hostname, buffer);
+			packstr(dump_node_ptr->comm_name, buffer);
+			packstr(dump_node_ptr->bcast_address, buffer);
+			pack16(dump_node_ptr->port, buffer);
+			pack32(dump_node_ptr->next_state, buffer);
+			pack32(dump_node_ptr->node_state, buffer);
+			packstr(dump_node_ptr->version, buffer);
+			
+			/* Only data from config_record used for scheduling */
+			pack16(dump_node_ptr->config_ptr->cpus, buffer);
+			pack16(dump_node_ptr->config_ptr->boards, buffer);
+			pack16(dump_node_ptr->config_ptr->tot_sockets, buffer);
+			pack16(dump_node_ptr->config_ptr->cores, buffer);
+			pack16(dump_node_ptr->config_ptr->threads, buffer);
+			pack64(dump_node_ptr->config_ptr->real_memory, buffer);
+			pack32(dump_node_ptr->config_ptr->tmp_disk, buffer);
+
+			packstr(dump_node_ptr->mcs_label, buffer);
+			pack32(dump_node_ptr->owner, buffer);
+			pack16(dump_node_ptr->core_spec_cnt, buffer);
+			pack32(dump_node_ptr->cpu_bind, buffer);
+			pack64(dump_node_ptr->mem_spec_limit, buffer);
+			packstr(dump_node_ptr->cpu_spec_list, buffer);
+			pack16(dump_node_ptr->cpus_efctv, buffer);
+
+			pack32(dump_node_ptr->cpu_load, buffer);
+			pack64(dump_node_ptr->free_mem, buffer);
+			pack32(dump_node_ptr->config_ptr->weight, buffer);
+			pack32(dump_node_ptr->reason_uid, buffer);
+
+			pack_time(dump_node_ptr->boot_time, buffer);
+			pack_time(dump_node_ptr->last_busy, buffer);
+			pack_time(dump_node_ptr->reason_time, buffer);
+			pack_time(dump_node_ptr->slurmd_start_time, buffer);
+
+			select_g_select_nodeinfo_pack(dump_node_ptr->select_nodeinfo,
+							buffer, protocol_version);
+
+			packstr(dump_node_ptr->arch, buffer);
+			packstr(dump_node_ptr->features, buffer);
+			packstr(dump_node_ptr->features_act, buffer);
+			if (dump_node_ptr->gres)
+				packstr(dump_node_ptr->gres, buffer);
+			else
+				packstr(dump_node_ptr->config_ptr->gres, buffer);
+
+			/* Gathering GRES details is slow, so don't by default */
+			if (show_flags & SHOW_DETAIL) {
+				gres_drain =
+					gres_get_node_drain(dump_node_ptr->gres_list);
+				gres_used  =
+					gres_get_node_used(dump_node_ptr->gres_list);
+			}
+			packstr(gres_drain, buffer);
+			packstr(gres_used, buffer);
+			xfree(gres_drain);
+			xfree(gres_used);
+
+			packstr(dump_node_ptr->os, buffer);
+			packstr(dump_node_ptr->comment, buffer);
+			packstr(dump_node_ptr->extra, buffer);
+			packstr(dump_node_ptr->reason, buffer);
+			acct_gather_energy_pack(dump_node_ptr->energy, buffer,
+						protocol_version);
+			ext_sensors_data_pack(dump_node_ptr->ext_sensors, buffer,
+						protocol_version);
+			power_mgmt_data_pack(dump_node_ptr->power, buffer,
+						protocol_version);
+
+			packstr(dump_node_ptr->tres_fmt_str, buffer);
+		}
+#endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		packstr(dump_node_ptr->name, buffer);
 		packstr(dump_node_ptr->node_hostname, buffer);
@@ -4693,6 +4772,25 @@ extern int send_nodes_to_accounting(time_t event_time)
 	return rc;
 }
 
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+extern void clear_mplanned_all_nodes(void)
+{
+	int i = 0;
+	node_record_t *node_ptr = NULL;
+
+	if (para_sched_main_planned_bitmap) {
+		for (i=0; i<resource_count; i++)	
+			FREE_NULL_BITMAP(para_sched_main_planned_bitmap[i]);
+	}
+
+	for (i = 0; (node_ptr = next_node(&i)); i++) {
+		node_ptr->main_planned_flag = false;
+	}
+
+	xfree(para_sched_main_planned_bitmap);
+}
+#endif
+
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 /* free_para_sched_resource - free all memory associated with para_sched */
 extern void free_para_sched_resource(void)
@@ -4729,6 +4827,10 @@ extern void free_para_sched_resource(void)
 	/* for nodes */
 	xfree(original_part_node_bitmap);					
 	xfree(para_sched_node_bitmap);
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	clear_mplanned_all_nodes();
+#endif
+
 	/* do FREE_NULL_BITMAP(para_sched_****_node_bitmap[i]) in func _sched_agent  */
 	xfree(para_sched_avail_node_bitmap);
 	xfree(para_sched_share_node_bitmap);
