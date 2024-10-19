@@ -365,6 +365,14 @@ static slurm_opt_t *_opt_copy(void)
 	opt.dcus_per_socket = NULL;	/* Moved by memcpy */
 	opt.dcus_per_task = NULL;	/* Moved by memcpy */
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	opt.npu_bind = NULL;		/* Moved by memcpy */
+	opt.npu_freq = NULL;		/* Moved by memcpy */
+	opt.npus = NULL;		/* Moved by memcpy */
+	opt.npus_per_node = NULL;	/* Moved by memcpy */
+	opt.npus_per_socket = NULL;	/* Moved by memcpy */
+	opt.npus_per_task = NULL;	/* Moved by memcpy */
+#endif
 	opt_dup->ifname = xstrdup(opt.ifname);
 	opt_dup->job_name = xstrdup(opt.job_name);
 	opt.licenses = NULL;		/* Moved by memcpy */
@@ -626,6 +634,9 @@ env_vars_t env_vars[] = {
 #ifdef __METASTACK_NEW_GRES_DCU
   { "SLURM_CPUS_PER_DCU", LONG_OPT_CPUS_PER_DCU },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SLURM_CPUS_PER_NPU", LONG_OPT_CPUS_PER_NPU },
+#endif
   { "SLURM_DELAY_BOOT", LONG_OPT_DELAY_BOOT },
   { "SLURM_DEPENDENCY", 'd' },
   { "SLURM_DISABLE_STATUS", 'X' },
@@ -649,6 +660,14 @@ env_vars_t env_vars[] = {
   { "SLURM_DCUS_PER_SOCKET", LONG_OPT_DCUS_PER_SOCKET },
   { "SLURM_DCUS_PER_TASK", LONG_OPT_DCUS_PER_TASK },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SLURM_NPUS", 'Y' },
+  { "SLURM_NPU_BIND", LONG_OPT_NPU_BIND },
+  { "SLURM_NPU_FREQ", LONG_OPT_NPU_FREQ },
+  { "SLURM_NPUS_PER_NODE", LONG_OPT_NPUS_PER_NODE },
+  { "SLURM_NPUS_PER_SOCKET", LONG_OPT_NPUS_PER_SOCKET },
+  { "SLURM_NPUS_PER_TASK", LONG_OPT_NPUS_PER_TASK },
+#endif
   { "SLURM_GRES", LONG_OPT_GRES },
   { "SLURM_GRES_FLAGS", LONG_OPT_GRES_FLAGS },
   { "SLURM_HINT", LONG_OPT_HINT },
@@ -664,6 +683,9 @@ env_vars_t env_vars[] = {
 #ifdef __METASTACK_NEW_GRES_DCU
   { "SLURM_MEM_PER_DCU", LONG_OPT_MEM_PER_DCU },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SLURM_MEM_PER_NPU", LONG_OPT_MEM_PER_NPU },
+#endif
   { "SLURM_MEM_PER_NODE", LONG_OPT_MEM },
   { "SLURM_MPI_TYPE", LONG_OPT_MPI },
   { "SLURM_NCORES_PER_SOCKET", LONG_OPT_CORESPERSOCKET },
@@ -677,6 +699,9 @@ env_vars_t env_vars[] = {
   { "SLURM_NTASKS_PER_GPU", LONG_OPT_NTASKSPERGPU },
 #ifdef __METASTACK_NEW_GRES_DCU
   { "SLURM_NTASKS_PER_DCU", LONG_OPT_NTASKSPERDCU },
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SLURM_NTASKS_PER_NPU", LONG_OPT_NTASKSPERNPU },
 #endif
   { "SLURM_NTASKS_PER_TRES", LONG_OPT_NTASKSPERTRES },
   { "SLURM_OPEN_MODE", LONG_OPT_OPEN_MODE },
@@ -1610,6 +1635,11 @@ static void _usage(void)
 "            [--dcus-per-node=n] [--dcus-per-socket=n] [--dcus-per-task=n]\n"
 "            [--mem-per-dcu=MB]\n"
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+"            [--cpus-per-npu=n] [--npus=n] [--npu-bind=...] [--npu-freq=...]\n"
+"            [--npus-per-node=n] [--npus-per-socket=n] [--npus-per-task=n]\n"
+"            [--mem-per-npu=MB]\n"
+#endif
 "            executable [args...]\n");
 
 }
@@ -1804,6 +1834,19 @@ static void _help(void)
 "      --dcus-per-socket=n     number of DCUs required per allocated socket\n"
 "      --dcus-per-task=n       number of DCUs required per spawned task\n"
 "      --mem-per-dcu=n         real memory required per allocated DCU\n"
+		);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	printf("\n"
+"NPU scheduling options:\n"
+"      --cpus-per-npu=n        number of CPUs required per allocated NPU\n"
+"  -Y, --npus=n                count of NPUs required for the job\n"
+"      --npu-bind=...          task to npu binding options\n"
+"      --npu-freq=...          frequency and voltage of NPUs\n"
+"      --npus-per-node=n       number of NPUs required per allocated node\n"
+"      --npus-per-socket=n     number of NPUs required per allocated socket\n"
+"      --npus-per-task=n       number of NPUs required per spawned task\n"
+"      --mem-per-npu=n         real memory required per allocated NPU\n"
 		);
 #endif
 	printf("\n"

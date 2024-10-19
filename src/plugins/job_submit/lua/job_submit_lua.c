@@ -587,6 +587,10 @@ static int _get_job_req_field(const job_desc_msg_t *job_desc, const char *name)
 	} else if (!xstrcmp(name, "ntasks_per_dcu")) {
 		lua_pushnumber(L, job_desc->ntasks_per_tres);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	} else if (!xstrcmp(name, "ntasks_per_npu")) {
+		lua_pushnumber(L, job_desc->ntasks_per_tres);
+#endif
 	} else if (!xstrcmp(name, "ntasks_per_node")) {
 		lua_pushnumber(L, job_desc->ntasks_per_node);
 	} else if (!xstrcmp(name, "ntasks_per_socket")) {
@@ -882,6 +886,10 @@ static int _set_job_req_field(lua_State *L)
 		job_desc->ntasks_per_tres = luaL_checknumber(L, 3);
 #ifdef __METASTACK_NEW_GRES_DCU
 	} else if (!xstrcmp(name, "ntasks_per_dcu")) {
+		job_desc->ntasks_per_tres = luaL_checknumber(L, 3);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	} else if (!xstrcmp(name, "ntasks_per_npu")) {
 		job_desc->ntasks_per_tres = luaL_checknumber(L, 3);
 #endif
 	} else if (!xstrcmp(name, "ntasks_per_node")) {

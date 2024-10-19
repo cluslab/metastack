@@ -104,6 +104,12 @@ START_TEST(test_data_job_macros)
 		      "LONG_OPT_CPUS_PER_DCU");
 	ck_assert_msg(opt.cpus_per_dcu == 12345, "cpus_per_dcu");
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_CPUS_PER_NPU,
+						arg, errors) == 0,
+		      "LONG_OPT_CPUS_PER_NPU");
+	ck_assert_msg(opt.cpus_per_npu == 12345, "cpus_per_npu");
+#endif
 	data_set_string(arg, "0");
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_CPUS_PER_GPU,
 						arg, errors) == 0,
@@ -114,6 +120,12 @@ START_TEST(test_data_job_macros)
 						arg, errors) == 0,
 		      "LONG_OPT_CPUS_PER_DCU");
 	ck_assert_msg(opt.cpus_per_dcu == 0, "cpus_per_dcu");
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_CPUS_PER_NPU,
+						arg, errors) == 0,
+		      "LONG_OPT_CPUS_PER_NPU");
+	ck_assert_msg(opt.cpus_per_npu == 0, "cpus_per_npu");
 #endif
 	/* COMMON_MBYTES_OPTION */
 	data_set_string(arg, "1");
@@ -357,6 +369,12 @@ START_TEST(test_data_job)
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_GRES, arg,
 						errors) == 0, "gres");
 	ck_assert_msg(!xstrcmp(opt.gres, "gres:dcu:10"), "gres value");	
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	data_set_string(arg, "npu:10");
+	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_GRES, arg,
+						errors) == 0, "gres");
+	ck_assert_msg(!xstrcmp(opt.gres, "gres:npu:10"), "gres value");	
 #endif
 
 	data_set_string(arg, "invalid");

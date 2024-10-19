@@ -1217,6 +1217,20 @@ static slurm_cli_opt_t slurm_opt_cpus_per_dcu = {
 };
 #endif
 
+#ifdef __METASTACK_NEW_GRES_NPU
+COMMON_INT_OPTION(cpus_per_npu, "--cpus-per-npu");
+static slurm_cli_opt_t slurm_opt_cpus_per_npu = {
+	.name = "cpus-per-npu",
+	.has_arg = required_argument,
+	.val = LONG_OPT_CPUS_PER_NPU,
+	.set_func = arg_set_cpus_per_npu,
+	.set_func_data = arg_set_data_cpus_per_npu,
+	.get_func = arg_get_cpus_per_npu,
+	.reset_func = arg_reset_cpus_per_npu,
+	.reset_each_pass = true,
+};
+#endif
+
 static int arg_set_cpus_per_task(slurm_opt_t *opt, const char *arg)
 {
 	int old_cpus_per_task = opt->cpus_per_task;
@@ -2222,6 +2236,165 @@ static slurm_cli_opt_t slurm_opt_dcus_per_task = {
 };
 #endif
 
+#ifdef __METASTACK_NEW_GRES_NPU
+static int arg_set_npu_bind(slurm_opt_t *opt, const char *arg)
+{
+	xfree(opt->npu_bind);
+	xfree(opt->tres_bind);
+	opt->npu_bind = xstrdup(arg);
+	xstrfmtcat(opt->tres_bind, "npu:%s", opt->npu_bind);
+	if (tres_bind_verify_cmdline(opt->tres_bind)) {
+		error("Invalid --npu-bind argument: %s", opt->tres_bind);
+		exit(1);
+	}
+
+	return SLURM_SUCCESS;
+}
+
+static int arg_set_data_npu_bind(slurm_opt_t *opt, const data_t *arg,
+				 data_t *errors)
+{
+	int rc;
+	char *str = NULL;
+
+	if ((rc = data_get_string_converted(arg, &str)))
+		ADD_DATA_ERROR("Unable to read string", rc);
+	else {
+		xfree(opt->npu_bind);
+		xfree(opt->tres_bind);
+		opt->npu_bind = xstrdup(str);
+		xstrfmtcat(opt->tres_bind, "npu:%s", opt->npu_bind);
+		if (tres_bind_verify_cmdline(opt->tres_bind)) {
+			rc = SLURM_ERROR;
+			ADD_DATA_ERROR("Invalid --npu-bind argument", rc);
+			xfree(opt->npu_bind);
+			xfree(opt->tres_bind);
+		}
+	}
+
+	xfree(str);
+	return rc;
+}
+static void arg_reset_npu_bind(slurm_opt_t *opt)
+{
+	xfree(opt->npu_bind);
+	xfree(opt->tres_bind);
+}
+COMMON_STRING_OPTION_GET(npu_bind);
+static slurm_cli_opt_t slurm_opt_npu_bind = {
+	.name = "npu-bind",
+	.has_arg = required_argument,
+	.val = LONG_OPT_NPU_BIND,
+	.set_func = arg_set_npu_bind,
+	.set_func_data = arg_set_data_npu_bind,
+	.get_func = arg_get_npu_bind,
+	.reset_func = arg_reset_npu_bind,
+	.reset_each_pass = true,
+};
+
+static int arg_set_npu_freq(slurm_opt_t *opt, const char *arg)
+{
+	xfree(opt->npu_freq);
+	xfree(opt->tres_freq);
+	opt->npu_freq = xstrdup(arg);
+	xstrfmtcat(opt->tres_freq, "npu:%s", opt->npu_freq);
+	if (tres_freq_verify_cmdline(opt->tres_freq)) {
+		error("Invalid --npu-freq argument: %s", opt->tres_freq);
+		exit(1);
+	}
+
+	return SLURM_SUCCESS;
+}
+static int arg_set_data_npu_freq(slurm_opt_t *opt, const data_t *arg,
+				 data_t *errors)
+{
+	int rc;
+	char *str = NULL;
+
+	if ((rc = data_get_string_converted(arg, &str)))
+		ADD_DATA_ERROR("Unable to read string", rc);
+	else {
+		xfree(opt->npu_freq);
+		xfree(opt->tres_freq);
+		opt->npu_freq = xstrdup(str);
+		xstrfmtcat(opt->tres_freq, "npu:%s", opt->npu_freq);
+		if (tres_freq_verify_cmdline(opt->tres_freq)) {
+			rc = SLURM_ERROR;
+			ADD_DATA_ERROR("Invalid --npu-freq argument", rc);
+			xfree(opt->npu_freq);
+			xfree(opt->tres_freq);
+		}
+	}
+
+	xfree(str);
+	return rc;
+}
+static void arg_reset_npu_freq(slurm_opt_t *opt)
+{
+	xfree(opt->npu_freq);
+	xfree(opt->tres_freq);
+}
+COMMON_STRING_OPTION_GET(npu_freq);
+static slurm_cli_opt_t slurm_opt_npu_freq = {
+	.name = "npu-freq",
+	.has_arg = required_argument,
+	.val = LONG_OPT_NPU_FREQ,
+	.set_func = arg_set_npu_freq,
+	.set_func_data = arg_set_data_npu_freq,
+	.get_func = arg_get_npu_freq,
+	.reset_func = arg_reset_npu_freq,
+	.reset_each_pass = true,
+};
+
+COMMON_STRING_OPTION(npus);
+static slurm_cli_opt_t slurm_opt_npus = {
+	.name = "npus",
+	.has_arg = required_argument,
+	.val = 'Y',
+	.set_func = arg_set_npus,
+	.set_func_data = arg_set_data_npus,
+	.get_func = arg_get_npus,
+	.reset_func = arg_reset_npus,
+	.reset_each_pass = true,
+};
+
+COMMON_STRING_OPTION(npus_per_node);
+static slurm_cli_opt_t slurm_opt_npus_per_node = {
+	.name = "npus-per-node",
+	.has_arg = required_argument,
+	.val = LONG_OPT_NPUS_PER_NODE,
+	.set_func = arg_set_npus_per_node,
+	.set_func_data = arg_set_data_npus_per_node,
+	.get_func = arg_get_npus_per_node,
+	.reset_func = arg_reset_npus_per_node,
+	.reset_each_pass = true,
+};
+
+COMMON_STRING_OPTION(npus_per_socket);
+static slurm_cli_opt_t slurm_opt_npus_per_socket = {
+	.name = "npus-per-socket",
+	.has_arg = required_argument,
+	.val = LONG_OPT_NPUS_PER_SOCKET,
+	.set_func = arg_set_npus_per_socket,
+	.set_func_data = arg_set_data_npus_per_socket,
+	.get_func = arg_get_npus_per_socket,
+	.reset_func = arg_reset_npus_per_socket,
+	.reset_each_pass = true,
+};
+
+COMMON_STRING_OPTION(npus_per_task);
+static slurm_cli_opt_t slurm_opt_npus_per_task = {
+	.name = "npus-per-task",
+	.has_arg = required_argument,
+	.val = LONG_OPT_NPUS_PER_TASK,
+	.set_func = arg_set_npus_per_task,
+	.set_func_data = arg_set_data_npus_per_task,
+	.get_func = arg_get_npus_per_task,
+	.reset_func = arg_reset_npus_per_task,
+	.reset_each_pass = true,
+};
+#endif
+
 static int arg_set_gres(slurm_opt_t *opt, const char *arg)
 {
 	if (!xstrcasecmp(arg, "help") || !xstrcasecmp(arg, "list")) {
@@ -2947,6 +3120,20 @@ static slurm_cli_opt_t slurm_opt_mem_per_dcu = {
 };
 #endif
 
+#ifdef __METASTACK_NEW_GRES_NPU
+COMMON_MBYTES_OPTION(mem_per_npu, --mem-per-npu);
+static slurm_cli_opt_t slurm_opt_mem_per_npu = {
+	.name = "mem-per-npu",
+	.has_arg = required_argument,
+	.val = LONG_OPT_MEM_PER_NPU,
+	.set_func = arg_set_mem_per_npu,
+	.set_func_data = arg_set_data_mem_per_npu,
+	.get_func = arg_get_mem_per_npu,
+	.reset_func = arg_reset_mem_per_npu,
+	.reset_each_pass = true,
+};
+#endif
+
 COMMON_INT_OPTION_SET(pn_min_cpus, "--mincpus");
 COMMON_INT_OPTION_SET_DATA(pn_min_cpus);
 COMMON_INT_OPTION_GET(pn_min_cpus);
@@ -3504,6 +3691,23 @@ static slurm_cli_opt_t slurm_opt_ntasks_per_dcu = {
 	.set_func_data = arg_set_data_ntasks_per_dcu,
 	.get_func = arg_get_ntasks_per_dcu,
 	.reset_func = arg_reset_ntasks_per_dcu,
+	.reset_each_pass = true,
+};
+#endif
+
+#ifdef __METASTACK_NEW_GRES_NPU
+COMMON_INT_OPTION_SET(ntasks_per_npu, "--ntasks-per-npu");
+COMMON_INT_OPTION_SET_DATA(ntasks_per_npu);
+COMMON_INT_OPTION_GET(ntasks_per_npu);
+COMMON_OPTION_RESET(ntasks_per_npu, NO_VAL);
+static slurm_cli_opt_t slurm_opt_ntasks_per_npu = {
+	.name = "ntasks-per-npu",
+	.has_arg = required_argument,
+	.val = LONG_OPT_NTASKSPERNPU,
+	.set_func = arg_set_ntasks_per_npu,
+	.set_func_data = arg_set_data_ntasks_per_npu,
+	.get_func = arg_get_ntasks_per_npu,
+	.reset_func = arg_reset_ntasks_per_npu,
 	.reset_each_pass = true,
 };
 #endif
@@ -5308,6 +5512,9 @@ static const slurm_cli_opt_t *common_options[] = {
 #ifdef __METASTACK_NEW_GRES_DCU
 	&slurm_opt_cpus_per_dcu,
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	&slurm_opt_cpus_per_npu,
+#endif
 	&slurm_opt_cpus_per_task,
 	&slurm_opt_deadline,
 	&slurm_opt_debugger_test,
@@ -5340,6 +5547,14 @@ static const slurm_cli_opt_t *common_options[] = {
 	&slurm_opt_dcus_per_socket,
 	&slurm_opt_dcus_per_task,
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	&slurm_opt_npu_bind,
+	&slurm_opt_npu_freq,
+	&slurm_opt_npus,
+	&slurm_opt_npus_per_node,
+	&slurm_opt_npus_per_socket,
+	&slurm_opt_npus_per_task,
+#endif
 	&slurm_opt_gres,
 	&slurm_opt_gres_flags,
 	&slurm_opt_help,
@@ -5368,6 +5583,9 @@ static const slurm_cli_opt_t *common_options[] = {
 #ifdef __METASTACK_NEW_GRES_DCU
 	&slurm_opt_mem_per_dcu,
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	&slurm_opt_mem_per_npu,
+#endif
 	&slurm_opt_mincpus,
 	&slurm_opt_mpi,
 	&slurm_opt_msg_timeout,
@@ -5387,6 +5605,9 @@ static const slurm_cli_opt_t *common_options[] = {
 	&slurm_opt_ntasks_per_gpu,
 #ifdef __METASTACK_NEW_GRES_DCU
 	&slurm_opt_ntasks_per_dcu,
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	&slurm_opt_ntasks_per_npu,
 #endif
 	&slurm_opt_ntasks_per_node,
 	&slurm_opt_ntasks_per_socket,
@@ -5999,10 +6220,52 @@ extern bool slurm_option_get_next_set(slurm_opt_t *opt, char **name,
  * Otherwise, if multiple environment variables are set simultaneously,
  * this will fatal().
  */
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
 static void _validate_memory_options(slurm_opt_t *opt)
 {
-#ifdef __METASTACK_NEW_GRES_DCU
-		if ((slurm_option_set_by_cli(opt, LONG_OPT_MEM) +
+	if ((slurm_option_set_by_cli(opt, LONG_OPT_MEM) +
+	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_CPU) +
+	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_DCU) +
+		 slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_NPU) +
+	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
+		fatal("--mem, --mem-per-cpu, --mem-per-gpu, --mem-per-dcu and --mem-per-npu are mutually exclusive.");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM)) {
+		slurm_option_reset(opt, "mem-per-cpu");
+		slurm_option_reset(opt, "mem-per-gpu");
+		slurm_option_reset(opt, "mem-per-dcu");
+		slurm_option_reset(opt, "mem-per-npu");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_CPU)) {
+		slurm_option_reset(opt, "mem");
+		slurm_option_reset(opt, "mem-per-gpu");
+		slurm_option_reset(opt, "mem-per-dcu");
+		slurm_option_reset(opt, "mem-per-npu");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_GPU)) {
+		slurm_option_reset(opt, "mem");
+		slurm_option_reset(opt, "mem-per-cpu");
+		slurm_option_reset(opt, "mem-per-dcu");
+		slurm_option_reset(opt, "mem-per-npu");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_DCU)) {
+		slurm_option_reset(opt, "mem");
+		slurm_option_reset(opt, "mem-per-cpu");
+		slurm_option_reset(opt, "mem-per-gpu");
+		slurm_option_reset(opt, "mem-per-npu");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_NPU)) {
+		slurm_option_reset(opt, "mem");
+		slurm_option_reset(opt, "mem-per-cpu");
+		slurm_option_reset(opt, "mem-per-gpu");
+		slurm_option_reset(opt, "mem-per-dcu");
+	} else if ((slurm_option_set_by_env(opt, LONG_OPT_MEM) +
+		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_CPU) +
+		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_DCU) +
+			slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_NPU) +
+		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
+		fatal("SLURM_MEM_PER_CPU, SLURM_MEM_PER_GPU, SLURM_MEM_PER_DCU, SLURM_MEM_PER_NPU and SLURM_MEM_PER_NODE are mutually exclusive.");
+	}
+}
+#elif defined(__METASTACK_NEW_GRES_DCU)
+static void _validate_memory_options(slurm_opt_t *opt)
+{
+	if ((slurm_option_set_by_cli(opt, LONG_OPT_MEM) +
 	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_CPU) +
 	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_DCU) +
 	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
@@ -6029,7 +6292,41 @@ static void _validate_memory_options(slurm_opt_t *opt)
 		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
 		fatal("SLURM_MEM_PER_CPU, SLURM_MEM_PER_GPU, SLURM_MEM_PER_DCU and SLURM_MEM_PER_NODE are mutually exclusive.");
 	}
+}
+#elif defined(__METASTACK_NEW_GRES_NPU)
+static void _validate_memory_options(slurm_opt_t *opt)
+{
+	if ((slurm_option_set_by_cli(opt, LONG_OPT_MEM) +
+	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_CPU) +
+	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_NPU) +
+	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
+		fatal("--mem, --mem-per-cpu, --mem-per-gpu and --mem-per-npu are mutually exclusive.");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM)) {
+		slurm_option_reset(opt, "mem-per-cpu");
+		slurm_option_reset(opt, "mem-per-gpu");
+		slurm_option_reset(opt, "mem-per-npu");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_CPU)) {
+		slurm_option_reset(opt, "mem");
+		slurm_option_reset(opt, "mem-per-gpu");
+		slurm_option_reset(opt, "mem-per-npu");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_GPU)) {
+		slurm_option_reset(opt, "mem");
+		slurm_option_reset(opt, "mem-per-cpu");
+		slurm_option_reset(opt, "mem-per-npu");
+	} else if (slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_NPU)) {
+		slurm_option_reset(opt, "mem");
+		slurm_option_reset(opt, "mem-per-cpu");
+		slurm_option_reset(opt, "mem-per-gpu");
+	} else if ((slurm_option_set_by_env(opt, LONG_OPT_MEM) +
+		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_CPU) +
+		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_NPU) +
+		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
+		fatal("SLURM_MEM_PER_CPU, SLURM_MEM_PER_GPU, SLURM_MEM_PER_NPU and SLURM_MEM_PER_NODE are mutually exclusive.");
+	}
+}
 #else
+static void _validate_memory_options(slurm_opt_t *opt)
+{
 	if ((slurm_option_set_by_cli(opt, LONG_OPT_MEM) +
 	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_CPU) +
 	     slurm_option_set_by_cli(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
@@ -6048,8 +6345,8 @@ static void _validate_memory_options(slurm_opt_t *opt)
 		    slurm_option_set_by_env(opt, LONG_OPT_MEM_PER_GPU)) > 1) {
 		fatal("SLURM_MEM_PER_CPU, SLURM_MEM_PER_GPU, and SLURM_MEM_PER_NODE are mutually exclusive.");
 	}
-#endif
 }
+#endif
 
 static void _validate_threads_per_core_option(slurm_opt_t *opt)
 {
@@ -6121,7 +6418,17 @@ static void _validate_ntasks_per_gpu(slurm_opt_t *opt)
 #ifdef __METASTACK_NEW_GRES_DCU
 	bool dcu = slurm_option_set_by_cli(opt, LONG_OPT_NTASKSPERDCU);
 	bool dcu_env = slurm_option_set_by_env(opt, LONG_OPT_NTASKSPERDCU);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	bool npu = slurm_option_set_by_cli(opt, LONG_OPT_NTASKSPERNPU);
+	bool npu_env = slurm_option_set_by_env(opt, LONG_OPT_NTASKSPERNPU);
+#endif
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+	bool any = (tres || gpu || tres_env || gpu_env || dcu || dcu_env || npu || npu_env);
+#elif defined(__METASTACK_NEW_GRES_DCU)
 	bool any = (tres || gpu || tres_env || gpu_env || dcu || dcu_env);
+#elif defined(__METASTACK_NEW_GRES_NPU)
+	bool any = (tres || gpu || tres_env || gpu_env || npu || npu_env);
 #else
 	bool any = (tres || gpu || tres_env || gpu_env);
 #endif
@@ -6185,6 +6492,54 @@ static void _validate_ntasks_per_gpu(slurm_opt_t *opt)
 			fatal("--ntasks-per-dcu or SLURM_NTASKS_PER_DCU need --dcus or --gres=dcu:x");	
 	}
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (npu && tres) {
+		if (opt->ntasks_per_npu != opt->ntasks_per_tres)
+			fatal("Inconsistent values set to --ntasks-per-npu=%d and --ntasks-per-tres=%d ",
+			      opt->ntasks_per_npu,
+			      opt->ntasks_per_tres);
+	} else if (npu && tres_env) {
+		if (opt->verbose)
+			info("Ignoring SLURM_NTASKS_PER_TRES since --ntasks-per-npu given as command line option");
+		slurm_option_reset(opt, "ntasks-per-tres");
+	} else if (tres && npu_env) {
+		if (opt->verbose)
+			info("Ignoring SLURM_NTASKS_PER_NPU since --ntasks-per-tres given as command line option");
+		slurm_option_reset(opt, "ntasks-per-npu");
+	} else if (npu_env && tres_env) {
+		if (opt->ntasks_per_npu != opt->ntasks_per_tres)
+			fatal("Inconsistent values set by environment variables SLURM_NTASKS_PER_NPU=%d and SLURM_NTASKS_PER_TRES=%d ",
+			      opt->ntasks_per_npu,
+			      opt->ntasks_per_tres);
+	}
+
+	if (gpu && npu) {
+		fatal("--ntasks-per-gpu and --ntasks-per-npu are mutually exclusive");
+	} else if (gpu && npu_env) {
+		fatal("--ntasks-per-npu and SLURM_NTASKS_PER_NPU are mutually exclusive");
+	} else if (gpu_env && npu) {
+		fatal("SLURM_NTASKS_PER_GPU and --ntasks-per-npu are mutually exclusive");
+	} else if (gpu_env && npu_env) {
+		fatal("SLURM_NTASKS_PER_GPU and SLURM_NTASKS_PER_NPU are mutually exclusive");
+	}
+
+#ifdef __METASTACK_NEW_GRES_DCU
+	if (dcu && npu) {
+		fatal("--ntasks-per-dcu and --ntasks-per-npu are mutually exclusive");
+	} else if (dcu && npu_env) {
+		fatal("--ntasks-per-dcu and SLURM_NTASKS_PER_NPU are mutually exclusive");
+	} else if (dcu_env && npu) {
+		fatal("SLURM_NTASKS_PER_DCU and --ntasks-per-npu are mutually exclusive");
+	} else if (dcu_env && npu_env) {
+		fatal("SLURM_NTASKS_PER_DCU and SLURM_NTASKS_PER_NPU are mutually exclusive");
+	}
+#endif
+
+	if (npu || npu_env) {
+		if (!opt->npus && !xstrstr(opt->gres, "npu") && !npu_env)
+			fatal("--ntasks-per-npu or SLURM_NTASKS_PER_NPU need --npus or --gres=npu:x");	
+	}
+#endif
 
 	if (slurm_option_set_by_cli(opt, LONG_OPT_GPUS_PER_TASK))
 		fatal("--gpus-per-task is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU");
@@ -6197,13 +6552,37 @@ static void _validate_ntasks_per_gpu(slurm_opt_t *opt)
 
 	if (slurm_option_set_by_env(opt, LONG_OPT_GPUS_PER_SOCKET))
 		fatal("SLURM_GPUS_PER_SOCKET is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU");
-#ifdef __METASTACK_NEW_GRES_DCU
+
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+	if (slurm_option_set_by_cli(opt, LONG_OPT_NTASKSPERNODE))
+		fatal("--ntasks-per-node is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU and --ntasks-per-dcu and SLURM_NTASKS_PER_DCU and --ntasks-per-npu and SLURM_NTASKS_PER_NPU");
+	
+	if (slurm_option_set_by_env(opt, LONG_OPT_NTASKSPERNODE))
+		fatal("SLURM_NTASKS_PER_NODE is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU and --ntasks-per-dcu and SLURM_NTASKS_PER_DCU");
+
+#elif defined(__METASTACK_NEW_GRES_DCU)
 	if (slurm_option_set_by_cli(opt, LONG_OPT_NTASKSPERNODE))
 		fatal("--ntasks-per-node is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU and --ntasks-per-dcu and SLURM_NTASKS_PER_DCU");
 	
 	if (slurm_option_set_by_env(opt, LONG_OPT_NTASKSPERNODE))
 		fatal("SLURM_NTASKS_PER_NODE is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU and --ntasks-per-dcu and SLURM_NTASKS_PER_DCU");
 	
+#elif defined(__METASTACK_NEW_GRES_NPU)
+	if (slurm_option_set_by_cli(opt, LONG_OPT_NTASKSPERNODE))
+		fatal("--ntasks-per-node is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU and --ntasks-per-npu and SLURM_NTASKS_PER_NPU");
+	
+	if (slurm_option_set_by_env(opt, LONG_OPT_NTASKSPERNODE))
+		fatal("SLURM_NTASKS_PER_NODE is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU and --ntasks-per-npu and SLURM_NTASKS_PER_NPU");
+	
+#else
+	if (slurm_option_set_by_cli(opt, LONG_OPT_NTASKSPERNODE))
+		fatal("--ntasks-per-node is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU");
+
+	if (slurm_option_set_by_env(opt, LONG_OPT_NTASKSPERNODE))
+		fatal("SLURM_NTASKS_PER_NODE is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU");
+#endif
+
+#ifdef __METASTACK_NEW_GRES_DCU
 	if (slurm_option_set_by_cli(opt, LONG_OPT_DCUS_PER_TASK))
 		fatal("--dcus-per-task is mutually exclusive with --ntasks-per-dcu and SLURM_NTASKS_PER_DCU");
 	
@@ -6215,12 +6594,20 @@ static void _validate_ntasks_per_gpu(slurm_opt_t *opt)
 	
 	if (slurm_option_set_by_env(opt, LONG_OPT_DCUS_PER_SOCKET))
 		fatal("SLURM_DCUS_PER_SOCKET is mutually exclusive with --ntasks-per-dcu and SLURM_NTASKS_PER_DCU");
-#else
-	if (slurm_option_set_by_cli(opt, LONG_OPT_NTASKSPERNODE))
-		fatal("--ntasks-per-node is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU");
+#endif
 
-	if (slurm_option_set_by_env(opt, LONG_OPT_NTASKSPERNODE))
-		fatal("SLURM_NTASKS_PER_NODE is mutually exclusive with --ntasks-per-gpu and SLURM_NTASKS_PER_GPU");
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (slurm_option_set_by_cli(opt, LONG_OPT_NPUS_PER_TASK))
+		fatal("--npus-per-task is mutually exclusive with --ntasks-per-npu and SLURM_NTASKS_PER_NPU");
+	
+	if (slurm_option_set_by_env(opt, LONG_OPT_NPUS_PER_TASK))
+		fatal("SLURM_NPUS_PER_TASK is mutually exclusive with --ntasks-per-npu and SLURM_NTASKS_PER_NPU");
+	
+	if (slurm_option_set_by_cli(opt, LONG_OPT_NPUS_PER_SOCKET))
+		fatal("--npus-per-socket is mutually exclusive with --ntasks-per-npu and SLURM_NTASKS_PER_NPU");
+	
+	if (slurm_option_set_by_env(opt, LONG_OPT_NPUS_PER_SOCKET))
+		fatal("SLURM_NPUS_PER_SOCKET is mutually exclusive with --ntasks-per-npu and SLURM_NTASKS_PER_NPU");
 #endif
 }
 
@@ -6321,6 +6708,11 @@ extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 		xstrfmtcat(job_desc->cpus_per_tres, "gres:dcu:%d",
 			   opt_local->cpus_per_dcu);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (opt_local->cpus_per_npu)
+		xstrfmtcat(job_desc->cpus_per_tres, "gres:npu:%d",
+			   opt_local->cpus_per_npu);
+#endif
 	/* crontab_entry not filled in here */
 
 	job_desc->deadline = opt_local->deadline;
@@ -6374,6 +6766,11 @@ extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 	if (opt_local->mem_per_dcu != NO_VAL64)
 		xstrfmtcat(job_desc->mem_per_tres, "gres:dcu:%"PRIu64,
 			   opt_local->mem_per_dcu);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (opt_local->mem_per_npu != NO_VAL64)
+		xstrfmtcat(job_desc->mem_per_tres, "gres:npu:%"PRIu64,
+			   opt_local->mem_per_npu);
 #endif
 
 	if (set_defaults || slurm_option_isset(opt_local, "name"))
@@ -6507,6 +6904,15 @@ extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 	xfmt_tres(&job_desc->tres_per_task, "gres:dcu",
 		  opt_local->dcus_per_task);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	xfmt_tres(&job_desc->tres_per_job, "gres:npu", opt_local->npus);
+	xfmt_tres(&job_desc->tres_per_node, "gres:npu",
+		  opt_local->npus_per_node);
+	xfmt_tres(&job_desc->tres_per_socket, "gres:npu",
+		  opt_local->npus_per_socket);
+	xfmt_tres(&job_desc->tres_per_task, "gres:npu",
+		  opt_local->npus_per_task);
+#endif
 	job_desc->user_id = opt_local->uid;
 
 	/* wait_all_nodes not filled in here */
@@ -6558,6 +6964,10 @@ extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 #ifdef __METASTACK_NEW_GRES_DCU
 	else if (opt_local->ntasks_per_dcu != NO_VAL)
 		job_desc->ntasks_per_tres = opt_local->ntasks_per_dcu;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	else if (opt_local->ntasks_per_npu != NO_VAL)
+		job_desc->ntasks_per_tres = opt_local->ntasks_per_npu;
 #endif
 
 	if (opt_local->pn_min_cpus > -1)

@@ -183,6 +183,12 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 			   opt_local->cpus_per_dcu);
 	}
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (opt_local->cpus_per_npu) {
+		xstrfmtcat(step_req->cpus_per_tres, "gres:npu:%d",
+			   opt_local->cpus_per_npu);
+	}
+#endif
 
 
 	step_req->exc_nodes = xstrdup(opt_local->exclude);
@@ -216,6 +222,11 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 	if (opt_local->mem_per_dcu != NO_VAL64)
 		xstrfmtcat(step_req->mem_per_tres, "gres:dcu:%"PRIu64,
 			   opt.mem_per_dcu);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (opt_local->mem_per_npu != NO_VAL64)
+		xstrfmtcat(step_req->mem_per_tres, "gres:npu:%"PRIu64,
+			   opt.mem_per_npu);
 #endif
 
 	step_req->min_nodes = job->nhosts;
@@ -284,6 +295,29 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 		step_req->cpu_count = opt_local->ntasks * dcus_per_task *
 				      opt_local->cpus_per_dcu;
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	} else if (opt_local->npus_per_task && opt_local->cpus_per_npu) {
+		char *save_ptr = NULL, *tmp_str, *tok, *sep;
+		int npus_per_task = 0;
+
+		tmp_str = xstrdup(opt_local->npus_per_task);
+
+		tok = strtok_r(tmp_str, ",", &save_ptr);
+		while (tok) {
+			int tmp = 0;
+			sep = xstrchr(tok, ':');
+			if (sep)
+				tmp += atoi(sep + 1);
+			else
+				tmp += atoi(tok);
+			if (tmp > 0)
+				npus_per_task += tmp;
+			tok = strtok_r(NULL, ",", &save_ptr);
+		}
+		xfree(tmp_str);
+		step_req->cpu_count = opt_local->ntasks * npus_per_task *
+				      opt_local->cpus_per_npu;
+#endif
 	} else if (opt_local->ntasks_set ||
 		   (opt_local->ntasks_per_tres != NO_VAL) ||
 		   (opt_local->ntasks_per_gpu != NO_VAL)) {
@@ -292,6 +326,12 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 	} else if (opt_local->ntasks_set ||
 		   (opt_local->ntasks_per_tres != NO_VAL) ||
 		   (opt_local->ntasks_per_dcu != NO_VAL)) {
+		step_req->cpu_count = opt_local->ntasks;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	} else if (opt_local->ntasks_set ||
+		   (opt_local->ntasks_per_tres != NO_VAL) ||
+		   (opt_local->ntasks_per_npu != NO_VAL)) {
 		step_req->cpu_count = opt_local->ntasks;
 #endif
 	} else if (use_all_cpus) {	/* job allocation created by srun */
@@ -317,6 +357,10 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 #ifdef __METASTACK_NEW_GRES_DCU
 	else if (opt_local->ntasks_per_dcu != NO_VAL)
 		step_req->ntasks_per_tres = opt_local->ntasks_per_dcu;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	else if (opt_local->ntasks_per_npu != NO_VAL)
+		step_req->ntasks_per_tres = opt_local->ntasks_per_npu;
 #endif
 	else
 		step_req->ntasks_per_tres = NO_VAL16;
@@ -381,6 +425,19 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 				   opt_local->ntasks_per_dcu);
 	}
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (!opt_local->tres_bind &&
+	    ((opt_local->ntasks_per_tres != NO_VAL) ||
+	     (opt_local->ntasks_per_npu != NO_VAL))) {
+		/* Implicit single NPU binding with ntasks-per-tres/npu */
+		if (opt_local->ntasks_per_tres != NO_VAL)
+			xstrfmtcat(opt_local->tres_bind, "npu:single:%d",
+				   opt_local->ntasks_per_tres);
+		else
+			xstrfmtcat(opt_local->tres_bind, "npu:single:%d",
+				   opt_local->ntasks_per_npu);
+	}
+#endif
 	if (!opt_local->tres_bind && opt_local->gpus_per_task) {
 		/* Implicit GPU binding with gpus_per_task */
 		xstrfmtcat(opt_local->tres_bind, "gpu:per_task:%s",
@@ -391,6 +448,13 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 		/* Implicit DCU binding with dcus_per_task */
 		xstrfmtcat(opt_local->tres_bind, "dcu:per_task:%s",
 			   opt_local->dcus_per_task);
+	}
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (!opt_local->tres_bind && opt_local->npus_per_task) {
+		/* Implicit NPU binding with npus_per_task */
+		xstrfmtcat(opt_local->tres_bind, "npu:per_task:%s",
+			   opt_local->npus_per_task);
 	}
 #endif
 	step_req->tres_bind = xstrdup(opt_local->tres_bind);
@@ -409,6 +473,12 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 	xfmt_tres(&step_req->tres_per_node, "gres:dcu",
 		  opt_local->dcus_per_node);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	xfmt_tres(&step_req->tres_per_step, "gres:npu", opt_local->npus);
+	
+	xfmt_tres(&step_req->tres_per_node, "gres:npu",
+		  opt_local->npus_per_node);
+#endif
 	if (opt_local->gres)
 		add_tres = opt_local->gres;
 	else
@@ -426,6 +496,10 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 	xfmt_tres(&step_req->tres_per_socket, "gres:dcu",
 		  opt_local->dcus_per_socket);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	xfmt_tres(&step_req->tres_per_socket, "gres:npu",
+		  opt_local->npus_per_socket);
+#endif
 	if (opt_local->cpus_set)
 		xstrfmtcat(step_req->tres_per_task, "%scpu:%u",
 			   step_req->tres_per_task ? "," : "",
@@ -435,6 +509,10 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 #ifdef __METASTACK_NEW_GRES_DCU
 	xfmt_tres(&step_req->tres_per_task, "gres:dcu",
 		  opt_local->dcus_per_task);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	xfmt_tres(&step_req->tres_per_task, "gres:npu",
+		  opt_local->npus_per_task);
 #endif
 	if (opt_local->time_limit != NO_VAL)
 		step_req->time_limit = opt_local->time_limit;

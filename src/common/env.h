@@ -77,6 +77,9 @@ typedef struct env_options {
 #ifdef __METASTACK_NEW_GRES_DCU
 	int ntasks_per_dcu;	/* --ntasks-per-dcu		*/
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	int ntasks_per_npu;	/* --ntasks-per-npu		*/
+#endif
 	int ntasks_per_tres;	/* --ntasks-per-tres		*/
 	uint16_t threads_per_core; /* --threads-per-core=n	*/
 	int cpus_on_node;

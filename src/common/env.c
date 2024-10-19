@@ -342,6 +342,15 @@ int setup_env(env_t *env, bool preserve_env)
 	}
 #endif
 
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (env->ntasks_per_npu &&
+	    setenvf(&env->env, "SLURM_NTASKS_PER_NPU", "%d",
+		    env->ntasks_per_npu)) {
+		error("Unable to set SLURM_NTASKS_PER_NPU");
+		rc = SLURM_ERROR;
+	}
+#endif
+
 	if (env->ntasks_per_node
 	   && setenvf(&env->env, "SLURM_NTASKS_PER_NODE", "%d",
 		      env->ntasks_per_node) ) {
@@ -2334,6 +2343,48 @@ extern void set_env_from_opts(slurm_opt_t *opt, char ***dest,
 		env_array_overwrite_het_fmt(dest, "SLURM_MEM_PER_DCU",
 					    het_job_offset, "%"PRIu64,
 					    opt->mem_per_dcu);
+	}
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (opt->cpus_per_npu) {
+		env_array_overwrite_het_fmt(dest, "SLURM_CPUS_PER_NPU",
+					    het_job_offset, "%d",
+					    opt->cpus_per_npu);
+	}
+	if (opt->npus) {
+		env_array_overwrite_het_fmt(dest, "SLURM_NPUS",
+					    het_job_offset, "%s",
+					    opt->npus);
+	}
+	if (opt->npu_bind) {
+		env_array_overwrite_het_fmt(dest, "SLURM_NPU_BIND",
+					    het_job_offset, "%s",
+					    opt->npu_bind);
+	}
+	if (opt->npu_freq) {
+		env_array_overwrite_het_fmt(dest, "SLURM_NPU_FREQ",
+					    het_job_offset, "%s",
+					    opt->npu_freq);
+	}
+	if (opt->npus_per_node) {
+		env_array_overwrite_het_fmt(dest, "SLURM_NPUS_PER_NODE",
+					    het_job_offset, "%s",
+					    opt->npus_per_node);
+	}
+	if (opt->npus_per_socket) {
+		env_array_overwrite_het_fmt(dest, "SLURM_NPUS_PER_SOCKET",
+					    het_job_offset, "%s",
+					    opt->npus_per_socket);
+	}
+	if (opt->npus_per_task) {
+		env_array_overwrite_het_fmt(dest, "SLURM_NPUS_PER_TASK",
+					    het_job_offset, "%s",
+					    opt->npus_per_task);
+	}
+	if (opt->mem_per_npu != NO_VAL64) {
+		env_array_overwrite_het_fmt(dest, "SLURM_MEM_PER_NPU",
+					    het_job_offset, "%"PRIu64,
+					    opt->mem_per_npu);
 	}
 #endif
 }

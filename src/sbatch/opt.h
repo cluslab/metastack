@@ -72,6 +72,9 @@ typedef struct sbatch_env_opts {
 #ifdef __METASTACK_NEW_GRES_DCU
 	uint32_t ntasks_per_dcu;
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	uint32_t ntasks_per_npu;
+#endif
 	uint32_t ntasks_per_node;
 	uint32_t ntasks_per_socket;
 	uint32_t ntasks_per_tres;

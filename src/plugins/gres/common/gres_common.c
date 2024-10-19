@@ -378,7 +378,7 @@ log_flag(GRES, "__METASTACK_NEW_GRES_DCU, %s, flags: %d", __func__, flags);
 		else
 			usable_str = xstrdup("NULL");
 		alloc_str = bit_fmt_hexmask_trim(bit_alloc);
-#ifdef __METASTACK_NEW_GRES_DCU
+#if defined(__METASTACK_NEW_GRES_DCU) || defined(__METASTACK_NEW_GRES_NPU)
 		fprintf(stderr, "gres-bind: usable_gres=%s; bit_alloc=%s; local_inx=%d; global_list=%s; local_list=%s\n",
 #else
 		fprintf(stderr, "gpu-bind: usable_gres=%s; bit_alloc=%s; local_inx=%d; global_list=%s; local_list=%s\n",
@@ -578,6 +578,13 @@ log_flag(GRES, "__METASTACK_NEW_GRES_DCU, gres_conf_flags: %d ", gres_conf_flags
 			local_list = xstrdup(getenvp(*env_ptr,
 						     "ROCR_VISIBLE_DEVICES"));
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+		else if (gres_conf_flags & GRES_CONF_ENV_DSMI) {
+			log_flag(GRES, "__METASTACK_NEW_GRES_NPU, gres_conf_flags: %d ", gres_conf_flags);
+			local_list = xstrdup(getenvp(*env_ptr,
+							 "ASCEND_VISIBLE_DEVICES"));
+		}
+#endif
 		else if (gres_conf_flags & GRES_CONF_ENV_ONEAPI)
 			local_list = xstrdup(getenvp(*env_ptr,
 						     "ZE_AFFINITY_MASK"));
@@ -640,6 +647,14 @@ log_flag(GRES, "__METASTACK_NEW_GRES_DCU, gres_conf_flags: %d ", gres_conf_flags
 			env_array_overwrite(env_ptr, "ROCR_VISIBLE_DEVICES",
 					    local_list);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+		if (gres_conf_flags & GRES_CONF_ENV_DSMI) {
+			env_array_overwrite(env_ptr, "ASCEND_VISIBLE_DEVICES",
+					    local_list);
+			env_array_overwrite(env_ptr, "NPU_DEVICE_ORDINAL", 
+						local_list);
+		}
+#endif
 		if (gres_conf_flags & GRES_CONF_ENV_ONEAPI)
 			env_array_overwrite(env_ptr, "ZE_AFFINITY_MASK",
 					    local_list);
@@ -662,6 +677,12 @@ log_flag(GRES, "__METASTACK_NEW_GRES_DCU, gres_conf_flags: %d ", gres_conf_flags
 #else
 		if (gres_conf_flags & GRES_CONF_ENV_RSMI)
 			unsetenvp(*env_ptr, "ROCR_VISIBLE_DEVICES");
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+		if (gres_conf_flags & GRES_CONF_ENV_DSMI) {
+		    unsetenvp(*env_ptr, "ASCEND_VISIBLE_DEVICES");
+			unsetenvp(*env_ptr, "NPU_DEVICE_ORDINAL");
+		}
 #endif
 		if (gres_conf_flags & GRES_CONF_ENV_ONEAPI)
 			unsetenvp(*env_ptr, "ZE_AFFINITY_MASK");
@@ -751,6 +772,15 @@ extern bool gres_common_epilog_set_env(char ***epilog_env_ptr,
 					    "ROCR_VISIBLE_DEVICES",
 					    vendor_gpu_str);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+		if (gres_conf_flags & GRES_CONF_ENV_DSMI)
+		    env_array_overwrite(epilog_env_ptr,
+                        "ASCEND_VISIBLE_DEVICES",
+                        vendor_gpu_str);
+			env_array_overwrite(epilog_env_ptr,
+                        "NPU_DEVICE_ORDINAL",
+                        vendor_gpu_str);
+#endif
 		if (gres_conf_flags & GRES_CONF_ENV_ONEAPI)
 			env_array_overwrite(epilog_env_ptr,
 					    "ZE_AFFINITY_MASK",
@@ -779,6 +809,10 @@ extern int gres_common_set_env_types_on_node_flags(void *x, void *arg)
 		*node_flags |= GRES_CONF_ENV_NVML;
 	if (gres_slurmd_conf->config_flags & GRES_CONF_ENV_RSMI)
 		*node_flags |= GRES_CONF_ENV_RSMI;
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (gres_slurmd_conf->config_flags & GRES_CONF_ENV_DSMI)
+		*node_flags |= GRES_CONF_ENV_DSMI;
+#endif
 	if (gres_slurmd_conf->config_flags & GRES_CONF_ENV_OPENCL)
 		*node_flags |= GRES_CONF_ENV_OPENCL;
 	if (gres_slurmd_conf->config_flags & GRES_CONF_ENV_ONEAPI)

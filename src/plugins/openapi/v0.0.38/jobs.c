@@ -119,6 +119,9 @@ const params_t job_params[] = {
 #ifdef __METASTACK_NEW_GRES_DCU
 	{ "cpus_per_dcu", LONG_OPT_CPUS_PER_DCU },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	{ "cpus_per_npu", LONG_OPT_CPUS_PER_NPU },
+#endif
 	{ "cpus_per_task", 'c' },
 	{ "current_working_directory", 'D' },
 	{ "cwd", 'D' },
@@ -151,6 +154,14 @@ const params_t job_params[] = {
 	{ "dcus_per_socket", LONG_OPT_DCUS_PER_SOCKET },
 	{ "dcus_per_task", LONG_OPT_DCUS_PER_TASK },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	{ "npu_binding", LONG_OPT_NPU_BIND },
+	{ "npu_frequency", LONG_OPT_NPU_FREQ },
+	{ "npus", 'Y' },
+	{ "npus_per_node", LONG_OPT_NPUS_PER_NODE },
+	{ "npus_per_socket", LONG_OPT_NPUS_PER_SOCKET },
+	{ "npus_per_task", LONG_OPT_NPUS_PER_TASK },
+#endif
 	{ "gres_flags", LONG_OPT_GRES_FLAGS },
 	{ "gres", LONG_OPT_GRES },
 	{ "group_id", LONG_OPT_GID, true },
@@ -175,6 +186,9 @@ const params_t job_params[] = {
 	{ "memory_per_gpu", LONG_OPT_MEM_PER_GPU },
 #ifdef __METASTACK_NEW_GRES_DCU
     { "memory_per_dcu", LONG_OPT_MEM_PER_DCU },	
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+    { "memory_per_npu", LONG_OPT_MEM_PER_NPU },	
 #endif
 	{ "memory_per_node", LONG_OPT_MEM },
 	{ "message_timeout", LONG_OPT_MSG_TIMEOUT, true },
@@ -236,6 +250,9 @@ const params_t job_params[] = {
 	{ "ntasks_per_gpu", LONG_OPT_NTASKSPERGPU },
 #ifdef __METASTACK_NEW_GRES_DCU
 	{ "ntasks_per_dcu", LONG_OPT_NTASKSPERDCU },
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	{ "ntasks_per_npu", LONG_OPT_NTASKSPERNPU },
 #endif
 	{ "tasks_per_node", LONG_OPT_NTASKSPERNODE },
 	{ "ntasks_per_node", LONG_OPT_NTASKSPERNODE },
