@@ -284,6 +284,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_GRES_DCU
 #endif
 
+#ifndef __METASTACK_NEW_GRES_NPU
+#define __METASTACK_NEW_GRES_NPU
+#endif
+
 #ifndef __METASTACK_NEW_GRES_MLU
 #define __METASTACK_NEW_GRES_MLU
 #endif

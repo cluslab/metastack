@@ -101,6 +101,17 @@ static char *_get_gpu_type(void)
 #else
 		info("Configured with rsmi, but rsmi isn't enabled during the build.");
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	} else if (autodetect_flags & GRES_AUTODETECT_GPU_DSMI) {
+#ifdef HAVE_DSMI
+		if (!dlopen("libdrvdsmi_host.so", RTLD_NOW | RTLD_GLOBAL))
+			info("We were configured with NPU functionality, but that lib wasn't found on the system.");
+		else
+			return "gpu/dsmi";
+#else
+		info("We were configured to autodetect NPU functionality, but we weren't able to find that lib when Slurm was configured.");
+#endif
+#endif
 	} else if (autodetect_flags & GRES_AUTODETECT_GPU_ONEAPI) {
 #ifdef HAVE_ONEAPI
 		if (!dlopen("libze_loader.so", RTLD_NOW | RTLD_GLOBAL))

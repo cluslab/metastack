@@ -618,6 +618,10 @@ static void _setup_one_job_env(slurm_opt_t *opt_local, srun_job_t *job,
 	else if (opt_local->ntasks_per_dcu != NO_VAL)
 		env->ntasks_per_tres = opt_local->ntasks_per_dcu;
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	else if (opt_local->ntasks_per_npu != NO_VAL)
+		env->ntasks_per_tres = opt_local->ntasks_per_npu;
+#endif
 	if (opt_local->threads_per_core != NO_VAL)
 		env->threads_per_core = opt_local->threads_per_core;
 	env->distribution = opt_local->distribution;

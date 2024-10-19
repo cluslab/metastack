@@ -173,6 +173,10 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 	if (opt.cpus_per_dcu)
 		xstrfmtcat(desc->cpus_per_tres, "gres:dcu:%d", opt.cpus_per_dcu);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (opt.cpus_per_npu)
+		xstrfmtcat(desc->cpus_per_tres, "gres:npu:%d", opt.cpus_per_npu);
+#endif
 	desc->tres_bind = xstrdup(opt.tres_bind);
 	desc->tres_freq = xstrdup(opt.tres_freq);
 	xfmt_tres(&desc->tres_per_job, "gres:gpu", opt.gpus);
@@ -180,6 +184,10 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 #ifdef __METASTACK_NEW_GRES_DCU
 	xfmt_tres(&desc->tres_per_job, "gres:dcu", opt.dcus);
 	xfmt_tres(&desc->tres_per_node, "gres:dcu", opt.dcus_per_node);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	xfmt_tres(&desc->tres_per_job, "gres:npu", opt.npus);
+	xfmt_tres(&desc->tres_per_node, "gres:npu", opt.npus_per_node);
 #endif
 	/* --gres=none for jobs means no GRES, so don't send it to slurmctld */
 	if (opt.gres && xstrcasecmp(opt.gres, "NONE")) {
@@ -197,5 +205,11 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 	xfmt_tres(&desc->tres_per_task, "gres:dcu", opt.dcus_per_task);
 	if (opt.mem_per_dcu != NO_VAL64)
 		xstrfmtcat(desc->mem_per_tres, "gres:dcu:%"PRIu64, opt.mem_per_dcu);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	xfmt_tres(&desc->tres_per_socket, "gres:npu", opt.npus_per_socket);
+	xfmt_tres(&desc->tres_per_task, "gres:npu", opt.npus_per_task);
+	if (opt.mem_per_npu != NO_VAL64)
+		xstrfmtcat(desc->mem_per_tres, "gres:npu:%"PRIu64, opt.mem_per_npu);
 #endif
 }

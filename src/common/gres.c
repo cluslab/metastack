@@ -1147,6 +1147,10 @@ static char *_get_autodetect_flags_str(void)
 			xstrfmtcat(flags, "%snvml", flags ? "," : "");
 		else if (autodetect_flags & GRES_AUTODETECT_GPU_RSMI)
 			xstrfmtcat(flags, "%srsmi", flags ? "," : "");
+#ifdef __METASTACK_NEW_GRES_NPU
+		else if (autodetect_flags & GRES_AUTODETECT_GPU_DSMI)
+			xstrfmtcat(flags, "%sdsmi", flags ? "," : "");
+#endif
 		else if (autodetect_flags & GRES_AUTODETECT_GPU_ONEAPI)
 			xstrfmtcat(flags, "%soneapi", flags ? "," : "");
 		else if (autodetect_flags & GRES_AUTODETECT_GPU_OFF)
@@ -1165,6 +1169,10 @@ static uint32_t _handle_autodetect_flags(char *str)
 		flags |= GRES_AUTODETECT_GPU_NVML;
 	else if (xstrcasestr(str, "rsmi"))
 		flags |= GRES_AUTODETECT_GPU_RSMI;
+#ifdef __METASTACK_NEW_GRES_NPU
+	else if (xstrcasestr(str, "dsmi"))
+		flags |= GRES_AUTODETECT_GPU_DSMI;
+#endif
 	else if (xstrcasestr(str, "oneapi"))
 		flags |= GRES_AUTODETECT_GPU_ONEAPI;
 	else if (!xstrcasecmp(str, "off"))
@@ -1256,6 +1264,10 @@ extern uint32_t gres_flags_parse(char *input, bool *no_gpu_env,
 #else
 	if (xstrcasestr(input, "amd_gpu_env"))
 		flags |= GRES_CONF_ENV_RSMI;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (xstrcasestr(input, "huawei_npu_env"))
+		flags |= GRES_CONF_ENV_DSMI;
 #endif
 	if (xstrcasestr(input, "intel_gpu_env"))
 		flags |= GRES_CONF_ENV_ONEAPI;
@@ -1443,6 +1455,13 @@ static int _parse_gres_config(void **dest, slurm_parser_enum_t type,
 	}
 #ifdef __METASTACK_NEW_GRES_DCU
 	if (set_default_envs && !xstrcasecmp(p->name, "dcu")) {
+		uint32_t env_flags = GRES_CONF_ENV_SET | GRES_CONF_ENV_DEF;
+		p->config_flags |= env_flags;
+		_set_prev_env_flags(&prev_env, p, env_flags, false);
+	}
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (set_default_envs && !xstrcasecmp(p->name, "npu")) {
 		uint32_t env_flags = GRES_CONF_ENV_SET | GRES_CONF_ENV_DEF;
 		p->config_flags |= env_flags;
 		_set_prev_env_flags(&prev_env, p, env_flags, false);
@@ -1971,8 +1990,13 @@ static void _merge_gres2(List gres_conf_list, List new_list, uint64_t count,
 
 	/* Set default env flags, and allow AutoDetect to override */
 	flags = 0;
-#ifdef __METASTACK_NEW_GRES_DCU
+
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+	if (!xstrcasecmp(gres_ctx->gres_name, "gpu") || !xstrcasecmp(gres_ctx->gres_name, "dcu") || !xstrcasecmp(gres_ctx->gres_name, "npu"))
+#elif defined(__METASTACK_NEW_GRES_DCU)
 	if (!xstrcasecmp(gres_ctx->gres_name, "gpu") || !xstrcasecmp(gres_ctx->gres_name, "dcu"))
+#elif defined(__METASTACK_NEW_GRES_NPU)
+	if (!xstrcasecmp(gres_ctx->gres_name, "gpu") || !xstrcasecmp(gres_ctx->gres_name, "npu"))
 #else
 	if (!xstrcasecmp(gres_ctx->gres_name, "gpu"))
 #endif
@@ -5670,6 +5694,9 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 #ifdef __METASTACK_NEW_GRES_DCU
 	bool requested_dcu = false;
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	bool requested_npu = false;
+#endif
 	bool overlap_merge = false;
 	gres_state_t *gres_state_job;
 	gres_job_state_t *gres_js;
@@ -5761,6 +5788,11 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 			    (!xstrcmp(gres_state_job->gres_name, "dcu")))
 				requested_dcu = true;
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+			if (!requested_npu &&
+			    (!xstrcmp(gres_state_job->gres_name, "npu")))
+				requested_npu = true;
+#endif
 			gres_js = gres_state_job->gres_data;
 			gres_js->gres_per_job = cnt;
 			in_val = NULL;
@@ -5781,6 +5813,11 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 			if (!requested_dcu &&
 			    (!xstrcmp(gres_state_job->gres_name, "dcu")))
 				requested_dcu = true;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+			if (!requested_npu &&
+			    (!xstrcmp(gres_state_job->gres_name, "npu")))
+				requested_npu = true;
 #endif
 			gres_js = gres_state_job->gres_data;
 			gres_js->gres_per_node = cnt;
@@ -5804,6 +5841,11 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 			if (!requested_dcu &&
 			    (!xstrcmp(gres_state_job->gres_name, "dcu")))
 				requested_dcu = true;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+			if (!requested_npu &&
+			    (!xstrcmp(gres_state_job->gres_name, "npu")))
+				requested_npu = true;
 #endif
 			gres_js = gres_state_job->gres_data;
 			gres_js->gres_per_socket = cnt;
@@ -5833,6 +5875,11 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 			if (!requested_dcu &&
 			    (!xstrcmp(gres_state_job->gres_name, "dcu")))
 				requested_dcu = true;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+			if (!requested_npu &&
+			    (!xstrcmp(gres_state_job->gres_name, "npu")))
+				requested_npu = true;
 #endif
 			gres_js = gres_state_job->gres_data;
 			gres_js->gres_per_task = cnt;
@@ -5882,6 +5929,18 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 			rc = ESLURM_INVALID_GRES;
 		}
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	} else if (requested_npu && list_count(*gres_list)) {
+		/* Set num_tasks = npus * ntasks/npu */
+		uint64_t npus = _get_job_gres_list_cnt(*gres_list, "npu", NULL);
+		if (npus != NO_VAL64)
+			*num_tasks = npus * *ntasks_per_tres;
+		else {
+			error("%s: Can't set num_tasks = npus * *ntasks_per_tres because there are no allocated NPUs",
+			      __func__);
+			rc = ESLURM_INVALID_GRES;
+		}
+#endif
 	} else if (*num_tasks && (*num_tasks != NO_VAL)) {
 		/*
 		 * If job_gres_list empty, and ntasks_per_tres is specified,
@@ -5891,9 +5950,21 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 		 */
 		uint32_t gpus = *num_tasks / *ntasks_per_tres;
 		char *save_ptr = NULL, *gres = NULL, *in_val;
-#ifdef __METASTACK_NEW_GRES_DCU
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+		if (xstrstr(tres_per_job, "npu") || xstrstr(tres_per_node, "npu") || xstrstr(tres_per_socket, "npu") || xstrstr(tres_per_task, "npu"))
+		    xstrfmtcat(gres, "gres:npu:%u", gpus);
+		else if (xstrstr(tres_per_job, "dcu") || xstrstr(tres_per_node, "dcu") || xstrstr(tres_per_socket, "dcu") || xstrstr(tres_per_task, "dcu"))
+		    xstrfmtcat(gres, "gres:dcu:%u", gpus);
+		else
+			xstrfmtcat(gres, "gres:gpu:%u", gpus);
+#elif defined(__METASTACK_NEW_GRES_DCU)
 		if (xstrstr(tres_per_job, "dcu") || xstrstr(tres_per_node, "dcu") || xstrstr(tres_per_socket, "dcu") || xstrstr(tres_per_task, "dcu"))
 		    xstrfmtcat(gres, "gres:dcu:%u", gpus);
+		else
+			xstrfmtcat(gres, "gres:gpu:%u", gpus);
+#elif defined(__METASTACK_NEW_GRES_NPU)
+		if (xstrstr(tres_per_job, "npu") || xstrstr(tres_per_node, "npu") || xstrstr(tres_per_socket, "npu") || xstrstr(tres_per_task, "npu"))
+		    xstrfmtcat(gres, "gres:npu:%u", gpus);
 		else
 			xstrfmtcat(gres, "gres:gpu:%u", gpus);
 #else
@@ -5933,8 +6004,12 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 		return rc;
 	}
 
-#ifdef __METASTACK_NEW_GRES_DCU
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+	if (mem_per_tres && (!requested_gpu) && (!requested_dcu) && (!requested_npu)) {
+#elif defined(__METASTACK_NEW_GRES_DCU)
 	if (mem_per_tres && (!requested_gpu) && (!requested_dcu)) {
+#elif defined(__METASTACK_NEW_GRES_NPU)
+	if (mem_per_tres && (!requested_gpu) && (!requested_npu)) {
 #else
 	if (mem_per_tres && (!requested_gpu)) {
 #endif
@@ -5947,7 +6022,7 @@ extern int gres_job_state_validate(char *cpus_per_tres,
 		 * of the GRES on the node, we still require that GPUs are
 		 * explicitly requested when --mem-per-gpu is used.
 		 */
-#ifdef __METASTACK_NEW_GRES_DCU
+#if defined(__METASTACK_NEW_GRES_DCU) || defined(__METASTACK_NEW_GRES_NPU)
 		error("Requested mem_per_tres=%s but did not request any GRES.",
 		      mem_per_tres);
 #else
@@ -8212,7 +8287,90 @@ static void _validate_step_counts(List step_gres_list, List job_gres_list_req,
 	}
 }
 
-#ifdef __METASTACK_NEW_GRES_DCU
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+static int _handle_ntasks_per_tres_step_withtype(List new_step_list,
+					uint16_t ntasks_per_tres,
+					uint32_t *num_tasks,
+					uint32_t *cpu_count,
+					char * gres_type)
+{
+	gres_step_state_t *gres_ss;
+	uint64_t cnt = 0;
+	int rc = SLURM_SUCCESS;
+	uint64_t tmp = 0;
+
+	if (strstr(gres_type, "dcu"))
+		tmp = _get_step_gres_list_cnt(new_step_list, "dcu", NULL);
+	else if (strstr(gres_type, "npu"))
+		tmp = _get_step_gres_list_cnt(new_step_list, "npu", NULL);
+	else
+		tmp = _get_step_gres_list_cnt(new_step_list, "gpu", NULL);
+	if ((tmp == NO_VAL64) && (*num_tasks != NO_VAL)) {
+		/*
+		 * Generate GPUs from ntasks_per_tres when not specified
+		 * and ntasks is specified
+		 */
+		uint32_t gpus = *num_tasks / ntasks_per_tres;
+		/* For now, do type-less GPUs */
+		char *save_ptr = NULL, *gres = NULL, *in_val;
+		if (strstr(gres_type, "dcu"))
+			xstrfmtcat(gres, "gres:dcu:%u", gpus);
+		else if (strstr(gres_type, "npu"))
+			xstrfmtcat(gres, "gres:npu:%u", gpus);
+		else
+			xstrfmtcat(gres, "gres:gpu:%u", gpus);
+		in_val = gres;
+		if (*num_tasks != ntasks_per_tres * gpus) {
+			if (strstr(gres_type, "dcu"))
+				log_flag(GRES, "%s: -n/--ntasks %u is not a multiple of --ntasks-per-dcu=%u",
+				 __func__, *num_tasks, ntasks_per_tres);
+			else if (strstr(gres_type, "npu"))
+				log_flag(GRES, "%s: -n/--ntasks %u is not a multiple of --ntasks-per-npu=%u",
+				 __func__, *num_tasks, ntasks_per_tres);
+			else
+				log_flag(GRES, "%s: -n/--ntasks %u is not a multiple of --ntasks-per-gpu=%u",
+				 __func__, *num_tasks, ntasks_per_tres);
+			return ESLURM_INVALID_GRES;
+		}
+		while ((gres_ss =
+			_get_next_step_gres(in_val, &cnt,
+					    new_step_list,
+					    &save_ptr, &rc))) {
+			/* Simulate a tres_per_job specification */
+			gres_ss->gres_per_step = cnt;
+			gres_ss->ntasks_per_gres = ntasks_per_tres;
+			gres_ss->total_gres =
+				MAX(gres_ss->total_gres, cnt);
+			in_val = NULL;
+		}
+		xfree(gres);
+		xassert(list_count(new_step_list) != 0);
+	} else if (tmp != NO_VAL64) {
+		tmp = tmp * ntasks_per_tres;
+		if (*num_tasks < tmp) {
+			uint32_t cpus_per_task = *cpu_count / *num_tasks;
+			*num_tasks = tmp;
+			tmp = tmp * cpus_per_task;
+			if (*cpu_count && (*cpu_count < tmp)) {
+				/* step_spec->cpu_count == 0 means SSF_OVERSUBSCRIBE */
+				*cpu_count = tmp;
+			}
+		}
+	} else {
+		if (strstr(gres_type, "dcu"))
+			error("%s: ntasks_per_tres was specified, but there was either no task count or no DCU specification to go along with it, or both were already specified.",
+		      __func__);
+		else if (strstr(gres_type, "npu"))
+			error("%s: ntasks_per_tres was specified, but there was either no task count or no NPU specification to go along with it, or both were already specified.",
+		      __func__);
+		else
+			error("%s: ntasks_per_tres was specified, but there was either no task count or no GPU specification to go along with it, or both were already specified.",
+		      __func__);
+		rc = SLURM_ERROR;
+	}
+	return rc;
+}
+#elif defined(__METASTACK_NEW_GRES_DCU)
 static int _handle_ntasks_per_tres_step_withtype(List new_step_list,
 					uint16_t ntasks_per_tres,
 					uint32_t *num_tasks,
@@ -8285,7 +8443,81 @@ static int _handle_ntasks_per_tres_step_withtype(List new_step_list,
 	}
 	return rc;
 }
+#elif defined(__METASTACK_NEW_GRES_NPU)
+static int _handle_ntasks_per_tres_step_withtype(List new_step_list,
+					uint16_t ntasks_per_tres,
+					uint32_t *num_tasks,
+					uint32_t *cpu_count,
+					char * gres_type)
+{
+	gres_step_state_t *gres_ss;
+	uint64_t cnt = 0;
+	int rc = SLURM_SUCCESS;
+	uint64_t tmp = 0;
+
+	if (strstr(gres_type, "npu"))
+		tmp = _get_step_gres_list_cnt(new_step_list, "npu", NULL);
+	else
+		tmp = _get_step_gres_list_cnt(new_step_list, "gpu", NULL);
+	if ((tmp == NO_VAL64) && (*num_tasks != NO_VAL)) {
+		/*
+		 * Generate GPUs from ntasks_per_tres when not specified
+		 * and ntasks is specified
+		 */
+		uint32_t gpus = *num_tasks / ntasks_per_tres;
+		/* For now, do type-less GPUs */
+		char *save_ptr = NULL, *gres = NULL, *in_val;
+		if (strstr(gres_type, "npu"))
+			xstrfmtcat(gres, "gres:npu:%u", gpus);
+		else
+			xstrfmtcat(gres, "gres:gpu:%u", gpus);
+		in_val = gres;
+		if (*num_tasks != ntasks_per_tres * gpus) {
+			if (strstr(gres_type, "npu"))
+				log_flag(GRES, "%s: -n/--ntasks %u is not a multiple of --ntasks-per-npu=%u",
+				 __func__, *num_tasks, ntasks_per_tres);
+			else
+				log_flag(GRES, "%s: -n/--ntasks %u is not a multiple of --ntasks-per-gpu=%u",
+				 __func__, *num_tasks, ntasks_per_tres);
+			return ESLURM_INVALID_GRES;
+		}
+		while ((gres_ss =
+			_get_next_step_gres(in_val, &cnt,
+					    new_step_list,
+					    &save_ptr, &rc))) {
+			/* Simulate a tres_per_job specification */
+			gres_ss->gres_per_step = cnt;
+			gres_ss->ntasks_per_gres = ntasks_per_tres;
+			gres_ss->total_gres =
+				MAX(gres_ss->total_gres, cnt);
+			in_val = NULL;
+		}
+		xfree(gres);
+		xassert(list_count(new_step_list) != 0);
+	} else if (tmp != NO_VAL64) {
+		tmp = tmp * ntasks_per_tres;
+		if (*num_tasks < tmp) {
+			uint32_t cpus_per_task = *cpu_count / *num_tasks;
+			*num_tasks = tmp;
+			tmp = tmp * cpus_per_task;
+			if (*cpu_count && (*cpu_count < tmp)) {
+				/* step_spec->cpu_count == 0 means SSF_OVERSUBSCRIBE */
+				*cpu_count = tmp;
+			}
+		}
+	} else {
+		if (strstr(gres_type, "npu"))
+			error("%s: ntasks_per_tres was specified, but there was either no task count or no NPU specification to go along with it, or both were already specified.",
+		      __func__);
+		else
+			error("%s: ntasks_per_tres was specified, but there was either no task count or no GPU specification to go along with it, or both were already specified.",
+		      __func__);
+		rc = SLURM_ERROR;
+	}
+	return rc;
+}
 #endif
+
 static int _handle_ntasks_per_tres_step(List new_step_list,
 					uint16_t ntasks_per_tres,
 					uint32_t *num_tasks,
@@ -8444,8 +8676,10 @@ extern int gres_step_state_validate(char *cpus_per_tres,
 	}
 
 	if ((ntasks_per_tres != NO_VAL16) && num_tasks && cpu_count) {
+#if defined(__METASTACK_NEW_GRES_DCU) || defined(__METASTACK_NEW_GRES_NPU)
+		char *gres_type = NULL;
+#endif
 #ifdef __METASTACK_NEW_GRES_DCU
-	    char *gres_type = NULL;
 		if (xstrstr(tres_per_step, "dcu") || xstrstr(tres_per_node, "dcu") || xstrstr(tres_per_socket, "dcu") || xstrstr(tres_per_task, "dcu")) {
 		    xstrfmtcat(gres_type, "dcu");
 			rc = _handle_ntasks_per_tres_step_withtype(new_step_list,
@@ -8453,6 +8687,18 @@ extern int gres_step_state_validate(char *cpus_per_tres,
 						  num_tasks,
 						  cpu_count,
 						  gres_type);
+			xfree(gres_type);
+		} else
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+		if (xstrstr(tres_per_step, "npu") || xstrstr(tres_per_node, "npu") || xstrstr(tres_per_socket, "npu") || xstrstr(tres_per_task, "npu")) {
+		    xstrfmtcat(gres_type, "npu");
+			rc = _handle_ntasks_per_tres_step_withtype(new_step_list,
+						  ntasks_per_tres,
+						  num_tasks,
+						  cpu_count,
+						  gres_type);
+			xfree(gres_type);
 		} else
 #endif
 		rc = _handle_ntasks_per_tres_step(new_step_list,
@@ -9247,8 +9493,12 @@ static void _parse_tres_bind(uint16_t accel_bind_type, char *tres_bind_str,
 
 	tres_bind->bind_gpu = accel_bind_type & ACCEL_BIND_CLOSEST_GPU;
 	tres_bind->bind_nic = accel_bind_type & ACCEL_BIND_CLOSEST_NIC;
-#ifdef __METASTACK_NEW_GRES_DCU
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+	if (!tres_bind->bind_gpu && ((sep = xstrstr(tres_bind_str, "gpu:")) || (sep = xstrstr(tres_bind_str, "dcu:")) || (sep = xstrstr(tres_bind_str, "npu:")) )) {
+#elif defined(__METASTACK_NEW_GRES_DCU)
 	if (!tres_bind->bind_gpu && ((sep = xstrstr(tres_bind_str, "gpu:")) || (sep = xstrstr(tres_bind_str, "dcu:")) )) {
+#elif defined(__METASTACK_NEW_GRES_NPU)
+    if (!tres_bind->bind_gpu && ((sep = xstrstr(tres_bind_str, "gpu:")) || (sep = xstrstr(tres_bind_str, "npu:")) )) {
 #else
 	if (!tres_bind->bind_gpu && (sep = xstrstr(tres_bind_str, "gpu:"))) {
 #endif
@@ -9274,8 +9524,16 @@ static void _parse_tres_bind(uint16_t accel_bind_type, char *tres_bind_str,
 			tres_bind->bind_gpu = true;
 		else if (!xstrncasecmp(sep, "map_gpu:", 8))
 			tres_bind->map_gpu = sep + 8;
+#ifdef __METASTACK_NEW_GRES_NPU
+        else if (!xstrncasecmp(sep, "map_npu:", 8))
+            tres_bind->map_gpu = sep + 8;
+#endif
 		else if (!xstrncasecmp(sep, "mask_gpu:", 9))
 			tres_bind->mask_gpu = sep + 9;
+#ifdef __METASTACK_NEW_GRES_NPU
+        else if (!xstrncasecmp(sep, "mask_npu:", 9))
+            tres_bind->mask_gpu = sep + 9;
+#endif
 		else if (!xstrncasecmp(sep, "per_task:", 9))
 			tres_bind->gpus_per_task = slurm_atoul(sep + 9);
 	}
@@ -9298,8 +9556,12 @@ static int _get_usable_gres(char *gres_name, int context_inx, int proc_id,
 	if (!gres_bit_alloc)
 		return SLURM_SUCCESS;
 
-#ifdef __METASTACK_NEW_GRES_DCU
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+	if (!xstrcmp(gres_name, "gpu") || !xstrcmp(gres_name, "dcu") || !xstrcmp(gres_name, "npu")) {
+#elif defined(__METASTACK_NEW_GRES_DCU)
 	if (!xstrcmp(gres_name, "gpu") || !xstrcmp(gres_name, "dcu")) {
+#elif defined(__METASTACK_NEW_GRES_NPU)
+	if (!xstrcmp(gres_name, "gpu") || !xstrcmp(gres_name, "npu")) {
 #else
 	if (!xstrcmp(gres_name, "gpu")) {
 #endif
@@ -9460,6 +9722,9 @@ extern void gres_g_task_set_env(char ***job_env_ptr, List step_gres_list,
 #ifdef __METASTACK_NEW_GRES_DCU
                 log_flag(GRES, "__METASTACK_NEW_GRES_DCU, %s, flags: %d, iterate GRES context %s", __func__, flags, gres_ctx->gres_type);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+                log_flag(GRES, "__METASTACK_NEW_GRES_NPU, %s, flags: %d, iterate GRES context %s", __func__, flags, gres_ctx->gres_type);
+#endif
 
 		if (!gres_ctx->ops.task_set_env)
 			continue;	/* No plugin to call */
@@ -9486,6 +9751,19 @@ extern void gres_g_task_set_env(char ***job_env_ptr, List step_gres_list,
 				     &tres_bind, &usable_gres, gres_bit_alloc,
 				     false) == SLURM_ERROR)
 			continue;
+#ifdef __METASTACK_NEW_GRES_NPU
+		char *usable_str = NULL;
+		if (usable_gres) {
+			usable_str = bit_fmt_hexmask_trim(usable_gres);
+			log_flag(GRES, "__METASTACK_NEW_GRES_NPU, %s, flags: %d, iterate GRES context %s END. Usable_gres: %ld, usable_str: %s", __func__, flags, gres_ctx->gres_type, *usable_gres, usable_str);
+		}
+		else {
+			usable_str = xstrdup("NULL");
+			log_flag(GRES, "__METASTACK_NEW_GRES_NPU, %s, flags: %d, iterate GRES context %s END. Usable_gres: NULL, usable_str: %s", __func__, flags, gres_ctx->gres_type, usable_str);
+		}
+		xfree(usable_str);
+#endif
+
 
 		list_iterator_destroy(gres_iter);
 
@@ -10200,6 +10478,14 @@ extern char *gres_flags2str(uint32_t config_flags)
 		sep = ",";
 	}
 
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (config_flags & GRES_CONF_ENV_DSMI) {
+		strcat(flag_str, sep);
+		strcat(flag_str, "ENV_DSMI");
+		sep = ",";
+	}
+
+#endif
 	if (config_flags & GRES_CONF_ENV_ONEAPI) {
 		strcat(flag_str, sep);
 		strcat(flag_str, "ENV_ONEAPI");

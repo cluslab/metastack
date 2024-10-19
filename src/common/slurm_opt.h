@@ -96,6 +96,9 @@ enum {
 #ifdef __METASTACK_NEW_GRES_DCU
 	LONG_OPT_CPUS_PER_DCU,
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	LONG_OPT_CPUS_PER_NPU,
+#endif
 	LONG_OPT_DEADLINE,
 	LONG_OPT_DEBUGGER_TEST,
 	LONG_OPT_DELAY_BOOT,
@@ -121,6 +124,14 @@ enum {
 	LONG_OPT_DCUS_PER_SOCKET,
 	LONG_OPT_DCUS_PER_TASK,
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	LONG_OPT_NPU_BIND,
+	LONG_OPT_NPU_FREQ,
+	LONG_OPT_NPUS,
+	LONG_OPT_NPUS_PER_NODE,
+	LONG_OPT_NPUS_PER_SOCKET,
+	LONG_OPT_NPUS_PER_TASK,
+#endif
 	LONG_OPT_GRES,
 	LONG_OPT_GRES_FLAGS,
 	LONG_OPT_HINT,
@@ -141,6 +152,9 @@ enum {
 #ifdef __METASTACK_NEW_GRES_DCU
 	LONG_OPT_MEM_PER_DCU,
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	LONG_OPT_MEM_PER_NPU,
+#endif
 	LONG_OPT_MINCORES,
 	LONG_OPT_MINCPUS,
 	LONG_OPT_MINSOCKETS,
@@ -158,6 +172,9 @@ enum {
 	LONG_OPT_NTASKSPERGPU,
 #ifdef __METASTACK_NEW_GRES_DCU
 	LONG_OPT_NTASKSPERDCU,
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	LONG_OPT_NTASKSPERNPU,
 #endif
 	LONG_OPT_NTASKSPERNODE,
 	LONG_OPT_NTASKSPERSOCKET,
@@ -343,6 +360,9 @@ typedef struct {
 #ifdef __METASTACK_NEW_GRES_DCU
 	int ntasks_per_dcu;		/* --ntasks-per-dcu=n		*/
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	int ntasks_per_npu;		/* --ntasks-per-npu=n		*/
+#endif
 	int ntasks_per_socket;		/* --ntasks-per-socket=n	*/
 	int ntasks_per_core;		/* --ntasks-per-core=n		*/
 	int ntasks_per_tres;		/* --ntasks-per-gpu=n	*/
@@ -401,12 +421,24 @@ typedef struct {
 	char *dcus_per_socket;		/* --dcus_per_socket		*/
 	char *dcus_per_task;		/* --dcus_per_task		*/
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU	
+	int cpus_per_npu;		/* --cpus-per-npu		*/
+	char *npus;			/* --npus			*/
+	char *npu_bind;			/* --npu_bind			*/
+	char *npu_freq;			/* --npu_freq			*/
+	char *npus_per_node;		/* --npus_per_node		*/
+	char *npus_per_socket;		/* --npus_per_socket		*/
+	char *npus_per_task;		/* --npus_per_task		*/
+#endif
 
 	int pn_min_cpus;		/* --mincpus			*/
 	uint64_t mem_per_cpu;		/* --mem-per-cpu		*/
 	uint64_t mem_per_gpu;		/* --mem-per-gpu		*/
 #ifdef __METASTACK_NEW_GRES_DCU	
 	uint64_t mem_per_dcu;		/* --mem-per-dcu		*/
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU	
+	uint64_t mem_per_npu;		/* --mem-per-npu		*/
 #endif
 	uint64_t pn_min_memory;		/* --mem			*/
 	uint64_t pn_min_tmp_disk;	/* --tmp			*/

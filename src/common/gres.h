@@ -104,8 +104,17 @@ typedef struct {
 
 #define GRES_CONF_ENV_ONEAPI SLURM_BIT(11) /* Set ZE_AFFINITY_MASK */
 
+#ifdef __METASTACK_NEW_GRES_NPU
+#define GRES_CONF_ENV_DSMI   SLURM_BIT(12) /* Set ASCEND_VISIBLE_DEVICES */
+#endif
+
+#ifdef __METASTACK_NEW_GRES_NPU
+#define GRES_CONF_ENV_SET    0x000018E0   /* Easy check if any of
+					   * GRES_CONF_ENV_* are set. */
+#else
 #define GRES_CONF_ENV_SET    0x000008E0   /* Easy check if any of
 					   * GRES_CONF_ENV_* are set. */
+#endif
 
 #define GRES_NO_CONSUME		0x0001	/* Requesting no consume of resources */
 
@@ -115,6 +124,9 @@ typedef struct {
 #define GRES_AUTODETECT_GPU_RSMI  0x00000002
 #define GRES_AUTODETECT_GPU_OFF   0x00000004 /* Do NOT use global */
 #define GRES_AUTODETECT_GPU_ONEAPI 0x00000008
+#ifdef __METASTACK_NEW_GRES_NPU
+#define GRES_AUTODETECT_GPU_DSMI  0x00000010
+#endif
 
 #define GRES_AUTODETECT_GPU_FLAGS 0x000000ff /* reserve first 8 bits for gpu
 					      * flags */

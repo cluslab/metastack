@@ -257,6 +257,9 @@ env_vars_t env_vars[] = {
 #ifdef __METASTACK_NEW_GRES_DCU
   { "SBATCH_CPUS_PER_DCU", LONG_OPT_CPUS_PER_DCU },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SBATCH_CPUS_PER_NPU", LONG_OPT_CPUS_PER_NPU },
+#endif
   { "SBATCH_DEBUG", 'v' },
   { "SBATCH_DELAY_BOOT", LONG_OPT_DELAY_BOOT },
   { "SBATCH_DISTRIBUTION", 'm' },
@@ -279,6 +282,14 @@ env_vars_t env_vars[] = {
   { "SBATCH_DCUS_PER_SOCKET", LONG_OPT_DCUS_PER_SOCKET },
   { "SBATCH_DCUS_PER_TASK", LONG_OPT_DCUS_PER_TASK },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SBATCH_NPUS", 'Y' },
+  { "SBATCH_NPU_BIND", LONG_OPT_NPU_BIND },
+  { "SBATCH_NPU_FREQ", LONG_OPT_NPU_FREQ },
+  { "SBATCH_NPUS_PER_NODE", LONG_OPT_NPUS_PER_NODE },
+  { "SBATCH_NPUS_PER_SOCKET", LONG_OPT_NPUS_PER_SOCKET },
+  { "SBATCH_NPUS_PER_TASK", LONG_OPT_NPUS_PER_TASK },
+#endif
   { "SLURM_HINT", LONG_OPT_HINT },
   { "SBATCH_HINT", LONG_OPT_HINT },
   { "SBATCH_JOB_NAME", 'J' },
@@ -287,6 +298,9 @@ env_vars_t env_vars[] = {
   { "SBATCH_MEM_PER_GPU", LONG_OPT_MEM_PER_GPU },
 #ifdef __METASTACK_NEW_GRES_DCU
   { "SBATCH_MEM_PER_DCU", LONG_OPT_MEM_PER_DCU },
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SBATCH_MEM_PER_NPU", LONG_OPT_MEM_PER_NPU },
 #endif
   { "SBATCH_MEM_PER_NODE", LONG_OPT_MEM },
   { "SBATCH_NETWORK", LONG_OPT_NETWORK },
@@ -1020,6 +1034,10 @@ static bool _opt_verify(void)
 	else if (opt.ntasks_per_dcu != NO_VAL)
 		het_job_env.ntasks_per_dcu = opt.ntasks_per_dcu;
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	else if (opt.ntasks_per_npu != NO_VAL)
+		het_job_env.ntasks_per_npu = opt.ntasks_per_npu;
+#endif
 
 	if (opt.ntasks_per_node != NO_VAL)
 		het_job_env.ntasks_per_node = opt.ntasks_per_node;
@@ -1245,6 +1263,11 @@ static void _usage(void)
 "              [--dcus-per-node=n] [--dcus-per-socket=n]  [--dcus-per-task=n]\n"
 "              [--mem-per-dcu=MB]\n"
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+"              [--cpus-per-npu=n] [--npus=n] [--npu-bind=...] [--npu-freq=...]\n"
+"              [--npus-per-node=n] [--npus-per-socket=n]  [--npus-per-task=n]\n"
+"              [--mem-per-npu=MB]\n"
+#endif
 "              executable [args...]\n");
 }
 
@@ -1406,6 +1429,19 @@ static void _help(void)
 "      --mem-per-dcu=n         real memory required per allocated DCU\n"
 		);
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	printf("\n"
+"NPU scheduling options:\n"
+"      --cpus-per-npu=n        number of CPUs required per allocated NPU\n"
+"  -Y, --npus=n                count of NPUs required for the job\n"
+"      --npu-bind=...          task to npu binding options\n"
+"      --npu-freq=...          frequency and voltage of NPUs\n"
+"      --npus-per-node=n       number of NPUs required per allocated node\n"
+"      --npus-per-socket=n     number of NPUs required per allocated socket\n"
+"      --npus-per-task=n       number of NPUs required per spawned task\n"
+"      --mem-per-npu=n         real memory required per allocated NPU\n"
+		);
+#endif
 
 	printf("\n"
 #ifdef HAVE_NATIVE_CRAY			/* Native Cray specific options */
@@ -1437,6 +1473,9 @@ extern void init_envs(sbatch_env_t *local_env)
 	local_env->ntasks_per_gpu	= NO_VAL;
 #ifdef __METASTACK_NEW_GRES_DCU
 	local_env->ntasks_per_dcu	= NO_VAL;
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	local_env->ntasks_per_npu	= NO_VAL;
 #endif
 	local_env->ntasks_per_node	= NO_VAL;
 	local_env->ntasks_per_socket	= NO_VAL;
@@ -1506,6 +1545,14 @@ extern void set_envs(char ***array_ptr, sbatch_env_t *local_env,
 					 het_job_offset, "%u",
 					 local_env->ntasks_per_dcu)) {
 		error("Can't set SLURM_NTASKS_PER_DCU env variable");
+	}
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if ((local_env->ntasks_per_npu  != NO_VAL) &&
+	    !env_array_overwrite_het_fmt(array_ptr, "SLURM_NTASKS_PER_NPU",
+					 het_job_offset, "%u",
+					 local_env->ntasks_per_npu)) {
+		error("Can't set SLURM_NTASKS_PER_NPU env variable");
 	}
 #endif
 	if ((local_env->ntasks_per_node != NO_VAL) &&

@@ -1672,14 +1672,18 @@ alloc_job:
 					   details_ptr->ntasks_per_tres, "dcu",
 					   job_ptr->gres_list_req);
 	else
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if (xstrstr(job_ptr->tres_per_job, "npu") || xstrstr(job_ptr->tres_per_node, "npu") || xstrstr(job_ptr->tres_per_socket, "npu") || xstrstr(job_ptr->tres_per_task, "npu"))
 		i = gres_select_util_job_min_tasks(job_res->nhosts, sockets_per_node,
-					   details_ptr->ntasks_per_tres, "gpu",
+					   details_ptr->ntasks_per_tres, "npu",
 					   job_ptr->gres_list_req);
-#else
+	else
+#endif
 	i = gres_select_util_job_min_tasks(job_res->nhosts, sockets_per_node,
 					   details_ptr->ntasks_per_tres, "gpu",
 					   job_ptr->gres_list_req);
-#endif
+
 	job_res->ncpus            = MAX(job_res->ncpus, i);
 	job_res->ncpus            = MAX(job_res->ncpus,
 					details_ptr->min_cpus);

@@ -259,6 +259,9 @@ env_vars_t env_vars[] = {
 #ifdef __METASTACK_NEW_GRES_DCU
   { "SALLOC_CPUS_PER_DCU", LONG_OPT_CPUS_PER_DCU },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SALLOC_CPUS_PER_NPU", LONG_OPT_CPUS_PER_NPU },
+#endif
   { "SALLOC_DEBUG", 'v' },
   { "SALLOC_DELAY_BOOT", LONG_OPT_DELAY_BOOT },
   { "SALLOC_EXCLUSIVE", LONG_OPT_EXCLUSIVE },
@@ -276,6 +279,14 @@ env_vars_t env_vars[] = {
   { "SALLOC_DCUS_PER_SOCKET", LONG_OPT_DCUS_PER_SOCKET },
   { "SALLOC_DCUS_PER_TASK", LONG_OPT_DCUS_PER_TASK },
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SALLOC_NPUS", 'Y' },
+  { "SALLOC_NPU_BIND", LONG_OPT_NPU_BIND },
+  { "SALLOC_NPU_FREQ", LONG_OPT_NPU_FREQ },
+  { "SALLOC_NPUS_PER_NODE", LONG_OPT_NPUS_PER_NODE },
+  { "SALLOC_NPUS_PER_SOCKET", LONG_OPT_NPUS_PER_SOCKET },
+  { "SALLOC_NPUS_PER_TASK", LONG_OPT_NPUS_PER_TASK },
+#endif
   { "SALLOC_GRES", LONG_OPT_GRES },
   { "SALLOC_GRES_FLAGS", LONG_OPT_GRES_FLAGS },
   { "SALLOC_IMMEDIATE", 'I' },
@@ -287,6 +298,9 @@ env_vars_t env_vars[] = {
   { "SALLOC_MEM_PER_GPU", LONG_OPT_MEM_PER_GPU },
 #ifdef __METASTACK_NEW_GRES_DCU
   { "SALLOC_MEM_PER_DCU", LONG_OPT_MEM_PER_DCU },
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+  { "SALLOC_MEM_PER_NPU", LONG_OPT_MEM_PER_NPU },
 #endif
   { "SALLOC_MEM_PER_NODE", LONG_OPT_MEM },
   { "SALLOC_NETWORK", LONG_OPT_NETWORK },
@@ -764,6 +778,13 @@ static bool _opt_verify(void)
 			opt.ntasks_per_dcu);
 	}
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	if ((opt.ntasks_per_npu != NO_VAL) &&
+	    (getenv("SLURM_NTASKS_PER_NPU") == NULL)) {
+		setenvf(NULL, "SLURM_NTASKS_PER_NPU", "%d",
+			opt.ntasks_per_npu);
+	}
+#endif
 	if ((opt.ntasks_per_node > 0) &&
 	    (getenv("SLURM_NTASKS_PER_NODE") == NULL)) {
 		setenvf(NULL, "SLURM_NTASKS_PER_NODE", "%d",
@@ -929,6 +950,11 @@ static void _usage(void)
 "              [--dcus-per-node=n] [--dcus-per-socket=n]  [--dcus-per-task=n]\n"
 "              [--mem-per-dcu=MB]\n"
 #endif
+#ifdef __METASTACK_NEW_GRES_NPU
+"              [--cpus-per-npu=n] [--npus=n] [--npu-bind=...] [--npu-freq=...]\n"
+"              [--npus-per-node=n] [--npus-per-socket=n]  [--npus-per-task=n]\n"
+"              [--mem-per-npu=MB]\n"
+#endif
 "              [command [args...]]\n");
 }
 
@@ -1073,6 +1099,19 @@ static void _help(void)
 "      --dcus-per-socket=n     number of DCUs required per allocated socket\n"
 "      --dcus-per-task=n       number of DCUs required per spawned task\n"
 "      --mem-per-dcu=n         real memory required per allocated DCU\n"
+		);
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU
+	printf("\n"
+"NPU scheduling options:\n"
+"      --cpus-per-npu=n        number of CPUs required per allocated NPU\n"
+"  -Y, --npus=n                count of NPUs required for the job\n"
+"      --npu-bind=...          task to npu binding options\n"
+"      --npu-freq=...          frequency and voltage of NPUs\n"
+"      --npus-per-node=n       number of NPUs required per allocated node\n"
+"      --npus-per-socket=n     number of NPUs required per allocated socket\n"
+"      --npus-per-task=n       number of NPUs required per spawned task\n"
+"      --mem-per-npu=n         real memory required per allocated NPU\n"
 		);
 #endif
 	spank_print_options(stdout, 6, 30);

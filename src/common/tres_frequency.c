@@ -214,6 +214,45 @@ static int _valid_dcu_freq(const char *arg)
 }
 #endif
 
+#ifdef __METASTACK_NEW_GRES_NPU
+/*
+ * Test for valid NPU frequency specification
+ * RET - -1 on error, else 0
+ */
+static int _valid_npu_freq(const char *arg)
+{
+	char *eq, *save_ptr = NULL, *tmp, *tok;
+	int rc = 0;
+
+	if ((arg == NULL) || (arg[0] == '\0'))
+		return -1;
+
+	tmp = xstrdup(arg);
+	tok = strtok_r(tmp, ",", &save_ptr);
+	while (tok) {
+		eq = strchr(tok, '=');
+		if (!eq) {
+			rc = _test_val(tok);
+			if ((rc != 0) && !strcmp(tok, "verbose"))
+				rc = 0;
+		} else {
+			eq[0] = '\0';
+			if (!strcmp(tok, "memory")) {
+				rc = _test_val(eq + 1);
+			} else {
+				rc = -1;
+			}
+		}
+		if (rc != 0)
+			break;
+		tok = strtok_r(NULL, ",", &save_ptr);
+	}
+	xfree(tmp);
+
+	return rc;
+}
+#endif
+
 /*
  * Verify --tres-freq command line option
  *
@@ -249,6 +288,13 @@ extern int tres_freq_verify_cmdline(const char *arg)
 #ifdef __METASTACK_NEW_GRES_DCU	
 		} else if (!strcmp(tok, "dcu")) {
 			if (_valid_dcu_freq(sep) != 0) {
+				rc = -1;
+				break;
+			}
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU	
+		} else if (!strcmp(tok, "npu")) {
+			if (_valid_npu_freq(sep) != 0) {
 				rc = -1;
 				break;
 			}

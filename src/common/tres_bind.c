@@ -100,6 +100,31 @@ static int _valid_num_list(const char *arg, bool hex)
 	return rc;
 }
 
+#ifdef __METASTACK_NEW_GRES_NPU
+/*
+ * Test for valid NPU binding specification
+ * RET - -1 on error, else 0
+ */
+static int _valid_npu_bind(char *arg)
+{
+	if (!strncasecmp(arg, "verbose,", 8))
+		arg += 8;
+	if (!xstrncasecmp(arg, "closest", 1))
+		return 0;
+	if (!xstrncasecmp(arg, "map_npu:", 8))
+		return _valid_num_list(arg + 8, false);
+	if (!xstrncasecmp(arg, "mask_npu:", 9))
+		return _valid_num_list(arg + 9, true);
+	if (!xstrncasecmp(arg, "none", 1))
+		return 0;
+	if (!xstrncasecmp(arg, "per_task:", 9))
+		return _valid_num(arg + 9);
+	if (!xstrncasecmp(arg, "single:", 7))
+		return _valid_num(arg + 7);
+	return -1;
+}
+#endif
+
 #ifdef __METASTACK_NEW_GRES_DCU
 /*
  * Test for valid DCU binding specification
@@ -187,6 +212,13 @@ extern int tres_bind_verify_cmdline(const char *arg)
 #ifdef __METASTACK_NEW_GRES_DCU			
 		} else if (!strcmp(tok, "dcu")) {
 			if (_valid_dcu_bind(sep) != 0) {
+                                rc = -1;
+                                break;
+                        }
+#endif
+#ifdef __METASTACK_NEW_GRES_NPU			
+		} else if (!strcmp(tok, "npu")) {
+			if (_valid_npu_bind(sep) != 0) {
                                 rc = -1;
                                 break;
                         }
