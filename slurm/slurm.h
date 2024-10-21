@@ -255,6 +255,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_PART_RBN
 #endif
 
+/* Macro definition that job running time prediction function */
+#ifndef __METASTACK_NEW_TIME_PREDICT
+#define __METASTACK_NEW_TIME_PREDICT
+#endif
+
 #ifndef __METASTACK_OPT_CACHE_QUERY
 #define __METASTACK_OPT_CACHE_QUERY
 #endif
@@ -1933,6 +1938,9 @@ typedef struct job_descriptor {	/* For submit, allocate, and update requests */
 				 * partition limit */
 	uint32_t time_min;	/* minimum run time in minutes, default is
 				 * time_limit */
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	uint16_t predict_job;  /* Marks the job that executes the time prediction function */
+#endif
 	char *tres_bind;	/* Task to TRES binding directives */
 	char *tres_freq;	/* TRES frequency directives */
 	char *tres_per_job;	/* semicolon delimited list of TRES=# values */
@@ -2142,6 +2150,9 @@ typedef struct job_info {
 	char *system_comment;	/* slurmctld's arbitrary comment */
 	uint32_t time_limit;	/* maximum run time in minutes or INFINITE */
 	uint32_t time_min;	/* minimum run time in minutes or INFINITE */
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	uint16_t predict_job;  /* Marks the job that executes the time prediction function */
+#endif
 	uint16_t threads_per_core; /* threads per core required by job  */
 	char *tres_bind;	/* Task to TRES binding directives */
 	char *tres_freq;	/* TRES frequency directives */

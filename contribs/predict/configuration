@@ -1,0 +1,36 @@
+# 时间预测功能配置相关
+#
+# 预测功能开关
+# predictionFunction=0关闭预测流程
+# predictionFunction=1开启预测流程只适用于白名单用户
+# predictionFunction=2开启预测流程适用全部用户
+predictionFunction=1
+
+# 预测使用的方法
+# 均值法:predictionMethod=0
+# AI随机森林算法:predictionMethod=1
+predictionMethod=0
+
+# 数据集获取范围,单位为月
+period=3
+
+
+
+# 时间预测工具路径相关
+# 注意：这里路径为了配合工具使用,修改时请谨慎操作
+#
+# sacct命令路径
+sacct_cmd=/opt/gridview/slurm/bin/sacct
+#
+# slurm/etc 配置路径
+etc_path=/opt/gridview/slurm/etc
+#
+# 预测工具路径
+predictor_path=/opt/gridview/slurm/etc/luaconfig/predictor
+#
+# python 3.9 执行路径
+python_executable=/opt/gridview/slurm/etc/luaconfig/predictor/AIenvironment/CentOS-7.6/envs/AIpredict/bin/python
+#
+# AI随机森林工具路径
+sklearn_path=/opt/gridview/slurm/etc/luaconfig/predictor/prediction_methods/sklearn
+

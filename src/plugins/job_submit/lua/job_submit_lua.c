@@ -680,6 +680,10 @@ static int _get_job_req_field(const job_desc_msg_t *job_desc, const char *name)
 		lua_pushnumber(L, job_desc->time_limit);
 	} else if (!xstrcmp(name, "time_min")) {
 		lua_pushnumber(L, job_desc->time_min);
+#ifdef __METASTACK_NEW_TIME_PREDICT
+        } else if (!xstrcmp(name, "predict_job")) {
+		lua_pushnumber(L, job_desc->predict_job);
+#endif
 	} else if (!xstrcmp(name, "tres_bind")) {
 		lua_pushstring(L, job_desc->tres_bind);
 	} else if (!xstrcmp(name, "tres_freq")) {
@@ -986,6 +990,10 @@ static int _set_job_req_field(lua_State *L)
 		job_desc->time_limit = luaL_checknumber(L, 3);
 	} else if (!xstrcmp(name, "time_min")) {
 		job_desc->time_min = luaL_checknumber(L, 3);
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	} else if (!xstrcmp(name, "predict_job")) {
+		job_desc->predict_job = luaL_checknumber(L, 3);
+#endif
 	} else if (!xstrcmp(name, "tres_bind")) {
 		value_str = luaL_checkstring(L, 3);
 		xfree(job_desc->tres_bind);

@@ -3985,6 +3985,9 @@ _unpack_job_info_members(job_info_t * job, buf_t *buffer,
 #ifdef __METASTACK_OPT_MSG_OUTPUT
             safe_unpackstr_xmalloc(&job->reason_detail, &uint32_tmp, buffer);
 #endif
+#ifdef __METASTACK_NEW_TIME_PREDICT
+		    safe_unpack16(&job->predict_job, buffer);
+#endif
         } else {
 		safe_unpack32(&job->array_job_id, buffer);
 		safe_unpack32(&job->array_task_id, buffer);
