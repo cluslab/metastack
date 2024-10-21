@@ -62,13 +62,14 @@ def test_env_variables():
     env_var_g0_count = 0
     for env_var in env_vars_list:
         name_val = env_var.split('=')
-        name = name_val[0]
-        env_value = name_val[1]
-        if name in env_vars:
-            env_var_count += 1
-        elif name in env_vars_g0:
-            if int(env_value) > 0:
-                env_var_g0_count += 1
+        if len(name_val) == 2:
+            name = name_val[0]
+            env_value = name_val[1]
+            if name in env_vars:
+                env_var_count += 1
+            elif name in env_vars_g0:
+                if int(env_value) > 0:
+                    env_var_g0_count += 1
     assert env_var_count == len(env_vars), f"Not all environment variables are set missing {len(env_vars) - env_var_count}"
     assert env_var_g0_count == len(env_vars_g0), f"Not all environment variables are set and greater than zero missing {len(env_vars_g0) - env_var_g0_count}"
 

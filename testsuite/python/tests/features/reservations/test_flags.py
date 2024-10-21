@@ -13,9 +13,11 @@ node2 = ""
 @pytest.fixture(scope='module', autouse=True)
 def setup():
     atf.require_accounting(modify=True)
-    atf.require_nodes(2)
-    atf.require_slurm_running()
-
+    node_info = atf.require_nodes(2)
+    node_ip_list = []
+    for item in node_info:
+        node_ip_list.append(item["NodeAddr"])
+    atf.require_slurm_running(node_ip_list)
 
 @pytest.fixture(scope='module', autouse=False)
 def node_list():

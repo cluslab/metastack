@@ -27,7 +27,7 @@ echo err >&2
     output = atf.run_command_output(f"qsub -l walltime=1:00 -o {file_out} -e {file_err} {file_in}", fatal=True)
     job_id = int(match.group(1)) if (match := re.search(r'(\d+)', output)) else None
     assert job_id is not None, "A job id was not returned from qsub"
-    assert atf.wait_for_job_state(job_id, 'DONE'), f"Job ({job_id}) did not run"
+    assert atf.wait_for_job_state(job_id, 'COMPLETED'), f"Job ({job_id}) did not run"
     assert atf.wait_for_file(file_out), f"Output file ({file_out}) was not created"
     with open(file_out) as f:
         assert re.search(r'out', f.read()), "Stdout was not written to output file"

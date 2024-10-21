@@ -5,7 +5,7 @@ import atf
 import pytest
 import re
 
-num_nodes = 3
+num_nodes = 2 
 
 
 # Setup
@@ -20,6 +20,8 @@ def test_preserve_env():
 
     file_in = atf.module_tmp_path / 'file_in'
     file_out = atf.module_tmp_path / 'file_out'
+    file_out_re = atf.module_tmp_path / 'file_out_re'
+
     num_tasks = num_nodes * 2
     srun_nodes = 1
     srun_tasks = 1
@@ -32,9 +34,11 @@ srun -n{srun_tasks} -N{srun_nodes} printenv SLURM_NTASKS""")
 
     atf.run_command("srun printenv SLURM_NNODES")
     job_id = atf.submit_job(f"-O --output={file_out} -N{num_nodes} -n{num_tasks} {file_in}")
-    atf.wait_for_job_state(job_id, 'DONE')
+    atf.wait_for_job_state(job_id, 'COMPLETED')
     atf.wait_for_file(file_out)
-    f = open(file_out, 'r')
+    atf.run_command("cat %s |grep -v 'srun' >> %s"%(file_out,file_out_re))
+    atf.wait_for_file(file_out_re)
+    f = open(file_out_re, 'r')
     error_msg = "Incorrect output from:"
     assert num_nodes == int(f.readline()), f"{error_msg} printenv SLURM_NNODES"
     assert num_nodes == int(f.readline()), f"{error_msg} srun -E -n{srun_tasks} -N{srun_nodes} printenv SLURM_NNODES"

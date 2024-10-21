@@ -73,14 +73,14 @@ def setup():
     # See: https://bugs.schedmd.com/show_bug.cgi?id=3807#c1
 
     # Gather a list of nodes that meet the RealMemory Requirement (node_list)
-    atf.require_nodes(4, [('RealMemory', max_mem_node + 1)])
-    nodes_dict = atf.get_nodes(live=False)
-
-    for node_name, node_dict in nodes_dict.items():
-        for parameter_name, parameter_value in node_dict.items():
-            if parameter_name == 'RealMemory' and int(parameter_value) >= (max_mem_node + 1):
-                node_list.append(node_name)
-
+    node_info=atf.require_nodes(4, [('RealMemory', max_mem_node + 2),('MemSpecLimit',1)])
+    for item in node_info:
+        node_list.append(item['NodeName'])
+    #nodes_dict = atf.get_nodes(live=False)
+    #for node_name, node_dict in nodes_dict.items():
+    #    for parameter_name, parameter_value in node_dict.items():
+    #        if parameter_name == 'RealMemory' and int(parameter_value) >= (max_mem_node + 1):
+    #            node_list.append(node_name)
     atf.require_config_parameter('PartitionName', {
     'p1'    : {
         'Nodes'         : ','.join(node_list[0:2]),
@@ -91,7 +91,7 @@ def setup():
         'Nodes'         : ','.join(node_list[2:5]),
         'State'         : 'UP',
         'MaxTime'       : 'INFINITE'}
-    })
+    },source='slurm_partition')
 
     p1_node_str = ','.join(node_list[0:2])
     atf.require_slurm_running()
@@ -139,7 +139,7 @@ def satisfy_pending_job_limit(job_id, limit_name, val_pass):
     atf.run_command(f"scontrol update partitionname=p1 {limit_name}={val_pass}", user=atf.properties['slurm-user'], fatal=True, quiet=True)
 
     # Allow time for job to requeue and complete
-    atf.wait_for_job_state(job_id, 'DONE', poll_interval=.5, fatal=True, quiet=True)
+    atf.wait_for_job_state(job_id, 'COMPLETED', poll_interval=.5, fatal=True, quiet=True)
 
 
 # Test functions
@@ -266,7 +266,6 @@ def enforce_NO_QOS(limit_name, flag, val_fail, val_pass):
 @pytest.mark.parametrize("limit_name", limits_dict.keys())
 def test_ALL(limit_name, setup_account, cancel_jobs):
     """Verify jobs are accepted and rejected with EnforePartLimits=ALL"""
-
     set_enforce_part_limits_policy('ALL')
     value = limits_dict[limit_name]
     set_partition_limit(limit_name, value['_set'])

@@ -12,10 +12,13 @@ def setup():
     atf.require_config_parameter('SelectType', 'select/cons_tres')
     atf.require_config_parameter_includes('GresTypes', 'gpu')
     atf.require_config_parameter_includes('GresTypes', 'mps')
-    atf.require_tty(0)
     atf.require_config_parameter('Name', {'gpu': {'File': '/dev/tty0'}, 'mps': {'Count': 100}}, source='gres')
-    atf.require_nodes(1, [('Gres', 'gpu:1,mps:100')])
-    atf.require_slurm_running()
+    node_info=atf.require_nodes(1, [('Gres', 'gpu:1,mps:100')])
+    node_ip_list = []
+    for item in node_info:
+        node_ip_list.append(item["NodeAddr"])
+    atf.require_tty(0,node_info)
+    atf.require_slurm_running(node_ip_list)
 
 
 def test_mps_and_gpus():

@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# This script will kill any user processes on a node when the last
+# SLURM job there ends. For example, if a user directly logs into
+# an allocated node SLURM will not kill that process without this
+# script being executed as an epilog.
+#
+# SLURM_BIN can be used for testing with private version of SLURM
+#SLURM_BIN="/usr/bin/"
+#
+if [ x$SLURM_UID = "x" ] ; then 
+	exit 0
+fi
+if [ x$SLURM_JOB_ID = "x" ] ; then 
+        exit 0
+fi
+
+export NHC_EPILOG=/opt/gridview/slurm/etc/nhc_in_epilog
+test -f $NHC_EPILOG && /usr/bin/bash  $NHC_EPILOG
+
+export AI_EPILOG=/opt/gridview/slurm/etc/sothisai/sothisai_in_epilog
+test -f $AI_EPILOG && /usr/bin/bash  $AI_EPILOG
+
+exit 0
+
+
+

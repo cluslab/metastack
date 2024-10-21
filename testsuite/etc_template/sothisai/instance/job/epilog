@@ -1,0 +1,36 @@
+#! /bin/bash
+#
+# Stop running container on single node
+#
+function stop_container()
+{
+
+	#获取该任务关联的节点
+        source $TASK_PATH/containers_resource_info
+        SLURM_NODES=`$SCONTROL show hostname $SLURM_NODELIST`
+        local subfunc="$FRAMEWORK_HOME/subfunction.sh"
+        test -f $subfunc && source $subfunc
+
+        #获取该节点的下标
+        CUR_NODE_INDEX=`getNodeIndexOfList $SLURM_JOB_ID $SLURMD_NODENAME`
+
+        #获取该节点关联的容器下标
+        local WK_TASK_INDEXS=""
+        WK_TASK_INDEXS=$(get_task_indexs_of_nodex ${CUR_NODE_INDEX} ${APPLY_NODE_NUMBER} ${WK_TOTAL_NUMBER})
+
+	#逐个停止容器
+	if [ ! -z "$WK_TASK_INDEXS" ]; then
+		ROLE_NAME="worker"
+		for index in `echo $WK_TASK_INDEXS | sed 's/,/ /g'`
+		do
+			container_name=${SLURM_JOB_ID}_${SLURMD_NODENAME}_worker_${index}
+			docker stop  $container_name 
+			docker rm -f $container_name
+			sed -i 's/STATUS=.*,IPADDR=.*,CPU/STATUS=Completed,IPADDR=-,CPU/g' $TASK_PATH/container_names/$container_name
+			sed -i 's/CPU_USAGE=.*,GPU_USAGE=.*,RAM_USAGE=.*,GPU_MEM_USAGE=.*,TYPE/CPU_USAGE=0,GPU_USAGE=0,RAM_USAGE=0,GPU_MEM_USAGE=0,TYPE/g' $TASK_PATH/container_names/$container_name
+		done
+	fi
+
+}
+stop_container
+

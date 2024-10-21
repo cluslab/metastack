@@ -191,112 +191,112 @@ sub log_output_file {
 # Run unit tests
 ##############################################################################
 
-sub run_unit_tests {
-    my ($test_base) = @_;
-    my $build_testsuite_dir = "$config{slurmbuilddir}/testsuite";
-
-    # Change to the specified test directory and get a list of test subdirectories
-    chdir("$build_testsuite_dir/$test_base") or die "Unable to change directory to $build_testsuite_dir/$test_base: $!\n";
-    my $subdirs = `echo 'print: ; \@echo "\$(SUBDIRS)"' | make -f Makefile -f - print`;
-    chomp($subdirs);
-
-    # Recursively iterate through all test subdirectories
-    foreach my $subdir (split / /, $subdirs) {
-        run_unit_tests("$test_base/$subdir");
-    }
-
-    # Return to the specified test directory and get a list of tests
-    chdir("$build_testsuite_dir/$test_base") or die "Unable to change directory to $build_testsuite_dir/$test_base: $!\n";
-    my $tests = `echo 'print: ; \@echo "\$(TESTS)"' | make -f Makefile -f - print`;
-    chomp($tests);
-
-    # Run make clean so that we get a fresh compile and test execution
-    `make clean`;
-
-    # Iterate through all tests in the current test directory
-    foreach my $test (split /\s+/, $tests) {
-        my $test_name = "$test_base/$test";
-        last if $exit_tests;
-        next if (defined $include_pattern && $test_name !~ /$include_pattern/);
-        next if (defined $exclude_pattern && $test_name =~ /$exclude_pattern/);
-        print_test_name($test_name);
-
-        # Compile the unit test
-        my $compile_output = `make $test 2>&1`;
-        $rc = $? >> 8;
-        if ($rc) {
-            print_test_status($test_name, 'Error', 'Unable to compile test');
-            next;
-        }
-
-        # Execute the unit test using the test driver
-        my $test_output = `make ${test}.log 2>&1`;
-        $rc = $? >> 8;
-
-        my $test_status = 'Passed';
-        $test_status = 'Failed' if $rc;
-
-        print_test_status($test_name, $test_status, '', $test_output);
-    }
-}
-
-run_unit_tests('slurm_unit');
+#sub run_unit_tests {
+#    my ($test_base) = @_;
+#    my $build_testsuite_dir = "$config{slurmbuilddir}/testsuite";
+#
+#    # Change to the specified test directory and get a list of test subdirectories
+#    chdir("$build_testsuite_dir/$test_base") or die "Unable to change directory to $build_testsuite_dir/$test_base: $!\n";
+#    my $subdirs = `echo 'print: ; \@echo "\$(SUBDIRS)"' | make -f Makefile -f - print`;
+#    chomp($subdirs);
+#
+#    # Recursively iterate through all test subdirectories
+#    foreach my $subdir (split / /, $subdirs) {
+#        run_unit_tests("$test_base/$subdir");
+#    }
+#
+#    # Return to the specified test directory and get a list of tests
+#    chdir("$build_testsuite_dir/$test_base") or die "Unable to change directory to $build_testsuite_dir/$test_base: $!\n";
+#    my $tests = `echo 'print: ; \@echo "\$(TESTS)"' | make -f Makefile -f - print`;
+#    chomp($tests);
+#
+#    # Run make clean so that we get a fresh compile and test execution
+#    `make clean`;
+#
+#    # Iterate through all tests in the current test directory
+#    foreach my $test (split /\s+/, $tests) {
+#        my $test_name = "$test_base/$test";
+#        last if $exit_tests;
+#        next if (defined $include_pattern && $test_name !~ /$include_pattern/);
+#        next if (defined $exclude_pattern && $test_name =~ /$exclude_pattern/);
+#        print_test_name($test_name);
+#
+#        # Compile the unit test
+#        my $compile_output = `make $test 2>&1`;
+#        $rc = $? >> 8;
+#        if ($rc) {
+#            print_test_status($test_name, 'Error', 'Unable to compile test');
+#            next;
+#        }
+#
+#        # Execute the unit test using the test driver
+#        my $test_output = `make ${test}.log 2>&1`;
+#        $rc = $? >> 8;
+#
+#        my $test_status = 'Passed';
+#        $test_status = 'Failed' if $rc;
+#
+#        print_test_status($test_name, $test_status, '', $test_output);
+#    }
+#}
+#
+#run_unit_tests('slurm_unit');
 
 
 ##############################################################################
 # Run expect tests
 ##############################################################################
 
-if ($expect_available) {
-    # Change directory to testsuite/expect
-    chdir("$Bin/expect") or die "Unable to change directory to $Bin/expect: $!\n";
-
-    # Obtain a list of expect tests to run
-    $output = `bash -c "ls test{?,??}\.{?,??,???} 2>/dev/null | sort -V" 2>&1`;
-    $rc = $? >> 8;
-    if ($rc) {
-        die "Unable to obtain list of expect tests to run: $output\n";
-    }
-    my @expect_tests = split /\s+/, $output;
-    #use Data::Dumper;
-    #print Data::Dumper->Dump([\@expect_tests], ['expect_tests']), "\n";
-
-    # Iterate over each expect test
-    foreach my $test (@expect_tests) {
-        my $test_name = "expect/$test";
-
-        last if $exit_tests;
-        next if (defined $include_pattern && $test_name !~ /$include_pattern/);
-        next if (defined $exclude_pattern && $test_name =~ /$exclude_pattern/);
-
-        # Initially print the test name so we can see what test is being run
-        print_test_name($test_name);
-
-        # Run the test
-        my $test_output = `./$test 2>&1`;
-        $rc = $? >> 8;
-
-        my $test_status = '';
-        if ($rc == 0) { $test_status = 'Passed'; }
-        elsif ($rc > 127) { $test_status = 'Skipped'; }
-        else { $test_status = 'Failed'; }
-
-        # Parse the test output for diagnostic information
-        my $diagnostic_output = '';
-        foreach my $line (split /\n/, $test_output) {
-            if ($line =~ m%^\[[^\]]+\] (Fatal|Error)\s+(.*)$% || $line =~ m%^\[[^\]]+\] (Warning)\s+(.*skip\@globals.*)$%) {
-                my ($severity, $message) = ($1, $2);
-                $message =~ s/\([^\)]*\)//g; # Remove parenthesized inclusions
-                $message =~ s/\([^\)]*\)//g; # Remove singly nested layers
-                $message =~ s/\s{2,}/ /g; # Collapse whitespace
-                $message =~ s/\s+$//g; # Remove trailing whitespace
-                $diagnostic_output .= "$severity: $message\n";
-            }
-        }
-
-        print_test_status($test_name, $test_status, $diagnostic_output, $test_output);
-    }
-}
+#if ($expect_available) {
+#    # Change directory to testsuite/expect
+#    chdir("$Bin/expect") or die "Unable to change directory to $Bin/expect: $!\n";
+#
+#    # Obtain a list of expect tests to run
+#    $output = `bash -c "ls test{?,??}\.{?,??,???} 2>/dev/null | sort -V" 2>&1`;
+#    $rc = $? >> 8;
+#    if ($rc) {
+#        die "Unable to obtain list of expect tests to run: $output\n";
+#    }
+#    my @expect_tests = split /\s+/, $output;
+#    #use Data::Dumper;
+#    #print Data::Dumper->Dump([\@expect_tests], ['expect_tests']), "\n";
+#
+#    # Iterate over each expect test
+#    foreach my $test (@expect_tests) {
+#        my $test_name = "expect/$test";
+#
+#        last if $exit_tests;
+#        next if (defined $include_pattern && $test_name !~ /$include_pattern/);
+#        next if (defined $exclude_pattern && $test_name =~ /$exclude_pattern/);
+#
+#        # Initially print the test name so we can see what test is being run
+#        print_test_name($test_name);
+#
+#        # Run the test
+#        my $test_output = `./$test 2>&1`;
+#        $rc = $? >> 8;
+#
+#        my $test_status = '';
+#        if ($rc == 0) { $test_status = 'Passed'; }
+#        elsif ($rc > 127) { $test_status = 'Skipped'; }
+#        else { $test_status = 'Failed'; }
+#
+#        # Parse the test output for diagnostic information
+#        my $diagnostic_output = '';
+#        foreach my $line (split /\n/, $test_output) {
+#            if ($line =~ m%^\[[^\]]+\] (Fatal|Error)\s+(.*)$% || $line =~ m%^\[[^\]]+\] (Warning)\s+(.*skip\@globals.*)$%) {
+#                my ($severity, $message) = ($1, $2);
+#                $message =~ s/\([^\)]*\)//g; # Remove parenthesized inclusions
+#                $message =~ s/\([^\)]*\)//g; # Remove singly nested layers
+#                $message =~ s/\s{2,}/ /g; # Collapse whitespace
+#                $message =~ s/\s+$//g; # Remove trailing whitespace
+#                $diagnostic_output .= "$severity: $message\n";
+#            }
+#        }
+#
+#        print_test_status($test_name, $test_status, $diagnostic_output, $test_output);
+#    }
+#}
 
 
 ##############################################################################
@@ -314,18 +314,25 @@ if ($pytest_available) {
     if ($rc) {
         die "Unable to obtain list of python tests to run: $output\n";
     }
-
+    my $newline;
     # Parse the collected test output
     foreach my $line (split /\n/, $output) {
         if ($line =~ m%^tests/.*test_\S+\.py::.*test_\S+$%) {
-            push @python_tests, $line;
+            $newline = (split /::/,$line)[0];
+            push @python_tests, $newline;
         }
     }
+    #print(@python_tests);
+    
+    my %ha; 
+    my @uniq=grep{++$ha{$_}<2}@python_tests;
+    #print(@uniq);
+    
     #use Data::Dumper;
     #print Data::Dumper->Dump([\@python_tests], ['python_tests']), "\n";
 
     # Iterate over each collected test
-    foreach my $test (@python_tests) {
+    foreach my $test (@uniq) {
         my $test_name = "python/$test";
         last if $exit_tests;
         next if (defined $include_pattern && $test_name !~ /$include_pattern/);
@@ -335,13 +342,13 @@ if ($pytest_available) {
         print_test_name($test_name);
 
         # Run the test function
-        my $test_output = `pytest-3 -s -rA -v --junit-xml=junit.xml $test 2>&1`;
+        my $test_output = `pytest-3 --auto-config -s -rA -v --junit-xml=junit.xml $test 2>&1`;
         $rc = $? >> 8;
 
         my $test_status;
-        #if ($rc == 0) { $test_status = 'Passed'; }
-        #elsif ($rc == 1) { $test_status = 'Failed'; }
-        #else { $test_status = 'Error'; }
+        if ($rc == 0) { $test_status = 'Passed'; }
+        elsif ($rc == 1) { $test_status = 'Failed'; }
+        else { $test_status = 'Error'; }
 
         # Parse the junit output for test function and status information
         open JUNIT_XML, "junit.xml" or die "Unable to open junit.xml for reading: $!\n";

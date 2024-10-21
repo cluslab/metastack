@@ -11,7 +11,10 @@ import pathlib
 @pytest.fixture(scope="module", autouse=True)
 def setup():
     atf.require_config_parameter('FrontendName', None)
-    atf.require_slurm_running()
+    node_ip_list=[]
+    ip = atf.get_config_parameter('ControlAddr',live=False)
+    node_ip_list.append(ip)
+    atf.require_slurm_running(node_ip_list)
 
 
 def test_user_limits():
@@ -71,9 +74,9 @@ def test_user_limits():
     ulimit -u {limit_nproc}
     ulimit -s {limit_stack}
     srun python3 {script_file}""")
-
     job_id = atf.submit_job(f"--output={file_out} --error={file_err} {file_in}")
-    atf.wait_for_job_state(job_id, 'DONE')
+    atf.wait_for_job_state(job_id, 'COMPLETED')
+   
     f = open(file_out, 'r')
     line = f.readline()
     assert limit_core * 1024 == int(line), f"RLIMIT_CORE failed {limit_core * 1024} != {line}"

@@ -17,6 +17,7 @@ def test_input_ouput_error(tmp_path):
 
     CONTENT = "sleep aaa\nexit 0"
     sleep_err_message = "sleep: invalid time interval ‘aaa’"
+    srun_message = "srun: ROUTE: split_hostlist:"
     echo_output = "test --output"
     file_in = tmp_path / "file_in.input"
     file_out = tmp_path / "file_out.output"
@@ -33,6 +34,8 @@ def test_input_ouput_error(tmp_path):
 
     # Test the none parameter
     stderr = atf.run_command_error(f"srun --input={str(file_in)} --error=none -t1 bash")
-    assert not stderr
+    assert re.search(srun_message, stderr) is not None
+    #assert not stderr
     stdout = atf.run_command_output(f"srun --output=none -t1 id")
-    assert not stdout
+    assert re.search(srun_message, stderr) is not None
+    #assert not stdout

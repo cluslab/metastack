@@ -19,9 +19,9 @@ def setup():
 @pytest.fixture(scope="module")
 def setup_account():
     test_user = pwd.getpwuid(os.getuid())[0]
-    atf.run_command(f"sacctmgr -vi add account test_account", user=atf.properties["slurm-user"], fatal=True)
-    atf.run_command(f"sacctmgr -vi add user {test_user} account=test_account AdminLevel=Admin", user=atf.properties["slurm-user"], fatal=True)
-
+    #atf.run_command(f"sacctmgr -vi add account test_account", user=atf.properties["slurm-user"], fatal=True)
+    #atf.run_command(f"sacctmgr -vi add user {test_user} account=test_account AdminLevel=Admin", user=atf.properties["slurm-user"], fatal=True)
+    atf.run_command(f"sacctmgr -vi modify user {test_user} set AdminLevel=Admin", user=atf.properties["slurm-user"], fatal=True)
 
 def test_PreserveCaseUser_on(setup_account):
     """Verify text case is preserved on the imported user name"""
@@ -34,7 +34,6 @@ User - {user}:DefaultAccount=test_account
 """
     with open(config_file, "w") as f:
         f.writelines(config_text)
-
     atf.run_command(f"sacctmgr -inQ load {config_file} clean", fatal=True)
     user_out = atf.run_command_output(f"sacctmgr list user {user} format=User -nP").rstrip()
     assert user_out == user, f"Case was not be preserved for imported user name ({user_out})"

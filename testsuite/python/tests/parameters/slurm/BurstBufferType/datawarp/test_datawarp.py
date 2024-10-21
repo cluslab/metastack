@@ -61,10 +61,10 @@ scontrol show burst
     bb_create_job_id = atf.submit_job(f"-N1 -t1 -o {bb_create_output} {bb_create_script}", fatal=True)
 
     # The burst buffer creation should complete first
-    assert atf.wait_for_job_state(bb_create_job_id, 'DONE', timeout=660), f"Burst buffer creation job ({bb_create_job_id}) did not run"
+    assert atf.wait_for_job_state(bb_create_job_id, 'COMPLETED', timeout=660), f"Burst buffer creation job ({bb_create_job_id}) did not run"
 
     # The burst buffer usage should then complete
-    assert atf.wait_for_job_state(bb_use_job_id, 'DONE', timeout=660), f"Burst buffer usage job ({bb_create_job_id}) did not run"
+    assert atf.wait_for_job_state(bb_use_job_id, 'COMPLETED', timeout=660), f"Burst buffer usage job ({bb_create_job_id}) did not run"
 
     # Ensure the burst buffer usage job ran after the buffer creation
     assert atf.wait_for_file(bb_use_output, timeout=660)
@@ -87,7 +87,7 @@ scontrol show burst
     bb_delete_job_id = atf.submit_job(f"-N1 -t1 -o {bb_delete_output} {bb_delete_script}", fatal=True)
 
     # The burst buffer deletion job should complete
-    assert atf.wait_for_job_state(bb_delete_job_id, 'DONE', timeout=660), f"Burst buffer deletion job ({bb_delete_job_id}) did not run"
+    assert atf.wait_for_job_state(bb_delete_job_id, 'COMPLETED', timeout=660), f"Burst buffer deletion job ({bb_delete_job_id}) did not run"
 
     assert atf.wait_for_file(bb_delete_output, timeout=660)
     assert atf.run_command_exit(f"grep test_buffer {bb_delete_output}") != 0, "Job deleting burst buffer failed to do so"

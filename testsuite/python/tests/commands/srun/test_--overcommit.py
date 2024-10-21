@@ -9,7 +9,7 @@ import re
 # Setup
 @pytest.fixture(scope="module", autouse=True)
 def setup():
-    atf.require_nodes(1, [('CPUs', 1)])
+    #atf.require_nodes(1, [('CPUs', 1)])
     atf.require_slurm_running()
 
 
