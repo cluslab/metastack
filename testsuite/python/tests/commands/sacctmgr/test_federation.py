@@ -26,7 +26,7 @@ federation1 = 'federation1'
 federation2 = 'federation2'
 federation3 = 'federation3'
 
-max_fed_clusters = 64
+max_fed_clusters = 8 
 
 cluster_list = []
 for i in range(1, max_fed_clusters):

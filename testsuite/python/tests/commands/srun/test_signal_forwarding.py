@@ -13,7 +13,8 @@ import logging
 # Setup
 @pytest.fixture(scope="module", autouse=True)
 def setup():
-    atf.require_slurm_running()
+    node_ip_list=["10.6.8.90"]
+    atf.require_slurm_running(node_ip_list)
 
 
 def test_signal_forwarding():
@@ -21,7 +22,6 @@ def test_signal_forwarding():
 
     sig1_count = 2
     sig2_count = 2
-
     file_in = atf.module_tmp_path / 'file_in'
     file_out = atf.module_tmp_path / 'file_out'
     script_file = pathlib.Path(__file__).parent.resolve() / 'signal_forwarding_script.py'
@@ -34,7 +34,7 @@ def test_signal_forwarding():
     for i in range(sig2_count):
         atf.run_command(f"scancel --signal {signal.SIGUSR2.value} {job_id}")
         time.sleep(1)
-    atf.wait_for_job_state(job_id, 'DONE', timeout=60)
+    atf.wait_for_job_state(job_id, 'COMPLETED', timeout=60)
 
     received_all_sigs = False
     user1_count = 0

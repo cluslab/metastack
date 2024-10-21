@@ -5,7 +5,7 @@ import inspect
 import logging
 import os
 import pathlib
-from py.io import TerminalWriter
+from _pytest._io import TerminalWriter
 import pwd
 import pytest
 import _pytest

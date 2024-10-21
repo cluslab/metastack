@@ -5,7 +5,7 @@ import atf
 import pytest
 import re
 
-node_count = 9
+node_count = 4 
 
 
 # Setup

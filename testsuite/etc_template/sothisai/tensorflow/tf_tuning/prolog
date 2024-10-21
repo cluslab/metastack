@@ -1,0 +1,405 @@
+#! /bin/bash
+date >> $LOGFILE
+echo "my prolog=$0" >> $LOGFILE
+echo "my workdir=`pwd`" >> $LOGFILE
+
+SLURM_INSTALL_PATH=/opt/gridview/slurm
+# ========= job params from jobdetail==========
+#job resource from job detail
+#JOB_CPUIDS
+DOCKER_CPUIDS=$(getFinalNodeCpus $JOBDETAIL)
+DOCKER_GPUIDS=$(getFinalNodeGpus $JOBDETAIL)
+DOCKER_CTRMEM=$(getFinalNodeMem $JOBDETAIL)
+echo "DOCKER_CPUIDS=$DOCKER_CPUIDS" >> $LOGFILE
+echo "DOCKER_GPUIDS=$DOCKER_GPUIDS" >> $LOGFILE
+echo "DOCKER_CTRMEM=$DOCKER_CTRMEM" >> $LOGFILE
+# ===================
+
+#single docker container name
+DOCKER_NAME=$(getDockerName)
+echo "DOCKER_NAME=$DOCKER_NAME" >> $LOGFILE
+
+# ===================
+initRoleContainerParams(){
+    #if only cpu,maybe no necessary
+    docker_shmsize="$DOCKER_CTRMEM"
+    echo "docker_shmsize=$docker_shmsize" >> $LOGFILE
+    #
+    docker_framework_ports_map=""
+    #--env PYTHONPATH=${TASK_PATH}
+    docker_framework_env="--env PYTHONPATH=${TASK_PATH}"
+    #
+    docker_framework_mounts="-v ${SOTHISAI_HOME}/scripts/scheduler/slurm/tensorflow/:/opt/SothisAI/"
+    # final: sh -c "cat /proc/1/environ| tr '\0' '\n' | awk -v ex='export ' '{printf ex;print $1}'> /etc/profile.d/sothisai.sh;/usr/sbin/sshd -D"
+    docker_cmd_arg="cat /proc/1/environ| tr '\0' '\n' | awk -v ex='export ' '{printf ex;print \\\$1}'> /etc/profile.d/sothisai.sh;echo \\\\\\\"export HOME=$USERHOME\\\\\\\" >> /etc/profile.d/sothisai.sh;sed -i -e 's/=/=\\\\\\\"/' -e 's/$/\\\\\\\"/' /etc/profile.d/sothisai.sh;/usr/sbin/sshd -D"
+    #
+}
+
+# ***************************
+
+# Usage: ${taskUser} ${taskImage} $dcName $dcCpuIDs ${taskMem} $dcGpuIDs $taskRole $taskx $taskNode
+function startRoleContainer(){
+    echo "Arguments of startRoleContainer: $*" >> $LOGFILE
+    echo "TASK_PATH:$TASK_PATH" >>$LOGFILE
+    echo "SLURM_JOB_ID:$SLURM_JOB_ID" >>$LOGFILE
+
+    if [ $# -ne 10 ];then
+        echo "Arguments of startRoleContainer not valid " >> $LOGFILE
+        return 1
+    fi
+    initRoleContainerParams
+    DC_NAME=$3
+    createRoleContainerParamsFile $*
+
+	echo "sh $SLURM_INSTALL_PATH/etc/sothisai/startRoleContainer.sh $TASK_PATH $DC_NAME $SLURM_JOB_ID" >> $LOGFILE
+	sh $SLURM_INSTALL_PATH/etc/sothisai/startRoleContainer.sh $TASK_PATH $DC_NAME $SLURM_JOB_ID 1
+
+
+    squeue >> $LOGFILE
+}
+# =========================================================
+
+#
+# get task cpu IDs of specified task from record file
+# Usage: $0 <task id> <task record file>
+# 
+# Record format: INDEX=1,CPUIDS=2:3,GPUIDS=1
+#
+function getTaskCpuIDs()
+{
+
+	if [ $# -ne 2 ]; then
+		echo "Usage: $0 <task id> <task record file>" >&2
+		return 1
+	fi
+
+	local MATCHSTR="INDEX=${1}"
+	cat ${2} | awk -F, -v MATCH=${MATCHSTR} '{if ($1 == MATCH) { split($2,arr,"="); printf("%s",arr[2]) } }'
+	return 0
+}
+
+#
+# get task GPU IDs of specified task from record file
+# Usage: $0 <task id> <task record file>
+# 
+# Record format: INDEX=1,CPUIDS=2:3,GPUIDS=1
+#
+function getTaskGpuIDs()
+{
+
+	if [ $# -ne 2 ]; then
+		echo "Usage: $0 <task id> <task record file>" >&2
+		return 1
+	fi
+
+	local MATCHSTR="INDEX=${1}"
+	cat ${2} | awk -F, -v MATCH=${MATCHSTR} '{if ($1 == MATCH) { split($3,arr,"="); printf("%s",arr[2]) } }'
+	return 0
+}
+
+#
+# schedule resources (cpu/gpu/mem) to each tasks individual
+# Usage: $0 <comma-separated tasks> <cpu per task> <gpu per task> <file to save result>
+#
+function schedTaskResources()
+{
+	if [ $# -ne 4 ]; then
+		echo "Usage: $0 <comma-separated tasks> <cpu per task> <gpu per task> <file to save result>" >&2
+		return 1
+	fi
+
+	local TASK_INDEXS="$(echo ${1} | sed 's/,/ /g')"
+	local TASK_CPU_NUM="${2}"
+	local TASK_GPU_NUM="${3}"
+	local save_file="${4}"
+
+	echo "ArgV[0] TASK_INDEXS:${TASK_INDEXS}" >> $LOGFILE
+	echo "ArgV[1] TASK_CPU_NUM:${TASK_CPU_NUM}" >> $LOGFILE
+	echo "ArgV[2] TASK_GPU_NUM:${TASK_GPU_NUM}" >> $LOGFILE
+	echo "ArgV[3] save_file:${save_file}" >> $LOGFILE
+
+	test -f ${save_file} && rm -f ${save_file}
+
+	local dcCpuIDs=""
+	local dcGpuIDs=""
+
+	local leftCpuIDs=""
+	local leftGpuIDs=""
+
+	local cpuneed=""
+	local gpuneed=""
+
+	for taskx in $TASK_INDEXS
+	do
+
+		cpuneed=${TASK_CPU_NUM}
+		gpuneed=${TASK_GPU_NUM}
+
+		echo "before sched cpu, allCpuIDs:${allCpuIDs}" >> $LOGFILE
+		echo "before sched cpu, leftCpuIDs:${leftCpuIDs}" >> $LOGFILE
+
+		dcCpuIDs=""
+		for cpux in $allCpuIDs
+		do
+			echo "      cpuneed:${cpuneed}" >> $LOGFILE
+			if [ $cpuneed -gt 0 ]; then
+				if [ -z "$dcCpuIDs" ]; then
+					dcCpuIDs="$cpux"
+				else
+					dcCpuIDs="$dcCpuIDs,$cpux"
+				fi
+				let "cpuneed-=1"
+			else
+				if [ -z "$leftCpuIDs" ]; then
+					leftCpuIDs="$cpux"
+				else
+					leftCpuIDs="$leftCpuIDs $cpux"
+				fi
+			fi
+		done
+
+		allCpuIDs="$leftCpuIDs"
+		leftCpuIDs=""
+		echo "allCpuIDs changed to: ${allCpuIDs}" >> $LOGFILE
+
+		echo "before sched GPU, allGpuIDs:${allGpuIDs}" >> $LOGFILE
+		echo "before sched GPU, leftGpuIDs:${leftGpuIDs}" >> $LOGFILE
+
+		dcGpuIDs=""
+		for gpux in $allGpuIDs
+		do
+			echo "      gpuneed:${gpuneed}" >> $LOGFILE
+			if [ $gpuneed -gt 0 ]; then
+				if [ -z "$dcGpuIDs" ]; then
+					dcGpuIDs="$gpux"
+				else
+					dcGpuIDs="$dcGpuIDs,$gpux"
+				fi
+				let "gpuneed-=1"
+			else
+				if [ -z "$leftGpuIDs" ]; then
+					leftGpuIDs="$gpux"
+				else
+					leftGpuIDs="$leftGpuIDs $gpux"
+				fi
+			fi
+		done
+
+		allGpuIDs="$leftGpuIDs"
+		leftGpuIDs=""
+		echo "allGpuIDs changed to: ${allGpuIDs}" >> $LOGFILE
+
+		echo " ->-> dcCpuIDs=$dcCpuIDs" >> $LOGFILE
+		echo " ->-> dcGpuIDs=$dcGpuIDs" >> $LOGFILE
+
+		if [ -z "$dcCpuIDs" ]; then
+			dcCpuIDs="-"
+		fi
+
+		if [ -z "$dcGpuIDs" ]; then
+			dcGpuIDs="-"
+		fi
+
+		local rcCpuIDs=$(echo ${dcCpuIDs} | sed 's/,/:/g')
+		echo " ->-> rcCpuIDs=${rcCpuIDs}" >> $LOGFILE
+
+		local rcGpuIDs=$(echo ${dcGpuIDs} | sed 's/,/:/g')
+		echo " ->-> rcGpuIDs=${rcGpuIDs}" >> $LOGFILE
+
+		echo "INDEX=${taskx},CPUIDS=${rcCpuIDs},GPUIDS=${rcGpuIDs}" >> $save_file
+
+	done
+}
+
+#
+# start all tasks with specified role
+# Usage: $0 <SLURM_JOB_USER> <SLURM_JOB_ID> <taskNode> <IMAGENAME> <ROLE_NAME> <TASK_INDEXS> <TASK CPU NUM> <TASK MEM> <TASK GPU NUM>
+#
+function StartRoledTasks()
+{
+
+	if [ $# -ne 9 ]; then
+		echo "Usage: $0 <SLURM_JOB_USER> <SLURM_JOB_ID> <taskNode> <IMAGENAME> <ROLE_NAME> <TASK_INDEXS> <TASK CPU NUM> <TASK MEM> <TASK GPU NUM>" >&2
+		return 1
+	fi
+
+	local taskUser=$1
+	local taskJobID=$2
+	local taskNode=$3
+	local taskImage=$4
+	local taskRole=$5
+	local taskIndexList=$6
+	local taskCpuNum=$7
+	local taskMem="${8}M"
+	local taskGpuNum=$9
+
+	echo "TASK_USER:$taskUser" >> $LOGFILE
+	echo "TASK_JOB_ID:$taskJobID" >> $LOGFILE
+    #taskNode:single slurm node
+	echo "TASK_NODE:$taskNode" >> $LOGFILE
+	echo "TASK_IMAGE:$taskImage" >> $LOGFILE
+	echo "TASK_ROLE:$taskRole" >> $LOGFILE
+	echo "TASK_INDEX_LIST:$taskIndexList" >> $LOGFILE
+	echo "TASK_CPU_NUMBER:$taskCpuNum" >> $LOGFILE
+	echo "TASK_MEM:$taskMem" >> $LOGFILE
+	echo "TASK_GPU_NUMBER:$taskGpuNum" >> $LOGFILE
+
+	local dcCpuIDs=""
+	local dcGpuIDs=""
+  local dockerInfo=""
+  if [ ! -z "${taskIndexList}" ]; then
+
+		schedTaskResources ${taskIndexList} ${taskCpuNum} ${taskGpuNum} ${temp_file}
+		cat ${temp_file} >> $LOGFILE
+
+    TASK_INDEXS="$(echo ${taskIndexList} | sed 's/,/ /g')"
+    TASK_INDEXS_arr=($TASK_INDEXS)
+    TASK_INDEXS_length=${#TASK_INDEXS_arr[@]}
+    for taskx in $TASK_INDEXS
+    do
+      dcName=`getDistributeDockerName ${taskJobID} ${taskNode} ${taskRole} $taskx`
+      echo " -> ${taskRole}[$taskx] $dcName"   >> $LOGFILE
+
+      dcCpuIDs=$(getTaskCpuIDs ${taskx} ${temp_file})
+      dcCpuIDs=$(echo ${dcCpuIDs} | sed 's/:/,/g')
+
+      dcGpuIDs=$(getTaskGpuIDs ${taskx} ${temp_file})
+      dcGpuIDs=$(echo ${dcGpuIDs} | sed 's/:/,/g')
+      dcGpuIDs_arr=($(echo ${dcGpuIDs} | sed 's/,/ /g'))
+      echo " -> dcCpuIDs=$dcCpuIDs" >> $LOGFILE
+      echo " -> dcGpuIDs=$dcGpuIDs" >> $LOGFILE
+      echo " -> index_Taskx=$taskx" >> $LOGFILE
+      Gpu_arr=($(getCUDAGPUIDs))
+      if [ $? -ne 5 ] && [ "gpu" = "${accelerator_type}" ] && [ "$dcGpuIDs" != "-" ];then
+        Gpu_arr_s=${Gpu_arr[*]}
+        ##format task index. if task list in this node is 1 3 5 then getIndexFromArr 1 change it to 0,getIndexFromArr 5 change it to 2.
+        formated_task_idx=$(getIndexFromArr $taskx "$TASK_INDEXS" "$TASK_INDEXS_length")
+        ##next, call splitCUDAGPUIDs function
+        Gpu_arr_split=($(splitCUDAGPUIDs $formated_task_idx $((${#dcGpuIDs_arr[*]})) "${Gpu_arr_s}"))
+        if [ "${#dcGpuIDs_arr[*]}" -eq "${#Gpu_arr_split[*]}" ] && [  "${dcGpuIDs_arr[*]}" != "${Gpu_arr_split[*]}" ];then
+        dcGpuIDs=$(echo "${Gpu_arr_split[*]}" | sed 's/ /,/g')
+        fi
+      echo " -> formated_task_index=$formated_task_idx" >> $LOGFILE
+      echo " -> new dcGpuIDs=$dcGpuIDs" >> $LOGFILE
+      fi
+      # ========0714=================
+      startRoleContainer ${taskUser} ${taskImage} $dcName $dcCpuIDs ${taskMem} "$dcGpuIDs" $taskRole $taskx $taskNode ${accelerator_type}
+		done
+		test -f ${temp_file} && rm -f ${temp_file}
+  fi
+}
+# ================== Entrance =======================================
+function SingleStart()
+{
+    local taskUser=$SLURM_JOB_USER
+    local taskImage=$IMAGENAME
+    local dcName=$DOCKER_NAME
+    local dcCpuIDs=$DOCKER_CPUIDS
+    local taskMem=$DOCKER_CTRMEM
+    local dcGpuIDs=$DOCKER_GPUIDS
+    if [ "$dcGpuIDs" = "" ];then
+        dcGpuIDs="-"
+    fi
+    local taskRole="worker"
+    local taskx=0
+    local taskNode=${SLURMD_NODENAME}
+    dcGpuIDs_arr=($(echo ${dcGpuIDs} | sed 's/,/ /g'))
+    echo " -> dcCpuIDs=$dcCpuIDs" >> $LOGFILE
+    echo " -> non-distributed dcGpuIDs=$dcGpuIDs" >> $LOGFILE
+    Gpu_arr=($(getCUDAGPUIDs))
+    if [ $? -ne 5 ] && [ "gpu" = "${accelerator_type}" ] && [ "$dcGpuIDs" != "-" ];then
+      Gpu_arr_s=${Gpu_arr[*]}
+      Gpu_arr_split=($(splitCUDAGPUIDs 0 $((${#dcGpuIDs_arr[*]})) "${Gpu_arr_s}"))
+      if [ "${#dcGpuIDs_arr[*]}" -eq "${#Gpu_arr_split[*]}" ] && [  "${dcGpuIDs_arr[*]}" != "${Gpu_arr_split[*]}" ];then
+      dcGpuIDs=$(echo "${Gpu_arr_split[*]}" | sed 's/ /,/g')
+      fi
+    echo " -> new dcGpuIDs=$dcGpuIDs" >> $LOGFILE
+    fi
+    startRoleContainer ${taskUser} ${taskImage} $dcName $dcCpuIDs ${taskMem} $dcGpuIDs $taskRole $taskx $taskNode $accelerator_type
+}
+
+function TFTuningStart()
+{
+	local docker_file=`getDockerInstanceFilePath $TASK_PATH $SLURM_JOB_ID`
+	SLURM_NODES=`$SCONTROL show hostname $SLURM_NODELIST`
+	echo "TF-TUNING DOCKER_LIST_FILE: $docker_file" >> $LOGFILE
+	echo "TF-TUNING SLURM_JOB_ID: $SLURM_JOB_ID" >> $LOGFILE
+	echo "TF-TUNING SLURM_JOB_USER: $SLURM_JOB_USER" >> $LOGFILE
+	echo "TF-TUNING SLURMD_NODENAME: $SLURMD_NODENAME" >> $LOGFILE
+    echo "TF-TUNING SLURM_NODES: $SLURM_NODES" >> $LOGFILE
+
+    # role - role num - node
+    local subfunc="$FRAMEWORK_HOME/subfunction.sh"
+    test -f $subfunc && source $subfunc
+    echo "  -> $subfunc" >> $LOGFILE
+    initTFTuningEnv
+	
+	mynodeindex=`getNodeIndexOfList $SLURM_JOB_ID $SLURMD_NODENAME`
+	# ===================
+	echo "NODE_INDEX: $mynodeindex" >> $LOGFILE
+	echo "WORKER_NUMBER: $worker_number" >> $LOGFILE
+	echo "MASTER_NUMBER: $master_number" >> $LOGFILE
+	
+	local MASTER_TASK_INDEXS=""
+	# should replace GPU_NODE_NUM by JOB_NODE_NUM
+	MASTER_TASK_INDEXS=$(getTaskIndexsOfNodeX ${mynodeindex} $JOB_NODE_NUM $master_number)
+	echo "MASTER_TASK_INDEXS: $MASTER_TASK_INDEXS" >> $LOGFILE
+	
+	local WK_TASK_INDEXS=""
+	# should replace GPU_NODE_NUM by JOB_NODE_NUM
+	WK_TASK_INDEXS=$(getTaskIndexsOfNodeX ${mynodeindex} $JOB_NODE_NUM $worker_number)
+	echo "WK_TASK_INDEXS: $WK_TASK_INDEXS" >> $LOGFILE
+	
+	local allCpuIDs=`getSpecifiedJobNodeCpuIDs $JOBDETAIL $SLURMD_NODENAME | sed 's/,/ /g'`
+	local allGpuIDs=`getSpecifiedJobNodeGpuIDs $JOBDETAIL $SLURMD_NODENAME | sed 's/,/ /g'`
+	
+	# NOTE: should be located $SPOOL_DIR
+	local temp_file="/tmp/tasks.${SLURM_JOB_ID}.$$"
+	
+	if [ ! -z "$MASTER_TASK_INDEXS" ]; then
+		ROLE_NAME="master"
+		if [ $master_gpu_enable -ge 1 ]; then
+			# Usage:        <SLURM_JOB_USER> <SLURM_JOB_ID>   <taskNode>  <IMAGENAME>  <ROLE_NAME>  <TASK_INDEXS>     <TASK CPU NUM>   <TASK MEM>  <TASK GPU NUM>
+			# =====0714==============
+			StartRoledTasks ${SLURM_JOB_USER} ${SLURM_JOB_ID} ${SLURMD_NODENAME} ${IMAGENAME} ${ROLE_NAME} ${MASTER_TASK_INDEXS} ${master_cpu_number} ${master_ramMB} ${master_gpu_number}
+		else
+			# Usage:        <SLURM_JOB_USER> <SLURM_JOB_ID>   <taskNode>  <IMAGENAME>  <ROLE_NAME>  <TASK_INDEXS>     <TASK CPU NUM>   <TASK MEM>  <TASK GPU NUM>
+			StartRoledTasks ${SLURM_JOB_USER} ${SLURM_JOB_ID} ${SLURMD_NODENAME} ${IMAGENAME} ${ROLE_NAME} ${MASTER_TASK_INDEXS} ${master_cpu_number} ${master_ramMB} 0
+			# ===================
+		fi
+	fi
+	
+	echo "after master, allCpuIDs: $allCpuIDs"
+	echo "after master, allGpuIDs: $allGpuIDs"
+	
+	if [ ! -z "$WK_TASK_INDEXS" ]; then
+		ROLE_NAME="worker"
+		if [ $worker_gpu_enable -ge 1 ]; then
+			# Usage:        <SLURM_JOB_USER> <SLURM_JOB_ID>   <taskNode>  <IMAGENAME>  <ROLE_NAME>  <TASK_INDEXS>     <TASK CPU NUM>       <TASK MEM>      <TASK GPU NUM>
+			# =====0714==============
+			StartRoledTasks ${SLURM_JOB_USER} ${SLURM_JOB_ID} ${SLURMD_NODENAME} ${IMAGENAME} ${ROLE_NAME} ${WK_TASK_INDEXS} ${worker_cpu_number} ${worker_ramMB} ${worker_gpu_number}
+		else
+			# Usage:        <SLURM_JOB_USER> <SLURM_JOB_ID>   <taskNode>  <IMAGENAME>  <ROLE_NAME>  <TASK_INDEXS>     <TASK CPU NUM>       <TASK MEM>      <TASK GPU NUM>
+			StartRoledTasks ${SLURM_JOB_USER} ${SLURM_JOB_ID} ${SLURMD_NODENAME} ${IMAGENAME} ${ROLE_NAME} ${WK_TASK_INDEXS} ${worker_cpu_number} ${worker_ramMB} 0
+			# ===================
+		fi
+	fi
+	# =====0714==============
+    # ===================
+}
+
+log_prolog_message "==Deploy container environment=="
+
+TFTuningStart
+header_node=`getHeaderNode`
+if [ $header_node == $SLURMD_NODENAME ];then
+	total_containers_number=$(($master_number+$worker_number))
+	collectContainerInfoToDockerFile $total_containers_number $TASK_PATH $SLURM_JOB_ID
+fi
+log_prolog_message "==Deploy environment completed=="
+
+echo "over" >> $LOGFILE
+date >> $LOGFILE
+#
+# No other SLURM jobs, purge all remaining processes of this user
+#

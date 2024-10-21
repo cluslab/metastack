@@ -6,20 +6,24 @@ import pytest
 import os
 import re
 
-
+node_name = ''
 # Setup
 @pytest.fixture(scope="module", autouse=True)
 def setup():
     atf.require_auto_config("wants to create helpers.conf, helper scripts and reboot script")
     atf.require_config_parameter('NodeFeaturesPlugins', 'node_features/helpers')
-    atf.require_nodes(1)
+    node_info = atf.require_nodes(1)
+    global node_name
+    node_name = node_info[0]['NodeName']
+    node_ip_list = []
+    node_ip_list.append(node_info[0]['NodeAddr'])
     helper_script = make_helper_script()
     feature_helpers_dict = {}
     for i in range(2):
         feature_helpers_dict[f"f{i+1}"] = {'Helper': helper_script}
     atf.require_config_parameter('Feature', feature_helpers_dict, source='helpers')
     atf.require_config_parameter('RebootProgram', f"{atf.module_tmp_path}/rebooter.sh")
-    atf.require_slurm_running()
+    atf.require_slurm_running(node_ip_list)
 
 
 # Creates the script called by each helper in the helpers.conf
@@ -69,10 +73,28 @@ done
     atf.run_command(f"chmod 0777 {reboot_file}", user='root', fatal=True, quiet=True)
 
 
+def make_rebooter_script_ssh(node_name,out_file):
+    reboot_file = f"{atf.module_tmp_path}/rebooter.sh"
+    atf.make_bash_script(reboot_file, f"""
+ssh root@{node_name} "pkill -9 slurmd"
+ssh root@{node_name} "systemctl stop slurmd && systemctl start slurmd"
+while [ $SECONDS -lt 10 ]; do
+   stdout=`ssh root@{node_name} "systemctl status slurmd"`
+   strB="Active: active (running)"
+   if [[ $stdout == *$strB* ]]
+   then
+    echo 'done' > {out_file}
+    break
+   fi
+done
+    """)
+    atf.run_command(f"chmod 0777 {reboot_file}", user='root', fatal=True, quiet=True)
+
+
 @pytest.fixture(scope="module")
 def our_node():
     # Determine our node name and wait until the node is up and at 'idle' state
-    node_name = list(atf.nodes.keys())[0]
+    #node_name = list(atf.nodes.keys())[0]
     atf.repeat_command_until(f"sinfo -h -n {node_name} -o %t", lambda results: re.search(r'idle', results['stdout']))
     return node_name
 
@@ -89,7 +111,7 @@ def test_request_adds_new_ActiveFeature(our_node):
     """Verify job request with new ActiveFeature restarts, adds new ActiveFeature, and runs"""
 
     out_file = f"{atf.module_tmp_path}/file.out"
-    make_rebooter_script(our_node, out_file)
+    make_rebooter_script_ssh(our_node, out_file)
 
     # Submit a job with inactive available feature 'f2', should trigger reboot
     atf.submit_job(f"--wrap='true' -C f2 -w {our_node}", fatal=True)

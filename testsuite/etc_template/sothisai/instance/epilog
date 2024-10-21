@@ -1,0 +1,16 @@
+#! /bin/bash
+
+echo "Arguments=($*)" >> $LOGFILE
+DOCKER_NAME=$(getDockerName)
+echo "DOCKER_NAME=$DOCKER_NAME" >> $LOGFILE
+
+#
+# No other SLURM jobs, purge all remaining processes of this user
+#
+#su -l root -c "nvidia-docker stop ${DOCKER_NAME} >> $LOGFILE 2>&1"
+su -l root -c "docker stop ${DOCKER_NAME} >> $LOGFILE 2>&1"
+
+if [ $? -eq 0 ]; then
+#	su -l root -c "nvidia-docker rm ${DOCKER_NAME} >> $LOGFILE 2>&1"
+	su -l root -c "docker rm ${DOCKER_NAME} >> $LOGFILE 2>&1"
+fi

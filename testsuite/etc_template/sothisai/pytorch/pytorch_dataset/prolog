@@ -1,0 +1,109 @@
+#! /bin/bash
+date >> $LOGFILE
+echo "my prolog=$0" >> $LOGFILE
+echo "my workdir=`pwd`" >> $LOGFILE
+
+SLURM_INSTALL_PATH=/opt/gridview/slurm
+# ========= job params from jobdetail==========
+#job resource from job detail
+#JOB_CPUIDS
+DOCKER_CPUIDS=$(getFinalNodeCpus $JOBDETAIL)
+DOCKER_GPUIDS=$(getFinalNodeGpus $JOBDETAIL)
+DOCKER_CTRMEM=$(getFinalNodeMem $JOBDETAIL)
+echo "DOCKER_CPUIDS=$DOCKER_CPUIDS" >> $LOGFILE
+echo "DOCKER_GPUIDS=$DOCKER_GPUIDS" >> $LOGFILE
+echo "DOCKER_CTRMEM=$DOCKER_CTRMEM" >> $LOGFILE
+
+#single docker container name
+DOCKER_NAME=$(getDockerName)
+echo "DOCKER_NAME=$DOCKER_NAME" >> $LOGFILE
+# ===================
+# private
+initRoleContainerParams(){
+    #if only cpu,maybe no necessary
+    if [ "$accelerator_type" = "dcu" ];then
+        docker_shmsize=$(getDcuMemSize)
+    elif [ "$accelerator_type" = "mlu" ];then
+        docker_shmsize=$(getMluMemSize)
+    elif [ "$accelerator_type" = "gpu" ];then
+        docker_shmsize=$(getGpuMemSize)
+    fi
+    
+    echo "docker_shmsize=$docker_shmsize" >> $LOGFILE
+
+    #
+    docker_framework_ports_map=""
+    #
+    docker_framework_env=""
+    #
+    docker_framework_entrypoint=""
+    #
+    docker_framework_mounts="-v ${SOTHISAI_HOME}/scripts/scheduler/slurm/pytorch/:/opt/SothisAI/"
+    # final: sh -c "cat /proc/1/environ| tr '\0' '\n' | awk -v ex='export ' '{printf ex;print $1}'> /etc/profile.d/sothisai.sh;/usr/sbin/sshd -D"
+    docker_cmd_arg="cat /proc/1/environ| tr '\0' '\n' | awk -v ex='export ' '{printf ex;print \\\$1}'> /etc/profile.d/sothisai.sh;echo \\\\\\\"export HOME=$USERHOME\\\\\\\" >> /etc/profile.d/sothisai.sh;sed -i -e 's/=/=\\\\\\\"/' -e 's/$/\\\\\\\"/' /etc/profile.d/sothisai.sh;/usr/sbin/sshd -D"
+    #
+}
+
+# Usage: ${taskUser} ${taskImage} $dcName $dcCpuIDs ${taskMem} $dcGpuIDs $taskRole $taskx $taskNode
+function startRoleContainer(){
+    echo "Arguments of startRoleContainer: $*" >> $LOGFILE
+    echo "TASK_PATH:$TASK_PATH" >>$LOGFILE
+    echo "SLURM_JOB_ID:$SLURM_JOB_ID" >>$LOGFILE
+
+    if [ $# -ne 10 ];then
+        echo "Arguments of startRoleContainer not valid " >> $LOGFILE
+        return 1
+    fi
+    
+    initRoleContainerParams
+    DC_NAME=$3
+    createRoleContainerParamsFile $*
+
+    local taskNode=$9
+    if [ "$taskNode" != "$SLURMD_NODENAME" ];then
+    # remote start
+        scp ${DOCKER_TMP_PASSWD} $taskNode:${DOCKER_TMP_PASSWD}
+        scp ${DOCKER_TMP_SHADOW} $taskNode:${DOCKER_TMP_SHADOW}
+        scp ${DOCKER_TMP_GROUP} $taskNode:${DOCKER_TMP_GROUP}
+        echo "ssh $taskNode \"sh $SLURM_INSTALL_PATH/etc/sothisai/startRoleContainer.sh $TASK_PATH $DC_NAME $SLURM_JOB_ID\"" >> $LOGFILE
+        ssh $taskNode "sh $SLURM_INSTALL_PATH/etc/sothisai/startRoleContainer.sh $TASK_PATH $DC_NAME $SLURM_JOB_ID"
+    else
+        # local start
+        echo "sh $SLURM_INSTALL_PATH/etc/sothisai/startRoleContainer.sh $TASK_PATH $DC_NAME $SLURM_JOB_ID" >> $LOGFILE
+        sh $SLURM_INSTALL_PATH/etc/sothisai/startRoleContainer.sh $TASK_PATH $DC_NAME $SLURM_JOB_ID
+    fi
+
+    squeue >> $LOGFILE
+}
+
+function SingleStart()
+{
+    local taskUser=$SLURM_JOB_USER
+    local taskImage=$IMAGENAME
+    local dcName=$DOCKER_NAME
+    local dcCpuIDs=$DOCKER_CPUIDS
+    local taskMem=$DOCKER_CTRMEM
+    local dcGpuIDs=$DOCKER_GPUIDS
+    if [ "$dcGpuIDs" = "" ];then
+        dcGpuIDs="-"
+    fi
+    local taskRole="worker"
+    local taskx=0
+    local taskNode=${SLURMD_NODENAME}
+    startRoleContainer ${taskUser} ${taskImage} $dcName "$dcCpuIDs" ${taskMem} "$dcGpuIDs" $taskRole $taskx $taskNode $accelerator_type
+}
+
+echo "Arguments=($*)" >> $LOGFILE
+squeue >> $LOGFILE
+
+log_prolog_message "==Deploy container environment=="
+
+SingleStart
+
+echo "over" >> $LOGFILE
+log_prolog_message "==Deploy environment completed=="
+date >> $LOGFILE
+
+#
+# No other SLURM jobs, purge all remaining processes of this user
+#

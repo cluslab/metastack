@@ -10,11 +10,14 @@ import re
 @pytest.fixture(scope="module", autouse=True)
 def setup():
     atf.require_config_parameter('SelectType', 'select/cons_tres')
-    atf.require_tty(0)
     atf.require_config_parameter('Name', {'gpu': {'File': '/dev/tty0'}}, source='gres')
     atf.require_config_parameter_includes('GresTypes', 'gpu')
-    atf.require_nodes(1, [('Gres', 'gpu:1'), ('RealMemory', 1)])
-    atf.require_slurm_running()
+    node_info = atf.require_nodes(1, [('Gres', 'gpu:1'), ('RealMemory', 2),('MemSpecLimit',1)])
+    node_ip_list = []
+    for item in node_info:
+        node_ip_list.append(item["NodeAddr"])
+    atf.require_tty(0,node_info)
+    atf.require_slurm_running(node_ip_list)
 
 
 # Global variables set via init_gpu_vars
@@ -77,7 +80,6 @@ def test_gpus_per_cpu(init_gpu_vars):
 
     gpu_bind = 'closest'
     gpu_freq = 'medium'
-
     job_id = atf.submit_job(f"--cpus-per-gpu={cpus_per_gpu} --gpu-bind={gpu_bind} --gpu-freq={gpu_freq} --gpus={gpu_count} --gpus-per-node={gpus_per_node} --gpus-per-task={gpus_per_task} --mem-per-gpu={memory_per_gpu} --nodes={node_count} --ntasks={task_count} -t1 --wrap \"true\"", fatal=True)
     job_dict = atf.get_job(job_id)
 

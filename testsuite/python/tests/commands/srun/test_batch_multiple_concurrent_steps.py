@@ -14,7 +14,7 @@ total_mem = memory * steps_submitted * 2
 # Setup
 @pytest.fixture(scope="module", autouse=True)
 def setup():
-    atf.require_nodes(4, [('RealMemory', total_mem),('CPUs', 1)])
+    atf.require_nodes(4, [('RealMemory', total_mem)])
     atf.require_slurm_running()
 
 

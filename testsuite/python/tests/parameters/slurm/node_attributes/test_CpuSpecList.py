@@ -86,7 +86,6 @@ def test_AllowSpecResourcesUsage(node_name):
 
 def test_cpu_ids(node_name):
     """Verify job does not run on our CPU reserved in CPUSpecList"""
-
     # Assert job is rejected on our allowed cpu reserved on CPUSpecList
     exit_code  = atf.run_job_exit(f"-w {node_name} -n1 --cpu-bind=verbose,map_cpu:{allowed_cpu_list[0]} hostname")
     assert exit_code != 0, f"Job should not run on cpu id: {allowed_cpu_list[0]} reserved in CPUSpecList"
@@ -94,5 +93,6 @@ def test_cpu_ids(node_name):
     # Assert job is allowed on our other allowed cpu(s) not reserved on CPUSpecList (if any)
     if len(allowed_cpu_list) > 1:
         cpus_to_str = atf.list_to_range(allowed_cpu_list[1:])
-        exit_code = atf.run_job_exit(f"-w {node_name} -n{len(allowed_cpu_list) - 1} --cpu-bind=verbose,map_cpu:{cpus_to_str} hostname")
+        new_cpus_to_str = cpus_to_str.replace('-','*')
+        exit_code = atf.run_job_exit(f"-w {node_name} -n{len(allowed_cpu_list) - 1} --cpu-bind=verbose,map_cpu:{new_cpus_to_str} hostname")
         assert exit_code == 0, f"Job should run on our other allowed cpu id(s): {cpus_to_str} not reserved in CPUSpecList"

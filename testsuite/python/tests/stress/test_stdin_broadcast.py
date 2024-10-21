@@ -14,8 +14,12 @@ task_count = 4
 # Setup/Teardown
 @pytest.fixture(scope='module', autouse=True)
 def setup():
-    atf.require_nodes(node_count, [('CPUs', task_count)])
-    atf.require_slurm_running()
+    node_info = atf.require_nodes(node_count, [('CPUs', task_count),('SocketsPerBoard', 4),('CoresPerSocket', 1)])
+    node_ip_list = []
+    for item in node_info:
+        node_ip_list.append(item["NodeAddr"])
+    print("nodeiplist =%s"%node_ip_list)
+    atf.require_slurm_running(node_ip_list)
 
 
 @pytest.fixture(scope='function')

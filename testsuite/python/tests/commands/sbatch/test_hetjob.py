@@ -10,8 +10,11 @@ import re
 @pytest.fixture(scope="module", autouse=True)
 def setup():
     atf.require_accounting()
-    atf.require_nodes(1, [('CPUs', 4), ('RealMemory', 40)])
-    atf.require_slurm_running()
+    node_info = atf.require_nodes(1, [('CPUs', 4),('SocketsPerBoard',4), ('CoresPerSocket',1), ('ThreadsPerCore',1), ('RealMemory', 40),('MemSpecLimit',20)])
+    node_ip_list=[]
+    for item in node_info:
+        node_ip_list.append(item["NodeAddr"])
+    atf.require_slurm_running(node_ip_list)
 
 
 def test_hetjob(tmp_path):

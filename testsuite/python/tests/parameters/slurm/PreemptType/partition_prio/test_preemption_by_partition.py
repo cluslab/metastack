@@ -55,15 +55,14 @@ def test_preempt_cancel(partition1, partition2, cancel_jobs):
 
 def test_preempt_suspend(partition1, partition2, cancel_jobs):
     """Test preempt suspend"""
-
     atf.run_command(f"scontrol update partitionname={partition1} preemptmode=suspend", user=atf.properties['slurm-user'], fatal=True)
 
-    job_id1 = atf.submit_job(f"-N1 -t1 -o /dev/null --exclusive -p {partition1} --wrap \"sleep 120\"", fatal=True)
+    job_id1 = atf.submit_job(f"-N1 -t1 -o /dev/null --exclusive -p {partition1} --mem=10G --wrap \"sleep 120\"", fatal=True)
     assert atf.wait_for_job_state(job_id1, 'RUNNING'), f"Job 1 ({job_id1}) did not start"
-    job_id2 = atf.submit_job(f"-N1 -t1 -o /dev/null --exclusive -p {partition2} --wrap \"sleep 30\"", fatal=True)
+    job_id2 = atf.submit_job(f"-N1 -t1 -o /dev/null --exclusive -p {partition2} --mem=10G --wrap \"sleep 30\"", fatal=True)
     assert atf.wait_for_job_state(job_id2, 'RUNNING'), f"Job 2 {job_id2} did not start"
     assert atf.wait_for_job_state(job_id1, 'SUSPENDED'), f"Job 1 ({job_id1}) did not get suspended"
-    assert atf.wait_for_job_state(job_id2, 'DONE', timeout=60, poll_interval=1), f"Job 2 ({job_id2}) did not complete"
+    assert atf.wait_for_job_state(job_id2, 'COMPLETED', timeout=60, poll_interval=1), f"Job 2 ({job_id2}) did not complete"
     assert atf.wait_for_job_state(job_id1, 'RUNNING'), f"Job 1 ({job_id1}) did not start running again"
 
 
@@ -77,7 +76,7 @@ def test_preempt_requeue(partition1, partition2, cancel_jobs):
     job_id2 = atf.submit_job(f"-N1 -t1 -o /dev/null --exclusive -p {partition2} --wrap \"sleep 30\"", fatal=True)
     assert atf.wait_for_job_state(job_id2, 'RUNNING'), f"Job 2 ({job_id2}) did not start"
     assert atf.wait_for_job_state(job_id1, 'PENDING'), f"Job 1 ({job_id1}) did not return to pending"
-    assert atf.wait_for_job_state(job_id2, 'DONE', timeout=60, poll_interval=1), f"Job 2 ({job_id2}) did not complete"
+    assert atf.wait_for_job_state(job_id2, 'COMPLETED', timeout=60, poll_interval=1), f"Job 2 ({job_id2}) did not complete"
     assert atf.wait_for_job_state(job_id1, 'RUNNING', timeout=150, poll_interval=1), f"Job 1 ({job_id1}) did not start running again"
     time.sleep(5)
     assert atf.get_job_parameter(job_id1, 'JobState') == 'RUNNING', f"Job 1 ({job_id1}) was not still running after 5 seconds"

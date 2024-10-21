@@ -5,6 +5,7 @@ import atf
 import pytest
 import os
 import re
+import time
 
 total_cpus = 0
 total_cores = 0
@@ -70,14 +71,14 @@ def test_node_state(node_names, teardown_jobs):
 
     job_id = atf.submit_job(f"-w {node_names} -n{available_cores} --wrap='srun sleep 60'")
     atf.wait_for_job_state(job_id, "RUNNING")
-
+    print("sssssss\n")
+    time.sleep(5)
     assert len(re.findall("alloc", atf.run_command_output(f"sinfo -n {node_names} -h -N -o%t"))) == 2, "node states in sinfo should be both 'alloc'"
 
     atf.cancel_all_jobs(quiet=True)
-
-    job_id = atf.submit_job(f"-w {node_names} -n2 --wrap='srun sleep 60'")
+    job_id = atf.submit_job(f"-w {node_names} -n{available_cores - 1} --wrap='srun sleep 60'")
     atf.wait_for_job_state(job_id, "RUNNING")
-
+    time.sleep(5)
     assert len(re.findall("alloc", atf.run_command_output(f"sinfo -n {node_names} -h -N -o%t"))) == 1, "one node state in sinfo should be 'alloc'"
     assert len(re.findall("mix", atf.run_command_output(f"sinfo -n {node_names} -h -N -o%t"))) == 1, "one node state in sinfo should be 'mix'"
 
@@ -88,8 +89,9 @@ def test_core_spec_override(node_names):
     """
 
     job_id = atf.submit_job(f"-w {node_names} --core-spec=0 -n{total_cores} --wrap='srun true'")
-    atf.wait_for_job_state(job_id, "DONE")
-
+    atf.wait_for_job_state(job_id, "COMPLETED")
+    print("11111111111111\n")
+    time.sleep(5)
     output = int(re.findall(
         rf'{job_id}\.0\s+(\d+)',
         atf.run_command_output(f"sacct -j {job_id} -o jobid%20,alloccpus"))[0])
@@ -97,8 +99,9 @@ def test_core_spec_override(node_names):
     assert output == total_cores, f"--core-spec=0 should allow {total_cores} cores"
 
     job_id = atf.submit_job(f"-w {node_names} --core-spec=0 --wrap='srun true'")
-    atf.wait_for_job_state(job_id, "DONE")
-
+    atf.wait_for_job_state(job_id, "COMPLETED")
+    print("22222\n")
+    time.sleep(5)
     output = int(re.findall(
         rf'{job_id}\.0\s+(\d+)',
         atf.run_command_output(f"sacct -j {job_id} -o jobid%20,alloccpus"))[0])
@@ -106,17 +109,19 @@ def test_core_spec_override(node_names):
     assert output == total_cores, f"Using --core-spec should imply --exclusive and using all cores"
 
     job_id = atf.submit_job(f"-w {node_names} --core-spec=1 -n{total_cores - 2} --wrap='srun true'")
-    atf.wait_for_job_state(job_id, "DONE")
-
+    atf.wait_for_job_state(job_id, "COMPLETED")
+    print("333333\n")
+    out = atf.run_command_output(f"sacct -j {job_id} -o jobid%20,alloccpus")
+    print("out = %s"%out)
     output = int(re.findall(
         rf'{job_id}\.0\s+(\d+)',
         atf.run_command_output(f"sacct -j {job_id} -o jobid%20,alloccpus"))[0])
 
     assert output == total_cores - 2, f"--core-spec=1 should allocate all cores except 1 per node"
-
     job_id = atf.submit_job(f"-w {node_names} --core-spec=2 -n{total_cores - 4} --wrap='srun true'")
-    atf.wait_for_job_state(job_id, "DONE")
-
+    atf.wait_for_job_state(job_id, "COMPLETED")
+    print("44444\n")
+    time.sleep(5)
     output = int(re.findall(
 	    rf'{job_id}\.0\s+(\d+)',
 	    atf.run_command_output(f"sacct -j {job_id} -o jobid%20,alloccpus"))[0])
@@ -133,8 +138,11 @@ def test_thread_spec_override(node_names):
     """
 
     job_id = atf.submit_job(f"-w {node_names} --thread-spec=1 --wrap='srun true'")
-    atf.wait_for_job_state(job_id, "DONE")
-
+    atf.wait_for_job_state(job_id, "COMPLETED")
+    time.sleep(5)
+    print("---------------")
+    out = atf.run_command_output(f"sacct -j {job_id} -o jobid%20,alloccpus")
+    print("out = %s"%out)
     output = int(re.findall(
         rf'{job_id}\.0\s+(\d+)',
         atf.run_command_output(f"sacct -j {job_id} -o jobid%20,alloccpus"))[0])

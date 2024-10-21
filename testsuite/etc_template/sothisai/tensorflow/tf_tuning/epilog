@@ -1,0 +1,98 @@
+#! /bin/bash
+
+#
+# Stop docker of tf docker running on single node
+#
+function SingleNodeStop()
+{
+	echo "Arguments=($*)" >> $LOGFILE
+
+	if [ $# -eq 1 ]; then
+		DOCKER_NAME=$1
+	else
+		DOCKER_NAME=$(getDockerName)
+	fi
+	
+	echo "DOCKER_NAME=$DOCKER_NAME" >> $LOGFILE
+
+	#
+	# No other SLURM jobs, purge all remaining processes of this user
+	#
+	su -l root -c "docker stop ${DOCKER_NAME} >> $LOGFILE 2>&1"
+
+	if [ $? -eq 0 ]; then
+		su -l root -c "docker rm ${DOCKER_NAME} >> $LOGFILE 2>&1"
+	fi
+
+}
+
+#
+# Stop docker of tf docker running on single node
+#
+function TFTuningStop()
+{
+	:
+	echo "tf SLURM_JOB_ID: $SLURM_JOB_ID" >> $LOGFILE
+	echo "tf SLURMD_NODENAME: $SLURMD_NODENAME" >> $LOGFILE
+
+	mynodeindex=`getNodeIndexOfList $SLURM_JOB_ID $SLURMD_NODENAME`
+	echo "mynodeindex: $mynodeindex" >> $LOGFILE
+
+	echo "worker_number: $worker_number" >> $LOGFILE
+	echo "master_number: $master_number" >> $LOGFILE
+
+	local subfunc="$FRAMEWORK_HOME/subfunction.sh"
+	test -f $subfunc && source $subfunc
+	echo "  -> $subfunc" >> $LOGFILE
+
+	initTFTuningEnv
+
+	local MASTER_TASK_INDEXS=""
+	# should replace GPU_NODE_NUM by JOB_NODE_NUM
+	MASTER_TASK_INDEXS=$(getTaskIndexsOfNodeX ${mynodeindex} $JOB_NODE_NUM $master_number)
+	echo "MASTER_TASK_INDEXS: $MASTER_TASK_INDEXS" >> $LOGFILE
+
+	local WK_TASK_INDEXS=""
+	# should replace GPU_NODE_NUM by JOB_NODE_NUM
+	WK_TASK_INDEXS=$(getTaskIndexsOfNodeX ${mynodeindex} $JOB_NODE_NUM $worker_number)
+	echo "WK_TASK_INDEXS: $WK_TASK_INDEXS" >> $LOGFILE
+
+	local allCpuIDs=`echo $DOCKER_CPUIDS | sed 's/,/ /g'`
+	local allGpuIDs=`echo $DOCKER_GPUIDS | sed 's/,/ /g'`
+
+	local leftCpuIDs=""
+	local leftGpuIDs=""
+
+	if [ ! -z "$MASTER_TASK_INDEXS" ]; then
+		ROLE_NAME="master"
+		echo "master_cpu_number:$master_cpu_number" >> $LOGFILE
+		echo "master_gpu_number:$master_gpu_number" >> $LOGFILE
+		for taskx in `echo $MASTER_TASK_INDEXS | sed 's/,/ /g'`
+		do
+			dcName=`getDistributeDockerName $SLURM_JOB_ID $SLURMD_NODENAME $ROLE_NAME $taskx`
+			echo " -> ${ROLE_NAME}[$taskx] $dcName"   >> $LOGFILE
+
+			SingleNodeStop $dcName
+
+		done
+	fi
+
+	if [ ! -z "$WK_TASK_INDEXS" ]; then
+		ROLE_NAME="worker"
+		echo "worker_cpu_number:$worker_cpu_number" >> $LOGFILE
+		echo "worker_gpu_number:$worker_gpu_number" >> $LOGFILE
+		for taskx in `echo $WK_TASK_INDEXS | sed 's/,/ /g'`
+		do
+			dcName=`getDistributeDockerName $SLURM_JOB_ID $SLURMD_NODENAME $ROLE_NAME $taskx`
+			echo " -> ${ROLE_NAME}[$taskx] $dcName"  >> $LOGFILE
+
+			SingleNodeStop $dcName
+
+		done
+	fi
+}
+
+TFTuningStop
+
+
+

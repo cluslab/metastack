@@ -18,8 +18,7 @@ import subprocess
 import sys
 import time
 import traceback
-
-
+from client import *
 ##############################################################################
 # ATF module functions
 ##############################################################################
@@ -103,7 +102,7 @@ def run_command(command, fatal=False, timeout=default_command_timeout, quiet=Fal
             stdout: command stdout as a string
             stderr: command stderr as a string
     """
-
+    print("command=%s"%command)
     additional_run_kwargs = {}
     if chdir is not None:
         additional_run_kwargs['cwd'] = chdir
@@ -330,17 +329,23 @@ def start_slurmctld(clean=False, quiet=False):
         # Start slurmctld
         command = f"{properties['slurm-sbin-dir']}/slurmctld"
         if clean:
-            command += " -c -i"
+            #command += " -c -i"
+            command = "systemctl restart slurmctld"
+        print(command)
         results = run_command(command, user=properties['slurm-user'], quiet=quiet)
         if results['exit_code'] != 0:
             pytest.fail(f"Unable to start slurmctld (rc={results['exit_code']}): {results['stderr']}")
-
+        time.sleep(10)
+        command1 = 'systemctl status slurmctld'
+        results = run_command(command, user=properties['slurm-user'], quiet=quiet)
+        print(results)
         # Verify that slurmctld is running
         if not repeat_command_until("scontrol ping", lambda results: re.search(r'is UP', results['stdout'])):
             pytest.fail(f"Slurmctld is not running")
+        else:
+            print("slurmctd is running!")
 
-
-def start_slurm(clean=False, quiet=False):
+def start_slurm(clean=False, quiet=False,slurmd_ips=None):
     """Starts all applicable slurm daemons.
 
     This function examines the slurm configuration files in order to
@@ -362,40 +367,42 @@ def start_slurm(clean=False, quiet=False):
         if run_command_exit("sacctmgr show cluster", user=properties['slurm-user'], quiet=quiet) != 0:
 
             # Start slurmdbd
-            results = run_command(f"{properties['slurm-sbin-dir']}/slurmdbd", user=properties['slurm-user'], quiet=quiet)
+            results = run_command(f"systemctl restart slurmdbd", user=properties['slurm-user'], quiet=quiet)
             if results['exit_code'] != 0:
                 pytest.fail(f"Unable to start slurmdbd (rc={results['exit_code']}): {results['stderr']}")
 
             # Verify that slurmdbd is running
             if not repeat_command_until("sacctmgr show cluster", lambda results: results['exit_code'] == 0):
                 pytest.fail(f"Slurmdbd is not running")
-
+            else:
+                print("slurmdbd running")
+        else:
+            print("=0")
+    else:
+      print("wwwww")
     # Start slurmctld
     start_slurmctld(clean, quiet)
 
     # Build list of slurmds
-    slurmd_list = []
-    output = run_command_output(f"perl -nle 'print $1 if /^NodeName=(\\S+)/' {properties['slurm-config-dir']}/slurm.conf", user=properties['slurm-user'], quiet=quiet)
-    if not output:
-        pytest.fail("Unable to determine the slurmd node names")
-    for node_name_expression in output.rstrip().split('\n'):
-        if node_name_expression != 'DEFAULT':
-            slurmd_list.extend(node_range_to_list(node_name_expression))
+    if slurmd_ips:
+        for ip in slurmd_ips:
+            client = Client(hostname=ip,username="root")
+            results = client.send_cmd("systemctl restart slurmd")
+    else:
+        slurmd_ip_list = []
+        output = run_command_output(
+            f"perl -nle 'print $4 if /^NodeName=(\\S+) CPUs=(\\S+) NodeHostname=(\\S+) NodeAddr=(\\S+)/' {properties['slurm-config-dir']}/slurm_node.conf",
+            user=properties['slurm-user'], quiet=quiet)
+        if not output:
+            pytest.fail("Unable to determine the slurmd node names")
+        for node_ip_expression in output.rstrip().split('\n'):
+            slurmd_ip_list.extend(node_range_to_list(node_ip_expression))
+        print(slurmd_ip_list)
+        for slurm_ip in slurmd_ip_list:
+            client = Client(hostname=slurm_ip,username="root")
+            results = client.send_cmd("systemctl restart slurmd")
+    time.sleep(30) 
 
-    # (Multi)Slurmds
-    for slurmd_name in slurmd_list:
-
-        # Check whether slurmd is running
-        if run_command_exit(f"pgrep -f 'slurmd -N {slurmd_name}'", quiet=quiet) != 0:
-
-            # Start slurmd
-            results = run_command(f"{properties['slurm-sbin-dir']}/slurmd -N {slurmd_name}", user='root', quiet=quiet)
-            if results['exit_code'] != 0:
-                pytest.fail(f"Unable to start slurmd -N {slurmd_name} (rc={results['exit_code']}): {results['stderr']}")
-
-            # Verify that the slurmd is running
-            if run_command_exit(f"pgrep -f 'slurmd -N {slurmd_name}'", quiet=quiet) != 0:
-                pytest.fail(f"Slurmd -N {slurmd_name} is not running")
 
 
 def stop_slurmctld(quiet=False):
@@ -460,15 +467,36 @@ def stop_slurm(fatal=True, quiet=False):
     if not repeat_until(lambda : pids_from_exe(f"{properties['slurm-sbin-dir']}/slurmctld"), lambda pids: len(pids) == 0):
         failures.append("Slurmctld is still running")
 
+    
+    results = run_command(f"pgrep -f {properties['slurm-sbin-dir']}/slurmd -a", quiet=quiet)
+    if results['exit_code'] == 0:
+        results = run_command("pkill -9 slurmd", user=properties['slurm-user'], quiet=quiet)
+        if results['exit_code'] != 0:
+            failures.append(f"Command \"pkill -9 slurmd\" failed with rc={results['exit_code']}")
+ 
     # Build list of slurmds
     slurmd_list = []
-    output = run_command_output(f"perl -nle 'print $1 if /^NodeName=(\\S+)/' {properties['slurm-config-dir']}/slurm.conf", quiet=quiet)
+    output = run_command_output(f"perl -nle 'print $1 if /^NodeName=(\\S+)/' {properties['slurm-config-dir']}/slurm_node.conf", quiet=quiet)
     if not output:
         failures.append("Unable to determine the slurmd node names")
     else:
         for node_name_expression in output.rstrip().split('\n'):
             if node_name_expression != 'DEFAULT':
                 slurmd_list.extend(node_range_to_list(node_name_expression))
+    
+    slurmd_ip_list = []
+    output = run_command_output(f"perl -nle 'print $4 if /^NodeName=(\\S+) CPUs=(\\S+) NodeHostname=(\\S+) NodeAddr=(\\S+)/' {properties['slurm-config-dir']}/slurm_node.conf", quiet=quiet)
+    print("wjy stop slurm slurmd ip = %s"%output)
+    if not output:
+        failures.append("Unable to determine the slurmd node names")
+    else:
+        for node_ip_expression in output.rstrip().split('\n'):
+            if node_ip_expression != 'DEFAULT':
+                slurmd_ip_list.extend(node_range_to_list(node_ip_expression))    
+    for slurmd_ip in slurmd_ip_list:
+        client = Client(hostname=slurmd_ip, username=properties['slurm-user'])
+        result = client.send_cmd("systemctl stop slurmd")
+        #print("slurmd cmd result = %s"%result)
 
     # Verify that slurmds are not running
     if not repeat_until(lambda : pids_from_exe(f"{properties['slurm-sbin-dir']}/slurmd"), lambda pids: len(pids) == 0):
@@ -500,6 +528,26 @@ def restart_slurmctld(clean=False, quiet=False):
     start_slurmctld(clean=clean, quiet=quiet)
 
 
+def restart_slurmd(node_ip_list=None,clean=False,quiet=False):
+    if node_ip_list:
+        for item in node_ip_list:
+            client = Client(hostname=item, username="root")
+            results = client.send_cmd("systemctl restart slurmd")
+    else:
+        slurmd_ip_list = []
+        output = run_command_output(
+            f"perl -nle 'print $4 if /^NodeName=(\\S+) CPUs=(\\S+) NodeHostname=(\\S+) NodeAddr=(\\S+)/' {properties['slurm-config-dir']}/slurm_node.conf",
+            user=properties['slurm-user'], quiet=quiet)
+        if not output:
+            pytest.fail("Unable to determine the slurmd node names")
+        for node_ip_expression in output.rstrip().split('\n'):
+            slurmd_ip_list.extend(node_range_to_list(node_ip_expression))
+        print(slurmd_ip_list)
+        for slurm_ip in slurmd_ip_list:
+            client = Client(hostname=slurm_ip, username="root")
+            results = client.send_cmd("systemctl restart slurmd")
+
+
 def restart_slurm(clean=False, quiet=False):
     """Restarts all applicable slurm daemons.
 
@@ -514,7 +562,7 @@ def restart_slurm(clean=False, quiet=False):
     start_slurm(clean=clean, quiet=quiet)
 
 
-def require_slurm_running():
+def require_slurm_running(slurmd_ips=None):
     """Ensures that the slurm daemons are running.
 
     In local-config mode, the test is skipped if slurm is not running.
@@ -528,7 +576,7 @@ def require_slurm_running():
 
     if properties['auto-config']:
         if not is_slurmctld_running(quiet=True):
-            start_slurm(clean=True, quiet=True)
+            start_slurm(clean=True, quiet=True,slurmd_ips=slurmd_ips)
             properties['slurm-started'] = True
     else:
         if not is_slurmctld_running(quiet=True):
@@ -816,7 +864,9 @@ def set_config_parameter(parameter_name, parameter_value, source='slurm', restar
         ]:
             restart_slurmctld(quiet=True)
         else:
-            run_command("scontrol reconfigure", user=properties['slurm-user'], quiet=True)
+            #run_command("scontrol reconfigure", user=properties['slurm-user'], quiet=True)
+            run_command("systemctl restart slurmctld", user=properties['slurm-user'], quiet=True)
+            time.sleep(5)
 
 
 def add_config_parameter_value(name, value, source='slurm'):
@@ -967,11 +1017,17 @@ def require_config_parameter_excludes(name, value, source='slurm'):
             pytest.skip(f"This test requires the {name} parameter to exclude {value}", allow_module_level=True)
 
 
-def require_tty(number):
+def require_tty(number,node_info=None):
 
     tty_file = f"/dev/tty{number}"
-    if not os.path.exists(tty_file):
-        run_command(f"mknod -m 666 {tty_file} c 4 {number}", user='root', fatal=True, quiet=True)
+    if not node_info:
+        if not os.path.exists(tty_file):
+            run_command(f"mknod -m 666 {tty_file} c 4 {number}", user='root', fatal=True, quiet=True)
+    else:
+        for item in node_info:
+            node_addr = item["NodeAddr"]
+            client = Client(node_addr,password="",username="root",port="22")
+            client.send_cmd(f"mknod -m 666 %s c 4 %d"%(tty_file,number))
 
 
 ## Use this to create an entry in gres.conf and create an associated tty
@@ -1155,11 +1211,10 @@ def get_nodes(live=True, quiet=False, **run_command_kwargs):
 
     else:
         # Get the config dictionary
-        config_dict = get_config(live=False, quiet=quiet)
+        config_dict = get_config(live=False,source='slurm_node', quiet=quiet)
 
         # Convert keys to lower case so we can do a case-insensitive search
         lower_config_dict = dict((key.lower(), value) for key, value in config_dict.items())
-
         # DEFAULT will be included seperately
         if 'nodename' in lower_config_dict:
             for node_expression, node_expression_dict in lower_config_dict['nodename'].items():
@@ -1236,7 +1291,7 @@ def set_node_parameter(node_name, new_parameter_name, new_parameter_value):
     if not properties['auto-config']:
         require_auto_config("wants to modify node parameters")
 
-    config_file = f"{properties['slurm-config-dir']}/slurm.conf"
+    config_file = f"{properties['slurm-config-dir']}/slurm_node.conf"
 
     # Read the original slurm.conf into a list of lines
     output = run_command_output(f"cat {config_file}", user=properties['slurm-user'], quiet=True)
@@ -1315,7 +1370,7 @@ def set_node_parameter(node_name, new_parameter_name, new_parameter_value):
         pytest.fail(f"Invalid node specified in set_node_parameter(). Node ({node_name}) does not exist")
 
     # Write the config file back out with the modifications
-    backup_config_file('slurm')
+    backup_config_file('slurm_node')
     new_config_string = "\n".join(new_config_lines)
     run_command(f"echo '{new_config_string}' > {config_file}", user = properties['slurm-user'], fatal=True, quiet=True)
 
@@ -1643,7 +1698,7 @@ def wait_for_job_state(job_id, desired_job_state, timeout=default_polling_timeou
     # Verify the desired state is supported
     if desired_job_state not in [
         'COMPLETING',
-        'DONE',
+        'COMPLETED',
         'PENDING',
         'PREEMPTED',
         'RUNNING',
@@ -1689,7 +1744,7 @@ def wait_for_job_state(job_id, desired_job_state, timeout=default_polling_timeou
             'OUT_OF_MEMORY',
             'TIMEOUT',
         ]:
-            if desired_job_state == 'DONE':
+            if desired_job_state == 'COMPLETED':
                 logging.log(log_level, f"Job ({job_id}) is in desired state {desired_job_state}")
                 return True
             else:
@@ -1786,6 +1841,33 @@ def create_node(node_dict):
         restart_slurm(quiet=True)
 
 
+def require_nodes_hpc(requirement_list):
+    if not properties['auto-config'] and is_slurmctld_running(quiet=True):
+        live = True
+    else:
+        live = False
+    nodes_dict = get_nodes(live=live, quiet=True)
+    nodename_list = list(nodes_dict.keys())
+    re_node_list = []
+    node_index = 0
+    for item in requirement_list:
+        node_num = item[0]
+        node_parameter = item[1]
+        for i in range (0,node_num):
+            re_node_info = {}
+            nodename = nodename_list[node_index+i]
+            re_node_info['NodeName'] = nodename
+            re_node_info['NodeAddr'] = nodes_dict[nodename]['NodeAddr']
+            for param in node_parameter:
+                new_parameter_name = param[0]
+                new_parameter_value = param[1]
+                set_node_parameter(nodename_list[node_index+i],new_parameter_name,new_parameter_value)
+            re_node_list.append(re_node_info)
+        node_index=node_index+node_num
+    return re_node_list
+
+
+
 # requirements_list is a list of (parameter_name, parameter_value) tuples.
 # Uses non-live node info because must copy from existing node config line
 # We implemented requirements_list as a list of tuples so that this could
@@ -1827,169 +1909,188 @@ def require_nodes(requested_node_count, requirements_list=[]):
     nodes_dict = get_nodes(live=live, quiet=True)
     original_nodes = {}
     default_node = {}
-
+    
+    requre_param_name_Cores=False
+    for requirement_tuple in requirements_list:
+        parameter_name, parameter_value = requirement_tuple[0:2]
+        if parameter_name == 'Cores':
+            requre_param_name_Cores = True 
+    
+    if not len (nodes_dict) < requested_node_count and requre_param_name_Cores == False:
+        nodename_list = list(nodes_dict.keys())
+        re_node_list = []
+        for i in range(0,requested_node_count):
+            re_node_info = {}
+            nodename = nodename_list[i]
+            re_node_info['NodeName'] = nodename
+            re_node_info['NodeAddr'] = nodes_dict[nodename]['NodeAddr']
+            re_node_list.append(re_node_info)
+            if requirements_list:
+                for item in requirements_list:
+                    new_parameter_name = item[0]
+                    new_parameter_value = item[1]
+                    set_node_parameter(nodename_list[i],new_parameter_name,new_parameter_value)
+        return re_node_list
+    
+    else:
     # Instantiate original node names from nodes_dict
-    for node_name in nodes_dict:
-        # Split out the default node
-        if node_name == 'DEFAULT':
-            default_node = nodes_dict[node_name]
-        else:
-            original_nodes[node_name] = {}
+        for node_name in nodes_dict:
+            # Split out the default node
+            if node_name == 'DEFAULT':
+                default_node = nodes_dict[node_name]
+            else:
+                original_nodes[node_name] = {}
 
-    # Populate with any default parameters
-    if default_node:
+        # Populate with any default parameters
+        if default_node:
+            for node_name in original_nodes:
+                for parameter_name, parameter_value in default_node.items():
+                    if parameter_name.lower() != 'nodename':
+                        original_nodes[node_name][parameter_name] = parameter_value
+
+        # Merge in parameters from nodes_dict
         for node_name in original_nodes:
-            for parameter_name, parameter_value in default_node.items():
+            for parameter_name, parameter_value in nodes_dict[node_name].items():
                 if parameter_name.lower() != 'nodename':
+                    # Translate CPUTot to CPUs for screening qualifying nodes
+                    if parameter_name.lower() == 'CPUs':
+                        parameter_name = 'CPUs'
                     original_nodes[node_name][parameter_name] = parameter_value
+        # Check to see how many qualifying nodes we have
+        qualifying_node_count = 0
+        node_count = 0
+        nonqualifying_node_count = 0
+        first_node_name = ''
+        first_qualifying_node_name = ''
+        node_indices = {}
+        augmentation_dict = {}
+        for node_name in sorted(original_nodes):
+            lower_node_dict = dict((key.lower(), value) for key, value in original_nodes[node_name].items())
+            node_count += 1
 
-    # Merge in parameters from nodes_dict
-    for node_name in original_nodes:
-        for parameter_name, parameter_value in nodes_dict[node_name].items():
-            if parameter_name.lower() != 'nodename':
-                # Translate CPUTot to CPUs for screening qualifying nodes
-                if parameter_name.lower() == 'cputot':
-                    parameter_name = 'CPUs'
-                original_nodes[node_name][parameter_name] = parameter_value
-
-    # Check to see how many qualifying nodes we have
-    qualifying_node_count = 0
-    node_count = 0
-    nonqualifying_node_count = 0
-    first_node_name = ''
-    first_qualifying_node_name = ''
-    node_indices = {}
-    augmentation_dict = {}
-    for node_name in sorted(original_nodes):
-        lower_node_dict = dict((key.lower(), value) for key, value in original_nodes[node_name].items())
-        node_count += 1
-
-        if node_count == 1:
-            first_node_name = node_name
-
-        # Build up node indices for use when having to create new nodes
-        match = re.search(r'^(.*?)(\d*)$', node_name)
-        node_prefix, node_index = match.group(1), match.group(2)
-        if node_index == '':
-            node_indices[node_prefix] = node_indices.get(node_prefix, [])
-        else:
-            node_indices[node_prefix] = node_indices.get(node_prefix, []) + [int(node_index)]
-
-        node_qualifies = True
-        for requirement_tuple in requirements_list:
-            parameter_name, parameter_value = requirement_tuple[0:2]
-            if parameter_name in ['CPUs', 'RealMemory']:
-                if parameter_name.lower() in lower_node_dict:
-                    if lower_node_dict[parameter_name.lower()] < parameter_value:
+            if node_count == 1:
+                first_node_name = node_name
+            # Build up node indices for use when having to create new nodes
+            match = re.search(r'^(.*?)(\d*)$', node_name)
+            node_prefix, node_index = match.group(1), match.group(2)
+            if node_index == '':
+                node_indices[node_prefix] = node_indices.get(node_prefix, [])
+            else:
+                node_indices[node_prefix] = node_indices.get(node_prefix, []) + [int(node_index)]
+            node_qualifies = True
+            for requirement_tuple in requirements_list:
+                parameter_name, parameter_value = requirement_tuple[0:2]
+                if parameter_name in ['CPUs', 'RealMemory']:
+                    if parameter_name.lower() in lower_node_dict:
+                        if lower_node_dict[parameter_name.lower()] < parameter_value:
+                            if node_qualifies:
+                                node_qualifies = False
+                                nonqualifying_node_count += 1
+                            if nonqualifying_node_count == 1:
+                                augmentation_dict[parameter_name] = parameter_value
+                    else:
+                        if node_qualifies:
+                            node_qualifies = False
+                            nonqualifying_node_count += 1
+                        if nonqualifying_node_count == 1:
+                            augmentation_dict[parameter_name] = parameter_value
+                elif parameter_name == 'Cores':
+                    boards = lower_node_dict.get('boards', 1)
+                    sockets_per_board = lower_node_dict.get('socketsperboard', 1)
+                    cores_per_socket = lower_node_dict.get('corespersocket', 1)
+                    sockets = boards * sockets_per_board
+                    cores = sockets * cores_per_socket
+                    if cores < parameter_value:
+                        if node_qualifies:
+                            node_qualifies = False
+                            nonqualifying_node_count += 1
+                        if nonqualifying_node_count == 1:
+                            augmentation_dict['CoresPerSocket'] = math.ceil(parameter_value / sockets)
+                elif parameter_name == 'Gres':
+                    if parameter_name.lower() in lower_node_dict:
+                        gres_list = parameter_value.split(',')
+                        for gres_value in gres_list:
+                            if match := re.search(r'^(\w+):(\d+)$', gres_value):
+                                (required_gres_name, required_gres_value) = (match.group(1), match.group(2))
+                            else:
+                                pytest.fail("Gres requirement must be of the form <name>:<count>")
+                            if match := re.search(rf"{required_gres_name}:(\d+)", lower_node_dict[parameter_name.lower()]):
+                                if match.group(1) < required_gres_value:
+                                    if node_qualifies:
+                                        node_qualifies = False
+                                        nonqualifying_node_count += 1
+                                    if nonqualifying_node_count == 1:
+                                        augmentation_dict[parameter_name] = gres_value
+                            else:
+                                if node_qualifies:
+                                    node_qualifies = False
+                                    nonqualifying_node_count += 1
+                                if nonqualifying_node_count == 1:
+                                    augmentation_dict[parameter_name] = gres_value
+                    else:
                         if node_qualifies:
                             node_qualifies = False
                             nonqualifying_node_count += 1
                         if nonqualifying_node_count == 1:
                             augmentation_dict[parameter_name] = parameter_value
                 else:
-                    if node_qualifies:
-                        node_qualifies = False
-                        nonqualifying_node_count += 1
-                    if nonqualifying_node_count == 1:
-                        augmentation_dict[parameter_name] = parameter_value
-            elif parameter_name == 'Cores':
-                boards = lower_node_dict.get('boards', 1)
-                sockets_per_board = lower_node_dict.get('socketsperboard', 1)
-                cores_per_socket = lower_node_dict.get('corespersocket', 1)
-                sockets = boards * sockets_per_board
-                cores = sockets * cores_per_socket
-                if cores < parameter_value:
-                    if node_qualifies:
-                        node_qualifies = False
-                        nonqualifying_node_count += 1
-                    if nonqualifying_node_count == 1:
-                        augmentation_dict['CoresPerSocket'] = math.ceil(parameter_value / sockets)
-            elif parameter_name == 'Gres':
-                if parameter_name.lower() in lower_node_dict:
-                    gres_list = parameter_value.split(',')
-                    for gres_value in gres_list:
-                        if match := re.search(r'^(\w+):(\d+)$', gres_value):
-                            (required_gres_name, required_gres_value) = (match.group(1), match.group(2))
-                        else:
-                            pytest.fail("Gres requirement must be of the form <name>:<count>")
-                        if match := re.search(rf"{required_gres_name}:(\d+)", lower_node_dict[parameter_name.lower()]):
-                            if match.group(1) < required_gres_value:
-                                if node_qualifies:
-                                    node_qualifies = False
-                                    nonqualifying_node_count += 1
-                                if nonqualifying_node_count == 1:
-                                    augmentation_dict[parameter_name] = gres_value
-                        else:
-                            if node_qualifies:
-                                node_qualifies = False
-                                nonqualifying_node_count += 1
-                            if nonqualifying_node_count == 1:
-                                augmentation_dict[parameter_name] = gres_value
+                    pytest.fail(f"{parameter_name} is not a supported requirement type")
+            if node_qualifies:
+                qualifying_node_count += 1
+                if first_qualifying_node_name == '':
+                    first_qualifying_node_name = node_name
+        # Not enough qualifying nodes
+        if qualifying_node_count < requested_node_count:
+
+            # If auto-config, configure what is required
+            if properties['auto-config']:
+
+                # Create new nodes to meet requirements
+                new_node_count = requested_node_count - qualifying_node_count
+                print("new_node_count=%s"%new_node_count)
+                # If we already have a qualifying node, we will use it as the template
+                if qualifying_node_count > 0:
+                    template_node_name = first_qualifying_node_name
+                    template_node = nodes_dict[template_node_name].copy()
+                # Otherwise we will use the first node as a template and augment it
                 else:
-                    if node_qualifies:
-                        node_qualifies = False
-                        nonqualifying_node_count += 1
-                    if nonqualifying_node_count == 1:
-                        augmentation_dict[parameter_name] = parameter_value
-            else:
-                pytest.fail(f"{parameter_name} is not a supported requirement type")
-        if node_qualifies:
-            qualifying_node_count += 1
-            if first_qualifying_node_name == '':
-                first_qualifying_node_name = node_name
+                    template_node_name = first_node_name
+                    template_node = nodes_dict[template_node_name].copy()
+                    for parameter_name, parameter_value in augmentation_dict.items():
+                        template_node[parameter_name] = parameter_value
 
-    # Not enough qualifying nodes
-    if qualifying_node_count < requested_node_count:
+                base_port = int(nodes_dict[template_node_name]['Port'])
 
-        # If auto-config, configure what is required
-        if properties['auto-config']:
-
-            # Create new nodes to meet requirements
-            new_node_count = requested_node_count - qualifying_node_count
-
-            # If we already have a qualifying node, we will use it as the template
-            if qualifying_node_count > 0:
-                template_node_name = first_qualifying_node_name
-                template_node = nodes_dict[template_node_name].copy()
-            # Otherwise we will use the first node as a template and augment it
-            else:
-                template_node_name = first_node_name
-                template_node = nodes_dict[template_node_name].copy()
-                for parameter_name, parameter_value in augmentation_dict.items():
-                    template_node[parameter_name] = parameter_value
-
-            base_port = int(nodes_dict[template_node_name]['Port'])
-
-            # Build up a list of available new indices starting after the template
-            match = re.search(r'^(.*?)(\d*)$', template_node_name)
-            template_node_prefix, template_node_index = match.group(1), int(match.group(2))
-            used_indices = sorted(node_indices[template_node_prefix])
-            new_indices = []
-            new_index = template_node_index
-            for i in range(new_node_count):
-                new_index += 1
-                while new_index in used_indices:
+                # Build up a list of available new indices starting after the template
+                match = re.search(r'^(.*?)(\d*)$', template_node_name)
+                template_node_prefix, template_node_index = match.group(1), int(match.group(2))
+                used_indices = sorted(node_indices[template_node_prefix])
+                new_indices = []
+                new_index = template_node_index
+                for i in range(new_node_count):
                     new_index += 1
-                new_indices.append(new_index)
+                    while new_index in used_indices:
+                        new_index += 1
+                    new_indices.append(new_index)
 
-            # Create a new aggregate node
-            # Later, we could consider collapsing the node into the template node if unmodified
-            new_node_dict = template_node.copy()
-            if new_node_count == 1:
-                new_node_dict['NodeName'] = template_node_prefix + str(new_indices[0])
-                new_node_dict['Port'] = base_port - template_node_index + new_indices[0]
+                # Create a new aggregate node
+                # Later, we could consider collapsing the node into the template node if unmodified
+                new_node_dict = template_node.copy()
+                if new_node_count == 1:
+                    new_node_dict['NodeName'] = template_node_prefix + str(new_indices[0])
+                    new_node_dict['Port'] = base_port - template_node_index + new_indices[0]
+                else:
+                    new_node_dict['NodeName'] = f"{template_node_prefix}[{list_to_range(new_indices)}]"
+                    new_node_dict['Port'] = list_to_range(list(map(lambda x: base_port - template_node_index + x, new_indices)))
+                print("new_node_dict = %s"%new_node_dict)
+                create_node(new_node_dict)
+
+            # If local-config, skip
             else:
-                new_node_dict['NodeName'] = f"{template_node_prefix}[{list_to_range(new_indices)}]"
-                new_node_dict['Port'] = list_to_range(list(map(lambda x: base_port - template_node_index + x, new_indices)))
-            create_node(new_node_dict)
-
-        # If local-config, skip
-        else:
-            message = f"This test requires {requested_node_count} nodes"
-            if requirements_list:
-                message += f" with {requirements_list}"
-            pytest.skip(message, allow_module_level=True)
-
+                message = f"This test requires {requested_node_count} nodes"
+                if requirements_list:
+                    message += f" with {requirements_list}"
+                pytest.skip(message, allow_module_level=True)
 
 def make_bash_script(script_name, script_contents):
     """Creates an executable bash script with the specified contents.
@@ -2059,22 +2160,22 @@ def backup_accounting_database():
 
     mysql_options = ''
     if database_host:
-        mysql_options += f" -h {database_host}"
+        mysql_options += f" -h{database_host}"
     if database_port:
-        mysql_options += f" -P {database_port}"
+        mysql_options += f" -P{database_port}"
     if database_user:
-        mysql_options += f" -u {database_user}"
+        mysql_options += f" -u{database_user}"
     else:
-        mysql_options += f" -u {properties['slurm-user']}"
+        mysql_options += f" -u{properties['slurm-user']}"
     if database_password:
-        mysql_options += f" -p {database_password}"
+        mysql_options += f" -p{database_password}"
 
     if not database_name:
         database_name = 'slurm_acct_db';
 
     # If the slurm database does not exist, touch an empty dump file with
     # the sticky bit set. restore_accounting_database will remove the file.
-    mysql_command = f"{mysql_path} {mysql_options} -e \"USE '{database_name}'\""
+    mysql_command = f"{mysql_path} {mysql_options} --socket=/opt/gvmysql/my_mysql.sock -e \"USE '{database_name}'\""
     if run_command_exit(mysql_command, quiet=True) != 0:
         #logging.warning(f"Slurm accounting database ({database_name}) is not present")
         run_command(f"touch {sql_dump_file}", fatal=True, quiet=True)
@@ -2115,20 +2216,20 @@ def restore_accounting_database():
 
     base_command = mysql_path
     if database_host:
-        base_command += f" -h {database_host}"
+        base_command += f" -h{database_host}"
     if database_port:
-        base_command += f" -P {database_port}"
+        base_command += f" -P{database_port}"
     if database_user:
-        base_command += f" -u {database_user}"
+        base_command += f" -u{database_user}"
     else:
-        base_command += f" -u {properties['slurm-user']}"
+        base_command += f" -u{properties['slurm-user']}"
     if database_password:
-        base_command += f" -p {database_password}"
+        base_command += f" -p{database_password}"
 
     # If the sticky bit is set and the dump file is empty, remove the database.
     # Otherwise, restore the dump.
 
-    run_command(f"{base_command} -e \"drop database {database_name}\"", fatal=True, quiet=True)
+    run_command(f"{base_command} --socket=/opt/gvmysql/my_mysql.sock -e \"drop database {database_name}\"", fatal=True, quiet=True)
     dump_stat = os.stat(sql_dump_file)
     if not (dump_stat.st_size == 0 and dump_stat.st_mode & stat.S_ISVTX):
         run_command(f"{base_command} -e \"create database {database_name}\"", fatal=True, quiet=True)
@@ -2270,8 +2371,7 @@ def set_partition_parameter(partition_name, new_parameter_name, new_parameter_va
     if not properties['auto-config']:
         require_auto_config("wants to modify partition parameters")
 
-    config_file = f"{properties['slurm-config-dir']}/slurm.conf"
-
+    config_file = f"{properties['slurm-config-dir']}/slurm_partition.conf"
     # Read the original slurm.conf into a list of lines
     output = run_command_output(f"cat {config_file}", user=properties['slurm-user'], quiet=True)
     original_config_lines = output.splitlines()
@@ -2281,7 +2381,6 @@ def set_partition_parameter(partition_name, new_parameter_name, new_parameter_va
     found_partition_name = False
     for line_index in range(len(original_config_lines)):
         line = original_config_lines[line_index]
-
         words = re.split(r' +', line.strip())
         if len(words) < 1:
             continue
@@ -2326,7 +2425,9 @@ def set_partition_parameter(partition_name, new_parameter_name, new_parameter_va
 
     # Reconfigure slurm controller if it is already running
     if is_slurmctld_running(quiet=True):
-        run_command("scontrol reconfigure", user=properties['slurm-user'], quiet=True)
+        #run_command("scontrol reconfigure", user=properties['slurm-user'], quiet=True)
+        run_command("systemctl restart slurmctld", user=properties['slurm-user'], quiet=True)
+        time.sleep(5)
 
 
 def default_partition():

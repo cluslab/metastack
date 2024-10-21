@@ -1,0 +1,71 @@
+#!/bin/sh
+#
+# This script will kill any user processes on a node when the last
+# SLURM job there ends. For example, if a user directly logs into
+# an allocated node SLURM will not kill that process without this
+# script being executed as an epilog.
+#
+# SLURM_BIN can be used for testing with private version of SLURM
+#SLURM_BIN="/usr/bin/"
+#
+if [ x$SLURM_UID = "x" ] ; then 
+	exit 0
+fi
+if [ x$SLURM_JOB_ID = "x" ] ; then 
+        exit 0
+fi
+SLURM_INSTALL_PATH=/opt/gridview/slurm
+epilog_info=$SLURM_INSTALL_PATH/log/epilog_info_`date +%Y%m%d`
+function log_epilog_info(){
+    echo -e "[`date`] $1" | tee -ia  $epilog_info
+}
+source $SLURM_INSTALL_PATH/etc/sothisai/function.sh
+
+export USERHOME=$(getUserHomeFromPasswd ${SLURM_JOB_USER})
+export LOGFILE=/tmp/epilog.env.$SLURM_JOB_ID
+
+getSpankEnv
+
+date >> $LOGFILE
+echo "================= env begin ==================" >> $LOGFILE
+env >> $LOGFILE
+echo "================= env  over ==================" >> $LOGFILE
+
+echo "SLURM_JOB_USER=$SLURM_JOB_USER" >> $LOGFILE
+
+echo "USERHOME=$USERHOME" >> $LOGFILE
+
+export DLFRAMEWORK="${dl_framework}"
+echo "DLFRAMEWORK=$DLFRAMEWORK" >> $LOGFILE
+
+echo "run dir is: `pwd`" >> $LOGFILE
+echo "current script: $0" >> $LOGFILE
+echo "SPOOL_DIR=$SPOOL_DIR" >> $LOGFILE
+
+EPILOG_HOME=`dirname $0`
+echo "EPILOG_HOME=$EPILOG_HOME" >> $LOGFILE
+FRAMEWORK_HOME="$EPILOG_HOME/$DLFRAMEWORK"
+echo "FRAMEWORK_HOME=$FRAMEWORK_HOME" >> $LOGFILE
+if [ "$DLFRAMEWORK" = "instance" ]; then
+TASK_EPILOG="$FRAMEWORK_HOME"
+	if [ $task_type = "job" ];then
+		TASK_EPILOG="$FRAMEWORK_HOME/$task_type"
+	fi
+else
+TASK_EPILOG="$FRAMEWORK_HOME/$task_type"
+fi
+FRAMEWORK_EPILOG="$TASK_EPILOG/epilog"
+
+echo "FRAMEWORK_EPILOG=$FRAMEWORK_EPILOG" >> $LOGFILE
+
+if [ ! -f "${FRAMEWORK_EPILOG}" ]; then
+	echo "Epilog for $DLFRAMEWORK ($FRAMEWORK_EPILOG) not found" >> $LOGFILE
+	exit 0
+fi
+
+source $FRAMEWORK_EPILOG
+date >> $LOGFILE
+
+rm -f $LOGFILE
+
+exit 0
