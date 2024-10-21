@@ -998,6 +998,9 @@ struct job_record {
 	uint32_t time_min;		/* minimum time_limit minutes or
 					 * INFINITE,
 					 * zero implies same as time_limit */
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	uint16_t predict_job;  /* Marks the job that executes the time prediction function */
+#endif
 	time_t tot_sus_time;		/* total time in suspend state */
 	uint32_t total_cpus;		/* number of allocated cpus,
 					 * for accounting */

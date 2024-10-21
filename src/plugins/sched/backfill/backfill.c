@@ -2789,6 +2789,12 @@ skip_start:
 					_set_job_time_limit(job_ptr,
 							    orig_time_limit);
 				}
+#ifdef __METASTACK_NEW_TIME_PREDICT
+			} else if ((job_ptr->predict_job == 1) && (rc == SLURM_SUCCESS) && 
+				   job_ptr->time_min) {
+				acct_policy_alter_job(job_ptr, orig_time_limit);
+				job_ptr->time_limit = orig_time_limit;
+#endif
 			} else if ((rc == SLURM_SUCCESS) && job_ptr->time_min) {
 				/* Set time limit as high as possible */
 				acct_policy_alter_job(job_ptr, comp_time_limit);
@@ -2823,8 +2829,14 @@ skip_start:
 					hard_limit = YEAR_SECONDS;
 				else
 					hard_limit = job_ptr->time_limit * 60;
+#ifdef __METASTACK_NEW_TIME_PREDICT
+				if ((job_ptr->predict_job == 1) && job_ptr->time_min) {
+					job_ptr->end_time = job_ptr->start_time + (job_ptr->time_min * 60);
+				} else {
 					job_ptr->end_time = job_ptr->start_time +
 						    hard_limit;
+				}
+#endif
 				/*
 				 * Only set if start_time. end_time must be set
 				 * beforehand for _reset_job_time_limit.
@@ -3363,7 +3375,13 @@ static void _reset_job_time_limit(job_record_t *job_ptr, time_t now,
 	new_time_limit = MAX(job_ptr->time_min, job_ptr->time_limit);
 	acct_policy_alter_job(job_ptr, new_time_limit);
 	job_ptr->time_limit = new_time_limit;
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if ((job_ptr->predict_job == 1) && job_ptr->time_min) {
+		job_ptr->end_time = job_ptr->start_time + (job_ptr->time_min * 60);
+	} else {
 		job_ptr->end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
+	}
+#endif
 
 	job_time_adj_resv(job_ptr);
 
@@ -3954,18 +3972,32 @@ static int _het_job_start_now(het_job_map_t *map, node_space_map_t *node_space)
 			fed_mgr_job_unlock(job_ptr);
 			break;
 		}
+#ifdef __METASTACK_NEW_TIME_PREDICT
 		if (job_ptr->time_min) {
-			/* Set time limit as high as possible */
-			acct_policy_alter_job(job_ptr, map->comp_time_limit);
-			job_ptr->time_limit = map->comp_time_limit;
-			reset_time = true;
+			if (job_ptr->predict_job == 1) {
+				/* Set time limit as high as possible */
+				acct_policy_alter_job(job_ptr, map->comp_time_limit);
+				reset_time = true;
+			} else {
+				/* Set time limit as high as possible */
+				acct_policy_alter_job(job_ptr, map->comp_time_limit);
+				job_ptr->time_limit = map->comp_time_limit;
+				reset_time = true;
+			}
 		}
+#endif
 		if (job_ptr->start_time) {
 			if (job_ptr->time_limit == INFINITE)
 				hard_limit = YEAR_SECONDS;
 			else
 				hard_limit = job_ptr->time_limit * 60;
-			job_ptr->end_time = job_ptr->start_time + hard_limit;
+#ifdef __METASTACK_NEW_TIME_PREDICT
+			if (job_ptr->predict_job == 1) {
+				job_ptr->end_time = job_ptr->start_time + job_ptr->time_min * 60;
+			} else {
+				job_ptr->end_time = job_ptr->start_time + hard_limit;
+			}
+#endif
 			/*
 			 * Only set if start_time. end_time must be set
 			 * beforehand for _reset_job_time_limit.

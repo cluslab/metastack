@@ -674,6 +674,9 @@ static job_record_t *_create_job_record(uint32_t num_jobs)
 #ifdef __METASTACK_NEW_PENDING_ORDER
 	job_ptr->pending_order = NO_VAL;
 #endif
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	job_ptr->predict_job = NO_VAL16;
+#endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	slurm_mutex_init(&job_ptr->job_sched_lock);
 	job_ptr->is_lock_init = true;
@@ -1625,6 +1628,9 @@ static int _dump_job_state(void *object, void *arg)
 #endif
 #ifdef __METASTACK_OPT_MSG_OUTPUT
     packstr(dump_job_ptr->reason_detail, buffer);
+#endif
+#ifdef __METASTACK_NEW_TIME_PREDICT
+    pack16(dump_job_ptr->predict_job, buffer);
 #endif
 	return 0;
 }
@@ -9622,6 +9628,10 @@ static int _copy_job_desc_to_job_record(job_desc_msg_t *job_desc,
 		job_ptr->delay_boot   = job_desc->delay_boot;
 	if (job_desc->time_min != NO_VAL)
 		job_ptr->time_min = job_desc->time_min;
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if (job_desc->predict_job != NO_VAL16)
+		job_ptr->predict_job = job_desc->predict_job;
+#endif
 	job_ptr->alloc_sid  = job_desc->alloc_sid;
 	job_ptr->alloc_node = xstrdup(job_desc->alloc_node);
 	job_ptr->account    = xstrdup(job_desc->account);
@@ -10450,12 +10460,41 @@ void job_time_limit(void)
 			else
 				over_run = now - (over_time_limit  * 60);
 			if (job_ptr->end_time <= over_run) {
+#ifdef __METASTACK_NEW_TIME_PREDICT
+				if ((job_ptr->predict_job == 1) && job_ptr->time_min){
+
+					/* hard_end_time -- The actual end time of the job.
+					 * next_end_time -- The predicted end time of the next round of job.
+					 */ 
+					time_t hard_end_time = time(NULL);
+					time_t next_end_time = time(NULL);
+					hard_end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
+
+					// The actual end time of the job is greater than now, delaying end_time. Otherwise cancel job
+					if (hard_end_time > over_run) {
+						next_end_time = job_ptr->end_time + (60 * 60);
+						if (next_end_time > hard_end_time) {
+							job_ptr->end_time = hard_end_time;
+						} else {
+							job_ptr->end_time = next_end_time;
+						}
+					} else {
 						last_job_update = now;
 						info("Time limit exhausted for %pJ", job_ptr);
 						_job_timed_out(job_ptr, false);
 						job_ptr->state_reason = FAIL_TIMEOUT;
 						xfree(job_ptr->state_desc);
 						goto time_check;
+					}
+				} else {
+					last_job_update = now;
+					info("Time limit exhausted for %pJ", job_ptr);
+					_job_timed_out(job_ptr, false);
+					job_ptr->state_reason = FAIL_TIMEOUT;
+					xfree(job_ptr->state_desc);
+					goto time_check;
+				}
+#endif
 			}
 		}
 
@@ -21022,6 +21061,11 @@ extern void job_end_time_reset(job_record_t *job_ptr)
 	if (job_ptr->time_limit == INFINITE) {
 		job_ptr->end_time = job_ptr->start_time +
 			(365 * 24 * 60 * 60); /* secs in year */
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	} else if ((job_ptr->predict_job == 1) && job_ptr->time_min) {
+		job_ptr->end_time = job_ptr->start_time +
+			(job_ptr->time_min * 60);	/* secs */
+#endif
 	} else {
 		job_ptr->end_time = job_ptr->start_time +
 			(job_ptr->time_limit * 60);	/* secs */
