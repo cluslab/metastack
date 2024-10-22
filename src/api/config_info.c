@@ -416,7 +416,7 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 
 		if (p[i].standby_nodes != NULL)
 			fprintf(fp, " StandbyNodes=%s", p[i].standby_nodes);
-#endif					
+#endif				
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 		if (p[i].suspend_idle != NO_VAL)
 			fprintf(fp, " SuspendKeepIdle=%"PRIu32"", p[i].suspend_idle);
@@ -1521,7 +1521,7 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 		key_pair->value =
 			xstrdup(slurm_ctl_conf_ptr->priority_jobsize_maxvalue);
 		list_append(ret_list, key_pair);
-#endif		
+#endif
 	}
 
 
@@ -2293,7 +2293,6 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	List rl_config_list;
 #endif
-
 	if (!config_list)
 		return;
 
@@ -2366,7 +2365,7 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 				(xstrcasestr(key_pair->name, "RlConfig")) ||
 				(xstrcasestr(key_pair->name, "RlUsers"))  ||
-#endif				
+#endif
 			    (!xstrcasecmp(key_pair->name,
 					  "UnkillableStepProgram"))) {
 				/* Exceptions not be tokenized in the output */
@@ -2390,11 +2389,12 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 								key_pair->name, temp);
 				} else
 
-#endif				
+#endif
 				temp = xstrdup_printf("%s=%s",
 						      key_pair->name, temp);
 			}
 		}
+
 
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 		if ((xstrcasestr(key_pair->name, "RlConfig")) ||
@@ -2647,7 +2647,7 @@ extern void slurm_print_key_pairs(FILE* out, void *key_pairs, char *title)
 		if (xstrcasestr(key_pair->name, "RlConfig") || xstrcasestr(key_pair->name, "RlUsers")) {
 			continue;
 		}
-#endif		
+#endif
 		fprintf(out, "%-23s = %s\n", key_pair->name, key_pair->value);
 	}
 	list_iterator_destroy(iter);

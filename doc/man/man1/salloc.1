@@ -529,6 +529,13 @@ Not compatible with the \fB\-\-cpus\-per\-task\fR option.
 .IP
 
 .TP
+\fB\-\-cpus\-per\-npu\fR=<\fIncpus\fR>
+Advise Slurm that ensuing job steps will require \fIncpus\fR processors per
+allocated NPU.
+Not compatible with the \fB\-\-cpus\-per\-task\fR option.
+.IP
+
+.TP
 \fB\-c\fR, \fB\-\-cpus\-per\-task\fR=<\fIncpus\fR>
 Advise Slurm that ensuing job steps will require \fIncpus\fR processors per
 task. By default Slurm will allocate one processor per task.
@@ -1167,6 +1174,59 @@ This option requires an explicit task count, e.g. -n, --ntasks or "--dcus=X
 .IP
 
 .TP
+\fB\-\-npu\-bind\fR=[verbose,]<\fItype\fR>
+almost same as \fB\-\-gpu\-bind\fR
+.IP
+
+.TP
+\fB\-\-npu\-freq\fR=[<\fItype\fR]=\fIvalue\fR>[,<\fItype\fR=\fIvalue\fR>][,verbose]
+almost same as \fB\-\-gpu\-freq\fR
+.IP
+
+.TP
+\fB\-U\fR, \fB\-\-npus\fR=[\fItype\fR:]<\fInumber\fR>
+Specify the total number of NPUs required for the job.
+An optional NPU type specification can be supplied.
+For example "\-\-npus=hygon:3".
+See also the \fB\-\-npus\-per\-node\fR, \fB\-\-npus\-per\-socket\fR and
+\fB\-\-npus\-per\-task\fR options.
+.br
+\fBNOTE\fR: The allocation has to contain at least one NPU per node.
+.IP
+
+.TP
+\fB\-\-npus\-per\-node\fR=[<\fitype\fR>:]<\fInumber\fR>
+Specify the number of NPUs required for the job on each node included in
+the job's resource allocation.
+An optional NPU type specification can be supplied.
+For example "\-\-npus\-per\-node=hygon:3".
+See also the \fB\-\-npus\fR, \fB\-\-npus\-per\-socket\fR and
+\fB\-\-npus\-per\-task\fR options.
+.IP
+
+.TP
+\fB\-\-npus\-per\-socket\fR=[<\fitype\fR>:]<\fInumber\fR>
+Specify the number of NPUs required for the job on each socket included in
+the job's resource allocation.
+An optional NPU type specification can be supplied.
+For example "\-\-npus\-per\-socket=hygon:3".
+Requires job to specify a sockets per node count ( \-\-sockets\-per\-node).
+See also the \fB\-\-npus\fR, \fB\-\-npus\-per\-node\fR and
+\fB\-\-npus\-per\-task\fR options.
+.IP
+
+.TP
+\fB\-\-npus\-per\-task\fR=[<\fitype\fR>:]<\fInumber\fR>
+Specify the number of NPUs required for the job on each task to be spawned
+in the job's resource allocation.
+An optional NPU type specification can be supplied.
+For example "\-\-npus\-per\-task=volta:1". See also the \fB\-\-npus\fR,
+\fB\-\-npus\-per\-socket\fR and \fB\-\-npus\-per\-node\fR options.
+This option requires an explicit task count, e.g. -n, --ntasks or "--npus=X
+--npus-per-task=Y" rather than an ambiguous range of nodes with -N, --nodes.
+.IP
+
+.TP
 \fB\-\-gres\-flags\fR=<\fItype\fR>
 Specify generic resource task binding options.
 .IP
@@ -1573,6 +1633,18 @@ options are mutually exclusive.
 .IP
 
 .TP
+\fB\-\-mem\-per\-npu\fR=<\fIsize[units]\fR>
+Minimum memory required per allocated NPU.
+Default units are megabytes.
+Different units can be specified using the suffix [K|M|G|T].
+If configured, the parameters can be seen using the \fBscontrol show config\fR
+and \fBscontrol show partition\fR commands.
+Also see \fB\-\-mem\fR.
+The \fB\-\-mem\fR, \fB\-\-mem\-per\-cpu\fR and \fB\-\-mem\-per\-npu\fR
+options are mutually exclusive.
+.IP
+
+.TP
 \fB\-\-mincpus\fR=<\fIn\fR>
 Specify a minimum number of logical cpus/processors per node.
 .IP
@@ -1766,6 +1838,21 @@ This option is not compatible with a node range
 (i.e. \-N<\fIminnodes\fR\-\fImaxnodes\fR>).
 This option is not compatible with \fB\-\-dcus-per-task\fR,
 \fB\-\-dcus-per-socket\fR, or \fB\-\-ntasks-per-node\fR.
+This option is not supported unless \fISelectType=cons_tres\fR is
+configured (either directly or indirectly on Cray systems).
+.IP
+
+.TP
+\fB\-\-ntasks\-per\-npu\fR=<\fIntasks\fR>
+Request that there are \fIntasks\fR tasks invoked for every NPU.
+This option can work with specifying the NPUs wanted(e.g. via \fB\-\-npus\fR or \fB\-\-gres\fR) ,
+and the total task count will be automatically determined.
+The number of CPUs needed will be automatically increased if necessary to allow
+for any calculated task count.
+This option is not compatible with a node range
+(i.e. \-N<\fIminnodes\fR\-\fImaxnodes\fR>).
+This option is not compatible with \fB\-\-npus-per-task\fR,
+\fB\-\-npus-per-socket\fR, or \fB\-\-ntasks-per-node\fR.
 This option is not supported unless \fISelectType=cons_tres\fR is
 configured (either directly or indirectly on Cray systems).
 .IP
@@ -2210,6 +2297,11 @@ Same as \fB\-\-cpus\-per\-dcu\fR
 .IP
 
 .TP
+\fBSALLOC_CPUS_PER_NPU\fR
+Same as \fB\-\-cpus\-per\-npu\fR
+.IP
+
+.TP
 \fBSALLOC_DEBUG\fR
 Same as \fB\-v, \-\-verbose\fR. Must be set to 0 or 1 to disable or enable
 the option.
@@ -2276,6 +2368,31 @@ Same as \fB\-\-dcus\-per\-task\fR
 .IP
 
 .TP
+\fBSALLOC_NPU_BIND\fR
+Same as \fB\-\-npu\-bind\fR
+.IP
+
+.TP
+\fBSALLOC_NPU_FREQ\fR
+Same as \fB\-\-npu\-freq\fR
+.IP
+
+.TP
+\fBSALLOC_NPUS\fR
+Same as \fB\-G, \-\-npus\fR
+.IP
+
+.TP
+\fBSALLOC_NPUS_PER_NODE\fR
+Same as \fB\-\-npus\-per\-node\fR
+.IP
+
+.TP
+\fBSALLOC_NPUS_PER_TASK\fR
+Same as \fB\-\-npus\-per\-task\fR
+.IP
+
+.TP
 \fBSALLOC_GRES\fR
 Same as \fB\-\-gres\fR
 .IP
@@ -2318,6 +2435,11 @@ Same as \fB\-\-mem\-per\-gpu\fR
 .TP
 \fBSALLOC_MEM_PER_DCU\fR
 Same as \fB\-\-mem\-per\-dcu\fR
+.IP
+
+.TP
+\fBSALLOC_MEM_PER_NPU\fR
+Same as \fB\-\-mem\-per\-npu\fR
 .IP
 
 .TP
@@ -2487,6 +2609,12 @@ Only set if the \fB\-\-cpus\-per\-dcu\fR option is specified.
 .IP
 
 .TP
+\fBSLURM_CPUS_PER_NPU\fR
+Number of CPUs requested per allocated NPU.
+Only set if the \fB\-\-cpus\-per\-npu\fR option is specified.
+.IP
+
+.TP
 \fBSLURM_CPUS_PER_TASK\fR
 Number of CPUs requested per task.
 Only set if the \fB\-\-cpus\-per\-task\fR option is specified.
@@ -2561,6 +2689,30 @@ Only set if the \fB\-\-dcus\-per\-socket\fR option is specified.
 \fBSLURM_DCUS_PER_TASK\fR
 Requested DCU count per allocated task.
 Only set if the \fB\-\-dcus\-per\-task\fR option is specified.
+.IP
+
+.TP
+\fBSLURM_NPUS\fR
+Number of NPUs requested.
+Only set if the \fB\-U, \-\-npus\fR option is specified.
+.IP
+
+.TP
+\fBSLURM_NPUS_PER_NODE\fR
+Requested NPU count per allocated node.
+Only set if the \fB\-\-npus\-per\-node\fR option is specified.
+.IP
+
+.TP
+\fBSLURM_NPUS_PER_SOCKET\fR
+Requested NPU count per allocated socket.
+Only set if the \fB\-\-npus\-per\-socket\fR option is specified.
+.IP
+
+.TP
+\fBSLURM_NPUS_PER_TASK\fR
+Requested NPU count per allocated task.
+Only set if the \fB\-\-npus\-per\-task\fR option is specified.
 .IP
 
 .TP
@@ -2680,6 +2832,12 @@ Only set if the \fB\-\-mem\-per\-dcu\fR option is specified.
 .IP
 
 .TP
+\fBSLURM_MEM_PER_NPU\fR
+Requested memory per allocated NPU.
+Only set if the \fB\-\-mem\-per\-npu\fR option is specified.
+.IP
+
+.TP
 \fBSLURM_MEM_PER_NODE\fR
 Same as \fB\-\-mem\fR
 .IP
@@ -2722,6 +2880,11 @@ Set to value of the \fB\-\-ntasks\-per\-gpu\fR option, if specified.
 .TP
 \fBSLURM_NTASKS_PER_DCU\fR
 Set to value of the \fB\-\-ntasks\-per\-dcu\fR option, if specified.
+.IP
+
+.TP
+\fBSLURM_NTASKS_PER_NPU\fR
+Set to value of the \fB\-\-ntasks\-per\-npu\fR option, if specified.
 .IP
 
 .TP

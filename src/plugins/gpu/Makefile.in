@@ -90,9 +90,10 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-@BUILD_RSMI_TRUE@am__append_1 = rsmi
-@BUILD_NVML_TRUE@am__append_2 = nvml
-@BUILD_ONEAPI_TRUE@am__append_3 = oneapi
+@BUILD_DSMI_TRUE@am__append_1 = dsmi
+@BUILD_RSMI_TRUE@am__append_2 = rsmi
+@BUILD_NVML_TRUE@am__append_3 = nvml
+@BUILD_ONEAPI_TRUE@am__append_4 = oneapi
 subdir = src/plugins/gpu
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
@@ -116,6 +117,7 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/x_ac_debug.m4 \
 	$(top_srcdir)/auxdir/x_ac_deprecated.m4 \
 	$(top_srcdir)/auxdir/x_ac_dlfcn.m4 \
+	$(top_srcdir)/auxdir/x_ac_dsmi.m4 \
 	$(top_srcdir)/auxdir/x_ac_env.m4 \
 	$(top_srcdir)/auxdir/x_ac_freeipmi.m4 \
 	$(top_srcdir)/auxdir/x_ac_hpe_slingshot.m4 \
@@ -203,7 +205,7 @@ am__define_uniq_tagged_files = \
   unique=`for i in $$list; do \
     if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
   done | $(am__uniquify_input)`
-DIST_SUBDIRS = common generic rsmi nvml oneapi
+DIST_SUBDIRS = common generic dsmi rsmi nvml oneapi
 ACLOCAL = @ACLOCAL@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
@@ -242,6 +244,9 @@ DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
 DL_LIBS = @DL_LIBS@
+DSMI_CPPFLAGS = @DSMI_CPPFLAGS@
+DSMI_LDFLAGS = @DSMI_LDFLAGS@
+DSMI_LIBS = @DSMI_LIBS@
 DSYMUTIL = @DSYMUTIL@
 DUMPBIN = @DUMPBIN@
 ECHO_C = @ECHO_C@
@@ -474,7 +479,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 SUBDIRS = common generic $(am__append_1) $(am__append_2) \
-	$(am__append_3)
+	$(am__append_3) $(am__append_4)
 all: all-recursive
 
 .SUFFIXES:

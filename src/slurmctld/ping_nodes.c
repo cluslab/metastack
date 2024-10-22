@@ -359,10 +359,6 @@ void ping_nodes (void)
 		if (IS_NODE_UNKNOWN(node_ptr) || (node_ptr->boot_time == 0) || node_ptr->do_reg ||
 		    ((node_ptr->index >= offset) &&
 		     (node_ptr->index < (offset + max_reg_threads))))
-#else
-		if (IS_NODE_UNKNOWN(node_ptr) || (node_ptr->boot_time == 0) ||
-		    ((node_ptr->index >= offset) &&
-		     (node_ptr->index < (offset + max_reg_threads))))
 #endif
 		{
 			if (reg_agent_args->protocol_version >

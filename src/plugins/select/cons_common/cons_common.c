@@ -1685,13 +1685,11 @@ extern select_nodeinfo_t *select_p_select_nodeinfo_copy(select_nodeinfo_t *nodei
 	nodeinfo_empty->tres_alloc_weighted = nodeinfo->tres_alloc_weighted;
 	nodeinfo_empty->magic = nodeinfo->magic;
 	nodeinfo_empty->tres_alloc_fmt_str = xstrdup(nodeinfo->tres_alloc_fmt_str);
-    nodeinfo->tres_alloc_cnt = NULL;
-	nodeinfo_empty->tres_alloc_cnt = NULL;
+    nodeinfo_empty->tres_alloc_cnt = NULL;
 //	if(nodeinfo->tres_alloc_cnt){
 //		nodeinfo_empty->tres_alloc_cnt = xcalloc(slurmctld_tres_cnt,sizeof(uint64_t));
 //		memcpy(nodeinfo_empty->tres_alloc_cnt, nodeinfo->tres_alloc_cnt, sizeof(uint64_t) * slurmctld_tres_cnt);
 //	}
-
 	return nodeinfo_empty;
 }
 
@@ -1907,7 +1905,7 @@ extern int select_p_select_nodeinfo_set_all(void)
 		nodeinfo->tres_alloc_weighted =
 			assoc_mgr_tres_weighted(nodeinfo->tres_alloc_cnt,
 						node_ptr->config_ptr->tres_weights,
-						slurm_conf.priority_flags, false);
+						slurm_conf.priority_flags, false);		
 	}
 	free_core_array(&alloc_core_bitmap);
 

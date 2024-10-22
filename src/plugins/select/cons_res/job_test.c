@@ -577,56 +577,7 @@ static int _eval_nodes(job_record_t *job_ptr, bitstr_t *node_map,
 				}
 			}
 		}
-#else
-		for (i = 0; i < consec_index; i++) {
-			if (consec_nodes[i] == 0)
-				continue;	/* no usable nodes here */
-
-			if (details_ptr->contiguous &&
-			    details_ptr->req_node_bitmap &&
-			    (consec_req[i] == -1))
-				continue;  /* not required nodes */
-
-			sufficient = (consec_cpus[i] >= rem_cpus) &&
-				     _enough_nodes(consec_nodes[i], rem_nodes,
-						   min_nodes, req_nodes);
-
-			/* if first possibility OR */
-			/* contains required nodes OR */
-			/* first set large enough for request OR */
-			/* tightest fit (less resource waste) OR */
-			/* nothing yet large enough, but this is biggest */
-			if ((best_fit_nodes == 0) ||
-			    ((best_fit_req == -1) && (consec_req[i] != -1)) ||
-			    (sufficient && (best_fit_sufficient == 0)) ||
-			    (sufficient && (consec_cpus[i] < best_fit_cpus)) ||
-			    (!sufficient && (consec_cpus[i] > best_fit_cpus))) {
-				best_fit_cpus = consec_cpus[i];
-				best_fit_nodes = consec_nodes[i];
-				best_fit_index = i;
-				best_fit_req = consec_req[i];
-				best_fit_sufficient = sufficient;
-			}
-
-			if (details_ptr->contiguous &&
-			    details_ptr->req_node_bitmap) {
-				/* Must wait for all required nodes to be
-				 * in a single consecutive block */
-				int j, other_blocks = 0;
-				for (j = (i+1); j < consec_index; j++) {
-					if (consec_req[j] != -1) {
-						other_blocks = 1;
-						break;
-					}
-				}
-				if (other_blocks) {
-					best_fit_nodes = 0;
-					break;
-				}
-			}
-		}
 #endif
-
 		if (best_fit_nodes == 0)
 			break;
 

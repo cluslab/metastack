@@ -268,12 +268,6 @@ static int _setup_res_limits(slurmdb_res_rec_t *res,
 		xstrfmtcat(*vals, ", '%s'", res->manager);
 		xstrfmtcat(*extra, ", manager='%s'", res->manager);
 	}
-	else{
-		if (cols)
-			xstrcat(*cols, ", manager");
-		xstrfmtcat(*vals, ", ''");
-		xstrfmtcat(*extra, ", manager=''");
-	}
 
 	if (res->type != SLURMDB_RESOURCE_NOTSET) {
 		if (cols)
@@ -405,7 +399,7 @@ static int _fill_in_res_rec(kingbase_conn_t *kingbase_conn, slurmdb_res_rec_t *r
 		res->count = slurm_atoul(temp);
 	temp = KCIResultGetColumnValue(result,0,RES_REQ_FLAGS);
 	if (*temp != '\0')
-		res->flags = slurm_atoul(KCIResultGetColumnValue(result,i,RES_REQ_FLAGS));
+		res->flags = slurm_atoul(KCIResultGetColumnValue(result,0,RES_REQ_FLAGS));
 	temp = KCIResultGetColumnValue(result,0,RES_REQ_NAME);
 	if (*temp != '\0') {
 		xfree(res->name);

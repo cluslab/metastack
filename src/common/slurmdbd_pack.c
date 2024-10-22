@@ -528,39 +528,6 @@ static int _unpack_job_complete_msg(dbd_job_comp_msg_t **msg,
 #endif
     } else
 		goto unpack_error;
-
-#else
-    if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
-		safe_unpackstr_xmalloc(&msg_ptr->admin_comment,
-				       &uint32_tmp, buffer);
-		safe_unpack32(&msg_ptr->assoc_id, buffer);
-		safe_unpackstr_xmalloc(&msg_ptr->comment, &uint32_tmp, buffer);
-		safe_unpack64(&msg_ptr->db_index, buffer);
-		safe_unpack32(&msg_ptr->derived_ec, buffer);
-		safe_unpack_time(&msg_ptr->end_time, buffer);
-		safe_unpack32(&msg_ptr->exit_code, buffer);
-		safe_unpack32(&msg_ptr->job_id, buffer);
-		safe_unpack32(&msg_ptr->job_state, buffer);
-		safe_unpackstr_xmalloc(&msg_ptr->nodes, &uint32_tmp, buffer);
-		safe_unpack32(&msg_ptr->req_uid, buffer);
-		safe_unpack_time(&msg_ptr->start_time, buffer);
-		safe_unpack_time(&msg_ptr->submit_time, buffer);
-		safe_unpackstr_xmalloc(&msg_ptr->system_comment,
-				       &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&msg_ptr->tres_alloc_str,
-				       &uint32_tmp, buffer);
-#ifdef __METASTACK_OPT_SACCT_COMMAND
-		safe_unpackstr_xmalloc(&msg_ptr->command, &uint32_tmp, buffer);
-#endif
-#ifdef __METASTACK_OPT_SACCT_OUTPUT
-		safe_unpackstr_xmalloc(&msg_ptr->stdout, &uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&msg_ptr->stderr, &uint32_tmp, buffer);
-#endif
-#ifdef __METASTACK_OPT_RESC_NODEDETAIL
-		safe_unpackstr_xmalloc(&msg_ptr->resource_node_detail, &uint32_tmp, buffer);
-#endif
-    } else
-		goto unpack_error;
 #endif
 
 	return SLURM_SUCCESS;
@@ -587,9 +554,6 @@ static void _pack_job_start_msg(void *in, uint16_t rpc_version, buf_t *buffer)
      */
     if (!msg->node_inx)
 		msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
-#else
-	xassert(!msg->node_inx);
-	msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
 #endif
 
 	if (rpc_version >= SLURM_22_05_PROTOCOL_VERSION) {
@@ -1324,9 +1288,6 @@ static void _pack_step_start_msg(dbd_step_start_msg_t *msg,
      */
     if (!msg->node_inx)
 		msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
-#else
-	xassert(!msg->node_inx);
-	msg->node_inx = acct_storage_g_node_inx(NULL, msg->nodes);
 #endif
 
 	if (rpc_version >= SLURM_21_08_PROTOCOL_VERSION) {

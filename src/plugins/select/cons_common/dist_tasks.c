@@ -60,7 +60,10 @@ static uint32_t comb_counts[MAX_BOARDS][MAX_BOARDS] =
  {7,21,35,35,21,7,1,0},
  {8,28,56,70,56,28,8,1}};
 
-static int *sockets_core_cnt = NULL;
+/* 
+ * Using local variables sockets_core_cnt for para_sched
+ */
+//static int *sockets_core_cnt = NULL;
 
 /*
  * Generate all combinations of k integers from the
@@ -116,12 +119,18 @@ static int _cmp_int_descend(const void *a, const void *b)
 	return (*(int*)b - *(int*)a);
 }
 
+typedef struct socket_sort {
+	int socket_index;
+	int sockets_core_cnt;
+} socket_sort_t;
 
 /* qsort compare function for board combination socket list
- * NOTE: sockets_core_cnt is a global symbol in this module */
+ * NOTE: sockets_core_cnt is a local symbol in this module */
 static int _cmp_sock(const void *a, const void *b)
 {
-	return (sockets_core_cnt[*(int*)b] - sockets_core_cnt[*(int*)a]);
+	socket_sort_t socket_1 = *(socket_sort_t *) a;
+	socket_sort_t socket_2 = *(socket_sort_t *) b;
+	return (socket_2.sockets_core_cnt - socket_1.sockets_core_cnt);
 }
 
 /* Enable detailed logging of cr_dist() node and core bitmaps */
@@ -503,7 +512,7 @@ static void _block_sync_core_bitmap(job_record_t *job_ptr,
 	uint32_t best_fit_location = 0;
 	uint64_t ncomb_brd;
 	bool sufficient, best_fit_sufficient;
-
+	int *sockets_core_cnt = NULL;
 	if (!job_res)
 		return;
 	if (!job_res->core_bitmap) {
@@ -705,8 +714,25 @@ static void _block_sync_core_bitmap(job_record_t *job_ptr,
 			 * Sort this socket list in descending order of
 			 * available core count
 			 */
-			qsort(&socket_list[elig_idx*sock_per_comb],
-			      sock_per_comb, sizeof (int), _cmp_sock);
+			/* 
+			 * Using local variables sockets_core_cnt and struct
+			 * socket_sort for para_sched
+			 */
+			int num;
+			int start = elig_idx*sock_per_comb;
+
+			socket_sort_t s_sort[sock_per_comb];
+			for (num = 0; num < sock_per_comb; num++) {
+				s_sort[num].socket_index = socket_list[num+start];
+				s_sort[num].sockets_core_cnt = sockets_core_cnt[num+start];
+			}
+			
+			qsort(&s_sort[0],
+				sock_per_comb, sizeof(socket_sort_t), _cmp_sock);
+
+			for (num = 0; num < sock_per_comb; num++) {
+				socket_list[num+start] = s_sort[num].socket_index;
+			}
 			/*
 			 * Determine minimum number of sockets required for
 			 * the allocation from this socket list

@@ -3103,6 +3103,13 @@ Prevent users from viewing partitions which cannot be used, include account's li
 .IP
 
 .TP
+\fBplanned\fR
+Node state Planned set by main scheduler is visible.
+Without this flag, planned state set by main scheduler will not appear in the 
+output of commands like \fBsinfo\fR or \fBscontrol show node\fR.
+.IP
+
+.TP
 \fBreservations\fR
 Prevents regular users from viewing reservations which they can not use.
 .IP

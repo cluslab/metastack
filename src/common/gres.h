@@ -1209,6 +1209,7 @@ extern bool gres_use_busy_dev(gres_state_t *gres_state_node,
 extern void gres_parse_config_dummy(void);
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
+
 /*
  * Duplicate a node gres status (used for will-run logic)
  * IN gres_list - node gres state information
@@ -1216,5 +1217,6 @@ extern void gres_parse_config_dummy(void);
  */
 extern List gres_node_state_list_copy(List gres_list);
 #endif
+
 
 #endif /* !_GRES_H */

@@ -299,7 +299,6 @@ extern char *other_select_jobinfo_xstrdup(select_jobinfo_t *jobinfo,
 /*******************************************************\
  * NODE-SPECIFIC SELECT CREDENTIAL MANAGEMENT FUNCIONS *
 \*******************************************************/
-
 #ifdef __METASTACK_OPT_CACHE_QUERY
 /* copy a select node credential
  * IN nodeinfo - the select node credential to be copied

@@ -2185,7 +2185,7 @@ extern void set_priority_factors(time_t start_time, job_record_t *job_ptr)
 			if (job_ptr->details)
 					min_nodes = job_ptr->details->min_nodes;
 		}	
-#endif	
+#endif				
 
 		if (flags & PRIORITY_FLAGS_SIZE_RELATIVE) {
 			uint32_t time_limit = 1;
@@ -2246,7 +2246,7 @@ extern void set_priority_factors(time_t start_time, job_record_t *job_ptr)
 					job_ptr->prio_factors->priority_js /= 2;
 				}
 			}				
-#endif	
+#endif				
 		} else {	/* favor large */
 #ifdef __METASTACK_PRIORITY_JOBSIZE
 			if (js_max_cpu) {

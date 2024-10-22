@@ -15,14 +15,14 @@ typedef struct {
     char *policy;
 } slurm_influxdb;
 
-uint8_t ct1[32] = {0};
-uint8_t plain1[32] = {0};
+uint8_t ct1[32] = {0};    //外部申请输出数据内存，用于存放加密后数据
+uint8_t plain1[32] = {0}; //外部申请输出数据内存，用于存放解密后数据
 
-uint8_t ct2[32] = {0};
-uint8_t plain2[32] = {0};
+uint8_t ct2[32] = {0};    //外部申请输出数据内存，用于存放加密后数据
+uint8_t plain2[32] = {0}; //外部申请输出数据内存，用于存放解密后数据
 
-uint8_t ct3[32] = {0};
-uint8_t plain3[32] = {0};
+uint8_t ct3[32] = {0};    //外部申请输出数据内存，用于存放加密后数据
+uint8_t plain3[32] = {0}; //外部申请输出数据内存，用于存放解密后数据
 char data3[64] = {0};
 
 
@@ -31,7 +31,7 @@ typedef struct{
     int Nr; // 10 rounds
 }AesKey;
 
-#define BLOCKSIZE 16
+#define BLOCKSIZE 16  //AES-128分组长度为16字节
 
 // uint8_t y[4] -> uint32_t x
 #define LOAD32H(x, y) \
@@ -43,22 +43,28 @@ typedef struct{
   do { (y)[0] = (uint8_t)(((x)>>24) & 0xff); (y)[1] = (uint8_t)(((x)>>16) & 0xff);   \
        (y)[2] = (uint8_t)(((x)>>8) & 0xff); (y)[3] = (uint8_t)((x) & 0xff); } while(0)
 
+// 从uint32_t x中提取从低位开始的第n个字节
 #define BYTE(x, n) (((x) >> (8 * (n))) & 0xff)
 
 /* used for keyExpansion */
+// 字节替换然后循环左移1位
 #define MIX(x) (((S[BYTE(x, 2)] << 24) & 0xff000000) ^ ((S[BYTE(x, 1)] << 16) & 0xff0000) ^ \
                 ((S[BYTE(x, 0)] << 8) & 0xff00) ^ (S[BYTE(x, 3)] & 0xff))
 
+// uint32_t x循环左移n位
 #define ROF32(x, n)  (((x) << (n)) | ((x) >> (32-(n))))
+// uint32_t x循环右移n位
 #define ROR32(x, n)  (((x) >> (n)) | ((x) << (32-(n))))
 
 /* for 128-bit blocks, Rijndael never uses more than 10 rcon values */
+// AES-128轮常量
 static const uint32_t rcon[10] = {
         0x01000000UL, 0x02000000UL, 0x04000000UL, 0x08000000UL, 0x10000000UL,
         0x20000000UL, 0x40000000UL, 0x80000000UL, 0x1B000000UL, 0x36000000UL
 };
 
 #define MAX_STRING_LENGTH 2000
+// S盒
 unsigned char S[256] = {
         0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
         0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
@@ -78,6 +84,7 @@ unsigned char S[256] = {
         0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
 };
 
+//逆S盒
 unsigned char inv_S[256] = {
         0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB,
         0x7C, 0xE3, 0x39, 0x82, 0x9B, 0x2F, 0xFF, 0x87, 0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB,
@@ -119,6 +126,7 @@ int storeStateArray(uint8_t (*state)[4], uint8_t *out) {
     return 0;
 }
 
+//秘钥扩展
 int keyExpansion(const uint8_t *key, uint32_t keyLen, AesKey *aesKey) {
 
     if (NULL == key || NULL == aesKey){
@@ -131,8 +139,8 @@ int keyExpansion(const uint8_t *key, uint32_t keyLen, AesKey *aesKey) {
         return -1;
     }
 
-    uint32_t *w = aesKey->eK;
-    uint32_t *v = aesKey->dK;
+    uint32_t *w = aesKey->eK;  //加密秘钥
+    uint32_t *v = aesKey->dK;  //解密秘钥
 
     /* keyLen is 16 Bytes, generate uint32_t W[44]. */
 
@@ -152,7 +160,7 @@ int keyExpansion(const uint8_t *key, uint32_t keyLen, AesKey *aesKey) {
     }
 
     w = aesKey->eK+44 - 4;
-    
+    //解密秘钥矩阵为加密秘钥矩阵的倒序，方便使用，把ek的11个矩阵倒序排列分配给dk作为解密秘钥
     //即dk[0-3]=ek[41-44], dk[4-7]=ek[37-40]... dk[41-44]=ek[0-3]
     for ( j = 0; j < 11; ++j) {
 
@@ -166,6 +174,7 @@ int keyExpansion(const uint8_t *key, uint32_t keyLen, AesKey *aesKey) {
     return 0;
 }
 
+// 轮秘钥加
 int addRoundKey(uint8_t (*state)[4], const uint32_t *key) {
     uint8_t k[4][4];
     int i = 0, j = 0;
@@ -180,18 +189,20 @@ int addRoundKey(uint8_t (*state)[4], const uint32_t *key) {
     return 0;
 }
 
+//字节替换
 int subBytes(uint8_t (*state)[4]) {
     /* i: row, j: col */
      int i = 0, j = 0;
     for (i = 0; i < 4; ++i) {
         for ( j = 0; j < 4; ++j) {
-            state[i][j] = S[state[i][j]]; 
+            state[i][j] = S[state[i][j]]; //直接使用原始字节作为S盒数据下标
         }
     }
 
     return 0;
 }
 
+//逆字节替换
 int invSubBytes(uint8_t (*state)[4]) {
     /* i: row, j: col */
     int i = 0, j = 0;
@@ -203,12 +214,14 @@ int invSubBytes(uint8_t (*state)[4]) {
     return 0;
 }
 
+//行移位
 int shiftRows(uint8_t (*state)[4]) {
     uint32_t block[4] = {0};
 
     /* i: row */
         int i = 0;
     for ( i = 0; i < 4; ++i) {
+    //便于行循环移位，先把一行4字节拼成uint_32结构，移位后再转成独立的4个字节uint8_t
         LOAD32H(block[i], state[i]);
         block[i] = ROF32(block[i], 8*i);
         STORE32H(block[i], state[i]);
@@ -217,6 +230,7 @@ int shiftRows(uint8_t (*state)[4]) {
     return 0;
 }
 
+//逆行移位
 int invShiftRows(uint8_t (*state)[4]) {
     uint32_t block[4] = {0};
 
@@ -232,6 +246,7 @@ int invShiftRows(uint8_t (*state)[4]) {
 }
 
 /* Galois Field (256) Multiplication of two Bytes */
+// 两字节的伽罗华域乘法运算
 uint8_t GMul(uint8_t u, uint8_t v) {
     uint8_t p = 0;
     int i = 0;
@@ -252,6 +267,7 @@ uint8_t GMul(uint8_t u, uint8_t v) {
     return p;
 }
 
+// 列混合
 int mixColumns(uint8_t (*state)[4]) {
     uint8_t tmp[4][4];
     uint8_t M[4][4] = {{0x02, 0x03, 0x01, 0x01},
@@ -268,7 +284,7 @@ int mixColumns(uint8_t (*state)[4]) {
     }
 
     for ( i = 0; i < 4; ++i) {
-        for ( j = 0; j < 4; ++j) {
+        for ( j = 0; j < 4; ++j) {  //伽罗华域加法和乘法
             state[i][j] = GMul(M[i][0], tmp[0][j]) ^ GMul(M[i][1], tmp[1][j])
                         ^ GMul(M[i][2], tmp[2][j]) ^ GMul(M[i][3], tmp[3][j]);
         }
@@ -277,12 +293,13 @@ int mixColumns(uint8_t (*state)[4]) {
     return 0;
 }
 
+// 逆列混合
 int invMixColumns(uint8_t (*state)[4]) {
     uint8_t tmp[4][4];
     uint8_t M[4][4] = {{0x0E, 0x0B, 0x0D, 0x09},
                        {0x09, 0x0E, 0x0B, 0x0D},
                        {0x0D, 0x09, 0x0E, 0x0B},
-                       {0x0B, 0x0D, 0x09, 0x0E}};
+                       {0x0B, 0x0D, 0x09, 0x0E}};  //使用列混合矩阵的逆矩阵
 
     /* copy state[4][4] to tmp[4][4] */
     int i = 0, j = 0;
@@ -302,11 +319,13 @@ int invMixColumns(uint8_t (*state)[4]) {
     return 0;
 }
 
+// AES-128加密接口，输入key应为16字节长度，输出长度应该是16字节整倍数，
+// 这样输出长度与输入长度相同，函数调用外部为输出数据分配内存
 int aesEncrypt(const uint8_t *key, uint32_t keyLen, const uint8_t *pt, uint8_t *ct, uint32_t len) {
     
     AesKey aesKey;
     uint8_t *pos = ct;
-    const uint32_t *rk = aesKey.eK;
+    const uint32_t *rk = aesKey.eK;  //解密秘钥指针
     //uint8_t out[BLOCKSIZE] = {0};
     uint8_t actualKey[16] = {0};
     uint8_t state[4][4] = {{0}};
@@ -327,37 +346,44 @@ int aesEncrypt(const uint8_t *key, uint32_t keyLen, const uint8_t *pt, uint8_t *
     }
 
     memcpy(actualKey, key, keyLen);
-    keyExpansion(actualKey, 16, &aesKey);
+    keyExpansion(actualKey, 16, &aesKey);  // 秘钥扩展
 
+	// 使用ECB模式循环加密多个分组长度的数据
     uint32_t i = 0, j = 0;
     for ( i = 0; i < len; i += BLOCKSIZE) {
+		// 把16字节的明文转换为4x4状态矩阵来进行处理
         loadStateArray(state, pt);
+        // 轮秘钥加
         addRoundKey(state, rk);
 
         for ( j = 1; j < 10; ++j) {
             rk += 4;
-            subBytes(state);
-            shiftRows(state);
-            mixColumns(state);
-            addRoundKey(state, rk);
+            subBytes(state);   // 字节替换
+            shiftRows(state);  // 行移位
+            mixColumns(state); // 列混合
+            addRoundKey(state, rk); // 轮秘钥加
         }
 
-        subBytes(state);
-        shiftRows(state); 
-        addRoundKey(state, rk+4);
+        subBytes(state);    // 字节替换
+        shiftRows(state);  // 行移位
+        // 此处不进行列混合
+        addRoundKey(state, rk+4); // 轮秘钥加
+		
+		// 把4x4状态矩阵转换为uint8_t一维数组输出保存
         storeStateArray(state, pos);
 
-        pos += BLOCKSIZE;
-        pt += BLOCKSIZE;
-        rk = aesKey.eK; 
+        pos += BLOCKSIZE;  // 加密数据内存指针移动到下一个分组
+        pt += BLOCKSIZE;   // 明文数据指针移动到下一个分组
+        rk = aesKey.eK;    // 恢复rk指针到秘钥初始位置
     }
     return 0;
 }
 
+// AES128解密， 参数要求同加密
 int aesDecrypt(const uint8_t *key, uint32_t keyLen, const uint8_t *ct, uint8_t *pt, uint32_t len) {
     AesKey aesKey;
     uint8_t *pos = pt;
-    const uint32_t *rk = aesKey.dK;
+    const uint32_t *rk = aesKey.dK;  //解密秘钥指针
     //uint8_t out[BLOCKSIZE] = {0};
     uint8_t actualKey[16] = {0};
     uint8_t state[4][4] = {{0}};
@@ -378,31 +404,35 @@ int aesDecrypt(const uint8_t *key, uint32_t keyLen, const uint8_t *ct, uint8_t *
     }
 
     memcpy(actualKey, key, keyLen);
-    keyExpansion(actualKey, 16, &aesKey); 
+    keyExpansion(actualKey, 16, &aesKey);  //秘钥扩展，同加密
     uint32_t i = 0, j = 0;
     for ( i = 0; i < len; i += BLOCKSIZE) {
+        // 把16字节的密文转换为4x4状态矩阵来进行处理
         loadStateArray(state, ct);
+        // 轮秘钥加，同加密
         addRoundKey(state, rk);
 
         for ( j = 1; j < 10; ++j) {
             rk += 4;
-            invShiftRows(state);
-            invSubBytes(state);     
-            addRoundKey(state, rk); 
-            invMixColumns(state);
+            invShiftRows(state);    // 逆行移位
+            invSubBytes(state);     // 逆字节替换，这两步顺序可以颠倒
+            addRoundKey(state, rk); // 轮秘钥加，同加密
+            invMixColumns(state);   // 逆列混合
         }
 
-        invSubBytes(state);
-        invShiftRows(state);
-        addRoundKey(state, rk+4);
+        invSubBytes(state);   // 逆字节替换
+        invShiftRows(state);  // 逆行移位
+        // 此处没有逆列混合
+        addRoundKey(state, rk+4);  // 轮秘钥加，同加密
 
-        storeStateArray(state, pos);
-        pos += BLOCKSIZE;
-        ct += BLOCKSIZE;
-        rk = aesKey.dK;   
+        storeStateArray(state, pos);  // 保存明文数据
+        pos += BLOCKSIZE;  // 输出数据内存指针移位分组长度
+        ct += BLOCKSIZE;   // 输入数据内存指针移位分组长度
+        rk = aesKey.dK;    // 恢复rk指针到秘钥初始位置
     }
     return 0;
 }
+// 方便输出16进制数据
 void printHex(uint8_t *ptr, int len, char *tag) {
     printf("%s\ndata[%d]: ", tag, len);
     int i = 0;
@@ -431,12 +461,13 @@ void extractUserAndPass( char *filename, slurm_influxdb* influxdb_data) {
         //printf("buffer=%s \n",buffer);
         if (buffer[0] == '#') continue;
         if (strstr(buffer, "ProfileInfluxDBUser=") != NULL) {
+            // 提取用户名
             char *position = strchr(buffer, '=');
             
             if (position != NULL) {
                 influxdb_data->username = strdup(position + 1);
                 char *find = strchr(influxdb_data->username,'\n');
-                if(find) { 
+                if(find) { // 如果找到指针，修改指针指向的元素为\0
                     *find = '\0';
                 }
             }
@@ -444,12 +475,13 @@ void extractUserAndPass( char *filename, slurm_influxdb* influxdb_data) {
         } 
 
         if (strstr(buffer, "ProfileInfluxDBPass=") != NULL) {
+            // 提取密码
             char *position = strchr(buffer, '=');
 
             if (position != NULL) {
                 influxdb_data->password = strdup(position + 1);
                 char *find = strchr(influxdb_data->password,'\n');
-                if(find) { 
+                if(find) { // 如果找到指针，修改指针指向的元素为\0
                     *find = '\0';
                 }
             }
@@ -463,7 +495,7 @@ void extractUserAndPass( char *filename, slurm_influxdb* influxdb_data) {
             if (position != NULL) {
                 influxdb_data->database = strdup(position + 1);
                 char *find = strchr(influxdb_data->database,'\n');
-                if(find) {
+                if(find) { // 如果找到指针，修改指针指向的元素为\0
                     *find = '\0';
                 }
             }
@@ -477,7 +509,7 @@ void extractUserAndPass( char *filename, slurm_influxdb* influxdb_data) {
             if (position != NULL) {
                 influxdb_data->policy = strdup(position + 1);
                 char *find = strchr(influxdb_data->policy,'\n');
-                if(find) { 
+                if(find) { // 如果找到指针，修改指针指向的元素为\0
                     *find = '\0';
                 }
             }
@@ -491,7 +523,7 @@ void extractUserAndPass( char *filename, slurm_influxdb* influxdb_data) {
             if (position != NULL) {
                 influxdb_data->host = strdup(position + 1);
                 char *find = strchr(influxdb_data->host,'\n');
-                if(find) { 
+                if(find) { // 如果找到指针，修改指针指向的元素为\0
                     *find = '\0';
                 }
             }
@@ -510,21 +542,26 @@ void padString(char *str, int desiredLength) {
 
     int currentLength = strlen(str);
     if (currentLength >= desiredLength) {
+        // 如果字符串长度已经大于等于指定长度，则不需要填充
         return;
     }
  
+    // 计算需要填充的数量
     int paddingLength = desiredLength - currentLength;
     
+    // 填充字符串
     //printf("paddingLength=%d str=%s \n",paddingLength,str);
     int i = 0;
     for (i = 0; i < paddingLength-1; ++i) {
         str[currentLength + i] = '#';
        
     }
+    // 添加字符串结尾的空字符
     str[currentLength + paddingLength-1] = '\0';
     
 }
 
+// 读取十六进制字符串并转换为 uint8_t 类型数组
 /*Read a hexadecimal string and convert it to a uint8_t type array*/
 int read_hex_bytes_from_file_test(char *path_tmp, const uint8_t *key)
 {
@@ -599,6 +636,8 @@ int read_hex_bytes_from_file_test(char *path_tmp, const uint8_t *key)
     return 0;
 }
 
+// 将十六进制字符串转换为字节流
+// 写入字节到文件（以十六进制形式）
 void write_hex_bytes_to_file(char* tmp_path, char *configpath, slurm_influxdb* influxdb_data) 
 {
 
@@ -642,6 +681,7 @@ void write_hex_bytes_to_file(char* tmp_path, char *configpath, slurm_influxdb* i
         printf("Hex data written to file: %s\n locate acct_gather.conf.key %s \n", tmp_path, configpath);
         mode_t mode = 0644; // rw-r--r--
         if (chmod(tmp_path, mode) == -1) {
+             // 尝试删除文件
             printf("File permissions for %s have been changed to 644.\n", tmp_path);
             if (remove(tmp_path) == -1) {
                 printf("Remove acct_gather.conf failed"); // 输出删除文件时的错误信息
@@ -654,6 +694,8 @@ void write_hex_bytes_to_file(char* tmp_path, char *configpath, slurm_influxdb* i
     }
 }
 
+// 读取十六进制字符串并转换为 uint8_t 类型数组
+
 int main() {
 
     slurm_influxdb* influxdb_data = NULL;
@@ -665,6 +707,7 @@ int main() {
     char *configpath = NULL;
     char tmp_conf[] = "/etc/acct_gather.conf";
 
+    /*获取slurm.conf 所在etc的位置*/
     if(strcmp(KEYDIR, "NONE") == 0) {
          configpath = strdup("/etc/slurm/acct_gather.conf");
     } else {
@@ -690,10 +733,13 @@ int main() {
         exit(1);
     } 
 
+    /*16位加密key*/
     const uint8_t key[]="fcad715bd73b5cb0";
 
+    /*加密32字节明文*/
     sprintf(data3, "%ld:%ld", strlen(influxdb_data->username), strlen(influxdb_data->password));
 
+    /*提取用户名及密码*/
     if((strlen(influxdb_data->username) > 31) || (strlen(influxdb_data->password) > 31)) {
         printf("error: Usernames or secrets exceeding 31 characters cannot be encrypted. (influxdb_data.username) length=%zu (influxdb_data.password)=%zu \n",
                             strlen(influxdb_data->username), strlen(influxdb_data->password));
@@ -719,11 +765,14 @@ int main() {
     char *tmp_path = malloc(strlen(str2)+strlen(configpath)+1);
     strcpy(tmp_path, configpath);
     strcat(tmp_path, str2);
+    /*生成key文件*/
     write_hex_bytes_to_file(tmp_path, configpath, influxdb_data);
     
+    /*密码读取测试*/
     //read_hex_bytes_from_file(tmp_path, key);
     read_hex_bytes_from_file_test(tmp_path, key);
 
+    /*内存释放*/
     free(configpath);
     if(influxdb_data->username)
         free(influxdb_data->username);

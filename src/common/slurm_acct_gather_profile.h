@@ -146,8 +146,6 @@ extern char *acct_gather_profile_dataset_str(
 	char *str, int str_len);
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather_rank_t step_rank);
-#else
-extern int acct_gather_profile_startpoll(char *freq, char *freq_def);
 #endif
 extern void acct_gather_profile_endpoll(void);
 

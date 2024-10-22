@@ -95,4 +95,3 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') ###   Today is: $current_date                
 echo "$(date '+%Y-%m-%d %H:%M:%S') ###   The jobs in the above time interval are saved in 'jobHistory_$current_date'               ###" >> $predictor_path/update.log
 echo "$(date '+%Y-%m-%d %H:%M:%S') ################################################################################################" >> $predictor_path/update.log
 echo " " >> $predictor_path/update.log
-

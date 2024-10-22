@@ -172,7 +172,7 @@ struct sinfo_parameters {
 	bool all_flag;
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	bool borrow_flag;
-#endif	
+#endif
 	List clusters;
 	uint32_t cluster_flags;
 	uint32_t convert_flags;
@@ -210,15 +210,15 @@ struct sinfo_parameters {
 	List  format_list;
 	List  state_list;
 	bool  state_list_and;
-
 	slurmdb_federation_rec_t *fed;
 #ifdef __METASTACK_OPT_PRINT_COMMAND
-   bool format_flag;
-   bool format_field_flag;
-   bool right_flag;
+    bool format_flag;
+    bool format_field_flag;
+    bool right_flag;
 #endif
 #ifdef __METASTACK_OPT_CACHE_QUERY
-   bool cache_query;		
+    bool cache_query;
+    bool nocache_query;	
 #endif
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 	bool mplanned;

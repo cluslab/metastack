@@ -1740,11 +1740,10 @@ send_msg:
 	else {
 		if (!(job_ptr->fed_details->siblings_viable &
 		      FED_SIBLING_BIT(fed_mgr_cluster_rec->fed.id))){
+			job_ptr->job_state |= JOB_REVOKED;
 #ifdef __METASTACK_OPT_CACHE_QUERY
 			_add_job_state_to_queue(job_ptr);
 #endif
-
-			job_ptr->job_state |= JOB_REVOKED;
 		}
 		add_fed_job_info(job_ptr);
 		schedule_job_save();	/* Has own locks */
@@ -3484,8 +3483,6 @@ static slurmdb_federation_rec_t *_state_load(char *state_save_location)
      * (ver > 22_05 | META) || (ver < 20_11)
      */
     if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
-#else
-    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
 #endif
     {
 		if (!ignore_state_errors)
@@ -5206,9 +5203,6 @@ extern int fed_mgr_job_requeue(job_record_t *job_ptr)
 			job_info->cluster_lock = 0;
 
 		slurm_mutex_unlock(&fed_job_list_mutex);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif
 
 		return SLURM_SUCCESS;
 	}
@@ -5246,9 +5240,6 @@ extern int fed_mgr_job_requeue(job_record_t *job_ptr)
 			job_ptr->fed_details->siblings_active;
 	}
 	slurm_mutex_unlock(&fed_job_list_mutex);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 
 	return rc;
 }

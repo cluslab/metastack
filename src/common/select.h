@@ -252,6 +252,7 @@ extern dynamic_plugin_data_t *select_g_select_nodeinfo_alloc(void);
 extern dynamic_plugin_data_t *select_g_select_nodeinfo_copy(	dynamic_plugin_data_t *nodeinfo);
 #endif
 
+
 /*
  * Pack a select plugin node record into a buffer.
  * IN nodeinfo - The node record to pack

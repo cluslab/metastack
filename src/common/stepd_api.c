@@ -1144,7 +1144,6 @@ rwfail:
 	return -1;	
 }
 #endif
-
 /*
  *
  * Returns SLURM_SUCCESS if successful.  On error returns SLURM_ERROR

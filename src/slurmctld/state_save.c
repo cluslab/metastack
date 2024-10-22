@@ -87,6 +87,14 @@ extern void cache_queue_init()
 	}
 }
 
+extern void cache_queue_fini()
+{
+	if(cache_queue){
+		list_destroy(cache_queue->work);
+		xfree(cache_queue);
+	}
+}
+
 /*cache_queue_shutdown: Shut down the cache query thread.*/
 extern void cache_queue_shutdown()
 {
@@ -398,8 +406,6 @@ extern void *slurmctld_state_copy(void *no_data)
 			NO_LOCK, NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
 	slurmctld_lock_t cache_part_write_lock = {
 			NO_LOCK, WRITE_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
-	slurmctld_lock_t cache_write_lock = {
-			NO_LOCK, WRITE_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
 #if HAVE_SYS_PRCTL_H
 	if (prctl(PR_SET_NAME, "cstate", NULL, NULL, NULL) < 0) {
 		error("%s: cannot set my name to %s %m", __func__, "cstate");
@@ -415,8 +421,6 @@ extern void *slurmctld_state_copy(void *no_data)
 			slurm_mutex_lock(&cache_queue->mutex);
 		 	if (cache_queue->shutdown) {
 				slurm_mutex_unlock(&cache_queue->mutex);
-				list_destroy(cache_queue->work);
-				xfree(cache_queue);
 				debug2("%s CACHE_QUERY thread shutdown", __func__);
 				return NULL;	/* shutdown */
 			}
@@ -431,14 +435,7 @@ extern void *slurmctld_state_copy(void *no_data)
 	 	if (cache_queue->shutdown) {
 			cache_queue->shutdown = false;
 			slurm_mutex_unlock(&cache_queue->mutex);
-			list_destroy(cache_queue->work);
-			xfree(cache_queue);
 			debug2("%s CACHE_QUERY shutdown", __func__);
-			lock_cache_query(cache_write_lock);
-			purge_cache_part_data();
-			purge_cache_node_data();
-			purge_cache_job_data();
-			unlock_cache_query(cache_write_lock);
 			return NULL;	/* shutdown */
 		} else if (cache_queue->copy_all_data){
 			cache_queue->copy_all_data = false;

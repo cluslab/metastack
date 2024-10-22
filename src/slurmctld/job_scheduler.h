@@ -109,8 +109,6 @@ extern void job_queue_rec_resv_list(job_queue_rec_t *job_queue_rec);
  */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 extern List build_job_queue(bool clear_start, bool backfill, List* job_queue);
-#else
-extern List build_job_queue(bool clear_start, bool backfill);
 #endif
 
 /* Given a scheduled job, return a pointer to it batch_job_launch_msg_t data */

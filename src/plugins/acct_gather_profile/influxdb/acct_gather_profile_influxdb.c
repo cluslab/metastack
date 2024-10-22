@@ -349,6 +349,7 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType
 		   influxdb_conf.database, rt_policy);
 	if(rt_policy) xfree(rt_policy);
 
+
 	chunk.message = xmalloc(1);
 	chunk.size = 0;
 

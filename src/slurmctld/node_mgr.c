@@ -1314,7 +1314,7 @@ static void _pack_node(node_record_t *dump_node_ptr, buf_t *buffer,
 			packbool(dump_node_ptr->main_planned_flag, buffer);
 #endif
 		} else {
-			packstr(dump_node_ptr->name, buffer);
+            packstr(dump_node_ptr->name, buffer);
 			packstr(dump_node_ptr->node_hostname, buffer);
 			packstr(dump_node_ptr->comm_name, buffer);
 			packstr(dump_node_ptr->bcast_address, buffer);
@@ -1385,7 +1385,7 @@ static void _pack_node(node_record_t *dump_node_ptr, buf_t *buffer,
 						protocol_version);
 
 			packstr(dump_node_ptr->tres_fmt_str, buffer);
-		}
+        }
 #endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		packstr(dump_node_ptr->name, buffer);
@@ -2218,6 +2218,7 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 					this_node_name,
 					node_state_string(state_val));
 			}
+
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			xfree(old_node_reason);
 #endif
@@ -5108,6 +5109,7 @@ extern int create_nodes(char *nodeline, char **err_msg)
 					  nodeline);
 		error("%s", *err_msg);
 		rc = SLURM_ERROR;
+		s_p_hashtbl_destroy(node_hashtbl);
 		goto fini;
 	}
 
@@ -5118,6 +5120,7 @@ extern int create_nodes(char *nodeline, char **err_msg)
 		*err_msg = xstrdup("Only State=FUTURE and State=CLOUD allowed for nodes created by scontrol");
 		error("%s", *err_msg);
 		rc = ESLURM_INVALID_NODE_STATE;
+		s_p_hashtbl_destroy(node_hashtbl);
 		goto fini;
 	}
 
@@ -6277,6 +6280,10 @@ void purge_cache_node_data()
 		FREE_NULL_LIST(cache_config_list);
 	xfree(cache_node_record_table_ptr);
 	xhash_free(cache_node_hash_table);
+	cache_node_record_table_ptr = NULL;
+	cache_node_hash_table = NULL;
+	cache_node_record_count = 0;
+	cache_config_list = NULL;
 }
 
 

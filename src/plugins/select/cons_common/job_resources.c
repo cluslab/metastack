@@ -65,8 +65,6 @@ static bitstr_t *_create_core_bitmap(int node_inx)
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		/* for para_sched, each thread needs to have an independent sys_core_size value */
 		uint32_t sys_core_size = NO_VAL;
-#else
-		static uint32_t sys_core_size = NO_VAL;
 #endif
 		xassert(!node_inx);
 

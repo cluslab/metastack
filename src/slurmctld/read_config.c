@@ -92,7 +92,9 @@
 #include "src/slurmctld/slurmctld.h"
 #include "src/slurmctld/srun_comm.h"
 #include "src/slurmctld/trigger_mgr.h"
-
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+#include "src/slurmctld/rate_limit.h"
+#endif
 #define FEATURE_MAGIC	0x34dfd8b5
 
 /* Global variables */
@@ -551,7 +553,7 @@ void valid_node_borrow_interval(void)
 	} else {
 		node_borrow_interval = DEFAULT_NODE_BORROW_INTERVAL;	
 	}
-	debug("%s: node_borrow_interval: %d", __func__, node_borrow_interval);
+	debug2("%s: node_borrow_interval: %d", __func__, node_borrow_interval);
 }
 
 
@@ -1300,7 +1302,7 @@ static bool _restore_all_partition_nodes_borrowed_info(bool reconfig, List part_
 	list_iterator_destroy(part_iterator);
 
 	END_TIMER;
-	debug("%s: %s", __func__, TIME_STR);
+	debug2("%s: %s", __func__, TIME_STR);
 
 	return rebuild;
 }
@@ -3751,6 +3753,10 @@ static int _compare_hostnames(node_record_t **old_node_table,
 		error("%s: node count has changed before reconfiguration "
 		      "from %d to %d. You have to restart slurmctld.",
 		      __func__, hostset_count(old_set), hostset_count(set));
+		hostset_destroy(old_set);
+		hostset_destroy(set);
+		xfree(old_ranged);
+		xfree(ranged);			  
 		return -1;
 	}
 
@@ -3865,8 +3871,6 @@ extern int load_config_state_lite(void)
      * less than min_orig_version. 
      * (ver > 22_05 | META) || (ver < 20_11)
      */
-    if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
-#else
     if (ver > SLURM_PROTOCOL_VERSION || ver < SLURM_MIN_PROTOCOL_VERSION) 
 #endif
     {

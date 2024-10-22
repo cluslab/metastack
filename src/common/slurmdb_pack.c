@@ -2819,7 +2819,6 @@ extern int slurmdb_unpack_user_cond(void **object, uint16_t protocol_version,
 		      "%hu not supported", protocol_version);
 	}
 #endif
-
 	return SLURM_SUCCESS;
 
 unpack_error:

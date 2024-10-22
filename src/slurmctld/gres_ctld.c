@@ -1767,23 +1767,11 @@ static void _set_type_tres_cnt(List gres_list,
 	gres_state_t *gres_state_ptr;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	slurmdb_tres_rec_t tres_rec;
-#else
-	static bool first_run = 1;
-	static slurmdb_tres_rec_t tres_rec;
-#endif
+#endif	
 	char *col_name = NULL;
 	uint64_t count;
 	int tres_pos;
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
-
-#ifndef __METASTACK_NEW_PART_PARA_SCHED
-	/* we only need to init this once */
-	if (first_run) {
-		first_run = 0;
-		memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
-		tres_rec.type = "gres";
-	}
-#endif
 
 	if (!gres_list || !tres_cnt)
 		return;
@@ -1791,7 +1779,7 @@ static void _set_type_tres_cnt(List gres_list,
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
 	tres_rec.type = "gres";	
-#endif	
+#endif
 	/* must be locked first before gres_contrex_lock!!! */
 	if (!locked)
 		assoc_mgr_lock(&locks);
@@ -2625,16 +2613,6 @@ static void _gres_2_tres_str_internal(char **tres_str,
 
 	memset(&tres_req, 0, sizeof(slurmdb_tres_rec_t));
 	tres_req.type = "gres";	
-#else
-	static bool first_run = 1;
-	static slurmdb_tres_rec_t tres_req;
-
-	/* we only need to init this once */
-	if (first_run) {
-		first_run = 0;
-		memset(&tres_req, 0, sizeof(slurmdb_tres_rec_t));
-		tres_req.type = "gres";
-	}
 #endif
 
 	xassert(verify_assoc_lock(TRES_LOCK, READ_LOCK));

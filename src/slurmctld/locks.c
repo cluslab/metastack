@@ -54,6 +54,7 @@ static pthread_rwlock_t slurmctld_locks[5] = {
 	PTHREAD_RWLOCK_INITIALIZER,
 	PTHREAD_RWLOCK_INITIALIZER,
 };
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 static pthread_rwlock_t cache_query_locks[5] = {
 	PTHREAD_RWLOCK_INITIALIZER,
@@ -64,6 +65,7 @@ static pthread_rwlock_t cache_query_locks[5] = {
 };
 
 #endif
+
 #ifndef NDEBUG
 /*
  * Used to protect against double-locking within a single thread. Calling
@@ -115,6 +117,7 @@ extern bool verify_lock(lock_datatype_t datatype, lock_level_t level)
 {
 	return (((lock_level_t *) &thread_locks)[datatype] >= level);
 }
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 
 static __thread bool cache_locked = false;
@@ -159,6 +162,8 @@ extern bool cache_verify_lock(lock_datatype_t datatype, lock_level_t level)
 }
 
 #endif
+
+
 #endif
 
 /* lock_slurmctld - Issue the required lock requests in a well defined order */

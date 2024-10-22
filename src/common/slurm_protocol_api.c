@@ -85,6 +85,7 @@ strong_alias(get_unit_type, slurm_get_unit_type);
 
 /* EXTERNAL VARIABLES */
 
+
 /* #DEFINES */
 
 /* STATIC VARIABLES */
@@ -429,7 +430,7 @@ static int _tres_weight_item(double *weights, char *item_str)
 	weight_value = strtod(value_str, &val_unit);
 	if (errno) {
 		error("Unable to convert %s value to double in %s",
-		      __func__, value_str);
+		      value_str, __func__);
 		return SLURM_ERROR;
 	}
 
@@ -2534,7 +2535,6 @@ extern int slurm_send_recv_controller_msg(slurm_msg_t * request_msg,
 			retry_max_period = tmp;
 		}
 	}
-
 #endif
 
 	/*
@@ -2645,8 +2645,7 @@ tryagain:
 				ratelimited);
 			sleep(1);
 			goto tryagain;
-		}
-
+		}					
 	}
 #endif
 

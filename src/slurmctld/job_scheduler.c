@@ -111,8 +111,6 @@ static bool	_scan_depend(List dependency_list, job_record_t *job_ptr);
 static void *	_sched_agent(void *args);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 static int _schedule(bool full_queue, int index, List job_queue);
-#else
-static int	_schedule(bool full_queue);
 #endif
 static int	_valid_batch_features(job_record_t *job_ptr, bool can_reboot);
 static int	_valid_feature_list(job_record_t *job_ptr, List feature_list,
@@ -658,8 +656,6 @@ extern void job_queue_rec_resv_list(job_queue_rec_t *job_queue_rec)
  *          regions to corresponding jo_queue
  */
 extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_queue)
-#else
-extern List build_job_queue(bool clear_start, bool backfill)
 #endif
 {
 	static time_t last_log_time = 0;
@@ -873,6 +869,8 @@ extern List build_job_queue(bool clear_start, bool backfill)
 				job_part_pairs++;
 				if (job_ptr->priority_array) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+					/* if para_sched and not backfill, build job_queue for each resource area */
+					/* else build one job_queue include all parttions */
 					if(para_sched && !backfill){
 						part_index = _get_job_part_index(para_sched_part_names ,part_ptr);
 						_job_queue_append(sched_job_queue[part_index], job_ptr,
@@ -885,14 +883,11 @@ extern List build_job_queue(bool clear_start, bool backfill)
 									job_ptr->
 									priority_array[inx]);
 					}
-#else					
-					_job_queue_append(job_queue, job_ptr,
-							  part_ptr,
-							  job_ptr->
-							  priority_array[inx]);
 #endif							  
 				} else {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+					/* if para_sched and not backfill, build job_queue for each resource area */
+					/* else build one job_queue include all parttions */
 					if(para_sched && !backfill){
 						part_index = _get_job_part_index(para_sched_part_names, part_ptr);	
 						_job_queue_append(sched_job_queue[part_index], job_ptr,
@@ -903,10 +898,6 @@ extern List build_job_queue(bool clear_start, bool backfill)
 								part_ptr,
 								job_ptr->priority);
 					}
-#else					
-					_job_queue_append(job_queue, job_ptr,
-							  part_ptr,
-							  job_ptr->priority);
 #endif							  
 				}
 			}
@@ -929,14 +920,13 @@ extern List build_job_queue(bool clear_start, bool backfill)
 				continue;
 			job_part_pairs++;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/* if para_sched and not backfill, build job_queue for each resource area */
+			/* else build one job_queue include all parttions */
 			if(para_sched && !backfill){
 				part_index = _get_job_part_index(para_sched_part_names, job_ptr->part_ptr);
 				_job_queue_append(sched_job_queue[part_index], job_ptr,
 						job_ptr->part_ptr, job_ptr->priority);		
 			} else
-				_job_queue_append(job_queue, job_ptr,
-					  	job_ptr->part_ptr, job_ptr->priority);			
-#else			
 				_job_queue_append(job_queue, job_ptr,
 					  	job_ptr->part_ptr, job_ptr->priority);			
 #endif					  
@@ -1313,8 +1303,6 @@ extern bool deadline_ok(job_record_t *job_ptr, char *func)
 	if (fail_job) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		_last_job_update(now);
-#else
-		last_job_update = now;
 #endif		
 		job_ptr->job_state = JOB_DEADLINE;
 		job_ptr->exit_code = 1;
@@ -1366,8 +1354,6 @@ extern void fill_array_reasons(job_record_t *job_ptr,
 		job_ptr->state_reason = reject_array_job->state_reason;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		_last_job_update(time(NULL));
-#else
-		last_job_update = time(NULL);
 #endif	
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
@@ -1594,8 +1580,6 @@ static void _handle_main_planned(bool set, int index)
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 static int _schedule(bool full_queue, int index, List sched_job_queue)
-#else
-static int _schedule(bool full_queue)
 #endif
 {
 	ListIterator job_iterator = NULL, part_iterator = NULL;
@@ -1891,6 +1875,7 @@ static int _schedule(bool full_queue)
 	}
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+	/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 	if(para_sched) {
 		slurm_mutex_unlock(&sched_conf_init);
 		slurm_rwlock_rdlock(&slurmctld_config.thread_count_rwlock);
@@ -1911,15 +1896,6 @@ static int _schedule(bool full_queue)
 		}
 		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 	}
-#else
-	slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-	if ((defer_rpc_cnt > 0) &&
-	    (slurmctld_config.server_thread_count >= defer_rpc_cnt)) {
-		sched_debug("schedule() returning, too many RPCs");
-		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
-		goto out;
-	}
-	slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif
 
 	if (!fed_mgr_sibs_synced()) {
@@ -1953,9 +1929,8 @@ static int _schedule(bool full_queue)
 		    _add_job_state_to_queue(job_ptr);
 #endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
-#else
-			last_job_update = now;
 #endif			
 		}
 		list_iterator_destroy(job_iterator);
@@ -1982,15 +1957,13 @@ static int _schedule(bool full_queue)
 	failed_resv = xcalloc(MAX_FAILED_RESV, sizeof(slurmctld_resv_t *));
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+	/* if para_sched, replace global node bitmap with resource area node bitmap */
 	if(para_sched) {
 		bit_or(para_sched_avail_node_bitmap[index], rs_node_bitmap);
 	} else {
 		save_avail_node_bitmap = bit_copy(avail_node_bitmap);
 		bit_or(avail_node_bitmap, rs_node_bitmap);
 	}
-#else
-	save_avail_node_bitmap = bit_copy(avail_node_bitmap);		
-	bit_or(avail_node_bitmap, rs_node_bitmap);
 #endif	
 
 #ifdef __METASTACK_NEW_PENDING_ORDER
@@ -2025,13 +1998,11 @@ static int _schedule(bool full_queue)
 					failed_parts[failed_part_cnt++] =
 						part_ptr;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+					/* if para_sched, replace global node bitmap with resource area node bitmap */
 					if(para_sched)
 						bit_and_not(para_sched_avail_node_bitmap[index],
 								part_ptr->node_bitmap);
 					else
-						bit_and_not(avail_node_bitmap,
-							    part_ptr->node_bitmap);
-#else							
 						bit_and_not(avail_node_bitmap,
 							    part_ptr->node_bitmap);
 #endif							
@@ -2088,6 +2059,7 @@ static int _schedule(bool full_queue)
 	 * In both cases, we test each partition associated with the job.
 	 */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+	/* if para_sched and not fifo_sched, replace job_queue with sched_job_queue */
 	if(para_sched) {
 		if (!fifo_sched) {
 			/* for FIFO, sched_job_queue no need to sort based on priority  */
@@ -2102,15 +2074,6 @@ static int _schedule(bool full_queue)
 			slurmctld_diag_stats.schedule_queue_len = list_count(job_queue);
 			sort_job_queue(job_queue);
 		}
-	}
-#else
-	if (fifo_sched) {
-		slurmctld_diag_stats.schedule_queue_len = list_count(job_list);
-		job_iterator = list_iterator_create(job_list);
-	} else {
-		job_queue = build_job_queue(false, false);
-		slurmctld_diag_stats.schedule_queue_len = list_count(job_queue);
-		sort_job_queue(job_queue);
 	}
 #endif
 	job_ptr = NULL;
@@ -2425,9 +2388,8 @@ next_task:
 		            _add_job_state_to_queue(job_ptr);
 #endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+					/* if para_sched, add mutex lock for _last_job_update */
 					_last_job_update(now);
-#else
-					last_job_update = now;
 #endif					
 				}
 				if (job_ptr->part_ptr == skip_part_ptr) {
@@ -2455,6 +2417,7 @@ next_task:
 		}
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 		if (para_sched) {
 			slurm_rwlock_rdlock(&slurmctld_config.thread_count_rwlock);
 			if ((defer_rpc_cnt > 0) &&
@@ -2475,15 +2438,6 @@ next_task:
 			}
 			slurm_mutex_unlock(&slurmctld_config.thread_count_lock);			
 		}
-#else
-		slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-		if ((defer_rpc_cnt > 0) &&
-		    (slurmctld_config.server_thread_count >= defer_rpc_cnt)) {
-			sched_debug("schedule() returning, too many RPCs");
-			slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
-			break;
-		}
-		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif
 
 		if (job_limits_check(&job_ptr, false) != WAIT_NO_REASON) {
@@ -2502,8 +2456,6 @@ next_task:
 		} else {
 			slurmctld_diag_stats.schedule_cycle_depth++;
 		}
-#else
-		slurmctld_diag_stats.schedule_cycle_depth++;
 #endif
 
 		if (job_ptr->resv_name) {
@@ -2533,9 +2485,8 @@ next_task:
 					     job_ptr->resv_name);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 				do_sched_job_lock_unlock(false, job_ptr);
+				/* if para_sched, add mutex lock for _last_job_update */
 				_last_job_update(now);
-#else
-				last_job_update = now;				
 #endif				
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	        	_add_job_state_to_queue(job_ptr);
@@ -2559,9 +2510,8 @@ next_task:
 		        _add_job_state_to_queue(job_ptr);
 #endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+				/* if para_sched, add mutex lock for _last_job_update */
 				_last_job_update(now);
-#else
-				last_job_update = now;
 #endif				
 			} else {
 				/*
@@ -2578,9 +2528,8 @@ next_task:
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_job_lock_unlock(false, job_ptr);
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
-#else
-			last_job_update = now;
 #endif	
 			continue;
 		} else if (wait_on_resv &&
@@ -2613,9 +2562,8 @@ next_task:
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 				do_sched_job_lock_unlock(false, job_ptr);
+				/* if para_sched, add mutex lock for _last_job_update */
 				_last_job_update(now);
-#else
-				last_job_update = now;
 #endif					
 				continue;
 			} else if (job_ptr->state_reason == FAIL_QOS) {
@@ -2625,9 +2573,8 @@ next_task:
 		        _add_job_state_to_queue(job_ptr);
 #endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+				/* if para_sched, add mutex lock for _last_job_update */
 				_last_job_update(now);
-#else
-				last_job_update = now;
 #endif				
 			}
 			assoc_mgr_unlock(&locks);
@@ -2685,6 +2632,7 @@ next_task:
 
 		FREE_NULL_BITMAP(job_ptr->resv_bitmap);	
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* if para_sched, replace global node bitmap with resource area node bitmap */
 		if (para_sched) {
 			if(para_sched_avail_node_bitmap[index]){
 				char *avail_tmp_str = NULL, *part_tmp_str = NULL;
@@ -2704,19 +2652,11 @@ next_task:
 				xfree(part_tmp_str);
 			}
 		}
-#else
-		if(avail_node_bitmap){
-			char *avail_tmp_str = NULL, *part_tmp_str = NULL;
-			avail_tmp_str = bit_fmt_hexmask(avail_node_bitmap);
-			part_tmp_str = bit_fmt_hexmask(job_ptr->part_ptr->node_bitmap);
-			debug2("%pJ. HetPart: _schedule avail_node_bitmap=%s. part_node_bitmap=%s", job_ptr, avail_tmp_str, part_tmp_str);
-			xfree(avail_tmp_str);
-			xfree(part_tmp_str);
-		}
 #endif		
 #endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* if para_sched, replace global node bitmap with resource area node bitmap */
 		if (para_sched) {
 			if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
 					job_ptr->details && job_ptr->details->req_node_bitmap &&
@@ -2753,42 +2693,14 @@ next_task:
 				continue;
 			}
 		}
-#else
-		if ((job_ptr->state_reason == WAIT_NODE_NOT_AVAIL) &&
-		    	job_ptr->details && job_ptr->details->req_node_bitmap &&				
-		    	!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap)) {		
-#ifdef __METASTACK_NEW_HETPART_SUPPORT
-						/*The requested node is added to the blacklist to ensure the priority*/
-				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
-					bit_and_not(avail_node_bitmap,job_ptr->details->req_node_bitmap);
-					if(!bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
-						fail_by_part = true;
-						goto fail_this_part;
-					}
-				}
-#endif		
-			continue;
-		}
 #endif		
 
-#ifndef __METASTACK_NEW_HETPART_SUPPORT
-		if (!job_ptr->part_ptr) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
-			do_sched_assoc_lock_unlock(false, job_ptr);
-			do_sched_job_lock_unlock(false, job_ptr);
-#endif
-			continue;
-		}
-#endif
-
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* if para_sched, replace global node bitmap with resource area node bitmap */
 		if(para_sched)
 			i = bit_overlap(para_sched_avail_node_bitmap[index],
 				job_ptr->part_ptr->node_bitmap);
 		else
-			i = bit_overlap(avail_node_bitmap,
-					job_ptr->part_ptr->node_bitmap);		
-#else
 			i = bit_overlap(avail_node_bitmap,
 					job_ptr->part_ptr->node_bitmap);		
 #endif				
@@ -2802,14 +2714,13 @@ next_task:
 			 */
 			job_ptr->state_reason = WAIT_RESOURCES;
 			xfree(job_ptr->state_desc);
+			job_ptr->state_desc = xstrdup("Nodes required for job are DOWN, DRAINED or reserved for jobs in higher priority partitions");
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		    _add_job_state_to_queue(job_ptr);
 #endif
-			job_ptr->state_desc = xstrdup("Nodes required for job are DOWN, DRAINED or reserved for jobs in higher priority partitions");
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
-#else
-			last_job_update = now;
 #endif
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u. Partition=%s.",
 				     job_ptr,
@@ -2830,6 +2741,7 @@ next_task:
 				/*Call "test only" to get the nodes available to the job*/
 				error_code = select_nodes(job_ptr, true, NULL, NULL, false,
 					  	SLURMDB_JOB_FLAG_SCHED, true, index);
+				/* if para_sched, replace global node bitmap with resource area node bitmap */	
 				if(para_sched){
 					if (job_ptr->details->req_node_bitmap &&
 					(bit_set_count(job_ptr->details->req_node_bitmap) >=
@@ -2875,28 +2787,6 @@ next_task:
 						continue;
 					}
 				}
-#else
-				/*Call "test only" to get the nodes available to the job*/
-				error_code = select_nodes(job_ptr, true, NULL, NULL, false,
-						SLURMDB_JOB_FLAG_SCHED);
-				if (job_ptr->details->req_node_bitmap &&
-				(bit_set_count(job_ptr->details->req_node_bitmap) >=
-				job_ptr->details->min_nodes)) {
-					/* Do not schedule more jobs on nodes required by this
-					* job, but don't block the entire queue/partition. */
-					bit_and_not(avail_node_bitmap, job_ptr->details->req_node_bitmap);
-					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
-						continue;
-					}
-				}else if (job_ptr->resv_bitmap && ((error_code == ESLURM_NODES_BUSY) || (error_code == ESLURM_NODE_NOT_AVAIL))){
-					/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
-					bit_and_not(avail_node_bitmap,	job_ptr->resv_bitmap);
-					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
-						continue;
-					}
-				}else{
-					continue;
-				}
 #endif
 			}	
 #endif
@@ -2921,6 +2811,7 @@ next_task:
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
 			do_sched_job_lock_unlock(false, job_ptr);
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
 #endif			
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -2974,6 +2865,7 @@ next_task:
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
 			do_sched_job_lock_unlock(false, job_ptr);
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
 #endif		
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -3002,9 +2894,6 @@ next_task:
 		error_code = select_nodes(job_ptr, false, NULL, NULL, false,
 					  SLURMDB_JOB_FLAG_SCHED, true, index);
 		do_sched_assoc_lock_unlock(false, job_ptr);
-#else
-		error_code = select_nodes(job_ptr, false, NULL, NULL, false,
-					  SLURMDB_JOB_FLAG_SCHED);
 #endif					  
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED					  
 			select_job_num++;
@@ -3051,6 +2940,7 @@ skip_start:
 				if (job_ptr->resv_bitmap && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
 				(bit_set_count(job_ptr->details->req_node_bitmap) < job_ptr->details->min_nodes))){
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+					/* if para_sched, replace global node bitmap with resource area node bitmap */
 					if(para_sched){
 						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->resv_bitmap);
 						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
@@ -3062,11 +2952,6 @@ skip_start:
 						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
 							continue;
 						}
-					}
-#else
-					bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
-					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
-						continue;
 					}
 #endif
 				}
@@ -3109,13 +2994,11 @@ skip_start:
 					     job_reason_string(job_ptr->state_reason),
 					     job_ptr->priority);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+				/* if para_sched, replace global node bitmap with resource area node bitmap */
 				if(para_sched)
 					bit_and_not(para_sched_avail_node_bitmap[index],
 					    job_ptr->resv_ptr->node_bitmap);
 				else
-					bit_and_not(avail_node_bitmap,
-					    job_ptr->resv_ptr->node_bitmap);				
-#else						 
 					bit_and_not(avail_node_bitmap,
 					    job_ptr->resv_ptr->node_bitmap);				
 #endif						
@@ -3138,9 +3021,8 @@ skip_start:
 		    _add_job_state_to_queue(job_ptr);
 #endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
-#else			
-			last_job_update = now;
 #endif			
 			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u. Partition=%s.",
 				     job_ptr,
@@ -3159,9 +3041,8 @@ skip_start:
 			/* job initiated */
 			sched_debug3("%pJ initiated", job_ptr);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
-#else			
-			last_job_update = now;
 #endif			
 
 			/* Clear assumed rejected array status */
@@ -3227,9 +3108,8 @@ skip_start:
 			sched_info("schedule: %pJ non-runnable: %s",
 				   job_ptr, slurm_strerror(error_code));
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/* if para_sched, add mutex lock for _last_job_update */
 			_last_job_update(now);
-#else				   
-			last_job_update = now;
 #endif			
 			job_ptr->job_state = JOB_PENDING;
 			job_ptr->state_reason = FAIL_BAD_CONSTRAINTS;
@@ -3256,6 +3136,7 @@ skip_start:
 				if (job_ptr->resv_bitmap && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
 				(bit_set_count(job_ptr->details->req_node_bitmap) < job_ptr->details->min_nodes))){
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+					/* if para_sched, replace global node bitmap with resource area node bitmap */
 					if(para_sched){
 						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->resv_bitmap);
 						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
@@ -3267,11 +3148,6 @@ skip_start:
 						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
 							continue;
 						}
-					}
-#else
-					bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
-					if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
-						continue;
 					}
 #endif
 				}
@@ -3287,13 +3163,11 @@ skip_start:
 			/* Do not schedule more jobs on nodes required by this
 			 * job, but don't block the entire queue/partition. */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/* if para_sched, replace global node bitmap with resource area node bitmap */
 			if(para_sched)
 				bit_and_not(para_sched_avail_node_bitmap[index],
 					job_ptr->details->req_node_bitmap);
 			else
-				bit_and_not(avail_node_bitmap,
-				    job_ptr->details->req_node_bitmap);		
-#else			 
 				bit_and_not(avail_node_bitmap,
 				    job_ptr->details->req_node_bitmap);		
 #endif					
@@ -3355,13 +3229,11 @@ fail_this_part:	if (fail_by_part) {
 				bit_and(main_planned_bitmap, avail_node_bitmap);
 			}
 #endif
+			/* if para_sched, replace global node bitmap with resource area node bitmap */
 			if(para_sched)
 				bit_and_not(para_sched_avail_node_bitmap[index],
 				    job_ptr->part_ptr->node_bitmap);
 			else
-				bit_and_not(avail_node_bitmap,
-				    job_ptr->part_ptr->node_bitmap);		
-#else			
 				bit_and_not(avail_node_bitmap,
 				    job_ptr->part_ptr->node_bitmap);	
 #endif					
@@ -3384,9 +3256,6 @@ fail_this_part:	if (fail_by_part) {
 		FREE_NULL_BITMAP(avail_node_bitmap);
 		avail_node_bitmap = save_avail_node_bitmap;
 	}
-#else
-	FREE_NULL_BITMAP(avail_node_bitmap);
-	avail_node_bitmap = save_avail_node_bitmap;
 #endif	
 	xfree(failed_parts);
 	xfree(failed_resv);
@@ -3419,9 +3288,6 @@ fail_this_part:	if (fail_by_part) {
 		sched_debug("sched_job_num : %d. reduce_job_num : %d. select_job_num : %d. run_job_num : %d.",
 			sched_job_num, reduce_job_num, select_job_num, job_cnt);		
 	}
-#else
-	sched_debug("sched_job_num : %d. reduce_job_num : %d. select_job_num : %d. run_job_num : %d.",
-			sched_job_num, reduce_job_num, select_job_num, job_cnt);
 #endif
 #endif
 #ifdef __METASTACK_NEW_PENDING_ORDER
@@ -3460,28 +3326,6 @@ fail_this_part:	if (fail_by_part) {
 	} else{
 		_do_diag_stats(DELTA_TIMER);	
 	}
-#else
-	if (fifo_sched) {
-		if (job_iterator)
-			list_iterator_destroy(job_iterator);
-		if (part_iterator)
-			list_iterator_destroy(part_iterator);
-	} else if (job_queue) {
-		FREE_NULL_LIST(job_queue);
-	}
-	xfree(sched_part_ptr);
-	xfree(sched_part_jobs);
-	slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-	if ((slurmctld_config.server_thread_count >= 150) &&
-	    (defer_rpc_cnt == 0)) {
-		sched_info("%d pending RPCs at cycle end, consider configuring max_rpc_cnt",
-			   slurmctld_config.server_thread_count);
-	}
-	slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
-	unlock_slurmctld(job_write_lock);
-	END_TIMER2("schedule");
-
-	_do_diag_stats(DELTA_TIMER);
 #endif	
 
 out:
@@ -3506,10 +3350,6 @@ extern int sort_job_queue2(void *x, void *y)
 	job_queue_rec_t *job_rec2 = *(job_queue_rec_t **) y;
 	het_job_details_t *details = NULL;
 	bool has_resv1, has_resv2;
-#ifndef __METASTACK_NEW_PART_PARA_SCHED	
-	static time_t config_update = 0;
-	static bool preemption_enabled = true;
-#endif	
 	uint32_t job_id1, job_id2;
 	uint32_t p1, p2;
 
@@ -3517,17 +3357,6 @@ extern int sort_job_queue2(void *x, void *y)
 	 * typical configurations for this frequently executed function. */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	if (p_preemption_enabled) {
-		if (preempt_g_job_preempt_check(job_rec1, job_rec2))
-			return -1;
-		if (preempt_g_job_preempt_check(job_rec2, job_rec1))
-			return 1;			
-	}
-#else
-	if (config_update != slurm_conf.last_update) {
-		preemption_enabled = slurm_preemption_enabled();
-		config_update = slurm_conf.last_update;
-	}
-	if (preemption_enabled) {
 		if (preempt_g_job_preempt_check(job_rec1, job_rec2))
 			return -1;
 		if (preempt_g_job_preempt_check(job_rec2, job_rec1))
@@ -5190,10 +5019,6 @@ extern int handle_job_dependency_updates(void *object, void *arg)
 			job_ptr->state_reason = WAIT_NO_REASON;
 			xfree(job_ptr->state_desc);
 			last_job_update = now;
-#ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
-#endif
-
 		}
 		_depend_list2str(job_ptr, false);
 		fed_mgr_job_requeue(job_ptr);
@@ -5210,11 +5035,11 @@ extern int handle_job_dependency_updates(void *object, void *arg)
 			xfree(job_ptr->state_desc);
 			last_job_update = now;
 		}
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif
 
 	}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 	if (slurm_conf.debug_flags & DEBUG_FLAG_DEPENDENCY)
 		print_job_dependency(job_ptr, __func__);
 
@@ -5723,8 +5548,6 @@ extern void epilog_slurmctld(job_record_t *job_ptr)
 	if (!para_sched) {	
 		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
 	}
-#else
-	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
 #endif
 
 	prep_g_epilog_slurmctld(job_ptr);
@@ -5882,22 +5705,11 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 	bitstr_t *boot_node_bitmap = NULL, *feature_node_bitmap = NULL;
 	char *reboot_features = NULL;
 	uint16_t protocol_version = SLURM_PROTOCOL_VERSION;
-#ifndef __METASTACK_NEW_PART_PARA_SCHED	
-	static bool power_save_on = false;
-	static time_t sched_update = 0;
-
-	if (sched_update != slurm_conf.last_update) {
-		power_save_on = power_save_test();
-		sched_update = slurm_conf.last_update;
-	}
-#endif
 
 	if ((job_ptr->details == NULL) || (job_ptr->node_bitmap == NULL))
 		return;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED		
 	if (!p_power_save_on &&
-#else
-	if (!power_save_on &&
 #endif	
 	    ((slurm_conf.reboot_program == NULL) ||
 	     (slurm_conf.reboot_program[0] == '\0')))
@@ -5989,8 +5801,6 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 		/* Reboot nodes to change KNL NUMA and/or MCDRAM mode */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		_do_reboot(p_power_save_on, feature_node_bitmap, job_ptr,
-#else
-		_do_reboot(power_save_on, feature_node_bitmap, job_ptr,
 #endif		
 			   reboot_features, protocol_version);
 
@@ -6017,8 +5827,6 @@ extern void reboot_job_nodes(job_record_t *job_ptr)
 		/* Reboot nodes with no feature changes */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		_do_reboot(p_power_save_on, boot_node_bitmap, job_ptr, NULL,
-#else
-		_do_reboot(power_save_on, boot_node_bitmap, job_ptr, NULL,
 #endif		
 			   protocol_version);
 	}
@@ -6081,8 +5889,6 @@ extern void prolog_slurmctld(job_record_t *job_ptr)
 	if (!para_sched) {		
 		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
 	}
-#else
-	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
 #endif
 
 	if (!prep_g_required(PREP_PROLOG_SLURMCTLD))
@@ -6653,6 +6459,12 @@ void main_sched_fini(void)
 {
 	if (!thread_id_sched)
 		return;
+#ifdef __METASTACK_BUG_BACKCTLD_THREADID_FIX
+// FROM: Slurm 23.11
+	slurm_mutex_lock(&sched_mutex);
 	slurm_cond_broadcast(&sched_cond);
+	slurm_mutex_unlock(&sched_mutex);
 	pthread_join(thread_id_sched, NULL);
+	thread_id_sched = 0;
+#endif
 }

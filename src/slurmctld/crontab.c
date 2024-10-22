@@ -49,6 +49,7 @@
 #include "src/common/xstring.h"
 
 #include "src/slurmctld/slurmctld.h"
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 #include "src/slurmctld/state_save.h"
 #endif
@@ -154,7 +155,6 @@ static int _handle_job(void *x, void *y)
 			cache_enqueue(cache_msg);
 		}
 #endif
-
 	}
 
 	return 0;

@@ -227,6 +227,7 @@ X_AC_LZ4
 X_AC_HWLOC
 X_AC_NVML
 X_AC_RSMI
+X_AC_DSMI
 X_AC_ONEAPI
 X_AC_PMIX
 X_AC_FREEIPMI
@@ -485,6 +486,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/ext_sensors/rrd/Makefile
 		 src/plugins/gpu/Makefile
 		 src/plugins/gpu/common/Makefile
+		 src/plugins/gpu/dsmi/Makefile
 		 src/plugins/gpu/generic/Makefile
 		 src/plugins/gpu/nvml/Makefile
 		 src/plugins/gpu/oneapi/Makefile
@@ -496,6 +498,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/gres/mlu/Makefile
 		 src/plugins/gres/mps/Makefile
 		 src/plugins/gres/nic/Makefile
+		 src/plugins/gres/npu/Makefile
 		 src/plugins/gres/shard/Makefile
 		 src/plugins/hash/Makefile
 		 src/plugins/hash/k12/Makefile

@@ -480,10 +480,7 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 		step_rank.step = EXTERN_STEP;
 		
 	acct_gather_profile_startpoll(msg->acctg_freq,
-				      slurm_conf.job_acct_gather_freq, step_rank);
-#else
-	acct_gather_profile_startpoll(msg->acctg_freq,
-				      slurm_conf.job_acct_gather_freq);		
+				      slurm_conf.job_acct_gather_freq, step_rank);	
 #endif
 	job->timelimit   = (time_t) -1;
 	job->flags       = msg->flags;
@@ -599,9 +596,6 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
-#else
-	acct_gather_profile_startpoll(msg->acctg_freq,
-				      slurm_conf.job_acct_gather_freq);
 #endif
 
 	job->open_mode  = msg->open_mode;

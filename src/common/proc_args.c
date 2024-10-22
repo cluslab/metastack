@@ -1713,7 +1713,6 @@ extern int validate_acctg_freq(char *acctg_freq)
 				valid = true;
 				break;
 			}
-
 #ifdef __METASTACK_LOAD_ABNORMAL
 		valid2 = false;
 	/*
@@ -1735,11 +1734,6 @@ extern int validate_acctg_freq(char *acctg_freq)
 
 	*/
 		if (!valid && !valid2) {
-			error("Invalid --acctg-freq specification: %s", tok);
-			rc = SLURM_ERROR;
-		}
-#else
-		if (!valid) {
 			error("Invalid --acctg-freq specification: %s", tok);
 			rc = SLURM_ERROR;
 		}

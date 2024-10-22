@@ -125,6 +125,7 @@ extern void remove_qos_hash(qos_hash_t **qos_hash, uint32_t key);
 extern void destroy_qos_hash(qos_hash_t **qos_hash);
 
 #endif
+
 typedef struct {
 	slurmdb_cluster_rec_t *cluster_rec;
 	int preempt_cnt;

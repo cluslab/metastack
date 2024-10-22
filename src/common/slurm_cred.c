@@ -1205,8 +1205,6 @@ void slurm_cred_pack(slurm_cred_t *cred, buf_t *buffer,
      * protocol_version is slurmd version
      */
 	xassert(cred->buf_version == protocol_version);
-#else
-	xassert(cred->buf_version == protocol_version);
 #endif
 	packbuf(cred->buffer, buffer);
 

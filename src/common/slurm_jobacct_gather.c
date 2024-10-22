@@ -121,12 +121,6 @@ typedef struct slurm_jobacct_gather_ops {
 	int (*add_task)   (pid_t pid, jobacct_id_t *jobacct_id);
 } slurm_jobacct_gather_ops_t;
 
-#else
-typedef struct slurm_jobacct_gather_ops {
-	void (*poll_data) (List task_list, uint64_t cont_id, bool profile);
-	int (*endpoll)    ();
-	int (*add_task)   (pid_t pid, jobacct_id_t *jobacct_id);
-} slurm_jobacct_gather_ops_t;
 #endif
 /*
  * These strings must be in the same order as the fields declared
@@ -407,15 +401,6 @@ static void _poll_data(bool profile, collection_t *collect, write_t *data)
 
 	if (task_list)
 		(*(ops.poll_data))(task_list, cont_id, profile, collect, data);
-	slurm_mutex_unlock(&task_list_lock);
-}
-#else
-static void _poll_data(bool profile)
-{
-	/* Update the data */
-	slurm_mutex_lock(&task_list_lock);
-	if (task_list)
-		(*(ops.poll_data))(task_list, cont_id, profile);
 	slurm_mutex_unlock(&task_list_lock);
 }
 #endif
@@ -820,9 +805,6 @@ static void *_watch_tasks(void *arg)
 			_poll_data(1, collect, NULL);	
 		else
 			_poll_data(1, NULL, NULL);
-#else
-		/* The initial poll is done after the last task is added */
-		_poll_data(1);
 #endif
 		slurm_mutex_unlock(&g_context_lock);
 #ifdef __METASTACK_LOAD_ABNORMAL
@@ -1174,8 +1156,6 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobin
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int jobacct_gather_startpoll(uint16_t frequency, acct_gather_rank_t jobinfo)
-#else
-extern int jobacct_gather_startpoll(uint16_t frequency)
 #endif
 {
 	int retval = SLURM_SUCCESS;
@@ -1214,8 +1194,6 @@ extern int jobacct_gather_startpoll(uint16_t frequency)
 	jobinfo_watch->step_id = jobinfo.step_id;   
 	jobinfo_watch->node_alloc_cpu = jobinfo.node_alloc_cpu;
 	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, jobinfo_watch);
-#else  
-	slurm_thread_create(&watch_tasks_thread_id, _watch_tasks, NULL);
 #endif
 	debug3("jobacct_gather dynamic logging enabled");
 
@@ -1277,9 +1255,6 @@ extern int jobacct_gather_add_task(pid_t pid, jobacct_id_t *jobacct_id,
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if (poll == 1)
 		_poll_data(1, NULL, NULL);
-#else
-	if (poll == 1)
-		_poll_data(1);
 #endif
 
 	return SLURM_SUCCESS;
@@ -1300,8 +1275,6 @@ extern jobacctinfo_t *jobacct_gather_stat_task(pid_t pid)
 	_poll_data(0, collect, NULL);
 	if(collect)
 		xfree(collect);
-#else
-	_poll_data(0);
 #endif
 	if (pid) {
 		struct jobacctinfo *jobacct = NULL;
@@ -1345,8 +1318,6 @@ extern jobacctinfo_t *jobacct_gather_remove_task(pid_t pid)
 	 * mainly for updating energy consumption */
 #ifdef __METASTACK_LOAD_ABNORMAL
 	_poll_data(1, NULL, NULL);
-#else
-	_poll_data(1);
 #endif
 
 	if (_jobacct_shutdown_test())
@@ -1907,72 +1878,6 @@ extern void jobacctinfo_pack(jobacctinfo_t *jobacct, uint16_t rpc_version,
 				tmp_dbl = 0;
 			packdouble(tmp_dbl, buffer);
 #endif
-// #ifdef __METASTACK_LOAD_ABNORMAL
-//             if ((tmp_64 = jobacct->flag) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-
-//             if ((tmp_dbl = jobacct->cpu_step_ave) < 0.0)
-//                 tmp_dbl = 0.0;
-//             packdouble(tmp_dbl, buffer);
-//             if ((tmp_dbl = jobacct->cpu_step_max) < 0.0)
-//                 tmp_dbl = 0.0;
-//             packdouble(tmp_dbl, buffer);
-//             if ((tmp_dbl = jobacct->cpu_step_min) < 0.0)
-//                 tmp_dbl = 0.0;
-//             packdouble(tmp_dbl, buffer);
-//             if ((tmp_dbl = jobacct->cpu_step_real) < 0.0)
-//                 tmp_dbl = 0.0;
-//             packdouble(tmp_dbl, buffer);
-
-//             if ((tmp_64 = jobacct->mem_step_max) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-//             if ((tmp_64 = jobacct->mem_step_min) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-//             if ((tmp_64 = jobacct->mem_step) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-
-//             if ((tmp_64 = jobacct->vmem_step_max) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-//             if ((tmp_64 = jobacct->vmem_step_min) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-//             if ((tmp_64 = jobacct->vmem_step) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-
-//             if ((tmp_64 = jobacct->step_pages) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-
-//             if ((tmp_64 = jobacct->acct_flag) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);	
-//             pack64((uint64_t)jobacct->cpu_count, buffer);
-//             pack64((uint64_t)jobacct->pid_count, buffer);
-//             pack64((uint64_t)jobacct->node_count, buffer);
-
-//             pack64_array(jobacct->cpu_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-//             pack64_array(jobacct->cpu_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-//             pack64_array(jobacct->pid_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-//             pack64_array(jobacct->pid_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-//             pack64_array(jobacct->node_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-//             pack64_array(jobacct->node_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-
-//             if ((tmp_64 = jobacct->node_alloc_cpu) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-//             if ((tmp_64 = jobacct->timer) < 0)
-//                 tmp_64 = 0;
-//             pack64(tmp_64, buffer);
-//             if ((tmp_32 = jobacct->cpu_threshold) < 0)
-//                 tmp_32 = 0;
-//             pack32(tmp_32, buffer);
-// #endif
         } else if(rpc_version >= META_2_0_PROTOCOL_VERSION) {
             /**
              * METASTACK 2.0.x(x>=3)
@@ -2210,203 +2115,6 @@ extern void jobacctinfo_pack(jobacctinfo_t *jobacct, uint16_t rpc_version,
 		info("jobacctinfo_pack version %u not supported", rpc_version);
 		return;
 	}
-#else
-	if (rpc_version >= SLURM_21_08_PROTOCOL_VERSION) {
-		pack64(jobacct->user_cpu_sec, buffer);
-		pack32((uint32_t)jobacct->user_cpu_usec, buffer);
-		pack64(jobacct->sys_cpu_sec, buffer);
-		pack32((uint32_t)jobacct->sys_cpu_usec, buffer);
-		pack32((uint32_t)jobacct->act_cpufreq, buffer);
-		pack64((uint64_t)jobacct->energy.consumed_energy, buffer);
-
-		pack32_array(jobacct->tres_ids, jobacct->tres_count, buffer);
-
-		slurm_pack_list(jobacct->tres_list,
-				slurmdb_pack_tres_rec, buffer,
-				SLURM_PROTOCOL_VERSION);
-
-		pack64_array(jobacct->tres_usage_in_max,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_max_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_max_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_min,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_min_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_min_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_tot,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_max,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_max_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_max_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_min,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_min_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_min_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_tot,
-			     jobacct->tres_count, buffer);
-#ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-		if ((tmp_dbl = jobacct->cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-
-		if ((tmp_dbl=jobacct->avg_cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-
-		if ((tmp_dbl = jobacct->min_cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-
-		if ((tmp_dbl = jobacct->max_cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-#endif
-#ifdef __METASTACK_LOAD_ABNORMAL
-		if ((tmp_64 = jobacct->flag) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-
-		if ((tmp_dbl = jobacct->cpu_step_ave) < 0.0)
-			tmp_dbl = 0.0;
-		packdouble(tmp_dbl, buffer);
-		if ((tmp_dbl = jobacct->cpu_step_max) < 0.0)
-			tmp_dbl = 0.0;
-		packdouble(tmp_dbl, buffer);
-		if ((tmp_dbl = jobacct->cpu_step_min) < 0.0)
-			tmp_dbl = 0.0;
-		packdouble(tmp_dbl, buffer);
-		if ((tmp_dbl = jobacct->cpu_step_real) < 0.0)
-			tmp_dbl = 0.0;
-		packdouble(tmp_dbl, buffer);
-
-		if ((tmp_64 = jobacct->mem_step_max) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-		if ((tmp_64 = jobacct->mem_step_min) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-		if ((tmp_64 = jobacct->mem_step) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-
-		if ((tmp_64 = jobacct->vmem_step_max) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-		if ((tmp_64 = jobacct->vmem_step_min) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-		if ((tmp_64 = jobacct->vmem_step) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-
-		if ((tmp_64 = jobacct->step_pages) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-
-		if ((tmp_64 = jobacct->acct_flag) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);	
-		pack64((uint64_t)jobacct->cpu_count, buffer);
-		pack64((uint64_t)jobacct->pid_count, buffer);
-		pack64((uint64_t)jobacct->node_count, buffer);
-
-		pack64_array(jobacct->cpu_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-		pack64_array(jobacct->cpu_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-		pack64_array(jobacct->pid_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-		pack64_array(jobacct->pid_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-		pack64_array(jobacct->node_start, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-		pack64_array(jobacct->node_end, JOBACCTINFO_START_END_ARRAY_SIZE, buffer);
-
-		if ((tmp_64 = jobacct->node_alloc_cpu) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-		if ((tmp_64 = jobacct->timer) < 0)
-			tmp_64 = 0;
-		pack64(tmp_64, buffer);
-		if ((tmp_32 = jobacct->cpu_threshold) < 0)
-			tmp_32 = 0;
-		pack32(tmp_32, buffer);
-
-#endif
-	} else if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
-		if (jobacct->user_cpu_sec > NO_VAL) {
-			pack32((uint32_t)NO_VAL, buffer);
-		} else
-			pack32((uint32_t)jobacct->user_cpu_sec, buffer);
-		pack32((uint32_t)jobacct->user_cpu_usec, buffer);
-		if (jobacct->sys_cpu_sec > NO_VAL) {
-			pack32((uint32_t)NO_VAL, buffer);
-		} else
-			pack32((uint32_t)jobacct->sys_cpu_sec, buffer);
-		pack32((uint32_t)jobacct->sys_cpu_usec, buffer);
-		pack32((uint32_t)jobacct->act_cpufreq, buffer);
-		pack64((uint64_t)jobacct->energy.consumed_energy, buffer);
-
-		pack32_array(jobacct->tres_ids, jobacct->tres_count, buffer);
-
-		slurm_pack_list(jobacct->tres_list,
-				slurmdb_pack_tres_rec, buffer,
-				SLURM_PROTOCOL_VERSION);
-
-		pack64_array(jobacct->tres_usage_in_max,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_max_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_max_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_min,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_min_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_min_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_in_tot,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_max,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_max_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_max_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_min,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_min_nodeid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_min_taskid,
-			     jobacct->tres_count, buffer);
-		pack64_array(jobacct->tres_usage_out_tot,
-			     jobacct->tres_count, buffer);
-#ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-		if ((tmp_dbl = jobacct->cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-
-		if ((tmp_dbl=jobacct->avg_cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-
-		if ((tmp_dbl = jobacct->min_cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-
-		if ((tmp_dbl = jobacct->max_cpu_util) < 0)
-			tmp_dbl = 0;
-		packdouble(tmp_dbl, buffer);
-#endif
-
-	} else {
-		info("jobacctinfo_pack version %u not supported", rpc_version);
-		return;
-	}
 #endif
 
 }
@@ -2493,56 +2201,6 @@ extern int jobacctinfo_unpack(jobacctinfo_t **jobacct, uint16_t rpc_version,
 			safe_unpackdouble(&tmp_double, buffer);
 			(*jobacct)->max_cpu_util = tmp_double;
 #endif
-// #ifdef __METASTACK_LOAD_ABNORMAL
-//             uint64_t tmp_int64;
-//             uint32_t tmp_int32;
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->flag = tmp_int64;
-
-//             safe_unpackdouble(&tmp_double, buffer);
-//             (*jobacct)->cpu_step_ave = tmp_double;
-//             safe_unpackdouble(&tmp_double, buffer);
-//             (*jobacct)->cpu_step_max = tmp_double;
-//             safe_unpackdouble(&tmp_double, buffer);
-//             (*jobacct)->cpu_step_min = tmp_double;
-//             safe_unpackdouble(&tmp_double, buffer);
-//             (*jobacct)->cpu_step_real = tmp_double;
-
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->mem_step_max = tmp_int64;
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->mem_step_min = tmp_int64;
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->mem_step = tmp_int64;
-
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->vmem_step_max = tmp_int64;
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->vmem_step_min = tmp_int64;
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->vmem_step = tmp_int64;
-
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->step_pages = tmp_int64;
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->acct_flag = tmp_int64;	
-//             safe_unpack64(&(*jobacct)->cpu_count, buffer);
-//             safe_unpack64(&(*jobacct)->pid_count, buffer);
-//             safe_unpack64(&(*jobacct)->node_count, buffer);
-//             safe_unpack64_array(&(*jobacct)->cpu_start,&uint32_tmp, buffer);
-//             safe_unpack64_array(&(*jobacct)->cpu_end,&uint32_tmp, buffer);
-//             safe_unpack64_array(&(*jobacct)->pid_start,&uint32_tmp, buffer);
-//             safe_unpack64_array(&(*jobacct)->pid_end,&uint32_tmp, buffer);
-//             safe_unpack64_array(&(*jobacct)->node_start,&uint32_tmp, buffer);
-//             safe_unpack64_array(&(*jobacct)->node_end,&uint32_tmp, buffer);		
-
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->node_alloc_cpu = tmp_int64;
-//             safe_unpack64(&tmp_int64, buffer);
-//             (*jobacct)->timer = tmp_int64;
-//             safe_unpack32(&tmp_int32, buffer);
-//             (*jobacct)->cpu_threshold = tmp_int32;
-// #endif
         } else if(rpc_version >= META_2_0_PROTOCOL_VERSION) {
 			safe_unpack64(&(*jobacct)->user_cpu_sec, buffer);
 			safe_unpack32(&uint32_tmp, buffer);
@@ -2769,183 +2427,6 @@ extern int jobacctinfo_unpack(jobacctinfo_t **jobacct, uint16_t rpc_version,
 		safe_unpackdouble(&tmp_double, buffer);
 		(*jobacct)->max_cpu_util = tmp_double;
 #endif
-	} else {
-		info("jobacctinfo_unpack version %u not supported",
-		     rpc_version);
-		return SLURM_ERROR;
-	}
-#else
-    if (rpc_version >= SLURM_21_08_PROTOCOL_VERSION) {
-		safe_unpack64(&(*jobacct)->user_cpu_sec, buffer);
-		safe_unpack32(&uint32_tmp, buffer);
-		(*jobacct)->user_cpu_usec = uint32_tmp;
-		safe_unpack64(&(*jobacct)->sys_cpu_sec, buffer);
-		safe_unpack32(&uint32_tmp, buffer);
-		(*jobacct)->sys_cpu_usec = uint32_tmp;
-
-		safe_unpack32(&(*jobacct)->act_cpufreq, buffer);
-		safe_unpack64(&(*jobacct)->energy.consumed_energy, buffer);
-
-		safe_unpack32_array(&(*jobacct)->tres_ids,
-				    &(*jobacct)->tres_count, buffer);
-		if (slurm_unpack_list(&(*jobacct)->tres_list,
-				      slurmdb_unpack_tres_rec,
-				      slurmdb_destroy_tres_rec,
-				      buffer, rpc_version) != SLURM_SUCCESS)
-			goto unpack_error;
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_max,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_max_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_max_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_min,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_min_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_min_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_tot,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_max,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_max_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_max_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_min,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_min_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_min_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_tot,
-				    &uint32_tmp, buffer);
-#ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-		double tmp_double;
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->cpu_util = tmp_double;
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->avg_cpu_util = tmp_double;
-
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->min_cpu_util = tmp_double;
-
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->max_cpu_util = tmp_double;
-#endif
-#ifdef __METASTACK_LOAD_ABNORMAL
-        uint64_t tmp_int64;
-		uint32_t tmp_int32;
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->flag = tmp_int64;
-
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->cpu_step_ave = tmp_double;
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->cpu_step_max = tmp_double;
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->cpu_step_min = tmp_double;
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->cpu_step_real = tmp_double;
-
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->mem_step_max = tmp_int64;
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->mem_step_min = tmp_int64;
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->mem_step = tmp_int64;
-
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->vmem_step_max = tmp_int64;
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->vmem_step_min = tmp_int64;
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->vmem_step = tmp_int64;
-
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->step_pages = tmp_int64;
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->acct_flag = tmp_int64;	
-		safe_unpack64(&(*jobacct)->cpu_count, buffer);
-		safe_unpack64(&(*jobacct)->pid_count, buffer);
-		safe_unpack64(&(*jobacct)->node_count, buffer);
-		safe_unpack64_array(&(*jobacct)->cpu_start,&uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->cpu_end,&uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->pid_start,&uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->pid_end,&uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->node_start,&uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->node_end,&uint32_tmp, buffer);		
-
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->node_alloc_cpu = tmp_int64;
-		safe_unpack64(&tmp_int64, buffer);
-		(*jobacct)->timer = tmp_int64;
-		safe_unpack32(&tmp_int32, buffer);
-		(*jobacct)->cpu_threshold = tmp_int32;
-#endif
-	} else if (rpc_version >= SLURM_MIN_PROTOCOL_VERSION) {
-		safe_unpack32(&uint32_tmp, buffer);
-		(*jobacct)->user_cpu_sec = uint32_tmp;
-		safe_unpack32(&uint32_tmp, buffer);
-		(*jobacct)->user_cpu_usec = uint32_tmp;
-		safe_unpack32(&uint32_tmp, buffer);
-		(*jobacct)->sys_cpu_sec = uint32_tmp;
-		safe_unpack32(&uint32_tmp, buffer);
-		(*jobacct)->sys_cpu_usec = uint32_tmp;
-
-		safe_unpack32(&(*jobacct)->act_cpufreq, buffer);
-		safe_unpack64(&(*jobacct)->energy.consumed_energy, buffer);
-
-		safe_unpack32_array(&(*jobacct)->tres_ids,
-				    &(*jobacct)->tres_count, buffer);
-		if (slurm_unpack_list(&(*jobacct)->tres_list,
-				      slurmdb_unpack_tres_rec,
-				      slurmdb_destroy_tres_rec,
-				      buffer, rpc_version) != SLURM_SUCCESS)
-			goto unpack_error;
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_max,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_max_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_max_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_min,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_min_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_min_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_in_tot,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_max,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_max_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_max_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_min,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_min_nodeid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_min_taskid,
-				    &uint32_tmp, buffer);
-		safe_unpack64_array(&(*jobacct)->tres_usage_out_tot,
-				    &uint32_tmp, buffer);
-#ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-		double tmp_double;
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->cpu_util = tmp_double;
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->avg_cpu_util = tmp_double;
-
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->min_cpu_util = tmp_double;
-
-		safe_unpackdouble(&tmp_double, buffer);
-		(*jobacct)->max_cpu_util = tmp_double;
-#endif
-
 	} else {
 		info("jobacctinfo_unpack version %u not supported",
 		     rpc_version);

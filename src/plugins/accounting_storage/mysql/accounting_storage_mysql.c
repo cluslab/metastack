@@ -3302,7 +3302,6 @@ extern int acct_storage_p_remove_reservation(mysql_conn_t *mysql_conn,
 extern List acct_storage_p_get_users(mysql_conn_t *mysql_conn, uid_t uid,
 				     slurmdb_user_cond_t *user_cond)
 {
-
 	return as_mysql_get_users(mysql_conn, uid, user_cond);
 }
 

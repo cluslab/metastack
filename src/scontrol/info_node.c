@@ -148,9 +148,9 @@ scontrol_print_node_list (char *node_list)
 		show_flags |= SHOW_DETAIL;
 	if (future_flag)
 		show_flags |= SHOW_FUTURE;
-
+	
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	    char *env_val = NULL;
+    char *env_val = NULL;
     if ((env_val = getenv("SCONTROL_NODE_CACHE_QUERY"))){
         if(!cache_flag && !nocache_flag){
             if(!xstrcmp(env_val, "cache"))
@@ -163,6 +163,7 @@ scontrol_print_node_list (char *node_list)
 		return;
 	}
 #endif
+
 
 	error_code = scontrol_load_nodes(&node_info_ptr, show_flags);
 	if (error_code) {

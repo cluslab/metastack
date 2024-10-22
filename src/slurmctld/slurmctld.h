@@ -141,7 +141,6 @@ typedef struct slurmctld_config {
 	int	server_thread_count;
 	time_t	shutdown_time;
 	bool    submissions_disabled;
-
 	slurm_cred_ctx_t cred_ctx;
 	pthread_cond_t thread_count_cond;
 	pthread_mutex_t thread_count_lock;
@@ -150,6 +149,7 @@ typedef struct slurmctld_config {
 #endif		
 	pthread_t thread_id_main;
 	pthread_t thread_id_save;
+
 	pthread_t thread_id_sig;
 	pthread_t thread_id_power;
 	pthread_t thread_id_purge_files;
@@ -161,6 +161,7 @@ typedef struct slurmctld_config {
 	pthread_t thread_id_copy;
 	pthread_t thread_id_query;
 #endif
+
 } slurmctld_config_t;
 
 /* Job scheduling statistics */
@@ -436,7 +437,7 @@ typedef struct {
 				     * service record attached to this
 				     * partition confirm the value before use */
 	uint16_t resume_timeout; /* time required in order to perform a node
-				  * resume operation */
+				  * resume operation */			 
 	uint16_t state_up;	/* See PARTITION_* states in slurm.h */
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 	uint32_t suspend_idle; /*Energy saving node of a Partition*/
@@ -484,6 +485,7 @@ extern void free_para_sched_resource(void);
 extern void get_para_sched_part_names(void);
 extern int _get_job_part_index(char** part_names, part_record_t *part_ptr);
 #endif
+
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 extern List copy_part_list;			/* list of copy_part_record entries */
 extern List cache_part_list;		/* list of cache_part_record entries */
@@ -762,6 +764,7 @@ typedef struct {
 	char *qos_name;
 } job_cache_data_t;
 #endif
+
 
 /*
  * NOTE: When adding fields to the job_record, or any underlying structures,
@@ -1342,6 +1345,7 @@ extern int build_part_bitmap(part_record_t *part_ptr, bool update_part);
 #else
 extern int build_part_bitmap(part_record_t *part_ptr);
 #endif
+
 /*
  * job_limits_check - check the limits specified for the job.
  * IN job_ptr - pointer to job table entry.
@@ -1409,7 +1413,6 @@ extern void copy_all_part_state();
 extern void replace_cache_part_data();
 extern void purge_cache_part_data();
 
-
 /* copy_all_job_state - copy the state of all jobs
  * RET 0 or error code */
 extern void copy_all_job_state();
@@ -1421,9 +1424,9 @@ extern void copy_all_node_state();
 extern void replace_cache_node_data();
 extern void purge_cache_node_data();
 
-extern void update_job_cache_data();
-extern void update_node_cache_data();
-extern void update_part_cache_data();
+
+
+
 
 typedef enum {
 	CREATE_CACHE_JOB_RECORD = 1,
@@ -1512,7 +1515,6 @@ typedef struct {
 	char     *st_nodes; 
 	char     *st_parameters;
 #endif
-
 }part_state_record_t;
 
 typedef struct {
@@ -1552,6 +1554,7 @@ extern void del_cache_job_state_record(job_state_record_t *src_job_ptr);
 extern int update_cache_job_record(job_state_record_t *src_job_ptr);
 extern void _add_job_state_to_queue(job_record_t *src_job_ptr);
 extern void _delete_copy_job_state(job_record_t *job_ptr);
+
 
 extern node_record_t *_add_cache_node(node_record_t *src_node_ptr);
 extern node_record_t * _add_node_to_queue(node_record_t *src_node_ptr, bool add_config_ptr);

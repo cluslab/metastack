@@ -81,8 +81,5 @@ extern void destroy_jag_prec(void *object);
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jag_callbacks_t *callbacks, bool profile, collection_t *collect, write_t *data);
-#else
-extern void jag_common_poll_data(List task_list, uint64_t cont_id,
-				 jag_callbacks_t *callbacks, bool profile);
 #endif
 #endif

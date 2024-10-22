@@ -25,7 +25,7 @@ Display nodes borrowed from standby_nodes in the partition.
 
 .TP
 \fB\-\-cache\fR
-When CacheQuery is set to "enable"， specify querying partition and node 
+When CacheQuery is set to "enable", specify querying partition and node 
 information from the cache data.
 .IP
 
@@ -54,6 +54,12 @@ same partition and state (e.g. "250+").
 .TP
 \fB\-\-federation\fR
 Show all partitions from the federation if a member of one.
+.IP
+
+.TP
+\fB\-\-noplanned\fR
+If set, do not display planned state set by main scheduler. The option 
+takes precedence over the setting of PrivateData in the slurm.conf.
 .IP
 
 .TP
@@ -102,6 +108,11 @@ options are:
 .I "\-\-long \-\-list\-reasons"
 "%20E %12U %19H %6t %N"
 .RE
+.IP
+
+.TP
+\fB\-\-planned\fR
+If set, display planned state set by main scheduler.
 .IP
 
 In the above format strings, the use of "#" represents the
@@ -705,15 +716,15 @@ This is ignored if the \fB\-\-format\fR option is specified.
 .IP
 
 .TP
-\fB\-\-noconvert\fR
-Don't convert units from their original type (e.g. 2048M won't be converted to
-2G).
-.IP
-
-.TP
 \fB\-\-nocache\fR
 When CacheQuery is set to "cache", specify querying job information from 
 the source data.
+.IP
+
+.TP
+\fB\-\-noconvert\fR
+Don't convert units from their original type (e.g. 2048M won't be converted to
+2G).
 .IP
 
 .TP
@@ -1225,6 +1236,14 @@ The location of the Slurm configuration file.
 Specify debug flags for sinfo to use. See DebugFlags in the
 \fBslurm.conf\fR(5) man page for a full list of flags. The environment
 variable takes precedence over the setting in the slurm.conf.
+.IP
+
+.TP
+\fBSLURM_MAIN_PLANNED\fR
+If set to true, it is the same as \-\-planned. If set to false, it is 
+the same as \-\-noplanned. The environment variable takes precedence 
+over the setting of PrivateData in the slurm.conf.
+\fBNOTE\fR: Command line options will always override these settings.
 .IP
 
 .TP

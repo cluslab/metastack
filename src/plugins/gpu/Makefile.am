@@ -2,6 +2,10 @@
 
 SUBDIRS = common generic
 
+if BUILD_DSMI
+SUBDIRS += dsmi
+endif
+
 if BUILD_RSMI
 SUBDIRS += rsmi
 endif

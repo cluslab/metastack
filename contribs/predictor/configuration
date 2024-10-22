@@ -33,4 +33,3 @@ python_executable=/opt/gridview/slurm/etc/luaconfig/predictor/AIenvironment/Cent
 #
 # AI随机森林工具路径
 sklearn_path=/opt/gridview/slurm/etc/luaconfig/predictor/prediction_methods/sklearn
-

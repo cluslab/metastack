@@ -740,6 +740,7 @@ static avail_res_t **_select_nodes(job_record_t *job_ptr, uint32_t min_nodes,
 	avail_res_array = _get_res_avail(job_ptr, node_bitmap, avail_core,
 					 node_usage, cr_type, test_only,
 					 will_run, part_core_map);
+
 	if (!avail_res_array)
 		return avail_res_array;
 

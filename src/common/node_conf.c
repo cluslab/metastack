@@ -724,11 +724,11 @@ static void _init_node_record(node_record_t *node_ptr,
 	node_ptr->tot_sockets = config_ptr->tot_sockets;
 	node_ptr->tot_cores = config_ptr->tot_sockets * config_ptr->cores;
 	node_ptr->weight = config_ptr->weight;
-#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
-	node_ptr->orig_parts = NULL;
-#endif
 #ifdef __METASTACK_OPT_REGISTRATION_FIX
 	node_ptr->do_reg = false;
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+	node_ptr->orig_parts = NULL;
 #endif
 	/*
 	 * Here we determine if this node is scheduling threads or not.
@@ -1068,14 +1068,7 @@ extern void node_fini2 (void)
 		FREE_NULL_LIST(config_list);
 		FREE_NULL_LIST(front_end_list);
 	}
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	xhash_free(cache_node_hash_table);
-	for (i = 0; (node_ptr = next_cache_node(&i, cache_node_record_count, cache_node_record_table_ptr)); i++)
-		delete_cache_node_record(node_ptr);
-	if(cache_config_list)
-		FREE_NULL_LIST(cache_config_list);
-	xfree(cache_node_record_table_ptr);
-#endif
+
 	xfree(node_record_table_ptr);
 	node_record_count = 0;
 }
@@ -1448,6 +1441,7 @@ extern void node_conf_set_all_active_bits(bitstr_t *b)
 }
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
+
 extern node_record_t *next_cache_node(int *index, int node_record_count, node_record_t **node_record_table_ptr)
 { 
 	
@@ -1461,7 +1455,6 @@ extern node_record_t *next_cache_node(int *index, int node_record_count, node_re
 		if (*index > cache_last_node_index)
 			return NULL;
 	}
-
 	if(node_record_table_ptr[*index]->index != *index)
 		return NULL;
 
@@ -1567,7 +1560,8 @@ extern void delete_cache_node_record(node_record_t *node_ptr)
 		}
 		if (i < 0)
 			cache_last_node_index = -1;
-	}	
+	}
+	
 	purge_cache_node_rec(node_ptr);
 }
 

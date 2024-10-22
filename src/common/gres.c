@@ -1150,7 +1150,7 @@ static char *_get_autodetect_flags_str(void)
 #ifdef __METASTACK_NEW_GRES_NPU
 		else if (autodetect_flags & GRES_AUTODETECT_GPU_DSMI)
 			xstrfmtcat(flags, "%sdsmi", flags ? "," : "");
-#endif
+#endif			
 		else if (autodetect_flags & GRES_AUTODETECT_GPU_ONEAPI)
 			xstrfmtcat(flags, "%soneapi", flags ? "," : "");
 		else if (autodetect_flags & GRES_AUTODETECT_GPU_OFF)
@@ -1990,7 +1990,6 @@ static void _merge_gres2(List gres_conf_list, List new_list, uint64_t count,
 
 	/* Set default env flags, and allow AutoDetect to override */
 	flags = 0;
-
 #if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
 	if (!xstrcasecmp(gres_ctx->gres_name, "gpu") || !xstrcasecmp(gres_ctx->gres_name, "dcu") || !xstrcasecmp(gres_ctx->gres_name, "npu"))
 #elif defined(__METASTACK_NEW_GRES_DCU)
@@ -9726,6 +9725,7 @@ extern void gres_g_task_set_env(char ***job_env_ptr, List step_gres_list,
                 log_flag(GRES, "__METASTACK_NEW_GRES_NPU, %s, flags: %d, iterate GRES context %s", __func__, flags, gres_ctx->gres_type);
 #endif
 
+
 		if (!gres_ctx->ops.task_set_env)
 			continue;	/* No plugin to call */
 		if (!step_gres_list) {
@@ -10354,15 +10354,6 @@ extern void gres_clear_tres_cnt(uint64_t *tres_cnt, bool locked)
 	int tres_pos;
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
 
-#ifndef __METASTACK_NEW_PART_PARA_SCHED
-	/* we only need to init this once */
-	if (first_run) {
-		first_run = 0;
-		memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
-		tres_rec.type = "gres";
-	}
-#endif
-
 	/* must be locked first before gres_contrex_lock!!! */
 	if (!locked)
 		assoc_mgr_lock(&locks);
@@ -10685,7 +10676,7 @@ static void *_copy_node_state_dup(gres_node_state_t *gres_ns)
 		for (i = 0; i < gres_ns->link_len; i++) {
 			new_gres_ns->links_cnt[i] = xmalloc(j);
 			memcpy(new_gres_ns->links_cnt[i],
-			       gres_ns->links_cnt[i], j);
+			    gres_ns->links_cnt[i], j);
 		}
 		new_gres_ns->link_len = gres_ns->link_len;
 	}

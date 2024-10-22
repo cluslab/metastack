@@ -152,7 +152,7 @@ struct node_record {
 	bool main_planned_flag; /* If true, when the main scheduler pulls 
 							 * the node into the blacklist, the node 
 							 * status will be displayed as planned */
-#endif	
+#endif
 	uint16_t port;			/* TCP port number of the slurmd */
 	power_mgmt_data_t *power;	/* power management data */
 	time_t power_save_req_time;	/* Time of power_save request */
@@ -197,7 +197,7 @@ struct node_record {
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	char *orig_parts;		/*  Comma separated list of partitions containing
 				 * this node before be borrowed */
-#endif							
+#endif					
 };
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -217,6 +217,7 @@ extern bool borrow_cache_nodes;
 
 #endif
 
+					 
 extern node_record_t **node_record_table_ptr;  /* ptr to node records */
 extern int node_record_count;		/* count in node_record_table_ptr */
 extern xhash_t* node_hash_table;	/* hash table for node records */
@@ -329,6 +330,7 @@ extern node_record_t *find_cache_node_record(char *name);
 extern void delete_cache_node_record(node_record_t *node_ptr);
 
 extern void delete_cache_one_node_record(node_record_t *node_ptr);
+
 /*
  * Return the next non-null node_record_t * in the node_record_table_ptr.
  *
@@ -340,6 +342,7 @@ extern void delete_cache_one_node_record(node_record_t *node_ptr);
  * RET - next non-null node_record_t * or NULL if finished iterating.
  */
 extern node_record_t *next_cache_node(int *index, int node_record_count, node_record_t **node_record_table_ptr);
+
 typedef struct {
 	char *name;			/* name of the node. NULL==defunct */
 	bool only_state;
@@ -374,6 +377,7 @@ extern void del_cache_node_info_record(dynamic_plugin_data_t **select_nodeinfo, 
 
 
 #endif
+
 
 /*
  * create_node_record - create a node record and set its values to defaults
