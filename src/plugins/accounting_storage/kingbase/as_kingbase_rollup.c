@@ -1337,7 +1337,7 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 		rc = SLURM_ERROR;
 		goto end_it;
 	}
-	char *value_temp = KCIResultGetColumnValue(result, i, 0);
+	char *value_temp = KCIResultGetColumnValue(result, 0, 0);
 	dims = value_temp == NULL ? 0 : atoi(value_temp);
 	KCIResultDealloc(result);
 
@@ -1443,16 +1443,17 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 				result2 = kingbase_db_query_ret(kingbase_conn, query, 0);
 				if (KCIResultGetStatusCode(result2) != EXECUTE_TUPLES_OK) {
 					rc = SLURM_ERROR;
+					KCIResultDealloc(result);
 					KCIResultDealloc(result2);
 					goto end_it;
 				}
 				xfree(query);
-				for(int i = 0; i < KCIResultGetRowCount(result2); i++) {
+				for(int j = 0; j < KCIResultGetRowCount(result2); j++) {
 					int tot_time = 0;
 					time_t local_start = slurm_atoul(
-						KCIResultGetColumnValue(result, i, SUSPEND_REQ_START));
+						KCIResultGetColumnValue(result2, j, SUSPEND_REQ_START));
 					time_t local_end = slurm_atoul(
-						KCIResultGetColumnValue(result, i, SUSPEND_REQ_END));
+						KCIResultGetColumnValue(result2, j, SUSPEND_REQ_END));
 
 					if (!local_start)
 						continue;
@@ -1830,8 +1831,7 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 
 			xfree(query);
 
-			if (rc == SLURM_ERROR) {
-				rc = SLURM_ERROR;
+			if (rc != SLURM_SUCCESS) {
 				error("Couldn't add assoc hour rollup");
 				goto end_it;
 			}

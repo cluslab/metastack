@@ -106,4 +106,5 @@ extern resource_allocation_response_msg_t *build_alloc_msg(
  */
 void slurmctld_query_req(slurm_msg_t *msg);
 #endif
+
 #endif /* !_HAVE_PROC_REQ_H */

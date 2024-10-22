@@ -245,6 +245,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_LOG_OUTPUT
 #endif
 
+#ifndef __METASTACK_BUG_BACKCTLD_THREADID_FIX
+#define __METASTACK_BUG_BACKCTLD_THREADID_FIX
+#endif
+
 /* Macro definitions that control heterogeneous partitioning capabilities */
 #ifndef __METASTACK_NEW_HETPART_SUPPORT
 #define __METASTACK_NEW_HETPART_SUPPORT
@@ -352,7 +356,6 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_JOB_USELESS_RUNNING_WARNING
 #define __METASTACK_JOB_USELESS_RUNNING_WARNING
 #endif
-
 
 #ifndef __METASTACK_OPT_INFLUXDB_ENFORCE
 #define __METASTACK_OPT_INFLUXDB_ENFORCE
@@ -3158,11 +3161,11 @@ typedef struct {
 				    * epilog complete message */
 	char *epilog_slurmctld;	/* pathname of job epilog run by slurmctld */
 	char *ext_sensors_type; /* external sensors plugin type */
+	uint16_t ext_sensors_freq; /* secs between ext sensors sampling */
+	void *ext_sensors_conf; /* external sensors config file*/
 #ifdef __METASTACK_OPT_MSG_OUTPUT
     char *extra_msg_file;
 #endif
-	uint16_t ext_sensors_freq; /* secs between ext sensors sampling */
-	void *ext_sensors_conf; /* external sensors config file*/
 	char *fed_params;       /* Federation parameters */
 	uint32_t first_job_id;	/* first slurm generated job_id to assign */
 	uint16_t fs_dampening_factor; /* dampening for Fairshare factor */
@@ -3383,7 +3386,7 @@ typedef struct {
 	uint16_t query_port_count; /* Cache query number of communication ports */
 	uint16_t cachedup_interval; /*Data copy time interval*/ 
 	uint16_t cache_query; /*High Performance Query Switch*/
-	uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
+    uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
 #endif
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	void *rl_config;

@@ -232,7 +232,6 @@ static void _proc_msg(int new_fd, char *msg, slurm_addr_t cli_addr)
 	slurmctld_lock_t job_cache_write_lock = {
 		NO_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
 #endif
-
 	/* Locks: Write job, write node data */
 	slurmctld_lock_t node_write_lock = {
 		NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK, READ_LOCK };
@@ -312,7 +311,6 @@ static void _proc_msg(int new_fd, char *msg, slurm_addr_t cli_addr)
 			local_job_cachedup = false;
 		}
 #endif
-
 	} else if (xstrncmp(cmd_ptr, "SHOW_CONFIG", 11) == 0) {
 		resp = show_config(cmd_ptr, cmd_uid, protocol_version);
 	} else if (xstrncmp(cmd_ptr, "SHOW_JOB:JOBID:", 15) == 0) {

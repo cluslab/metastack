@@ -404,7 +404,6 @@ static slurm_errtab_t slurm_errtab[] = {
 	{ ESLURM_INVALID_STANDBY_NODE_PARAMETERS,
 	  "Invalid standby_node_parameters"},
 #endif
-
 	/* SPANK errors */
 	{ ESPANK_ERROR,
 	  "Generic error"					},

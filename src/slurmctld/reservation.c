@@ -6556,8 +6556,6 @@ static int _advance_resv_time(slurmctld_resv_t *resv_ptr)
 	if (!para_sched) {		
 		xassert(verify_lock(NODE_LOCK, WRITE_LOCK));
 	}
-#else
-	xassert(verify_lock(NODE_LOCK, WRITE_LOCK));
 #endif
 
 	if (resv_ptr->flags & RESERVE_FLAG_TIME_FLOAT)

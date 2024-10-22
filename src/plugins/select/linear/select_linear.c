@@ -3841,6 +3841,7 @@ extern select_nodeinfo_t *select_p_select_nodeinfo_copy(select_nodeinfo_t *nodei
 
 #endif
 
+
 extern int select_p_select_nodeinfo_pack(select_nodeinfo_t *nodeinfo,
 					 buf_t *buffer,
 					 uint16_t protocol_version)

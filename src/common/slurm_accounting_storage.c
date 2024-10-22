@@ -219,7 +219,7 @@ typedef struct slurm_acct_storage_ops {
 				    uint32_t reason_uid);
 	int  (*node_return)            (void *db_conn, node_record_t *node_ptr,
 				    time_t event_time);					
-#endif	
+#endif
 } slurm_acct_storage_ops_t;
 /*
  * Must be synchronized with slurm_acct_storage_ops_t above.
@@ -305,7 +305,7 @@ static const char *syms[] = {
 	"acct_storage_p_get_borrow",
 	"clusteracct_storage_p_node_borrow",
 	"clusteracct_storage_p_node_return",
-#endif	
+#endif
 };
 
 static slurm_acct_storage_ops_t ops;

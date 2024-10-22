@@ -1235,10 +1235,10 @@ extern void slurm_free_job_info_members(job_info_t * job)
 		free_job_resources(&job->job_resrcs);
 		xfree(job->selinux_context);
 		xfree(job->state_desc);
-		xfree(job->std_err);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
         xfree(job->reason_detail);
 #endif
+		xfree(job->std_err);
 		xfree(job->std_in);
 		xfree(job->std_out);
 		xfree(job->tres_alloc_str);
@@ -4146,7 +4146,8 @@ extern void private_data_string(uint16_t private_data, char *str, int str_len)
 {
 	if (str_len > 0)
 		str[0] = '\0';
-	if (str_len < 69) {
+
+	if (str_len < 77) {
 		error("private_data_string: output buffer too small");
 		return;
 	}
@@ -4211,7 +4212,7 @@ extern void private_data_string(uint16_t private_data, char *str, int str_len)
 		strcat(str, "users"); //6 len
 	}
 
-	// total len 69
+	// total len 77
 
 	if (str[0] == '\0')
 		strcat(str, "none");

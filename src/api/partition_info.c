@@ -88,7 +88,7 @@ void slurm_print_partition_info_msg ( FILE* out,
 		time_str, part_info_ptr->record_count);
 
 	for (i = 0; i < part_info_ptr->record_count; i++) {
-		slurm_print_partition_info ( out, & part_ptr[i], one_liner ) ;
+		slurm_print_partition_info ( out, & part_ptr[i], one_liner ) ;	
 	}
 
 }
@@ -473,7 +473,6 @@ void slurm_print_partition_info ( FILE* out, partition_info_t * part_ptr,
 	xfree(print_this);
 }
 
-
 /*
  * slurm_sprint_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions
@@ -483,7 +482,7 @@ void slurm_print_partition_info ( FILE* out, partition_info_t * part_ptr,
  *           NULL is returned on failure.
  */
 char *slurm_sprint_partition_info ( partition_info_t * part_ptr,
-				    int one_liner )
+				    int one_liner )				
 {
 	char *out = NULL;
 	char *allow_deny, *value;

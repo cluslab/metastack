@@ -375,8 +375,9 @@ extern void scontrol_print_job(char * job_id_str)
 		if (end_ptr[0] == '+')
 			het_job_offset = strtol(end_ptr + 1, &end_ptr, 10);
 	}
+	
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	char *env_val = NULL;
+    char *env_val = NULL;
     if ((env_val = getenv("SCONTROL_JOB_CACHE_QUERY"))){
         if(!cache_flag && !nocache_flag){
             if(!xstrcmp(env_val, "cache"))
@@ -386,10 +387,10 @@ extern void scontrol_print_job(char * job_id_str)
         }
     }
 	if(update_client_port(cache_flag, nocache_flag)){
-
 		return;
 	}
 #endif
+
 	error_code = scontrol_load_job(&job_buffer_ptr, job_id);
 	if (error_code) {
 		exit_code = 1;
@@ -487,9 +488,9 @@ scontrol_print_step (char *job_step_id_str)
 		show_flags |= SHOW_ALL;
 	if (local_flag)
 		show_flags |= SHOW_LOCAL;
-
+	
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	char *env_val = NULL;
+    char *env_val = NULL;
     if ((env_val = getenv("SCONTROL_STEP_CACHE_QUERY"))){
         if(!cache_flag && !nocache_flag){
             if(!xstrcmp(env_val, "cache"))

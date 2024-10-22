@@ -219,9 +219,6 @@ void parse_command_line(int argc, char **argv)
 #ifdef __METASTACK_LOAD_ABNORMAL
 		c = getopt_long(argc, argv, "aehij:dno:pPvVmgr",
 				long_options, &optionIndex);
-#else
-		c = getopt_long(argc, argv, "aehij:no:pPvVmgr",
-				long_options, &optionIndex);
 #endif
 #else
 		c = getopt_long(argc, argv, "aehij:no:pPvV",

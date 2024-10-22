@@ -178,8 +178,6 @@ int save_cred_state(slurm_cred_ctx_t vctx);
 /* Run the health check program if configured */
 #ifdef __METASTACK_NEW_STATE_TO_NHC
 int run_script_health_check(char *node_state, char *node_reason);
-#else
-int run_script_health_check(void);
 #endif
 
 /* Handler for SIGTERM; can also be called to shutdown the slurmd. */

@@ -128,6 +128,9 @@ int main(int argc, char **argv)
 	int error_code = SLURM_SUCCESS, opt_char;
 	char *env_val;
 	log_options_t opts = LOG_OPTS_STDERR_ONLY ;
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+        bool opt_planned_set = false, opt_noplanned_set = false;
+#endif
 
 	int option_index;
 	static struct option long_options[] = {
@@ -284,10 +287,14 @@ int main(int argc, char **argv)
 			break;
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		case OPT_LONG_MPLANNED:
+			opt_planned_set = true;
 			mplanned_flag = true;
+			no_mplanned_flag = false;
 			break;
 		case OPT_LONG_NOMPLANNED:
+			opt_noplanned_set = true;
 			no_mplanned_flag = true;
+			mplanned_flag = false;
 			break;
 #endif
 		case (int)'Q':
@@ -336,11 +343,11 @@ int main(int argc, char **argv)
 			params.sctl_uid = *uid_ptr;
 		}
 		list_iterator_destroy(itr);
-	}	
+	}
 #endif
 
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
-	if (mplanned_flag && no_mplanned_flag) {
+	if ((opt_planned_set && opt_noplanned_set) || (mplanned_flag && no_mplanned_flag)) {
 		error("Conflicting options, --planned and --noplanned, specified. "
 									"Please choose one or the other."); 
 		exit(1);
@@ -2121,7 +2128,9 @@ scontrol [<OPTION>] [<COMMAND>]                                            \n\
      -M, --cluster  Equivalent to \"cluster\" command. Implies --local.    \n\
                     NOTE: SlurmDBD must be up.                             \n\
          --nocache  retrieve job information from the source data          \n\
+	 --noplanned    Don't show planned state set by main scheduler.    \n\
      -o, --oneliner Equivalent to \"oneliner\" command                     \n\
+	 --planned      Show planned state set by main scheduler.		   \n\
      -Q, --quiet    Equivalent to \"quiet\" command                        \n\
      --sibling      Report information about all sibling jobs on a         \n\
 	            federated cluster. Implies --federation option.        \n\

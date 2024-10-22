@@ -73,11 +73,10 @@ extern void *slurmctld_state_save(void *no_data);
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 
-/* shutdown the shutdown_state_copy thread */
-extern void shutdown_state_copy(void);
+extern slurmctld_cache_t *cache_queue;
 
 /* Perform a status copy immediately */
-extern void real_time_state_copy(void);
+extern void update_all_cache_state(void);
 
 /*
  * Run as pthread to copy slurmctld state information as needed,
@@ -85,11 +84,15 @@ extern void real_time_state_copy(void);
  * RET - NULL
  */
 extern void *slurmctld_state_copy(void *no_data);
+
 extern void cache_queue_init();
+extern void cache_queue_fini();
+
 /* shutdown the shutdown_state_copy thread */
 extern void cache_queue_shutdown();
 extern void update_all_cache_state(void);
 extern bool cache_enqueue(slurm_cache_date_t *msg);
 
 #endif
+
 #endif

@@ -40,7 +40,7 @@ accounting_storage_kingbase_la_LIBADD = \
 
 force:
 $(accounting_storage_kingbase_la_LIBADD) : force
-	@cd `dirname $@` && $(MAKE) `basename $@`
+        @cd `dirname $@` && $(MAKE) `basename $@`
 else
 EXTRA_accounting_storage_kingbase_la_SOURCES = $(AS_KINGBASE_SOURCES)
 endif

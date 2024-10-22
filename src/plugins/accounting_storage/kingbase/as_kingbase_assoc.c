@@ -1782,9 +1782,9 @@ static int _process_modify_assoc_results(kingbase_conn_t *kingbase_conn,
 					alt_assoc.max_tres_run_mins =
 						with_assoc_sql[ASSOC2_REQ_MTRM];
 			}
-			for(int i =0 ; i < 14; i++) {
-				if(with_assoc_sql[i])
-				xfree(with_assoc_sql[i]);
+			for(int j =0 ; j < 14; j++) {
+				if(with_assoc_sql[j])
+				xfree(with_assoc_sql[j]);
 			}
 		}
 		mod_assoc = xmalloc(sizeof(slurmdb_assoc_rec_t));

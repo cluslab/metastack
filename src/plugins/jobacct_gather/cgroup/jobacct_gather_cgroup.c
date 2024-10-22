@@ -230,23 +230,6 @@ extern void jobacct_gather_p_poll_data(List task_list, uint64_t cont_id,
 
 	return;
 }
-#else
-extern void jobacct_gather_p_poll_data(List task_list, uint64_t cont_id,
-				       bool profile)
-{
-	static jag_callbacks_t callbacks;
-	static bool first = 1;
-
-	if (first) {
-		memset(&callbacks, 0, sizeof(jag_callbacks_t));
-		first = 0;
-		callbacks.prec_extra = _prec_extra;
-	}
-
-	jag_common_poll_data(task_list, cont_id, &callbacks, profile);
-
-	return;
-}
 #endif
 
 extern int jobacct_gather_p_endpoll(void)

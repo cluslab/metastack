@@ -3336,9 +3336,6 @@ static void _rpc_health_check(slurm_msg_t *msg)
 		slurm_free_nhc_node_info_msg(node_rec_state_array_tmp);
 		msg->data = NULL;
 	}
-#else
-	if (rc == SLURM_SUCCESS)
-		rc = run_script_health_check();
 #endif
 
 	/* Take this opportunity to enforce any job memory limits */

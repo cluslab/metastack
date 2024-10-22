@@ -96,10 +96,10 @@ extern void prep_prolog_slurmctld_callback(int rc, uint32_t job_id,
 #ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
 		if ((rc = job_requeue(0, jid, NULL, false, JOB_PROLOG_MAXREQUEUE_HOLD)) &&
 		   (rc != ESLURM_JOB_PENDING)) {
-#else			
+#else
 		if ((rc = job_requeue(0, jid, NULL, false, 0)) &&
 		    (rc != ESLURM_JOB_PENDING)) {
-#endif				
+#endif
 			info("unable to requeue JobId=%u: %s", jid,
 			     slurm_strerror(rc));
 

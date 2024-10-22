@@ -2048,7 +2048,7 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
                         qos_ptr->name);
             }
 #endif
-			debug2("job submit for user %s(%u): qos max submit job limit exceeded %u (used:%u + requested:%d) for qos '%s'",
+			debug2("job submit for user %s(%u): qos max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
 			       user_name,
 			       job_desc->user_id,
 			       qos_ptr->max_submit_jobs_pu,
@@ -4154,6 +4154,7 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 		parent = 1;
 	}
 end_it:
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	_add_job_state_to_queue(job_ptr);
 #endif
@@ -5024,7 +5025,6 @@ job_failed:
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	_add_job_state_to_queue(job_ptr);
 #endif
-
 	assoc_mgr_unlock(&locks);
 	slurmdb_free_qos_rec_members(&qos_rec);
 
@@ -5495,10 +5495,6 @@ extern time_t acct_policy_get_preemptable_time(job_record_t *job_ptr)
 		xassert(verify_lock(CONF_LOCK, READ_LOCK));
 		xassert(verify_lock(JOB_LOCK, READ_LOCK));
 	}
-	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
-#else
-	xassert(verify_lock(CONF_LOCK, READ_LOCK));
-	xassert(verify_lock(JOB_LOCK, READ_LOCK));
 	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
 #endif
 

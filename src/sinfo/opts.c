@@ -338,6 +338,9 @@ extern void parse_command_line(int argc, char **argv)
 	hostlist_t host_list;
 	bool long_form = false;
 	bool opt_a_set = false, opt_p_set = false;
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+    bool opt_planned_set = false, opt_noplanned_set = false;
+#endif
 	bool env_a_set = false, env_p_set = false;
 	static struct option long_options[] = {
 		{"all",       no_argument,       0, 'a'},
@@ -364,7 +367,7 @@ extern void parse_command_line(int argc, char **argv)
 		{"noconvert", no_argument,       0, OPT_LONG_NOCONVERT},
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		{"noplanned",no_argument,	 0, OPT_LONG_NOMPLANNED},
-#endif	
+#endif		
 		{"noheader",  no_argument,       0, 'h'},
 		{"Node",      no_argument,       0, 'N'},
 		{"format",    required_argument, 0, 'o'},
@@ -602,14 +605,18 @@ extern void parse_command_line(int argc, char **argv)
 		case OPT_LONG_NOCACHE:
 			params.nocache_query = true;
             params.cache_query = false;
-			break;
+			break;	
 #endif
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		case OPT_LONG_MPLANNED:
+			opt_planned_set = true;
 			params.mplanned = true;
+			params.no_mplanned = false;
 			break;
 		case OPT_LONG_NOMPLANNED:
+		    opt_noplanned_set = true;
 			params.no_mplanned = true;
+			params.mplanned = false;
 			break;
 #endif
 
@@ -626,7 +633,7 @@ extern void parse_command_line(int argc, char **argv)
 	}
 
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
-	if (params.mplanned && params.no_mplanned) {
+	if ((opt_planned_set && opt_noplanned_set) || (params.mplanned && params.no_mplanned)) {
 		error("Conflicting options, --planned and --noplanned, specified. "
 									"Please choose one or the other."); 
 		exit(1);
@@ -1814,10 +1821,12 @@ Usage: sinfo [OPTIONS]\n\
   -n, --nodes=NODES          report on specific node(s)\n\
   --noconvert                don't convert units from their original type\n\
 			     (e.g. 2048M won't be converted to 2G).\n\
+  --noplanned                don't show planned state set by main scheduler\n\
   -N, --Node                 Node-centric format\n\
   -o, --format=format        format specification\n\
   -O, --Format=format        long format specification\n\
   -p, --partition=PARTITION  report on specific partition\n\
+  --planned                  show planned state set by main scheduler\n\
   -r, --responding           report only responding nodes\n\
   -R, --list-reasons         list reason nodes are down or drained\n\
   -s, --summarize            report state summary only\n\

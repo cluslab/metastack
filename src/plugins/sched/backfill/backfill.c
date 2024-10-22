@@ -336,6 +336,7 @@ static bool _many_pending_rpcs(void)
 	bool many_pending_rpcs = false;
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+	/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 	if (para_sched) {
 		slurm_rwlock_rdlock(&slurmctld_config.thread_count_rwlock);
 		//info("thread_count = %u", slurmctld_config.server_thread_count);
@@ -351,13 +352,6 @@ static bool _many_pending_rpcs(void)
 			many_pending_rpcs = true;
 		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);		
 	}
-#else
-	slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-	//info("thread_count = %u", slurmctld_config.server_thread_count);
-	if ((max_rpc_cnt > 0) &&
-	    (slurmctld_config.server_thread_count >= max_rpc_cnt))
-		many_pending_rpcs = true;
-	slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif
 
 	return many_pending_rpcs;
@@ -1154,6 +1148,7 @@ static int _yield_locks(int64_t usec)
 	while (!stop_backfill) {
 		bf_sleep_usec += _my_sleep(usec);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 		if (para_sched) {
 			slurm_rwlock_rdlock(&slurmctld_config.thread_count_rwlock);
 			if ((max_rpc_cnt == 0) ||
@@ -1175,16 +1170,6 @@ static int _yield_locks(int64_t usec)
 				slurmctld_config.server_thread_count);
 			slurm_mutex_unlock(&slurmctld_config.thread_count_lock);			
 		} 
-#else
-		slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-		if ((max_rpc_cnt == 0) ||
-		    (slurmctld_config.server_thread_count <= yield_rpc_cnt)) {
-			slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
-			break;
-		}
-		verbose("continuing to yield locks, %d RPCs pending",
-			slurmctld_config.server_thread_count);
-		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif		
 	}
 	lock_slurmctld(all_locks);
@@ -1829,8 +1814,6 @@ static void _attempt_backfill(void)
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	job_queue = build_job_queue(true, true, NULL);
-#else
-	job_queue = build_job_queue(true, true);
 #endif
 	job_test_count = list_count(job_queue);
 	if (job_test_count == 0) {
@@ -1963,6 +1946,7 @@ static void _attempt_backfill(void)
 
 		many_rpcs = false;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 		if (para_sched) {
 			slurm_rwlock_rdlock(&slurmctld_config.thread_count_rwlock);
 			if ((max_rpc_cnt > 0) &&
@@ -1976,12 +1960,6 @@ static void _attempt_backfill(void)
 				many_rpcs = true;
 			slurm_mutex_unlock(&slurmctld_config.thread_count_lock);			
 		}
-#else
-		slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-		if ((max_rpc_cnt > 0) &&
-		    (slurmctld_config.server_thread_count >= max_rpc_cnt))
-			many_rpcs = true;
-		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif
 
 		if (many_rpcs || (slurm_delta_tv(&start_tv) >= yield_interval)) {
@@ -2337,6 +2315,7 @@ next_task:
 
 		many_rpcs = false;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 		if (para_sched) {
 			slurm_mutex_lock(&slurmctld_config.thread_count_lock);
 			if ((max_rpc_cnt > 0) &&
@@ -2350,12 +2329,6 @@ next_task:
 				many_rpcs = true;
 			slurm_mutex_unlock(&slurmctld_config.thread_count_lock);	
 		}
-#else
-		slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-		if ((max_rpc_cnt > 0) &&
-		    (slurmctld_config.server_thread_count >= max_rpc_cnt))
-			many_rpcs = true;
-		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif
 
 		if (many_rpcs || (slurm_delta_tv(&start_tv) >= yield_interval)) {
@@ -3204,6 +3177,7 @@ skip_start:
 	}
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+	/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 	if (para_sched) {
 		slurm_rwlock_rdlock(&slurmctld_config.thread_count_rwlock);
 		if (slurmctld_config.server_thread_count >= 150) {
@@ -3221,14 +3195,6 @@ skip_start:
 		}
 		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);		
 	}
-#else
-	slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-	if (slurmctld_config.server_thread_count >= 150) {
-		info("%d pending RPCs at cycle end, consider "
-		     "configuring max_rpc_cnt",
-		     slurmctld_config.server_thread_count);
-	}
-	slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif
 
 	return;
@@ -3252,9 +3218,6 @@ static int _start_job(job_record_t *job_ptr, bitstr_t *resv_bitmap)
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	rc = select_nodes(job_ptr, false, NULL, NULL, false,
 			  SLURMDB_JOB_FLAG_BACKFILL, false, 0);
-#else
-	rc = select_nodes(job_ptr, false, NULL, NULL, false,
-			  SLURMDB_JOB_FLAG_BACKFILL);
 #endif			  
 	if (is_job_array_head && job_ptr->details) {
 		job_record_t *base_job_ptr;
@@ -3382,7 +3345,6 @@ static void _reset_job_time_limit(job_record_t *job_ptr, time_t now,
 		job_ptr->end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
 	}
 #endif
-
 	job_time_adj_resv(job_ptr);
 
 	if (orig_time_limit != job_ptr->time_limit) {
@@ -3972,6 +3934,7 @@ static int _het_job_start_now(het_job_map_t *map, node_space_map_t *node_space)
 			fed_mgr_job_unlock(job_ptr);
 			break;
 		}
+
 #ifdef __METASTACK_NEW_TIME_PREDICT
 		if (job_ptr->time_min) {
 			if (job_ptr->predict_job == 1) {
@@ -3986,6 +3949,7 @@ static int _het_job_start_now(het_job_map_t *map, node_space_map_t *node_space)
 			}
 		}
 #endif
+
 		if (job_ptr->start_time) {
 			if (job_ptr->time_limit == INFINITE)
 				hard_limit = YEAR_SECONDS;

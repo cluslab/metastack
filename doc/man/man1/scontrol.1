@@ -98,8 +98,19 @@ to query partition, node, job, and step information from the source data.
 .IP
 
 .TP
+\fB\-\-noplanned\fR
+If set, do not display planned state set by main scheduler. The option takes 
+precedence over the setting of PrivateData in the slurm.conf.
+.IP
+
+.TP
 \fB\-o\fR, \fB\-\-oneliner\fR
 Print information one line per record.
+.IP
+
+.TP
+\fB\-\-planned\fR
+If set, display planned state set by main scheduler.
 .IP
 
 .TP
@@ -2807,6 +2818,14 @@ written.
 Specify debug flags for scontrol to use. See DebugFlags in the
 \fBslurm.conf\fR(5) man page for a full list of flags. The environment
 variable takes precedence over the setting in the slurm.conf.
+.IP
+
+.TP
+\fBSLURM_MAIN_PLANNED\fR
+If set to true, it is the same as \-\-planned. If set to false, it is 
+the same as \-\-noplanned. The environment variable takes precedence 
+over the setting of PrivateData in the slurm.conf.
+\fBNOTE\fR: Command line options will always override these settings.
 .IP
 
 .TP

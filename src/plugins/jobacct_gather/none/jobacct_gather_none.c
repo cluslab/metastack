@@ -92,11 +92,6 @@ extern void jobacct_gather_p_poll_data(
 {
 	return;
 }
-#else
-extern void jobacct_gather_p_poll_data(List task_list, uint64_t cont_id)
-{
-	return;
-}
 #endif
 
 extern jobacctinfo_t *jobacct_gather_p_create(jobacct_id_t *jobacct_id)

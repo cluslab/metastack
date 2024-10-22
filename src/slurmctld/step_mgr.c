@@ -4653,8 +4653,6 @@ extern void step_set_alloc_tres(step_record_t *step_ptr, uint32_t node_count,
 	if (!para_sched) {		
 		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
 	}
-#else
-	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
 #endif
 
 	xfree(step_ptr->tres_alloc_str);

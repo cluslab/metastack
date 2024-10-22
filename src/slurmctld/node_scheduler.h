@@ -144,8 +144,6 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			bitstr_t **select_node_bitmap, char **err_msg,
 #ifdef __METASTACK_NEW_PART_PARA_SCHED			
 			bool submission, uint32_t scheduler_type, bool sched, int index);
-#else			
-			bool submission, uint32_t scheduler_type);
 #endif
 
 /*

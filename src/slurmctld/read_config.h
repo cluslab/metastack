@@ -70,6 +70,7 @@ extern bool validate_partition_borrow_nodes(part_record_t *part_ptr);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
 extern bool enable_reason_detail;
 #endif
+
 /*
  * Free the global response_cluster_rec
  */
@@ -109,7 +110,9 @@ extern void build_feature_list_ne(void);
  * node_bitmap IN - Nodes with the new active_features value */
 extern void update_feature_list(List feature_list, char *new_features,
 				bitstr_t *node_bitmap);
+
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 extern void _validate_copy_het_jobs(void);
 #endif
+
 #endif /* !_HAVE_READ_CONFIG_H */

@@ -259,10 +259,8 @@ void run_backup(void)
 		error("Unable to recover slurm state");
 		abort();
 	}
-	
 	unlock_slurmctld(config_write_lock);
 	select_g_select_nodeinfo_set_all();
-
 	return;
 }
 
@@ -316,7 +314,10 @@ static void *_background_signal_hand(void *no_data)
 			break;
 		case SIGUSR2:
 			info("Logrotate signal (SIGUSR2) received");
+			/* Prevent an assertion in debugging builds when triggering log rotation in a backup slurmctld. */
+			lock_slurmctld(config_write_lock);			
 			update_logging();
+			unlock_slurmctld(config_write_lock);			
 			break;
 		default:
 			error("Invalid signal (%d) received", sig);

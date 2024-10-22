@@ -341,12 +341,13 @@ static List _query_server(bool clear_old)
 	int cc;
 	node_info_t *node_ptr;
 	List sinfo_list = NULL;
-
+	
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	if(update_client_port(params.cache_query, params.nocache_query)){
 		return NULL;
 	}
 #endif
+
 
 	if (params.all_flag)
 		show_flags |= SHOW_ALL;
@@ -591,7 +592,7 @@ void *_build_part_info(void *args)
 			node_ptr = &(node_msg->node_array[i]);
 			if (node_ptr->name == NULL)
 				continue;
-				
+
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			/* display borrowed nodes by using '--borrow' */
 			if (params.borrow_flag && !IS_NODE_BORROWED(node_ptr)) {

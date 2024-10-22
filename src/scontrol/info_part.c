@@ -95,7 +95,7 @@ scontrol_print_part (char *partition_name)
 	partition_info_t *part_ptr = NULL;
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	    char *env_val = NULL;
+    char *env_val = NULL;
     if ((env_val = getenv("SCONTROL_PART_CACHE_QUERY"))){
         if(!cache_flag && !nocache_flag){
             if(!xstrcmp(env_val, "cache"))
@@ -105,7 +105,6 @@ scontrol_print_part (char *partition_name)
         }
     }
 	if(update_client_port(cache_flag, nocache_flag)){
-
 		return;
 	}
 #endif

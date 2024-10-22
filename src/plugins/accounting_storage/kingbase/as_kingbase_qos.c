@@ -575,7 +575,7 @@ static int _setup_qos_limits(slurmdb_qos_rec_t *qos,
 		xstrfmtcat(*extra, ", usage_thres=%f", qos->usage_thres);
 	}
 
-		if (fuzzy_equal(qos->limit_factor, INFINITE)) {
+	if (fuzzy_equal(qos->limit_factor, INFINITE)) {
 		xstrcat(*cols, ", limit_factor");
 		xstrcat(*vals, ", NULL");
 		xstrcat(*extra, ", limit_factor=NULL");

@@ -2032,11 +2032,13 @@ static void _slurm_rpc_dump_cache_nodes(slurm_msg_t * msg)
 		return;
 	}
 	
+	
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
 		lock_cache_query(node_cache_read_lock);
 		lock_slurmctld(node_write_lock);
 	}
-//	select_g_select_nodeinfo_set_all();
+	
+
 
 	if ((node_req_msg->last_update - 1) >= last_node_update) {
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING)){
@@ -3672,7 +3674,6 @@ static void _slurm_rpc_node_registration(slurm_msg_t *msg)
 			queue_job_scheduler();
 		}
 	}
-
 
 send_resp:
 

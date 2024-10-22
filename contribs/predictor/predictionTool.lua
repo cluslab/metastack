@@ -655,7 +655,7 @@ function sklearn_prediction(user_name, partition_p, req_cpu, req_mem, req_nodes,
 	-- 判断 prediction_time.py 是否存在
 	if not file_exists(prediction_script) then
 		slurm.log_debug("prediction_time.py file is missing")
-[O	end
+	end
 
 	-- 构建 Python 命令
 	local command = string.format(
@@ -683,5 +683,4 @@ function file_exists(path)
 		return false
 	end
 end
-
 

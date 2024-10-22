@@ -1607,7 +1607,7 @@ extern void print_fields(type_t type, void *object)
 			}
 			convert_num_unit((double)tmp_uint32, outbuf,
 					 sizeof(outbuf), UNIT_NONE,
-					 params.units, params.convert_flags);
+					 NO_VAL, params.convert_flags);
 
 			field->print_routine(field,
 					     outbuf,

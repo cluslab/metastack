@@ -1070,21 +1070,9 @@ extern void license_set_job_tres_cnt(List license_list,
 	licenses_t *license_entry;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	slurmdb_tres_rec_t tres_rec;
-#else
-	static bool first_run = 1;
-	static slurmdb_tres_rec_t tres_rec;
 #endif	
 	int tres_pos;
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
-
-#ifndef __METASTACK_NEW_PART_PARA_SCHED
-	/* we only need to init this once */
-	if (first_run) {
-		first_run = 0;
-		memset(&tres_rec, 0, sizeof(slurmdb_tres_rec_t));
-		tres_rec.type = "license";
-	}
-#endif
 
 	if (!license_list || !tres_cnt)
 		return;
@@ -1147,20 +1135,6 @@ static void _pack_license(licenses_t *lic, buf_t *buffer,
 		pack32(lic->reserved, buffer);
 		pack8(lic->remote, buffer);
     } else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
-		packstr(lic->name, buffer);
-		pack32(lic->total, buffer);
-		pack32(lic->used, buffer);
-#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
-		pack32(lic->occupied, buffer);
-#endif
-		pack32(lic->reserved, buffer);
-		pack8(lic->remote, buffer);
-	} else {
-		error("%s: protocol_version %hu not supported",
-		      __func__, protocol_version);
-	}
-#else
-	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		packstr(lic->name, buffer);
 		pack32(lic->total, buffer);
 		pack32(lic->used, buffer);

@@ -1013,6 +1013,7 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 		xfree(query);
 		if (KCIResultGetStatusCode(step_result) != EXECUTE_TUPLES_OK) {
 			rc = SLURM_ERROR;
+			KCIResultDealloc(result);
 			KCIResultDealloc(step_result);
 			goto end_it;
 		}

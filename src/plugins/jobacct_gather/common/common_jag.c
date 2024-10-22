@@ -837,7 +837,6 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 #ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
 	data[FIELD_TIMER].u64 = send->timer;
 #endif
-
 	if(send->load_flag & LOAD_LOW) { 
 		data[FIELD_EVENTTYPE1START].u64 = send->cpu_start;
 		data[FIELD_EVENTTYPE1END].u64 = send->cpu_end;
@@ -856,6 +855,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		data[FIELD_EVENTTYPE1START].u64 = send->node_start;
 		data[FIELD_EVENTTYPE1END].u64 = send->node_end;
 	}	
+
 
 	log_flag(PROFILE, "PROFILE-Task: %s",
 		 acct_gather_profile_dataset_str(dataset, data, str,
@@ -990,9 +990,6 @@ static void _record_profile(struct jobacctinfo *jobacct)
 	pdata.process = jobacct->pjobs;
 	acct_gather_profile_g_add_sample_data(jobacct->dataset_id,
 										  (void *)&pdata, jobacct->cur_time);
-#else
-	acct_gather_profile_g_add_sample_data(jobacct->dataset_id,
-	                                      (void *)data, jobacct->cur_time);
 #endif
 }
 
@@ -1172,9 +1169,6 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jag_callbacks_t *callbacks, bool profile, collection_t *collect, write_t *data)
-#else
-extern void jag_common_poll_data(List task_list, uint64_t cont_id,
-				 jag_callbacks_t *callbacks, bool profile)
 #endif
 {
 	/* Update the data */

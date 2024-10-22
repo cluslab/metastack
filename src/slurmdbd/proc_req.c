@@ -1363,6 +1363,7 @@ static int _get_users(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 							    *uid, user_cond);
 	}
 #endif
+
 	if (!errno) {
 		if (!list_msg.my_list)
 			list_msg.my_list = list_create(NULL);
@@ -1379,7 +1380,6 @@ static int _get_users(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	}
 
 	FREE_NULL_LIST(list_msg.my_list);
-
 #ifdef __METASTACK_ASSOC_HASH
 	if (flag) {
 		assoc_mgr_unlock(&locks);

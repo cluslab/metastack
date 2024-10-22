@@ -328,20 +328,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 		slurm_job_step_pids_response_msg_free(step_stat_response);
 		return rc;
 	}
-#else
-	if ((rc = slurm_job_step_stat(step_id,
-				      nodelist, use_protocol_ver,
-				      &step_stat_response)) != SLURM_SUCCESS) {
-		if (rc == ESLURM_INVALID_JOB_ID) {
-			debug("%ps has already completed",
-			      step_id);
-		} else {
-			error("problem getting step_layout for %ps: %s",
-			      step_id, slurm_strerror(rc));
-		}
-		slurm_job_step_pids_response_msg_free(step_stat_response);
-		return rc;
-	}
 #endif
 
 	memset(&job, 0, sizeof(slurmdb_job_rec_t));
@@ -417,6 +403,7 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 	list_iterator_destroy(itr);
 #ifdef __METASTACK_LOAD_ABNORMAL
  	char arrTest1[] = "batch";
+	/* If the linux acquisition plug-in is not enabled, skip the judgment branch */
 	if((params.opt_event == 1) && total_jobacct) {
 		if(step.step_id.step_id == -5) {
 			printf("\n*********************************************************************************\n");
@@ -568,9 +555,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if(params.opt_event != 1)
 		print_fields(&step);
-
-#else
-	print_fields(&step);
 #endif
 
 getout:
@@ -610,8 +594,6 @@ int main(int argc, char **argv)
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if(params.opt_event != 1) 
 		print_fields_header(print_fields_list);
-#else
-	print_fields_header(print_fields_list);
 #endif
 	itr = list_iterator_create(params.opt_job_list);
 	while ((selected_step = list_next(itr))) {

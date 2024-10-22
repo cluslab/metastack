@@ -114,9 +114,6 @@
 #include "src/slurmctld/read_config.h"
 #include "src/slurmctld/reservation.h"
 #include "src/slurmctld/rpc_queue.h"
-#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
-#include "src/slurmctld/rate_limit.h"
-#endif
 #include "src/slurmctld/sched_plugin.h"
 #include "src/slurmctld/slurmctld.h"
 #include "src/slurmctld/slurmctld_plugstack.h"
@@ -124,6 +121,9 @@
 #include "src/slurmctld/srun_comm.h"
 #include "src/slurmctld/state_save.h"
 #include "src/slurmctld/trigger_mgr.h"
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+#include "src/slurmctld/rate_limit.h"
+#endif
 
 
 #define DEFAULT_DAEMONIZE 1	/* Run as daemon by default if set */
@@ -215,6 +215,7 @@ static int	new_nice = 0;
 static int	recover   = DEFAULT_RECOVER;
 static pthread_mutex_t sched_cnt_mutex = PTHREAD_MUTEX_INITIALIZER;
 static char *	slurm_conf_filename;
+
 
 /*
  * Static list of signals to block in this process
@@ -700,6 +701,7 @@ int main(int argc, char **argv)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 			update_all_cache_state();
 #endif
+
 			if (recover == 0) {
 				slurmctld_init_db = 1;
 				_accounting_mark_all_nodes_down("cold-start");
@@ -785,7 +787,6 @@ int main(int argc, char **argv)
 		 */
 		slurm_thread_create(&slurmctld_config.thread_id_save,
 				    slurmctld_state_save, NULL);
-
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		/*
 		 * create attached thread for copy data
@@ -793,7 +794,6 @@ int main(int argc, char **argv)
 		slurm_thread_create(&slurmctld_config.thread_id_copy,
 				    slurmctld_state_copy, NULL);
 #endif
-
 		/*
 		 * create attached thread for node power management
   		 */
@@ -819,6 +819,7 @@ int main(int argc, char **argv)
 		priority_g_fini();
 		slurmctld_plugstack_fini();
 		shutdown_state_save();
+
 		slurm_mutex_lock(&purge_thread_lock);
 		slurm_cond_signal(&purge_thread_cond); /* wake up last time */
 		slurm_mutex_unlock(&purge_thread_lock);
@@ -830,6 +831,7 @@ int main(int argc, char **argv)
 		pthread_join(slurmctld_config.thread_id_query, NULL);
 		pthread_join(slurmctld_config.thread_id_copy, NULL);
 #endif
+
 		slurmctld_config.thread_id_purge_files = (pthread_t) 0;
 		slurmctld_config.thread_id_sig  = (pthread_t) 0;
 		slurmctld_config.thread_id_rpc  = (pthread_t) 0;
@@ -897,6 +899,9 @@ int main(int argc, char **argv)
 
 	slurmscriptd_fini();
 	jobcomp_g_fini();
+#ifdef __METASTACK_OPT_CACHE_QUERY	
+	cache_queue_fini();
+#endif
 
 	/*
 	 * Since pidfile is created as user root (its owner is
@@ -938,6 +943,9 @@ int main(int argc, char **argv)
 	/* Purge our local data structures */
 	configless_clear();
 	power_save_fini();
+	purge_cache_part_data();
+	purge_cache_node_data();
+	purge_cache_job_data();
 	job_fini();
 	part_fini();	/* part_fini() must precede node_fini() */
 	node_fini();
@@ -1132,6 +1140,7 @@ static void  _init_config(void)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	slurmctld_config.thread_id_query   = (pthread_t) 0;
 #endif
+	
 }
 
 /* Read configuration file.
@@ -1336,6 +1345,7 @@ static void *_slurmctld_rpc_mgr(void *no_data)
 	unlock_slurmctld(config_read_lock);
 
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	/* restart slurmctld to init rate limit config */
 	rate_limit_init();
 #endif
 	rpc_queue_init();
@@ -1452,13 +1462,6 @@ static void *_service_connection(void *arg)
 		/* process the request */
 		slurmctld_req(msg);
 	}
-#else
-	if (rpc_enqueue(msg)) {
-		server_thread_decr();
-		return NULL;
-	}
-	/* process the request */
-	slurmctld_req(msg);
 #endif
 
 	if ((msg->conn_fd >= 0) && (close(msg->conn_fd) < 0))
@@ -1723,8 +1726,6 @@ static bool _wait_for_server_thread(void)
 			} else {
 				slurmctld_config.server_thread_count++;				
 			}
-#else
-			slurmctld_config.server_thread_count++;
 #endif
 			break;
 		} else {
@@ -1768,8 +1769,6 @@ extern void server_thread_decr(void)
 			slurmctld_config.server_thread_count--;			
 		}
 	}
-#else
-		slurmctld_config.server_thread_count--;
 #endif		
 	else
 		error("slurmctld_config.server_thread_count underflow");
@@ -1781,6 +1780,7 @@ extern void server_thread_decr(void)
 extern void server_thread_incr(void)
 {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+	/* if para_sched, replace mutex lock with rwlock to reduce lock competition */
 	if (para_sched) {
 		slurm_rwlock_wrlock(&slurmctld_config.thread_count_rwlock);
 		slurmctld_config.server_thread_count++;
@@ -1790,10 +1790,6 @@ extern void server_thread_incr(void)
 		slurmctld_config.server_thread_count++;
 		slurm_mutex_unlock(&slurmctld_config.thread_count_lock);		
 	}
-#else
-	slurm_mutex_lock(&slurmctld_config.thread_count_lock);
-	slurmctld_config.server_thread_count++;
-	slurm_mutex_unlock(&slurmctld_config.thread_count_lock);
 #endif	
 }
 
@@ -3037,6 +3033,7 @@ int slurmctld_shutdown(void)
 			error("thread_id_rpc not set");
 		}
 #endif
+
 	if (slurmctld_config.thread_id_rpc) {
 		pthread_kill(slurmctld_config.thread_id_rpc, SIGUSR1);
 		return SLURM_SUCCESS;

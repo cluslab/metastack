@@ -391,11 +391,8 @@ main (int argc, char **argv)
 	_install_fork_handlers();
 	slurm_conf_install_fork_handlers();
 	record_launched_jobs();
-
 #ifdef __METASTACK_NEW_STATE_TO_NHC
 	run_script_health_check(NULL, NULL);
-#else
-	run_script_health_check();
 #endif
 	slurm_thread_create_detached(NULL, _registration_engine, NULL);
 
@@ -2856,8 +2853,6 @@ static void _resource_spec_fini(void)
  */
 #ifdef __METASTACK_NEW_STATE_TO_NHC
 extern int run_script_health_check(char *node_state, char *node_reason)
-#else
-extern int run_script_health_check(void)
 #endif
 {
 	int rc = SLURM_SUCCESS;

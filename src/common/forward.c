@@ -937,8 +937,6 @@ extern List start_msg_tree(hostlist_t hl, slurm_msg_t *msg, int timeout)
 	} else {
 		_start_msg_tree_internal(NULL, sp_hl, &fwd_tree, hl_count);
 	}
-#else
-	_start_msg_tree_internal(NULL, sp_hl, &fwd_tree, hl_count);
 #endif
 	xfree(sp_hl);
 

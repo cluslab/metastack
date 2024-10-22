@@ -102,4 +102,3 @@ Python 3.9.19、pandas、numpy、sklearnjoblib、os、sys、argparse、warnings
 ​			首次安装需执行updateJobHistory脚本获取历史作业集，及生成对应的AI预测模型。
 
 ​			若历史作业集需频繁更新，建议将updateJobHistory脚本放置在系统级crontab定时任务中，作业集和AI预测模型会对应更新。
-

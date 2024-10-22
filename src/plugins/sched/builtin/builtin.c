@@ -153,8 +153,6 @@ static void _compute_start_times(void)
 	alloc_bitmap = bit_alloc(node_record_count);
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	job_queue = build_job_queue(true, false, NULL);
-#else	
-	job_queue = build_job_queue(true, false);
 #endif	
 	sort_job_queue(job_queue);
 	while ((job_queue_rec = (job_queue_rec_t *) list_pop(job_queue))) {

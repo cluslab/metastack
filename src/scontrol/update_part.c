@@ -376,7 +376,7 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			part_msg_ptr->standby_node_parameters = val;
 			(*update_cnt_ptr)++;
 		}
-#endif			
+#endif		
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 		else if (!xstrncasecmp(tag, "SuspendKeepIdle", MAX(taglen, 8))) {
 			if (parse_uint32(val, &part_msg_ptr->suspend_idle)) {

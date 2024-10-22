@@ -593,8 +593,6 @@ static void acct_gather_set_parameters(char *freq, char* freq_def, acct_gather_r
 }
 
 extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather_rank_t step_rank)
-#else
-extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 #endif
 {
 	int i;
@@ -647,11 +645,6 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def)
 			} 
 			jobacct_gather_startpoll(
 				acct_gather_profile_timer[i].freq, step_rank);
-#else
-			_set_freq(i, freq, freq_def);
-
-			jobacct_gather_startpoll(
-				acct_gather_profile_timer[i].freq);
 #endif
 			break;
 		case PROFILE_FILESYSTEM:

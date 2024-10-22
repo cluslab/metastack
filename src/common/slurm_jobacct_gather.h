@@ -256,8 +256,6 @@ extern void jobacctinfo_pack_detial(jobacctinfo_t *jobacct, uint16_t rpc_version
 extern int jobacctinfo_unpack_detial(jobacctinfo_t **jobacct, uint16_t rpc_version,
 			      uint16_t protocol_type, buf_t *buffer, bool alloc); 	
 extern void jobacctinfo_aggregate_2(jobacctinfo_t *dest, jobacctinfo_t *from);
-#else
-extern int  jobacct_gather_startpoll(uint16_t frequency);
 #endif
 extern int  jobacct_gather_endpoll(void);
 extern void jobacct_gather_suspend_poll(void);

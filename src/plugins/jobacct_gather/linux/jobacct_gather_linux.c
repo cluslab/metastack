@@ -271,24 +271,6 @@ extern void jobacct_gather_p_poll_data(
 	jag_common_poll_data(task_list, cont_id, &callbacks, profile, collect, data);
 	return;
 }
-#else
-extern void jobacct_gather_p_poll_data(
-	List task_list, int64_t cont_id, bool profile)
-{
-	static jag_callbacks_t callbacks;
-	static bool first = 1;
-
-	xassert(running_in_slurmstepd());
-
-	if (first) {
-		memset(&callbacks, 0, sizeof(jag_callbacks_t));
-		first = 0;
-		callbacks.get_offspring_data = _get_offspring_data;
-	}
-
-	jag_common_poll_data(task_list, cont_id, &callbacks, profile);
-	return;
-}
 #endif
 
 extern int jobacct_gather_p_endpoll(void)

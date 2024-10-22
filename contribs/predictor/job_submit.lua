@@ -477,4 +477,3 @@ end
 
 slurm.log_info("initialized")
 return slurm.SUCCESS
-

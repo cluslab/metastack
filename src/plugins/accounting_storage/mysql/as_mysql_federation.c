@@ -192,6 +192,7 @@ static int _remove_clusters_from_fed(mysql_conn_t *mysql_conn, List clusters)
 	xfree(query);
 	if (rc)
 		error("Failed to remove clusters %s from federation", names);
+	list_iterator_destroy(itr);
 	xfree(names);
 
 	return rc;
