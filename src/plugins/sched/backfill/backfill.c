@@ -3337,7 +3337,14 @@ static void _reset_job_time_limit(job_record_t *job_ptr, time_t now,
 	}
 	new_time_limit = MAX(job_ptr->time_min, job_ptr->time_limit);
 	acct_policy_alter_job(job_ptr, new_time_limit);
-	job_ptr->time_limit = new_time_limit;
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if (job_ptr->predict_job == 1) {
+		job_ptr->time_limit = orig_time_limit;
+	} else {
+		job_ptr->time_limit = new_time_limit;
+	}
+#endif
+
 #ifdef __METASTACK_NEW_TIME_PREDICT
 	if ((job_ptr->predict_job == 1) && job_ptr->time_min) {
 		job_ptr->end_time = job_ptr->start_time + (job_ptr->time_min * 60);
