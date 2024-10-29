@@ -3389,18 +3389,60 @@ end_it:
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
  	/* If you add a child account and it's parent account 
 	has a coordinator, update the coordinator of the parent account */
-	if (assoc_list_tmp && acct_added) {
+	if (assoc_list_tmp && acct_added && (rc == SLURM_SUCCESS)) {
 		ListIterator itr3 = list_iterator_create(assoc_list_tmp);
 		MYSQL_RES *result1 = NULL;
 		MYSQL_ROW row1;
 		
 		while ((object = list_next(itr3))){
 			if(object->parent_acct){
+				char *extra_parent = NULL;
+				xstrfmtcat(extra_parent, "(acct='%s'" , object->parent_acct);
+
+				char *parent_acct = xstrdup(object->parent_acct);
+
+				while (parent_acct) {
+					MYSQL_RES *result2 = NULL;
+					MYSQL_ROW row2;
+					char *query2 = xstrdup_printf(
+						"select parent_acct from \"%s_%s\" where acct='%s' && user='' && deleted=0;",
+						object->cluster, assoc_table, parent_acct);
+					DB_DEBUG(DB_ASSOC, mysql_conn->conn, "query\n%s", query2);
+					xfree(parent_acct);
+					if (!(result2 = mysql_db_query_ret(
+								mysql_conn, query2, 0))) {
+						xfree(query2);
+						rc = SLURM_ERROR;
+						break;
+					}
+					xfree(query2);
+
+					row2 = mysql_fetch_row(result2);
+					if (row2) {
+						parent_acct = xstrdup(row2[0]);
+						xstrfmtcat(extra_parent, "|| acct='%s'", parent_acct);
+					} else {
+						parent_acct = NULL;
+					}
+					mysql_free_result(result2);
+				}
+				if (parent_acct) {
+					xfree(parent_acct);
+				}
+
+				if (rc == SLURM_ERROR) {
+					xfree(extra_parent);
+					break;
+				}
+
+				xstrfmtcat(extra_parent, ")");
+				
 				char *query1 = xstrdup_printf(
-					"select user from %s where acct='%s' && deleted=0",
-					acct_coord_table, object->parent_acct);
+					"select user from %s where %s && deleted=0",
+					acct_coord_table, extra_parent);
 				
 				DB_DEBUG(DB_ASSOC, mysql_conn->conn, "query\n%s", query1);
+				xfree(extra_parent);
 				if (!(result1 = mysql_db_query_ret(
 							mysql_conn, query1, 0))) {
 					xfree(query1);

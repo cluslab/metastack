@@ -1332,11 +1332,6 @@ static int _post_user_list(List user_list)
 
 	START_TIMER;
 
-#ifdef __METASTACK_ASSOC_HASH
-	destroy_str_key_hash(&user_hash);
-	destroy_str_key_hash(&user_uid_hash);
-#endif
-
 	while ((user = list_next(itr))) {
 		uid_t pw_uid;
 		/* Just to make sure we have a default_wckey since it
@@ -1418,10 +1413,6 @@ static int _post_qos_list(List qos_list)
 
 	g_qos_count = 0;
 	g_qos_max_priority = 0;
-
-#ifdef __METASTACK_QOS_HASH
-	destroy_qos_hash(&qos_hash);
-#endif
 
 	while ((qos = list_next(itr))) {
 		if (qos->flags & QOS_FLAG_NOTSET)
@@ -1938,6 +1929,12 @@ static int _get_assoc_mgr_qos_list(void *db_conn, int enforce)
 	List new_list = NULL;
 	assoc_mgr_lock_t locks = { .qos = WRITE_LOCK };
 
+#ifdef __METASTACK_QOS_HASH
+	assoc_mgr_lock(&locks);
+	destroy_qos_hash(&qos_hash);
+	assoc_mgr_unlock(&locks);
+#endif
+
 	new_list = acct_storage_g_get_qos(db_conn, uid, NULL);
 
 	if (!new_list) {
@@ -1979,6 +1976,10 @@ static int _get_assoc_mgr_user_list(void *db_conn, int enforce)
 #endif
 
 	assoc_mgr_lock(&locks);
+#ifdef __METASTACK_ASSOC_HASH
+	destroy_str_key_hash(&user_hash);
+	destroy_str_key_hash(&user_uid_hash);
+#endif
 	FREE_NULL_LIST(assoc_mgr_user_list);
 	assoc_mgr_user_list = acct_storage_g_get_users(db_conn, uid, &user_q);
 
@@ -2190,6 +2191,12 @@ static int _refresh_assoc_mgr_qos_list(void *db_conn, int enforce)
 	uid_t uid = getuid();
 	assoc_mgr_lock_t locks = { .qos = WRITE_LOCK };
 
+#ifdef __METASTACK_QOS_HASH
+	assoc_mgr_lock(&locks);
+	destroy_qos_hash(&qos_hash);
+	assoc_mgr_unlock(&locks);
+#endif
+
 	current_qos = acct_storage_g_get_qos(db_conn, uid, NULL);
 
 	if (!current_qos) {
@@ -2241,6 +2248,13 @@ static int _refresh_assoc_mgr_user_list(void *db_conn, int enforce)
 
 	memset(&user_q, 0, sizeof(slurmdb_user_cond_t));
 	user_q.with_coords = 1;
+
+#ifdef __METASTACK_ASSOC_HASH
+	assoc_mgr_lock(&locks);
+	destroy_str_key_hash(&user_hash);
+	destroy_str_key_hash(&user_uid_hash);
+	assoc_mgr_unlock(&locks);
+#endif
 
 	current_users = acct_storage_g_get_users(db_conn, uid, &user_q);
 
@@ -5511,8 +5525,12 @@ extern int assoc_mgr_update_qos(slurmdb_update_object_t *update, bool locked)
 		list_iterator_reset(itr);
 		while ((object = list_next(itr)))
 			_set_qos_norm_priority(object);
-	} else if (redo_priority == 2)
+	} else if (redo_priority == 2) {
+#ifdef __METASTACK_QOS_HASH
+		destroy_qos_hash(&qos_hash);
+#endif
 		_post_qos_list(assoc_mgr_qos_list);
+	}
 
 	list_iterator_destroy(itr);
 
@@ -6774,6 +6792,10 @@ extern int load_assoc_mgr_state(bool only_tres)
 				error("No users retrieved");
 				break;
 			}
+#ifdef __METASTACK_ASSOC_HASH
+			destroy_str_key_hash(&user_hash);
+			destroy_str_key_hash(&user_uid_hash);
+#endif
 			FREE_NULL_LIST(assoc_mgr_user_list);
 			assoc_mgr_user_list = msg->my_list;
 			_post_user_list(assoc_mgr_user_list);
@@ -6813,6 +6835,9 @@ extern int load_assoc_mgr_state(bool only_tres)
 				error("No qos retrieved");
 				break;
 			}
+#ifdef __METASTACK_QOS_HASH
+			destroy_qos_hash(&qos_hash);
+#endif
 			FREE_NULL_LIST(assoc_mgr_qos_list);
 			assoc_mgr_qos_list = msg->my_list;
 			_post_qos_list(assoc_mgr_qos_list);
