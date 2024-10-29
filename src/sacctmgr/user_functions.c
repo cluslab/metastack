@@ -922,9 +922,7 @@ extern int sacctmgr_add_user(int argc, char **argv)
 	user_list = list_create(slurmdb_destroy_user_rec);
 	assoc_list = list_create(slurmdb_destroy_assoc_rec);
 	wckey_list = list_create(slurmdb_destroy_wckey_rec);
-#ifdef __METASTACK_ASSOC_HASH
-	assoc_mgr_lock_t locks = { .uid = WRITE_LOCK };
-#endif
+
 	itr = list_iterator_create(assoc_cond->user_list);
 	while((name = list_next(itr))) {
 		slurmdb_user_rec_t *user_rec = NULL;
@@ -969,32 +967,22 @@ extern int sacctmgr_add_user(int argc, char **argv)
 				first = 0;
 			}
 
-#ifdef __METASTACK_ASSOC_HASH
-			assoc_mgr_lock(&locks);
-			if (!(find_str_key_hash(&user_uid_hash, name))) {
-				if (uid_from_string (name, &pw_uid) < 0) {
-					char *warning = xstrdup_printf(
-						"There is no uid for user '%s'"
-						"\nAre you sure you want to continue?",
-						name);
+			if (uid_from_string (name, &pw_uid) < 0) {
+				char *warning = xstrdup_printf(
+					"There is no uid for user '%s'"
+					"\nAre you sure you want to continue?",
+					name);
 
-					if (!commit_check(warning)) {
-						xfree(warning);
-						rc = SLURM_ERROR;
-						list_flush(user_list);
-						xfree(local_def_acct);
-						xfree(local_def_wckey);
-						assoc_mgr_unlock(&locks);
-						goto end_it;
-					}
+				if (!commit_check(warning)) {
 					xfree(warning);
-				} else {
-					remove_str_key_hash(&user_uid_hash, name);
-					insert_str_key_hash(&user_uid_hash, &(pw_uid), name);
+					rc = SLURM_ERROR;
+					list_flush(user_list);
+					xfree(local_def_acct);
+					xfree(local_def_wckey);
+					goto end_it;
 				}
-			} 
-			assoc_mgr_unlock(&locks);
-#endif
+				xfree(warning);
+			}
 
 			user = xmalloc(sizeof(slurmdb_user_rec_t));
 			user->assoc_list =

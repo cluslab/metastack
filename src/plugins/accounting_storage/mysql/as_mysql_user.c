@@ -1576,6 +1576,7 @@ empty:
 			user->flags |= SLURMDB_USER_FLAG_DELETED;
 
 #ifdef __METASTACK_ASSOC_HASH
+		if (user_cond && user_cond->with_coords) {
 			slurmdb_user_rec_t *value = NULL;
 			if (user_hash && user->name) {
 				value = find_str_key_hash(&user_hash, user->name);
@@ -1586,6 +1587,7 @@ empty:
 			if (!value) {
 				_get_user_coords(mysql_conn, user);
 			}
+		}
 #endif
 	}
 	mysql_free_result(result);

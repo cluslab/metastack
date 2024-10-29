@@ -563,7 +563,7 @@ extern List as_kingbase_remove_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 	cluster_list_tmp = list_shallow_copy(as_kingbase_cluster_list);
 	itr = list_iterator_create(cluster_list_tmp);
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-    slurm_mutex_lock(&assoc_lock);
+	slurm_mutex_lock(&assoc_lock);
 #endif
 	while ((object = list_next(itr))) {
 		if ((rc = remove_common(kingbase_conn, DBD_REMOVE_ACCOUNTS, now,
