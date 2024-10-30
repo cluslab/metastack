@@ -1571,6 +1571,11 @@ extern void del_cache_node_state_record(node_state_record_t *src_node_ptr)
 {	
 	int i;
 	xfree(src_node_ptr->name);
+    xfree(src_node_ptr->arch);
+    xfree(src_node_ptr->os);
+    xfree(src_node_ptr->features);
+    xfree(src_node_ptr->features_act);
+    xfree(src_node_ptr->gres);
 //	select_g_select_nodeinfo_free(src_node_ptr->select_nodeinfo);
 	xfree(src_node_ptr->reason);
 	if(!src_node_ptr->only_state){

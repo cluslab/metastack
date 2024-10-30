@@ -780,6 +780,26 @@ void bit_or_not(bitstr_t *b1, bitstr_t *b2)
 		b1[_bit_word(bit)] |= ~b2[_bit_word(bit)];
 }
 
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+/*
+ * b1 = (b1 & ~b2) | (~b1 & b2)
+ * b1 (IN/OUT)
+ * b2 (IN)
+*/
+void bit_xor(bitstr_t *b1, bitstr_t *b2)
+{
+	bitoff_t bit, bit_cnt;
+
+	_assert_bitstr_valid(b1);
+	_assert_bitstr_valid(b2);
+
+	bit_cnt = MIN(_bitstr_bits(b1), _bitstr_bits(b2));
+	for (bit = 0; bit < bit_cnt; bit += sizeof(bitstr_t)*8) 
+		b1[_bit_word(bit)] = (b1[_bit_word(bit)] & ~b2[_bit_word(bit)]) |
+		                     (~b1[_bit_word(bit)] & b2[_bit_word(bit)]);
+}
+#endif
+
 /*
  * return a copy of the supplied bitmap
  */

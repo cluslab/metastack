@@ -359,6 +359,12 @@ typedef struct {
 	uint16_t resume_timeout;	/* time required in order to perform a
 					 * node resume operation */
 	char *reason;
+    char *arch;
+    char *os;
+    uint32_t cpu_load;      /* CPU load * 100 */
+    char *features;
+    char *features_act;
+    char *gres;
 	uint16_t cpus_efctv;
 	uint16_t part_cnt;
 	void **part_pptr;

@@ -478,6 +478,9 @@ extern bitstr_t **para_sched_share_node_bitmap; /* A collection of bitmaps for s
 extern bitstr_t **para_sched_idle_node_bitmap;  /* A collection of bitmaps for idle nodes in each resource area */
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 extern bitstr_t **para_sched_main_planned_bitmap;
+/* To be compatible with cache. */
+extern bitstr_t **para_sched_last_main_planned_bitmap;
+extern bitstr_t **para_sched_planned_update_bitmap;
 #endif
 
 extern void build_sched_resource(void);
@@ -489,7 +492,9 @@ extern int _get_job_part_index(char** part_names, part_record_t *part_ptr);
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 extern List copy_part_list;			/* list of copy_part_record entries */
 extern List cache_part_list;		/* list of cache_part_record entries */
+extern char *default_cache_part_name;		/* name of default partition */
 #endif
+
 extern List part_list;			/* list of part_record entries */
 extern time_t last_part_update;		/* time of last part_list update */
 extern part_record_t default_part;	/* default configuration values */
@@ -1435,6 +1440,7 @@ typedef enum {
 	UPDATE_CACHE_JOB_RECORD,
 	UPDATE_CACHE_NODE_RECORD,
 	UPDATE_CACHE_NODE_INFO,
+	UPDATE_CACHE_NODE_STATE,
 	UPDATE_CACHE_PART_RECORD,
 	DELETE_CACHE_JOB_RECORD,
 	DELETE_CACHE_NODE_RECORD,
@@ -1476,6 +1482,20 @@ typedef struct {
 	bitstr_t *node_bitmap;
 	uint32_t total_nodes;
 	uint32_t node_cnt_wag;
+    uint32_t priority;      /* relative priority of the job,
+                         * zero == held (don't initiate) */
+    time_t deadline;        /* deadline */                        
+    char *partition;        /* name of job partition(s) */
+    uint32_t het_job_id;        /* job ID of HetJob leader */
+    uint32_t het_job_offset;    /* HetJob component index */   
+    uint32_t array_job_id;      /* job_id of a job array or 0 if N/A */
+    uint32_t array_task_id;     /* task_id of a job array */ 
+    char *comment;
+    char *gres_used;
+    job_resources_t *job_resrcs;	/* details of allocated cores */
+    uint32_t gres_detail_cnt;	/* Count of gres_detail_str records,
+					 * one per allocated node */
+	char **gres_detail_str;		/* Details of GRES index alloc per node */
 	bool details_ptr;
 	uint32_t de_max_nodes;
 	uint16_t de_ntasks_per_node;
@@ -1509,6 +1529,11 @@ typedef struct {
 	uint32_t total_cpus;	/* total number of cpus in the partition */
 	uint32_t max_cpu_cnt;	/* max # of cpus on a node in the partition */
 	uint32_t max_core_cnt;	/* max # of cores on a node in the partition */
+    char *deny_accounts;
+    char *allow_groups;
+    char *qos_char;
+    uint32_t default_time;  /* minutes, NO_VAL or INFINITE */
+    uint32_t max_time;  /* minutes or INFINITE */
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	bool     standby_nodes_ptr;
 	char     *st_borrowed_nodes;	
@@ -1521,6 +1546,9 @@ typedef struct {
 	uint16_t msg_type;
 	job_record_t *job_ptr;
 	node_record_t *node_ptr;
+    bitstr_t *node_state_bitmap;
+    bitstr_t *para_sched_node_bitmap;
+    char *default_part_name;
 	int node_record_count;
 	part_record_t *part_ptr;
 	job_state_record_t *job_state_ptr;
@@ -1563,6 +1591,7 @@ extern void reset_cache_node_record_table_ptr(int node_record_count);
 extern void _add_node_state_to_queue(node_record_t *src_node_ptr, bool only_state);
 extern void _add_node_info_to_queue();
 extern int update_cache_node_info(dynamic_plugin_data_t **select_nodeinfo, int node_record_count);
+extern int update_cache_node_state(bitstr_t *node_state_bitmap, bitstr_t *para_sched_node_bitmap);
 extern void _update_node_info();
 
 
@@ -2578,9 +2607,13 @@ extern void pack_job(job_record_t *dump_job_ptr, uint16_t show_flags,
  * NOTE: if you make any changes here be sure to make the corresponding
  *	changes to load_part_config in api/partition_info.c
  */
+ #ifdef __METASTACK_OPT_CACHE_QUERY
+extern void pack_part(part_record_t *part_ptr, buf_t *buffer, 
+            uint16_t protocol_version, bool pack_cache);
+#else
 extern void pack_part(part_record_t *part_ptr, buf_t *buffer,
 		      uint16_t protocol_version);
-
+#endif
 /*
  * pack_one_job - dump information for one jobs in
  *	machine independent form (for network transmission)

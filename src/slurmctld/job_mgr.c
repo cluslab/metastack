@@ -22151,10 +22151,15 @@ static int copy_job(job_record_t *src_job_ptr, job_record_t *des_job_ptr)
 	}else {
 			des_job_ptr->job_cache_data->preemptable = 0;
 	} 
-
-	if(src_job_ptr->job_resrcs)
+    des_job_ptr->job_resrcs = NULL;
+	if(src_job_ptr->job_resrcs){
 		des_job_ptr->job_resrcs = copy_job_resources(src_job_ptr->job_resrcs);
-
+		des_job_ptr->job_resrcs->nodes = xstrdup(src_job_ptr->job_resrcs->nodes);
+		des_job_ptr->job_resrcs->threads_per_core = src_job_ptr->job_resrcs->threads_per_core;
+		des_job_ptr->job_resrcs->cr_type = src_job_ptr->job_resrcs->cr_type;
+		
+	}
+    des_job_ptr->gres_detail_str = NULL;
 	if(des_job_ptr->gres_detail_cnt > 0){
 			des_job_ptr->gres_detail_str = xcalloc(des_job_ptr->gres_detail_cnt, sizeof(char *));
 			for (i = 0; i < des_job_ptr->gres_detail_cnt; i++) {
@@ -22163,15 +22168,17 @@ static int copy_job(job_record_t *src_job_ptr, job_record_t *des_job_ptr)
 	}
 
 	/* A few details are always dumped here */
+    des_job_ptr->details = NULL;
 	if (src_job_ptr->details){
 		des_job_ptr->details = xmalloc(sizeof(struct job_details));
 		_copy_job_details(src_job_ptr->details, des_job_ptr->details);
 	}
 
+    des_job_ptr->fed_details = NULL;
 	if (src_job_ptr->fed_details) {
 		des_job_ptr->fed_details = _dup_job_fed_details(src_job_ptr->fed_details);
 	}
-
+    des_job_ptr->step_list = NULL;
 	if(src_job_ptr->step_list){
 		des_job_ptr->step_list = list_create(free_copy_step_record);
 		list_for_each_ro(src_job_ptr->step_list, _copy_job_step_state, des_job_ptr);
@@ -22488,10 +22495,22 @@ extern int _del_cache_job(uint32_t job_id)
  *update messages in the message queue. */
 extern void del_cache_job_state_record(job_state_record_t *src_job_ptr)
 {
+    int i;
 	xfree(src_job_ptr->state_desc);
 	xfree(src_job_ptr->nodes);
 	xfree(src_job_ptr->sched_nodes);
 	xfree(src_job_ptr->batch_host);
+    xfree(src_job_ptr->partition);
+    xfree(src_job_ptr->comment);
+    if(src_job_ptr->job_resrcs){
+        free_job_resources(&src_job_ptr->job_resrcs);
+    }
+    if(src_job_ptr->gres_detail_str){
+    	for (i = 0; i < src_job_ptr->gres_detail_cnt; i++)
+    		xfree(src_job_ptr->gres_detail_str[i]);
+    	xfree(src_job_ptr->gres_detail_str);
+    }
+    xfree(src_job_ptr->gres_used);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
 	xfree(src_job_ptr->reason_detail);
 #endif
@@ -22504,6 +22523,7 @@ extern void del_cache_job_state_record(job_state_record_t *src_job_ptr)
  *and place it in the queue.*/
 extern void _add_job_state_to_queue(job_record_t *src_job_ptr)
 {
+    int i;
 	if(!src_job_ptr)
 		return;
 	if(cachedup_realtime && cache_queue){
@@ -22549,6 +22569,31 @@ extern void _add_job_state_to_queue(job_record_t *src_job_ptr)
 		cache_msg->job_state_ptr->nodes = xstrdup(src_job_ptr->nodes);
 		cache_msg->job_state_ptr->sched_nodes = xstrdup(src_job_ptr->sched_nodes);
 		cache_msg->job_state_ptr->batch_host = xstrdup(src_job_ptr->batch_host);
+        cache_msg->job_state_ptr->priority = src_job_ptr->priority;
+        cache_msg->job_state_ptr->deadline = src_job_ptr->deadline;
+        cache_msg->job_state_ptr->het_job_id = src_job_ptr->het_job_id;
+        cache_msg->job_state_ptr->het_job_offset = src_job_ptr->het_job_offset;
+        cache_msg->job_state_ptr->array_job_id = src_job_ptr->array_job_id;
+        cache_msg->job_state_ptr->array_task_id = src_job_ptr->array_task_id;
+        cache_msg->job_state_ptr->gres_detail_cnt = src_job_ptr->gres_detail_cnt;
+        cache_msg->job_state_ptr->partition = xstrdup(src_job_ptr->partition);
+        cache_msg->job_state_ptr->comment = xstrdup(src_job_ptr->comment);
+        cache_msg->job_state_ptr->gres_used = xstrdup(src_job_ptr->gres_used);
+        cache_msg->job_state_ptr->job_resrcs = NULL;
+        if(src_job_ptr->job_resrcs){
+        	cache_msg->job_state_ptr->job_resrcs = copy_job_resources(src_job_ptr->job_resrcs);
+        	cache_msg->job_state_ptr->job_resrcs->nodes = xstrdup(src_job_ptr->job_resrcs->nodes);
+        	cache_msg->job_state_ptr->job_resrcs->threads_per_core = src_job_ptr->job_resrcs->threads_per_core;
+        	cache_msg->job_state_ptr->job_resrcs->cr_type = src_job_ptr->job_resrcs->cr_type;
+        	
+        }
+        cache_msg->job_state_ptr->gres_detail_str = NULL;
+        if(src_job_ptr->gres_detail_cnt > 0){
+            cache_msg->job_state_ptr->gres_detail_str = xcalloc(src_job_ptr->gres_detail_cnt, sizeof(char *));
+            for (i = 0; i < src_job_ptr->gres_detail_cnt; i++) {
+                cache_msg->job_state_ptr->gres_detail_str[i] = xstrdup(src_job_ptr->gres_detail_str[i]);
+            }
+        }      
 		cache_msg->job_state_ptr->node_bitmap_cg = NULL;
 		if(src_job_ptr->node_bitmap_cg)
 			cache_msg->job_state_ptr->node_bitmap_cg = bit_copy(src_job_ptr->node_bitmap_cg);
@@ -22580,6 +22625,35 @@ extern int update_cache_job_record(job_state_record_t *src_job_ptr)
 #ifdef __METASTACK_NEW_TIME_PREDICT
 		des_job_ptr->predict_job = src_job_ptr->predict_job;
 #endif
+        des_job_ptr->priority = src_job_ptr->priority;
+        des_job_ptr->deadline = src_job_ptr->deadline;
+        des_job_ptr->het_job_id = src_job_ptr->het_job_id;
+        des_job_ptr->het_job_offset = src_job_ptr->het_job_offset;
+        des_job_ptr->array_job_id = src_job_ptr->array_job_id;
+        des_job_ptr->array_task_id = src_job_ptr->array_task_id;
+        xfree(des_job_ptr->partition);
+		des_job_ptr->partition = src_job_ptr->partition;
+		src_job_ptr->partition = NULL;
+        xfree(des_job_ptr->comment);
+		des_job_ptr->comment = src_job_ptr->comment;
+		src_job_ptr->comment = NULL;
+        if(des_job_ptr->job_resrcs){
+            free_job_resources(&des_job_ptr->job_resrcs);
+        }
+        if(src_job_ptr->job_resrcs){
+            des_job_ptr->job_resrcs = src_job_ptr->job_resrcs;
+            src_job_ptr->job_resrcs = NULL;     
+        }
+        if(des_job_ptr->gres_detail_str){
+            _clear_job_gres_details(des_job_ptr);
+        }
+        des_job_ptr->gres_detail_cnt = src_job_ptr->gres_detail_cnt;
+        xfree(des_job_ptr->gres_used);
+		des_job_ptr->gres_used = src_job_ptr->gres_used;
+		src_job_ptr->gres_used = NULL;
+        if(src_job_ptr->gres_detail_str){
+            des_job_ptr->gres_detail_str = src_job_ptr->gres_detail_str;
+        }  
 		if(des_job_ptr->details && src_job_ptr->details_ptr){
 			des_job_ptr->details->max_nodes = src_job_ptr->de_max_nodes;
 			des_job_ptr->details->ntasks_per_node = src_job_ptr->de_ntasks_per_node;
