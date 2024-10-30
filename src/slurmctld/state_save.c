@@ -341,6 +341,7 @@ static void _list_delete_cache_record(void *entry)
 			purge_cache_node_rec(msg_ptr->node_ptr);
 			break;
 		case CREATE_CACHE_PART_RECORD:
+            xfree(msg_ptr->default_part_name);
 			_list_delete_cache_part(msg_ptr->part_ptr);
 			break;
 		case UPDATE_CACHE_JOB_RECORD:
@@ -352,13 +353,19 @@ static void _list_delete_cache_record(void *entry)
 		case UPDATE_CACHE_NODE_INFO:
 			del_cache_node_info_record(msg_ptr->select_nodeinfo,msg_ptr->node_record_count);
 			break;
+        case UPDATE_CACHE_NODE_STATE:
+            FREE_NULL_BITMAP(msg_ptr->node_state_bitmap);
+            FREE_NULL_BITMAP(msg_ptr->para_sched_node_bitmap);
+			break;
 		case UPDATE_CACHE_PART_RECORD:
+            xfree(msg_ptr->default_part_name);
 			del_cache_part_state_record(msg_ptr->part_state_ptr);
 			break;
 		case DELETE_CACHE_NODE_RECORD:
 			xfree(msg_ptr->node_name);
 			break;
 		case DELETE_CACHE_PART_RECORD:
+            xfree(msg_ptr->default_part_name);
 			xfree(msg_ptr->part_name);
 			break;
 	}
@@ -449,13 +456,13 @@ extern void *slurmctld_state_copy(void *no_data)
 		slurm_mutex_unlock(&cache_queue->mutex);
 		now = time(NULL);
 		if(difftime(now, last_node_info) >= 3){
+            debug2("%s CACHE_QUERY cache_queue list count %d ", __func__, list_count(cache_queue->work));
 			_update_node_info();
 			now = time(NULL);
 			last_node_info = now;
 		}
 		/*Pop from the list and perform different data update
 		 *operations based on the message type. */
-		debug2("%s CACHE_QUERY cache_queue list count %d ", __func__, list_count(cache_queue->work));
 		msg = list_dequeue(cache_queue->work);
 		if (!msg) {	
 			usleep(500);
@@ -466,7 +473,6 @@ extern void *slurmctld_state_copy(void *no_data)
 				slurm_cond_timedwait(&cache_queue->cond, &cache_queue->mutex, &ts);
 			}
 			slurm_mutex_unlock(&cache_queue->mutex);
-
 		} else {
 			switch (msg->msg_type) {
 				case CREATE_CACHE_JOB_RECORD:
@@ -487,6 +493,9 @@ extern void *slurmctld_state_copy(void *no_data)
 				case CREATE_CACHE_PART_RECORD:
 					debug4("%s CACHE_QUERY CREATE_CACHE_PART_RECORD", __func__);
 					lock_cache_query(cache_part_write_lock);
+					xfree(default_cache_part_name);
+					default_cache_part_name = msg->default_part_name;
+					msg->default_part_name = NULL;
 					_add_queue_part_to_cache(msg->part_ptr);
 					unlock_cache_query(cache_part_write_lock);
 					xfree(msg);
@@ -512,9 +521,19 @@ extern void *slurmctld_state_copy(void *no_data)
 					unlock_cache_query(cache_node_write_lock);
 					xfree(msg);
 					break;
+				case UPDATE_CACHE_NODE_STATE:
+					debug4("%s CACHE_QUERY UPDATE_CACHE_NODE_STATE", __func__);
+					lock_cache_query(cache_node_write_lock);
+					update_cache_node_state(msg->node_state_bitmap,msg->para_sched_node_bitmap);
+					unlock_cache_query(cache_node_write_lock);
+					xfree(msg);
+					break;
 				case UPDATE_CACHE_PART_RECORD:
 					debug4("%s CACHE_QUERY UPDATE_CACHE_PART_RECORD", __func__);
 					lock_cache_query(cache_part_write_lock);
+					xfree(default_cache_part_name);
+					default_cache_part_name = msg->default_part_name;
+					msg->default_part_name = NULL;
 					update_cache_part_record(msg->part_state_ptr);
 					unlock_cache_query(cache_part_write_lock);
 					xfree(msg);
@@ -538,6 +557,9 @@ extern void *slurmctld_state_copy(void *no_data)
 				case DELETE_CACHE_PART_RECORD:
 					debug4("%s CACHE_QUERY DELETE_CACHE_PART_RECORD", __func__);
 					lock_cache_query(cache_part_write_lock);
+					xfree(default_cache_part_name);
+					default_cache_part_name = msg->default_part_name;
+					msg->default_part_name = NULL;
 					_del_cache_part(msg->part_name);
 					unlock_cache_query(cache_part_write_lock);
 					xfree(msg->part_name);

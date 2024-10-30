@@ -4784,11 +4784,23 @@ extern void clear_mplanned_all_nodes(void)
 			FREE_NULL_BITMAP(para_sched_main_planned_bitmap[i]);
 	}
 
+	if (para_sched_last_main_planned_bitmap) {
+		for (i=0; i<resource_count; i++)    
+            FREE_NULL_BITMAP(para_sched_last_main_planned_bitmap[i]);
+	}
+
+	if (para_sched_planned_update_bitmap) {
+		for (i=0; i<resource_count; i++)    
+            FREE_NULL_BITMAP(para_sched_planned_update_bitmap[i]);
+	}
+
 	for (i = 0; (node_ptr = next_node(&i)); i++) {
 		node_ptr->main_planned_flag = false;
 	}
 
 	xfree(para_sched_main_planned_bitmap);
+	xfree(para_sched_last_main_planned_bitmap);
+	xfree(para_sched_planned_update_bitmap);
 }
 #endif
 
@@ -5757,18 +5769,21 @@ static int copy_node(node_record_t *src_node_ptr, node_record_t *des_node_ptr)
 	des_node_ptr->tres_str = xstrdup(src_node_ptr->tres_str);
 	if(src_node_ptr->node_spec_bitmap)
 		des_node_ptr->node_spec_bitmap = bit_copy(src_node_ptr->node_spec_bitmap);
+    des_node_ptr->select_nodeinfo = NULL;
 	if(src_node_ptr->select_nodeinfo)
 		des_node_ptr->select_nodeinfo = select_g_select_nodeinfo_copy(src_node_ptr->select_nodeinfo);
 	des_node_ptr->gres = xstrdup(src_node_ptr->gres);
-	
+	des_node_ptr->energy = NULL;
 	if(src_node_ptr->energy){
 		des_node_ptr->energy = acct_gather_energy_alloc(1);
 		memcpy(des_node_ptr->energy, src_node_ptr->energy, sizeof(acct_gather_energy_t));
 	}
+    des_node_ptr->ext_sensors = NULL;
 	if(src_node_ptr->ext_sensors){
 		des_node_ptr->ext_sensors = ext_sensors_alloc();
 		memcpy(des_node_ptr->ext_sensors, src_node_ptr->ext_sensors, sizeof(ext_sensors_data_t));
 	}
+    des_node_ptr->power = NULL;
 	if(src_node_ptr->power){
 		des_node_ptr->power = xmalloc(sizeof(power_mgmt_data_t));
 		memcpy(des_node_ptr->power, src_node_ptr->power, sizeof(power_mgmt_data_t));
@@ -5822,6 +5837,49 @@ extern void _add_node_info_to_queue()
 	}
 }
 
+/*update_cache_node_state: Update the cached data with the node state 
+ *status update information from the queue.*/
+extern int update_cache_node_state(bitstr_t *node_state_bitmap, bitstr_t *para_sched_node_bitmap)
+{
+	node_record_t *des_node_ptr;
+	int i_first, i_last, i;
+
+	if (!node_state_bitmap)
+		return 0;
+    if(!para_sched_node_bitmap){
+        for (i = 0; (des_node_ptr = next_cache_node(&i, cache_node_record_count, cache_node_record_table_ptr)); i++) {
+    		if ((des_node_ptr->name == NULL) || (des_node_ptr->name[0] == '\0'))
+    			continue;	/* vestigial record */
+    		if(!bit_test(node_state_bitmap, i))
+                des_node_ptr->main_planned_flag = false;
+            else
+                des_node_ptr->main_planned_flag = true;
+    	}
+        FREE_NULL_BITMAP(node_state_bitmap);
+    }else{
+        i_first = bit_ffs(para_sched_node_bitmap);
+    	if (i_first >= 0)
+    		i_last = bit_fls(para_sched_node_bitmap);
+    	else
+    		i_last = -2;
+    	for (i = i_first; i <= i_last; i++) {
+    		if (!bit_test(para_sched_node_bitmap, i))
+    			continue;
+    		des_node_ptr = cache_node_record_table_ptr[i];
+    		if(des_node_ptr){
+                if(!bit_test(node_state_bitmap, i))
+                    des_node_ptr->main_planned_flag = false;
+                else
+                    des_node_ptr->main_planned_flag = true;
+            }
+    	}
+        FREE_NULL_BITMAP(node_state_bitmap);
+        FREE_NULL_BITMAP(para_sched_node_bitmap);
+    }
+	return 0;
+}
+
+
 /*update_cache_node_info: Update the cached data with the node info 
  *status update information from the queue.*/
 extern int update_cache_node_info(dynamic_plugin_data_t **select_nodeinfo, int node_record_count)
@@ -5864,6 +5922,13 @@ extern void _add_node_state_to_queue(node_record_t *src_node_ptr, bool only_stat
 		cache_msg->node_state_ptr->reason_time = src_node_ptr->reason_time;
 		cache_msg->node_state_ptr->reason_uid = src_node_ptr->reason_uid;
 		cache_msg->node_state_ptr->resume_timeout = src_node_ptr->resume_timeout;
+        cache_msg->node_state_ptr->arch = xstrdup(src_node_ptr->arch);
+        cache_msg->node_state_ptr->os = xstrdup(src_node_ptr->os);
+        cache_msg->node_state_ptr->cpu_load = src_node_ptr->cpu_load;
+        cache_msg->node_state_ptr->features = xstrdup(src_node_ptr->features);
+	    cache_msg->node_state_ptr->features_act = xstrdup(src_node_ptr->features_act);
+        cache_msg->node_state_ptr->gres = xstrdup(src_node_ptr->gres);
+        
 //		cache_msg->node_state_ptr->select_nodeinfo = NULL;
 //		if(src_node_ptr->select_nodeinfo)
 //			cache_msg->node_state_ptr->select_nodeinfo = select_g_select_nodeinfo_copy(src_node_ptr->select_nodeinfo);
@@ -5900,9 +5965,26 @@ extern int update_cache_node_record(node_state_record_t *src_node_ptr)
 		des_node_ptr->reason_time = src_node_ptr->reason_time;
 		des_node_ptr->reason_uid = src_node_ptr->reason_uid;
 		des_node_ptr->resume_timeout = src_node_ptr->resume_timeout;
+        des_node_ptr->cpu_load = src_node_ptr->cpu_load;
 		xfree(des_node_ptr->reason);
 		des_node_ptr->reason = src_node_ptr->reason;
 		src_node_ptr->reason = NULL;
+		xfree(des_node_ptr->arch);
+		des_node_ptr->arch = src_node_ptr->arch;
+		src_node_ptr->arch = NULL;
+        xfree(des_node_ptr->os);
+		des_node_ptr->os = src_node_ptr->os;
+		src_node_ptr->os = NULL;
+        xfree(des_node_ptr->features);
+		des_node_ptr->features = src_node_ptr->features;
+		src_node_ptr->features = NULL;
+        xfree(des_node_ptr->features_act);
+		des_node_ptr->features_act = src_node_ptr->features_act;
+		src_node_ptr->features_act = NULL;
+        xfree(des_node_ptr->gres);
+		des_node_ptr->gres = src_node_ptr->gres;
+		src_node_ptr->gres = NULL;
+
 //		if(src_node_ptr->select_nodeinfo){
 //			select_g_select_nodeinfo_free(des_node_ptr->select_nodeinfo);
 //			des_node_ptr->select_nodeinfo = src_node_ptr->select_nodeinfo;

@@ -88,11 +88,17 @@ typedef struct {
 #ifdef __METASTACK_OPT_PART_VISIBLE
 	slurmdb_user_rec_t user_rec;
 #endif
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	bool pack_cache;
+#endif
+
 } _foreach_pack_part_info_t;
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 List   copy_part_list = NULL;		/* copy partition list */
 List   cache_part_list = NULL;      /* cache partition list */
+char *default_cache_part_name = NULL;		/* name of default partition */
+char *default_copy_part_name = NULL;		/* name of default partition */
 #endif
 
 /* Global variables */
@@ -2718,8 +2724,11 @@ static int _pack_part(void *object, void *arg)
 	    !pack_info->privileged &&
 	    part_not_on_list(pack_info->visible_parts, part_ptr))
 		return SLURM_SUCCESS;
-
-	pack_part(part_ptr, pack_info->buffer, pack_info->protocol_version);
+#ifdef __METASTACK_OPT_CACHE_QUERY		
+    pack_part(part_ptr, pack_info->buffer, pack_info->protocol_version, pack_info->pack_cache);
+#else
+    pack_part(part_ptr, pack_info->buffer, pack_info->protocol_version);
+#endif
 	pack_info->parts_packed++;
 
 	return SLURM_SUCCESS;
@@ -2752,6 +2761,9 @@ extern void pack_all_part(char **buffer_ptr, int *buffer_size,
 		.show_flags = show_flags,
 		.uid = uid,
 		.user_rec.uid = (uint32_t)uid,
+#ifdef __METASTACK_OPT_CACHE_QUERY		
+		.pack_cache = false,
+#endif
 	};
 	
     pack_info.user_rec.assoc_list = NULL;
@@ -2766,6 +2778,9 @@ extern void pack_all_part(char **buffer_ptr, int *buffer_size,
 		.show_flags = show_flags,
 		.uid = uid,
 		.visible_parts = build_visible_parts(uid, privileged),
+#ifdef __METASTACK_OPT_CACHE_QUERY		
+        .pack_cache = false,
+#endif
 	};
 #endif
 
@@ -2806,16 +2821,34 @@ extern void pack_all_part(char **buffer_ptr, int *buffer_size,
  * NOTE: if you make any changes here be sure to make the corresponding changes
  *	to _unpack_partition_info_members() in common/slurm_protocol_pack.c
  */
+ #ifdef __METASTACK_OPT_CACHE_QUERY
+void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version, bool pack_cache)
+#else
 void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version)
+#endif
 {
 #ifdef __META_PROTOCOL
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
         if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+            
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            if(pack_cache){
+                if (default_cache_part_name && !xstrcmp(default_cache_part_name, part_ptr->name))
+                    part_ptr->flags |= PART_FLAG_DEFAULT;
+                else
+                    part_ptr->flags &= (~PART_FLAG_DEFAULT);
+            }else{
+                if (default_part_loc == part_ptr)
+                    part_ptr->flags |= PART_FLAG_DEFAULT;
+                else
+                    part_ptr->flags &= (~PART_FLAG_DEFAULT);
+            }
+#else
             if (default_part_loc == part_ptr)
                 part_ptr->flags |= PART_FLAG_DEFAULT;
             else
                 part_ptr->flags &= (~PART_FLAG_DEFAULT);
-
+#endif
             packstr(part_ptr->name, buffer);
             pack32(part_ptr->cpu_bind, buffer);
             pack32(part_ptr->grace_time, buffer);
@@ -3740,11 +3773,15 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	if (create_flag && part_cachedup_realtime == 1) {
 		_add_cache_part(part_ptr);
+        xfree(default_cache_part_name);
+        if(default_part_name)
+            default_cache_part_name = xstrdup(default_part_name);
 	}else if(create_flag && part_cachedup_realtime == 2 && cache_queue){
 		slurm_cache_date_t *cache_msg = NULL;
 		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
 		cache_msg->msg_type = CREATE_CACHE_PART_RECORD;
 		cache_msg->part_ptr = _add_part_to_queue(part_ptr);
+        cache_msg->default_part_name = xstrdup(default_part_name);
 		cache_enqueue(cache_msg);
 	}else if(!create_flag){
        _add_part_state_to_queue(part_ptr);
@@ -4044,11 +4081,15 @@ extern int delete_partition(delete_part_msg_t *part_desc_ptr)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	if(part_cachedup_realtime == 1){
 		_del_cache_part(part_desc_ptr->name);
+        xfree(default_cache_part_name);
+        if(default_part_name)
+            default_cache_part_name = xstrdup(default_part_name);
 	}else if(part_cachedup_realtime == 2 && cache_queue){
 		slurm_cache_date_t *cache_msg = NULL;
 		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
 		cache_msg->msg_type = DELETE_CACHE_PART_RECORD;
 		cache_msg->part_name = xstrdup(part_desc_ptr->name);
+        cache_msg->default_part_name = xstrdup(default_part_name);
 		cache_enqueue(cache_msg);
 	}
 #endif
@@ -4456,6 +4497,7 @@ static int copy_part(part_record_t *src_part_ptr, part_record_t *des_part_ptr)
 		des_part_ptr->deny_qos_bitstr = bit_copy(src_part_ptr->deny_qos_bitstr);
 	des_part_ptr->billing_weights_str = xstrdup(src_part_ptr->billing_weights_str);
 	des_part_ptr->tres_fmt_str = xstrdup(src_part_ptr->tres_fmt_str);
+    src_part_ptr->job_defaults_list = NULL;
 	if(src_part_ptr->job_defaults_list){
 		des_part_ptr->job_defaults_list = list_create(xfree_ptr);
 		(void)copy_job_defaults_list(src_part_ptr->job_defaults_list, des_part_ptr->job_defaults_list);
@@ -4467,6 +4509,7 @@ static int copy_part(part_record_t *src_part_ptr, part_record_t *des_part_ptr)
 	des_part_ptr->allow_uids = get_groups_members(des_part_ptr->allow_groups);
 
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+    des_part_ptr->standby_nodes = NULL;
 	if(src_part_ptr->standby_nodes){
 		des_part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
 		des_part_ptr->standby_nodes->borrowed_nodes = xstrdup(src_part_ptr->standby_nodes->borrowed_nodes);
@@ -4495,6 +4538,9 @@ extern void del_cache_part_state_record(part_state_record_t *src_part_ptr)
 	xfree(src_part_ptr->st_borrowed_nodes);
 	xfree(src_part_ptr->st_nodes);
 	xfree(src_part_ptr->st_parameters);
+    xfree(src_part_ptr->deny_accounts);
+    xfree(src_part_ptr->allow_groups);
+    xfree(src_part_ptr->qos_char);
 	FREE_NULL_BITMAP(src_part_ptr->node_bitmap);
 	xfree(src_part_ptr->allow_accounts);
 	xfree(src_part_ptr);
@@ -4510,6 +4556,7 @@ extern void _add_part_state_to_queue(part_record_t *part_ptr)
 		slurm_cache_date_t *cache_msg = NULL;
 		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
 		cache_msg->msg_type = UPDATE_CACHE_PART_RECORD;
+        cache_msg->default_part_name = xstrdup(default_part_name);
 		cache_msg->part_state_ptr = xmalloc(sizeof(part_state_record_t));
 		cache_msg->part_state_ptr->name = xstrdup(part_ptr->name);
 		cache_msg->part_state_ptr->state_up = part_ptr->state_up;
@@ -4526,7 +4573,7 @@ extern void _add_part_state_to_queue(part_record_t *part_ptr)
 		cache_msg->part_state_ptr->standby_nodes_ptr = false;
 		if(part_ptr->standby_nodes){
 			cache_msg->part_state_ptr->standby_nodes_ptr = true;
-			cache_msg->part_state_ptr->st_borrowed_nodes = xstrdup(part_ptr->standby_nodes->borrowed_nodes);    
+			cache_msg->part_state_ptr->st_borrowed_nodes = xstrdup(part_ptr->standby_nodes->borrowed_nodes);
 			cache_msg->part_state_ptr->st_nodes = xstrdup(part_ptr->standby_nodes->nodes); 
 			cache_msg->part_state_ptr->st_parameters = xstrdup(part_ptr->standby_nodes->parameters);
 		}
@@ -4536,6 +4583,11 @@ extern void _add_part_state_to_queue(part_record_t *part_ptr)
 		cache_msg->part_state_ptr->nodes = xstrdup(part_ptr->nodes);
 		cache_msg->part_state_ptr->nodesets = xstrdup(part_ptr->nodesets);
 		cache_msg->part_state_ptr->orig_nodes = xstrdup(part_ptr->orig_nodes);
+        cache_msg->part_state_ptr->deny_accounts = xstrdup(part_ptr->deny_accounts);
+        cache_msg->part_state_ptr->allow_groups = xstrdup(part_ptr->allow_groups);
+        cache_msg->part_state_ptr->qos_char = xstrdup(part_ptr->qos_char);
+        cache_msg->part_state_ptr->default_time= part_ptr->default_time;
+        cache_msg->part_state_ptr->max_time = part_ptr->max_time;
         cache_msg->part_state_ptr->node_bitmap = NULL;
 		if(part_ptr->node_bitmap)
 			cache_msg->part_state_ptr->node_bitmap = bit_copy(part_ptr->node_bitmap);
@@ -4543,7 +4595,7 @@ extern void _add_part_state_to_queue(part_record_t *part_ptr)
 	}	
 }
 
-/*update_cache_part_record: Update the cached data with the partition 
+/*update_cache_part_record: Update the cached data with the partition
  *status update information from the queue.*/
 extern int update_cache_part_record(part_state_record_t *src_part_ptr)
 {
@@ -4564,6 +4616,8 @@ extern int update_cache_part_record(part_state_record_t *src_part_ptr)
 		des_part_ptr->total_cpus = src_part_ptr->total_cpus;
 		des_part_ptr->max_cpu_cnt = src_part_ptr->max_cpu_cnt;
 		des_part_ptr->max_core_cnt = src_part_ptr->max_core_cnt;
+        des_part_ptr->default_time = src_part_ptr->default_time;
+        des_part_ptr->max_time = src_part_ptr->max_time;
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
 		des_part_ptr->meta_flags = src_part_ptr->meta_flags;
 #endif
@@ -4575,18 +4629,28 @@ extern int update_cache_part_record(part_state_record_t *src_part_ptr)
 //			node_name2bitmap(des_part_ptr->nodes, false, &des_node_bitmap);
 //		if(src_part_ptr->nodes)
 //			node_name2bitmap(src_part_ptr->nodes, false, &src_node_bitmap);
-		xfree(des_part_ptr->nodes);
-		xfree(des_part_ptr->nodesets);
-		xfree(des_part_ptr->orig_nodes);
+		
 		if(des_part_ptr->node_bitmap){
 			FREE_NULL_BITMAP(des_part_ptr->node_bitmap);
 		}
+        xfree(des_part_ptr->nodes);
 		des_part_ptr->nodes = src_part_ptr->nodes;
 		src_part_ptr->nodes = NULL;
+        xfree(des_part_ptr->nodesets);
 		des_part_ptr->nodesets = src_part_ptr->nodesets;
 		src_part_ptr->nodesets = NULL;
+        xfree(des_part_ptr->orig_nodes);
 		des_part_ptr->orig_nodes = src_part_ptr->orig_nodes;
 		src_part_ptr->orig_nodes = NULL;
+        xfree(des_part_ptr->deny_accounts);
+        des_part_ptr->deny_accounts = src_part_ptr->deny_accounts;
+        src_part_ptr->deny_accounts = NULL;
+        xfree(des_part_ptr->allow_groups);
+        des_part_ptr->allow_groups = src_part_ptr->allow_groups;
+        src_part_ptr->allow_groups = NULL;
+        xfree(des_part_ptr->qos_char);
+        des_part_ptr->qos_char = src_part_ptr->qos_char;
+        src_part_ptr->qos_char = NULL;
 		xfree(des_part_ptr->tres_fmt_str);
 		des_part_ptr->tres_fmt_str = src_part_ptr->tres_fmt_str;
 		src_part_ptr->tres_fmt_str = NULL;
@@ -4812,14 +4876,19 @@ void copy_all_part_state()
 			NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
 	copy_part_list = list_create(_copy_list_delete_part);
 	lock_slurmctld(config_read_lock);
-	if(part_list)
-			list_for_each_ro(part_list, _copy_part, NULL);
+	if(part_list){
+		list_for_each_ro(part_list, _copy_part, NULL);
+	}
+	if(default_part_name){
+		default_copy_part_name = xstrdup(default_part_name);
+	}
 	unlock_slurmctld(config_read_lock);
 }
 
 void purge_cache_part_data()
 {
 	FREE_NULL_LIST(cache_part_list);
+    xfree(default_cache_part_name);
 	cache_part_list = NULL;
 }
 
@@ -4827,8 +4896,10 @@ void purge_cache_part_data()
 
 void replace_cache_part_data()
 {
+    default_cache_part_name = default_copy_part_name;
 	cache_part_list = copy_part_list;
 	copy_part_list = NULL;
+    default_copy_part_name = NULL;
 }
 
 
@@ -4931,7 +5002,8 @@ extern void pack_all_cache_part(char **buffer_ptr, int *buffer_size,
                 .protocol_version = protocol_version,
                 .show_flags = show_flags,
                 .uid = uid,
-                .user_rec.uid = (uint32_t)uid,
+                .user_rec.uid = (uint32_t)uid,		
+                .pack_cache = true,
         };
 
     pack_info.user_rec.assoc_list = NULL;
@@ -4945,7 +5017,8 @@ extern void pack_all_cache_part(char **buffer_ptr, int *buffer_size,
                 .protocol_version = protocol_version,
                 .show_flags = show_flags,
                 .uid = uid,
-                .visible_parts = build_visible_cache_parts(uid, privileged),
+                .visible_parts = build_visible_cache_parts(uid, privileged),	
+                .pack_cache = true,
         };
 #endif
 

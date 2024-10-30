@@ -150,6 +150,8 @@ static pthread_mutex_t schedule_cycle_depth = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+static bitstr_t *last_main_planned_bitmap = NULL; // To be compatible with cache.
+static bitstr_t *planned_update_bitmap = NULL;    // To be compatible with cache.
 static bitstr_t *main_planned_bitmap = NULL;
 #endif
 
@@ -1108,6 +1110,8 @@ static void *_sched_agent(void *args)
 	DEF_TIMERS;
 #endif
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+    last_main_planned_bitmap = bit_alloc(node_record_count);  // To be compatible with cache.
+	planned_update_bitmap = bit_alloc(node_record_count);     // To be compatible with cache.
 	main_planned_bitmap = bit_alloc(node_record_count);
 #endif
 
@@ -1124,6 +1128,8 @@ static void *_sched_agent(void *args)
 			if (slurmctld_config.shutdown_time) {
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 				FREE_NULL_BITMAP(main_planned_bitmap);
+				FREE_NULL_BITMAP(last_main_planned_bitmap);
+				FREE_NULL_BITMAP(planned_update_bitmap);
 #endif
 				slurm_mutex_unlock(&sched_mutex);
 				return NULL;
@@ -1258,6 +1264,8 @@ static void *_sched_agent(void *args)
 
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 	FREE_NULL_BITMAP(main_planned_bitmap);
+	FREE_NULL_BITMAP(last_main_planned_bitmap);
+	FREE_NULL_BITMAP(planned_update_bitmap);
 #endif
 
 	return NULL;
@@ -1614,6 +1622,9 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 	int *pending_job_cnt;
 	int sched_job_num = 0, reduce_job_num = 0, select_job_num = 0;
 #endif
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+	static bool sched_planned = false;
+#endif
 	static int sched_timeout = 0;
 	static int sched_max_job_start = 0;
 	static int bf_min_age_reserve = 0;
@@ -1663,6 +1674,13 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 		}
 #endif
 
+#ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
+		if (xstrcasestr(slurm_conf.sched_params, "sched_planned")) {
+			sched_planned = true;
+		} else {
+			sched_planned = false;
+		}
+#endif
 		if ((tmp_ptr = xstrcasestr(slurm_conf.sched_params,
 					   "batch_sched_delay="))) {
 			batch_sched_delay = atoi(tmp_ptr + 18);
@@ -1912,7 +1930,9 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 	last_job_sched_start = now;
 	START_TIMER;
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
-	_handle_main_planned(false, index);
+	if (sched_planned) {
+		_handle_main_planned(false, index);
+	}
 #endif
 	if (!avail_front_end(NULL)) {
 		ListIterator job_iterator = list_iterator_create(job_list);
@@ -2630,29 +2650,7 @@ next_task:
 			continue;
 		}
 
-		FREE_NULL_BITMAP(job_ptr->resv_bitmap);	
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-		/* if para_sched, replace global node bitmap with resource area node bitmap */
-		if (para_sched) {
-			if(para_sched_avail_node_bitmap[index]){
-				char *avail_tmp_str = NULL, *part_tmp_str = NULL;
-				avail_tmp_str = bit_fmt_hexmask(para_sched_avail_node_bitmap[index]);
-				part_tmp_str = bit_fmt_hexmask(job_ptr->part_ptr->node_bitmap);
-				debug4("%pJ. HetPart: _schedule avail_node_bitmap=%s. part_node_bitmap=%s", job_ptr, avail_tmp_str, part_tmp_str);
-				xfree(avail_tmp_str);
-				xfree(part_tmp_str);
-			}
-		}else{
-			if(avail_node_bitmap){
-				char *avail_tmp_str = NULL, *part_tmp_str = NULL;
-				avail_tmp_str = bit_fmt_hexmask(avail_node_bitmap);
-				part_tmp_str = bit_fmt_hexmask(job_ptr->part_ptr->node_bitmap);
-				debug4("%pJ. HetPart: _schedule avail_node_bitmap=%s. part_node_bitmap=%s", job_ptr, avail_tmp_str, part_tmp_str);
-				xfree(avail_tmp_str);
-				xfree(part_tmp_str);
-			}
-		}
-#endif		
+		FREE_NULL_BITMAP(job_ptr->resv_bitmap);			
 #endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -3221,12 +3219,12 @@ fail_this_part:	if (fail_by_part) {
 			failed_parts[failed_part_cnt++] = job_ptr->part_ptr;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED	
-			if (para_sched) {
-				bit_or(para_sched_main_planned_bitmap[index], job_ptr->part_ptr->node_bitmap);
-				bit_and(para_sched_main_planned_bitmap[index], para_sched_avail_node_bitmap[index]);
-			} else {
-				bit_or(main_planned_bitmap, job_ptr->part_ptr->node_bitmap);
-				bit_and(main_planned_bitmap, avail_node_bitmap);
+			if (sched_planned) {
+				if (para_sched) {
+					bit_or(para_sched_main_planned_bitmap[index], job_ptr->part_ptr->node_bitmap);
+				} else {
+					bit_or(main_planned_bitmap, job_ptr->part_ptr->node_bitmap);
+				}
 			}
 #endif
 			/* if para_sched, replace global node bitmap with resource area node bitmap */
@@ -3243,7 +3241,41 @@ fail_this_part:	if (fail_by_part) {
 #endif			
 	}
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
-	_handle_main_planned(true, index);
+	if (sched_planned) {
+		_handle_main_planned(true, index);
+		if (para_sched) {
+			/* To be compatible with cache. */
+			bit_copybits(para_sched_planned_update_bitmap[index], para_sched_last_main_planned_bitmap[index]);
+        	bit_xor(para_sched_planned_update_bitmap[index], para_sched_main_planned_bitmap[index]);
+        	bit_copybits(para_sched_last_main_planned_bitmap[index], para_sched_main_planned_bitmap[index]);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(cachedup_realtime && cache_queue && bit_set_count(para_sched_planned_update_bitmap[index])){
+				slurm_cache_date_t *cache_msg = NULL;
+				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+				cache_msg->msg_type = UPDATE_CACHE_NODE_STATE;
+				cache_msg->node_state_bitmap = bit_copy(para_sched_main_planned_bitmap[index]);
+				cache_msg->para_sched_node_bitmap = bit_copy(para_sched_node_bitmap[index]);
+				cache_enqueue(cache_msg);
+			}
+#endif
+		} else {
+			/* To be compatible with cache. */
+			bit_copybits(planned_update_bitmap, last_main_planned_bitmap);
+			bit_xor(planned_update_bitmap, main_planned_bitmap);
+			bit_copybits(last_main_planned_bitmap, main_planned_bitmap);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			if(cachedup_realtime && cache_queue && bit_set_count(planned_update_bitmap)){
+				slurm_cache_date_t *cache_msg = NULL;
+				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+				cache_msg->msg_type = UPDATE_CACHE_NODE_STATE;
+				cache_msg->node_state_bitmap = bit_copy(main_planned_bitmap);
+				cache_msg->para_sched_node_bitmap = NULL;
+				cache_enqueue(cache_msg);
+			}
+#endif
+
+		}
+	}
 #endif
 
 	if (bb_wait_cnt)
