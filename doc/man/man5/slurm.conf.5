@@ -4327,6 +4327,13 @@ The default value is 2 microseconds.
 .IP
 
 .TP
+\fBsched_planned\fR
+If defined, enables the function of setting the node reserved for queued jobs
+in the main schedule to the planned state.  By default, the planned state of 
+a node is only set by the backfill scheduler.   
+.IP
+
+.TP
 \fBspec_cores_first\fR
 Specialized cores will be selected from the first cores of the first sockets,
 cycling through the sockets on a round robin basis.
