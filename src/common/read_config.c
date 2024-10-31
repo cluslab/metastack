@@ -823,7 +823,12 @@ extern void parse_limit_type(const char *parameters, int global_limit_type, int*
 	*limit_type = global_limit_type;
 	char *tmp_ptr = NULL, *tmp = NULL, *tok = NULL, *save_ptr = NULL;
 	if ((tmp_ptr = xstrcasestr(parameters, "limit_type="))) {
-		tmp = tmp_ptr + 11;
+		tmp = xstrdup(tmp_ptr + 11);
+		if (tmp == NULL || *tmp == '\0') {
+			info("limit_type not configured, use global configuration value");
+			xfree(tmp);
+			return;
+		}
 		tok = strtok_r(tmp, ",", &save_ptr);
 		if (!tok) {
 			info("limit_type not configured, use global configuration value");
@@ -838,6 +843,7 @@ extern void parse_limit_type(const char *parameters, int global_limit_type, int*
 				info("limit_type configured invalid value, use global configuration value");
 			}
 		}
+		xfree(tmp);
 	} else {
 		info("limit_type not configured, use global configuration value");
 	}
