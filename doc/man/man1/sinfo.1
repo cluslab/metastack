@@ -58,8 +58,9 @@ Show all partitions from the federation if a member of one.
 
 .TP
 \fB\-\-noplanned\fR
-If set, do not display planned state set by main scheduler. The option 
-takes precedence over the setting of PrivateData in the slurm.conf.
+If set, do not display planned state set by main scheduler. This option will 
+overwrite the settings of PrivateData in slurm.conf and the environment 
+variable SLURM_MAIN_PLANNED. Also see \fB\-\-planned\fR.
 .IP
 
 .TP
@@ -108,11 +109,6 @@ options are:
 .I "\-\-long \-\-list\-reasons"
 "%20E %12U %19H %6t %N"
 .RE
-.IP
-
-.TP
-\fB\-\-planned\fR
-If set, display planned state set by main scheduler.
 .IP
 
 In the above format strings, the use of "#" represents the
@@ -756,6 +752,11 @@ Do not print a header on the output.
 \fB\-p\fR, \fB\-\-partition\fR=<\fIpartition\fR>
 Print information only about the specified partition(s). Multiple partitions
 are separated by commas.
+.IP
+
+.TP
+\fB\-\-planned\fR
+If set, display planned state set by main scheduler.
 .IP
 
 .TP

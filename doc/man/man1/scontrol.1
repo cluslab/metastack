@@ -99,8 +99,9 @@ to query partition, node, job, and step information from the source data.
 
 .TP
 \fB\-\-noplanned\fR
-If set, do not display planned state set by main scheduler. The option takes 
-precedence over the setting of PrivateData in the slurm.conf.
+If set, do not display planned state set by main scheduler. This option will 
+overwrite the settings of PrivateData in slurm.conf and the environment 
+variable SLURM_MAIN_PLANNED. Also see \fB\-\-planned\fR.
 .IP
 
 .TP
