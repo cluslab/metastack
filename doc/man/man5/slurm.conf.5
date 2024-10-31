@@ -1352,6 +1352,13 @@ External sensors data is collected from the RRD database.
 .IP
 
 .TP
+\fBExtraMsgFile\fR
+Allow custom error messages for submission failures, configuring each error code 
+with a message on a separate line. See the configuration example in 
+slurm_warning.conf.example in the etc directory
+.IP
+
+.TP
 \fBFairShareDampeningFactor\fR
 Dampen the effect of exceeding a user or group's fair share of allocated
 resources. Higher values will provides greater ability to differentiate
@@ -4792,6 +4799,12 @@ be automatically pushed out and applied to nodes that are running in this
 A restart of slurmctld is required for changes to this parameter to take effect.
 NOTE: Included files with the \fBInclude\fR directive will only be pushed
 if the filename has no path separators and is located adjacent to slurm.conf.
+.IP
+
+.TP
+\fBenable_reason_detail\fR
+Allow slurmctld to return detailed reasons to the CLI, including job submission 
+errors or reasons for pending (PD) jobs.
 .IP
 
 .TP
