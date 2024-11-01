@@ -1369,8 +1369,8 @@ extern KCIResult *kingbase_db_query_ret(kingbase_conn_t *kingbase_conn,
 		errno = 0;
 		if (!result && KCIResultGetColumnCount(result)) {
 			/* should have returned data */
-			error("We should have gotten a result: '%m' '%d'",
-					KCIResultGetStatusCode(result));
+			error("We should have gotten a result: '%m' '%s'",
+					KCIConnectionGetLastError(kingbase_conn->db_conn));
 		}
 	}
 	slurm_mutex_unlock(&kingbase_conn->lock);

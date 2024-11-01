@@ -290,7 +290,7 @@ static int _check_is_def_acct_before_remove(kingbase_conn_t *kingbase_conn,
 		as_statement = "as t2 ";
 
 	/* Query all the user associations given */
-	query = xstrdup_printf("select %s from `%s_%s` %swhere deleted=0 && `user`!='' && (%s) order by `user`, is_def asc",
+	query = xstrdup_printf("select %s from `%s_%s` %swhere deleted=0 and `user`!='' and (%s) order by `user`, is_def asc",
 			       tmp_char, cluster_name, assoc_table,
 			       as_statement, assoc_char);
 	xfree(tmp_char);
@@ -402,9 +402,9 @@ static bool _check_jobs_before_remove(kingbase_conn_t *kingbase_conn,
 			"from `%s_%s` as t0, "
 			"`%s_%s` as t1, `%s_%s` as t2 "
 			"where t1.lft between "
-			"t2.lft and t2.rgt && (%s) "
+			"t2.lft and t2.rgt and (%s) "
 			"and t0.id_assoc=t1.id_assoc "
-			"and t0.time_end=0 && t0.state<%d;",
+			"and t0.time_end=0 and t0.state<%d;",
 			object, cluster_name, job_table,
 			cluster_name, assoc_table,
 			cluster_name, assoc_table,
@@ -415,7 +415,7 @@ static bool _check_jobs_before_remove(kingbase_conn_t *kingbase_conn,
 			"select t0.id_assoc from `%s_%s` as t2 inner join "
 			"`%s_%s` as t1 inner join `%s_%s` as t0 "
 			"where t1.lft between "
-			"t2.lft and t2.rgt && (%s) "
+			"t2.lft and t2.rgt and (%s) "
 			"and t0.id_assoc=t1.id_assoc limit 1;",
 			cluster_name, assoc_table,
 			cluster_name, assoc_table,
@@ -479,7 +479,7 @@ static bool _check_jobs_before_remove_assoc(kingbase_conn_t *kingbase_conn,
 		query = xstrdup_printf("select %s "
 				       "from `%s_%s` as t1, `%s_%s` as t2 "
 				       "where (%s) and t1.id_assoc=t2.id_assoc "
-				       "and t1.time_end=0 && t1.state<%d;",
+				       "and t1.time_end=0 and t1.state<%d;",
 				       object, cluster_name, job_table,
 				       cluster_name, assoc_table,
 				       assoc_char, JOB_COMPLETE);
@@ -2319,7 +2319,7 @@ extern int modify_common(kingbase_conn_t *kingbase_conn,
 		xassert(cluster_name);
 		xstrfmtcat(query,
 			   "update `%s_%s` set mod_time=%ld%s "
-			   "where deleted=0 && %s;",
+			   "where deleted=0 and %s;",
 			   cluster_name, table, now, vals, cond_char);
 		xstrfmtcat(query,
 			   "insert into %s "
@@ -2331,7 +2331,7 @@ extern int modify_common(kingbase_conn_t *kingbase_conn,
 	} else {
 		xstrfmtcat(query,
 			   "update %s set mod_time=%ld%s "
-			   "where deleted=0 && %s;",
+			   "where deleted=0 and %s;",
 			   table, now, vals, cond_char);
 		xstrfmtcat(query,
 			   "insert into %s "
@@ -2437,12 +2437,12 @@ extern int remove_common(kingbase_conn_t *kingbase_conn,
 	if (!has_jobs && table != assoc_table) {
 		if (cluster_centric) {
 			query = xstrdup_printf("delete from `%s_%s` where "
-					       "creation_time>%ld && (%s);",
+					       "creation_time>%ld and (%s);",
 					       cluster_name, table, day_old,
 					       name_char);
 		} else {
 			query = xstrdup_printf("delete from %s where "
-					       "creation_time>%ld && (%s);",
+					       "creation_time>%ld and (%s);",
 					       table, day_old, name_char);
 		}
 	}
@@ -2451,14 +2451,14 @@ extern int remove_common(kingbase_conn_t *kingbase_conn,
 		if (cluster_centric) {
 			xstrfmtcat(query,
 				   "update `%s_%s` set mod_time=%ld, "
-				   "deleted=1 where deleted=0 && (%s);",
+				   "deleted=1 where deleted=0 and (%s);",
 				   cluster_name, table, now, name_char);
 		} else if (table == federation_table) {
 			xstrfmtcat(query,
 				   "update %s set "
 				   "mod_time=%ld, deleted=1, "
 				   "flags=DEFAULT "
-				   "where deleted=0 && (%s);",
+				   "where deleted=0 and (%s);",
 				   federation_table, now,
 				   name_char);
 		} else if (table == qos_table) {
@@ -2493,12 +2493,12 @@ extern int remove_common(kingbase_conn_t *kingbase_conn,
 				   "usage_factor=DEFAULT, "
 				   "usage_thres=DEFAULT, "
 				   "limit_factor=DEFAULT "
-				   "where deleted=0 && (%s);",
+				   "where deleted=0 and (%s);",
 				   qos_table, now, name_char);
 		} else {
 			xstrfmtcat(query,
 				   "update %s set mod_time=%ld, deleted=1 "
-				   "where deleted=0 && (%s);",
+				   "where deleted=0 and (%s);",
 				   table, now, name_char);
 		}
 	}
@@ -2566,9 +2566,9 @@ extern int remove_common(kingbase_conn_t *kingbase_conn,
 		   already done this, so don't */
 		query = xstrdup_printf("select distinct t1.id_assoc "
 				       "from `%s_%s` as t1, `%s_%s` as t2 "
-				       "where (%s) && t1.lft between "
-				       "t2.lft and t2.rgt && t1.deleted=0 "
-				       "&& t2.deleted=0 order by t1.id_assoc;",
+				       "where (%s) and t1.lft between "
+				       "t2.lft and t2.rgt and t1.deleted=0 "
+				       "and t2.deleted=0 order by t1.id_assoc;",
 				       cluster_name, assoc_table,
 				       cluster_name, assoc_table, assoc_char);
 
@@ -2593,7 +2593,7 @@ extern int remove_common(kingbase_conn_t *kingbase_conn,
 		while (tmp_inx < row) {
 			slurmdb_assoc_rec_t *rem_assoc = NULL;
 			if (loc_assoc_char)
-				xstrcat(loc_assoc_char, " || ");
+				xstrcat(loc_assoc_char, " or ");
 			xstrfmtcat(loc_assoc_char, "id_assoc=%s", KCIResultGetColumnValue(result,tmp_inx,0));
 
 			rem_assoc = xmalloc(sizeof(slurmdb_assoc_rec_t));
@@ -2654,7 +2654,7 @@ extern int remove_common(kingbase_conn_t *kingbase_conn,
 	 * the first place.
 	 */
 	query = xstrdup_printf("select id_assoc from `%s_%s` as t1 where "
-			       "creation_time>%ld && (%s);",
+			       "creation_time>%ld and (%s);",
 			       cluster_name, assoc_table,
 			       day_old, loc_assoc_char);
 
@@ -3252,7 +3252,7 @@ extern int acct_storage_p_commit(kingbase_conn_t *kingbase_conn, bool commit)
 
 		xstrfmtcat(query, "select control_host, control_port, "
 			   "name, rpc_version, flags "
-			   "from %s where deleted=0 && control_port != 0",
+			   "from %s where deleted=0 and control_port != 0",
 			   cluster_table);
 		//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);	
 		result = kingbase_db_query_ret(kingbase_conn, query, 0);		   

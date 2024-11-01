@@ -4371,7 +4371,7 @@ static uint32_t _archive_table(purge_type_t type, kingbase_conn_t *kingbase_conn
 	switch (type) {
 	case PURGE_TXN:
 		query = xstrdup_printf("select %s from `%s` where "
-				       "timestamp <= %ld && cluster='%s' "
+				       "timestamp <= %ld and cluster='%s' "
 				       "order by timestamp asc LIMIT %d",
 				       cols, sql_table,
 				       period_end, cluster_name,
@@ -4387,14 +4387,14 @@ static uint32_t _archive_table(purge_type_t type, kingbase_conn_t *kingbase_conn
 		break;
 	case PURGE_JOB:
 		query = xstrdup_printf("select %s from `%s_%s` where "
-				       "time_submit <= %ld && time_end != 0 "
+				       "time_submit <= %ld and time_end != 0 "
 				       "order by time_submit asc LIMIT %d",
 				       cols, cluster_name, job_table,
 				       period_end, MAX_PURGE_LIMIT);
 		break;
 	default:
 		query = xstrdup_printf("select %s from `%s_%s` where "
-				       "time_start <= %ld && time_end != 0 "
+				       "time_start <= %ld and time_end != 0 "
 				       "order by time_start asc LIMIT %d",
 				       cols, cluster_name, sql_table,
 				       period_end, MAX_PURGE_LIMIT);
@@ -4474,7 +4474,7 @@ static int _get_oldest_record(kingbase_conn_t *kingbase_conn, char *cluster,
 	case PURGE_TXN:
 		query = xstrdup_printf(
 			"select %s from `%s` where %s <= %ld "
-			"&& cluster='%s' order by %s asc LIMIT 1",
+			"and cluster='%s' order by %s asc LIMIT 1",
 			col_name, table, col_name, period_end, cluster,
 			col_name);
 		break;
@@ -4489,7 +4489,7 @@ static int _get_oldest_record(kingbase_conn_t *kingbase_conn, char *cluster,
 	default:
 		query = xstrdup_printf(
 			"select %s from `%s_%s` where %s <= %ld "
-			"&& time_end != 0 order by %s asc LIMIT 1",
+			"and time_end != 0 order by %s asc LIMIT 1",
 			col_name, cluster, table, col_name, period_end,
 			col_name);
 		break;
@@ -4697,7 +4697,7 @@ static int _archive_purge_table(purge_type_t purge_type, uint32_t usage_info,
 				// sql_table, col_name, tmp_end, cluster_name,
 				// col_name, MAX_PURGE_LIMIT);
 				"delete from `%s` where %s in "
-				"(select %s from `%s` where %s <= %ld && cluster='%s' order by %s asc LIMIT %d)",
+				"(select %s from `%s` where %s <= %ld and cluster='%s' order by %s asc LIMIT %d)",
 				sql_table, col_name, col_name, sql_table, col_name,
 				tmp_end, cluster_name, col_name, MAX_PURGE_LIMIT);				
 			break;
@@ -4716,7 +4716,7 @@ static int _archive_purge_table(purge_type_t purge_type, uint32_t usage_info,
 		default:
 			query = xstrdup_printf(
 				"delete from `%s_%s` where %s in "
-				"(select %s from `%s_%s` where %s <= %ld && time_end != 0 order by %s asc LIMIT %d)",
+				"(select %s from `%s_%s` where %s <= %ld and time_end != 0 order by %s asc LIMIT %d)",
 				cluster_name, sql_table, col_name, col_name, cluster_name, sql_table, col_name,
 				tmp_end, col_name, MAX_PURGE_LIMIT);
 			break;

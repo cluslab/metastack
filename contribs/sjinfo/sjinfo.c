@@ -3607,7 +3607,7 @@ int main(int argc ,char** argv) {
 
 
     /*16-bit encryption key*/
-    const uint8_t key[]="fcad715bd73b5cb0";
+    const uint8_t key[]="xxx";
     
     sjinfo_init(influxdb_data);
 

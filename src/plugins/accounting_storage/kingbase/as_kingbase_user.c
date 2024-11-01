@@ -246,7 +246,7 @@ static int _get_user_coords(kingbase_conn_t *kingbase_conn, slurmdb_user_rec_t *
 		user->coord_accts = list_create(slurmdb_destroy_coord_rec);
 
 	query = xstrdup_printf(
-		"select acct from %s where `user`='%s' && deleted=0",
+		"select acct from %s where `user`='%s' and deleted=0",
 		acct_coord_table, user->name);
 	//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);
 	result = kingbase_db_query_ret(kingbase_conn, query, 0);
@@ -277,12 +277,12 @@ static int _get_user_coords(kingbase_conn_t *kingbase_conn, slurmdb_user_rec_t *
 
 		while ((coord = list_next(itr))) {
 			if (set)
-				xstrcat(query, " || ");
+				xstrcat(query, " or ");
 			else
 				xstrfmtcat(query,
 					   "select distinct t1.acct from "
 					   "`%s_%s` as t1, `%s_%s` "
-					   "as t2 where t1.deleted=0 && (",
+					   "as t2 where t1.deleted=0 and (",
 					   cluster_name, assoc_table,
 					   cluster_name, assoc_table);
 			/* Make sure we don't get the same
@@ -290,9 +290,9 @@ static int _get_user_coords(kingbase_conn_t *kingbase_conn, slurmdb_user_rec_t *
 			 * track of the sub-accounts.
 			 */
 			xstrfmtcat(query, "(t2.acct='%s' "
-				   "&& t1.lft between t2.lft "
-				   "and t2.rgt && t1.user='' "
-				   "&& t1.acct!='%s')",
+				   "and t1.lft between t2.lft "
+				   "and t2.rgt and t1.user='' "
+				   "and t1.acct!='%s')",
 				   coord->name, coord->name);
 			set = 1;
 		}
@@ -710,11 +710,11 @@ extern List as_kingbase_modify_users(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (user_cond->assoc_cond && user_cond->assoc_cond->user_list
 	    && list_count(user_cond->assoc_cond->user_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(user_cond->assoc_cond->user_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "name='%s'", object);
 			set = 1;
 		}
@@ -723,7 +723,7 @@ extern List as_kingbase_modify_users(kingbase_conn_t *kingbase_conn, uint32_t ui
 	}
 
 	if (user_cond->admin_level != SLURMDB_ADMIN_NOTSET)
-		xstrfmtcat(extra, " && admin_level=%u",
+		xstrfmtcat(extra, " and admin_level=%u",
 			   user_cond->admin_level);
 
 	ret_list = _get_other_user_names_to_mod(kingbase_conn, uid, user_cond);
@@ -771,7 +771,7 @@ extern List as_kingbase_modify_users(kingbase_conn_t *kingbase_conn, uint32_t ui
 		if (!name_char)
 			xstrfmtcat(name_char, "(name='%s'", object);
 		else
-			xstrfmtcat(name_char, " || name='%s'", object);
+			xstrfmtcat(name_char, " or name='%s'", object);
 
 		user_rec = xmalloc(sizeof(slurmdb_user_rec_t));
 
@@ -928,7 +928,7 @@ static bool _is_coord_over_all_accts(kingbase_conn_t *kingbase_conn,
 		return false;
 	}
 
-	query = xstrdup_printf("select distinct acct from `%s_%s` where deleted=0 && (%s) && (",
+	query = xstrdup_printf("select distinct acct from `%s_%s` where deleted=0 and (%s) and (",
 			       cluster_name, assoc_table, user_char);
 
 	/*
@@ -939,7 +939,7 @@ static bool _is_coord_over_all_accts(kingbase_conn_t *kingbase_conn,
 	itr = list_iterator_create(coord->coord_accts);
 	while ((coord_acct = (list_next(itr)))) {
 		xstrfmtcat(query, "%sacct != '%s'", sep_str, coord_acct->name);
-		sep_str = " && ";
+		sep_str = " and ";
 	}
 	list_iterator_destroy(itr);
 	xstrcat(query, ");");
@@ -1017,13 +1017,13 @@ extern List as_kingbase_remove_users(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (user_cond->assoc_cond && user_cond->assoc_cond->user_list
 	    && list_count(user_cond->assoc_cond->user_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(user_cond->assoc_cond->user_list);
 		while ((object = list_next(itr))) {
 			if (!object[0])
 				continue;
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "name='%s'", object);
 			set = 1;
 		}
@@ -1034,7 +1034,7 @@ extern List as_kingbase_remove_users(kingbase_conn_t *kingbase_conn, uint32_t ui
 	ret_list = _get_other_user_names_to_mod(kingbase_conn, uid, user_cond);
 
 	if (user_cond->admin_level != SLURMDB_ADMIN_NOTSET) {
-		xstrfmtcat(extra, " && admin_level=%u", user_cond->admin_level);
+		xstrfmtcat(extra, " and admin_level=%u", user_cond->admin_level);
 	}
 
 	if (!extra && !ret_list) {
@@ -1106,9 +1106,9 @@ no_user_table:
 		list_append(assoc_cond.user_list, object);
 
 		if (name_char) {
-			xstrfmtcat(name_char, " || name='%s'", object);
-			xstrfmtcat(user_char, " || `user`='%s'", object);
-			xstrfmtcat(assoc_char, " || t2.user='%s'", object);
+			xstrfmtcat(name_char, " or name='%s'", object);
+			xstrfmtcat(user_char, " or `user`='%s'", object);
+			xstrfmtcat(assoc_char, " or t2.user='%s'", object);
 		} else {
 			xstrfmtcat(name_char, "name='%s'", object);
 			xstrfmtcat(user_char, "`user`='%s'", object);
@@ -1249,7 +1249,7 @@ extern List as_kingbase_remove_coord(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (user_list && list_count(user_list)) {
 		set = 0;
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, "(");
 
@@ -1258,7 +1258,7 @@ extern List as_kingbase_remove_coord(kingbase_conn_t *kingbase_conn, uint32_t ui
 			if (!object[0])
 				continue;
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "`user`='%s'", object);
 			set = 1;
 		}
@@ -1269,7 +1269,7 @@ extern List as_kingbase_remove_coord(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (acct_list && list_count(acct_list)) {
 		set = 0;
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, "(");
 
@@ -1278,7 +1278,7 @@ extern List as_kingbase_remove_coord(kingbase_conn_t *kingbase_conn, uint32_t ui
 			if (!object[0])
 				continue;
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "acct='%s'", object);
 			set = 1;
 		}
@@ -1293,7 +1293,7 @@ extern List as_kingbase_remove_coord(kingbase_conn_t *kingbase_conn, uint32_t ui
 	}
 
 	query = xstrdup_printf(
-		"select `user`, acct from %s where deleted=0 && %s order by `user`",
+		"select `user`, acct from %s where deleted=0 and %s order by `user`",
 		acct_coord_table, extra);
 
 	DB_DEBUG(DB_ASSOC, kingbase_conn->conn, "query\n%s", query);
@@ -1434,7 +1434,7 @@ extern List as_kingbase_get_users(kingbase_conn_t *kingbase_conn, uid_t uid,
 	}
 
 	if (user_cond->with_deleted)
-		xstrcat(extra, "where (deleted=0 || deleted=1)");
+		xstrcat(extra, "where (deleted=0 or deleted=1)");
 	else
 		xstrcat(extra, "where deleted=0");
 
@@ -1463,11 +1463,11 @@ extern List as_kingbase_get_users(kingbase_conn_t *kingbase_conn, uid_t uid,
 	    user_cond->assoc_cond->user_list
 	    && list_count(user_cond->assoc_cond->user_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(user_cond->assoc_cond->user_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "name='%s'", object);
 			set = 1;
 		}
@@ -1476,7 +1476,7 @@ extern List as_kingbase_get_users(kingbase_conn_t *kingbase_conn, uid_t uid,
 	}
 
 	if (user_cond->admin_level != SLURMDB_ADMIN_NOTSET) {
-		xstrfmtcat(extra, " && admin_level=%u",
+		xstrfmtcat(extra, " and admin_level=%u",
 			   user_cond->admin_level);
 	}
 
@@ -1485,7 +1485,7 @@ empty:
 	 * if this flag is set.
 	 */
 	if (!is_admin && (slurm_conf.private_data & PRIVATE_DATA_USERS)) {
-		xstrfmtcat(extra, " && name='%s'", user.name);
+		xstrfmtcat(extra, " and name='%s'", user.name);
 	}
 
 	xfree(tmp);

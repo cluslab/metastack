@@ -893,9 +893,9 @@ static local_cluster_usage_t *_setup_cluster_usage(kingbase_conn_t *kingbase_con
 	 * state.  We handle those later with the reservations.
 	 */
 	query = xstrdup_printf("select %s from `%s_%s` where "
-			       "!(state & %"PRIu64") && (time_start < %ld "
-			       "&& (time_end >= %ld "
-			       "|| time_end = 0)) "
+			       "!(state & %"PRIu64") and (time_start < %ld "
+			       "and (time_end >= %ld "
+			       "or time_end = 0)) "
 			       "order by node_name, time_start",
 			       event_str, cluster_name, event_table,
 			       NODE_STATE_MAINT,
@@ -1139,7 +1139,7 @@ extern int _setup_resv_usage(kingbase_conn_t *kingbase_conn,
 		xstrfmtcat(resv_str, ", %s", resv_req_inx[i]);
 
 	query = xstrdup_printf("select %s from `%s_%s` where "
-			       "(time_start < %ld && time_end >= %ld) "
+			       "(time_start < %ld and time_end >= %ld) "
 			       "order by time_start",
 			       resv_str, cluster_name, resv_table,
 			       curr_end, curr_start);
@@ -1374,9 +1374,9 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 
 		/* now get the jobs during this time only  */
 		query = xstrdup_printf("select %s from `%s_%s` as job "
-				       "where (job.time_eligible && "
-				       "job.time_eligible < %ld && "
-				       "(job.time_end >= %ld || "
+				       "where (job.time_eligible and "
+				       "job.time_eligible < %ld and "
+				       "(job.time_end >= %ld or "
 				       "job.time_end = 0)) "
 				       "group by job.job_db_inx "
 				       "order by job.id_assoc, "
@@ -1428,8 +1428,8 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 				/* get the suspended time for this job */
 				query = xstrdup_printf(
 					"select %s from `%s_%s` where "
-					"(time_start < %ld && (time_end >= %ld "
-					"|| time_end = 0)) && job_db_inx=%s "
+					"(time_start < %ld and (time_end >= %ld "
+					"or time_end = 0)) and job_db_inx=%s "
 					"order by time_start",
 					suspend_str, cluster_name,
 					suspend_table,
@@ -1979,7 +1979,7 @@ extern int as_kingbase_nonhour_rollup(kingbase_conn_t *kingbase_conn,
 		query = xstrdup_printf(
 			"with cte1 as ("
 				"select %ld, %ld, id, id_tres, %ld, SUM(alloc_secs) ASUM "
-				"from `%s_%s` where (time_start < %ld && time_start >= %ld) group by id, id_tres"
+				"from `%s_%s` where (time_start < %ld and time_start >= %ld) group by id, id_tres"
 			") "
 			"insert into `%s_%s` (creation_time, mod_time, id, id_tres, time_start, alloc_secs) "
 			"(select * from cte1) on duplicate key update mod_time=%ld, alloc_secs=cte1.ASUM;",
@@ -2024,7 +2024,7 @@ extern int as_kingbase_nonhour_rollup(kingbase_conn_t *kingbase_conn,
 			   	"with cte2 as ( "
 				"select %ld, %ld, %ld, id_tres, MAX(count) CPU, SUM(alloc_secs) ASUM, SUM(down_secs) DSUM, SUM(pdown_secs) PDSUM, SUM(idle_secs) ISUM, SUM(over_secs) OSUM, SUM(plan_secs) PSUM "
 				"from %s_%s "
-				"where (time_start < %ld && time_start >= %ld) "
+				"where (time_start < %ld and time_start >= %ld) "
 				"group by deleted, id_tres "
 				") "
 				"insert into %s_%s (creation_time, mod_time, time_start, id_tres, count, alloc_secs, down_secs, pdown_secs, idle_secs, over_secs, plan_secs) "
@@ -2062,7 +2062,7 @@ extern int as_kingbase_nonhour_rollup(kingbase_conn_t *kingbase_conn,
 				   "with cte3 as ("
 						"select %ld, %ld, id, id_tres, %ld, SUM(alloc_secs) ASUM "
 						"from %s_%s "
-						"where (time_start < %ld && time_start >= %ld) group by id, id_tres "
+						"where (time_start < %ld and time_start >= %ld) group by id, id_tres "
 					")"
 					"insert into %s_%s (creation_time, mod_time, id, id_tres, time_start, alloc_secs) "
 					"(select * from cte3) on duplicate key update mod_time=%ld, alloc_secs=cte3.ASUM;",

@@ -71,9 +71,9 @@ static int _reset_default_wckey(kingbase_conn_t *kingbase_conn,
 		return SLURM_ERROR;
 
 	xstrfmtcat(query, "update `%s_%s` set is_def=0, mod_time=%ld "
-		   "where (`user`='%s' && wckey_name!='%s' && is_def=1);"
+		   "where (`user`='%s' and wckey_name!='%s' and is_def=1);"
 		   "select id_wckey from `%s_%s` "
-		   "where (`user`='%s' && wckey_name!='%s' && is_def=1);",
+		   "where (`user`='%s' and wckey_name!='%s' and is_def=1);",
 		   wckey->cluster, wckey_table, (long)now,
 		   wckey->user, wckey->name,
 		   wckey->cluster, wckey_table,
@@ -221,7 +221,7 @@ static int _setup_wckey_cond_limits(slurmdb_wckey_cond_t *wckey_cond,
 		return 0;
 
 	if (wckey_cond->with_deleted){
-		xstrfmtcat(*extra, " where (%s.deleted=0 || %s.deleted=1)",
+		xstrfmtcat(*extra, " where (%s.deleted=0 or %s.deleted=1)",
 			   prefix, prefix);
 	} else {
 		xstrfmtcat(*extra, " where %s.deleted=0", prefix);
@@ -229,16 +229,16 @@ static int _setup_wckey_cond_limits(slurmdb_wckey_cond_t *wckey_cond,
 
 	if (wckey_cond->only_defs) {
 		set = 1;
-		xstrfmtcat(*extra, " && (%s.is_def=1)", prefix);
+		xstrfmtcat(*extra, " and (%s.is_def=1)", prefix);
 	}
 
 	if (wckey_cond->name_list && list_count(wckey_cond->name_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(wckey_cond->name_list);
 		while ((object = list_next(itr))) {
 			if (set){
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			}
 			xstrfmtcat(*extra, "%s.wckey_name='%s'",
 				   prefix, object);
@@ -250,11 +250,11 @@ static int _setup_wckey_cond_limits(slurmdb_wckey_cond_t *wckey_cond,
 
 	if (wckey_cond->id_list && list_count(wckey_cond->id_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(wckey_cond->id_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "%s.id_wckey=%s", prefix, object);
 			set = 1;
 		}
@@ -264,11 +264,11 @@ static int _setup_wckey_cond_limits(slurmdb_wckey_cond_t *wckey_cond,
 
 	if (wckey_cond->user_list && list_count(wckey_cond->user_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(wckey_cond->user_list);
 		while ((object = list_next(itr))) {
 			if (set){
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			}
 			xstrfmtcat(*extra, "%s.user='%s'", prefix, object);
 			set = 1;
@@ -317,7 +317,7 @@ static int _cluster_remove_wckeys(kingbase_conn_t *kingbase_conn,
 		if (!assoc_char)
 			xstrfmtcat(assoc_char, "id_wckey='%s'", KCIResultGetColumnValue(result,i,0));
 		else
-			xstrfmtcat(assoc_char, " || id_wckey='%s'", KCIResultGetColumnValue(result,i,0));
+			xstrfmtcat(assoc_char, " or id_wckey='%s'", KCIResultGetColumnValue(result,i,0));
 
 		wckey_rec = xmalloc(sizeof(slurmdb_wckey_rec_t));
 		/* we only need id and cluster when removing
@@ -396,7 +396,7 @@ static int _cluster_modify_wckeys(kingbase_conn_t *kingbase_conn,
 		if (!wckey_char)
 			xstrfmtcat(wckey_char, "id_wckey='%s'", KCIResultGetColumnValue(result,i,0));
 		else
-			xstrfmtcat(wckey_char, " || id_wckey='%s'", KCIResultGetColumnValue(result,i,0));
+			xstrfmtcat(wckey_char, " or id_wckey='%s'", KCIResultGetColumnValue(result,i,0));
 
 		wckey_rec = xmalloc(sizeof(slurmdb_wckey_rec_t));
 		/* we only need id and cluster when removing
@@ -931,7 +931,7 @@ empty:
 	 * coordinator of.
 	 */
 	if (!is_admin && (slurm_conf.private_data & PRIVATE_DATA_USERS))
-		xstrfmtcat(extra, " && t1.user='%s'", user.name);
+		xstrfmtcat(extra, " and t1.user='%s'", user.name);
 
 	wckey_list = list_create(slurmdb_destroy_wckey_rec);
 
