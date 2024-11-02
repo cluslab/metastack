@@ -183,7 +183,7 @@ extern int as_kingbase_fix_runaway_jobs(kingbase_conn_t *kingbase_conn, uint32_t
 
 	query = xstrdup_printf("UPDATE `%s_%s` SET time_end="
 			       "GREATEST(time_start, time_eligible, time_submit), "
-			       "state=%d WHERE time_end=0 && id_job IN (%s);",
+			       "state=%d WHERE time_end=0 and id_job IN (%s);",
 			       kingbase_conn->cluster_name, job_table,
 			       JOB_COMPLETE, job_ids);
 

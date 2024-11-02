@@ -87,26 +87,26 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->acct_list && list_count(txn_cond->acct_list)) {
 		set = 0;
 		if (assoc_extra)
-			xstrcat(assoc_extra, " && (");
+			xstrcat(assoc_extra, " and (");
 		else
 			xstrcat(assoc_extra, " where (");
 
 		if (name_extra)
-			xstrcat(name_extra, " && (");
+			xstrcat(name_extra, " and (");
 		else
 			xstrcat(name_extra, " (");
 		itr = list_iterator_create(txn_cond->acct_list);
 		while ((object = list_next(itr))) {
 			if (set) {
-				xstrcat(assoc_extra, " || ");
-				xstrcat(name_extra, " || ");
+				xstrcat(assoc_extra, " or ");
+				xstrcat(name_extra, " or ");
 			}
 
 			xstrfmtcat(assoc_extra, "acct='%s'", object);
 
 			xstrfmtcat(name_extra, "(name like E'%%\\'%s\\'%%'"
-				   " || name='%s')"
-				   " || (info like E'%%acct=\\'%s\\'%%')",
+				   " or name='%s')"
+				   " or (info like E'%%acct=\\'%s\\'%%')",
 				   object, object, object);
 			set = 1;
 		}
@@ -118,18 +118,18 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->cluster_list && list_count(txn_cond->cluster_list)) {
 		set = 0;
 		if (name_extra)
-			xstrcat(name_extra, " && (");
+			xstrcat(name_extra, " and (");
 		else
 			xstrcat(name_extra, "(");
 
 		itr = list_iterator_create(txn_cond->cluster_list);
 		while ((object = list_next(itr))) {
 			if (set) {
-				xstrcat(name_extra, " || ");
+				xstrcat(name_extra, " or ");
 			}
-			xstrfmtcat(name_extra, "(cluster='%s' || "
-				   "name like E'%%\\'%s\\'%%' || name='%s')"
-				   " || (info like E'%%cluster=\\'%s\\'%%')",
+			xstrfmtcat(name_extra, "(cluster='%s' or "
+				   "name like E'%%\\'%s\\'%%' or name='%s')"
+				   " or (info like E'%%cluster=\\'%s\\'%%')",
 				   object, object, object, object); 
 			set = 1;
 		}
@@ -141,26 +141,26 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->user_list && list_count(txn_cond->user_list)) {
 		set = 0;
 		if (assoc_extra)
-			xstrcat(assoc_extra, " && (");
+			xstrcat(assoc_extra, " and (");
 		else
 			xstrcat(assoc_extra, " where (");
 
 		if (name_extra)
-			xstrcat(name_extra, " && (");
+			xstrcat(name_extra, " and (");
 		else
 			xstrcat(name_extra, "(");
 
 		itr = list_iterator_create(txn_cond->user_list);
 		while ((object = list_next(itr))) {
 			if (set) {
-				xstrcat(assoc_extra, " || ");
-				xstrcat(name_extra, " || ");
+				xstrcat(assoc_extra, " or ");
+				xstrcat(name_extra, " or ");
 			}
 			xstrfmtcat(assoc_extra, "`user`='%s'", object);
 
 			xstrfmtcat(name_extra, "(name like E'%%\\'%s\\'%%'"
-				   " || name='%s')"
-				   " || (info like E'%%user=\\'%s\\'%%')",
+				   " or name='%s')"
+				   " or (info like E'%%user=\\'%s\\'%%')",
 				   object, object, object);
 
 			set = 1;
@@ -195,23 +195,23 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 			if (KCIResultGetRowCount(result)) {
 				if (extra)
 					xstrfmtcat(extra,
-						   " || (cluster='%s' && (",
+						   " or (cluster='%s' and (",
 						   object);
 				else
 					xstrfmtcat(extra,
-						   " where (cluster='%s' && (",
+						   " where (cluster='%s' and (",
 						   object);
 
 				set = 0;
                 cnt = KCIResultGetRowCount(result);
 				for(int j = 0; j < cnt; j++) {
 					if (set)
-						xstrcat(extra, " || ");
+						xstrcat(extra, " or ");
 
 					xstrfmtcat(extra,
 						   "(name like "
 						   "'%%id_assoc=%s %%' "
-						   "|| name like "
+						   "or name like "
 						   "'%%id_assoc=%s')",
 						   KCIResultGetColumnValue(result, j, 0), KCIResultGetColumnValue(result, j, 0));
 					set = 1;
@@ -227,7 +227,7 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 
 	if (name_extra) {
 		if (extra)
-			xstrfmtcat(extra, " || (%s)", name_extra);
+			xstrfmtcat(extra, " or (%s)", name_extra);
 		else
 			xstrfmtcat(extra, " where (%s)", name_extra);
 		xfree(name_extra);
@@ -237,13 +237,13 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->action_list && list_count(txn_cond->action_list)) {
 		set = 0;
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
 		itr = list_iterator_create(txn_cond->action_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "action='%s'", object);
 			set = 1;
 		}
@@ -254,13 +254,13 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->actor_list && list_count(txn_cond->actor_list)) {
 		set = 0;
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
 		itr = list_iterator_create(txn_cond->actor_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "actor='%s'", object);
 			set = 1;
 		}
@@ -271,7 +271,7 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->id_list && list_count(txn_cond->id_list)) {
 		set = 0;
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
 		itr = list_iterator_create(txn_cond->id_list);
@@ -287,7 +287,7 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 			}
 
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "id=%s", object);
 			set = 1;
 		}
@@ -298,13 +298,13 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->info_list && list_count(txn_cond->info_list)) {
 		set = 0;
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
 		itr = list_iterator_create(txn_cond->info_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "info like '%%%s%%'", object);
 			set = 1;
 		}
@@ -315,13 +315,13 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (txn_cond->name_list && list_count(txn_cond->name_list)) {
 		set = 0;
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
 		itr = list_iterator_create(txn_cond->name_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "name like '%%%s%%'", object);
 			set = 1;
 		}
@@ -331,21 +331,21 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 
 	if (txn_cond->time_start && txn_cond->time_end) {
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
-		xstrfmtcat(extra, "timestamp < %ld && timestamp >= %ld)",
+		xstrfmtcat(extra, "timestamp < %ld and timestamp >= %ld)",
 			   txn_cond->time_end, txn_cond->time_start);
 	} else if (txn_cond->time_start) {
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
 		xstrfmtcat(extra, "timestamp >= %ld)", txn_cond->time_start);
 
 	} else if (txn_cond->time_end) {
 		if (extra)
-			xstrcat(extra, " && (");
+			xstrcat(extra, " and (");
 		else
 			xstrcat(extra, " where (");
 		xstrfmtcat(extra, "timestamp < %ld)", txn_cond->time_end);

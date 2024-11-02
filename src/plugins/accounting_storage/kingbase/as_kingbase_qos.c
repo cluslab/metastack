@@ -982,7 +982,7 @@ extern List as_kingbase_modify_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			xstrfmtcat(name_char, "(name='%s'", object);
 			rc = 1;
 		} else  {
-			xstrfmtcat(name_char, " || name='%s'", object);
+			xstrfmtcat(name_char, " or name='%s'", object);
 		}
 
 		qos_rec = xmalloc(sizeof(slurmdb_qos_rec_t));
@@ -1189,11 +1189,11 @@ extern List as_kingbase_remove_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 		if (!name_char)
 			xstrfmtcat(name_char, "id='%s'", KCIResultGetColumnValue(result, i, 0));
 		else
-			xstrfmtcat(name_char, " || id='%s'", KCIResultGetColumnValue(result, i, 0));
+			xstrfmtcat(name_char, " or id='%s'", KCIResultGetColumnValue(result, i, 0));
 		if (!assoc_char)
 			xstrfmtcat(assoc_char, "id_qos='%s'", KCIResultGetColumnValue(result, i, 0));
 		else
-			xstrfmtcat(assoc_char, " || id_qos='%s'", KCIResultGetColumnValue(result, i, 0));
+			xstrfmtcat(assoc_char, " or id_qos='%s'", KCIResultGetColumnValue(result, i, 0));
 		xstrfmtcat(extra,
 			   ", qos=replace(qos, ',%s,', '')"
 			   ", delta_qos=replace(replace(delta_qos, ',+%s,', ''), ',-%s,', '')",
@@ -1380,7 +1380,7 @@ extern List as_kingbase_get_qos(kingbase_conn_t *kingbase_conn, uid_t uid,
 	}
 
 	if (qos_cond->with_deleted)
-		xstrcat(extra, "where (deleted=0 || deleted=1)");
+		xstrcat(extra, "where (deleted=0 or deleted=1)");
 	else
 		xstrcat(extra, "where deleted=0");
 

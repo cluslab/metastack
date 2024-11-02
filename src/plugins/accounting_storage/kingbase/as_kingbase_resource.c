@@ -55,18 +55,18 @@ static void _setup_res_cond(slurmdb_res_cond_t *res_cond,
 	}
 
 	if (res_cond->with_deleted)
-		xstrcat(*extra, "where (t1.deleted=0 || t1.deleted=1)");
+		xstrcat(*extra, "where (t1.deleted=0 or t1.deleted=1)");
 	else
 		xstrcat(*extra, "where t1.deleted=0");
 
 	if (res_cond->description_list
 	    && list_count(res_cond->description_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->description_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "description='%s'", object);
 			set = 1;
 		}
@@ -75,18 +75,18 @@ static void _setup_res_cond(slurmdb_res_cond_t *res_cond,
 	}
 
 	if (!(res_cond->flags & SLURMDB_RES_FLAG_NOTSET)) {
-		xstrfmtcat(*extra, " && (flags & %u)",
+		xstrfmtcat(*extra, " and (flags & %u)",
 			   res_cond->flags & SLURMDB_RES_FLAG_BASE);
 	}
 
 	if (res_cond->id_list
 	    && list_count(res_cond->id_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->id_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "id='%s'", object);
 			set = 1;
 		}
@@ -97,11 +97,11 @@ static void _setup_res_cond(slurmdb_res_cond_t *res_cond,
 	if (res_cond->manager_list
 	    && list_count(res_cond->manager_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->manager_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "manager='%s'", object);
 			set = 1;
 		}
@@ -112,11 +112,11 @@ static void _setup_res_cond(slurmdb_res_cond_t *res_cond,
 	if (res_cond->name_list
 	    && list_count(res_cond->name_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->name_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "name='%s'", object);
 			set = 1;
 		}
@@ -127,11 +127,11 @@ static void _setup_res_cond(slurmdb_res_cond_t *res_cond,
 	if (res_cond->server_list
 	    && list_count(res_cond->server_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->server_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "server='%s'", object);
 			set = 1;
 		}
@@ -142,11 +142,11 @@ static void _setup_res_cond(slurmdb_res_cond_t *res_cond,
 	if (res_cond->type_list
 	    && list_count(res_cond->type_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->type_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "type='%s'", object);
 			set = 1;
 		}
@@ -163,23 +163,23 @@ static int _setup_clus_res_cond(slurmdb_res_cond_t *res_cond, char **extra)
 	int query_clusters = 0;
 
 	if (!res_cond) {
-		xstrfmtcat(*extra, "%st2.deleted=0", *extra ? " && " : "");
+		xstrfmtcat(*extra, "%st2.deleted=0", *extra ? " and " : "");
 		return SLURM_SUCCESS;
 	}
 
 	if (res_cond->with_deleted)
-		xstrfmtcat(*extra, "%s(t2.deleted=0 || t2.deleted=1)",
-			   *extra ? " && " : "");
+		xstrfmtcat(*extra, "%s(t2.deleted=0 or t2.deleted=1)",
+			   *extra ? " and " : "");
 	else
-		xstrfmtcat(*extra, "%st2.deleted=0", *extra ? " && " : "");
+		xstrfmtcat(*extra, "%st2.deleted=0", *extra ? " and " : "");
 
 	if (res_cond->cluster_list && list_count(res_cond->cluster_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->cluster_list);
 		while ((tmp = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "t2.cluster='%s'", tmp);
 			set = 1;
 		}
@@ -190,11 +190,11 @@ static int _setup_clus_res_cond(slurmdb_res_cond_t *res_cond, char **extra)
 
 	if (res_cond->percent_list && list_count(res_cond->percent_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(res_cond->percent_list);
 		while ((tmp = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "t2.percent_allowed='%s'", tmp);
 			set = 1;
 		}
@@ -296,10 +296,10 @@ static uint32_t _get_res_used(kingbase_conn_t *kingbase_conn, uint32_t res_id,
 	 * what we want.
 	 */
 	query = xstrdup_printf("select distinct SUM(percent_allowed) "
-			       "from %s as t2 where deleted=0 && res_id=%u",
+			       "from %s as t2 where deleted=0 and res_id=%u",
 			       clus_res_table, res_id);
 	if (extra)
-		xstrfmtcat(query, " && !(%s)", extra);
+		xstrfmtcat(query, " and !(%s)", extra);
 
 	DB_DEBUG(DB_RES, kingbase_conn->conn, "query\n%s", query);
 	//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);
@@ -368,7 +368,7 @@ static int _fill_in_res_rec(kingbase_conn_t *kingbase_conn, slurmdb_res_rec_t *r
 
 	query = xstrdup_printf("select distinct %s from %s as t1 "
 			       "left outer join "
-			       "%s as t2 on (res_id=id && "
+			       "%s as t2 on (res_id=id and "
 			       "t2.deleted=0) "
 			       "where id=%u group by id",
 			       tmp, res_table, clus_res_table, res->id);
@@ -671,7 +671,7 @@ static List _get_clus_res(kingbase_conn_t *kingbase_conn, uint32_t res_id,
 	}
 
 	query = xstrdup_printf(
-		"select %s from %s as t2 where %s && (res_id=%u);",
+		"select %s from %s as t2 where %s and (res_id=%u);",
 		tmp, clus_res_table, extra, res_id);
 	xfree(tmp);
 	DB_DEBUG(DB_RES, kingbase_conn->conn, "query\n%s", query);
@@ -821,7 +821,7 @@ extern List as_kingbase_get_res(kingbase_conn_t *kingbase_conn, uid_t uid,
 			       "id",
 			       tmp, res_table, clus_res_table,
 			       (!res_cond || !res_cond->with_deleted) ?
-			       " && t2.deleted=0" : "",
+			       " and t2.deleted=0" : "",
 			       extra);
 	xfree(tmp);
 	xfree(extra);
@@ -942,10 +942,10 @@ extern List as_kingbase_remove_res(kingbase_conn_t *kingbase_conn, uint32_t uid,
 
 	query = xstrdup_printf("select id, name, server, cluster "
 			       "from %s as t1 left outer join "
-			       "%s as t2 on (res_id = id%s) %s && %s;",
+			       "%s as t2 on (res_id = id%s) %s and %s;",
 			       res_table, clus_res_table,
 			       (!res_cond || !res_cond->with_deleted) ?
-			       " && t2.deleted=0" : "",
+			       " and t2.deleted=0" : "",
 			       extra, clus_extra);
 	xfree(clus_extra);
 
@@ -994,8 +994,8 @@ extern List as_kingbase_remove_res(kingbase_conn_t *kingbase_conn, uint32_t uid,
 
 		if (query_clusters) {
 			xstrfmtcat(clus_char,
-				   "%s(res_id='%s' && cluster='%s')",
-				   clus_char ? " || " : "", KCIResultGetColumnValue(result,i,0), KCIResultGetColumnValue(result,i,3));
+				   "%s(res_id='%s' and cluster='%s')",
+				   clus_char ? " or " : "", KCIResultGetColumnValue(result,i,0), KCIResultGetColumnValue(result,i,3));
 		} else {
 			if (!res_added) {
 				name = xstrdup_printf("%s@%s", KCIResultGetColumnValue(result,i,1), KCIResultGetColumnValue(result,i,2));
@@ -1004,9 +1004,9 @@ extern List as_kingbase_remove_res(kingbase_conn_t *kingbase_conn, uint32_t uid,
 				name = NULL;
 			}
 			xstrfmtcat(name_char, "%sid='%s'",
-				   name_char ? " || " : "", KCIResultGetColumnValue(result,i,0));
+				   name_char ? " or " : "", KCIResultGetColumnValue(result,i,0));
 			xstrfmtcat(clus_char, "%sres_id='%s'",
-				   clus_char ? " || " : "", KCIResultGetColumnValue(result,i,0));
+				   clus_char ? " or " : "", KCIResultGetColumnValue(result,i,0));
 		}
 		if (have_clusters && KCIResultGetColumnValue(result,i,3) && KCIResultGetColumnValue(result,i,3)[0]) {
 			slurmdb_res_rec_t *res_rec =
@@ -1124,10 +1124,10 @@ extern List as_kingbase_modify_res(kingbase_conn_t *kingbase_conn, uint32_t uid,
 	if (query_clusters || send_update)
 		query = xstrdup_printf("select id, name, server, cluster "
 				       "from %s as t1 left outer join "
-				       "%s as t2 on (res_id = id%s) %s && %s;",
+				       "%s as t2 on (res_id = id%s) %s and %s;",
 				       res_table, clus_res_table,
 				       (!res_cond || !res_cond->with_deleted) ?
-				       " && t2.deleted=0" : "",
+				       " and t2.deleted=0" : "",
 				       extra, clus_extra);
 	else
 		query = xstrdup_printf("select id, name, server "
@@ -1210,8 +1210,8 @@ extern List as_kingbase_modify_res(kingbase_conn_t *kingbase_conn, uint32_t uid,
 
 		if (query_clusters) {
 			xstrfmtcat(clus_char,
-				   "%s(res_id='%s' && cluster='%s')",
-				   clus_char ? " || " : "", KCIResultGetColumnValue(result,i,0), KCIResultGetColumnValue(result,i,3));
+				   "%s(res_id='%s' and cluster='%s')",
+				   clus_char ? " or " : "", KCIResultGetColumnValue(result,i,0), KCIResultGetColumnValue(result,i,3));
 		} else {
 			if (!res_added) {
 				name = xstrdup_printf("%s@%s", KCIResultGetColumnValue(result,i,1), KCIResultGetColumnValue(result,i,2));
@@ -1220,9 +1220,9 @@ extern List as_kingbase_modify_res(kingbase_conn_t *kingbase_conn, uint32_t uid,
 				name = NULL;
 			}
 			xstrfmtcat(name_char, "%sid='%s'",
-				   name_char ? " || " : "", KCIResultGetColumnValue(result,i,0));
+				   name_char ? " or " : "", KCIResultGetColumnValue(result,i,0));
 			xstrfmtcat(clus_char, "%sres_id='%s'",
-				   clus_char ? " || " : "", KCIResultGetColumnValue(result,i,0));
+				   clus_char ? " or " : "", KCIResultGetColumnValue(result,i,0));
 		}
 		if (have_clusters && KCIResultGetColumnValue(result,i,3) && KCIResultGetColumnValue(result,i,3)[0]) {
 			slurmdb_res_rec_t *res_rec;

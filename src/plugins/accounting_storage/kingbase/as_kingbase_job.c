@@ -1142,7 +1142,7 @@ extern List as_kingbase_modify_job(kingbase_conn_t *kingbase_conn, uint32_t uid,
 		}
 
 		time_str = xstrdup_printf(
-			"(time_start < %ld && time_start >= %ld)",
+			"(time_start < %ld and time_start >= %ld)",
 			usage_end, usage_start);
 
 		itr = list_iterator_create(id_switch_list);
@@ -1169,21 +1169,25 @@ extern List as_kingbase_modify_job(kingbase_conn_t *kingbase_conn, uint32_t uid,
 				 * Move any of the new id lines into the old id.
 				 */
 				query = xstrdup_printf(
+					"with res1 as ("
+						"select creation_time, %ld, %u, id_tres, time_start, SUM(alloc_secs) ASUM"
+						" from `%s` "
+						"where (id=%u or id=%u) and %s group by id_tres, time_start, creation_time "
+					") "
 					"insert into `%s` (creation_time, mod_time, id, id_tres, time_start, alloc_secs) "
-					"select creation_time, %ld, %u, id_tres, time_start, @ASUM:=SUM(alloc_secs) from `%s` where (id=%u || id=%u) && %s group by id_tres, time_start on duplicate key update alloc_secs=@ASUM;",
-					use_table,
+					"(select * from res1) on duplicate key update alloc_secs=res1.ASUM;",
 					now, id_switch->old, use_table,
 					id_switch->new, id_switch->old,
-					time_str);
+					time_str, use_table);
 
 				/* Delete all traces of the new id */
 				xstrfmtcat(query,
-					   "delete from `%s` where id=%u && %s;",
+					   "delete from `%s` where id=%u and %s;",
 					   use_table, id_switch->new, time_str);
 
 				/* Now we just need to switch the ids */
 				xstrfmtcat(query,
-					   "update `%s` set mod_time=%ld, id=%u where id=%u && %s;",
+					   "update `%s` set mod_time=%ld, id=%u where id=%u and %s;",
 					   use_table, now, id_switch->new, id_switch->old, time_str);
 
 
@@ -1871,7 +1875,7 @@ extern int as_kingbase_suspend(kingbase_conn_t *kingbase_conn, uint64_t old_db_i
 		job_db_inx = old_db_inx;
 		xstrfmtcat(query,
 			   "update `%s_%s` set time_end=%d where "
-			   "job_db_inx=%"PRIu64" && time_end=0;",
+			   "job_db_inx=%"PRIu64" and time_end=0;",
 			   kingbase_conn->cluster_name, suspend_table,
 			   (int)job_ptr->suspend_time, job_db_inx);
 
@@ -1899,7 +1903,7 @@ extern int as_kingbase_suspend(kingbase_conn_t *kingbase_conn, uint64_t old_db_i
 	else
 		xstrfmtcat(query,
 			   "update `%s_%s` set time_end=%d where "
-			   "job_db_inx=%"PRIu64" && time_end=0;",
+			   "job_db_inx=%"PRIu64" and time_end=0;",
 			   kingbase_conn->cluster_name, suspend_table,
 			   (int)job_ptr->suspend_time, job_ptr->db_index);
 	DB_DEBUG(DB_JOB, kingbase_conn->conn, "query\n%s", query);
@@ -2003,7 +2007,7 @@ again:
 			   event_time, suspended_char);
 		xstrfmtcat(query,
 			   "update `%s_%s` set time_end=%ld where (%s) "
-			   "&& time_end=0;",
+			   "and time_end=0;",
 			   kingbase_conn->cluster_name, suspend_table,
 			   event_time, suspended_char);
 		xfree(suspended_char);

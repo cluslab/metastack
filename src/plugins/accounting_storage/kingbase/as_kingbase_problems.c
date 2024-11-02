@@ -55,11 +55,11 @@ static int _setup_assoc_cond_limits(
 
 	if (assoc_cond->acct_list && list_count(assoc_cond->acct_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(assoc_cond->acct_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "acct='%s'", object);
 			set = 1;
 		}
@@ -69,11 +69,11 @@ static int _setup_assoc_cond_limits(
 
 	if (assoc_cond->user_list && list_count(assoc_cond->user_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(assoc_cond->user_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "`user`='%s'", object);
 			set = 1;
 		}
@@ -82,17 +82,17 @@ static int _setup_assoc_cond_limits(
 	} else if (user_query) {
 		/* we want all the users, but no non-user associations */
 		set = 1;
-		xstrcat(*extra, " && (`user`!='')");
+		xstrcat(*extra, " and (`user`!='')");
 	}
 
 	if (assoc_cond->partition_list
 	    && list_count(assoc_cond->partition_list)) {
 		set = 0;
-		xstrcat(*extra, " && (");
+		xstrcat(*extra, " and (");
 		itr = list_iterator_create(assoc_cond->partition_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(*extra, " || ");
+				xstrcat(*extra, " or ");
 			xstrfmtcat(*extra, "partition='%s'", object);
 			set = 1;
 		}
@@ -125,11 +125,11 @@ extern int as_kingbase_acct_no_assocs(kingbase_conn_t *kingbase_conn,
 		int set = 0;
 		ListIterator itr = NULL;
 		char *object = NULL;
-		xstrcat(query, " && (");
+		xstrcat(query, " and (");
 		itr = list_iterator_create(assoc_cond->acct_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(query, " || ");
+				xstrcat(query, " or ");
 			xstrfmtcat(query, "name='%s'", object);
 			set = 1;
 		}
@@ -165,7 +165,7 @@ extern int as_kingbase_acct_no_assocs(kingbase_conn_t *kingbase_conn,
 				xstrcat(query, " union ");
 			xstrfmtcat(query,
 				   "select distinct id_assoc from `%s_%s` "
-				   "where deleted=0 && "
+				   "where deleted=0 and "
 				   "acct='%s'",
 				   cluster_name, assoc_table, KCIResultGetColumnValue(result, i, 0));
 		}
@@ -260,7 +260,7 @@ extern int as_kingbase_acct_no_users(kingbase_conn_t *kingbase_conn,
 		if (query)
 			xstrcat(query, " union ");
 		xstrfmtcat(query, "select distinct %s, '%s' as cluster "
-			   "from `%s_%s` %s && `user`='' && lft=(rgt-1) ",
+			   "from `%s_%s` %s and `user`='' and lft=(rgt-1) ",
 			   tmp, cluster_name, cluster_name,
 			   assoc_table, extra);
 	}
@@ -327,11 +327,11 @@ extern int as_kingbase_user_no_assocs_or_no_uid(
 	    assoc_cond->user_list && list_count(assoc_cond->user_list)) {
 		int set = 0;
 		char *object = NULL;
-		xstrcat(query, " && (");
+		xstrcat(query, " and (");
 		itr = list_iterator_create(assoc_cond->user_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(query, " || ");
+				xstrcat(query, " or ");
 			xstrfmtcat(query, "name='%s'", object);
 			set = 1;
 		}
@@ -378,7 +378,7 @@ extern int as_kingbase_user_no_assocs_or_no_uid(
 				xstrcat(query, " union ");
 			xstrfmtcat(query,
 				   "select distinct id_assoc from `%s_%s` "
-				   "where deleted=0 && "
+				   "where deleted=0 and "
 				   "`user`='%s'",
 				   cluster_name, assoc_table, KCIResultGetColumnValue(result, i, 0));
 		}

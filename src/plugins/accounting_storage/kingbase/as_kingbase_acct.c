@@ -66,7 +66,7 @@ static int _get_account_coords(kingbase_conn_t *kingbase_conn,
 		acct->coordinators = list_create(slurmdb_destroy_coord_rec);
 
 	query = xstrdup_printf(
-		"select `user` from %s where acct='%s' && deleted=0",
+		"select `user` from %s where acct='%s' and deleted=0",
 		acct_coord_table, acct->name);
 	//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);
 	result = kingbase_db_query_ret(kingbase_conn, query, 0);
@@ -94,10 +94,10 @@ static int _get_account_coords(kingbase_conn_t *kingbase_conn,
 		xstrfmtcat(query,
 			   "select distinct t0.user from %s as t0, "
 			   "`%s_%s` as t1, `%s_%s` as t2 "
-			   "where t0.acct=t1.acct && "
-			   "t1.lft<t2.lft && t1.rgt>t2.lft && "
-			   "t1.user='' && t2.acct='%s' "
-			   "&& t1.acct!='%s' && !t0.deleted",
+			   "where t0.acct=t1.acct and "
+			   "t1.lft<t2.lft and t1.rgt>t2.lft and "
+			   "t1.user='' and t2.acct='%s' "
+			   "and t1.acct!='%s' and !t0.deleted",
 			   acct_coord_table, cluster_name, assoc_table,
 			   cluster_name, assoc_table,
 			   acct->name, acct->name);
@@ -315,11 +315,11 @@ extern List as_kingbase_modify_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 	    && acct_cond->assoc_cond->acct_list
 	    && list_count(acct_cond->assoc_cond->acct_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->assoc_cond->acct_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "name='%s'", object);
 			set = 1;
 		}
@@ -330,11 +330,11 @@ extern List as_kingbase_modify_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (acct_cond->description_list
 	    && list_count(acct_cond->description_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->description_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "description='%s'", object);
 			set = 1;
 		}
@@ -345,11 +345,11 @@ extern List as_kingbase_modify_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (acct_cond->organization_list
 	    && list_count(acct_cond->organization_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->organization_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "organization='%s'", object);
 			set = 1;
 		}
@@ -392,7 +392,7 @@ extern List as_kingbase_modify_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 			xstrfmtcat(name_char, "(name='%s'", object);
 			rc = 1;
 		} else  {
-			xstrfmtcat(name_char, " || name='%s'", object);
+			xstrfmtcat(name_char, " or name='%s'", object);
 		}
 	}
 
@@ -463,13 +463,13 @@ extern List as_kingbase_remove_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 	    && acct_cond->assoc_cond->acct_list
 	    && list_count(acct_cond->assoc_cond->acct_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->assoc_cond->acct_list);
 		while ((object = list_next(itr))) {
 			if (!object[0])
 				continue;
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "name='%s'", object);
 			set = 1;
 		}
@@ -480,11 +480,11 @@ extern List as_kingbase_remove_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (acct_cond->description_list
 	    && list_count(acct_cond->description_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->description_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "description='%s'", object);
 			set = 1;
 		}
@@ -495,11 +495,11 @@ extern List as_kingbase_remove_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 	if (acct_cond->organization_list
 	    && list_count(acct_cond->organization_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->organization_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "organization='%s'", object);
 			set = 1;
 		}
@@ -535,8 +535,8 @@ extern List as_kingbase_remove_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 			xstrfmtcat(assoc_char, "t2.acct='%s'", object);
 			rc = 1;
 		} else  {
-			xstrfmtcat(name_char, " || name='%s'", object);
-			xstrfmtcat(assoc_char, " || t2.acct='%s'", object);
+			xstrfmtcat(name_char, " or name='%s'", object);
+			xstrfmtcat(assoc_char, " or t2.acct='%s'", object);
 		}
 	}
 
@@ -655,7 +655,7 @@ extern List as_kingbase_get_accts(kingbase_conn_t *kingbase_conn, uid_t uid,
 	}
 
 	if (acct_cond->with_deleted)
-		xstrcat(extra, "where (deleted=0 || deleted=1)");
+		xstrcat(extra, "where (deleted=0 or deleted=1)");
 	else
 		xstrcat(extra, "where deleted=0");
 
@@ -663,11 +663,11 @@ extern List as_kingbase_get_accts(kingbase_conn_t *kingbase_conn, uid_t uid,
 	    && acct_cond->assoc_cond->acct_list
 	    && list_count(acct_cond->assoc_cond->acct_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->assoc_cond->acct_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "name='%s'", object);
 			set = 1;
 		}
@@ -683,11 +683,11 @@ extern List as_kingbase_get_accts(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (acct_cond->description_list
 	    && list_count(acct_cond->description_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->description_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "description='%s'", object);
 			set = 1;
 		}
@@ -698,11 +698,11 @@ extern List as_kingbase_get_accts(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (acct_cond->organization_list
 	    && list_count(acct_cond->organization_list)) {
 		set = 0;
-		xstrcat(extra, " && (");
+		xstrcat(extra, " and (");
 		itr = list_iterator_create(acct_cond->organization_list);
 		while ((object = list_next(itr))) {
 			if (set)
-				xstrcat(extra, " || ");
+				xstrcat(extra, " or ");
 			xstrfmtcat(extra, "organization='%s'", object);
 			set = 1;
 		}
@@ -728,11 +728,11 @@ empty:
 		itr = list_iterator_create(user.coord_accts);
 		while ((coord = list_next(itr))) {
 			if (set) {
-				xstrfmtcat(extra, " || name='%s'",
+				xstrfmtcat(extra, " or name='%s'",
 					   coord->name);
 			} else {
 				set = 1;
-				xstrfmtcat(extra, " && (name='%s'",
+				xstrfmtcat(extra, " and (name='%s'",
 					   coord->name);
 			}
 		}

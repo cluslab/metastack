@@ -184,8 +184,8 @@ static int _insert_into_hash_table(kingbase_conn_t *kingbase_conn, char *cluster
 	query = xstrdup_printf(
 		"insert into `%s_%s` (%s, %s) "
 		"select distinct %s, %s from `%s_%s` "
-		"where %s is not NULL && "
-		"(id_array_job=id_job || !id_array_job) "
+		"where %s is not NULL and "
+		"(id_array_job=id_job or !id_array_job) "
 		"on duplicate key update last_used=UNIX_TIMESTAMP();",
 		cluster_name, type_table,
 		hash_col, type_col,
