@@ -36,8 +36,8 @@ def is_file_empty(filepath):
 		with open(filepath, 'r') as file:
 
 			# 读取第二行内容，如果第二行为空，则文件内容为空
-            file.readline()  # 读取第一行并丢弃
-            second_line = file.readline().strip() # 读取第二行数据
+			file.readline()  # 读取第一行并丢弃
+			second_line = file.readline().strip() # 读取第二行数据
 
 			return not bool(second_line)  # 如果第二行为空，则返回 True
 

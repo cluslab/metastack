@@ -574,7 +574,7 @@ extern List as_kingbase_remove_accts(kingbase_conn_t *kingbase_conn, uint32_t ui
 			break;
 	}
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-    slurm_mutex_unlock(&assoc_lock);
+	slurm_mutex_unlock(&assoc_lock);
 #endif
 	list_iterator_destroy(itr);
 	FREE_NULL_LIST(cluster_list_tmp);
