@@ -220,6 +220,9 @@
 /* Define to 1 if RSMI library found */
 #undef HAVE_RSMI
 
+/* Define to 1 if DSMI library found */
+#undef HAVE_DSMI
+
 /* Define to 1 if you have the <security/pam_appl.h> header file. */
 #undef HAVE_SECURITY_PAM_APPL_H
 
