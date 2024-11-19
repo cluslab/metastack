@@ -22653,6 +22653,7 @@ extern int update_cache_job_record(job_state_record_t *src_job_ptr)
 		src_job_ptr->gres_used = NULL;
         if(src_job_ptr->gres_detail_str){
             des_job_ptr->gres_detail_str = src_job_ptr->gres_detail_str;
+			src_job_ptr->gres_detail_str = NULL;
         }  
 		if(des_job_ptr->details && src_job_ptr->details_ptr){
 			des_job_ptr->details->max_nodes = src_job_ptr->de_max_nodes;
