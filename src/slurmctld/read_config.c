@@ -1903,6 +1903,11 @@ int read_slurm_conf(int recover, bool reconfig)
 	int error_code = SLURM_SUCCESS;
 	int i, rc = 0, load_job_ret = SLURM_SUCCESS;
 	int old_node_record_count = 0;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    uint16_t old_cache_query = slurm_conf.cache_query;
+    uint32_t old_query_port = slurm_conf.query_port;
+    uint16_t old_cachedup_realtime = cachedup_realtime;
+#endif
 	node_record_t **old_node_table_ptr = NULL, *node_ptr;
 	List old_part_list = NULL, old_config_list = NULL;
 	char *old_def_part_name = NULL;
@@ -1958,7 +1963,17 @@ int read_slurm_conf(int recover, bool reconfig)
 	}
 
 	_init_all_slurm_conf();
-
+#ifdef __METASTACK_OPT_CACHE_QUERY
+    if(reconfig){
+        if((old_cache_query == 0 &&  slurm_conf.cache_query != 0) || (old_cache_query != 0 &&  slurm_conf.cache_query == 
+        0) || slurm_conf.query_port != old_query_port){
+            slurm_conf.cache_query = old_cache_query;
+            slurm_conf.query_port = old_query_port;
+            cachedup_realtime = old_cachedup_realtime;
+            error("Cache query configuration modification failed.");
+        }
+    }
+#endif
 	if (reconfig)
 		cgroup_conf_reinit();
 	else

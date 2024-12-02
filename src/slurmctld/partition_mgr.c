@@ -4535,9 +4535,11 @@ extern void del_cache_part_state_record(part_state_record_t *src_part_ptr)
 	xfree(src_part_ptr->nodesets);
 	xfree(src_part_ptr->orig_nodes);
 	xfree(src_part_ptr->tres_fmt_str);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	xfree(src_part_ptr->st_borrowed_nodes);
 	xfree(src_part_ptr->st_nodes);
 	xfree(src_part_ptr->st_parameters);
+#endif
     xfree(src_part_ptr->deny_accounts);
     xfree(src_part_ptr->allow_groups);
     xfree(src_part_ptr->qos_char);
