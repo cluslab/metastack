@@ -1334,27 +1334,16 @@ static int _get_users(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 #ifdef __METASTACK_ASSOC_HASH
 	assoc_mgr_lock_t locks = { .user = READ_LOCK };
 	bool flag = false;
-	/* Check if assoc_mgr_user_list is not NULL, if the uid has permissions, if the request is from slurmctld, 
-	 * and if user_cond->assoc_cond is NULL, or if it's not NULL, whether its variables are either NULL or 0. 
-	 * If all these conditions are met, the cached user list (assoc_mgr_user_list) is used, 
+	/* Check if assoc_mgr_user_list is not NULL, if the uid has permissions, the request is from slurmctld, 
+	 * and user_cond meets the conditions, the cached user list (assoc_mgr_user_list) is used,
 	 * otherwise, the user list is retrieved from the database. */
 	if (assoc_mgr_user_list && 
 		(*uid == slurm_conf.slurm_user_id || *uid == 0) && 
 		assoc_mgr_get_admin_level(slurmdbd_conn->db_conn, *uid) >= SLURMDB_ADMIN_OPERATOR && 
 		!user_cond->with_assocs && !user_cond->with_deleted && !user_cond->with_wckeys && 
-		(user_cond->with_coords == 1) && (user_cond->is_ctld == 1) && 
-		(user_cond->admin_level == SLURMDB_ADMIN_NOTSET) && 
-		(!user_cond->def_acct_list) && (!user_cond->def_wckey_list) && 
-		(!user_cond->assoc_cond || (!user_cond->assoc_cond->only_defs && 
-		!user_cond->assoc_cond->user_list && !list_count(user_cond->assoc_cond->user_list) && 
-		!user_cond->assoc_cond->acct_list && !list_count(user_cond->assoc_cond->acct_list) && 
-		!user_cond->assoc_cond->def_qos_id_list && !list_count(user_cond->assoc_cond->def_qos_id_list) && 
-		!user_cond->assoc_cond->partition_list && !list_count(user_cond->assoc_cond->partition_list) && 
-		!user_cond->assoc_cond->id_list && !list_count(user_cond->assoc_cond->id_list) && 
-		!user_cond->assoc_cond->parent_acct_list && !list_count(user_cond->assoc_cond->parent_acct_list) && 
-		!user_cond->assoc_cond->qos_list && !list_count(user_cond->assoc_cond->qos_list) && 
-		!user_cond->assoc_cond->with_sub_accts))) {
-
+		(user_cond->with_coords == 1) && (user_cond->is_ctld == 1) &&
+		!user_cond->assoc_cond->only_defs) {
+		
 		assoc_mgr_lock(&locks);
 		list_msg.my_list = list_shallow_copy(assoc_mgr_user_list);
 		flag = true;

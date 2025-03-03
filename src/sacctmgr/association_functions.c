@@ -808,18 +808,18 @@ extern void sacctmgr_print_assoc_rec(slurmdb_assoc_rec_t *assoc,
 		break;
 	case PRINT_QOS:
 #ifdef __METASTACK_QOS_HASH
-		if ((qos_hash == NULL) || !HASH_COUNT(qos_hash)) {
+		if ((g_qos_hash == NULL) || !HASH_COUNT(g_qos_hash)) {
 			if (!g_qos_list)
 				g_qos_list = slurmdb_qos_get(
 					db_conn, NULL);
 			slurmdb_qos_rec_t *qos = NULL;
 			ListIterator qos_itr = list_iterator_create(g_qos_list);
 			while ((qos = list_next(qos_itr))) {
-				insert_qos_hash(&qos_hash, qos, qos->id);
+				insert_qos_hash(&g_qos_hash, qos, qos->id);
 			}
 			list_iterator_destroy(qos_itr);
 		} 	
-		field->print_routine(field, qos_hash, assoc->qos_list, last);
+		field->print_routine(field, g_qos_hash, assoc->qos_list, last);
 #else
 		if (!g_qos_list)
 			g_qos_list = slurmdb_qos_get(

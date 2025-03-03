@@ -55,6 +55,10 @@
 #define DEFAULT_SLURMDBD_KEEPALIVE_TIME 30
 //#define DEFAULT_SLURMDBD_STEP_PURGE	1
 
+#ifdef __METASTACK_ASSOC_HASH
+#define DEFAULT_UIDSAVE_INTERVAL   300
+#endif
+
 /* Define slurmdbd_conf_t flags */
 #define DBD_CONF_FLAG_ALLOW_NO_DEF_ACCT SLURM_BIT(0)
 
@@ -95,6 +99,11 @@ typedef struct {
 					 * than this in months or days	*/
 	uint32_t        purge_usage;    /* purge usage data older
 					 * than this in months or days	*/
+#ifdef __METASTACK_ASSOC_HASH
+	uint16_t	save_uid;    /* Whether or not to save user's uid*/
+	char *		uid_save_location; /* Pathname of user's uid save directory*/
+	uint16_t	uid_save_interval; /* Uid save time interval*/
+#endif
 	char *		storage_loc;	/* database name		*/
 	uint16_t	syslog_debug;	/* output to both logfile and syslog*/
 	uint16_t        track_wckey;    /* Whether or not to track wckey*/
@@ -120,7 +129,11 @@ extern void log_config(void);
  *	file. This function can be called more than once if so desired.
  * RET SLURM_SUCCESS if no error, otherwise an error code
  */
+#ifdef __METASTACK_ASSOC_HASH
+extern int read_slurmdbd_conf(bool reconfig);
+#else
 extern int read_slurmdbd_conf(void);
+#endif
 
 /* Dump the configuration in name,value pairs for output to
  *	"sacctmgr show config", caller must call list_destroy() */

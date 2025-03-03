@@ -49,6 +49,28 @@ extern pthread_t signal_handler_thread;	/* thread ID for signal hander */
 
 extern void shutdown_threads();
 
+#ifdef __METASTACK_ASSOC_HASH
+/*
+ * set_uid_loc - create directory as needed and "cd" to it
+ */
+extern void set_uid_loc(void);
+
+/* 
+ * Verify that Slurm directories are secure, not world writable 
+ */
+extern void _stat_slurm_dirs(void);
+
+/*
+ * Run as a pthread, saving uid information for all users as needed.
+ * no_data IN - unused
+ * RET - NULL
+ */
+extern void *slurmdbd_uid_save(void *no_data);
+
+/* shutdown the slurmdbd_uid_save thread */
+extern void shutdown_uid_save(void);
+#endif
+
 extern void reconfig();
 
 extern void handle_rollup_stats(List rollup_stats_list,
