@@ -128,10 +128,46 @@ extern void insert_str_key_hash(str_key_hash_t **str_key_hash, void *insert_valu
 extern void *find_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
 extern void remove_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
 extern void destroy_str_key_hash(str_key_hash_t **str_key_hash);
-extern void update_user_hash(slurmdb_user_rec_t *user, str_key_hash_t *rec_user_entry, str_key_hash_t *rec_user_uid_entry);
+
+typedef struct struct_user_uid_hash {
+	char *username;
+	uid_t  uid;
+	UT_hash_handle hh;
+} user_uid_hash_t;
+
+extern void insert_user_uid_hash(user_uid_hash_t **user_uid_hash, uid_t value, char *str_key);
+extern uid_t find_user_uid_hash(user_uid_hash_t **user_uid_hash, char *str_key);
+extern void remove_user_uid_hash(user_uid_hash_t **user_uid_hash, char *str_key);
+extern void destroy_user_uid_hash(user_uid_hash_t **user_uid_hash);
+
+typedef struct struct_uid_user_hash {
+	uid_t  uid;
+	char *username;
+	UT_hash_handle hh;
+} uid_user_hash_t;
+
+extern void insert_uid_user_hash(uid_user_hash_t **uid_user_hash, char *value, uid_t key);
+extern char *find_uid_user_hash(uid_user_hash_t **uid_user_hash, uid_t key);
+extern void remove_uid_user_hash(uid_user_hash_t **uid_user_hash, uid_t key);
+extern void destroy_uid_user_hash(uid_user_hash_t **uid_user_hash);
+
+/*
+ * update user_hash, user_uid_hash and uid_user_hash
+ * IN:  user - slurmdb_user_rec_t of user to update
+ * IN:  rec_user_entry - NULL or the key pair of the user to be updated in user_hash
+ * IN:  rec_user_uid_entry - NULL or the key pair of the user to be updated in user_uid_hash
+ */
+extern void update_user_hash(slurmdb_user_rec_t *user,
+				     str_key_hash_t *rec_user_entry, 
+				     user_uid_hash_t *rec_user_uid_entry);
 
 extern str_key_hash_t *user_hash;
-extern str_key_hash_t *user_uid_hash;
+extern user_uid_hash_t *user_uid_hash;
+extern uid_user_hash_t *uid_user_hash;
+
+extern pthread_mutex_t uid_save_lock;
+extern pthread_cond_t  uid_save_cond;
+extern int save_uids;
 #endif
 
 extern List assoc_mgr_tres_list;
@@ -453,6 +489,20 @@ extern void assoc_mgr_remove_qos_usage(slurmdb_qos_rec_t *qos);
  * database isn't up next time we run.
  */
 extern int dump_assoc_mgr_state(void);
+
+#ifdef __METASTACK_ASSOC_HASH
+/*
+ * Dump the uid information of all users for quick use next time we run.
+ */
+extern int dump_uid_state(void);
+
+/*
+ * Read in the uids of the users.
+ */
+extern int load_uid_state(bool uid_write_locked);
+
+extern void uid_save(void);
+#endif
 
 /*
  * Read in the past usage for associations.

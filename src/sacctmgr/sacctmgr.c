@@ -63,6 +63,9 @@ int no_sort_assoc;
 int with_assoc_flag = 0;
 void *db_conn = NULL;
 uint32_t my_uid = 0;
+#ifdef __METASTACK_QOS_HASH
+qos_hash_t *g_qos_hash = NULL;
+#endif
 List g_qos_list = NULL;
 List g_res_list = NULL;
 List g_tres_list = NULL;
@@ -267,6 +270,9 @@ int main(int argc, char **argv)
 		exit_code = local_exit_code;
 	slurmdb_connection_close(&db_conn);
 	slurm_acct_storage_fini();
+#ifdef __METASTACK_QOS_HASH
+	destroy_qos_hash(&g_qos_hash);
+#endif
 	FREE_NULL_LIST(g_qos_list);
 	FREE_NULL_LIST(g_res_list);
 	FREE_NULL_LIST(g_tres_list);

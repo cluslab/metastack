@@ -72,6 +72,13 @@
 #include "src/slurmdbd/proc_req.h"
 #include "src/slurmdbd/backup.h"
 
+#ifdef __METASTACK_ASSOC_HASH
+/* Maximum delay for pending state save to be processed, in seconds */
+#ifndef SAVE_MAX_WAIT
+#define SAVE_MAX_WAIT	5
+#endif
+#endif
+
 /* Global variables */
 time_t shutdown_time = 0;		/* when shutdown request arrived */
 List registered_clusters = NULL;
@@ -94,12 +101,18 @@ static int	 new_nice = 0;
 static pthread_t rpc_handler_thread = 0; /* thread ID for RPC hander */
 static pthread_t rollup_handler_thread = 0; /* thread ID for rollup hander */
 static pthread_t commit_handler_thread = 0; /* thread ID for commit hander */
+#ifdef __METASTACK_ASSOC_HASH
+static pthread_t uid_save_thread = 0; /* thread ID for saving uid */
+#endif
 static pthread_mutex_t rollup_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool running_rollup = 0;
 static bool running_commit = 0;
 static bool restart_backup = false;
 static bool reset_lft_rgt = 0;
 static List lft_rgt_list = NULL;
+#ifdef __METASTACK_ASSOC_HASH
+static bool run_save_thread = true;
+#endif
 
 /* Local functions */
 static void  _become_slurm_user(void);
@@ -133,8 +146,13 @@ int main(int argc, char **argv)
 
 	_init_config();
 	log_init(argv[0], log_opts, LOG_DAEMON, NULL);
+#ifdef __METASTACK_ASSOC_HASH
+	if (read_slurmdbd_conf(false))
+		exit(1);
+#else
 	if (read_slurmdbd_conf())
 		exit(1);
+#endif
 	_parse_commandline(argc, argv);
 	_update_logging(true);
 	_update_nice();
@@ -164,6 +182,17 @@ int main(int argc, char **argv)
 		fatal("Unable to initialize %s accounting storage plugin",
 		      slurm_conf.accounting_storage_type);
 	}
+
+#ifdef __METASTACK_ASSOC_HASH
+	/*
+	* If save_uid is true, create the UidSaveLocation directory if it does
+	* not exist. Check directory permissions and verify directory is  secure.
+	*/
+	if (slurmdbd_conf->save_uid) {
+		set_uid_loc();
+		_stat_slurm_dirs();
+	}
+#endif
 
 	if (foreground == 0 || setwd)
 		_set_work_dir();
@@ -259,6 +288,13 @@ int main(int argc, char **argv)
 					    _rollup_handler, db_conn);
 		}
 
+#ifdef __METASTACK_ASSOC_HASH
+		if (slurmdbd_conf->save_uid && !shutdown_time) {
+			/* Create detached thread to save uid */
+			slurm_thread_create_detached(&uid_save_thread, slurmdbd_uid_save, NULL);
+		}
+#endif
+
 		/* Daemon is fully operational here */
 		if (!shutdown_time || primary_resumed) {
 			shutdown_time = 0;
@@ -271,6 +307,7 @@ int main(int argc, char **argv)
 		_request_registrations(db_conn);
 		acct_storage_g_commit(db_conn, 1);
 
+
 		/* this is only ran if not backup */
 		if (rollup_handler_thread) {
 			pthread_join(rollup_handler_thread, NULL);
@@ -280,6 +317,13 @@ int main(int argc, char **argv)
 			pthread_join(rpc_handler_thread, NULL);
 			rpc_handler_thread = 0;
 		}
+	
+#ifdef __METASTACK_ASSOC_HASH
+		if (uid_save_thread) {
+			shutdown_uid_save();
+			uid_save_thread = 0;
+		}
+#endif
 
 		if (backup && primary_resumed && !restart_backup) {
 			shutdown_time = 0;
@@ -316,6 +360,11 @@ end_it:
 		_restart_self(argc, argv);
 	}
 
+#ifdef __METASTACK_ASSOC_HASH
+	if (slurmdbd_conf->save_uid) {
+		dump_uid_state();
+	}
+#endif
 	assoc_mgr_fini(0);
 	slurm_acct_storage_fini();
 	slurm_auth_fini();
@@ -329,7 +378,16 @@ end_it:
 
 extern void reconfig(void)
 {
+
+#ifdef __METASTACK_ASSOC_HASH
+	read_slurmdbd_conf(true);
+	if (slurmdbd_conf->save_uid) {
+		uid_save();
+	}
+#else
 	read_slurmdbd_conf();
+#endif
+
 	assoc_mgr_set_missing_uids();
 	acct_storage_g_reconfig(NULL, 0);
 	_update_logging(false);
@@ -400,6 +458,13 @@ extern void shutdown_threads(void)
 	/* End commit before rpc_mgr_wake.  It will do the final
 	   commit on the connection.
 	*/
+#ifdef __METASTACK_ASSOC_HASH
+	if (uid_save_thread) {
+		shutdown_uid_save();
+		uid_save_thread = 0;
+	}
+#endif
+
 	_commit_handler_cancel();
 	rpc_mgr_wake();
 	_rollup_handler_cancel();
@@ -629,6 +694,134 @@ static void _init_pidfile(void)
 	*/
 	create_pidfile(slurmdbd_conf->pid_file, slurm_conf.slurm_user_id);
 }
+
+#ifdef __METASTACK_ASSOC_HASH
+
+/* shutdown the slurmdbd_uid_save thread */
+extern void shutdown_uid_save(void)
+{
+	slurm_mutex_lock(&uid_save_lock);
+	run_save_thread = false;
+	slurm_cond_signal(&uid_save_cond);
+	slurm_mutex_unlock(&uid_save_lock);
+}
+
+/*
+ * Run as a pthread, saving uid information for all users as needed.
+ * no_data IN - unused
+ * RET - NULL
+ */
+extern void *slurmdbd_uid_save(void *no_data)
+{
+	time_t last_save = 0, now = 0;
+	double save_delay = 0.0, save_interval = 0.0;
+	bool run_save = false;
+	int save_count = 0;
+
+#if HAVE_SYS_PRCTL_H
+	if (prctl(PR_SET_NAME, "uid_save", NULL, NULL, NULL) < 0) {
+		error("%s: cannot set my name to %s %m", __func__, "uid_save");
+	}
+#endif
+
+	if (user_uid_hash) {
+		dump_uid_state();
+	}
+
+	while (1) {
+		run_save = false;
+		
+		/* wait for work to perform */
+		slurm_mutex_lock(&uid_save_lock);
+		while (!shutdown_time) {
+			save_count = save_uids;
+			now = time(NULL);
+			save_interval = difftime(now, last_save);
+			save_delay = difftime(now, last_save);
+			if ((save_count || save_interval >= slurmdbd_conf->uid_save_interval) &&
+			    (!run_save_thread || (save_delay >= SAVE_MAX_WAIT))) {
+				last_save = now;
+				run_save = true;
+				save_uids = 0;
+				break;		/* do the work */
+			} else if (!run_save_thread) {
+				run_save_thread = true;
+				slurm_mutex_unlock(&uid_save_lock);
+				debug2("%s UID_SAVE shutdown", __func__);
+				return NULL;	/* shutdown */
+			} else { /* wait for a timeout */
+				struct timespec ts = {0, 0};
+				ts.tv_sec = now + 1;
+				slurm_cond_timedwait(&uid_save_cond,
+					  	     &uid_save_lock, &ts);
+			}
+		}
+
+		if (shutdown_time) {
+			if (save_count) {
+				(void)dump_uid_state();
+			}
+			run_save_thread = true;
+			slurm_mutex_unlock(&uid_save_lock);
+			debug2("%s UID_SAVE shutdown", __func__);
+			return NULL;
+		}
+
+		/* save uid info if necessary */
+		slurm_mutex_unlock(&uid_save_lock);
+		if (run_save) {
+			(void)dump_uid_state();
+		}
+	}
+}
+
+/*
+ * set_uid_loc - create directory as needed and "cd" to it
+ */
+extern void set_uid_loc(void)
+{
+	int rc;
+	struct stat st;
+	const char *path = slurmdbd_conf->uid_save_location;
+
+	/*
+	 * If uid save location does not exist, try to create it.
+	 *  Otherwise, ensure path is a directory as expected, and that
+	 *  we have permission to write to it.
+	 */
+	if (((rc = stat(path, &st)) < 0) && (errno == ENOENT)) {
+		if (mkdir(path, 0755) < 0 && errno != EEXIST) {
+			fatal("mkdir(%s): %m", path);
+		}
+	} else if (rc < 0) {
+		fatal("Unable to stat uid save loc: %s: %m", path);
+	} else if (!S_ISDIR(st.st_mode)) {
+		fatal("Uid save loc: %s: Not a directory!", path);
+	} else if (access(path, R_OK|W_OK|X_OK) < 0) {
+		fatal("Incorrect permissions on uid save loc: %s", path);
+	}
+}
+
+/* Verify that Slurm directories are secure, not world writable */
+extern void _stat_slurm_dirs(void)
+{
+	struct stat stat_buf;
+	char *problem_dir = NULL;
+
+	if (!stat(slurmdbd_conf->uid_save_location, &stat_buf) &&
+	    (stat_buf.st_mode & S_IWOTH)) {
+		problem_dir = "UidSaveLocation";
+	}
+
+	if (problem_dir) {
+		error("################################################");
+		error("###       SEVERE SECURITY VULERABILTY        ###");
+		error("### %s DIRECTORY IS WORLD WRITABLE ###", problem_dir);
+		error("###         CORRECT FILE PERMISSIONS         ###");
+		error("################################################");
+	}
+}
+#endif
 
 /* Become a daemon (child of init) and
  * "cd" to the LogFile directory (if one is configured) */

@@ -63,6 +63,10 @@
 #include "src/common/slurmdb_defs.h"
 #include "src/slurmdbd/read_config.h"
 
+#ifdef __METASTACK_ASSOC_HASH
+#include "src/slurmdbd/slurmdbd.h"
+#endif
+
 /* Global variables */
 pthread_mutex_t conf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -109,6 +113,11 @@ static void _clear_slurmdbd_conf(void)
 		slurmdbd_conf->purge_suspend = 0;
 		slurmdbd_conf->purge_txn = 0;
 		slurmdbd_conf->purge_usage = 0;
+#ifdef __METASTACK_ASSOC_HASH
+		slurmdbd_conf->save_uid = 0;
+		xfree(slurmdbd_conf->uid_save_location);
+		slurmdbd_conf->uid_save_interval = 0;
+#endif
 		xfree(slurmdbd_conf->storage_loc);
 		slurmdbd_conf->track_wckey = 0;
 		slurmdbd_conf->track_ctld = 0;
@@ -121,7 +130,11 @@ static void _clear_slurmdbd_conf(void)
  *	This function can be called more than once.
  * RET SLURM_SUCCESS if no error, otherwise an error code
  */
+#ifdef __METASTACK_ASSOC_HASH
+extern int read_slurmdbd_conf(bool reconfig)
+#else
 extern int read_slurmdbd_conf(void)
+#endif
 {
 	s_p_options_t options[] = {
 		{"AllowNoDefAcct", S_P_BOOLEAN},
@@ -171,6 +184,11 @@ extern int read_slurmdbd_conf(void)
 		{"PurgeTXNMonths", S_P_UINT32},
 		{"PurgeUsageMonths", S_P_UINT32},
 		{"SlurmUser", S_P_STRING},
+#ifdef __METASTACK_ASSOC_HASH
+		{"SaveUid", S_P_BOOLEAN},
+		{"UidSaveLocation", S_P_STRING},
+		{"UidSaveInterval", S_P_UINT16},
+#endif
 		{"StepPurge", S_P_UINT32},
 		{"StorageBackupHost", S_P_STRING},
 		{"StorageHost", S_P_STRING},
@@ -188,6 +206,15 @@ extern int read_slurmdbd_conf(void)
 	char *conf_path = NULL;
 	char *temp_str = NULL;
 	struct stat buf;
+
+#ifdef __METASTACK_ASSOC_HASH
+	uint16_t old_save_uid = 0;
+	char *old_uid_save_location = NULL;
+	if (reconfig) {
+		old_save_uid = slurmdbd_conf->save_uid;
+		old_uid_save_location = xstrdup(slurmdbd_conf->uid_save_location);
+	}
+#endif
 
 	/* Set initial values */
 	slurm_mutex_lock(&conf_mutex);
@@ -553,6 +580,35 @@ extern int read_slurmdbd_conf(void)
 				fatal("No user entry for uid(%u) owning slurmdbd.conf file %s found",
 				      conf_path_uid, conf_path);
 		}
+
+#ifdef __METASTACK_ASSOC_HASH
+		if (!s_p_get_boolean((bool *)&slurmdbd_conf->save_uid,
+				   "SaveUid", tbl))
+			slurmdbd_conf->save_uid = false;
+		
+		if (reconfig && old_save_uid != slurmdbd_conf->save_uid)
+			error("SaveUid has changed during reconfig, slurmdbd must be restarted");
+
+		if (!s_p_get_string(&slurmdbd_conf->uid_save_location,
+				   "UidSaveLocation", tbl))
+			slurmdbd_conf->uid_save_location = xstrdup(DEFAULT_SAVE_STATE_LOC);
+
+		if (reconfig) {
+			if (xstrcmp(old_uid_save_location, slurmdbd_conf->uid_save_location)) {
+				set_uid_loc();
+				_stat_slurm_dirs();
+			}
+			xfree(old_uid_save_location);
+		}
+
+		if (!s_p_get_uint16(&slurmdbd_conf->uid_save_interval,
+				   "UidSaveInterval", tbl)) {
+			slurmdbd_conf->uid_save_interval = DEFAULT_UIDSAVE_INTERVAL;
+		} else if (slurmdbd_conf->uid_save_interval < 60) {
+			error("UidSaveInterval value less than 60 seconds, replace with default value of %u seconds.", DEFAULT_UIDSAVE_INTERVAL);
+			slurmdbd_conf->uid_save_interval = DEFAULT_UIDSAVE_INTERVAL;
+		}
+#endif
 
 		if (s_p_get_uint32(&slurmdbd_conf->purge_step,
 				   "StepPurge", tbl)) {
@@ -1002,6 +1058,13 @@ extern List dump_config(void)
 		key_pair->value = xstrdup("NONE");
 	list_append(my_list, key_pair);
 
+#ifdef __METASTACK_ASSOC_HASH
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("SaveUid");
+	key_pair->value = xstrdup(slurmdbd_conf->save_uid ? "Yes" : "No");
+	list_append(my_list, key_pair);
+#endif
+
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("SLURMDBD_CONF");
 	key_pair->value = get_extra_conf_path("slurmdbd.conf");
@@ -1071,6 +1134,18 @@ extern List dump_config(void)
 	key_pair->name = xstrdup("TrackSlurmctldDown");
 	key_pair->value = xstrdup(slurmdbd_conf->track_ctld ? "Yes" : "No");
 	list_append(my_list, key_pair);
+
+#ifdef __METASTACK_ASSOC_HASH
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("UidSaveLocation");
+	key_pair->value = xstrdup(slurmdbd_conf->uid_save_location);
+	list_append(my_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("UidSaveInterval");
+	key_pair->value = xstrdup_printf("%u secs", slurmdbd_conf->uid_save_interval);
+	list_append(my_list, key_pair);
+#endif
 
 	return my_list;
 }

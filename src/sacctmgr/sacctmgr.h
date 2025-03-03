@@ -383,6 +383,7 @@ extern int no_sort_assoc;
 
 #ifdef __METASTACK_QOS_HASH
 #include "src/common/slurmdb_defs.h"
+extern qos_hash_t *g_qos_hash;
 extern void sacctmgr_print_qos_list1(print_field_t *field, qos_hash_t *qos_hash,
 				    List value, int last);
 #endif
