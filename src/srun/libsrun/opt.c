@@ -517,6 +517,12 @@ extern int initialize_and_process_args(int argc, char **argv, int *argc_off)
 			}
 		}
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+		if (opt.predict_job != 0) {
+			opt.predict_job = -1;
+		}
+#endif
+
 		if (cli_filter_g_pre_submit(&opt, i)) {
 			error("cli_filter plugin terminated with error");
 			exit(error_exit);

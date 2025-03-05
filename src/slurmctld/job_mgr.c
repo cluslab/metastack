@@ -8643,6 +8643,12 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 		job_ptr->direct_set_prio = 1;
 	}
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if ((job_ptr->predict_job == 1) && (job_ptr->time_min > 0)) {
+		info("JobId=%d is a predict job, and The TimeMin is %d minutes.", job_ptr->job_id, job_ptr->time_min);
+	}
+#endif
+
 	/*
 	 * The job submit plugin sets site_factor to NO_VAL so that it can
 	 * only be set the by the job submit plugin at submission.
@@ -10442,19 +10448,40 @@ void job_time_limit(void)
 				if ((job_ptr->predict_job == 1) && job_ptr->time_min){
 
 					/* hard_end_time -- The actual end time of the job.
-					 * next_end_time -- The predicted end time of the next round of job.
-					 */ 
+					* next_end_time -- The predicted end time of the next round of job.
+					*/ 
 					time_t hard_end_time = time(NULL);
 					time_t next_end_time = time(NULL);
+					char old_end_time[32] = {0};
+					char new_end_time[32] = {0};
+					uint32_t old_time_min = 0;
+					uint32_t new_time_min = 0;
+
 					hard_end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
 
-					// The actual end time of the job is greater than now, delaying end_time. Otherwise cancel job
+					// The actual end time of the job is greater than now, update EndTime & TimeMin. Otherwise cancel job
 					if (hard_end_time > over_run) {
 						next_end_time = job_ptr->end_time + (60 * 60);
 						if (next_end_time > hard_end_time) {
+							slurm_make_time_str(&job_ptr->end_time, old_end_time, sizeof(old_end_time));
+							slurm_make_time_str(&hard_end_time, new_end_time, sizeof(new_end_time));
 							job_ptr->end_time = hard_end_time;
+							info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s", job_ptr->job_id, old_end_time, new_end_time);
+
+							old_time_min = job_ptr->time_min;
+							new_time_min = job_ptr->time_limit;
+							job_ptr->time_min = new_time_min;
+							info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes", job_ptr->job_id, old_time_min, new_time_min);
 						} else {
+							slurm_make_time_str(&job_ptr->end_time, old_end_time, sizeof(old_end_time));
+							slurm_make_time_str(&next_end_time, new_end_time, sizeof(new_end_time));
 							job_ptr->end_time = next_end_time;
+							info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s", job_ptr->job_id, old_end_time, new_end_time);
+
+							old_time_min = job_ptr->time_min;
+							new_time_min = job_ptr->time_min + 60;
+							job_ptr->time_min = new_time_min;
+							info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes", job_ptr->job_id, old_time_min, new_time_min);
 						}
 					} else {
 						last_job_update = now;
