@@ -3262,6 +3262,61 @@ static slurm_cli_opt_t slurm_opt_nice = {
 	.reset_func = arg_reset_nice,
 };
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+static int arg_set_predict_job(slurm_opt_t *opt, const char *arg)
+{
+	long long tmp_predict_job = 0;
+
+	if (arg)
+		tmp_predict_job = strtoll(arg, NULL, 10);
+	else
+		tmp_predict_job = -1;
+
+	if (tmp_predict_job != 1 && tmp_predict_job != 0) {
+		tmp_predict_job = -1;
+	}
+
+	opt->predict_job = (int) tmp_predict_job;
+
+	return SLURM_SUCCESS;
+}
+static int arg_set_data_predict_job(slurm_opt_t *opt, const data_t *arg,
+			     data_t *errors)
+{
+	int64_t val = 0;
+	int rc = SLURM_SUCCESS;
+
+	if (data_get_type(arg) == DATA_TYPE_NULL)
+		opt->predict_job = -1;
+	else if ((rc = data_get_int_converted(arg, &val)))
+		ADD_DATA_ERROR("Unable to read integer value", rc);
+	else if (llabs(val) == 1) {
+		opt->predict_job = 1;
+	} else if (llabs(val) == 0) {
+		opt->predict_job = 0;
+	} else {
+		opt->predict_job = -1;
+	}
+
+	return rc;
+}
+static char *arg_get_predict_job(slurm_opt_t *opt)
+{
+	return xstrdup_printf("%d", opt->predict_job);
+}
+COMMON_OPTION_RESET(predict_job, NO_VAL);
+static slurm_cli_opt_t slurm_opt_predict_job = {
+	.name = "predict-job",
+	.has_arg = optional_argument,
+	.val = LONG_OPT_PREDICT_JOB,
+	.set_func = arg_set_predict_job,
+	.set_func_data = arg_set_data_predict_job,
+	.get_func = arg_get_predict_job,
+	.reset_func = arg_reset_predict_job,
+};
+#endif
+
+
 COMMON_SRUN_BOOL_OPTION(no_alloc);
 static slurm_cli_opt_t slurm_opt_no_allocate = {
 	.name = "no-allocate",
@@ -5628,6 +5683,9 @@ static const slurm_cli_opt_t *common_options[] = {
 	&slurm_opt_prolog,
 	&slurm_opt_propagate,
 	&slurm_opt_pty,
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	&slurm_opt_predict_job,
+#endif
 	&slurm_opt_qos,
 	&slurm_opt_quiet,
 	&slurm_opt_quit_on_interrupt,
@@ -6780,6 +6838,11 @@ extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 
 	if (opt_local->nice != NO_VAL)
 		job_desc->nice = NICE_OFFSET + opt_local->nice;
+
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if (opt_local->predict_job != NO_VAL)
+		job_desc->predict_job = opt_local->predict_job;
+#endif
 
 	if (opt_local->ntasks_set) {
 		job_desc->bitflags |= JOB_NTASKS_SET;
