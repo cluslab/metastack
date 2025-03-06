@@ -6,6 +6,9 @@ predictor_path="/opt/gridview/slurm/etc/luaconfig/predictor"
 # 定义AI随机森林路径为变量
 sklearn_path="/opt/gridview/slurm/etc/luaconfig/predictor/prediction_methods/sklearn"
 
+# 获取python3执行路径
+PYTHON_EXECUTABLE=$(awk -F'=' '/^python_executable=/ {print $2}' "$predictor_path/configuration")
+
 # 获取当前时间
 current_date=$(date +"%Y-%m-%d")
 
@@ -13,7 +16,7 @@ current_date=$(date +"%Y-%m-%d")
 if [ -f "$predictor_path/jobHistory" ]; then
 
 	# 生成新的预测模型及标签文件
-	/opt/gridview/slurm/etc/luaconfig/predictor/AIenvironment/CentOS-7.6/envs/AIpredict/bin/python $sklearn_path/generative_model.py
+	"$PYTHON_EXECUTABLE" $sklearn_path/generative_model.py
 
 	# 获取 Python 脚本的退出状态码
 	status_code=$?

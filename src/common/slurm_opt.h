@@ -190,6 +190,9 @@ enum {
 	LONG_OPT_PROLOG,
 	LONG_OPT_PROPAGATE,
 	LONG_OPT_PTY,
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	LONG_OPT_PREDICT_JOB,
+#endif
 	LONG_OPT_QUIT_ON_INTR,
 	LONG_OPT_RAMDISK_IMAGE,
 	LONG_OPT_REBOOT,
@@ -382,6 +385,9 @@ typedef struct {
 	char *job_name;			/* --job-name			*/
 	char *dependency;		/* --dependency			*/
 	int nice;			/* --nice			*/
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	int predict_job;  /* Marks the job that executes the time prediction function */
+#endif
 	uint32_t priority;		/* --priority			*/
 	char *account;			/* --account			*/
 	char *comment;			/* --comment			*/

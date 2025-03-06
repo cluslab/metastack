@@ -491,6 +491,11 @@ extern void process_options_second_pass(int argc, char **argv, int *argc_off,
 	/* set options from command line */
 	*argc_off = _set_options(argc, argv);
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if (opt.predict_job != 0) {
+		opt.predict_job = -1;
+    }
+#endif
 
 	if (cli_filter_g_pre_submit(&opt, het_job_inx)) {
 		error("cli_filter plugin terminated with error");
