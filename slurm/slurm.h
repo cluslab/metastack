@@ -385,6 +385,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_MAIN_SCHED_PLANNED
 #endif
 
+#ifndef __METASTACK_OPT_GRES_CONFIG
+#define __METASTACK_OPT_GRES_CONFIG
+#endif
+
 /* Macro definitions that control the size of Jobsize */
 #ifndef __METASTACK_PRIORITY_JOBSIZE
 #define __METASTACK_PRIORITY_JOBSIZE
@@ -3336,6 +3340,9 @@ typedef struct {
 	uint16_t slurmctld_timeout;/* seconds that backup controller waits
 				    * on non-responding primarly controller */
 	char *slurmctld_params;	/* SlurmctldParameters */
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	uint16_t slurmctld_load_gres; /* slurmctld load gres */
+#endif
 	uint16_t slurmd_debug;	/* slurmd logging level */
 	char *slurmd_logfile;	/* where slurmd error log gets written */
 	char *slurmd_params;	/* SlurmdParameters */

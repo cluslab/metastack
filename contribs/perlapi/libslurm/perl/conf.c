@@ -339,6 +339,9 @@ int slurm_ctl_conf_to_hv(slurm_conf_t *conf, HV *hv)
 	STORE_FIELD(hv, conf, slurmctld_port_count, uint16_t);
 	STORE_FIELD(hv, conf, slurmctld_timeout, uint16_t);
 
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	STORE_FIELD(hv, conf, slurmctld_load_gres, uint16_t);
+#endif
 	STORE_FIELD(hv, conf, slurmd_debug, uint16_t);
 	if (conf->slurmd_logfile)
 		STORE_FIELD(hv, conf, slurmd_logfile, charp);
@@ -612,6 +615,9 @@ int hv_to_slurm_ctl_conf(HV *hv, slurm_conf_t *conf)
 	FETCH_FIELD(hv, conf, slurmctld_port_count, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, slurmctld_timeout, uint16_t, TRUE);
 
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	FETCH_FIELD(hv, conf, slurmctld_load_gres, uint16_t, TRUE);
+#endif
 	FETCH_FIELD(hv, conf, slurmd_debug, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, slurmd_logfile, charp, FALSE);
 	FETCH_FIELD(hv, conf, slurmd_pidfile, charp, FALSE);
