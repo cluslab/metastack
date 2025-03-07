@@ -1305,8 +1305,15 @@ static int _parse_gres_config(void **dest, slurm_parser_enum_t type,
 	/* Remember the last-set Flags value */
 	static prev_env_flags_t prev_env;
 
-	tbl = s_p_hashtbl_create(_gres_options);
-	s_p_parse_line(tbl, *leftover, leftover);
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	if (slurm_conf.slurmctld_load_gres && running_in_slurmctld()) {
+		parsed_line_t *parsed = &parsed_lines[current_line_index];
+		tbl = parsed->hashtbl;
+	}else{
+		tbl = s_p_hashtbl_create(_gres_options);
+		s_p_parse_line(tbl, *leftover, leftover);
+	}
+#endif
 
 	p = xmalloc(sizeof(gres_slurmd_conf_t));
 
@@ -1331,7 +1338,11 @@ static int _parse_gres_config(void **dest, slurm_parser_enum_t type,
 				error("Invalid GRES data, no type name (%s)",
 				      line);
 			xfree(p);
-			s_p_hashtbl_destroy(tbl);
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+			if (!(slurm_conf.slurmctld_load_gres && running_in_slurmctld())){
+				s_p_hashtbl_destroy(tbl);
+			}
+#endif
 			return 0;
 		}
 	} else {
@@ -1510,7 +1521,11 @@ static int _parse_gres_config(void **dest, slurm_parser_enum_t type,
 	} else if (p->count == 0)
 		p->count = 1;
 
-	s_p_hashtbl_destroy(tbl);
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	if (!(slurm_conf.slurmctld_load_gres && running_in_slurmctld())){
+		s_p_hashtbl_destroy(tbl);
+	}
+#endif
 
 	for (i = 0; i < gres_context_cnt; i++) {
 		if (xstrcasecmp(p->name, gres_context[i].gres_name) == 0)
@@ -1529,25 +1544,48 @@ static int _parse_gres_config_node(void **dest, slurm_parser_enum_t type,
 				   const char *key, const char *value,
 				   const char *line, char **leftover)
 {
-	s_p_hashtbl_t *tbl;
-
-	if (gres_node_name && value) {
-		bool match = false;
-		hostlist_t hl;
-		hl = hostlist_create(value);
-		if (hl) {
-			match = (hostlist_find(hl, gres_node_name) >= 0);
-			hostlist_destroy(hl);
-		}
-		if (!match) {
-			debug("skipping GRES for NodeName=%s %s", value, line);
-			tbl = s_p_hashtbl_create(_gres_options);
-			s_p_parse_line(tbl, *leftover, leftover);
-			s_p_hashtbl_destroy(tbl);
-			return 0;
-		}
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	if (key == NULL) {
+		error("%s: key is NULL", __func__);
+		return SLURM_ERROR;
 	}
-	return _parse_gres_config(dest, type, key, NULL, line, leftover);
+	if (value == NULL) {
+		error("%s: value is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (line == NULL) {
+		error("%s: line is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (leftover == NULL) {
+		error("%s: leftover is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if(slurm_conf.slurmctld_load_gres && running_in_slurmctld()){
+		return _parse_gres_config(dest, type, key, NULL, line, leftover);
+	}else{
+		s_p_hashtbl_t *tbl = NULL;
+
+		if (gres_node_name && value) {
+			bool match = false;
+			hostlist_t hl;
+			hl = hostlist_create(value);
+			if (hl) {
+				match = (hostlist_find(hl, gres_node_name) >= 0);
+				hostlist_destroy(hl);
+			}
+			if (!match) {
+				debug("skipping GRES for NodeName=%s %s", value, line);
+				tbl = s_p_hashtbl_create(_gres_options);
+				s_p_parse_line(tbl, *leftover, leftover);
+				s_p_hashtbl_destroy(tbl);
+				return 0;
+			}
+		}
+		return _parse_gres_config(dest, type, key, NULL, line, leftover);
+	}
+	
+#endif
 }
 
 static int _foreach_slurm_conf(void *x, void *arg)
@@ -2283,6 +2321,53 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+/*Parse the gres.conf configuration file and populate the configuration information into the struct array parsed_lines*/
+extern s_p_hashtbl_t *gres_parse_config_file(char *gres_conf_file, parsed_line_t *parsed_lines, int max_parsed_lines, int *num_parsed_lines) {
+	if (gres_conf_file == NULL) {
+		error("%s: No filename given", __func__);
+		return NULL;
+	}
+	if (parsed_lines == NULL) {
+		error("%s: parsed_lines is NULL", __func__);
+		return NULL;
+	}
+	if (num_parsed_lines == NULL) {
+		error("%s: num_parsed_lines is NULL", __func__);
+		return NULL;
+	}
+
+	s_p_hashtbl_t *tbl = NULL;
+	struct stat config_stat;
+	char *autodetect_string = NULL;
+
+    /* Keep options in sync with gres_parse_config_dummy(). */
+	static s_p_options_t _gres_conf_options[] = {
+		{"AutoDetect", S_P_STRING},
+		{"Name",     S_P_ARRAY, _parse_gres_config,  NULL},
+		{"NodeName", S_P_ARRAY, _parse_gres_config_node, NULL},
+		{NULL}
+	};
+
+	tbl = s_p_hashtbl_create(_gres_conf_options);
+	if (!tbl) {
+		error("Failed to create hash table for GRES configuration");
+		return NULL;
+	}
+
+	if (stat(gres_conf_file, &config_stat) < 0) {
+		info("Cannot stat gres.conf file (%s), using slurm.conf data", gres_conf_file);
+	} else {
+		if (s_p_parse_gres_file(tbl, NULL, gres_conf_file, false, NULL, parsed_lines, max_parsed_lines, num_parsed_lines) == SLURM_ERROR) {
+			error("Error opening/reading %s", gres_conf_file);
+			s_p_hashtbl_destroy(tbl); 
+			xfree(autodetect_string); 
+		}
+	}
+	return tbl;
+}
+#endif
+
 /*
  * Load this node's configuration (how many resources it has, topology, etc.)
  * IN cpu_cnt - Number of CPUs configured for node node_name.
@@ -2429,6 +2514,147 @@ fini:
 
 	return rc;
 }
+
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+/**
+* Loads and validates GRES (Generic Resource) configuration for a node.  
+* This function is responsible for loading GRES configuration from  parsed_lines, 
+* validating the configuration against the node's current settings, 
+* and merging the configuration with the node's existing GRES settings.
+*
+* cpu_cnt - The number of CPUs on the node.
+* node_name - The name of the node.
+* gres_list - The list of GRES configurations.
+* xcpuinfo_abs_to_mac - Function pointer for converting absolute CPU IDs to MAC addresses.
+* xcpuinfo_mac_to_abs - Function pointer for converting MAC addresses to absolute CPU IDs.
+* parsed_lines - Array of parsed lines from the GRES configuration file.
+* max_lines - Maximum number of lines in the parsed_lines array.
+* return SLURM_SUCCESS if the configuration is loaded and validated successfully,
+*         otherwise returns an error code.
+*/
+extern int gres_g_node_config_loadgres(uint32_t cpu_cnt, char *node_name,
+                                   List gres_list,
+                                   void *xcpuinfo_abs_to_mac,
+                                   void *xcpuinfo_mac_to_abs, parsed_line_t *parsed_lines, int max_lines)
+{
+	if (parsed_lines == NULL) {
+		error("%s: parsed_lines is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	static s_p_options_t _gres_conf_options[] = {
+		{"AutoDetect", S_P_STRING},
+		{"Name",     S_P_ARRAY, _parse_gres_config,  NULL},
+		{"NodeName", S_P_ARRAY, _parse_gres_config_node, NULL},
+		{NULL}
+	};
+	autodetect_flags = 0;
+	int count = 0, i, rc = 0, rc2 = 0;
+	struct stat config_stat;
+	s_p_hashtbl_t *tbl = NULL;
+	gres_slurmd_conf_t **gres_array = NULL;
+	char *gres_conf_file = NULL;
+	char *autodetect_string = NULL;
+	bool in_slurmd = running_in_slurmd();
+	node_config_load_t node_conf = {
+		.cpu_cnt = cpu_cnt,
+		.in_slurmd = in_slurmd,
+		.xcpuinfo_mac_to_abs = xcpuinfo_mac_to_abs
+	};
+	if (cpu_cnt == 0) {
+		error("%s: Invalid cpu_cnt of 0 for node %s",  __func__, node_name);
+		return ESLURM_INVALID_CPU_COUNT;
+	}
+
+	if (xcpuinfo_abs_to_mac)
+		xcpuinfo_ops.xcpuinfo_abs_to_mac = xcpuinfo_abs_to_mac;
+	rc = gres_init();
+	slurm_mutex_lock(&gres_context_lock);
+
+	if (gres_context_cnt == 0) {
+		rc = SLURM_SUCCESS;
+		goto fini;
+	}
+
+	FREE_NULL_LIST(gres_conf_list);
+	gres_conf_list = list_create(destroy_gres_slurmd_conf);
+	gres_conf_file = get_extra_conf_path("gres.conf");
+	if (stat(gres_conf_file, &config_stat) < 0) {
+		info("Can not stat gres.conf file (%s), using slurm.conf data", gres_conf_file);
+	} else {
+		if (xstrcmp(gres_node_name, node_name)) {
+			xfree(gres_node_name);
+			gres_node_name = xstrdup(node_name);
+		}
+		gres_cpu_cnt = cpu_cnt;
+		tbl = s_p_hashtbl_create(_gres_conf_options);
+		if (s_p_parse_file_gres(tbl, gres_conf_file, false, parsed_lines, max_lines, gres_node_name) ==SLURM_ERROR){
+			error("File parsing failed. Please check if the configuration for node %s in the gres.conf file is correct.", gres_node_name);
+			s_p_hashtbl_destroy(tbl);
+			xfree(gres_conf_file);
+			rc = SLURM_ERROR;
+			goto fini;
+		}
+		if (s_p_get_string(&autodetect_string, "Autodetect", tbl)) {
+			_handle_global_autodetect(autodetect_string);
+			xfree(autodetect_string);
+		}
+		if (running_in_slurmctld() &&
+			autodetect_flags &&
+			!((autodetect_flags & GRES_AUTODETECT_GPU_FLAGS) &
+				GRES_AUTODETECT_GPU_OFF)){
+			debug("Warning:When SlurmctldLoadGres=Yes is specified in slurm.conf, AutoDetect will not take effect.");
+			s_p_hashtbl_destroy(tbl);
+			xfree(gres_conf_file);
+			rc = SLURM_ERROR;
+			goto fini;
+		}
+		if (s_p_get_array((void ***) &gres_array,
+				&count, "Name", tbl)) {
+			for (i = 0; i < count; i++) {
+				list_append(gres_conf_list, gres_array[i]);
+				gres_array[i] = NULL;
+			}
+		}
+		if (s_p_get_array((void ***) &gres_array,
+				&count, "NodeName", tbl)) {
+			for (i = 0; i < count; i++) {
+				list_append(gres_conf_list, gres_array[i]);
+				gres_array[i] = NULL;
+			}
+		}
+		s_p_hashtbl_destroy(tbl);
+	}
+	xfree(gres_conf_file);
+
+	for (i = 0; i < gres_context_cnt; i++) {
+		_validate_slurm_conf(gres_list, &gres_context[i]);
+		_validate_gres_conf(gres_conf_list, &gres_context[i]);
+		_check_conf_mismatch(gres_list, gres_conf_list,
+                             &gres_context[i]);
+	}
+	_merge_config(&node_conf, gres_conf_list, gres_list);
+	for (i = 0; i < gres_context_cnt; i++) {
+		if (gres_context[i].ops.node_config_load == NULL){
+			continue;       /* No plugin */
+		}
+		rc2 = (*(gres_context[i].ops.node_config_load))(gres_conf_list,
+									 &node_conf);
+		if (rc == SLURM_SUCCESS){
+			rc = rc2;
+		}		
+
+	}
+	(void) list_delete_all(gres_conf_list, _find_fileless_gres,
+					&gpu_plugin_id);
+	list_for_each(gres_conf_list, _log_gres_slurmd_conf, NULL);
+
+fini:
+	_pack_context_buf();
+	_pack_gres_conf();
+	slurm_mutex_unlock(&gres_context_lock);
+	return rc;
+}
+#endif
 
 /*
  * Pack this node's gres configuration into a buffer

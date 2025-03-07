@@ -472,6 +472,13 @@ extern int gres_g_node_config_load(uint32_t cpu_cnt, char *node_name,
 				   void *xcpuinfo_abs_to_mac,
 				   void *xcpuinfo_mac_to_abs);
 
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+extern int gres_g_node_config_loadgres(uint32_t cpu_cnt, char *node_name,
+                   List gres_list,
+                   void *xcpuinfo_abs_to_mac,
+                   void *xcpuinfo_mac_to_abs, parsed_line_t *parsed_lines, int max_lines);
+#endif
+
 /*
  * Set GRES devices as allocated or not for a particular job
  * IN gres_list - allocated gres devices
@@ -1207,6 +1214,10 @@ extern bool gres_use_busy_dev(gres_state_t *gres_state_node,
  * to conf_includes_list for configless files push.
  */
 extern void gres_parse_config_dummy(void);
+
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+extern s_p_hashtbl_t *gres_parse_config_file(char *gres_conf_file, parsed_line_t *parsed_lines, int max_parsed_lines, int *num_parsed_lines);
+#endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 

@@ -5311,6 +5311,18 @@ and "StandardError=null" to the respective service files or override files.
 .IP
 
 .TP
+\fBSlurmctldLoadGres\fR
+Specifies whether Slurmctld should load the GRES configuration when starting up. 
+If set to "Yes", regardless of whether the Slurm daemon service is running, 
+the management node will preload all nodes' GRES configurations when starting 
+Slurmctld service, which can effectively prevent the submission of jobs that do
+not meet the core-to-GPU ratio requirements.
+Configuration method:
+SlurmctldLoadGres=Yes  enables Slurmctld to read GRES configuration functionality.
+SlurmctldLoadGres=No  disables Slurmctld to read GRES configuration functionality.
+.IP
+
+.TP
 \fBSlurmdTimeout\fR
 The interval, in seconds, that the Slurm controller waits for \fBslurmd\fR
 to respond before configuring that node's state to DOWN.

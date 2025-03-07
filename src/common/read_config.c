@@ -438,6 +438,9 @@ s_p_options_t slurm_conf_options[] = {
 	{"SlurmctldSyslogDebug", S_P_STRING},
 	{"SlurmctldTimeout", S_P_UINT16},
 	{"SlurmctldParameters", S_P_STRING},
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	{"SlurmctldLoadGres", S_P_BOOLEAN},
+#endif
 	{"SlurmdDebug", S_P_STRING},
 	{"SlurmdLogFile", S_P_STRING},
 	{"SlurmdParameters", S_P_STRING},
@@ -4697,6 +4700,12 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 #ifdef __METASTACK_NEW_STATE_TO_NHC
 	if (s_p_get_boolean(&truth, "HealthCheckCarryNode", hashtbl) && truth)
 		conf->conf_flags |= CTL_CONF_HCN;
+#endif
+#ifdef __METASTACK_OPT_GRES_CONFIG
+	if (s_p_get_boolean(&truth, "SlurmctldLoadGres", hashtbl) && truth)
+		conf->slurmctld_load_gres = 1;
+	else
+		conf->slurmctld_load_gres = 0;
 #endif
 	if (s_p_get_string(&temp_str,
 			   "EnforcePartLimits", hashtbl)) {
