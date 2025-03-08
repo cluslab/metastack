@@ -23390,6 +23390,14 @@ if test -f "$SpankMakeFile"; then
     sed -i '1i\PREFIX ?= '$prefix''  $SpankMakeFile
 fi
 
+# Update contribs/pyxis/Makefile if this file exists
+PyxisMakeFile=contribs/pyxis/Makefile
+if test -f "$PyxisMakeFile"; then
+    sed -i '/^PREFIX/d' $PyxisMakeFile
+    sed -i "1i\exec_prefix = $prefix"  $PyxisMakeFile
+    sed -i "2i\PREFIX ?= \$(DESTDIR)$libdir"  $PyxisMakeFile
+fi
+
 # Update contribs/sjinfoexit/Makefile if this file exists
 SjinfoMakeFile=contribs/sjinfo/Makefile
 SjinfoHeadFile=contribs/sjinfo/sjinfo.h
