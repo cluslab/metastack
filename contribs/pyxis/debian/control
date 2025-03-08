@@ -1,0 +1,16 @@
+Source: nvslurm-plugin-pyxis
+Section: admin
+Priority: optional
+Maintainer: NVIDIA CORPORATION <cudatools@nvidia.com>
+Standards-Version: 4.1.4
+Homepage: https://github.com/NVIDIA/pyxis
+Build-Depends: debhelper (>= 10), slurm-smd-dev | libslurm-dev
+
+Package: nvslurm-plugin-pyxis
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, enroot (>= 3.1.0) | enroot-hardened (>= 3.1.0)
+Description: Slurm plugin for launching containerized tasks
+ A SPANK plugin for the Slurm Resource Manager project to launch
+ containerized tasks using "srun".
+ .
+ Requires the enroot container sandboxing utility.
