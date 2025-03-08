@@ -78,7 +78,12 @@
 #include "src/common/xstring.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
 #include "src/slurmdbd/read_config.h"
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+#include "src/common/run_command.h"
+#include "src/common/fd.h"
+// #include <sys/syscall.h>
+// #include "src/slurmd/common/proctrack.h"
+#endif
 #define KB_ADJ 1024
 #define MB_ADJ 1048576
 
@@ -157,6 +162,19 @@ collection_t share_data = {
 };
 #endif
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+bool update_watch_dog = false;
+bool update_node_watch_dog = false;
+static pthread_t watch_dog_thread_id = 0;
+static acct_gather_profile_timer_t *profile_watch_dog_timer =
+	&acct_gather_profile_timer_watch_dog;
+static write_t watch_dog_collect;
+static write_t watch_dog_node_step_collect;
+static char **_build_watch_dog_env(acct_gather_rank_t *watch_dog);
+//pthread_rwlock_t rwlock = PTHREAD_RWLOCK_INITIALIZER;
+static pthread_mutex_t watch_dog_env_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t watch_dog_all_env_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
 static int freq = 0;
 static List task_list = NULL;
 static uint64_t cont_id = NO_VAL64;
@@ -452,6 +470,153 @@ static void _acct_send_data_step(acct_gather_rank_t *job_send, step_gather_msg_t
 	
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+
+static char **_build_watch_dog_env(acct_gather_rank_t *watch_dog)
+{
+	if(watch_dog == NULL)
+		return NULL;
+	char **my_env;
+	my_env = xmalloc(sizeof(char *));
+	my_env[0] = NULL;
+    
+	setenvf(&my_env, "SLURM_JOB_ID", "%u", watch_dog->job_id);
+	setenvf(&my_env, "SLURM_STEP_ID", "%d", watch_dog->step_id.step_id);	
+	setenvf(&my_env, "SLURM_JOB_UID", "%u", watch_dog->uid);
+	setenvf(&my_env, "SLURM_JOB_GID", "%u", watch_dog->gid);
+	setenvf(&my_env, "SLURM_STEP_WATCH_DOG", "%s", watch_dog->watch_dog);
+
+	slurm_mutex_lock(&watch_dog_env_lock);
+	if((watch_dog_node_step_collect.update == true) || (update_watch_dog == true)) {
+		setenvf(&my_env, "SLURM_JOB_NODE_AVE_CPU", "%.2f",watch_dog_node_step_collect.cpu_step_ave);
+		setenvf(&my_env, "SLURM_JOB_NODE_NOW_CPU", "%.2f", watch_dog_node_step_collect.cpu_step_real);
+		setenvf(&my_env, "SLURM_JOB_NODE_MEM", "%ld", watch_dog_node_step_collect.mem_step);
+		setenvf(&my_env, "SLURM_JOB_NODE_VMEM", "%ld", watch_dog_node_step_collect.vmem_step);
+		setenvf(&my_env, "SLURM_JOB_NODE_PAGES", "%ld", watch_dog_node_step_collect.step_pages);
+		watch_dog_node_step_collect.update = false;
+		if(update_watch_dog == false)
+			update_watch_dog = true;
+	}
+
+	if(watch_dog_node_step_collect.pids) {
+		char *pid_str = NULL;
+		if (watch_dog_node_step_collect.npids > 0) {
+			for (int i = 0; i < watch_dog_node_step_collect.npids; i++) {
+				if(i == 0)
+					xstrfmtcat(pid_str, "%d",watch_dog_node_step_collect.pids[i]);
+				else
+					xstrfmtcat(pid_str, ",%d",watch_dog_node_step_collect.pids[i]);
+			}
+			setenvf(&my_env, "SLURM_STEP_NODE_PIDS", "%s", pid_str);
+			xfree(pid_str);
+			xfree(watch_dog_node_step_collect.pids);
+		}			
+	}	
+
+	slurm_mutex_unlock(&watch_dog_env_lock);
+	if(watch_dog->head_node) {
+		slurm_mutex_lock(&watch_dog_all_env_lock);
+		/*set environment variables for the head node.*/
+		if(watch_dog_collect.update || update_node_watch_dog) {
+			setenvf(&my_env, "SLURM_JOB_AVE_CPU", "%.2f", watch_dog_collect.cpu_step_ave);
+			setenvf(&my_env, "SLURM_JOB_NOW_CPU", "%.2f", watch_dog_collect.cpu_step_real);
+			setenvf(&my_env, "SLURM_JOB_MEM", "%ld", watch_dog_collect.mem_step);
+			setenvf(&my_env, "SLURM_JOB_VMEM", "%ld", watch_dog_collect.vmem_step);
+			setenvf(&my_env, "SLURM_JOB_PAGES", "%ld", watch_dog_collect.step_pages);
+			watch_dog_collect.update = false;
+			if(update_node_watch_dog == false)
+				update_node_watch_dog = true;
+		}
+		slurm_mutex_unlock(&watch_dog_all_env_lock);
+	}
+
+	return my_env;
+}
+
+static void *step_watch_dog(void *args)
+{
+	acct_gather_rank_t *watch_dog_tran =(acct_gather_rank_t *) args;
+	const char watch_dog[32] = "watch dog";
+	pid_t cpid = -1 ;
+	bool  start = false;
+	time_t diff_time = time(NULL);
+ #if HAVE_SYS_PRCTL_H
+	if (prctl(PR_SET_NAME, "watch_dog_acct", NULL, NULL, NULL) < 0) {
+		error("%s: cannot set my name to %s %m", __func__, "acctg_watch_dog_step");
+	}
+#endif
+	while (_init_run_test() && !_jobacct_shutdown_test() &&
+	       acct_gather_profile_test()) {
+		/* Do this until shutdown is requested */
+		struct timeval now;
+		struct timespec timeout = {0, 0};
+		gettimeofday(&now, NULL);
+		timeout.tv_sec = now.tv_sec;
+		timeout.tv_nsec = now.tv_usec*1000;
+
+		timeout.tv_nsec = timeout.tv_nsec  + 100000000;  // add 100ms，100000000ns
+		if (timeout.tv_nsec >= 1000000000) {
+			timeout.tv_sec += 1;
+			timeout.tv_nsec -= 1000000000;
+		}
+
+		slurm_mutex_lock(&profile_watch_dog_timer->notify_mutex);
+		int ret = pthread_cond_timedwait(&profile_watch_dog_timer->notify,
+				&profile_watch_dog_timer->notify_mutex, &timeout);	
+		slurm_mutex_unlock(&profile_watch_dog_timer->notify_mutex);
+        
+		/* shutting down, woken by jobacct_gather_fini() */
+		if (!_init_run_test())
+			break;
+		if (watch_dog_tran->watch_dog_script == NULL || watch_dog_tran->watch_dog_script[0] == '\0')
+			continue;
+		/* Prevent job steps from running as soon as they are started */
+		if(!start) {
+			if(difftime(time(NULL), diff_time) >= 1)
+				start = true;
+		}
+		if(!start)
+			continue;
+		if(ret == 0) {
+			char **my_env;
+			my_env = _build_watch_dog_env(watch_dog_tran);
+			run_command_args_t run_script_msg;
+			char *cmd_argv[2] = {0};
+			memset(&run_script_msg, 0, sizeof(run_script_msg));
+			run_script_msg.job_id = watch_dog_tran->job_id;
+			run_script_msg.script_type = watch_dog;
+			run_script_msg.env = my_env;
+			run_script_msg.max_wait = -1;
+			run_script_msg.script_path = watch_dog_tran->watch_dog_script;
+			run_script_msg.script_argv = cmd_argv;
+			debug3("[job %u] attempting to run  [%s]",
+					watch_dog_tran->step_id.job_id, run_script_msg.script_path);
+			if(run_watch_dog_wait(&cpid, false))
+				run_watch_dog_command(&run_script_msg, &cpid, watch_dog_tran->gid, watch_dog_tran->gid, 0);
+			if(my_env) {
+				for (int i = 0; my_env[i]; i++)
+					xfree(my_env[i]);
+
+				xfree(my_env);
+			}
+		} else {
+			if((cpid != -1) && (cpid != 0))
+				run_watch_dog_wait(&cpid, false);
+		}
+	}
+
+	if((cpid != -1) && (cpid != 0))
+		run_watch_dog_wait(&cpid, true);
+
+	if(watch_dog_tran) {
+		xfree(watch_dog_tran->watch_dog);
+		xfree(watch_dog_tran->watch_dog_script);
+		xfree(watch_dog_tran);
+	}
+	return NULL;
+}
+#endif
+
 static void *step_collect(void *args)
 {
 	acct_gather_rank_t *job_info = (acct_gather_rank_t *) args;
@@ -568,7 +733,16 @@ static void *step_collect(void *args)
 				write_data->node_end = record_time;
 //				write_data->load_flag = write_data->load_flag | JNODE_STAT;
 			}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+			slurm_mutex_lock(&watch_dog_all_env_lock);
+			watch_dog_collect.cpu_step_ave  = write_data->cpu_step_ave ;
+			watch_dog_collect.cpu_step_real = write_data->cpu_step_real ;
+			watch_dog_collect.mem_step 	    = write_data->mem_step ;
+			watch_dog_collect.vmem_step     = write_data->vmem_step ;
+			watch_dog_collect.step_pages    = write_data->step_pages ;
+			watch_dog_collect.update		= true;
+			slurm_mutex_unlock(&watch_dog_all_env_lock);
+#endif
 			_poll_data(1, NULL, write_data);
 
 			memset(&msg, 0, sizeof(msg));
@@ -733,6 +907,16 @@ static void *step_collect(void *args)
 					write_data->node_end = record_time;
 //					write_data->load_flag = write_data->load_flag | JNODE_STAT;
 				}
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+				slurm_mutex_lock(&watch_dog_all_env_lock);
+				watch_dog_collect.cpu_step_ave  = write_data->cpu_step_ave ;
+				watch_dog_collect.cpu_step_real = write_data->cpu_step_real ;
+				watch_dog_collect.mem_step 	    = write_data->mem_step ;
+				watch_dog_collect.vmem_step     = write_data->vmem_step ;
+				watch_dog_collect.step_pages    = write_data->step_pages ;
+				watch_dog_collect.update		= true;
+				slurm_mutex_unlock(&watch_dog_all_env_lock);
+#endif
 				_poll_data(1, NULL, write_data);
 			}
 
@@ -764,7 +948,11 @@ static void *_watch_tasks(void *arg)
     double  tmp_cpuutil = 0.0;
 	collect = xmalloc(sizeof(collection_t));
     diff = time(NULL);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	int max_watch_dog_pid = 2000;
+	collect->npids = 0;
+	collect->pids = xmalloc(sizeof(pid_t)* max_watch_dog_pid);
+#endif
 	if(job_message->timer > 0)
 		count = (job_message->timer) / job_message->frequency; 
 	
@@ -857,12 +1045,40 @@ static void *_watch_tasks(void *arg)
 		if(item)
 			xfree(item);
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		if(collect && collect->pids) {
+			slurm_mutex_lock(&watch_dog_env_lock);
+			watch_dog_node_step_collect.cpu_step_real = collect->cpu_step_real;
+			watch_dog_node_step_collect.cpu_step_ave  = collect->cpu_step_ave;				
+			watch_dog_node_step_collect.mem_step	  = collect->mem_step;
+			watch_dog_node_step_collect.vmem_step	  = collect->vmem_step;
+			watch_dog_node_step_collect.step_pages	  = collect->step_pages;
+			watch_dog_node_step_collect.npids		  = collect->npids;
+			watch_dog_node_step_collect.update		  = true;
+			if(watch_dog_node_step_collect.pids)
+				xfree(watch_dog_node_step_collect.pids);
+			
+			if((collect->npids <= max_watch_dog_pid) && (collect->npids > 0)) {
+				watch_dog_node_step_collect.pids = xmalloc(sizeof(pid_t) * (watch_dog_node_step_collect.npids)+ 1);
+				memcpy(watch_dog_node_step_collect.pids, collect->pids, (sizeof(pid_t) * (collect->npids)));
+			} else if(collect->npids > max_watch_dog_pid) {
+				watch_dog_node_step_collect.pids = xmalloc(sizeof(pid_t) * (max_watch_dog_pid) + 1);
+				memcpy(watch_dog_node_step_collect.pids, collect->pids, (sizeof(pid_t) * max_watch_dog_pid));
+			}
+			slurm_mutex_unlock(&watch_dog_env_lock);
+		}
+#endif
 	}
 #ifdef __METASTACK_LOAD_ABNORMAL
 	if((collect->step) && (count > 0)) {
 		FREE_NULL_LIST(fifo);
 	}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if(watch_dog_node_step_collect.pids)
+		xfree(watch_dog_node_step_collect.pids);
+	if(collect) 
+		xfree(collect->pids);
+#endif
 	xfree(collect);
 	if(job_message)
 		xfree(job_message);
@@ -1107,6 +1323,16 @@ extern int jobacct_gather_fini(void)
 			slurm_mutex_lock(&g_context_lock);
 		}
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		if (watch_dog_thread_id) {
+			slurm_mutex_unlock(&g_context_lock);
+			slurm_mutex_lock(&profile_watch_dog_timer->notify_mutex);
+			slurm_cond_signal(&profile_watch_dog_timer->notify);
+			slurm_mutex_unlock(&profile_watch_dog_timer->notify_mutex);
+			pthread_join(watch_dog_thread_id, NULL);
+			slurm_mutex_lock(&g_context_lock);
+		}
+#endif
 		rc = plugin_context_destroy(g_context);
 		g_context = NULL;
 	}
@@ -1114,6 +1340,45 @@ extern int jobacct_gather_fini(void)
 
 	return rc;
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern int jobacct_gather_watchdog(int frequency, acct_gather_rank_t step_rank) 
+{
+	int retval = SLURM_SUCCESS;
+	if (!plugin_polling)
+		return SLURM_SUCCESS;
+	if (jobacct_gather_init() < 0)
+		return SLURM_ERROR;
+	if (_jobacct_shutdown_test()) {
+		slurm_mutex_lock(&jobacct_shutdown_mutex);
+		jobacct_shutdown = false;
+		slurm_mutex_unlock(&jobacct_shutdown_mutex);
+		// return SLURM_SUCCESS;
+	}
+
+	if (frequency <= 0 || !(step_rank.enable_watchdog)) {   /* don't want dynamic monitoring? */
+		debug2("jobacct_gather_watchdog thread disabled");
+		return retval;
+	}	
+
+	acct_gather_rank_t *load_args 	= xmalloc(sizeof(acct_gather_rank_t));
+	load_args->watch_dog_script 	= xstrdup(step_rank.watch_dog_script);
+	load_args->watch_dog        	= xstrdup(step_rank.watch_dog);
+	load_args->init_time 			= step_rank.init_time;
+	load_args->period 				= step_rank.period;
+	load_args->enable_watchdog 		= step_rank.enable_watchdog;
+	load_args->style_step 			= step_rank.style_step;
+	load_args->job_id 				= step_rank.job_id;
+	load_args->step_id.step_id 		= step_rank.step_id.step_id;
+	load_args->head_node 			= step_rank.head_node;
+	load_args->uid 					= step_rank.uid;
+	load_args->gid					= step_rank.gid;
+	load_args->switch_step			= step_rank.switch_step;
+	
+	slurm_thread_create(&watch_dog_thread_id, step_watch_dog, load_args);
+	return retval;
+}
+#endif
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobinfo) 
@@ -1275,6 +1540,13 @@ extern jobacctinfo_t *jobacct_gather_stat_task(pid_t pid)
 	_poll_data(0, collect, NULL);
 	if(collect)
 		xfree(collect);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if(collect) {
+		if(collect->pids)
+			xfree(collect->pids);
+		xfree(collect);
+	}
+#endif
 #endif
 	if (pid) {
 		struct jobacctinfo *jobacct = NULL;

@@ -525,6 +525,15 @@ extern int slurm_conf_nodename_array(slurm_conf_node_t **ptr_array[]);
  */
 extern int slurm_conf_partition_array(slurm_conf_partition_t **ptr_array[]);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * Set "watr_array" with the pointer to an array of pointers to
+ * watch_dog_record_t structures.
+ *
+ * Return value is the length of the array.
+ */
+int slurm_conf_watch_dog_array(watch_dog_record_t **watr_array[]);
+#endif
 /*
  * Set "ptr_array" with the pointer to an array of pointers to
  * slurm_conf_downnodes_t structures.

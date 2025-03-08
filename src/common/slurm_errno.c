@@ -610,7 +610,10 @@ static slurm_errtab_t slurm_errtab[] = {
 	  "MIME type is unknown to any loaded plugins"},
 	{ ESLURM_DATA_TOO_LARGE,
 	  "DATA too large to handle"},
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	{ ESLURMD_INVALID_WATCH_DOG,
+	"The specified watch dog script is invalid"},
+#endif
 	/* container  errors */
 	{ ESLURM_CONTAINER_NOT_CONFIGURED,
 	  "Container support is not configured"},

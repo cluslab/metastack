@@ -385,6 +385,15 @@ extern int slurm_step_launch(slurm_step_ctx_t *ctx,
 
 	launch.num_resp_port = ctx->launch_state->num_resp_port;
 	launch.resp_port = xcalloc(launch.num_resp_port, sizeof(uint16_t));
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	launch.watch_dog         = ctx->step_resp->watch_dog;	
+	launch.watch_dog_script  = ctx->step_resp->watch_dog_script;	
+	launch.init_time         = ctx->step_resp->init_time;	
+	launch.period            = ctx->step_resp->period;	
+	launch.enable_all_nodes  = ctx->step_resp->enable_all_nodes;	
+	launch.enable_all_stepds = ctx->step_resp->enable_all_stepds;			
+	launch.style_step        = ctx->step_resp->style_step;	
+#endif
 	memcpy(launch.resp_port, ctx->launch_state->resp_port,
 	       (sizeof(uint16_t) * launch.num_resp_port));
 	rc = _launch_tasks(ctx, &launch, params->msg_timeout,
@@ -395,6 +404,10 @@ extern int slurm_step_launch(slurm_step_ctx_t *ctx,
 	xfree(launch.io_port);
 
 fail1:
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
+	xfree(launch.watch_dog);
+	xfree(launch.watch_dog_script);
+#endif
 	xfree(launch.user_name);
 	xfree(launch.complete_nodelist);
 	xfree(launch.cwd);
@@ -513,6 +526,22 @@ extern int slurm_step_launch_add(slurm_step_ctx_t *ctx,
 	if (params->pty)
 		launch.flags |= LAUNCH_PTY;
 	launch.acctg_freq	= params->acctg_freq;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
+	// launch.watch_dog         = params->watch_dog;	
+	// launch.watch_dog_script  = params->watch_dog_script;	
+	// launch.init_time         = params->init_time;	
+	// launch.period            = params->period;	
+	// launch.enable_all_nodes  = params->enable_all_nodes;	
+	// launch.enable_all_stepds = params->enable_all_stepds;			
+	// launch.style_step        = params->style_step;	
+	launch.watch_dog         = ctx->step_resp->watch_dog;	
+	launch.watch_dog_script  = ctx->step_resp->watch_dog_script;	
+	launch.init_time         = ctx->step_resp->init_time;	
+	launch.period            = ctx->step_resp->period;	
+	launch.enable_all_nodes  = ctx->step_resp->enable_all_nodes;	
+	launch.enable_all_stepds = ctx->step_resp->enable_all_stepds;			
+	launch.style_step        = ctx->step_resp->style_step;	
+#endif	
 	launch.open_mode        = params->open_mode;
 	launch.options          = job_options_create();
 	launch.complete_nodelist =

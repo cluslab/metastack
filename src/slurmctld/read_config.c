@@ -148,6 +148,12 @@ static void _sync_nodes_to_suspended_job(job_record_t *job_ptr);
 static void _sync_part_prio(void);
 static void _update_preempt(uint16_t old_enable_preempt);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+int list_find_watch_dog(void *x, void *key);
+static void _init_watch_dog_record(watch_dog_record_t *watch_dog_ptr);
+void init_watch_dog_conf(void);
+static void _list_delete_watch_dog(void *watch_dog_entry);
+#endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 /* Global variables */
 int part_count = 0;     /* The number of all partitions */
@@ -827,6 +833,32 @@ static void _build_bitmaps(void)
 }
 
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static void _list_delete_watch_dog(void *watch_dog_entry)
+{
+	watch_dog_record_t *watch_dog_ptr;
+	watch_dog_ptr = (watch_dog_record_t *) watch_dog_entry;
+	xfree(watch_dog_ptr->watch_dog);
+	xfree(watch_dog_ptr->script);
+	xfree(watch_dog_ptr->describe);
+	xfree(watch_dog_ptr->account);
+	xfree(watch_dog_ptr);
+}
+
+/*
+ * Create a global watch dog list.
+ *
+ * This should be called before creating any watch dog entries.
+ */
+void init_watch_dog_conf(void) 
+{
+	last_watch_dog_update = time(NULL);
+	if (watch_dog_list)		/* delete defunct partitions */
+		list_flush(watch_dog_list);
+	else
+		watch_dog_list = list_create(_list_delete_watch_dog);
+}
+#endif
 /*
  * _init_all_slurm_conf - initialize or re-initialize the slurm
  *	configuration values.
@@ -842,6 +874,9 @@ static void _init_all_slurm_conf(void)
 
 	init_node_conf();
 	init_part_conf();
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	init_watch_dog_conf();
+#endif
 	init_job_conf();
 }
 
@@ -1005,6 +1040,101 @@ extern void qos_list_build(char *qos, bitstr_t **qos_bits)
 	*qos_bits = tmp_qos_bitstr;
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * Sync with _init_conf_part().
+ *
+ * _init_conf_part() initializes default values from slurm.conf parameters.
+ * After parsing slurm.conf, _build_single_partitionline_info() copies
+ * slurm_conf_partition_t to part_record_t. Default values between
+ * slurm_conf_partition_t and part_record_t should stay in sync in case a
+ * part_record_t is created outside of slurm.conf parsing.
+ */
+static void _init_watch_dog_record(watch_dog_record_t *watch_dog_ptr)
+{
+	watch_dog_ptr->init_time = 0;
+	watch_dog_ptr->period = 0;
+	watch_dog_ptr->show_flags = 0;
+	watch_dog_ptr->enable_all_nodes = false;
+	watch_dog_ptr->enable_all_stepds = false;
+}
+
+/*
+ * list_find_watch_dog - find an entry in the watch dog list, see common/list.h
+ *	for documentation
+ * IN key - watch_dog name
+ * RET 1 if matches key, 0 otherwise
+ */
+int list_find_watch_dog(void *x, void *key)
+{
+	watch_dog_record_t *watch_dog_ptr = (watch_dog_record_t *) x;
+	char *watch_dog_name = (char *)key;
+
+	return (!xstrcmp(watch_dog_ptr->watch_dog, watch_dog_name));
+}
+
+/*
+ * create_watch_dog_record - create a partition record
+ * RET a pointer to the record or NULL if error
+ */
+watch_dog_record_t *create_watch_dog_record(const char *name)
+{
+	watch_dog_record_t *watch_dog_ptr = xmalloc(sizeof(*watch_dog_ptr));
+
+	last_part_update = time(NULL);
+
+	_init_watch_dog_record(watch_dog_ptr);
+	watch_dog_ptr->watch_dog = xstrdup(name);
+
+	(void) list_append(watch_dog_list, watch_dog_ptr);
+
+	return watch_dog_ptr;
+
+}
+
+/*
+ * _build_single_watchdogline_info - get a array of watch_dog_record_t
+ *	structures from the slurm.conf reader, build table, and set values
+ * RET 0 if no error, error code otherwise
+ * Note: Operates on common variables
+ * global: xxxx - global partition list pointer
+ *	xxxx - default parameters for a partition
+ */	
+static int _build_single_watchdogline_info(watch_dog_record_t *watch)
+{
+	watch_dog_record_t *watch_dog_ptr = NULL;
+
+	if (list_find_first(watch_dog_list, &list_find_watch_dog, watch->watch_dog)) {
+		error("%s: %s specified more than once, latest value used",
+		      __func__,  watch->watch_dog);
+		list_delete_first(watch_dog_list,  &list_find_watch_dog, watch->watch_dog);
+	}
+
+	watch_dog_ptr = create_watch_dog_record(watch->watch_dog);  
+	// if(watch->watch_dog)
+	// 	watch_dog_ptr->watch_dog = xstrdup(watch->watch_dog);
+
+	if(watch->script)
+		watch_dog_ptr->script = xstrdup(watch->script);
+
+	if(watch->account)
+		watch_dog_ptr->account = xstrdup(watch->account);
+
+	if(watch->describe)
+		watch_dog_ptr->describe = xstrdup(watch->describe);
+
+   	watch_dog_ptr->init_time  = watch->init_time;
+   	watch_dog_ptr->period     = watch->period;
+	watch_dog_ptr->show_flags = watch->show_flags;
+	watch_dog_ptr->enable_all_nodes = watch->enable_all_nodes;
+	watch_dog_ptr->enable_all_stepds = watch->enable_all_stepds;
+	if(!(watch_dog_ptr->watch_dog) || !(watch_dog_ptr->script))
+		error("watch dog  has invalid options, "
+			      "please check your configuration");
+
+    return 0;
+}
+#endif
 /*
  * _build_single_partitionline_info - get a array of slurm_conf_partition_t
  *	structures from the slurm.conf reader, build table, and set values
@@ -1323,6 +1453,24 @@ static bool _restore_all_partition_nodes_borrowed_info(bool reconfig, List part_
 }
 #endif
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static int _build_all_watchdog_info(void)
+{
+	watch_dog_record_t **watr_array = NULL;
+	int count = 0;
+	int i;	
+	count = slurm_conf_watch_dog_array(&watr_array);
+	if (count == 0) {
+		debug("No watch dog information available!");
+		return SLURM_ERROR;
+	}
+
+	for (i = 0; i < count; i++)
+		_build_single_watchdogline_info(watr_array[i]);
+
+	return SLURM_SUCCESS;
+}
+#endif
 /*
  * _build_all_partitionline_info - get a array of slurm_conf_partition_t
  *	structures from the slurm.conf reader, build table, and set values
@@ -1966,6 +2114,9 @@ int read_slurm_conf(int recover, bool reconfig)
 		part_list = NULL;
 		old_def_part_name = default_part_name;
 		default_part_name = NULL;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		FREE_NULL_LIST(watch_dog_list);
+#endif
 	}
 
 	_init_all_slurm_conf();
@@ -2040,6 +2191,9 @@ int read_slurm_conf(int recover, bool reconfig)
 	}
 	_handle_all_downnodes();
 	_build_all_partitionline_info();
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	_build_all_watchdog_info();
+#endif
 	if (!reconfig) {
 		restore_front_end_state(recover);
 

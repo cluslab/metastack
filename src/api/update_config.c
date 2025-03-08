@@ -94,6 +94,9 @@ slurm_update_job2 (job_desc_msg_t * job_msg, job_array_resp_msg_t **resp)
 
 	slurm_msg_t_init(&req_msg);
 	req_msg.msg_type	= REQUEST_UPDATE_JOB;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	req_msg.data		= job_msg;
 
 tryagain:

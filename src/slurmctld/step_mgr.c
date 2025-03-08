@@ -606,6 +606,10 @@ extern void free_step_record(void *x)
 	xfree(step_ptr->tres_per_socket);
 	xfree(step_ptr->tres_per_task);
 	xfree(step_ptr->memory_allocated);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	xfree(step_ptr->watch_dog);
+	xfree(step_ptr->watch_dog_script);
+#endif
 	step_ptr->magic = ~STEP_MAGIC;
 	xfree(step_ptr);
 }
@@ -3416,6 +3420,33 @@ extern int step_create(job_step_create_request_msg_t *step_specs,
 	step_ptr->start_time = time(NULL);
 	step_ptr->state      = JOB_RUNNING;
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	/*Using srun to carry the watch dog again in snatch or sbatch requires verification here*/
+	if(step_specs->watch_dog) {
+		watch_dog_record_t *watch_dog_ptr = NULL;
+		int error_code = SLURM_SUCCESS;
+		error_code =  _get_job_watch_dogs_and_check(step_specs->watch_dog, &watch_dog_ptr, NULL);
+		if(error_code == ESLURMD_INVALID_WATCH_DOG)
+			error("the jobid %d has an invalid watchdog specified",step_specs->step_id.job_id);
+		else if(watch_dog_ptr) {
+			step_ptr->watch_dog 		= xstrdup(watch_dog_ptr->watch_dog);
+			step_ptr->watch_dog_script  = xstrdup(watch_dog_ptr->script);
+			step_ptr->init_time         = watch_dog_ptr->init_time;
+			step_ptr->period            = watch_dog_ptr->period;
+			step_ptr->enable_all_nodes  =  watch_dog_ptr->enable_all_nodes;
+			step_ptr->enable_all_stepds =  watch_dog_ptr->enable_all_stepds;
+			step_ptr->style_step 		= 0;
+		}
+	} else  {
+		step_ptr->watch_dog  		= xstrdup(job_ptr->details->watch_dog);
+		step_ptr->watch_dog_script  = xstrdup(job_ptr->details->watch_dog_script);
+		step_ptr->init_time         = job_ptr->details->init_time;
+		step_ptr->period 			= job_ptr->details->period;
+		step_ptr->enable_all_nodes 	= job_ptr->details->enable_all_nodes;
+		step_ptr->enable_all_stepds = job_ptr->details->enable_all_stepds;
+		step_ptr->style_step 		= job_ptr->details->style_step;
+	}
+#endif
 	memcpy(&step_ptr->step_id, &step_specs->step_id,
 	       sizeof(step_ptr->step_id));
 
@@ -5991,7 +6022,10 @@ static int copy_job_step_state(step_record_t *src_step_ptr, step_record_t *des_s
 //		des_step_ptr->memory_allocated = xmalloc(i);
 //		memcpy(des_step_ptr->memory_allocated,src_step_ptr->memory_allocated, i);
 //	}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+    des_step_ptr->watch_dog = NULL;
+    des_step_ptr->watch_dog_script = NULL;
+#endif
 	des_step_ptr->core_bitmap_job = NULL;
 	des_step_ptr->exit_node_bitmap = NULL;
 	des_step_ptr->ext_sensors = NULL;
