@@ -583,7 +583,7 @@ static void _launch_app(srun_job_t *job, List srun_job_list, bool got_alloc)
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 		if((job->step_ctx->step_resp->watch_dog) && 
 					(job->step_ctx->step_resp->style_step == 0))
-			job->step_ctx->step_resp->style_step = 0x010;
+			job->step_ctx->step_resp->style_step = 0x010; //srun flag 
 #endif
 		opts = xmalloc(sizeof(_launch_app_data_t));
 		opts->got_alloc   = got_alloc;
