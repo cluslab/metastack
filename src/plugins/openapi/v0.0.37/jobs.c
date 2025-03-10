@@ -485,7 +485,11 @@ cleanup:
 
 		xfree(tmp);
 	}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if (req->watch_dog)
+		env_array_overwrite(&req->environment, "SLURM_JOB_CUSTOM",
+				    req->watch_dog);
+#endif
 	/* update size of env in case it changed */
 	req->env_size = envcount(req->environment);
 

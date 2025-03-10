@@ -393,6 +393,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_PRIORITY_JOBSIZE
 #define __METASTACK_PRIORITY_JOBSIZE
 #endif
+
+#ifndef __METASTACK_NEW_CUSTOM_EXCEPTION
+#define __METASTACK_NEW_CUSTOM_EXCEPTION  
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -2013,6 +2018,9 @@ typedef struct job_descriptor {	/* For submit, allocate, and update requests */
 #ifdef __METASTACK_OPT_MSG_OUTPUT
     char *reason_detail;
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+#endif
 } job_desc_msg_t;
 
 typedef struct job_info {
@@ -2416,6 +2424,18 @@ typedef struct {
 	uint32_t spank_job_env_size;	/* element count in spank_env */
 	char *tres_bind;
 	char *tres_freq;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	char *watch_dog_script;		/* location of the script */
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period;  
+	bool enable_all_nodes;    
+	bool enable_all_stepds;   
+	uint32_t style_step;     /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/
+#endif
 } slurm_step_launch_params_t;
 
 typedef struct {
@@ -2760,6 +2780,26 @@ typedef struct partition_info {
 #endif		
 } partition_info_t;
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+
+typedef struct {
+	char    *account;
+	char    *watch_dog;
+	char 	*script;		/* location of the script */
+	char    *describe;
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period;        /*This keyword specifies the interval (in seconds) between 
+							 *executions of the watchdog script after the last execution.*/	
+	uint16_t show_flags;
+	bool      enable_all_nodes;  /*Custom exceptions enabled on all nodes*/
+	bool      enable_all_stepds;  /*Custom exceptions enabled on all stepds*/
+
+} watch_dog_record_t;
+#endif
+
 typedef struct delete_partition_msg {
 	char *name;		/* name of partition to be delete */
 } delete_part_msg_t;
@@ -2808,6 +2848,14 @@ typedef struct partition_info_msg {
 	uint32_t record_count;	/* number of records */
 	partition_info_t *partition_array; /* the partition records */
 } partition_info_msg_t;
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+typedef struct slurm_ctl_conf_info_msg_watch_dog {
+	time_t          last_update;
+	uint32_t        record_count;	         /* number of records */
+    watch_dog_record_t * watch_dog_array;    /* the watch dog records */
+} slurm_ctl_conf_info_msg_watch_dog_t;
+#endif
 
 typedef struct will_run_response_msg {
 	uint32_t job_id;	/* ID of job to start */
@@ -3398,6 +3446,9 @@ typedef struct {
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	void *rl_config;
 	void *rl_users;
+#endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;     /*--watch dog*/
 #endif
 } slurm_conf_t;
 
@@ -4085,6 +4136,20 @@ extern void slurm_step_launch_fwd_wake(slurm_step_ctx_t *ctx);
  */
 extern long slurm_api_version(void);
 
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * slurm_load_ctl_conf_watch_dog - issue RPC to get slurm control configuration
+ *	information if changed since update_time
+ * IN update_time - time of current configuration data
+ * IN slurm_ctl_conf_ptr - place to store slurm control configuration
+ *	pointer
+ * RET SLURM_SUCCESS on success, otherwise return SLURM_ERROR with errno set
+ * NOTE: free the response using slurm_free_ctl_conf
+ */
+int slurm_load_ctl_conf_watch_dog(time_t update_time, slurm_ctl_conf_info_msg_watch_dog_t **confp);
+#endif
+
 /*
  * slurm_load_ctl_conf - issue RPC to get slurm control configuration
  *	information if changed since update_time
@@ -4104,6 +4169,9 @@ extern int slurm_load_ctl_conf(time_t update_time,
  */
 extern void slurm_free_ctl_conf(slurm_conf_t *slurm_ctl_conf_ptr);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern void slurm_print_watch_dog_conf(FILE *out, watch_dog_record_t *watch_dog_ptr, int one_liner);
+#endif
 /*
  * slurm_print_ctl_conf - output the contents of slurm control configuration
  *	message as loaded using slurm_load_ctl_conf
@@ -4111,6 +4179,7 @@ extern void slurm_free_ctl_conf(slurm_conf_t *slurm_ctl_conf_ptr);
  * IN slurm_ctl_conf_ptr - slurm control configuration pointer
  */
 extern void slurm_print_ctl_conf(FILE *out, slurm_conf_t *slurm_ctl_conf_ptr);
+
 
 /*
  * slurm_write_ctl_conf - write the contents of slurm control configuration
@@ -4120,10 +4189,12 @@ extern void slurm_print_ctl_conf(FILE *out, slurm_conf_t *slurm_ctl_conf_ptr);
  * IN node_info_ptr - pointer to node table of information
  * IN part_info_ptr - pointer to partition information
  */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 extern void slurm_write_ctl_conf(slurm_conf_t *slurm_ctl_conf_ptr,
                                  node_info_msg_t *node_info_ptr,
-                                 partition_info_msg_t *part_info_ptr);
-
+                                 partition_info_msg_t *part_info_ptr,
+								 slurm_ctl_conf_info_msg_watch_dog_t  *slurm_watch_dog_ptr);
+#endif
 /*
  * slurm_ctl_conf_2_key_pairs - put the slurm_conf_t variables into
  *	a List of opaque data type config_key_pair_t
@@ -4885,7 +4956,11 @@ extern char *_slurm_sprint_partition_info(partition_info_t *part_ptr,
  */
 extern void slurm_print_partition_info(FILE *out,
 				       partition_info_t *part_ptr,
-				       int one_liner);			 					   
+				       int one_liner);			
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern char *slurm_print_watch_dog_info(watch_dog_record_t *watch_dog_ptr, int one_liner);	
+#endif		 					   
+				   
 /*
  * slurm_sprint_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions

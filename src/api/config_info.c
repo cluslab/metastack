@@ -102,9 +102,12 @@ _reset_period_str(uint16_t reset_period)
  * IN node_info_ptr - pointer to node table of information
  * IN part_info_ptr - pointer to partition information
  */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 			    node_info_msg_t * node_info_ptr,
-			    partition_info_msg_t * part_info_ptr)
+			    partition_info_msg_t * part_info_ptr,
+				slurm_ctl_conf_info_msg_watch_dog_t  *slurm_watch_dog_ptr)
+#endif
 {
 	int i = 0;
 	char time_str[32];
@@ -486,7 +489,49 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 
 		fprintf(fp, "\n");
 	}
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if(slurm_watch_dog_ptr) {
+		fprintf(fp,
+			"###############################################\n");
+		fprintf(fp,"#                  WATCH DOGS                 #\n");
+		fprintf(fp,
+			"###############################################\n");
+		fprintf(fp, "#\n#\n");
 
+		watch_dog_record_t *write_watchdog_config = slurm_watch_dog_ptr->watch_dog_array;
+		for (i = 0; i < slurm_watch_dog_ptr->record_count; i++) {
+				if(write_watchdog_config[i].watch_dog == NULL) 
+					continue;
+				fprintf(fp, "WatchdogName=%s", write_watchdog_config[i].watch_dog);
+
+				if (write_watchdog_config[i].script &&
+					(xstrcasecmp(write_watchdog_config[i].script, "Script") != 0))
+					fprintf(fp, " Script=%s",
+						write_watchdog_config[i].script);	
+				if (write_watchdog_config[i].describe &&
+					(xstrcasecmp(write_watchdog_config[i].describe, "Describe") != 0))
+					fprintf(fp, " Describe=\"%s\"",
+						write_watchdog_config[i].describe);		
+				if (write_watchdog_config[i].account &&
+					(xstrcasecmp(write_watchdog_config[i].account, "Accounts") != 0))
+					fprintf(fp, " Accounts=%s",
+						write_watchdog_config[i].account);
+				if ((write_watchdog_config[i].init_time >= 0) && (write_watchdog_config[i].init_time != NO_VAL))
+					fprintf(fp, " Init_time=%u",write_watchdog_config[i].init_time);
+				if ((write_watchdog_config[i].period >= 0) && (write_watchdog_config[i].period != NO_VAL))
+					fprintf(fp, " Period=%u",write_watchdog_config[i].period);
+				if (write_watchdog_config[i].enable_all_nodes == true)
+					fprintf(fp, " EnableAllNodes=YES");
+				else
+					fprintf(fp, " EnableAllNodes=NO");
+				if (write_watchdog_config[i].enable_all_stepds == true)
+					fprintf(fp, " EnableAllStepds=YES");
+				else
+					fprintf(fp, " EnableAllStepds=NO");
+				fprintf(fp, "\n");				
+			}
+	}
+#endif
 	fprintf(stdout, "Slurm config saved to %s\n", path);
 
 	xfree(path);
@@ -509,6 +554,73 @@ static void _print_config_plugin_params_list(FILE* out, List l, char *title)
 	}
 	list_iterator_destroy(itr);
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * slurm_print_watch_dog_info - output the contents of watch dog configuration
+ *	message as loaded using slurm_load_ctl_conf()
+ * IN out - file to write to
+ * IN watch_dog_ptr - watch dog configuration pointer
+ */
+char *slurm_print_watch_dog_info(watch_dog_record_t *watch_dog_ptr, int one_liner)
+{
+	if(watch_dog_ptr == NULL)
+		return NULL;
+
+	char *out = NULL;
+	//har *allow_deny, *value;
+	//uint16_t force, preempt_mode, val;
+	char *line_end = (one_liner) ? " " : "\n   ";
+	/****** Line 1 ******/
+
+	xstrfmtcat(out, "WatchdogName=%s", watch_dog_ptr->watch_dog);
+	xstrcat(out, line_end);
+	/****** Line 2 ******/
+	if(watch_dog_ptr->account)
+		xstrfmtcat(out, "Accounts=%s", watch_dog_ptr->account);
+	if(watch_dog_ptr->script)
+		xstrfmtcat(out, "Script=%s", watch_dog_ptr->script);
+	if (watch_dog_ptr->init_time == 0)
+		xstrcat(out, " Init_time=0");
+	else
+		xstrfmtcat(out, " Init_time=%u",watch_dog_ptr->init_time);
+
+	if (watch_dog_ptr->period == 0)
+		xstrcat(out, " Period=not set");
+	else
+		xstrfmtcat(out, " Period=%u",watch_dog_ptr->period);
+
+	if (watch_dog_ptr->enable_all_nodes == false)
+		xstrcat(out, " EnableAllNodes=NO");
+	else
+		xstrcat(out, " EnableAllNodes=YES");
+
+	if (watch_dog_ptr->enable_all_stepds == false)
+		xstrcat(out, " EnableAllStepds=NO");
+	else
+		xstrcat(out, " EnableAllStepds=YES");
+
+	if(watch_dog_ptr->describe)
+		xstrfmtcat(out, " Describe=\"%s\"", watch_dog_ptr->describe);
+	if (one_liner)
+		xstrcat(out, "\n");
+	else
+		xstrcat(out, "\n\n");
+
+	return out;
+}
+
+void slurm_print_watch_dog_conf(FILE *out, watch_dog_record_t *watch_dog_ptr, int one_liner)
+{
+	if(watch_dog_ptr == NULL)
+		return;
+	char *print_this = slurm_print_watch_dog_info(watch_dog_ptr, one_liner);
+    if(print_this == NULL)
+		return;
+	fprintf (out, "%s", print_this);
+	xfree(print_this);
+}
+#endif
 
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 static void slurm_print_rl_pairs(FILE* out, void *rl_config, void *rl_users, char *title)
@@ -2093,6 +2205,56 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 
 	return (void *)ret_list;
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * slurm_load_ctl_conf_watch_dog - issue RPC to get slurm control configuration
+ *	information if changed since update_time
+ * IN update_time - time of current configuration data
+ * IN slurm_ctl_conf_ptr - place to store slurm control configuration
+ *	pointer
+ * RET SLURM_SUCCESS on success, otherwise return SLURM_ERROR with errno set
+ * NOTE: free the response using slurm_free_ctl_conf
+ */
+int slurm_load_ctl_conf_watch_dog(time_t update_time, slurm_ctl_conf_info_msg_watch_dog_t **confp)
+{
+	int rc = SLURM_SUCCESS;
+	slurm_msg_t req_msg;
+	slurm_msg_t resp_msg;
+	last_update_msg_t req;
+
+	slurm_msg_t_init(&req_msg);
+	slurm_msg_t_init(&resp_msg);
+
+	memset(&req, 0, sizeof(req));
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+
+	req.last_update  = update_time;
+	req_msg.msg_type = REQUEST_BUILD_WATCH_DOG_INFO;
+	req_msg.data     = &req;
+
+	if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
+					   working_cluster_rec) < 0)
+		return SLURM_ERROR;
+
+	switch (resp_msg.msg_type) {
+	case RESPONSE_BUILD_WATCH_DOG_INFO:
+		*confp = (slurm_ctl_conf_info_msg_watch_dog_t *) resp_msg.data;
+		break;
+	case RESPONSE_SLURM_RC:
+		rc = ((return_code_msg_t *) resp_msg.data)->return_code;
+		slurm_free_return_code_msg(resp_msg.data);
+		if (rc)
+			slurm_seterrno_ret(rc);
+		break;
+	default:
+		slurm_seterrno_ret(SLURM_UNEXPECTED_MSG_ERROR);
+		break;
+	}
+	return SLURM_SUCCESS;
+}
+
+#endif
 
 /*
  * slurm_load_ctl_conf - issue RPC to get slurm control configuration

@@ -114,7 +114,10 @@ static const char *syms[] = {
 };
 
 acct_gather_profile_timer_t acct_gather_profile_timer[PROFILE_CNT];
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+acct_gather_profile_timer_t acct_gather_profile_timer_watch_dog;
+static bool init_watch_dog = false;
+#endif
 static bool acct_gather_profile_running = false;
 static pthread_mutex_t profile_running_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -185,6 +188,23 @@ static void _set_freq_2(int type, char *freq, char *freq_def, acct_gather_rank_t
 }
 #endif
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static void _set_freq_watch_dog(acct_gather_rank_t step_rank)
+{
+	if(step_rank.enable_watchdog) {
+		if(step_rank.period < 2147483647)
+			acct_gather_profile_timer_watch_dog.freq = (int)step_rank.period;
+		else {
+			acct_gather_profile_timer_watch_dog.freq = 0;
+			debug("the period (%d) is too large. Please contact the administrator to "
+					"set a reasonable value; the value must be less than 2147483647",step_rank.period);
+		}
+
+	} else
+		acct_gather_profile_timer_watch_dog.freq = 0;
+}
+#endif
+
 static void _set_freq(int type, char *freq, char *freq_def)
 {
 	if ((acct_gather_profile_timer[type].freq =
@@ -199,80 +219,173 @@ static void _set_freq(int type, char *freq, char *freq_def)
  * and operates on a 1-second granularity.
  */
 
-static void *_timer_thread(void *args)
-{
-	int i, now, diff;
-	struct timeval tvnow;
-	struct timespec abs;
-
-#if HAVE_SYS_PRCTL_H
-	if (prctl(PR_SET_NAME, "acctg_prof", NULL, NULL, NULL) < 0) {
-		error("%s: cannot set my name to %s %m",
-		      __func__, "acctg_prof");
-	}
-#endif
-
-	/* setup timer */
-	gettimeofday(&tvnow, NULL);
-	abs.tv_sec = tvnow.tv_sec;
-	abs.tv_nsec = tvnow.tv_usec * 1000;
-
-	while (init_run && acct_gather_profile_test()) {
-		slurm_mutex_lock(&g_context_lock);
-		now = time(NULL);
-
-		for (i=0; i<PROFILE_CNT; i++) {
-			if (acct_gather_suspend_test()) {
-				/* Handle suspended time as if it
-				 * didn't happen */
-				if (!acct_gather_profile_timer[i].freq)
-					continue;
-				if (acct_gather_profile_timer[i].last_notify)
-					acct_gather_profile_timer[i].
-						last_notify += SLEEP_TIME;
-				else
-					acct_gather_profile_timer[i].
-						last_notify = now;
-				continue;
-			}
-
-			diff = now - acct_gather_profile_timer[i].last_notify;
-			/* info ("%d is %d and %d", i, */
-			/*       acct_gather_profile_timer[i].freq, */
-			/*       diff); */
-			if (!acct_gather_profile_timer[i].freq
-			    || (diff < acct_gather_profile_timer[i].freq))
-				continue;
-			if (!acct_gather_profile_test())
-				break;	/* Shutting down */
-			debug2("profile signaling type %s",
-			       acct_gather_profile_type_t_name(i));
-
-			/* signal poller to start */
-			slurm_mutex_lock(&acct_gather_profile_timer[i].
-					 notify_mutex);
-			slurm_cond_signal(
-				&acct_gather_profile_timer[i].notify);
-			slurm_mutex_unlock(&acct_gather_profile_timer[i].
-					   notify_mutex);
-			acct_gather_profile_timer[i].last_notify = now;
-		}
-		slurm_mutex_unlock(&g_context_lock);
-
-		/*
-		 * Sleep until the next second interval, or until signaled
-		 * to shutdown by acct_gather_profile_fini().
-		 */
-
-		abs.tv_sec += 1;
-		slurm_mutex_lock(&timer_thread_mutex);
-		slurm_cond_timedwait(&timer_thread_cond, &timer_thread_mutex,
-				     &abs);
-		slurm_mutex_unlock(&timer_thread_mutex);
-	}
-
-	return NULL;
-}
+ static void *_timer_thread(void *args)
+ {
+	 int i, now, diff;
+	 struct timeval tvnow;
+	 struct timespec abs;
+ 
+ #if HAVE_SYS_PRCTL_H
+	 if (prctl(PR_SET_NAME, "acctg_prof", NULL, NULL, NULL) < 0) {
+		 error("%s: cannot set my name to %s %m",
+			   __func__, "acctg_prof");
+	 }
+ #endif
+ #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	 acct_gather_rank_t * rank_stepd = (acct_gather_rank_t *) args;
+ #endif
+	 /* setup timer */
+	 gettimeofday(&tvnow, NULL);
+	 abs.tv_sec = tvnow.tv_sec;
+	 abs.tv_nsec = tvnow.tv_usec * 1000;
+ 
+	 while (init_run && acct_gather_profile_test()) {
+		 slurm_mutex_lock(&g_context_lock);
+		 now = time(NULL);
+ 
+ #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		 for (i=0; i<PROFILE_CNT + 1; i++) {
+			 if(i < PROFILE_CNT) {
+				 if (acct_gather_suspend_test()) {
+					 /* Handle suspended time as if it
+					 * didn't happen */
+					 if (!acct_gather_profile_timer[i].freq)
+						 continue;
+					 if (acct_gather_profile_timer[i].last_notify)
+						 acct_gather_profile_timer[i].
+							 last_notify += SLEEP_TIME;
+					 else
+						 acct_gather_profile_timer[i].
+							 last_notify = now;
+					 continue;
+				 }
+ 
+				 diff = now - acct_gather_profile_timer[i].last_notify;
+				 /* info ("%d is %d and %d", i, */
+				 /*       acct_gather_profile_timer[i].freq, */
+				 /*       diff); */
+				 if (!acct_gather_profile_timer[i].freq
+					 || (diff < acct_gather_profile_timer[i].freq))
+					 continue;
+				 if (!acct_gather_profile_test())
+					 break;	/* Shutting down */
+				 debug2("profile signaling type %s",
+					 acct_gather_profile_type_t_name(i));
+ 
+				 /* signal poller to start */
+				 slurm_mutex_lock(&acct_gather_profile_timer[i].
+						 notify_mutex);
+				 slurm_cond_signal(
+					 &acct_gather_profile_timer[i].notify);
+				 slurm_mutex_unlock(&acct_gather_profile_timer[i].
+						 notify_mutex);
+				 acct_gather_profile_timer[i].last_notify = now;
+			 } else {
+				 if (acct_gather_suspend_test()) {
+					 /* Handle suspended time as if it
+						 * didn't happen */
+					 if (!acct_gather_profile_timer_watch_dog.freq)
+						 continue;
+					 if (acct_gather_profile_timer_watch_dog.last_notify)
+						 acct_gather_profile_timer_watch_dog.
+							 last_notify += SLEEP_TIME;
+					 else
+						 acct_gather_profile_timer_watch_dog.
+							 last_notify = now;
+					 continue;
+				 }
+				 diff = now - acct_gather_profile_timer_watch_dog.last_notify;
+ 
+				 /* info ("%d is %d and %d", i, */
+				 /*       acct_gather_profile_timer[i].freq, */
+				 /*       diff); */
+				 if(!acct_gather_profile_timer_watch_dog.freq)
+					 continue;
+ 
+				 if(((rank_stepd->init_time > 0) && (!init_watch_dog))) {
+					 if(diff < (acct_gather_profile_timer_watch_dog.freq + rank_stepd->init_time))
+						 continue;
+				 } else if ((diff < acct_gather_profile_timer_watch_dog.freq))
+					 continue;
+ 
+				 if((!init_watch_dog) && (acct_gather_profile_timer_watch_dog.last_notify != 0))
+						 init_watch_dog = true;
+ 
+				 if (!acct_gather_profile_test())
+					 break;	/* Shutting down */
+ 
+				 /* signal poller to start */
+				 slurm_mutex_lock(&acct_gather_profile_timer_watch_dog.
+							 notify_mutex);
+				 slurm_cond_signal(
+					 &acct_gather_profile_timer_watch_dog.notify);
+				 slurm_mutex_unlock(&acct_gather_profile_timer_watch_dog.
+							 notify_mutex);
+				 acct_gather_profile_timer_watch_dog.last_notify = now;
+			 }
+ 
+		 }
+ #else
+		 for (i=0; i<PROFILE_CNT; i++) {
+			 if (acct_gather_suspend_test()) {
+				 /* Handle suspended time as if it
+				  * didn't happen */
+				 if (!acct_gather_profile_timer[i].freq)
+					 continue;
+				 if (acct_gather_profile_timer[i].last_notify)
+					 acct_gather_profile_timer[i].
+						 last_notify += SLEEP_TIME;
+				 else
+					 acct_gather_profile_timer[i].
+						 last_notify = now;
+				 continue;
+			 }
+ 
+			 diff = now - acct_gather_profile_timer[i].last_notify;
+			 /* info ("%d is %d and %d", i, */
+			 /*       acct_gather_profile_timer[i].freq, */
+			 /*       diff); */
+			 if (!acct_gather_profile_timer[i].freq
+				 || (diff < acct_gather_profile_timer[i].freq))
+				 continue;
+			 if (!acct_gather_profile_test())
+				 break;	/* Shutting down */
+			 debug2("profile signaling type %s",
+					acct_gather_profile_type_t_name(i));
+ 
+			 /* signal poller to start */
+			 slurm_mutex_lock(&acct_gather_profile_timer[i].
+					  notify_mutex);
+			 slurm_cond_signal(
+				 &acct_gather_profile_timer[i].notify);
+			 slurm_mutex_unlock(&acct_gather_profile_timer[i].
+						notify_mutex);
+			 acct_gather_profile_timer[i].last_notify = now;
+ 
+			 
+		 }
+ #endif
+		 slurm_mutex_unlock(&g_context_lock);
+ 
+		 /*
+		  * Sleep until the next second interval, or until signaled
+		  * to shutdown by acct_gather_profile_fini().
+		  */
+ 
+		 abs.tv_sec += 1;
+		 slurm_mutex_lock(&timer_thread_mutex);
+		 slurm_cond_timedwait(&timer_thread_cond, &timer_thread_mutex,
+					  &abs);
+		 slurm_mutex_unlock(&timer_thread_mutex);
+	 }
+ #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
+	 if(rank_stepd) {
+		 xfree(rank_stepd->watch_dog_script);
+		 xfree(rank_stepd);
+	 }
+ #endif
+	 return NULL;
+ }
 
 extern int acct_gather_profile_init(void)
 {
@@ -615,7 +728,12 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 
 	(*(ops.get))(ACCT_GATHER_PROFILE_RUNNING, &profile);
 	xassert(profile != ACCT_GATHER_PROFILE_NOT_SET);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	memset(&acct_gather_profile_timer_watch_dog, 0,
+		       sizeof(acct_gather_profile_timer_t));
+	slurm_cond_init(&acct_gather_profile_timer_watch_dog.notify, NULL);
+	slurm_mutex_init(&acct_gather_profile_timer_watch_dog.notify_mutex);
+#endif
 	for (i=0; i < PROFILE_CNT; i++) {
 		memset(&acct_gather_profile_timer[i], 0,
 		       sizeof(acct_gather_profile_timer_t));
@@ -645,6 +763,15 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 			} 
 			jobacct_gather_startpoll(
 				acct_gather_profile_timer[i].freq, step_rank);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+			if(step_rank.enable_watchdog) {
+				/*set the frequency of new threads*/
+				_set_freq_watch_dog(step_rank);
+				
+				jobacct_gather_watchdog(
+					acct_gather_profile_timer_watch_dog.freq, step_rank);
+			}
+#endif
 #endif
 			break;
 		case PROFILE_FILESYSTEM:
@@ -680,8 +807,17 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 		}
 	}
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	/* create polling thread */
-	slurm_thread_create(&timer_thread_id, _timer_thread, NULL);
+	acct_gather_rank_t *load_args = xmalloc(sizeof(acct_gather_rank_t));
+	load_args->enable_watchdog  = true;
+	load_args->watch_dog_script = xstrdup(step_rank.watch_dog_script);
+	load_args->period           = step_rank.period;
+	load_args->init_time        = step_rank.init_time;
+	load_args->style_step       = step_rank.style_step;
+	slurm_thread_create(&timer_thread_id, _timer_thread, load_args);
+#endif
+
 
 	debug3("acct_gather_profile_startpoll dynamic logging enabled");
 

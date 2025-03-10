@@ -95,6 +95,9 @@ typedef struct env_options {
 	char *account;          /* job's account */
 	char *qos;              /* job's qos */
 	char *resv_name;        /* job's reservation */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;        /*submit job's watch dog */
+#endif
 } env_t;
 
 

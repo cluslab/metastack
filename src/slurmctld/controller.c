@@ -902,7 +902,9 @@ int main(int argc, char **argv)
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 	cache_queue_fini();
 #endif
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	watch_dog_fini();
+#endif
 	/*
 	 * Since pidfile is created as user root (its owner is
 	 *   changed to SlurmUser) SlurmUser may not be able to

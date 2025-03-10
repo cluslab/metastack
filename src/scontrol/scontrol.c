@@ -112,6 +112,10 @@ static void	_fetch_token(int argc, char **argv);
 static int	_get_command(int *argc, char **argv);
 static void     _ping_slurmctld(uint32_t control_cnt, char **control_machine);
 static void	_print_config(char *config_param);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static void _print_config_watchdog(char *config_param);
+slurm_ctl_conf_info_msg_watch_dog_t *old_slurm_watch_dog_ptr = NULL;
+#endif
 static void     _print_daemons(void);
 static void     _print_aliases(char* node_hostname);
 static void	_print_ping(void);
@@ -579,9 +583,111 @@ static void _write_config(char *file_name)
 		slurm_write_ctl_conf (slurm_ctl_conf_ptr,
 				      node_info_ptr,
 				      part_info_ptr);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		int error_code1 = SLURM_SUCCESS;
+		slurm_ctl_conf_info_msg_watch_dog_t  *slurm_watch_dog_ptr = NULL;
+		//watch_dog_record_t *watch_dog_ptr = NULL;    /* the watch dog records */
+
+		if (old_slurm_watch_dog_ptr) {
+			old_slurm_watch_dog_ptr->last_update = (time_t) 0;
+			error_code1 = slurm_load_ctl_conf_watch_dog (
+					old_slurm_watch_dog_ptr->last_update,
+					&slurm_watch_dog_ptr);
+
+			if (error_code1 == SLURM_SUCCESS)
+				slurm_free_ctl_conf_watch_dog(old_slurm_watch_dog_ptr);
+			else if (slurm_get_errno () == SLURM_NO_CHANGE_IN_DATA) {
+				slurm_watch_dog_ptr = old_slurm_watch_dog_ptr;
+				error_code1 = SLURM_SUCCESS;
+				if (quiet_flag == -1) {
+					printf ("slurm_load_ctl_conf_watch_dog no change "
+						"in data\n");
+				}
+			}
+		} else
+			error_code1 = slurm_load_ctl_conf_watch_dog ((time_t) NULL,
+							&slurm_watch_dog_ptr);
+
+		if (error_code1) {
+			exit_code = 1;
+			if (quiet_flag != 1)
+				slurm_perror ("slurm_load_ctl_conf_watch_dog error");
+		} else {
+			old_slurm_watch_dog_ptr = slurm_watch_dog_ptr;
+		}
+
+			/* send the info off to be written */
+		slurm_write_ctl_conf (slurm_ctl_conf_ptr,
+						node_info_ptr,
+						part_info_ptr,
+						slurm_watch_dog_ptr);
+#endif
 	}
 }
 
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/* printf watch dog parameter printing */
+static void
+_print_config_watchdog(char *config_param)
+{
+	int error_code, print_cnt = 0;
+	int i = 0;
+	slurm_ctl_conf_info_msg_watch_dog_t  *slurm_watch_dog_ptr = NULL;
+    watch_dog_record_t *watch_dog_ptr = NULL;    /* the watch dog records */
+
+	if (old_slurm_watch_dog_ptr) {
+		old_slurm_watch_dog_ptr->last_update = (time_t) 0;
+		error_code = slurm_load_ctl_conf_watch_dog (
+				old_slurm_watch_dog_ptr->last_update,
+				&slurm_watch_dog_ptr);
+
+		if (error_code == SLURM_SUCCESS)
+			slurm_free_ctl_conf_watch_dog(old_slurm_watch_dog_ptr);
+		else if (slurm_get_errno () == SLURM_NO_CHANGE_IN_DATA) {
+			slurm_watch_dog_ptr = old_slurm_watch_dog_ptr;
+			error_code = SLURM_SUCCESS;
+			if (quiet_flag == -1) {
+				printf ("slurm_load_ctl_conf_watch_dog no change "
+					"in data\n");
+			}
+		}
+	}
+	else
+		error_code = slurm_load_ctl_conf_watch_dog ((time_t) NULL,
+						  &slurm_watch_dog_ptr);
+
+	if (error_code) {
+		exit_code = 1;
+		if (quiet_flag != 1)
+			slurm_perror ("slurm_load_ctl_conf_watch_dog error");
+	}
+	else
+		old_slurm_watch_dog_ptr = slurm_watch_dog_ptr;
+
+	if(slurm_watch_dog_ptr) {
+		watch_dog_ptr = slurm_watch_dog_ptr->watch_dog_array;
+		if (error_code == SLURM_SUCCESS) {
+			for (i = 0; i < slurm_watch_dog_ptr->record_count; i++) {
+				if (config_param &&
+					xstrcmp (config_param, watch_dog_ptr[i].watch_dog) != 0)
+					continue;
+				print_cnt++;
+
+				slurm_print_watch_dog_conf(stdout, &watch_dog_ptr[i],
+											one_liner ) ;								
+				if (config_param)
+					break;
+			}
+			fprintf(stdout, "\n");
+		}
+	}
+
+	if (print_cnt == 0) {
+		printf ("No watchdog present in the system or no match found for the specified name.\n");
+	}
+}
+#endif
 /*
  * _print_config - print the specified configuration parameter and value
  * IN config_param - NULL to print all parameters and values
@@ -1881,6 +1987,10 @@ static void _show_it(int argc, char **argv)
 #endif
 	} else if (xstrncasecmp(tag, "config", MAX(tag_len, 1)) == 0) {
 		_print_config (val);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	} else if (xstrncasecmp(tag, "watchdog", MAX(tag_len, 5)) == 0) {
+		_print_config_watchdog (val);
+#endif
 	} else if (xstrncasecmp(tag, "daemons", MAX(tag_len, 1)) == 0) {
 		if (val) {
 			exit_code = 1;

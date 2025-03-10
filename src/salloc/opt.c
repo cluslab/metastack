@@ -325,6 +325,9 @@ env_vars_t env_vars[] = {
 #ifdef __METASTACK_LOAD_ABNORMAL
   { "SALLOC_JOB_MONITOR", LONG_OPT_JOB_MONITOR },
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+  { "SALLOC_JOB_CUSTOM", LONG_OPT_JOB_CUSTOM },
+#endif
   { NULL }
 };
 

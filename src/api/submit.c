@@ -68,7 +68,9 @@ extern int slurm_submit_batch_job(job_desc_msg_t *req,
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	/*
 	 * set Node and session id for this request
 	 */
@@ -119,7 +121,9 @@ extern int slurm_submit_batch_het_job(List job_req_list,
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	/*
 	 * set session id for this request
 	 */

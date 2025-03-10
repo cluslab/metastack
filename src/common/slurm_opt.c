@@ -1231,6 +1231,20 @@ static slurm_cli_opt_t slurm_opt_cpus_per_npu = {
 };
 #endif
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+COMMON_STRING_OPTION(watch_dog);
+static slurm_cli_opt_t slurm_opt_custom = {
+	.name = "watch-dog",
+	.has_arg = required_argument,
+	.val = LONG_OPT_JOB_CUSTOM,
+	.set_func = arg_set_watch_dog,
+	.set_func_data = arg_set_data_watch_dog,
+	.get_func = arg_get_watch_dog,
+	.reset_func = arg_reset_watch_dog,
+	.reset_each_pass = true,
+};
+#endif
+
 static int arg_set_cpus_per_task(slurm_opt_t *opt, const char *arg)
 {
 	int old_cpus_per_task = opt->cpus_per_task;
@@ -5725,6 +5739,9 @@ static const slurm_cli_opt_t *common_options[] = {
 	&slurm_opt_whole,
 	&slurm_opt_wrap,
 	&slurm_opt_x11,
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	&slurm_opt_custom,	
+#endif
 	NULL /* END */
 };
 
@@ -6742,7 +6759,10 @@ extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 	job_desc->cluster_features = xstrdup(opt_local->c_constraint);
 	job_desc->comment = xstrdup(opt_local->comment);
 	job_desc->req_context = xstrdup(opt_local->context);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	/*salloc sbatch submit job*/
+	job_desc->watch_dog = xstrdup(opt_local->watch_dog);
+#endif
 	if (set_defaults || slurm_option_isset(opt_local, "contiguous"))
 		job_desc->contiguous = opt_local->contiguous;
 	else

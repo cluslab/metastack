@@ -227,6 +227,9 @@ enum {
 #ifdef __METASTACK_LOAD_ABNORMAL
 	LONG_OPT_JOB_MONITOR,
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	LONG_OPT_JOB_CUSTOM,	
+#endif
 	LONG_OPT_ENUM_END
 };
 
@@ -501,6 +504,9 @@ typedef struct {
 	char *efname;			/* error file name		*/
 	char *ifname;			/* input file name		*/
 	char *ofname;			/* output file name		*/
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;  
+#endif
 
 } slurm_opt_t;
 

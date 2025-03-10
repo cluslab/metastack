@@ -68,6 +68,9 @@ extern bitstr_t *idle_node_bitmap __attribute__((weak_import));
 slurm_conf_t slurm_conf;
 node_record_t **node_record_table_ptr;
 List part_list;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+List watch_dog_list; 
+#endif
 List job_list;
 int node_record_count;
 time_t last_node_update;

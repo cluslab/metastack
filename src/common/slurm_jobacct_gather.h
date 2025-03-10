@@ -198,6 +198,11 @@ typedef struct {
 	time_t node_end;
 	uint64_t node_alloc_cpu;
     uint64_t timer;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	pid_t *pids;
+	int npids;
+	bool update;
+#endif
 } write_t;
 
 typedef struct {
@@ -211,6 +216,10 @@ typedef struct {
 	uint64_t vmem_step;
 	uint64_t step_pages;
 	time_t start;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	pid_t *pids;
+	int   npids;
+#endif
 } collection_t;
 extern collection_t share_data;
 
@@ -247,6 +256,11 @@ extern step_gather_t step_gather;
 
 extern int jobacct_gather_init(void); /* load the plugin */
 extern int jobacct_gather_fini(void); /* unload the plugin */
+
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern int jobacct_gather_watchdog(int frequency, acct_gather_rank_t jobinfo);
+#endif
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int  jobacct_gather_startpoll(uint16_t frequency, acct_gather_rank_t job_set);

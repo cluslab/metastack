@@ -2237,7 +2237,15 @@ static int _spawn_prolog_stepd(slurm_msg_t *msg)
 						  sizeof(uint16_t));
 	launch_req->uid			= req->uid;
 	launch_req->user_name		= req->user_name;
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	launch_req->watch_dog			= req->watch_dog;
+	launch_req->watch_dog_script	= req->watch_dog_script;
+	launch_req->init_time			= req->init_time;
+	launch_req->period	= req->period;
+	launch_req->enable_all_nodes	= req->enable_all_nodes;
+	launch_req->enable_all_stepds	= req->enable_all_stepds;
+	launch_req->style_step			= req->style_step;
+#endif
 	/*
 	 * determine which node this is in the allocation and if
 	 * it should setup the x11 forwarding or not

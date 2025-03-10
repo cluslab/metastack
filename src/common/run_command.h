@@ -101,6 +101,10 @@ extern int run_command_count(void);
  */
 extern char *run_command(run_command_args_t *run_command_args);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern pid_t run_watch_dog_command(run_command_args_t *args, pid_t* cpid, gid_t gid, uid_t uid, bool send_terminate);
+extern bool run_watch_dog_wait(pid_t* cpid, bool send_terminate);
+#endif
 /*
  * run_command_waitpid_timeout()
  *
