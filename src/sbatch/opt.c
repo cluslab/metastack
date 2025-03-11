@@ -331,6 +331,9 @@ env_vars_t env_vars[] = {
 #ifdef __METASTACK_LOAD_ABNORMAL
   { "SBATCH_JOB_MONITOR", LONG_OPT_JOB_MONITOR },
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+  { "SBATCH_JOB_CUSTOM", LONG_OPT_JOB_CUSTOM },
+#endif   
   { NULL }
 };
 
@@ -491,6 +494,11 @@ extern void process_options_second_pass(int argc, char **argv, int *argc_off,
 	/* set options from command line */
 	*argc_off = _set_options(argc, argv);
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if (opt.predict_job != 0) {
+		opt.predict_job = -1;
+    }
+#endif
 
 	if (cli_filter_g_pre_submit(&opt, het_job_inx)) {
 		error("cli_filter plugin terminated with error");
@@ -1038,7 +1046,10 @@ static bool _opt_verify(void)
 	else if (opt.ntasks_per_npu != NO_VAL)
 		het_job_env.ntasks_per_npu = opt.ntasks_per_npu;
 #endif
-
+// #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+// 	if (opt.watch_dog)
+// 		setenvf(NULL, "SBATCH_JOB_CUSTOM", "%s", opt.watch_dog);
+// #endif
 	if (opt.ntasks_per_node != NO_VAL)
 		het_job_env.ntasks_per_node = opt.ntasks_per_node;
 
@@ -1082,7 +1093,10 @@ static bool _opt_verify(void)
 	if (opt.abnormal_dete)
 		setenvf(NULL, "SLURM_JOB_MONITOR", "%s", opt.abnormal_dete);
 #endif
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if (opt.watch_dog)
+		setenvf(NULL, "SBATCH_JOB_CUSTOM", "%s", opt.watch_dog);
+#endif
 #ifdef HAVE_NATIVE_CRAY
 	if (opt.network && opt.shared)
 		fatal("Requesting network performance counters requires "
@@ -1267,6 +1281,9 @@ static void _usage(void)
 "              [--cpus-per-npu=n] [--npus=n] [--npu-bind=...] [--npu-freq=...]\n"
 "              [--npus-per-node=n] [--npus-per-socket=n]  [--npus-per-task=n]\n"
 "              [--mem-per-npu=MB]\n"
+#endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+"			   [--watch-dog]\n"
 #endif
 "              executable [args...]\n");
 }

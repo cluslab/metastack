@@ -496,6 +496,10 @@ extern char *default_cache_part_name;		/* name of default partition */
 #endif
 
 extern List part_list;			/* list of part_record entries */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern List watch_dog_list;			/* watch dog list */
+extern time_t last_watch_dog_update;	/* time of last update to watch_dog records */
+#endif
 extern time_t last_part_update;		/* time of last part_list update */
 extern part_record_t default_part;	/* default configuration values */
 extern char *default_part_name;		/* name of default partition */
@@ -716,6 +720,18 @@ struct job_details {
 	char *x11_magic_cookie;		/* x11 magic cookie */
 	char *x11_target;		/* target host, or socket if port == 0 */
 	uint16_t x11_target_port;	/* target TCP port on alloc_node */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	char *watch_dog_script;		/* location of the script */
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period;  
+	bool enable_all_nodes;    
+	bool enable_all_stepds;   
+	uint32_t style_step;     /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/
+#endif
 };
 
 typedef struct job_array_struct {
@@ -1175,6 +1191,18 @@ typedef struct {
 	char *tres_per_node;		/* semicolon delimited list of TRES=# values */
 	char *tres_per_socket;		/* semicolon delimited list of TRES=# values */
 	char *tres_per_task;		/* semicolon delimited list of TRES=# values */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	char *watch_dog_script;		/* location of the script */
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period;  
+	bool enable_all_nodes;    
+	bool enable_all_stepds;   
+	uint32_t style_step;     /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/
+#endif
 } step_record_t;
 
 typedef struct {
@@ -1335,6 +1363,16 @@ extern resource_allocation_response_msg_t *build_job_info_resp(
  */
 extern part_record_t *create_part_record(const char *name);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * create_watch_dog_record - create a partition record
+ * RET a pointer to the record or NULL if error
+ * NOTE: the record's values are initialized to those of default_watch_dog
+ * NOTE: allocates memory that should be xfreed with delete_watch_dog
+ * 
+ */
+watch_dog_record_t *create_watch_dog_record(const char *name);
+#endif
 /*
  * build_part_bitmap - update the total_cpus, total_nodes, and node_bitmap
  *	for the specified partition, also reset the partition pointers in
@@ -1704,6 +1742,15 @@ extern node_record_t *find_first_node_record(bitstr_t *node_bitmap);
  * RET pointer to partition or NULL if not found
  */
 extern part_record_t *find_part_record(char *name);
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * find_watch_dog_record - find a record for watch dog with specified name
+ * IN name - name of the desired partition
+ * RET pointer to watch dog or NULL if not found
+ */
+watch_dog_record_t *find_watch_dog_record(char *name);
+#endif
 
 /*
  * find_step_record - return a pointer to the step record with the given
@@ -2239,6 +2286,9 @@ int list_compare_config (void *config_entry1, void *config_entry2);
  */
 extern int list_find_feature(void *feature_entry, void *key);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+int list_find_watch_dog(void *x, void *key);
+#endif
 /*
  * list_find_part - find an entry in the partition list, see common/list.h
  *	for documentation
@@ -2565,6 +2615,20 @@ extern int pack_ctld_job_step_info_response_msg(
 	slurm_step_id_t *step_id, uid_t uid, uint16_t show_flags,
 	buf_t *buffer, uint16_t protocol_version);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+	* pack_all_watch_dog - dump all watch dog information for all partitions in
+	*	machine independent form (for network transmission)
+	* OUT buffer_ptr - the pointer is set to the allocated buffer.
+	* OUT buffer_size - set to size of the buffer in bytes
+	* IN uid - uid of user making request (for watch dog filtering)
+	* IN protocol_version - slurm protocol version of client
+	* global: watch_dog_list - global list of watch dog records
+	* NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+	*/
+extern void pack_all_watch_dog(char **buffer_ptr, int *buffer_size,
+					uid_t uid, uint16_t protocol_version);
+#endif
 /*
  * pack_all_part - dump all partition information for all partitions in
  *	machine independent form (for network transmission)
@@ -2596,7 +2660,10 @@ extern void pack_all_part(char **buffer_ptr, int *buffer_size,
 extern void pack_job(job_record_t *dump_job_ptr, uint16_t show_flags,
 		     buf_t *buffer, uint16_t protocol_version, uid_t uid,
 		     bool has_qos_lock);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*for scontrol show watchdog*/
+void pack_watch_dog(watch_dog_record_t *watch_dog_ptr, buf_t *buffer, uint16_t protocol_version);
+#endif
 /*
  * pack_part - dump all configuration information about a specific partition
  *	in machine independent form (for network transmission)
@@ -2662,6 +2729,10 @@ extern part_record_t **build_visible_parts_user(slurmdb_user_rec_t *user_ret,
 				bool skip, bool locked);
 #endif
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+//extern watch_dog_record_t **build_visible_watch_dogs(uid_t uid, bool skip) ;
+extern void watch_dog_fini (void);
+#endif
 /*
  * build_visible_parts - returns an array with pointers to partitions visible
  * to user based on partition Hidden and AllowedGroups properties.
@@ -3156,6 +3227,13 @@ extern int validate_group(part_record_t *part_ptr, uid_t run_uid);
 extern int validate_job_create_req(job_desc_msg_t * job_desc, uid_t submit_uid,
 				   char **err_msg);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * _get_job_watch_dogs_and_check - validate that any jobs or stepds that 
+ *	should be has watch dog in slurm.conf
+ */
+extern int _get_job_watch_dogs_and_check(char *job_desc_watchdog, watch_dog_record_t **watch_dog_ptr, char **err_msg);
+#endif
 /*
  * validate_jobs_on_node - validate that any jobs that should be on the node
  *	are actually running, if not clean up the job records and/or node

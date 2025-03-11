@@ -176,6 +176,9 @@ hv_to_job_desc_msg(HV *hv, job_desc_msg_t *job_desc)
 	FETCH_FIELD(hv, job_desc, std_in, charp, FALSE);
 	FETCH_FIELD(hv, job_desc, std_out, charp, FALSE);
 	FETCH_FIELD(hv, job_desc, wckey, charp, FALSE);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	FETCH_FIELD(hv, job_desc, watch_dog, charp, FALSE);
+#endif
 	return 0;
 }
 

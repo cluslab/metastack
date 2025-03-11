@@ -63,6 +63,10 @@ static int command_shutdown = 0;
 static int child_proc_count = 0;
 static pthread_mutex_t proc_count_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static int child_proc_watch_dog_count = 0;
+static pthread_mutex_t proc_watch_dog_count_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 #define MAX_POLL_WAIT 500
 
 extern void run_command_add_to_script(char **script_body, char *new_str)
@@ -356,6 +360,117 @@ extern char *run_command(run_command_args_t *args)
 	return resp;
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern bool run_watch_dog_wait(pid_t* cpid, bool send_terminate)
+{
+	int status = 0;
+	if(*cpid == 0)
+		return true;
+	slurm_mutex_lock(&proc_watch_dog_count_mutex);
+	
+	if(child_proc_watch_dog_count > 0) {
+		/* Kill immediately if the script isn't exiting normally. */
+		if (send_terminate) {
+			_kill_pg(*cpid);
+			waitpid(*cpid, &status, 0);
+			child_proc_watch_dog_count-- ;
+			*cpid = 0;
+			slurm_mutex_unlock(&proc_watch_dog_count_mutex);
+			return false;
+		}
+
+		pid_t tmp = *cpid;
+		pid_t result = waitpid(tmp, &status, WNOHANG);
+		if (result == 0) {
+			/*the child process is still running.*/
+		} else if (result == *cpid) {
+			/*child process has exited, handling exit status.*/ 
+			child_proc_watch_dog_count--;
+			*cpid = 0;
+		} else {
+			if (!(errno == EINTR)) {
+				debug("waitpid: %m");
+				child_proc_watch_dog_count--;
+				*cpid = 0;
+			} 
+		}
+	}
+
+	if(!(child_proc_watch_dog_count == 0) || send_terminate) {
+		slurm_mutex_unlock(&proc_watch_dog_count_mutex);
+		return false;
+	}
+	slurm_mutex_unlock(&proc_watch_dog_count_mutex);
+
+	return true;
+}
+
+extern int run_watch_dog_command(run_command_args_t *args, pid_t* cpid, gid_t gid, uid_t uid, bool send_terminate )
+{
+
+	if ((args->script_path == NULL) || (args->script_path[0] == '\0')) {
+		error("%s: no script specified", __func__);
+		*(args->status) = 127;
+		return -1;
+	}
+	if (args->script_path[0] != '/') {
+		error("%s: %s is not fully qualified pathname (%s)",
+				__func__, args->script_type, args->script_path);
+		*(args->status) = 127;
+		return -1;
+	}
+	if (access(args->script_path, R_OK | X_OK) < 0) {
+		error("%s: %s can not be executed (%s) %m",
+				__func__, args->script_type, args->script_path);
+		*(args->status) = 127;
+		return -1;
+	}
+	slurm_mutex_lock(&proc_watch_dog_count_mutex);
+	child_proc_watch_dog_count++;
+	slurm_mutex_unlock(&proc_watch_dog_count_mutex);
+
+	if ((*cpid = fork()) == 0) {
+		/*
+		* container_g_join() needs to be called in the child process
+		* to avoid a race condition if this process makes a file
+		* before we add the pid to the container in the parent.
+		*/
+		if (args->container_join &&
+			((*(args->container_join))(args->job_id, getuid()) !=
+				SLURM_SUCCESS))
+			error("container_g_join(%u): %m", args->job_id);
+	
+		closeall(0);
+		setpgid(0, 0);
+		/*
+			* sync euid -> ruid, egid -> rgid to avoid issues with fork'd
+			* processes using access() or similar calls.
+			*/
+		if (setresgid(gid, gid, -1)) {
+			error("%s: Unable to setresgid()", __func__);
+			_exit(127);
+		}
+		if (setresuid(uid, uid, -1)) {
+			error("%s: Unable to setresuid()", __func__);
+			_exit(127);
+		}
+
+		if (!args->env)
+			execv(args->script_path, args->script_argv);
+		else
+			execve(args->script_path, args->script_argv, args->env);
+
+		error("%s: execv(%s): %m", __func__, args->script_path);
+		_exit(0);
+	} else if (*cpid < 0) {
+		error("%s: fork(): %m", __func__);
+		slurm_mutex_lock(&proc_watch_dog_count_mutex);
+		child_proc_watch_dog_count--;
+		slurm_mutex_unlock(&proc_watch_dog_count_mutex);
+	}
+	return 0;
+}
+#endif
 /*
  * run_command_waitpid_timeout()
  *

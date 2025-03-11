@@ -114,6 +114,9 @@ slurm_allocate_resources (job_desc_msg_t *req,
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	/*
 	 * set Node and session id for this request
 	 */
@@ -180,7 +183,9 @@ slurm_allocate_resources_blocking (const job_desc_msg_t *user_req,
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	/* make a copy of the user's job description struct so that we
 	 * can make changes before contacting the controller */
 	req = (job_desc_msg_t *)xmalloc(sizeof(job_desc_msg_t));
@@ -442,7 +447,9 @@ List slurm_allocate_het_job_blocking(List job_req_list, time_t timeout,
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	/*
 	 * set node name and session ID for this request
 	 */
@@ -707,7 +714,9 @@ static int _job_will_run_cluster(job_desc_msg_t *req,
 	slurm_msg_t_init(&req_msg);
 	req_msg.msg_type = REQUEST_JOB_WILL_RUN;
 	req_msg.data     = req;
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	rc = slurm_send_recv_controller_msg(&req_msg, &resp_msg, cluster);
 
 	if (rc < 0)
@@ -745,6 +754,9 @@ slurm_job_step_create (job_step_create_request_msg_t *req,
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+#endif
 	req_msg.msg_type = REQUEST_JOB_STEP_CREATE;
 	req_msg.data     = req;
 

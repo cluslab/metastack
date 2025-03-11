@@ -123,6 +123,27 @@ typedef struct _expline_values_st {
 
 List conf_includes_list = NULL;
 
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+static s_p_options_t gres_options[] = {
+		{"AutoDetect", S_P_STRING},
+		{"Count", S_P_STRING},  /* Number of Gres available */
+		{"CPUs" , S_P_STRING},  /* CPUs to bind to Gres resource
+								* (deprecated, use Cores) */
+		{"Cores", S_P_STRING},  /* Cores to bind to Gres resource */
+		{"File",  S_P_STRING},  /* Path to Gres device */
+		{"Files", S_P_STRING},  /* Path to Gres device */
+		{"Flags", S_P_STRING},  /* GRES Flags */
+		{"Link",  S_P_STRING},  /* Communication link IDs */
+		{"Links", S_P_STRING},  /* Communication link IDs */
+		{"MultipleFiles", S_P_STRING}, /* list of GRES device files */
+		{"Name",  S_P_STRING},  /* Gres name */
+		{"Type",  S_P_STRING},  /* Gres type (e.g. model name) */
+		{NULL}
+};
+parsed_line_t *parsed_lines = NULL;
+int current_line_index = -1;
+#endif
+
 static bool _run_in_daemon(void)
 {
 	static bool run = false, set = false;
@@ -1054,6 +1075,178 @@ static int _parse_next_key(s_p_hashtbl_t *hashtbl,
 	return 1;
 }
 
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+static int _parse_next_key_gres(s_p_hashtbl_t *hashtbl,
+                           const char *line, char **leftover, bool ignore_new, parsed_line_t *parsed_lines, int current_line_index, int *max_lines, char *gres_node_name)
+{
+	if (hashtbl == NULL) {
+		error("%s: hashtbl is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (parsed_lines == NULL) {
+		error("%s: parsed_lines is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (max_lines == NULL) {
+		error("%s: max_lines is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (gres_node_name == NULL) {
+		error("%s: gres_node_name is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	char *key = NULL; 
+	char *value = NULL;
+	s_p_values_t *p = NULL;
+	char *new_leftover = NULL;
+	slurm_parser_operator_t op;
+	if (parsed_lines[current_line_index].key){
+		key = xstrdup(parsed_lines[current_line_index].key);
+		value = xstrdup(parsed_lines[current_line_index].value);
+		op = parsed_lines[current_line_index].op;
+		new_leftover = xstrdup(parsed_lines[current_line_index].new_leftover);
+		if (strcasecmp(key, "NodeName") == 0) {
+			if (parsed_lines[current_line_index].hostlist) {
+				int found = hostlist_find(parsed_lines[current_line_index].hostlist, gres_node_name) >= 0;
+				if (!found) {
+					xfree(key);
+					xfree(value);
+					xfree(new_leftover);
+					return 1; 
+				}
+			}
+		}
+		if (strcasecmp(key, "AutoDetect") == 0) {
+				xfree(key);
+				xfree(value);
+				xfree(new_leftover);
+				return 1;
+		}
+		if ((p = _conf_hashtbl_lookup(hashtbl, key))) {
+			p->operator = op;
+			if (_handle_keyvalue_match(p, value, new_leftover,
+									&new_leftover) == -1) {
+				xfree(key);
+				xfree(value);
+				xfree(new_leftover);
+				*leftover = (char *)line;
+				slurm_seterrno(EINVAL);
+				return 0;
+			}
+			*leftover = new_leftover;
+		} else if (ignore_new) {
+			debug("%s: Parsing error at unrecognized key: %s",
+				__func__, key);
+			*leftover = (char *)line;
+		} else {
+			error("%s: Parsing error at unrecognized key: %s",
+				__func__, key);
+			xfree(key);
+			xfree(value);
+			xfree(new_leftover);
+			*leftover = (char *)line;
+			slurm_seterrno(EINVAL);
+			return 0;
+		}
+		if (new_leftover) {
+			xfree(new_leftover);
+			new_leftover = NULL; 
+			(*max_lines)--; 
+		}
+		xfree(key);
+		xfree(value);
+	} else {
+		*leftover = (char *)line;
+	}
+	return 1;
+}
+#endif
+
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+/**
+* Parses the next key-value pair from a GRES configuration line.
+*
+* This function takes a line from a GRES configuration file, parses it to extract
+* a key-value pair, and stores the result in a parsed_line_t structure.  It also
+* handles unrecognized keys and manages leftover text from the line.
+*
+* hashtbl - The hash table containing valid GRES configuration keys.
+* line - The line to parse.
+* leftover - Pointer to store any leftover text from the line.
+* ignore_new - Flag to indicate whether to ignore unrecognized keys.
+* parsed - Structure to store the parsed key-value pair.
+* return 1 if the line is parsed successfully, 0 otherwise.
+*/
+static int _parse_next_gres_key(s_p_hashtbl_t *hashtbl,
+                           const char *line, char **leftover, bool ignore_new, parsed_line_t *parsed)
+{
+	if (hashtbl == NULL) {
+		error("%s: hashtbl is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (line == NULL) {
+		error("%s: line is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (parsed == NULL) {
+		error("%s: parsed is NULL", __func__);
+		return SLURM_ERROR;
+	} 
+	char *key = NULL;
+	char *value = NULL;
+	char *new_leftover = NULL;
+	slurm_parser_operator_t op;
+	if (_keyvalue_regex(hashtbl, line, &key, &value, &new_leftover, &op) == 0) {
+		if ((_conf_hashtbl_lookup(hashtbl, key))) {
+			parsed->key = xstrdup(key);
+			parsed->value = xstrdup(value);
+			parsed->new_leftover = xstrdup(new_leftover);
+			parsed->op = op;
+			parsed->hashtbl = s_p_hashtbl_create(gres_options);
+			char *leftover_tbl = xstrdup(new_leftover);
+			s_p_parse_line(parsed->hashtbl, new_leftover, &new_leftover);
+			if (strcasecmp(key, "NodeName") == 0) {
+				parsed->hostlist = hostlist_create(value);
+				if (parsed->hostlist == NULL) {
+					error("Failed to create hostlist for NodeName=%s", value);
+					xfree(parsed->key);
+					xfree(parsed->value);
+					xfree(parsed->new_leftover);
+					parsed->key = NULL;
+					parsed->value = NULL;
+					parsed->new_leftover = NULL;
+					*leftover = new_leftover;
+					return 0;
+				}
+			}
+			xfree(key);
+			xfree(value);
+			*leftover = leftover_tbl;
+			xfree(leftover_tbl);
+			return 1;
+		} else if (ignore_new) {
+			debug("%s: Parsing error at unrecognized key: %s",
+					__func__, key);
+			*leftover = (char *)line;
+		} else {
+			error("%s: Parsing error at unrecognized key: %s",
+					__func__, key);
+			xfree(key);
+			xfree(value);
+			*leftover = (char *)line;
+			slurm_seterrno(EINVAL);
+			return 0;
+		}
+		xfree(key);
+		xfree(value);
+	} else {
+		*leftover = (char *)line;
+	}
+
+	return 1;
+}
+#endif
+
 static char * _add_full_path(char *file_name, char *slurm_conf_path)
 {
 	char *path_name = NULL, *slash;
@@ -1304,6 +1497,172 @@ int s_p_parse_file(s_p_hashtbl_t *hashtbl, uint32_t *hash_val, char *filename,
 	fclose(f);
 	return rc;
 }
+
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+/*Traversing the structure array parsed_lines, parses the Gres configuration information of the current node from the structure array.
+* hashtbl - The hash table containing valid GRES configuration keys.
+* filename - The path to the GRES configuration file.
+* ignore_new - Flag to indicate whether to ignore unrecognized keys.
+* parsed_lines - Array to store the parsed lines from the file.
+* max_lines - Maximum number of lines to parse.
+* gres_node_name - The name of the node for which the GRES configuration is being parsed.
+* return SLURM_SUCCESS if the file is parsed successfully, otherwise returns SLURM_ERROR.
+*/
+int s_p_parse_file_gres(s_p_hashtbl_t *hashtbl, char *filename,
+                   bool ignore_new, parsed_line_t *parsed_lines, int max_lines, char *gres_node_name)
+{
+	if (hashtbl == NULL) {
+		error("%s: hashtbl is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (parsed_lines == NULL) {
+		error("%s: parsed_lines is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (!filename) {
+		error("%s: No filename given", __func__);
+		return SLURM_ERROR;
+	}
+	if (gres_node_name == NULL) {
+		error("%s: gres_node_name is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	char *leftover = NULL;
+	int i, rc = SLURM_SUCCESS;
+	int line_number = 1;
+	struct stat stat_buf;
+	char *line = NULL;
+	current_line_index = 0;
+	for (i = 0; ; i++) {
+		if (i == 1) {   /* Long once, on first retry */
+			error("%s: cannot stat file %s: %m, retrying in 1sec up to 60sec",
+				__func__, filename);
+		}
+		if (i >= 60){    /* Give up after 60 seconds */
+			return SLURM_ERROR;
+		}
+		if (i > 0)
+			sleep(1);
+		if (stat(filename, &stat_buf) >= 0)
+			break;
+	}
+	if (stat_buf.st_size == 0) {
+		info("s_p_parse_file_gres: file \"%s\" is empty", filename);
+		return SLURM_SUCCESS;
+	}
+
+	line = xmalloc(stat_buf.st_size + 1);
+	while (parsed_lines[current_line_index].key && max_lines > 0) {
+		if (!_parse_next_key_gres(hashtbl, line, &leftover,
+									ignore_new, parsed_lines, current_line_index, &max_lines, gres_node_name)) {
+			error("Error parsing line %d in file %s", line_number, filename);
+			rc = SLURM_ERROR;
+			continue;
+		}
+		current_line_index++;
+		line_number = current_line_index;
+	}
+
+	xfree(line);
+	return rc;
+}
+#endif
+
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+/**
+ * Parses a GRES configuration file and populates parsed_lines array with the parsed data.
+ * 
+ * This function reads a GRES configuration file, parses its contents, and stores the
+ * parsed data in parsed_lines array.
+ */
+int s_p_parse_gres_file(s_p_hashtbl_t *hashtbl, uint32_t *hash_val, char *filename,
+                   bool ignore_new, char *last_ancestor, parsed_line_t *parsed_lines, int max_parsed_lines, int *num_parsed_lines)
+{
+	if (hashtbl == NULL) {
+		error("%s: hashtbl is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (!filename) {
+		error("%s: No filename given", __func__);
+		return SLURM_ERROR;
+	}
+	if (parsed_lines == NULL) {
+		error("%s: parsed_lines is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	if (num_parsed_lines == NULL) {
+		error("%s: num_parsed_lines is NULL", __func__);
+		return SLURM_ERROR;
+	}
+	FILE *f = NULL;
+	char *leftover = NULL;
+	int i, rc = SLURM_SUCCESS;
+	int line_number = 1;
+	int merged_lines=0;
+	int inc_rc = 0;
+	struct stat stat_buf;
+	char *line = NULL;
+
+	for (i = 0; ; i++) {
+		if (i == 1) {
+			error("%s: cannot stat file %s: %m, retrying in 1sec up to 60sec",
+				__func__, filename);
+		}
+		if (i >= 60) {    /* Give up after 60 seconds */
+			return SLURM_ERROR;
+		}
+		if (i > 0) {
+			sleep(1);
+		}
+		if (stat(filename, &stat_buf) >= 0)
+			break;
+	}
+	if (stat_buf.st_size == 0) {
+		info("s_p_parse_gres_file: file \"%s\" is empty", filename);
+		return SLURM_SUCCESS;
+	}
+	f = fopen(filename, "r");
+	if (f == NULL) {
+		error("s_p_parse_gres_file: unable to read \"%s\": %m",
+			filename);
+		return SLURM_ERROR;
+	}
+
+	line = xmalloc(stat_buf.st_size + 1);
+	while ((merged_lines = _get_next_line(
+				line, stat_buf.st_size + 1, hash_val, f)) > 0) {
+
+		if (line[0] == '\0') {
+			line_number += merged_lines;
+			continue;
+		}
+
+		inc_rc = _parse_include_directive(hashtbl, hash_val,
+										line, &leftover, ignore_new,
+										filename, last_ancestor);
+		if (inc_rc == 0) {
+			if (!_parse_next_gres_key(hashtbl, line, &leftover,
+								ignore_new, &parsed_lines[*num_parsed_lines])) {
+				rc = SLURM_ERROR;
+				line_number += merged_lines;
+				continue;
+			}
+			(*num_parsed_lines)++;
+		} else if (inc_rc < 0) {
+			error("\"Include\" failed in file %s line %d",
+						filename, line_number);
+			rc = SLURM_ERROR;
+			line_number += merged_lines;
+			continue;
+		}
+		line_number += merged_lines;
+	}
+
+	xfree(line);
+	fclose(f);
+	return rc;
+}
+#endif
 
 int s_p_parse_buffer(s_p_hashtbl_t *hashtbl, uint32_t *hash_val,
 		     buf_t *buffer, bool ignore_new)

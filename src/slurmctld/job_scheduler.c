@@ -3594,6 +3594,15 @@ static batch_job_launch_msg_t *_build_launch_job_msg(job_record_t *job_ptr,
 	}
 
 	launch_msg_ptr->acctg_freq = xstrdup(job_ptr->details->acctg_freq);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	launch_msg_ptr->watch_dog = xstrdup(job_ptr->details->watch_dog);
+	launch_msg_ptr->watch_dog_script = xstrdup(job_ptr->details->watch_dog_script);
+	launch_msg_ptr->init_time = job_ptr->details->init_time;
+	launch_msg_ptr->period = job_ptr->details->period;
+	launch_msg_ptr->enable_all_nodes = job_ptr->details->enable_all_nodes;
+	launch_msg_ptr->enable_all_stepds = job_ptr->details->enable_all_stepds;
+	launch_msg_ptr->style_step = job_ptr->details->style_step;
+#endif
 	if (job_ptr->part_ptr)
 		launch_msg_ptr->partition = xstrdup(job_ptr->part_ptr->name);
 	else

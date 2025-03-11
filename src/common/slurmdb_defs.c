@@ -110,7 +110,7 @@ extern void remove_qos_hash(qos_hash_t **qos_hash, uint32_t key) {
 
 /** delete hash */
 extern void destroy_qos_hash(qos_hash_t **qos_hash) {
-	qos_hash_t *current_entry, *tmp;
+	qos_hash_t *current_entry  = NULL, *tmp  = NULL;
 
 	HASH_ITER(hh, *qos_hash, current_entry, tmp) {
 		HASH_DEL(*qos_hash, current_entry);

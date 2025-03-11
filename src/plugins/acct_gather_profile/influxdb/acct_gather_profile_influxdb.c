@@ -623,7 +623,10 @@ static int _send_data(const char *data, RPType type)
 #ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
 	char* rt_policy = NULL;
 #endif
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if(data == NULL && datastr && strlen(datastr) <= 0)
+		return rc;
+#endif
 	debug3("%s %s called", plugin_type, __func__);
 
 	/*

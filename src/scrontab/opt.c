@@ -212,4 +212,7 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 	if (opt.mem_per_npu != NO_VAL64)
 		xstrfmtcat(desc->mem_per_tres, "gres:npu:%"PRIu64, opt.mem_per_npu);
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	desc->watch_dog = xstrdup(opt.watch_dog);
+#endif
 }

@@ -479,8 +479,38 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	} else if(msg->step_id.step_id == SLURM_EXTERN_CONT)
 		step_rank.step = EXTERN_STEP;
 		
-	acct_gather_profile_startpoll(msg->acctg_freq,
-				      slurm_conf.job_acct_gather_freq, step_rank);	
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	uint32_t stepd_id = msg->step_id.step_id;
+	bool head_node = false;
+	step_rank.job_id = job->step_id.job_id;
+	step_rank.uid    = job->uid;
+	step_rank.gid	 = job->gid;
+	step_rank.watch_dog = NULL;
+	step_rank.watch_dog_script = NULL;
+	if (acct_gather_check_acct_watch_dog_task(stepd_id, &head_node, msg)) {
+		step_rank.enable_watchdog  = true;
+		step_rank.watch_dog        = xstrdup(msg->watch_dog);
+		step_rank.watch_dog_script = xstrdup(msg->watch_dog_script);
+		step_rank.period           = msg->period;
+		step_rank.init_time        = msg->init_time;
+		step_rank.style_step       = msg->style_step;
+		step_rank.head_node		   = head_node;
+
+	} else {
+		//step_rank.watch_dog_script = msg->watch_dog_script;
+		step_rank.period           = 0;
+		step_rank.init_time        = 0;
+		step_rank.enable_watchdog  = false;
+		step_rank.head_node		   = head_node;
+		//step_rank.style_step       = 0;
+	}
+
+
+acct_gather_profile_startpoll(msg->acctg_freq,
+					slurm_conf.job_acct_gather_freq, step_rank);	
+xfree(step_rank.watch_dog);
+xfree(step_rank.watch_dog_script);
+#endif
 #endif
 	job->timelimit   = (time_t) -1;
 	job->flags       = msg->flags;
@@ -594,8 +624,32 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	step_rank.step_id = job->step_id;
 	step_rank.node_alloc_cpu = job->cpus;
 	
+	#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	uint32_t stepd_id 			= job->step_id.step_id;
+	step_rank.enable_watchdog 	= false;
+	step_rank.job_id 			= job->step_id.job_id;
+	step_rank.head_node 		= true;
+	step_rank.uid				= job->uid;
+	step_rank.gid				= job->gid;
+	step_rank.watch_dog			= NULL;
+	step_rank.watch_dog_script	= NULL;
+	if (acct_gather_check_acct_watch_dog_batch(stepd_id, msg) ) {
+		step_rank.enable_watchdog  = true;
+		step_rank.watch_dog        = xstrdup(msg->watch_dog);
+		step_rank.watch_dog_script = xstrdup(msg->watch_dog_script);
+		step_rank.period           = msg->period;
+		step_rank.init_time        = msg->init_time;
+		step_rank.style_step       = msg->style_step;
+	} else {
+		step_rank.period           = 0;
+		step_rank.init_time        = 0;
+	}
+	
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
+	xfree(step_rank.watch_dog);
+	xfree(step_rank.watch_dog_script);
+#endif
 #endif
 
 	job->open_mode  = msg->open_mode;

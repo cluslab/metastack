@@ -1474,6 +1474,23 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		collect->load_flag = collect->load_flag | pid_status;
 	}
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if(collect && collect->pids) {
+		collect->npids = 0;
+		int max_watch_dog_pid = 2000;
+		int npids = 0;
+		pid_t *pids = NULL;
+		proctrack_g_get_pids(cont_id, &pids, &npids);
+
+		collect->npids = npids;
+		memset(collect->pids, 0, sizeof(int) * max_watch_dog_pid);
+		if(npids >= max_watch_dog_pid)
+			memcpy(collect->pids, pids, (sizeof(pid_t)*(max_watch_dog_pid)));	
+		else if((npids > 0) && (npids < max_watch_dog_pid))
+			memcpy(collect->pids, pids, (sizeof(pid_t)*(npids)));	
+		xfree(pids);
+	} 
+#endif
 	if (slurm_conf.job_acct_oom_kill)
 		jobacct_gather_handle_mem_limit(total_job_mem,
 						total_job_vsize);

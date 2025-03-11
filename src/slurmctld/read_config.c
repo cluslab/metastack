@@ -50,6 +50,9 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+#include <sys/time.h>
+#endif
 
 #include "src/common/assoc_mgr.h"
 #include "src/common/cpu_frequency.h"
@@ -71,6 +74,9 @@
 #include "src/common/switch.h"
 #include "src/common/xstring.h"
 #include "src/common/cgroup.h"
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+#include "src/common/parse_config.h"
+#endif
 
 #include "src/slurmctld/acct_policy.h"
 #include "src/slurmctld/burst_buffer.h"
@@ -142,6 +148,12 @@ static void _sync_nodes_to_suspended_job(job_record_t *job_ptr);
 static void _sync_part_prio(void);
 static void _update_preempt(uint16_t old_enable_preempt);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+int list_find_watch_dog(void *x, void *key);
+static void _init_watch_dog_record(watch_dog_record_t *watch_dog_ptr);
+void init_watch_dog_conf(void);
+static void _list_delete_watch_dog(void *watch_dog_entry);
+#endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 /* Global variables */
 int part_count = 0;     /* The number of all partitions */
@@ -821,6 +833,32 @@ static void _build_bitmaps(void)
 }
 
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static void _list_delete_watch_dog(void *watch_dog_entry)
+{
+	watch_dog_record_t *watch_dog_ptr;
+	watch_dog_ptr = (watch_dog_record_t *) watch_dog_entry;
+	xfree(watch_dog_ptr->watch_dog);
+	xfree(watch_dog_ptr->script);
+	xfree(watch_dog_ptr->describe);
+	xfree(watch_dog_ptr->account);
+	xfree(watch_dog_ptr);
+}
+
+/*
+ * Create a global watch dog list.
+ *
+ * This should be called before creating any watch dog entries.
+ */
+void init_watch_dog_conf(void) 
+{
+	last_watch_dog_update = time(NULL);
+	if (watch_dog_list)		/* delete defunct partitions */
+		list_flush(watch_dog_list);
+	else
+		watch_dog_list = list_create(_list_delete_watch_dog);
+}
+#endif
 /*
  * _init_all_slurm_conf - initialize or re-initialize the slurm
  *	configuration values.
@@ -836,6 +874,9 @@ static void _init_all_slurm_conf(void)
 
 	init_node_conf();
 	init_part_conf();
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	init_watch_dog_conf();
+#endif
 	init_job_conf();
 }
 
@@ -999,6 +1040,101 @@ extern void qos_list_build(char *qos, bitstr_t **qos_bits)
 	*qos_bits = tmp_qos_bitstr;
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*
+ * Sync with _init_conf_part().
+ *
+ * _init_conf_part() initializes default values from slurm.conf parameters.
+ * After parsing slurm.conf, _build_single_partitionline_info() copies
+ * slurm_conf_partition_t to part_record_t. Default values between
+ * slurm_conf_partition_t and part_record_t should stay in sync in case a
+ * part_record_t is created outside of slurm.conf parsing.
+ */
+static void _init_watch_dog_record(watch_dog_record_t *watch_dog_ptr)
+{
+	watch_dog_ptr->init_time = 0;
+	watch_dog_ptr->period = 0;
+	watch_dog_ptr->show_flags = 0;
+	watch_dog_ptr->enable_all_nodes = false;
+	watch_dog_ptr->enable_all_stepds = false;
+}
+
+/*
+ * list_find_watch_dog - find an entry in the watch dog list, see common/list.h
+ *	for documentation
+ * IN key - watch_dog name
+ * RET 1 if matches key, 0 otherwise
+ */
+int list_find_watch_dog(void *x, void *key)
+{
+	watch_dog_record_t *watch_dog_ptr = (watch_dog_record_t *) x;
+	char *watch_dog_name = (char *)key;
+
+	return (!xstrcmp(watch_dog_ptr->watch_dog, watch_dog_name));
+}
+
+/*
+ * create_watch_dog_record - create a partition record
+ * RET a pointer to the record or NULL if error
+ */
+watch_dog_record_t *create_watch_dog_record(const char *name)
+{
+	watch_dog_record_t *watch_dog_ptr = xmalloc(sizeof(*watch_dog_ptr));
+
+	last_part_update = time(NULL);
+
+	_init_watch_dog_record(watch_dog_ptr);
+	watch_dog_ptr->watch_dog = xstrdup(name);
+
+	(void) list_append(watch_dog_list, watch_dog_ptr);
+
+	return watch_dog_ptr;
+
+}
+
+/*
+ * _build_single_watchdogline_info - get a array of watch_dog_record_t
+ *	structures from the slurm.conf reader, build table, and set values
+ * RET 0 if no error, error code otherwise
+ * Note: Operates on common variables
+ * global: xxxx - global partition list pointer
+ *	xxxx - default parameters for a partition
+ */	
+static int _build_single_watchdogline_info(watch_dog_record_t *watch)
+{
+	watch_dog_record_t *watch_dog_ptr = NULL;
+
+	if (list_find_first(watch_dog_list, &list_find_watch_dog, watch->watch_dog)) {
+		error("%s: %s specified more than once, latest value used",
+		      __func__,  watch->watch_dog);
+		list_delete_first(watch_dog_list,  &list_find_watch_dog, watch->watch_dog);
+	}
+
+	watch_dog_ptr = create_watch_dog_record(watch->watch_dog);  
+	// if(watch->watch_dog)
+	// 	watch_dog_ptr->watch_dog = xstrdup(watch->watch_dog);
+
+	if(watch->script)
+		watch_dog_ptr->script = xstrdup(watch->script);
+
+	if(watch->account)
+		watch_dog_ptr->account = xstrdup(watch->account);
+
+	if(watch->describe)
+		watch_dog_ptr->describe = xstrdup(watch->describe);
+
+   	watch_dog_ptr->init_time  = watch->init_time;
+   	watch_dog_ptr->period     = watch->period;
+	watch_dog_ptr->show_flags = watch->show_flags;
+	watch_dog_ptr->enable_all_nodes = watch->enable_all_nodes;
+	watch_dog_ptr->enable_all_stepds = watch->enable_all_stepds;
+	if(!(watch_dog_ptr->watch_dog) || !(watch_dog_ptr->script))
+		error("watch dog  has invalid options, "
+			      "please check your configuration");
+
+    return 0;
+}
+#endif
 /*
  * _build_single_partitionline_info - get a array of slurm_conf_partition_t
  *	structures from the slurm.conf reader, build table, and set values
@@ -1317,6 +1453,24 @@ static bool _restore_all_partition_nodes_borrowed_info(bool reconfig, List part_
 }
 #endif
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static int _build_all_watchdog_info(void)
+{
+	watch_dog_record_t **watr_array = NULL;
+	int count = 0;
+	int i;	
+	count = slurm_conf_watch_dog_array(&watr_array);
+	if (count == 0) {
+		debug("No watch dog information available!");
+		return SLURM_ERROR;
+	}
+
+	for (i = 0; i < count; i++)
+		_build_single_watchdogline_info(watr_array[i]);
+
+	return SLURM_SUCCESS;
+}
+#endif
 /*
  * _build_all_partitionline_info - get a array of slurm_conf_partition_t
  *	structures from the slurm.conf reader, build table, and set values
@@ -1960,6 +2114,9 @@ int read_slurm_conf(int recover, bool reconfig)
 		part_list = NULL;
 		old_def_part_name = default_part_name;
 		default_part_name = NULL;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		FREE_NULL_LIST(watch_dog_list);
+#endif
 	}
 
 	_init_all_slurm_conf();
@@ -2034,6 +2191,9 @@ int read_slurm_conf(int recover, bool reconfig)
 	}
 	_handle_all_downnodes();
 	_build_all_partitionline_info();
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	_build_all_watchdog_info();
+#endif
 	if (!reconfig) {
 		restore_front_end_state(recover);
 
@@ -2624,6 +2784,105 @@ extern void update_feature_list(List feature_list, char *new_features,
 	node_features_updated = true;
 }
 
+#ifdef __METASTACK_OPT_GRES_CONFIG
+/**
+ * Removes parentheses and their contents from a given string.
+ * str IN - The input string to be modified.
+ */
+static void remove_parentheses(char *str) {
+	if (str == NULL) {
+		return; 
+	}
+	char *src, *dst;
+	src = dst = str; 
+	while (*src != '\0') { 
+		if (*src != '(') { 
+			*dst++ = *src; 
+			src++; 
+		} else { 
+			src++; 
+			while (*src != '\0' && *src != ')') {
+				src++;
+			}
+			if (*src == ')') { 
+				src++; 
+			}
+		}
+	}
+	*dst = '\0'; 
+}
+
+/**
+ * Parses the GRES count from a given GRES name string.
+ * 
+ * This function takes a GRES name string, removes any parentheses and their contents,
+ * and then parses the count of GRES resources. It assumes the GRES name is in the format
+ * "type:count" and can contain multiple entries separated by commas.
+ * gres_name IN - The GRES name string to parse.
+ * return - The total count of GRES resources.
+ */
+static int parse_gres_count(const char *gres_name) {
+	if (gres_name == NULL) {
+		error("GRES name is NULL");
+		return -1;  
+	}
+	char *gres_copy = strdup(gres_name);
+	if (!gres_copy) {
+		error("Memory allocation failed");
+		return -1;
+	}
+	remove_parentheses(gres_copy);
+	char *token = strtok(gres_copy, ",");
+	int total_count = 0;
+
+	while (token != NULL) {
+		char *last_colon = strrchr(token, ':');
+		if (last_colon != NULL) {
+			char *endptr;
+			long num = strtol(last_colon + 1, &endptr, 10);
+			if (*endptr == '\0' && endptr > last_colon + 1) {
+				total_count += (int)num;
+			} else {
+				error("Failed to parse GRES number from gres_name");
+			}
+		} else {
+			error("No colon found in gres_name");
+		}
+		token = strtok(NULL, ",");
+	}
+
+	free(gres_copy);
+	return total_count;
+}
+/**
+* Cleans up and frees memory allocated within each element of a parsed lines array.
+*
+* This function iterates through each element of the parsed_lines array and frees
+* the memory allocated for the key, value, and new_leftover fields.  It also destroys
+* any associated hash table and host list.
+*
+* parsed_lines IN - Array of parsed lines to be cleaned up.
+* max_parsed_lines IN - Number of elements in the parsed_lines array.
+*/
+static void cleanup_parsed_lines(parsed_line_t *parsed_lines, int max_parsed_lines) {
+	if (parsed_lines == NULL || max_parsed_lines < 0) {
+		return; 
+	}
+	for (int i = 0; i < max_parsed_lines; i++) {
+		xfree(parsed_lines[i].key);
+		xfree(parsed_lines[i].value);
+		xfree(parsed_lines[i].new_leftover);
+		if (parsed_lines[i].hashtbl) {
+			s_p_hashtbl_destroy(parsed_lines[i].hashtbl); 
+		}
+		if (parsed_lines[i].hostlist) {
+			hostlist_destroy(parsed_lines[i].hostlist); 
+		}
+	}
+	xfree(parsed_lines);
+}
+#endif
+
 static void _gres_reconfig(bool reconfig)
 {
 	node_record_t *node_ptr;
@@ -2636,34 +2895,119 @@ static void _gres_reconfig(bool reconfig)
 		goto grab_includes;
 	}
 
-	for (i = 0; (node_ptr = next_node(&i)); i++) {
-		if (node_ptr->gres)
-			gres_name = node_ptr->gres;
-		else
-			gres_name = node_ptr->config_ptr->gres;
-		gres_init_node_config(gres_name, &node_ptr->gres_list);
-		if (!IS_NODE_CLOUD(node_ptr))
-			continue;
+#ifdef __METASTACK_OPT_GRES_CONFIG
+	struct timeval start, end;
+	long seconds, useconds;
+	double mtime;
+	if(slurm_conf.slurmctld_load_gres){
+		int gres_number = -1;
+		int max_parsed_lines = 0;
+		int num_parsed_lines = 0;
+		char *gres_conf_file = NULL;
+		FILE *fg;
+		char ch;
+		gettimeofday(&start, NULL);
+		gres_conf_file = get_extra_conf_path("gres.conf");
+		fg = fopen(gres_conf_file, "r");
+		if (fg == NULL) {
+			error("_gres_reconfig: unable to read \"%s\": %m", gres_conf_file);
+			xfree(gres_conf_file);
+			return ;
+		}	
+		while ((ch = fgetc(fg)) != EOF) {
+			if (ch == '\n') {
+				max_parsed_lines++;
+			}
+		}
+		/* If the file is not empty and the last character is not a newline, increase the number of lines */
+		if (fseek(fg, 0, SEEK_END) == 0) {
+			if (ftell(fg) > 0) {
+				max_parsed_lines++;
+			}
+		}
+		max_parsed_lines++;
+		fclose(fg);
+		parsed_lines = xmalloc(sizeof(parsed_line_t) * max_parsed_lines);
+		if (parsed_lines == NULL) {
+			error("_gres_reconfig:Memory allocation failed");
+			return;
+		}
+		s_p_hashtbl_t *tbl;
+		tbl = gres_parse_config_file(gres_conf_file, parsed_lines, max_parsed_lines, &num_parsed_lines);
+		if (!tbl) {
+			error("Failed to parse GRES configuration file");
+			xfree(gres_conf_file); 
+			return;
+		}
+		xfree(gres_conf_file);
+		s_p_hashtbl_destroy(tbl);
+		for (i = 0; (node_ptr = next_node(&i)); i++) {
+			if (node_ptr->gres){
+				gres_name = node_ptr->gres;
+			}
+			else{
+				gres_name = node_ptr->config_ptr->gres;
+			}
+			if (gres_name == NULL) {
+				continue;
+			}
+			gres_number = parse_gres_count(gres_name);
+			gres_init_node_config(gres_name, &node_ptr->gres_list);
+			if(gres_g_node_config_loadgres(
+							node_ptr->config_ptr->cpus, node_ptr->name,
+							node_ptr->gres_list, NULL, NULL, parsed_lines, gres_number) ==SLURM_ERROR){
+				continue;
+			}	
+			gres_node_config_validate(
+				node_ptr->name, node_ptr->config_ptr->gres,
+				&node_ptr->gres, &node_ptr->gres_list,
+				node_ptr->config_ptr->threads,
+				node_ptr->config_ptr->cores,
+				node_ptr->config_ptr->tot_sockets,
+				slurm_conf.conf_flags & CTL_CONF_OR, NULL);
 
-		/*
-		 * Load in GRES for node now. By default Slurm gets this
-		 * information when the node registers for the first
-		 * time, which can take a while for a node in the cloud
-		 * to boot.
-		 */
-		gres_g_node_config_load(
-			node_ptr->config_ptr->cpus, node_ptr->name,
-			node_ptr->gres_list, NULL, NULL);
-		gres_node_config_validate(
-			node_ptr->name, node_ptr->config_ptr->gres,
-			&node_ptr->gres, &node_ptr->gres_list,
-			node_ptr->config_ptr->threads,
-			node_ptr->config_ptr->cores,
-			node_ptr->config_ptr->tot_sockets,
-			slurm_conf.conf_flags & CTL_CONF_OR, NULL);
+			gres_loaded = true;
+		}
+		if (parsed_lines != NULL) {
+			cleanup_parsed_lines(parsed_lines, max_parsed_lines);
+		}
+		gettimeofday(&end, NULL);
+		seconds = end.tv_sec - start.tv_sec;
+		useconds = end.tv_usec - start.tv_usec;
+		mtime = (seconds * 1000) + (useconds / 1000.0);
+		debug("Slurmctld load Gres config time: %.2f ms\n", mtime);
+	}else{
+		for (i = 0; (node_ptr = next_node(&i)); i++) {
+			if (node_ptr->gres)
+				gres_name = node_ptr->gres;
+			else
+				gres_name = node_ptr->config_ptr->gres;
+			gres_init_node_config(gres_name, &node_ptr->gres_list);
+			if (!IS_NODE_CLOUD(node_ptr))
+				continue;
 
-		gres_loaded = true;
+			/*
+			 * Load in GRES for node now. By default Slurm gets this
+			 * information when the node registers for the first
+			 * time, which can take a while for a node in the cloud
+			 * to boot.
+			 */
+			gres_g_node_config_load(
+				node_ptr->config_ptr->cpus, node_ptr->name,
+				node_ptr->gres_list, NULL, NULL);
+			
+			gres_node_config_validate(
+				node_ptr->name, node_ptr->config_ptr->gres,
+				&node_ptr->gres, &node_ptr->gres_list,
+				node_ptr->config_ptr->threads,
+				node_ptr->config_ptr->cores,
+				node_ptr->config_ptr->tot_sockets,
+				slurm_conf.conf_flags & CTL_CONF_OR, NULL);
+
+			gres_loaded = true;
+		}		
 	}
+#endif
 
 grab_includes:
 	if (!gres_loaded) {

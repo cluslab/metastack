@@ -325,6 +325,9 @@ env_vars_t env_vars[] = {
 #ifdef __METASTACK_LOAD_ABNORMAL
   { "SALLOC_JOB_MONITOR", LONG_OPT_JOB_MONITOR },
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+  { "SALLOC_JOB_CUSTOM", LONG_OPT_JOB_CUSTOM },
+#endif
   { NULL }
 };
 
@@ -404,6 +407,12 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 		error("--container requires LaunchParameters=use_interactive_step");
 		exit(error_exit);
 	}
+
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if (opt.predict_job != 0) {
+		opt.predict_job = -1;
+    }
+#endif
 
 	if (cli_filter_g_pre_submit(&opt, het_job_offset)) {
 		error("cli_filter plugin terminated with error");

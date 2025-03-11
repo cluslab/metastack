@@ -301,6 +301,10 @@ static void _add_copy_job_array_hash(job_record_t *job_ptr, job_record_t **job_a
 
 #endif
 
+// #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+// static int  _match_watch_dog_ptr(void *part_ptr, void *key);
+// #endif
+
 static char *_get_mail_user(const char *user_name, uid_t user_id)
 {
 	char *mail_user = NULL;
@@ -752,6 +756,10 @@ static void _delete_job_details(job_record_t *job_entry)
 	xfree(job_entry->details->work_dir);
 	xfree(job_entry->details->x11_magic_cookie);
 	xfree(job_entry->details->x11_target);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	xfree(job_entry->details->watch_dog);
+	xfree(job_entry->details->watch_dog_script);
+#endif	
 	xfree(job_entry->details);	/* Must be last */
 }
 
@@ -3630,6 +3638,15 @@ void _dump_job_details(struct job_details *detail_ptr, buf_t *buffer)
 			buffer);
 	packstr(detail_ptr->env_hash, buffer);
 	packstr(detail_ptr->script_hash, buffer);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	packstr(detail_ptr->watch_dog, buffer);
+	packstr(detail_ptr->watch_dog_script, buffer);
+	pack32(detail_ptr->init_time, buffer);
+	pack32(detail_ptr->period, buffer);
+	packbool(detail_ptr->enable_all_nodes, buffer);
+	packbool(detail_ptr->enable_all_stepds, buffer);
+	pack32(detail_ptr->style_step, buffer);
+#endif
 }
 
 /* _load_job_details - Unpack a job details information from buffer */
@@ -3663,7 +3680,13 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 	multi_core_data_t *mc_ptr;
 	cron_entry_t *crontab_entry = NULL;
 	buf_t *script_buf;
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog = NULL;
+	char *watch_dog_script = NULL;
+	uint32_t init_time = 0, period = 0, style_step = 0;
+	bool enable_all_nodes = false;
+	bool enable_all_stepds = false;
+#endif
 	/* unpack the job's details from the buffer */
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
 		safe_unpack32(&min_cpus, buffer);
@@ -3731,6 +3754,15 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 			goto unpack_error;
 		safe_unpackstr_xmalloc(&env_hash, &name_len, buffer);
 		safe_unpackstr_xmalloc(&script_hash, &name_len, buffer);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		safe_unpackstr_xmalloc(&watch_dog, &name_len, buffer);
+		safe_unpackstr_xmalloc(&watch_dog_script, &name_len, buffer);
+		safe_unpack32(&init_time, buffer);
+		safe_unpack32(&period, buffer);
+		safe_unpackbool(&enable_all_nodes, buffer);
+		safe_unpackbool(&enable_all_stepds, buffer);
+		safe_unpack32(&style_step, buffer);
+#endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		safe_unpack32(&min_cpus, buffer);
 		safe_unpack32(&max_cpus, buffer);
@@ -3930,7 +3962,11 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 	xfree(job_ptr->details->submit_line);
 	xfree(job_ptr->details->req_nodes);
 	xfree(job_ptr->details->work_dir);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	xfree(job_ptr->details->watch_dog);
+	xfree(job_ptr->details->watch_dog_script);
+	
+#endif
 	/* now put the details into the job record */
 	job_ptr->details->acctg_freq = acctg_freq;
 	job_ptr->details->argc = argc;
@@ -3979,6 +4015,15 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 
 	job_ptr->details->script_hash = script_hash;
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	job_ptr->details->watch_dog = watch_dog;
+	job_ptr->details->watch_dog_script = watch_dog_script;
+	job_ptr->details->init_time = init_time;
+	job_ptr->details->period = period;
+	job_ptr->details->enable_all_nodes = enable_all_nodes;
+	job_ptr->details->enable_all_stepds = enable_all_stepds;
+	job_ptr->details->style_step = style_step;
+#endif
 	switch (features_use) {
 	case 0:
 		break;
@@ -4052,6 +4097,10 @@ unpack_error:
 	xfree(req_nodes);
 	xfree(script_hash);
 	xfree(work_dir);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	xfree(watch_dog);
+	xfree(watch_dog_script);
+#endif
 	return SLURM_ERROR;
 }
 
@@ -5711,6 +5760,19 @@ extern job_record_t *job_array_split(job_record_t *job_ptr)
 	details_new->preempt_start_time = 0;
 
 	details_new->acctg_freq = xstrdup(job_details->acctg_freq);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if((job_details->watch_dog) && (job_details->watch_dog_script)) {
+		details_new->watch_dog = xstrdup(job_details->watch_dog);
+		details_new->watch_dog_script = xstrdup(job_details->watch_dog_script);
+		details_new->init_time = job_details->init_time;
+		details_new->period = job_details->period;
+	} else {
+		details_new->watch_dog = NULL;
+		details_new->watch_dog_script = NULL;
+		details_new->init_time = 0;
+		details_new->period = 0 ;
+	}
+#endif
 	if (job_details->argc) {
 		details_new->argv =
 			xcalloc((job_details->argc + 1), sizeof(char *));
@@ -7794,6 +7856,109 @@ fini:
 	return rc;
 }
 
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+// static int _match_watch_dog_ptr(void *watch_dog_ptr, void *key)
+// {
+// 	if (watch_dog_ptr == key)
+// 		return 1;
+
+// 	return 0;
+// }
+
+// static void _list_destroy_watch_dog(void *watch_dog_entry)
+// {
+// 	watch_dog_record_t *watch_dog_ptr = NULL;
+// 	watch_dog_ptr = (watch_dog_record_t *) watch_dog_entry;
+// 	xfree(watch_dog_ptr->watch_dog);
+// 	xfree(watch_dog_ptr->script);
+// 	xfree(watch_dog_ptr->describe);
+// 	xfree(watch_dog_ptr->account);
+// 	xfree(watch_dog_ptr);
+// }
+
+
+// extern List get_watch_dog_list(char *name)
+// {
+// 	watch_dog_record_t *watch_dog_ptr = NULL;
+// 	//List job_part_list = NULL;
+// 	List job_watch_dog_list = NULL;
+// 	char *token = NULL , *last = NULL, *tmp_name = NULL;
+
+// 	if (name == NULL)
+// 		return job_watch_dog_list;
+// 	tmp_name = xstrdup(name);
+// 	token = strtok_r(tmp_name, ",", &last);
+// 	while (token) {
+// 		watch_dog_ptr = list_find_first(watch_dog_list, &list_find_watch_dog, token);
+// 		if (watch_dog_ptr) {
+// 			if (job_watch_dog_list == NULL) {
+// 				job_watch_dog_list = list_create(_list_destroy_watch_dog);
+// 			}
+// 			if (!list_find_first(job_watch_dog_list, &_match_watch_dog_ptr,
+// 					     watch_dog_ptr)) {
+// 				list_append(job_watch_dog_list, watch_dog_ptr);
+// 			}
+// 		} else {
+// 			FREE_NULL_LIST(job_watch_dog_list);
+// 			break;
+// 		}
+// 		token = strtok_r(NULL, ",", &last);
+// 	}
+// 	xfree(tmp_name);
+// 	return job_watch_dog_list;
+// }
+
+extern int _get_job_watch_dogs_and_check(char *job_desc_watchdog, watch_dog_record_t **watch_dog_ptr, char **err_msg)
+{
+	//List watch_dog_ptr_list = NULL;
+	watch_dog_record_t *watch_tmp_ptr = NULL;
+	int rc = SLURM_SUCCESS;	
+	if(job_desc_watchdog == NULL || job_desc_watchdog[0] =='\0')
+		return rc;
+
+	if (job_desc_watchdog) {	
+		//char *err_watch_dog = NULL;
+		watch_tmp_ptr = find_watch_dog_record(job_desc_watchdog);
+
+		// if (watch_tmp_ptr == NULL) {
+		// 	watch_dog_ptr_list = get_watch_dog_list(job_desc_watchdog);
+		// 	// if (watch_dog_ptr_list) {
+		// 	// 	list_peek(watch_dog_ptr_list);
+		// 	// 	if (list_count(watch_dog_ptr_list) == 1)
+		// 	// 		FREE_NULL_LIST(watch_dog_ptr_list);
+		// 	// }
+		// } 
+
+		// if(watch_dog_ptr_list) {
+		// 	FREE_NULL_LIST(watch_dog_ptr_list);
+		// 	if (err_msg) {
+		// 			xfree(*err_msg);
+		// 			xstrfmtcat(*err_msg,
+		// 				"invalid watch dog specified, only supports specifying one");
+		// 		}
+		// 	rc = ESLURMD_INVALID_WATCH_DOG;
+		// }	
+
+		if (watch_tmp_ptr == NULL) {
+			info("%s: invalid watch dog name specified: %s",
+			     __func__, job_desc_watchdog);
+			if (err_msg) {
+				xfree(*err_msg);
+				xstrfmtcat(*err_msg,
+					   "invalid watch dog specified: %s",
+					   job_desc_watchdog);
+			}
+			//FREE_NULL_LIST(watch_dog_ptr_list);
+			return ESLURMD_INVALID_WATCH_DOG;
+		} 
+	}
+
+    *watch_dog_ptr = watch_tmp_ptr;
+	return rc;
+}
+#endif
+
 static int _get_job_parts(job_desc_msg_t *job_desc, part_record_t **part_pptr,
 			  List *part_pptr_list, char **err_msg)
 {
@@ -8309,6 +8474,53 @@ extern int job_limits_check(job_record_t **job_pptr, bool check_min_time)
 	return (fail_reason);
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static int _copy_watch_dog(watch_dog_record_t *watch_dog_ptr, job_record_t *job_ptr) 
+{
+	if(job_ptr == NULL || job_ptr->details == NULL)
+		return SLURM_ERROR;
+
+	if(watch_dog_ptr) {
+		job_ptr->details->watch_dog = xstrdup(watch_dog_ptr->watch_dog);
+		job_ptr->details->watch_dog_script = xstrdup(watch_dog_ptr->script);
+		job_ptr->details->init_time = watch_dog_ptr->init_time;
+		job_ptr->details->period = watch_dog_ptr->period;
+		job_ptr->details->enable_all_nodes = watch_dog_ptr->enable_all_nodes;
+		job_ptr->details->enable_all_stepds = watch_dog_ptr->enable_all_stepds;
+	} else {
+		job_ptr->details->watch_dog = NULL;
+		job_ptr->details->watch_dog_script = NULL;
+		job_ptr->details->init_time = 0;
+		job_ptr->details->period = 0;
+		job_ptr->details->enable_all_nodes = false;
+		job_ptr->details->enable_all_stepds = false;
+	}
+	return SLURM_SUCCESS;
+}
+
+static int _set_watch_dog_step_style(job_desc_msg_t *job_desc, job_record_t *job_ptr) 
+{
+	if(job_desc == NULL || job_ptr == NULL || job_ptr->details == NULL)
+		return SLURM_ERROR;
+	if(job_desc->submit_line) {
+		char* names = xstrdup(job_desc->submit_line);
+		char *saveptr = NULL;    
+		char *token = strtok_r(names, " ", &saveptr);
+
+		if (token != NULL) {
+			if (!xstrcmp(token, "srun"))
+				job_ptr->details->style_step = 0x010;
+			if (!xstrcmp(token, "salloc"))
+				job_ptr->details->style_step = 0x100;	
+			if (!xstrcmp(token, "sbatch"))
+				job_ptr->details->style_step = 0x001;				
+		}
+		xfree(names);
+	}	
+	return SLURM_SUCCESS;
+}
+#endif
+
 /*
  * _job_create - create a job table record for the supplied specifications.
  *	This performs only basic tests for request validity (access to
@@ -8339,7 +8551,9 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	slurmdb_qos_rec_t qos_rec, *qos_ptr;
 	uint32_t user_submit_priority, acct_reason = 0;
 	acct_policy_limit_set_t acct_policy_limit_set;
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	watch_dog_record_t *watch_dog_ptr = NULL;
+#endif
 	memset(&acct_policy_limit_set, 0, sizeof(acct_policy_limit_set));
 	acct_policy_limit_set.tres = xcalloc(slurmctld_tres_cnt,
 					     sizeof(uint16_t));
@@ -8390,7 +8604,12 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 				    err_msg);
 	if (error_code != SLURM_SUCCESS)
 		goto cleanup_fail;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
+	error_code = _get_job_watch_dogs_and_check(job_desc->watch_dog, &watch_dog_ptr, err_msg);
+	if (error_code != SLURM_SUCCESS)
+		goto cleanup_fail;
 
+#endif
 	memset(&assoc_rec, 0, sizeof(assoc_rec));
 	assoc_rec.acct      = job_desc->account;
 	assoc_rec.partition = part_ptr->name;
@@ -8604,7 +8823,10 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	job_ptr->part_ptr_list = part_ptr_list;
 	job_ptr->bit_flags |= JOB_DEPENDENT;
 	job_ptr->last_sched_eval = time(NULL);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	_copy_watch_dog(watch_dog_ptr, job_ptr); 
+    _set_watch_dog_step_style(job_desc, job_ptr);
+#endif
 	part_ptr_list = NULL;
 
 	memcpy(&job_ptr->limit_set, &acct_policy_limit_set,
@@ -8642,6 +8864,12 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	} else if (job_ptr->priority != NO_VAL) {
 		job_ptr->direct_set_prio = 1;
 	}
+
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	if ((job_ptr->predict_job == 1) && (job_ptr->time_min > 0)) {
+		info("JobId=%d is a predict job, and The TimeMin is %d minutes.", job_ptr->job_id, job_ptr->time_min);
+	}
+#endif
 
 	/*
 	 * The job submit plugin sets site_factor to NO_VAL so that it can
@@ -10442,19 +10670,40 @@ void job_time_limit(void)
 				if ((job_ptr->predict_job == 1) && job_ptr->time_min){
 
 					/* hard_end_time -- The actual end time of the job.
-					 * next_end_time -- The predicted end time of the next round of job.
-					 */ 
+					* next_end_time -- The predicted end time of the next round of job.
+					*/ 
 					time_t hard_end_time = time(NULL);
 					time_t next_end_time = time(NULL);
+					char old_end_time[32] = {0};
+					char new_end_time[32] = {0};
+					uint32_t old_time_min = 0;
+					uint32_t new_time_min = 0;
+
 					hard_end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
 
-					// The actual end time of the job is greater than now, delaying end_time. Otherwise cancel job
+					// The actual end time of the job is greater than now, update EndTime & TimeMin. Otherwise cancel job
 					if (hard_end_time > over_run) {
 						next_end_time = job_ptr->end_time + (60 * 60);
 						if (next_end_time > hard_end_time) {
+							slurm_make_time_str(&job_ptr->end_time, old_end_time, sizeof(old_end_time));
+							slurm_make_time_str(&hard_end_time, new_end_time, sizeof(new_end_time));
 							job_ptr->end_time = hard_end_time;
+							info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s", job_ptr->job_id, old_end_time, new_end_time);
+
+							old_time_min = job_ptr->time_min;
+							new_time_min = job_ptr->time_limit;
+							job_ptr->time_min = new_time_min;
+							info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes", job_ptr->job_id, old_time_min, new_time_min);
 						} else {
+							slurm_make_time_str(&job_ptr->end_time, old_end_time, sizeof(old_end_time));
+							slurm_make_time_str(&next_end_time, new_end_time, sizeof(new_end_time));
 							job_ptr->end_time = next_end_time;
+							info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s", job_ptr->job_id, old_end_time, new_end_time);
+
+							old_time_min = job_ptr->time_min;
+							new_time_min = job_ptr->time_min + 60;
+							job_ptr->time_min = new_time_min;
+							info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes", job_ptr->job_id, old_time_min, new_time_min);
 						}
 					} else {
 						last_job_update = now;
@@ -21623,6 +21872,10 @@ extern int job_get_node_inx(char *node_name, bitstr_t *node_bitmap)
 
 	des_detail_ptr->req_context = NULL;
 	des_detail_ptr->acctg_freq = NULL;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	des_detail_ptr->watch_dog = NULL;
+	des_detail_ptr->watch_dog_script = NULL;
+#endif
 	des_detail_ptr->cpu_bind = NULL;
 	des_detail_ptr->mem_bind = NULL;
 	des_detail_ptr->orig_dependency = NULL;

@@ -340,6 +340,9 @@ static slurm_opt_t *_opt_copy(void)
 	opt_dup->clusters = xstrdup(opt.clusters);
 	opt_dup->srun_opt->cmd_name = xstrdup(sropt.cmd_name);
 	opt_dup->comment = xstrdup(opt.comment);
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	opt_dup->apptype = xstrdup(opt.apptype);
+#endif
 	opt.constraint = NULL;		/* Moved by memcpy */
 	opt_dup->context = xstrdup(opt.context);
 	opt_dup->srun_opt->cpu_bind = xstrdup(sropt.cpu_bind);
@@ -396,7 +399,9 @@ static slurm_opt_t *_opt_copy(void)
 	opt_dup->tres_bind = xstrdup(opt.tres_bind);
 	opt_dup->tres_freq = xstrdup(opt.tres_freq);
 	opt_dup->wckey = xstrdup(opt.wckey);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	opt_dup->watch_dog = xstrdup(opt.watch_dog);
+#endif
 	return opt_dup;
 }
 
@@ -516,6 +521,12 @@ extern int initialize_and_process_args(int argc, char **argv, int *argc_off)
 				}
 			}
 		}
+
+#ifdef __METASTACK_NEW_TIME_PREDICT
+		if (opt.predict_job != 0) {
+			opt.predict_job = -1;
+		}
+#endif
 
 		if (cli_filter_g_pre_submit(&opt, i)) {
 			error("cli_filter plugin terminated with error");
@@ -740,6 +751,12 @@ env_vars_t env_vars[] = {
   { "SLURM_DEBUG", 'v'},
 #ifdef __METASTACK_LOAD_ABNORMAL
   { "SLURM_JOB_MONITOR", LONG_OPT_JOB_MONITOR },
+#endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+  { "SLURM_JOB_CUSTOM", LONG_OPT_JOB_CUSTOM },
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+  { "SLURM_JOB_APPTYPE", LONG_OPT_APPTYPE },
 #endif
   { NULL }
 };
@@ -1640,6 +1657,9 @@ static void _usage(void)
 "            [--npus-per-node=n] [--npus-per-socket=n] [--npus-per-task=n]\n"
 "            [--mem-per-npu=MB]\n"
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+"			 [--watch-dog]\n"
+#endif
 "            executable [args...]\n");
 
 }
@@ -1847,6 +1867,11 @@ static void _help(void)
 "      --npus-per-socket=n     number of NPUs required per allocated socket\n"
 "      --npus-per-task=n       number of NPUs required per spawned task\n"
 "      --mem-per-npu=n         real memory required per allocated NPU\n"
+		);
+#endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	printf("\n"
+"      --watch-dog             job custom detection options\n"
 		);
 #endif
 	printf("\n"

@@ -102,10 +102,25 @@ char *default_copy_part_name = NULL;		/* name of default partition */
 #endif
 
 /* Global variables */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+List watch_dog_list = NULL;			/* watch dog list */
+int list_find_watch_dog(void *x, void *key);
+typedef struct {
+	buf_t *buffer;
+	uint32_t watch_dogs_packed;
+	bool privileged;
+	uint16_t protocol_version;
+	uid_t uid;
+	watch_dog_record_t **visible_watch_dogs;
+} _foreach_pack_watch_dog_info_t;
+#endif
 List part_list = NULL;			/* partition list */
 char *default_part_name = NULL;		/* name of default partition */
 part_record_t *default_part_loc = NULL;	/* default partition location */
 time_t last_part_update = (time_t) 0;	/* time of last update to partition records */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+time_t last_watch_dog_update = (time_t) 0;	/* time of last update to watch_dog records */
+#endif
 uint16_t part_max_priority = DEF_PART_MAX_PRIORITY;
 
 static int    _dump_part_state(void *x, void *arg);
@@ -2184,6 +2199,23 @@ part_record_t *find_part_record(char *name)
 	return list_find_first(part_list, &list_find_part, name);
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+
+/*
+ * find_watch_dog_record - find a record for watch dog with specified name
+ * IN name - name of the desired partition
+ * RET pointer to watch dog or NULL if not found
+ */
+watch_dog_record_t *find_watch_dog_record(char *name)
+{
+	if (!watch_dog_list) {
+		error("watch dog is NULL");
+		return NULL;
+	}
+	return list_find_first(watch_dog_list, &list_find_watch_dog, name);
+}
+#endif
+
 /*
  * Create a copy of a job's part_list *partition list
  * IN part_list_src - a job's part_list
@@ -2623,6 +2655,14 @@ static int _build_visible_parts_foreach(void *elem, void *x)
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+typedef struct {
+	uid_t uid;
+	watch_dog_record_t **visible_watch_dogs;
+	slurmdb_user_rec_t user_rec;
+} build_visible_watch_dog_arg_t;
+#endif
+
 /** 
  * 
 */
@@ -2733,6 +2773,69 @@ static int _pack_part(void *object, void *arg)
 
 	return SLURM_SUCCESS;
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+
+/*for scontrol show watchdog*/
+void pack_watch_dog(watch_dog_record_t *watch_dog_ptr, buf_t *buffer, uint16_t protocol_version)
+{
+#ifdef __META_PROTOCOL
+	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+        if (protocol_version >= META_2_3_PROTOCOL_VERSION) {
+			packstr(watch_dog_ptr->watch_dog, buffer);
+			packstr(watch_dog_ptr->account, buffer);
+			packstr(watch_dog_ptr->script, buffer);
+			packstr(watch_dog_ptr->describe, buffer);
+            pack32(watch_dog_ptr->init_time, buffer);
+            pack32(watch_dog_ptr->period, buffer);
+            packbool(watch_dog_ptr->enable_all_nodes, buffer);
+            packbool(watch_dog_ptr->enable_all_stepds, buffer);
+		} else {
+			error("%s: protocol_version %hu not supported",
+		      __func__, protocol_version);
+		}
+	}
+#endif
+}
+
+static int _pack_watch_dog(void *object, void *arg)
+{
+	watch_dog_record_t *watch_dog_ptr = object;
+	_foreach_pack_watch_dog_info_t *pack_info = arg;
+	pack_watch_dog(watch_dog_ptr, pack_info->buffer, pack_info->protocol_version);
+	pack_info->watch_dogs_packed++;
+
+	return SLURM_SUCCESS;
+}
+
+extern void pack_all_watch_dog(char **buffer_ptr, int *buffer_size,
+			     uid_t uid, uint16_t protocol_version)
+{
+    time_t now = time(NULL);
+	int tmp_offset = 0;
+    _foreach_pack_watch_dog_info_t pack_watch_dog_info = {
+		.buffer = init_buf(BUF_SIZE),
+		.watch_dogs_packed = 0,
+		.privileged = 0,
+		.protocol_version = protocol_version,
+		.uid = uid, 
+		//.visible_watch_dogs = build_visible_watch_dogs(uid, 0),
+	};
+	/* write header: version and time */
+	pack32(0, pack_watch_dog_info.buffer);
+	pack_time(now, pack_watch_dog_info.buffer);
+
+	list_for_each_ro(watch_dog_list, _pack_watch_dog, &pack_watch_dog_info);
+	/* put the real record count in the message body header */
+	tmp_offset = get_buf_offset(pack_watch_dog_info.buffer);
+	set_buf_offset(pack_watch_dog_info.buffer, 0);
+	pack32(pack_watch_dog_info.watch_dogs_packed, pack_watch_dog_info.buffer);
+	set_buf_offset(pack_watch_dog_info.buffer, tmp_offset);
+	*buffer_size = get_buf_offset(pack_watch_dog_info.buffer);
+	buffer_ptr[0] = xfer_buf_data(pack_watch_dog_info.buffer);
+	//xfree(pack_watch_dog_info.visible_watch_dogs);
+}
+#endif
 
 /*
  * pack_all_part - dump all partition information for all partitions in
@@ -4054,6 +4157,13 @@ void part_fini (void)
 	FREE_NULL_LIST(part_list);
 	default_part_loc = NULL;
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+void watch_dog_fini (void)
+{
+	FREE_NULL_LIST(watch_dog_list);
+}
+#endif
 
 /*
  * delete_partition - delete the specified partition

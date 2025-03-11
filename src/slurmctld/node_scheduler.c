@@ -3234,7 +3234,15 @@ extern void launch_prolog(job_record_t *job_ptr)
 		job_ptr->node_bitmap_pr = bit_copy(job_ptr->node_bitmap);
 #endif
 	}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	prolog_msg_ptr->watch_dog = xstrdup(job_ptr->details->watch_dog);
+	prolog_msg_ptr->watch_dog_script =  xstrdup(job_ptr->details->watch_dog_script);
+	prolog_msg_ptr->init_time = job_ptr->details->init_time;
+	prolog_msg_ptr->period = job_ptr->details->period;
+	prolog_msg_ptr->enable_all_nodes = job_ptr->details->enable_all_nodes;	
+	prolog_msg_ptr->enable_all_stepds = job_ptr->details->enable_all_stepds;
+	prolog_msg_ptr->style_step = job_ptr->details->style_step;
+#endif
 	prolog_msg_ptr->job_gres_info =
 		 gres_g_epilog_build_env(job_ptr->gres_list_req,job_ptr->nodes);
 	prolog_msg_ptr->job_id = job_ptr->job_id;

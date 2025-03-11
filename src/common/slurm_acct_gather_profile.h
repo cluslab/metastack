@@ -74,6 +74,22 @@ typedef struct {
 	int timer;
 	int cpu_min_load;
 	uint16_t frequency;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+    uint32_t job_id;
+	bool 	 head_node;
+	gid_t         gid;     					/* group ID for job                          */
+	uid_t         uid;    					/* user id for job */   
+	char 	      *watch_dog_script;		/* location of the script */
+	uint32_t      init_time;      		/* Optional. This keyword specifies the delay 
+									  		 * (in seconds) before starting the watchdog script after 
+									  		 *the job starts. Specify a number greater than 30 seconds. 
+									 		 *The default value is 60 seconds. */
+	uint32_t       period;          		/*customized abnormal operation cycle*/	
+	bool           enable_watchdog;
+	uint32_t	   style_step;      		/*which stepd, 0x001 is sbatch submit, 
+											 *0x010 is srun submit, 0x100 is salloc submit*/
+	char           *watch_dog; 
+#endif
 } acct_gather_rank_t;
 
 typedef enum {
@@ -114,7 +130,9 @@ typedef struct {
 } acct_gather_profile_timer_t;
 
 extern acct_gather_profile_timer_t acct_gather_profile_timer[PROFILE_CNT];
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern acct_gather_profile_timer_t acct_gather_profile_timer_watch_dog;
+#endif
 /*
  * Load the plugin
  */

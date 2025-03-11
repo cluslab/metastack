@@ -81,6 +81,9 @@ extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key);
 
 /** delete hash */
 extern void destroy_assoc_hash(assoc_hash_t **assoc_hash);
+
+/** destroy the hash table whose value is the assoc_hash table */
+extern void destroy_hash_value_hash(str_key_hash_t **str_key_hash);
 #endif
 
 #ifdef __METASTACK_OPT_SACCTMGR_ADD_USER

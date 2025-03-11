@@ -62,6 +62,9 @@ extern "C" {
 #define __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #endif
 
+#ifndef __METASTACK_NEW_CUSTOM_EXCEPTION
+#define __METASTACK_NEW_CUSTOM_EXCEPTION
+#endif
 /* set errno to the specified value - then return -1 */
 #define slurm_seterrno_ret(errnum) do { \
 	slurm_seterrno(errnum);         \
@@ -360,7 +363,9 @@ typedef enum {
 	ESLURM_DATA_REGEX_COMPILE,
 	ESLURM_DATA_UNKNOWN_MIME_TYPE,
 	ESLURM_DATA_TOO_LARGE,
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	ESLURMD_INVALID_WATCH_DOG,
+#endif
 	/* container errors */
 	ESLURM_CONTAINER_NOT_CONFIGURED = 10000,
 } slurm_err_t;
