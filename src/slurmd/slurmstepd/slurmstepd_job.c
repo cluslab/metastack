@@ -505,11 +505,16 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 		//step_rank.style_step       = 0;
 	}
 
-
-acct_gather_profile_startpoll(msg->acctg_freq,
-					slurm_conf.job_acct_gather_freq, step_rank);	
-xfree(step_rank.watch_dog);
-xfree(step_rank.watch_dog_script);
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	step_rank.apptype = xstrdup(msg->apptype);
+#endif	
+	acct_gather_profile_startpoll(msg->acctg_freq,
+						slurm_conf.job_acct_gather_freq, step_rank);	
+	xfree(step_rank.watch_dog);
+	xfree(step_rank.watch_dog_script);
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	xfree(step_rank.apptype);
+#endif
 #endif
 #endif
 	job->timelimit   = (time_t) -1;
@@ -644,11 +649,16 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 		step_rank.period           = 0;
 		step_rank.init_time        = 0;
 	}
-	
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	step_rank.apptype = xstrdup(msg->apptype);
+#endif	
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
 	xfree(step_rank.watch_dog);
 	xfree(step_rank.watch_dog_script);
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	xfree(step_rank.apptype);
+#endif
 #endif
 #endif
 

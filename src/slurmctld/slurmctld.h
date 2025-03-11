@@ -732,6 +732,9 @@ struct job_details {
 	bool enable_all_stepds;   
 	uint32_t style_step;     /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype;
+#endif
 };
 
 typedef struct job_array_struct {

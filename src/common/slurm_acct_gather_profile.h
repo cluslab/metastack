@@ -90,6 +90,9 @@ typedef struct {
 											 *0x010 is srun submit, 0x100 is salloc submit*/
 	char           *watch_dog; 
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype;
+#endif
 } acct_gather_rank_t;
 
 typedef enum {
@@ -107,6 +110,9 @@ typedef enum {
 	PROFILE_NETWORK,
 #ifdef __METASTACK_LOAD_ABNORMAL
 	PROFILE_STEPD,
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	PROFILE_APPTYPE,
 #endif
 	PROFILE_CNT
 } acct_gather_profile_type_t;
@@ -132,6 +138,9 @@ typedef struct {
 extern acct_gather_profile_timer_t acct_gather_profile_timer[PROFILE_CNT];
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 extern acct_gather_profile_timer_t acct_gather_profile_timer_watch_dog;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+extern int apptype_recongn_count;
 #endif
 /*
  * Load the plugin

@@ -1068,6 +1068,9 @@ extern void slurm_free_job_desc_msg(job_desc_msg_t *msg)
         /*submit job need free malloc*/
 		xfree(msg->watch_dog);
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		xfree(msg->apptype);
+#endif
 		xfree(msg);
 	}
 }
@@ -1111,7 +1114,9 @@ extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 		xfree(msg->std_out);
 		xfree(msg->work_dir);
 		xfree(msg->user_name);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		xfree(msg->apptype);
+#endif
 		xfree(msg->x11_alloc_host);
 		xfree(msg->x11_magic_cookie);
 		xfree(msg->x11_target);
@@ -1186,6 +1191,9 @@ extern void slurm_free_job_launch_msg(batch_job_launch_msg_t * msg)
 		*/
 		xfree(msg->watch_dog);
 		xfree(msg->watch_dog_script);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		xfree(msg->apptype);
 #endif
 		xfree(msg);
 	}
@@ -1636,6 +1644,9 @@ extern void slurm_free_launch_tasks_request_msg(launch_tasks_request_msg_t * msg
 	/*RPC REQUEST_LAUNCH_TASKS */
 	xfree(msg->watch_dog);
 	xfree(msg->watch_dog_script);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	xfree(msg->apptype);
 #endif
 	xfree(msg);
 }

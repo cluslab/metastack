@@ -12302,6 +12302,9 @@ static void _pack_launch_tasks_request_msg(launch_tasks_request_msg_t *msg,
 			packbool(msg->enable_all_stepds, buffer);
 			pack32(msg->style_step, buffer);
 	#endif
+	#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			packstr(msg->apptype, buffer);
+	#endif
 		} else {
 			pack_step_id(&msg->step_id, buffer, protocol_version);
 			pack32(msg->uid, buffer);
@@ -12776,6 +12779,10 @@ static int _unpack_launch_tasks_request_msg(launch_tasks_request_msg_t **msg_ptr
 			safe_unpackbool(&msg->enable_all_nodes, buffer);
 			safe_unpackbool(&msg->enable_all_stepds, buffer);
 			safe_unpack32(&msg->style_step, buffer);
+	#endif
+	#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			safe_unpackstr_xmalloc(&msg->apptype, &uint32_tmp,
+						buffer);
 	#endif
 		} else {
 			if (unpack_step_id_members(&msg->step_id, buffer,
@@ -13573,6 +13580,9 @@ static void _pack_prolog_launch_msg(prolog_launch_msg_t *msg,
 			packbool(msg->enable_all_stepds, buffer);
 			pack32(msg->style_step, buffer);
 	#endif
+	#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			packstr(msg->apptype, buffer);
+	#endif
 		} else {
 			gres_job_alloc_pack(msg->job_gres_info, buffer,
 				    protocol_version);
@@ -13689,6 +13699,10 @@ static int _unpack_prolog_launch_msg(prolog_launch_msg_t **msg,
 			safe_unpackbool(&launch_msg_ptr->enable_all_nodes, buffer);
 			safe_unpackbool(&launch_msg_ptr->enable_all_stepds, buffer);
 			safe_unpack32(&launch_msg_ptr->style_step, buffer);
+	#endif
+	#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			safe_unpackstr_xmalloc(&launch_msg_ptr->apptype, &uint32_tmp,
+						buffer);
 	#endif
 		} else {
 			if (gres_job_alloc_unpack(&launch_msg_ptr->job_gres_info,
@@ -14604,6 +14618,9 @@ _pack_batch_job_launch_msg(batch_job_launch_msg_t * msg, buf_t *buffer,
 			packbool(msg->enable_all_stepds, buffer);	
 			pack32(msg->style_step, buffer);
 	#endif
+	#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			packstr(msg->apptype, buffer);
+	#endif
 		} else {
 			pack32(msg->job_id, buffer);
 			pack32(msg->het_job_id, buffer);
@@ -14921,6 +14938,10 @@ _unpack_batch_job_launch_msg(batch_job_launch_msg_t ** msg, buf_t *buffer,
 			safe_unpackbool(&launch_msg_ptr->enable_all_nodes, buffer);
 			safe_unpackbool(&launch_msg_ptr->enable_all_stepds, buffer);
 			safe_unpack32(&launch_msg_ptr->style_step, buffer);
+	#endif
+	#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			safe_unpackstr_xmalloc(&launch_msg_ptr->apptype, &uint32_tmp,
+						buffer);
 	#endif
 		} else {
 			safe_unpack32(&launch_msg_ptr->job_id, buffer);

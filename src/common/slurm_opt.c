@@ -526,6 +526,34 @@ static slurm_cli_opt_t slurm_opt_account = {
 	.get_func = arg_get_account,
 	.reset_func = arg_reset_account,
 };
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/*
+	This is mainly used to pass submit-line to cli_filter.lua, 
+	so we mask any operations on submit-line.
+*/
+static int arg_set_submit_line(slurm_opt_t *opt, const char *arg)
+{
+	return SLURM_SUCCESS;
+}
+static int arg_set_data_submit_line(slurm_opt_t *opt, const data_t *arg, data_t *errors)
+{
+	return SLURM_SUCCESS;
+}
+static void arg_reset_submit_line(slurm_opt_t *opt) {}
+static char* arg_get_submit_line(slurm_opt_t *opt)
+{
+	return xstrdup(opt->submit_line);
+}
+static slurm_cli_opt_t slurm_opt_submit_line = {
+	.name = "submit-line",
+	.has_arg = required_argument,
+	.val = LONG_OPT_SUBMIT_LINE,
+	.set_func = arg_set_submit_line,
+	.set_func_data = arg_set_data_submit_line,
+	.get_func = arg_get_submit_line,
+	.reset_func = arg_reset_submit_line,
+};
+#endif
 
 static int arg_set_acctg_freq(slurm_opt_t *opt, const char *arg)
 {
@@ -952,6 +980,48 @@ static slurm_cli_opt_t slurm_opt_comment = {
 	.get_func = arg_get_comment,
 	.reset_func = arg_reset_comment,
 };
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/*
+	The apptype configuration entry is not open to the user and 
+	the value is initialized to -1 when the JobAcctGatherFrequency 
+	does not configure the apptype
+*/
+static int arg_set_apptype(slurm_opt_t *opt, const char *arg)
+{
+	xfree(opt->apptype);
+	char *acctg_freq = xstrdup(slurm_conf.job_acct_gather_freq);
+	if(acct_gather_parse_freq(PROFILE_APPTYPE, acctg_freq) == -1){
+		opt->apptype = xstrdup("unset");
+	}else {
+		opt->apptype = xstrdup(arg);
+	}
+	xfree(acctg_freq);
+	return SLURM_SUCCESS;
+}
+static char *arg_get_apptype(slurm_opt_t *opt)
+{
+	return xstrdup(opt->apptype);
+}
+static void arg_reset_apptype(slurm_opt_t *opt)
+{
+	if(opt->apptype) xfree(opt->apptype);
+	char *acctg_freq = xstrdup(slurm_conf.job_acct_gather_freq);
+	if(acct_gather_parse_freq(PROFILE_APPTYPE, acctg_freq) == -1){
+		opt->apptype = xstrdup("unset");
+	}
+	xfree(acctg_freq);
+}
+COMMON_STRING_OPTION_SET_DATA(apptype);
+static slurm_cli_opt_t slurm_opt_apptype = {
+	.name = "apptype",
+	.has_arg = required_argument,
+	.val = LONG_OPT_APPTYPE,
+	.set_func = arg_set_apptype,
+	.set_func_data = arg_set_data_apptype,
+	.get_func = arg_get_apptype,
+	.reset_func = arg_reset_apptype,
+};
+#endif
 
 static int arg_set_compress(slurm_opt_t *opt, const char *arg)
 {
@@ -5742,6 +5812,10 @@ static const slurm_cli_opt_t *common_options[] = {
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	&slurm_opt_custom,	
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	&slurm_opt_submit_line,
+	&slurm_opt_apptype,
+#endif
 	NULL /* END */
 };
 
@@ -6742,7 +6816,9 @@ extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 
 	job_desc->account = xstrdup(opt_local->account);
 	job_desc->acctg_freq = xstrdup(opt_local->acctg_freq);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	job_desc->apptype = xstrdup(opt_local->apptype);
+#endif
 	/* admin_comment not filled in here */
 	/* alloc_node not filled in here */
 	/* alloc_resp_port not filled in here */

@@ -414,6 +414,14 @@ extern int acct_gather_parse_freq(int type, char *freq)
 			freq_int = _get_int(sub_str + 5);
 		break;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	case PROFILE_APPTYPE:
+		if ((sub_str = xstrcasestr(freq, "apptype="))){
+			freq_int = _get_int(sub_str + 8);
+			freq_int = freq_int > JOBACCTGATHER_APPTYPE_DURATION ? JOBACCTGATHER_APPTYPE_DURATION : freq_int;
+		}
+		break;
+#endif
 	default:
 		fatal("Unhandled profile option %d please update "
 		      "slurm_acct_gather.c "

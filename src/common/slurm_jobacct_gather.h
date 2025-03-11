@@ -174,7 +174,14 @@ struct jobacctinfo {
 #define PROC_AB    0x0000000000000010  /*pocess status read only*/
 #define JNODE_STAT 0x0000000000000100
 #define JOBACCTINFO_START_END_ARRAY_SIZE 200
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+#define JOBACCT_GATHER_PROFILE_ABNORMAL 0x0000000000000001
+/*
+	It represents that the purpose of this collection is to collect 
+	content related to application name recognition
+*/
+#define JOBACCT_GATHER_PROFILE_APPTYPE 	0x0000000000000010
+#endif
 struct jobinfostat {
 	double job_avg_cpu;
 	double job_cpu_util;
@@ -203,6 +210,13 @@ typedef struct {
 	int npids;
 	bool update;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char* apptype_step;	 /* Save the application type obtained by the jobacctgather plugin */
+	uint64_t send_flag2; /* Used to indicate what kind of data was sent, exception event data, or application type data */
+	uint64_t have_recogn; 	 /* Flag whether data needs to be saved or sent to influxdb */
+	char* apptype_cli;	 /* Save the application type obtained by the cli_filter plugin */
+	uint64_t cputime;	/*  cputime is consumed by the most important processes */
+#endif
 } write_t;
 
 typedef struct {
@@ -219,6 +233,14 @@ typedef struct {
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	pid_t *pids;
 	int   npids;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char **cmdlines;
+	char **commands;
+	int app_rec_cnt;
+	uint64_t collect_flag;
+	uint64_t max_cpu_time;
+	char *max_cputime_comm;
 #endif
 } collection_t;
 extern collection_t share_data;
@@ -248,6 +270,12 @@ typedef struct {
 extern step_gather_t step_gather;
 #endif
 
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/*
+	Defines the duration of the apptype recognition
+*/
+#define JOBACCTGATHER_APPTYPE_DURATION 60
+#endif
 /* Define jobacctinfo_t below to avoid including extraneous slurm headers */
 #ifndef __jobacctinfo_t_defined
 #  define  __jobacctinfo_t_defined
@@ -270,6 +298,14 @@ extern void jobacctinfo_pack_detial(jobacctinfo_t *jobacct, uint16_t rpc_version
 extern int jobacctinfo_unpack_detial(jobacctinfo_t **jobacct, uint16_t rpc_version,
 			      uint16_t protocol_type, buf_t *buffer, bool alloc); 	
 extern void jobacctinfo_aggregate_2(jobacctinfo_t *dest, jobacctinfo_t *from);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+extern int	jobacct_gather_apptypepoll(uint16_t frequency, acct_gather_rank_t jobinfo);
+extern int apptype_properties_conf_init(void);
+extern int apptype_properties_write_conf(int fd);
+extern int apptype_properties_read_conf(int fd);
+extern int apptype_properties_conf_reconfig(void);
+extern int apptype_properties_conf_destory(void);
 #endif
 extern int  jobacct_gather_endpoll(void);
 extern void jobacct_gather_suspend_poll(void);

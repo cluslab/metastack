@@ -3603,6 +3603,9 @@ static batch_job_launch_msg_t *_build_launch_job_msg(job_record_t *job_ptr,
 	launch_msg_ptr->enable_all_stepds = job_ptr->details->enable_all_stepds;
 	launch_msg_ptr->style_step = job_ptr->details->style_step;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	launch_msg_ptr->apptype = xstrdup(job_ptr->details->apptype);
+#endif	
 	if (job_ptr->part_ptr)
 		launch_msg_ptr->partition = xstrdup(job_ptr->part_ptr->name);
 	else

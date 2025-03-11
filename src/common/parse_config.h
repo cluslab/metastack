@@ -332,6 +332,13 @@ int s_p_parse_gres_file(s_p_hashtbl_t *hashtbl, uint32_t *hash_val, char *filena
 int s_p_parse_file_gres(s_p_hashtbl_t *hashtbl, char *filename,
 		   bool ignore_new, parsed_line_t *parsed_lines, int max_lines, char *gres_node_name);
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/**
+ * In contrast to s_p_hashtbl_create, the s_p_hashtbl_create_2 function matches the 
+ * key-value with a simple regular expression '='
+*/
+s_p_hashtbl_t *s_p_hashtbl_create_2(const struct conf_file_options options[]);
+#endif
 /* Returns SLURM_SUCCESS if buffer was opened and parse correctly.
  * buffer must be a valid buf_t buffer only containing strings. The parsing
  * stops at the first non string content extracted.
@@ -436,7 +443,14 @@ int s_p_parse_line_expanded(const s_p_hashtbl_t *hashtbl,
  * NOTE: Caller is responsible for freeing the returned string with xfree!
  */
 int s_p_get_string(char **str, const char *key, const s_p_hashtbl_t *hashtbl);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/**
+ * Because of the special nature of apptype.properties, we don't want the match 
+ * to be error-free, so s_p_get_string_2 is added to remove the error caused by 
+ * a failed match in s_p_get_string
+*/
+int s_p_get_string_2(char **str, const char *key, const s_p_hashtbl_t *hashtbl);
+#endif
 /*
  * s_p_get_long
  *

@@ -84,6 +84,9 @@
 // #include <sys/syscall.h>
 // #include "src/slurmd/common/proctrack.h"
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+#include <sys/stat.h>
+#endif
 #define KB_ADJ 1024
 #define MB_ADJ 1048576
 
@@ -95,7 +98,20 @@ strong_alias(jobacctinfo_pack, slurm_jobacctinfo_pack);
 strong_alias(jobacctinfo_unpack, slurm_jobacctinfo_unpack);
 strong_alias(jobacctinfo_create, slurm_jobacctinfo_create);
 strong_alias(jobacctinfo_destroy, slurm_jobacctinfo_destroy);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+static buf_t *apptype_properties_apptype_buf = NULL;
+static pthread_mutex_t conf_mutex2 = PTHREAD_MUTEX_INITIALIZER;
+static bool inited = 0;
+typedef struct s_p_hashtbl_info {
+	int full_option_cnt;
+	s_p_options_t full_option;
+} s_p_hashtbl_info_t;
+static uint64_t total_cpu_time = 0;		/* Record the maximum machine consumption of the process */
+static char *max_cputime_proc = NULL;	/* Record the process Command at the time of maximum machine consumption */
+static pthread_t apptype_recognition_thread_id = 0;
+static acct_gather_profile_timer_t *profile_apptype =
+	&acct_gather_profile_timer[PROFILE_APPTYPE];
+#endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 step_gather_t step_gather = {
 	PTHREAD_COND_INITIALIZER,
@@ -431,7 +447,190 @@ static bool _init_run_test(void)
 	slurm_mutex_unlock(&init_run_mutex);
 	return rc;
 }
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+static void *apptype_recognition(void *args){
+	bool have_recogn = false, have_recogn_weak = false;
+	char *apptype = (char *) args;
+	s_p_hashtbl_t *tbl = NULL;
+	char *temp = NULL, *temp_weak = NULL, *weak_apptype = NULL;
+	collection_t *collect = NULL;
+	write_t *write_data = NULL;
+	/* Prepare exit criteria */
+	if (acct_gather_profile_timer[PROFILE_APPTYPE].freq <= 0) {
+		xfree(apptype);
+		apptype_recongn_count = 0;
+		return NULL;
+	}
+#if HAVE_SYS_PRCTL_H
+	if (prctl(PR_SET_NAME, "acctg_apptype", NULL, NULL, NULL) < 0) {
+		error("%s: cannot set my name to %s %m", __func__, "acctg_apptype");
+	}
+#endif
+	tbl = s_p_unpack_hashtbl(apptype_properties_apptype_buf);
+	/*
+		Resolve the weak application type of the setting
+		When the match is complete, the weak application type will be returned only 
+		if the strong application type is not matched.
+	*/
+	s_p_get_string_2(&weak_apptype, "WEAK_APPTYPE", tbl);
+	while (_init_run_test() && !_jobacct_shutdown_test() &&
+	       acct_gather_profile_test()) {
+		slurm_mutex_lock(&profile_apptype->notify_mutex);
+		slurm_cond_wait(&profile_apptype->notify,
+				&profile_apptype->notify_mutex);
+		slurm_mutex_unlock(&profile_apptype->notify_mutex);
 
+		if (apptype_recongn_count <= 0) 
+			break;
+
+		collect = xmalloc(sizeof(collection_t));
+		collect->collect_flag = JOBACCT_GATHER_PROFILE_APPTYPE;
+		collect->step = true;
+		collect->cmdlines = xmalloc(JOBACCTINFO_START_END_ARRAY_SIZE * sizeof(const char *));
+		collect->commands = xmalloc(JOBACCTINFO_START_END_ARRAY_SIZE * sizeof(const char *));
+		collect->max_cpu_time = total_cpu_time;
+		
+		_poll_data(0, collect, NULL);
+		/*
+			According to the collected process information, word segmentation mapping is performed
+			 to judge the application type
+		*/
+		int limit = (collect->app_rec_cnt < JOBACCTINFO_START_END_ARRAY_SIZE 
+				? collect->app_rec_cnt 
+				: JOBACCTINFO_START_END_ARRAY_SIZE);
+		for (int i = 0; i < limit && !have_recogn; i++) {
+			int idx = (collect->app_rec_cnt < JOBACCTINFO_START_END_ARRAY_SIZE) 
+						? i 
+						: (collect->app_rec_cnt + i) % JOBACCTINFO_START_END_ARRAY_SIZE;
+			/*
+				max_cputime_proc holds the process that currently consumes the most cputime during apptype 
+				thread collection. If max_cputime_proc has a value and is consistent with the segmented 
+				process name, it means that the process has replaced the application type with cputime 
+				because it cannot map the specific application type, so there is no need to judge 
+				again. Just skip it
+			*/
+			if (max_cputime_proc && (xstrcasecmp(collect->commands[idx], max_cputime_proc) == 0))
+				break;
+			char *input_copy = xstrdup(collect->cmdlines[idx]);
+			if (!input_copy) 
+				continue;
+			char *saveptr1 = NULL, *saveptr2 = NULL;
+    		char *token1 = NULL, *token2 = NULL;
+			// Press ' /' to segment words
+			for (token1 = strtok_r(input_copy, " /", &saveptr1); token1 && !have_recogn; token1 = strtok_r(NULL, " /", &saveptr1)) {
+				xfree(temp);
+				if (s_p_get_string_2(&temp, token1, tbl) && temp) {
+					if (xstrcasestr(weak_apptype, temp)) {
+						have_recogn_weak = true;
+						xfree(temp_weak);
+						temp_weak = xstrdup(temp);
+					} else {
+						have_recogn = true;
+					}
+				}
+				// Press '.-=_+' to segment words
+				for (token2 = strtok_r(token1, ".-=_+", &saveptr2); token2 && !have_recogn; token2 = strtok_r(NULL, ".-=_+", &saveptr2)) {
+					xfree(temp);
+					if (s_p_get_string_2(&temp, token2, tbl) && temp) {
+						if (xstrcasestr(weak_apptype, temp)) {
+							have_recogn_weak = true;
+							xfree(temp_weak);
+							temp_weak = xstrdup(temp);
+						} else {
+							have_recogn = true;
+						}
+					}
+				}
+			}
+			xfree(input_copy);
+		}
+
+		/* send data */
+		if (!have_recogn && collect->max_cpu_time >= total_cpu_time) {
+			total_cpu_time = collect->max_cpu_time;
+			if (collect->max_cputime_comm) {
+				xfree(max_cputime_proc);
+				/* Copy max_cputime_proc to apptype_rp for last_resend */
+				max_cputime_proc = xstrdup(collect->max_cputime_comm);
+			}
+		}
+
+		/* free collect memory */
+		for (int i = 0 ; i < limit ; i++) {
+			xfree(collect->cmdlines[i]);
+			xfree(collect->commands[i]);
+		}
+		xfree(collect->cmdlines);
+		xfree(collect->commands);
+		xfree(collect->max_cputime_comm);
+		xfree(collect);
+
+		if (have_recogn || have_recogn_weak) {
+			/* send_data */
+			write_data = xmalloc(sizeof(write_t));
+			write_data->send_flag2 = JOBACCT_GATHER_PROFILE_APPTYPE;
+			write_data->apptype_step = have_recogn ? xstrdup(temp) : xstrdup(temp_weak);
+			write_data->apptype_cli = xstrdup(apptype);
+			write_data->have_recogn = true;
+			/*
+				If the application type is identified, cputime is recorded as the maximum value.
+				If the application type is not identified, the process with the largest cputime 
+					is selected as the identification result, and the real value of cputime is emitted together.
+				Setting cputime to its maximum value also makes a difference.
+			*/
+			write_data->cputime = UINT64_MAX;
+			/* send job apptype data to influxdb */
+			_poll_data(1, NULL, write_data);
+
+			xfree(write_data->apptype_step);
+			xfree(write_data->apptype_cli);
+			xfree(write_data);
+			/* The thread is exited when the application type is successfully mapped */
+			break;
+		} else {
+			apptype_recongn_count--;
+			write_data = xmalloc(sizeof(write_t));
+			write_data->send_flag2 = JOBACCT_GATHER_PROFILE_APPTYPE;
+			write_data->apptype_step = xstrdup(max_cputime_proc);
+			write_data->apptype_cli = xstrdup(apptype);
+			write_data->cputime = total_cpu_time;
+			if (apptype_recongn_count <= 0) {
+				/* send job apptype data to influxdb */
+				write_data->have_recogn = true;
+				_poll_data(1, NULL, write_data);
+				
+			} else {
+				/* send job apptype data to influxdb plugin but no send data to influxdb, just cache */
+				write_data->have_recogn = false;
+				_poll_data(0, NULL, write_data);
+			}
+			xfree(write_data->apptype_step);
+			xfree(write_data->apptype_cli);
+			xfree(write_data);
+		}
+
+		if (apptype_recongn_count <= 0) 
+			break;
+
+		/* shutting down, woken by jobacct_gather_fini() */
+		if (!_init_run_test())
+			break;
+	}
+	/* free memory */
+	xfree(apptype);
+	xfree(weak_apptype);
+	xfree(temp_weak);
+	xfree(temp);
+	xfree(max_cputime_proc);
+	s_p_hashtbl_destroy(tbl);
+	/* 
+		apptype_recongn_count is set to 0 to mark the exit of the thread and to prevent further 
+		access to the process cmdline information in _poll_data 
+	*/
+	apptype_recongn_count = 0;
+	return NULL;
+}
+#endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 /* _acct_send_step() issue RPC to aggregation job step data*/
 static void _acct_send_data_step(acct_gather_rank_t *job_send, step_gather_msg_t msg, int timeout)
@@ -641,7 +840,9 @@ static void *step_collect(void *args)
 	write_data->step_pages = 0;
 	write_data->send_flag = false;
 	write_data->load_flag = 0;
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	write_data->send_flag2 = 0;
+#endif
 #if HAVE_SYS_PRCTL_H
 	if (prctl(PR_SET_NAME, "acctg_step", NULL, NULL, NULL) < 0) {
 		error("%s: cannot set my name to %s %m", __func__, "acctg_step");
@@ -742,6 +943,9 @@ static void *step_collect(void *args)
 			watch_dog_collect.step_pages    = write_data->step_pages ;
 			watch_dog_collect.update		= true;
 			slurm_mutex_unlock(&watch_dog_all_env_lock);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			write_data->send_flag2 |= JOBACCT_GATHER_PROFILE_ABNORMAL;
 #endif
 			_poll_data(1, NULL, write_data);
 
@@ -916,6 +1120,9 @@ static void *step_collect(void *args)
 				watch_dog_collect.step_pages    = write_data->step_pages ;
 				watch_dog_collect.update		= true;
 				slurm_mutex_unlock(&watch_dog_all_env_lock);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+				write_data->send_flag2 |= JOBACCT_GATHER_PROFILE_ABNORMAL;
 #endif
 				_poll_data(1, NULL, write_data);
 			}
@@ -1291,10 +1498,186 @@ extern int jobacct_gather_init(void)
 
 done:
 	slurm_mutex_unlock(&g_context_lock);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	if (retval == SLURM_SUCCESS) {
+		if(acct_gather_parse_freq(PROFILE_APPTYPE, slurm_conf.job_acct_gather_freq) > 0){
+			retval = apptype_properties_conf_init();
+		}
+	}
+#endif
 	return(retval);
 }
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+static int _get_option_from_file(s_p_options_t **full_options, int *full_options_cnt)
+{
+	char *conf_path = NULL;
+	struct stat buf;
+	int size = 0, capacity = 10;
+	s_p_options_t *options = NULL;
 
+	conf_path = get_extra_conf_path("apptype.properties");
+	if ((conf_path == NULL) || (stat(conf_path, &buf) == -1)) {
+		debug2("No apptype.properties file (%s)", conf_path);
+		return SLURM_ERROR;
+	} 
+
+	debug2("Build option struct array from apptype.properties file %s", conf_path);
+	/* Build an array of option structs by reading apptype.properties */
+	FILE *file = fopen(conf_path, "r");
+	if (!file) {
+		debug2("Failed to open file: %s to Build s_p_options_t", conf_path);
+		xfree(conf_path);
+		return SLURM_ERROR;
+	}
+	options = xmalloc(capacity * sizeof(s_p_options_t));
+	if(!options){
+		fclose(file);
+		xfree(conf_path);
+		return SLURM_ERROR;
+	}
+	char line[256] = {0};
+	while (fgets(line, sizeof(line), file)) {
+		/* Remove blank lines and comment lines */
+		if (line[0] == '\n' || line[0] == '#') {
+			continue;
+		}
+		/* Remove end-of-line newlines */
+		line[strcspn(line, "\n")] = '\0';
+
+		/* Press '=' to split the key and value and extract the key */
+		char *saveptr = NULL;
+		char *key = strtok_r(line, "=", &saveptr);
+		if (!key) continue;
+
+		if (size >= capacity) {
+			capacity *= 2;
+			options = xrealloc(options, capacity * sizeof(s_p_options_t));
+			if (!options) {
+				fclose(file);
+				return -1;
+			}
+		}
+
+		/* Save the key and fix the type to S_P_STRING */
+		options[size].key = xstrdup(key);
+		options[size].type = S_P_STRING;
+		size++;
+	}
+	fclose(file);
+
+	if (size < capacity) {
+		options[size].key = NULL;
+	}
+
+	transfer_s_p_options(full_options, options, full_options_cnt);
+	for (int i = 0; i < size; i++) { 
+		xfree(options[i].key);
+	}
+	xfree(options);
+	xfree(conf_path);
+	return SLURM_SUCCESS;
+}
+extern int apptype_properties_conf_init(void)
+{
+	char *conf_path = NULL;
+	struct stat buf;
+	int rc = SLURM_SUCCESS;
+	s_p_options_t *full_options = NULL;
+	int full_options_cnt = 0, i;
+	s_p_hashtbl_t *tbl = NULL;
+	
+	/* Determine if the apptype is set and load the appType.properties file */
+	if (inited)
+		return SLURM_SUCCESS;
+	inited = 1;
+
+	rc += _get_option_from_file(&full_options, &full_options_cnt);
+	xrealloc(full_options,
+		 ((full_options_cnt + 1) * sizeof(s_p_options_t)));
+	tbl = s_p_hashtbl_create_2(full_options);
+
+	conf_path = get_extra_conf_path("apptype.properties");
+	if ((conf_path == NULL) || (stat(conf_path, &buf) == -1)) {
+		debug2("No apptype.properties file (%s)", conf_path);
+	} else {
+		debug2("Reading apptype.properties file %s", conf_path);	
+		/* 
+			Build the hash table from apptype.properties, passing true and changing error to debug 
+			so as not to affect the ctld service 
+		*/
+		if (s_p_parse_file(tbl, NULL, conf_path, true, NULL) ==
+		    SLURM_ERROR) {
+			fatal("Could not open/read/parse apptype.properties file "
+			      "%s.  Many times this is because you have "
+			      "defined options for plugins that are not "
+			      "loaded.  Please check your slurm.conf file "
+			      "and make sure the plugins for the options "
+			      "listed are loaded.",
+			      conf_path);
+		}
+	}
+	apptype_properties_apptype_buf = s_p_pack_hashtbl(
+		tbl, full_options, full_options_cnt);
+	for (i=0; i<full_options_cnt; i++)
+		xfree(full_options[i].key);
+	xfree(full_options);
+	xfree(conf_path);
+	s_p_hashtbl_destroy(tbl);
+	return SLURM_SUCCESS;
+}
+
+extern int apptype_properties_write_conf(int fd)
+{
+	int len;
+	apptype_properties_conf_init();
+	slurm_mutex_lock(&conf_mutex2);
+	len = get_buf_offset(apptype_properties_apptype_buf);
+
+	safe_write(fd, &len, sizeof(int));
+	safe_write(fd, get_buf_data(apptype_properties_apptype_buf), len);
+	slurm_mutex_unlock(&conf_mutex2);
+	return 0;
+rwfail:
+	slurm_mutex_unlock(&conf_mutex2);
+	return -1;
+	
+}
+extern int apptype_properties_read_conf(int fd)
+{
+	int len;
+
+	safe_read(fd, &len, sizeof(int));
+	apptype_properties_apptype_buf = init_buf(len);
+	safe_read(fd, apptype_properties_apptype_buf->head, len);
+
+	inited = true;
+
+	return SLURM_SUCCESS;
+rwfail:
+	return SLURM_ERROR;
+}
+extern int apptype_properties_conf_reconfig(void)
+{
+	apptype_properties_conf_destory();
+	slurm_mutex_init(&conf_mutex2);
+	apptype_properties_conf_init();
+	return SLURM_SUCCESS;
+}
+extern int apptype_properties_conf_destory(void)
+{
+	int rc = SLURM_SUCCESS;
+
+	if(!inited)
+		return SLURM_SUCCESS;
+	
+	inited = false;
+
+	FREE_NULL_BUFFER(apptype_properties_apptype_buf);
+
+	return rc;
+}
+
+#endif
 extern int jobacct_gather_fini(void)
 {
 	int rc = SLURM_SUCCESS;
@@ -1333,9 +1716,22 @@ extern int jobacct_gather_fini(void)
 			slurm_mutex_lock(&g_context_lock);
 		}
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		if (apptype_recognition_thread_id) {
+			slurm_mutex_unlock(&g_context_lock);
+			slurm_mutex_lock(&profile_apptype->notify_mutex);
+			slurm_cond_signal(&profile_apptype->notify);
+			slurm_mutex_unlock(&profile_apptype->notify_mutex);
+			pthread_join(apptype_recognition_thread_id, NULL);
+			slurm_mutex_lock(&g_context_lock);
+		}
+#endif
 		rc = plugin_context_destroy(g_context);
 		g_context = NULL;
 	}
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	apptype_properties_conf_destory();
+#endif
 	slurm_mutex_unlock(&g_context_lock);
 
 	return rc;
@@ -1416,6 +1812,43 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobin
 	debug3("jobacct stepd gather dynamic logging enabled");
 
 	return retval;
+}
+#endif
+
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+extern int	jobacct_gather_apptypepoll(uint16_t frequency, acct_gather_rank_t jobinfo) 
+{
+	char *apptype = NULL;
+	if (!plugin_polling)
+		return SLURM_SUCCESS;
+
+	if (jobacct_gather_init() < 0)
+		return SLURM_ERROR;
+
+	if (_jobacct_shutdown_test()) {
+		slurm_mutex_lock(&jobacct_shutdown_mutex);
+		jobacct_shutdown = false;
+		slurm_mutex_unlock(&jobacct_shutdown_mutex);
+	}
+	/* There is no need to apply apptype identification */
+	if (frequency <= 0) {
+		debug2("jobacct_gather no need to apply apptype identification");
+		return SLURM_SUCCESS;
+	}
+	/* Non-head nodes do not start the thread */
+	if(step_gather.parent_rank_gather != -1) 
+		return SLURM_SUCCESS;
+
+	/*
+		Limit the number of apptype_regn threads collected
+		+1 to ensure that the thread can collect one more time before exiting
+	*/
+	apptype_recongn_count = (frequency <= 0 ? 0 : ((JOBACCTGATHER_APPTYPE_DURATION / frequency) + 1));
+	apptype = xstrdup(jobinfo.apptype);
+	slurm_thread_create(&apptype_recognition_thread_id, apptype_recognition, apptype);
+	debug3("jobacct apptype gather dynamic logging enabled");
+
+	return SLURM_SUCCESS;
 }
 #endif
 

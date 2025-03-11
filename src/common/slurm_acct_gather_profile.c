@@ -118,6 +118,15 @@ acct_gather_profile_timer_t acct_gather_profile_timer[PROFILE_CNT];
 acct_gather_profile_timer_t acct_gather_profile_timer_watch_dog;
 static bool init_watch_dog = false;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/*
+	This variable controls how many times the acctg_apptype thread is woked, which only collects 
+	job data early in the job run to analyze the application type. When the variable is set to 
+	zero, the acctg_apptype thread is woked one last time and exited to keep thread overhead as 
+	low as possible
+*/
+int apptype_recongn_count = 0;
+#endif
 static bool acct_gather_profile_running = false;
 static pthread_mutex_t profile_running_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -455,6 +464,10 @@ extern int acct_gather_profile_fini(void)
 		case PROFILE_STEPD:
 			break;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		case PROFILE_APPTYPE:
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -510,6 +523,13 @@ extern void acct_gather_profile_to_string_r(uint32_t profile,
 			strcat(profile_str, "Jobmonitor");
 		}
 #endif		
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		if (profile & ACCT_GATHER_PROFILE_APPTYPE) {
+			if (profile_str[0])
+				strcat(profile_str, ",");
+			strcat(profile_str, "Apptype");
+		}
+#endif
 	}
 }
 
@@ -546,6 +566,10 @@ extern uint32_t acct_gather_profile_from_string(const char *profile_str)
 #ifdef __METASTACK_LOAD_ABNORMAL
 		if (xstrcasestr(profile_str, "jobmonitor"))
 			profile |= ACCT_GATHER_PROFILE_STEPD;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		if (xstrcasestr(profile_str, "apptype"))
+			profile |= ACCT_GATHER_PROFILE_APPTYPE;
 #endif
 	}
 
@@ -602,6 +626,11 @@ extern char *acct_gather_profile_type_t_name(acct_gather_profile_type_t type)
 	/*The name of the newly opened thread*/
 	case PROFILE_STEPD:
 		return "Jobmonitor";
+		break;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	case PROFILE_APPTYPE:
+		return "Apptype";
 		break;
 #endif
 	default:
@@ -800,6 +829,23 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 			}
 			break;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		case PROFILE_APPTYPE:
+			/*
+				ProfileInfluxDBDefault If apptype is not enabled, the acctg_apptype thread will 
+				not be started. This is because apptype's query means are dependent on influxdb 
+				plugin, independent of slurm.
+			*/
+			if (!(profile & ACCT_GATHER_PROFILE_APPTYPE))
+				break;
+			/*
+				The frequency of passing NULL to represent acctg_apptype is not affected by the 
+				user side and depends only on slurm.conf
+			*/
+			_set_freq(i, NULL, freq_def);
+			jobacct_gather_apptypepoll(acct_gather_profile_timer[i].freq, step_rank);
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -846,6 +892,9 @@ extern void acct_gather_profile_endpoll(void)
 		switch (i) {
 		case PROFILE_ENERGY:
 			break;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		case PROFILE_APPTYPE:
+#endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 		case PROFILE_STEPD:
 #endif

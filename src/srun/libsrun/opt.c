@@ -521,7 +521,14 @@ extern int initialize_and_process_args(int argc, char **argv, int *argc_off)
 				}
 			}
 		}
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		/*
+			If apptype is enabled by JobAcctGatherFrequency, initialize apptype as argv[0] for srun job.
+		*/
+		if ((opt.apptype == NULL || xstrcmp(opt.apptype, "unset") != 0) && opt.srun_opt->argc >= 1) {
+    		opt.apptype = xstrdup(opt.srun_opt->argv[0]);
+		}
+#endif
 #ifdef __METASTACK_NEW_TIME_PREDICT
 		if (opt.predict_job != 0) {
 			opt.predict_job = -1;

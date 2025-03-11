@@ -65,6 +65,9 @@ typedef struct jag_prec {	/* process record */
 #ifdef __METASTACK_LOAD_ABNORMAL
     int flag;/*Use different numbers to represent different states*/
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *cmdline;
+#endif
 } jag_prec_t;
 
 typedef struct jag_callbacks {

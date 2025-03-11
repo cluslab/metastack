@@ -96,7 +96,15 @@ static char *keyvalue_pattern =
 	"((\"([^\"]*)\")|([^[:space:]]+))" /* value: quoted with whitespace,
 					    * or unquoted and no whitespace */
 	"([[:space:]]|$)";
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/* Just use = to get the key and value */
+static char *keyvalue_pattern_easy =
+	"^[[:space:]]*"
+	"((\"([^\"]*)\")|([^[:space:]]+))" /* key: quoted or unquoted */
+	"[[:space:]]*=[[:space:]]*"
+	"((\"([^\"]*)\")|([^[:space:]]+))" /* value: quoted or unquoted */
+	"([[:space:]]|$)";
+#endif
 struct s_p_values {
 	char *key;
 	int type;
@@ -227,7 +235,40 @@ s_p_hashtbl_t *s_p_hashtbl_create(const s_p_options_t options[])
 
 	return tbl;
 }
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+s_p_hashtbl_t *s_p_hashtbl_create_2(const s_p_options_t options[])
+{
+	s_p_hashtbl_t *tbl = xmalloc(sizeof(*tbl));
 
+	for (const s_p_options_t *op = options; op->key; op++) {
+		s_p_values_t *value = xmalloc(sizeof(*value));
+		value->key = xstrdup(op->key);
+		value->operator = S_P_OPERATOR_SET;
+		value->type = op->type;
+		value->data_count = 0;
+		value->data = NULL;
+		value->next = NULL;
+		value->handler = op->handler;
+		value->destroy = op->destroy;
+		if (op->type == S_P_LINE || op->type == S_P_EXPLINE) {
+			/* line_options mandatory for S_P_*LINE */
+			_expline_values_t *expdata = xmalloc(sizeof(*expdata));
+			xassert(op->line_options);
+			expdata->template =
+				s_p_hashtbl_create(op->line_options);
+			expdata->index = xmalloc(sizeof(*expdata->index));
+			expdata->values = NULL;
+			value->data = expdata;
+		}
+		_conf_hashtbl_insert(tbl, value);
+	}
+
+	if (regcomp(&tbl->keyvalue_re, keyvalue_pattern_easy, REG_EXTENDED))
+		fatal("keyvalue regex compilation failed");
+
+	return tbl;
+}
+#endif
 /* Swap the data in two data structures without changing the linked list
  * pointers */
 static void _conf_hashtbl_swap_data(s_p_values_t *data_1,
@@ -2280,6 +2321,39 @@ int s_p_get_string(char **str, const char *key, const s_p_hashtbl_t *hashtbl)
 
 	return 0;
 }
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+static s_p_values_t* _get_check_2(slurm_parser_enum_t type,
+				const char* key, const s_p_hashtbl_t* hashtbl)
+{
+	s_p_values_t *p;
+	if (!hashtbl)
+		return NULL;
+	p = _conf_hashtbl_lookup(hashtbl, key);
+	if (p == NULL) {
+		// error("Invalid key \"%s\"", key);
+		return NULL;
+	}
+	if (p->type != type) {
+		error("Key \"%s\" is not typed correctly", key);
+		return NULL;
+	}
+	if (p->data_count == 0) {
+		return NULL;
+	}
+	return p;
+}
+int s_p_get_string_2(char **str, const char *key, const s_p_hashtbl_t *hashtbl)
+{
+	s_p_values_t *p = _get_check_2(S_P_STRING, key, hashtbl);
+
+	if (p) {
+		*str = xstrdup((char *)p->data);
+		return 1;
+	}
+
+	return 0;
+}
+#endif
 
 int s_p_get_long(long *num, const char *key, const s_p_hashtbl_t *hashtbl)
 {
