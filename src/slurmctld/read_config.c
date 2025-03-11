@@ -1953,6 +1953,10 @@ void _sync_jobs_to_conf(void)
 				build_cg_bitmap(job_ptr);
 				was_running = true;
 			} else if (IS_JOB_SUSPENDED(job_ptr)) {
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+				job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+				job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 				job_ptr->end_time = job_ptr->suspend_time;
 				job_ptr->job_state =
 					JOB_NODE_FAIL | JOB_COMPLETING;

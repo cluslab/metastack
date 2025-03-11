@@ -4810,6 +4810,10 @@ extern int kill_job_by_part_name(char *part_name)
 			 * accounting stuff.
 			 */
 			job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+			job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+			job_ptr->end_time = job_ptr->suspend_time = now;
+#endif	
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_ptr->job_state = suspend_job_state;
 			suspended = true;
@@ -4898,6 +4902,10 @@ extern int kill_job_by_front_end_name(char *node_name)
 			 * accounting stuff.
 			 */
 			job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+			job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+			job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_ptr->job_state = suspend_job_state;
 			suspended = true;
@@ -5139,6 +5147,10 @@ extern int kill_running_job_by_node_name(char *node_name)
 			 * accounting stuff.
 			 */
 			job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+			job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+			job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_ptr->job_state = suspend_job_state;
 			suspended = true;
@@ -6555,6 +6567,10 @@ static int _job_fail(job_record_t *job_ptr, uint32_t job_state)
 		 * accounting stuff.
 		 */
 		job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 		job_ptr->job_state = suspend_job_state;
 		suspended = true;
@@ -6772,6 +6788,10 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_term_state = JOB_CANCELLED;
 	if (IS_JOB_SUSPENDED(job_ptr) && (signal == SIGKILL)) {
 		last_job_update         = now;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		job_ptr->end_time       = job_ptr->suspend_time;
 		job_ptr->tot_sus_time  += difftime(now, job_ptr->suspend_time);
 		job_ptr->job_state      = job_term_state | JOB_COMPLETING;
@@ -7433,6 +7453,10 @@ static int _job_complete(job_record_t *job_ptr, uid_t uid, bool requeue,
 		 * accounting stuff.
 		 */
 		job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 		job_ptr->job_state = suspend_job_state;
 		job_comp_flag = JOB_COMPLETING;
@@ -19748,6 +19772,10 @@ static int _job_requeue_op(uid_t uid, job_record_t *job_ptr, bool preempt,
 		 * accounting stuff.
 		 */
 		job_ptr->job_state = JOB_REQUEUE;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 		job_ptr->job_state = suspend_job_state;
 		is_suspended = true;
