@@ -230,6 +230,10 @@ enum {
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	LONG_OPT_JOB_CUSTOM,	
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	LONG_OPT_SUBMIT_LINE,
+	LONG_OPT_APPTYPE,
+#endif
 	LONG_OPT_ENUM_END
 };
 
@@ -507,7 +511,9 @@ typedef struct {
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	char *watch_dog;  
 #endif
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype;			/* --apptype	*/
+#endif
 } slurm_opt_t;
 
 extern struct option *slurm_option_table_create(slurm_opt_t *opt,

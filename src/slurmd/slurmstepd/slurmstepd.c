@@ -594,7 +594,10 @@ _init_from_slurmd(int sock, char **argv,
 	/* receive acct_gather conf from slurmd */
 	if (acct_gather_read_conf(sock) != SLURM_SUCCESS)
 		fatal("Failed to read acct_gather conf from slurmd");
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	if (apptype_properties_read_conf(sock) != SLURM_SUCCESS)
+		fatal("Failed to read apptype.properties from slurmd");
+#endif
 	/* receive job type from slurmd */
 	safe_read(sock, &step_type, sizeof(int));
 	debug3("step_type = %d", step_type);

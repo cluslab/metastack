@@ -526,7 +526,10 @@ _send_slurmstepd_init(int fd, int type, void *req,
 	/* send acct_gather.conf over to slurmstepd */
 	if (acct_gather_write_conf(fd) < 0)
 		goto rwfail;
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	if (apptype_properties_write_conf(fd) < 0)
+		goto rwfail;
+#endif
 	/* send type over to slurmstepd */
 	safe_write(fd, &type, sizeof(int));
 
@@ -2245,6 +2248,9 @@ static int _spawn_prolog_stepd(slurm_msg_t *msg)
 	launch_req->enable_all_nodes	= req->enable_all_nodes;
 	launch_req->enable_all_stepds	= req->enable_all_stepds;
 	launch_req->style_step			= req->style_step;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	launch_req->apptype			= req->apptype;
 #endif
 	/*
 	 * determine which node this is in the allocation and if

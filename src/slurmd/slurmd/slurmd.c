@@ -1231,7 +1231,9 @@ _reconfigure(void)
 	send_registration_msg(SLURM_SUCCESS);
 
 	acct_gather_reconfig();
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	apptype_properties_conf_reconfig();
+#endif
 	/* reconfigure energy */
 	acct_gather_energy_g_set_data(ENERGY_DATA_RECONFIG, NULL);
 

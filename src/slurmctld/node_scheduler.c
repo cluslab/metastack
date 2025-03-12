@@ -3270,7 +3270,9 @@ extern void launch_prolog(job_record_t *job_ptr)
 	prolog_msg_ptr->spank_job_env_size = job_ptr->spank_job_env_size;
 	prolog_msg_ptr->spank_job_env = xduparray(job_ptr->spank_job_env_size,
 						  job_ptr->spank_job_env);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	prolog_msg_ptr->apptype = xstrdup(job_ptr->details->apptype);
+#endif
 	xassert(job_ptr->job_resrcs);
 	job_resrcs_ptr = job_ptr->job_resrcs;
 	setup_cred_arg(&cred_arg, job_ptr);

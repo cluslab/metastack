@@ -572,6 +572,35 @@ void _set_smaps_file(char **proc_smaps_file, pid_t pid)
 	else
 		xstrfmtcat(*proc_smaps_file, "/proc/%d/smaps", pid);
 }
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+static int _get_cmdline(char *proc_cmdline_file, jag_prec_t *prec)
+{
+	FILE *fp = NULL;
+    char buffer[1024] = {0};
+    size_t len = 0;
+
+	if (!proc_cmdline_file || !prec) {
+        return -1;
+    }
+	if (!(fp = fopen(proc_cmdline_file, "r")))
+		return -1;
+	len = fread(buffer, 1, sizeof(buffer) - 1, fp);
+
+	if (len <= 0) {
+        fclose(fp);
+        return -1;
+	}
+	buffer[len] = '\0';
+	fclose(fp);
+    for (size_t i = 0; i < len; i++) {
+        if (buffer[i] == '\0') {
+            buffer[i] = ' ';
+        }
+    }
+    prec->cmdline = xstrdup(buffer);
+	return 0;
+}
+#endif
 
 static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 {
@@ -665,7 +694,21 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 		if (_get_pss(proc_file, prec) == -1)
 			goto bail_out;
 	}
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	prec->cmdline = NULL;
+	/* 
+		apptype_recongn_count marks the number of times that the apptype thread collects data related 
+		to application information. When this variable is less than or equal to 0, it means that the 
+		apptype thread has exited and the subsequent process information collection process does not 
+		need to collect cmdline information
+	*/
+	if (apptype_recongn_count > 0) {
+		xfree(proc_file);
+		xstrfmtcat(proc_file, "/proc/%u/cmdline", pid);
+		if (_get_cmdline(proc_file, prec) == -1)
+			goto bail_out;
+	}
+#endif
 	xfree(proc_file);
 	xstrfmtcat(proc_file, "/proc/%u/io", pid);
 	if ((io_fp = fopen(proc_file, "r"))) {
@@ -712,6 +755,10 @@ bail_out:
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
     if(prec->command != NULL)
 		xfree(prec->command);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	if (prec->cmdline != NULL)
+		xfree(prec->cmdline);
 #endif
 	xfree(prec);
 	return;
@@ -780,13 +827,24 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		FIELD_EVENTTYPE3START,
 		FIELD_EVENTTYPE1END,
 		FIELD_EVENTTYPE2END,
-		FIELD_EVENTTYPE3END,						
+		FIELD_EVENTTYPE3END,	
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		/* APPTYPE */
+		FIELD_SENDFLAG,
+		FIELD_APPTYPESTEP,
+		FIELD_APPTYPECLI,
+		FIELD_HAVERECOGN,
+		FIELD_CPUTIME,
+#endif						
 		FIELD_CNT
 	};
 
 	acct_gather_profile_dataset_t dataset[] = {
 		{ "STEPPROFILE", PROFILE_FIELD_DOUBLE },
 		{ "STPEDEVENT", PROFILE_FIELD_DOUBLE },
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		{ "APPTYPE",	PROFILE_FIELD_DOUBLE },
+#endif
 		{ NULL, PROFILE_FIELD_NOT_SET }
 	};
 	static int64_t profile_gid = -1;
@@ -795,8 +853,28 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 	union {
 		double d;
 		uint64_t u64;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		char *str;
+#endif
 	} data[FIELD_CNT];
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	/* Initializing all  member*/
+	data[FIELD_CPUTHRESHOLD].d = 0;
+	data[FIELD_STEPCPU].d = 0;
+	data[FIELD_STEPCPUAVE].d = 0;	
+	data[FIELD_STEPMEM].d = 0;
+	data[FIELD_STEPVMEM].d = 0;
+	data[FIELD_STEPPAGES].u64 = 0;
+	data[FIELD_FLAG].u64 = 0;
+	data[FIELD_TIMER].u64 = 0;
+	data[FIELD_EVENTTYPE1START].u64 = 0;
+	data[FIELD_EVENTTYPE1END].u64 = 0;
+	data[FIELD_SENDFLAG].u64 = 0;
+	data[FIELD_APPTYPESTEP].str = NULL;
+	data[FIELD_HAVERECOGN].u64 = 0;
+	data[FIELD_APPTYPECLI].str = NULL;
+	data[FIELD_CPUTIME].u64 = 0;
+#endif
 	char str[256];
 
 	if (profile_gid == -1)
@@ -818,43 +896,52 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 
 	if (jobacct->dataset_id < 0)
 		return;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	data[FIELD_SENDFLAG].u64 = send->send_flag2;
+	if (send->send_flag2 & JOBACCT_GATHER_PROFILE_ABNORMAL) {
 	/* Profile Mem and VMem as KB */
-	if(jobacct->node_alloc_cpu > 0) {
-		data[FIELD_CPUTHRESHOLD].d = send->cpu_threshold / jobacct->node_alloc_cpu;
-		data[FIELD_STEPCPU].d = jobacct->cpu_step_real / jobacct->node_alloc_cpu;
-		data[FIELD_STEPCPUAVE].d = jobacct->cpu_step_ave / jobacct->node_alloc_cpu;	
-	} else {
-		data[FIELD_CPUTHRESHOLD].d = 0;
-		data[FIELD_STEPCPU].d = 0;
-		data[FIELD_STEPCPUAVE].d = 0;			
+		if (jobacct->node_alloc_cpu > 0) {
+			data[FIELD_CPUTHRESHOLD].d = send->cpu_threshold / jobacct->node_alloc_cpu;
+			data[FIELD_STEPCPU].d = jobacct->cpu_step_real / jobacct->node_alloc_cpu;
+			data[FIELD_STEPCPUAVE].d = jobacct->cpu_step_ave / jobacct->node_alloc_cpu;	
+		} else {
+			data[FIELD_CPUTHRESHOLD].d = 0;
+			data[FIELD_STEPCPU].d = 0;
+			data[FIELD_STEPCPUAVE].d = 0;			
+		}
+
+		data[FIELD_STEPMEM].d = jobacct->mem_step / 1024;
+		data[FIELD_STEPVMEM].d = jobacct->vmem_step / 1024;	
+		data[FIELD_STEPPAGES].u64 = jobacct->step_pages;
+
+		data[FIELD_FLAG].u64 = send->load_flag;
+		data[FIELD_TIMER].u64 = send->timer;
+		if (send->load_flag & LOAD_LOW) { 
+			data[FIELD_EVENTTYPE1START].u64 = send->cpu_start;
+			data[FIELD_EVENTTYPE1END].u64 = send->cpu_end;
+		}
+
+		if (send->load_flag & PROC_AB) { 
+			/*
+				Since the acquisition period is a fixed interval, there is no need to record the start
+				and end time of each anomaly, only one copy is needed.
+			*/
+			data[FIELD_EVENTTYPE1START].u64 = send->pid_start;
+			data[FIELD_EVENTTYPE1END].u64 = send->pid_end;
+		}
+
+		if (send->load_flag & JNODE_STAT) { 
+			data[FIELD_EVENTTYPE1START].u64 = send->node_start;
+			data[FIELD_EVENTTYPE1END].u64 = send->node_end;
+		}	
 	}
-
-	data[FIELD_STEPMEM].d = jobacct->mem_step / 1024;
-	data[FIELD_STEPVMEM].d = jobacct->vmem_step / 1024;	
-	data[FIELD_STEPPAGES].u64 = jobacct->step_pages;
-
-	data[FIELD_FLAG].u64 = send->load_flag;
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
-	data[FIELD_TIMER].u64 = send->timer;
+	if (send->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) {
+		data[FIELD_APPTYPESTEP].str = xstrdup(send->apptype_step);
+		data[FIELD_HAVERECOGN].u64 = (uint64_t)send->have_recogn;
+		data[FIELD_APPTYPECLI].str = xstrdup(send->apptype_cli);
+		data[FIELD_CPUTIME].u64 = send->cputime;
+	}
 #endif
-	if(send->load_flag & LOAD_LOW) { 
-		data[FIELD_EVENTTYPE1START].u64 = send->cpu_start;
-		data[FIELD_EVENTTYPE1END].u64 = send->cpu_end;
-	}
-
-	if(send->load_flag & PROC_AB) { 
-		/*
-			Since the acquisition period is a fixed interval, there is no need to record the start
-			and end time of each anomaly, only one copy is needed.
-		*/
-		data[FIELD_EVENTTYPE1START].u64 = send->pid_start;
-		data[FIELD_EVENTTYPE1END].u64 = send->pid_end;
-	}
-
-	if(send->load_flag & JNODE_STAT) { 
-		data[FIELD_EVENTTYPE1START].u64 = send->node_start;
-		data[FIELD_EVENTTYPE1END].u64 = send->node_end;
-	}	
 
 
 	log_flag(PROFILE, "PROFILE-Task: %s",
@@ -865,7 +952,12 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 	if (influx_flag == SLURM_ERROR) {
 		debug2("the influxdb plug is not enabled");
 	}
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	if (send->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) {
+		if (data[FIELD_APPTYPESTEP].str) xfree(data[FIELD_APPTYPESTEP].str);
+		if (data[FIELD_APPTYPECLI].str) xfree(data[FIELD_APPTYPECLI].str);
+	}
+#endif
 }
 #endif
 
@@ -1030,6 +1122,9 @@ extern void destroy_jag_prec(void *object)
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
 	xfree(prec->command);
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	xfree(prec->cmdline);
+#endif
 	xfree(prec->tres_data);
 	xfree(prec);
 	return;
@@ -1190,7 +1285,9 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	/* just write once to the jobacct structure */
 	bool stamp = false; 
 #endif
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	uint64_t total_job_cputime = 0;
+#endif
 	xassert(callbacks);
 
 	if (cont_id == NO_VAL64) {
@@ -1208,7 +1305,24 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		callbacks->get_precs = _get_precs;
 
 	ct = time(NULL);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	/*
+		1. A profile of 0 means no data is written
+		2. collect is NULL if no data will be collected
+		3. If write is not NULL, it means that the purpose of this poll_data is to send data to the influxdb cache.
+		Currently only apptype triggers this.
+	*/
+	if (!profile && collect == NULL && data != NULL) {
+		if ((data->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) && acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_APPTYPE)) {
+			jobacct = jobacctinfo_create(NULL);
+			jobacct->cur_time = ct;
+			_record_profile2(jobacct, data);
+			jobacctinfo_destroy(jobacct);
+			processing = 0;
+			return;
+		}
+	}
+#endif
 	(void)list_for_each(prec_list, (ListForF)_init_tres, NULL);
 	(*(callbacks->get_precs))(task_list, cont_id, callbacks);
 
@@ -1340,53 +1454,67 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 
 		total_job_mem += jobacct->tres_usage_in_tot[TRES_ARRAY_MEM];
 		total_job_vsize += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		total_job_cputime += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
+#endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 		if(data != NULL) {
 			if(stamp == false) {
-				
-				jobacct->node_alloc_cpu = data->node_alloc_cpu;
-				jobacct->timer = data->timer;
-				jobacct->cpu_threshold = data->cpu_threshold;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+				if (data->send_flag2 & JOBACCT_GATHER_PROFILE_ABNORMAL) {
+					jobacct->node_alloc_cpu = data->node_alloc_cpu;
+					jobacct->timer = data->timer;
+					jobacct->cpu_threshold = data->cpu_threshold;
 
-				if(data->load_flag & LOAD_LOW) { 
-					jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
-					jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;
-					jobacct->cpu_count++;
-					jobacct->flag |= data->load_flag;
-				}
-				if(data->load_flag & PROC_AB) { 
-					jobacct->pid_start[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_start;
-					jobacct->pid_end[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_end;
-					jobacct->pid_count++;
-					jobacct->flag |= data->load_flag;
-				}
+					if (data->load_flag & LOAD_LOW) { 
+						jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
+						jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;
+						jobacct->cpu_count++;
+						jobacct->flag |= data->load_flag;
+					}
+					if (data->load_flag & PROC_AB) { 
+						jobacct->pid_start[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_start;
+						jobacct->pid_end[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_end;
+						jobacct->pid_count++;
+						jobacct->flag |= data->load_flag;
+					}
 
-				if(data->load_flag & JNODE_STAT) { 
-					jobacct->node_start[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_start;
-					jobacct->node_end[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_end;
-					jobacct->node_count++;
-					jobacct->flag |= data->load_flag;
-				}
+					if (data->load_flag & JNODE_STAT) { 
+						jobacct->node_start[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_start;
+						jobacct->node_end[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_end;
+						jobacct->node_count++;
+						jobacct->flag |= data->load_flag;
+					}
 
-				jobacct->cpu_step_ave = data->cpu_step_ave;
-				jobacct->cpu_step_real = data->cpu_step_real;
-				jobacct->mem_step = data->mem_step;
-				jobacct->vmem_step = data->vmem_step;
-				jobacct->step_pages = data->step_pages;
+					jobacct->cpu_step_ave = data->cpu_step_ave;
+					jobacct->cpu_step_real = data->cpu_step_real;
+					jobacct->mem_step = data->mem_step;
+					jobacct->vmem_step = data->vmem_step;
+					jobacct->step_pages = data->step_pages;
 
-				jobacct->cpu_step_max = jobacct->cpu_step_max < data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_max;
-				jobacct->cpu_step_min = jobacct->cpu_step_min > data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_min;
-				jobacct->mem_step_max = jobacct->mem_step_max < data->mem_step ? data->mem_step : jobacct->mem_step_max;
-				jobacct->mem_step_min = jobacct->mem_step_min > data->mem_step ? data->mem_step : jobacct->mem_step_min;
-				jobacct->vmem_step_max = jobacct->vmem_step_max < data->vmem_step ? data->vmem_step : jobacct->vmem_step_max;
-				jobacct->vmem_step_min = jobacct->vmem_step_min > data->vmem_step ? data->vmem_step : jobacct->vmem_step_min;				
-				jobacct->acct_flag = 1;
-				if(data && profile &&  acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_STEPD)) {	
-					jobacct->cur_time = ct;
-					_record_profile2(jobacct, data);
+					jobacct->cpu_step_max = jobacct->cpu_step_max < data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_max;
+					jobacct->cpu_step_min = jobacct->cpu_step_min > data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_min;
+					jobacct->mem_step_max = jobacct->mem_step_max < data->mem_step ? data->mem_step : jobacct->mem_step_max;
+					jobacct->mem_step_min = jobacct->mem_step_min > data->mem_step ? data->mem_step : jobacct->mem_step_min;
+					jobacct->vmem_step_max = jobacct->vmem_step_max < data->vmem_step ? data->vmem_step : jobacct->vmem_step_max;
+					jobacct->vmem_step_min = jobacct->vmem_step_min > data->vmem_step ? data->vmem_step : jobacct->vmem_step_min;				
+					jobacct->acct_flag = 1;
+					if (data && profile && acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_STEPD)) {	
+						jobacct->cur_time = ct;
+						_record_profile2(jobacct, data);
+					}
 				}
-			}	
-			stamp = true;
+				if (data->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) {
+					/*	For incoming apptype information, there is no need to determine the profile; 
+						a special decision is made in record_profile2 whether to cache or send data */
+					if (data && acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_APPTYPE)) {
+						jobacct->cur_time = ct;
+						_record_profile2(jobacct, data);
+					}
+				}
+				stamp = true;
+#endif
+			}
 		}
 		total_job_cpuutil += jobacct->cpu_util;
 		total_job_cpuutil_ave += jobacct->avg_cpu_util;
@@ -1465,6 +1593,19 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				log_flag(JAG,"pid = %d  abnormal process status",prec1->pid);
 				pid_status = pid_status|PROC_AB;
 			} 
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION	
+			if (prec1->cmdline != NULL && prec1->command != NULL && ((collect->collect_flag & JOBACCT_GATHER_PROFILE_APPTYPE) != 0)) {
+				int total_cpu_time = prec1->ssec + prec1->usec;
+				collect->cmdlines[collect->app_rec_cnt % JOBACCTINFO_START_END_ARRAY_SIZE] = xstrdup(prec1->cmdline);
+				collect->commands[collect->app_rec_cnt % JOBACCTINFO_START_END_ARRAY_SIZE] = xstrdup(prec1->command);
+				collect->app_rec_cnt++;
+				if (total_cpu_time >= collect->max_cpu_time) {
+					collect->max_cpu_time = total_cpu_time;
+					if (collect->max_cputime_comm) xfree(collect->max_cputime_comm);
+					collect->max_cputime_comm = xstrdup(prec1->command);
+				}
+			}
+#endif
 		}
 		list_iterator_destroy(itr1);
 		collect->cpu_step_real = total_job_cpuutil;

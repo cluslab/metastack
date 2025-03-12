@@ -760,6 +760,9 @@ static void _delete_job_details(job_record_t *job_entry)
 	xfree(job_entry->details->watch_dog);
 	xfree(job_entry->details->watch_dog_script);
 #endif	
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	xfree(job_entry->details->apptype);
+#endif
 	xfree(job_entry->details);	/* Must be last */
 }
 
@@ -3647,6 +3650,9 @@ void _dump_job_details(struct job_details *detail_ptr, buf_t *buffer)
 	packbool(detail_ptr->enable_all_stepds, buffer);
 	pack32(detail_ptr->style_step, buffer);
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	packstr(detail_ptr->apptype, buffer);
+#endif
 }
 
 /* _load_job_details - Unpack a job details information from buffer */
@@ -3686,6 +3692,9 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 	uint32_t init_time = 0, period = 0, style_step = 0;
 	bool enable_all_nodes = false;
 	bool enable_all_stepds = false;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype = NULL;
 #endif
 	/* unpack the job's details from the buffer */
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
@@ -3762,6 +3771,9 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 		safe_unpackbool(&enable_all_nodes, buffer);
 		safe_unpackbool(&enable_all_stepds, buffer);
 		safe_unpack32(&style_step, buffer);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		safe_unpackstr_xmalloc(&apptype, &name_len, buffer);
 #endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		safe_unpack32(&min_cpus, buffer);
@@ -3939,6 +3951,9 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 
 	/* free any left-over detail data */
 	xfree(job_ptr->details->acctg_freq);
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	xfree(job_ptr->details->apptype);
+#endif
 	for (i=0; i<job_ptr->details->argc; i++)
 		xfree(job_ptr->details->argv[i]);
 	xfree(job_ptr->details->argv);
@@ -3980,6 +3995,9 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 	job_ptr->details->cpu_freq_min = cpu_freq_min;
 	job_ptr->details->cpu_freq_max = cpu_freq_max;
 	job_ptr->details->cpu_freq_gov = cpu_freq_gov;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	job_ptr->details->apptype = apptype;
+#endif
 	if (cpus_per_task != NO_VAL16)
 		job_ptr->details->cpus_per_task = cpus_per_task;
 	else
@@ -4792,6 +4810,10 @@ extern int kill_job_by_part_name(char *part_name)
 			 * accounting stuff.
 			 */
 			job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+			job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+			job_ptr->end_time = job_ptr->suspend_time = now;
+#endif	
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_ptr->job_state = suspend_job_state;
 			suspended = true;
@@ -4880,6 +4902,10 @@ extern int kill_job_by_front_end_name(char *node_name)
 			 * accounting stuff.
 			 */
 			job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+			job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+			job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_ptr->job_state = suspend_job_state;
 			suspended = true;
@@ -5121,6 +5147,10 @@ extern int kill_running_job_by_node_name(char *node_name)
 			 * accounting stuff.
 			 */
 			job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+			job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+			job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_ptr->job_state = suspend_job_state;
 			suspended = true;
@@ -5780,6 +5810,9 @@ extern job_record_t *job_array_split(job_record_t *job_ptr)
 			details_new->argv[i] = xstrdup(job_details->argv[i]);
 		}
 	}
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	details_new->apptype = xstrdup(job_details->apptype);
+#endif
 	details_new->cpu_bind = xstrdup(job_details->cpu_bind);
 	details_new->cpu_bind_type = job_details->cpu_bind_type;
 	details_new->cpu_freq_min = job_details->cpu_freq_min;
@@ -6534,6 +6567,10 @@ static int _job_fail(job_record_t *job_ptr, uint32_t job_state)
 		 * accounting stuff.
 		 */
 		job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 		job_ptr->job_state = suspend_job_state;
 		suspended = true;
@@ -6751,6 +6788,10 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_term_state = JOB_CANCELLED;
 	if (IS_JOB_SUSPENDED(job_ptr) && (signal == SIGKILL)) {
 		last_job_update         = now;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		job_ptr->end_time       = job_ptr->suspend_time;
 		job_ptr->tot_sus_time  += difftime(now, job_ptr->suspend_time);
 		job_ptr->job_state      = job_term_state | JOB_COMPLETING;
@@ -7412,6 +7453,10 @@ static int _job_complete(job_record_t *job_ptr, uid_t uid, bool requeue,
 		 * accounting stuff.
 		 */
 		job_ptr->job_state = JOB_CANCELLED;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 		job_ptr->job_state = suspend_job_state;
 		job_comp_flag = JOB_COMPLETING;
@@ -9902,6 +9947,9 @@ static int _copy_job_desc_to_job_record(job_desc_msg_t *job_desc,
 	job_desc->argv   = (char **) NULL; /* nothing left to free */
 	job_desc->argc   = 0;		   /* nothing left to free */
 	detail_ptr->acctg_freq = xstrdup(job_desc->acctg_freq);
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	detail_ptr->apptype = xstrdup(job_desc->apptype);
+#endif
 	detail_ptr->cpu_bind_type = job_desc->cpu_bind_type;
 	detail_ptr->cpu_bind   = xstrdup(job_desc->cpu_bind);
 	detail_ptr->cpu_freq_gov = job_desc->cpu_freq_gov;
@@ -19724,6 +19772,10 @@ static int _job_requeue_op(uid_t uid, job_record_t *job_ptr, bool preempt,
 		 * accounting stuff.
 		 */
 		job_ptr->job_state = JOB_REQUEUE;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+		job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 		jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 		job_ptr->job_state = suspend_job_state;
 		is_suspended = true;
@@ -20646,6 +20698,9 @@ extern job_desc_msg_t *copy_job_record_to_job_desc(job_record_t *job_ptr)
 
 	job_desc->account           = xstrdup(job_ptr->account);
 	job_desc->acctg_freq        = xstrdup(details->acctg_freq);
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	job_desc->apptype			= xstrdup(details->apptype);
+#endif
 	job_desc->alloc_node        = xstrdup(job_ptr->alloc_node);
 	/* Since the allocating salloc or srun is not expected to exist
 	 * when this checkpointed job is restarted, do not save these:
@@ -21875,6 +21930,9 @@ extern int job_get_node_inx(char *node_name, bitstr_t *node_bitmap)
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	des_detail_ptr->watch_dog = NULL;
 	des_detail_ptr->watch_dog_script = NULL;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	des_detail_ptr->apptype = NULL;
 #endif
 	des_detail_ptr->cpu_bind = NULL;
 	des_detail_ptr->mem_bind = NULL;

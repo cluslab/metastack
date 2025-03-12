@@ -357,6 +357,14 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_JOB_USELESS_RUNNING_WARNING
 #endif
 
+#ifndef __METASTACK_BUG_FIX_SUSPEND_TIME
+#define __METASTACK_BUG_FIX_SUSPEND_TIME
+#endif
+
+#ifndef __METASTACK_NEW_APPTYPE_RECOGNITION
+#define __METASTACK_NEW_APPTYPE_RECOGNITION
+#endif
+
 #ifndef __METASTACK_OPT_INFLUXDB_ENFORCE
 #define __METASTACK_OPT_INFLUXDB_ENFORCE
 #endif
@@ -1029,6 +1037,9 @@ enum acct_gather_profile_info {
 #define ACCT_GATHER_PROFILE_NETWORK 0x00000010
 #ifdef __METASTACK_LOAD_ABNORMAL
 #define ACCT_GATHER_PROFILE_STEPD   0x00000020
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+#define ACCT_GATHER_PROFILE_APPTYPE  0x00000040
+#endif
 #endif
 #define ACCT_GATHER_PROFILE_ALL     0xffffffff
 
@@ -2021,6 +2032,9 @@ typedef struct job_descriptor {	/* For submit, allocate, and update requests */
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	char *watch_dog;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype;
+#endif
 } job_desc_msg_t;
 
 typedef struct job_info {
@@ -2435,6 +2449,9 @@ typedef struct {
 	bool enable_all_nodes;    
 	bool enable_all_stepds;   
 	uint32_t style_step;     /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char* apptype;
 #endif
 } slurm_step_launch_params_t;
 

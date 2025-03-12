@@ -92,7 +92,9 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 	desc->account = xstrdup(opt.account);
 	desc->comment = xstrdup(opt.comment);
 	desc->qos = xstrdup(opt.qos);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	desc->apptype = xstrdup(opt.apptype);
+#endif
 	/* job constraints */
 	if (opt.pn_min_cpus > -1)
 		desc->pn_min_cpus = opt.pn_min_cpus;
