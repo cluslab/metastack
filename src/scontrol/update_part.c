@@ -50,6 +50,17 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 	int i, min, max;
 	char *tag, *val;
 	int taglen, vallen;
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	bool prio_mul = false, with_slurmdbd = false;
+
+	if (xstrcasecmp(slurm_conf.priority_type, "priority/multifactor") == 0) {
+		prio_mul = true;
+	}
+
+	if (xstrcasecmp(slurm_conf.accounting_storage_type, "accounting_storage/slurmdbd") == 0) {
+		with_slurmdbd = true;
+	}
+#endif
 
 	if (!update_cnt_ptr) {
 		error("scontrol_parse_part_options internal error, "
@@ -366,6 +377,136 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			}
 			(*update_cnt_ptr)++;
 		}
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		else if (xstrncasecmp(tag, "PriorityFavorSmall", MAX(taglen, 15)) == 0) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityFavorSmall for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (xstrncasecmp(val, "NO", MAX(vallen, 1)) == 0)
+				part_msg_ptr->priority_favor_small = 0;
+			else if (xstrncasecmp(val, "YES", MAX(vallen, 1)) == 0)
+				part_msg_ptr->priority_favor_small = 1;
+			else {
+				exit_code = 1;
+				error("Invalid input: %s", argv[i]);
+				error("Acceptable PriorityFavorSmall values are YES and NO");
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "PriorityWeightAge", MAX(taglen, 17))) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityWeightAge for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (!with_slurmdbd) {
+				exit_code = 1;
+				error("Only 'accounting_storage/slurmdbd' plugin support PriorityWeightAge for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (parse_uint32(val, &part_msg_ptr->priority_weight_age)) {
+				error("Invalid PriorityWeightAge value: %s", val);
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "PriorityWeightAssoc", MAX(taglen, 17))) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityWeightAssoc for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (parse_uint32(val, &part_msg_ptr->priority_weight_assoc)) {
+				error("Invalid PriorityWeightAssoc value: %s", val);
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "PriorityWeightFairshare", MAX(taglen, 17))) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityWeightFairshare for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (!with_slurmdbd) {
+				exit_code = 1;
+				error("Only 'accounting_storage/slurmdbd' plugin support PriorityWeightFairshare for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (parse_uint32(val, &part_msg_ptr->priority_weight_fs)) {
+				error("Invalid PriorityWeightFairshare value: %s", val);
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "PriorityWeightJobSize", MAX(taglen, 17))) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityWeightJobSize for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (parse_uint32(val, &part_msg_ptr->priority_weight_js)) {
+				error("Invalid PriorityWeightJobSize value: %s", val);
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "PriorityWeightPartition", MAX(taglen, 17))) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityWeightPartition for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (parse_uint32(val, &part_msg_ptr->priority_weight_part)) {
+				error("Invalid PriorityWeightPartition value: %s", val);
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "PriorityWeightQOS", MAX(taglen, 17))) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityWeightQOS for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			if (parse_uint32(val, &part_msg_ptr->priority_weight_qos)) {
+				error("Invalid PriorityWeightQOS value: %s", val);
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+
+		else if (!xstrncasecmp(tag, "PriorityWeightTRES", MAX(taglen, 17))) {
+			if (!prio_mul) {
+				exit_code = 1;
+				error("Only 'priority/multifactor' plugin support PriorityWeightTRES for partition, ignoring");
+				return SLURM_ERROR;
+			}
+
+			part_msg_ptr->priority_weight_tres = val;
+			(*update_cnt_ptr)++;
+		}												
+#endif
+
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		else if (!xstrncasecmp(tag, "StandbyNodes", MAX(taglen, 12))) {
 			part_msg_ptr->standby_nodes = val;

@@ -184,6 +184,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 				const char *key, const char *value,
 				const char *line, char **leftover);
 static slurm_conf_partition_t *_create_conf_part(void);
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION 
 /* read slurm.conf */
 static int _parse_watch_dog_name(void **dest, slurm_parser_enum_t type,
@@ -450,9 +451,6 @@ s_p_options_t slurm_conf_options[] = {
 	{"SlurmctldSyslogDebug", S_P_STRING},
 	{"SlurmctldTimeout", S_P_UINT16},
 	{"SlurmctldParameters", S_P_STRING},
-#ifdef  __METASTACK_OPT_GRES_CONFIG
-	{"SlurmctldLoadGres", S_P_BOOLEAN},
-#endif
 	{"SlurmdDebug", S_P_STRING},
 	{"SlurmdLogFile", S_P_STRING},
 	{"SlurmdParameters", S_P_STRING},
@@ -847,7 +845,7 @@ extern void parse_limit_type(const char *parameters, int global_limit_type, int*
 			info("limit_type not configured, use global configuration value");
 			xfree(tmp);
 			return;
-		}
+		}		
 		tok = strtok_r(tmp, ",", &save_ptr);
 		if (!tok) {
 			info("limit_type not configured, use global configuration value");
@@ -862,7 +860,7 @@ extern void parse_limit_type(const char *parameters, int global_limit_type, int*
 				info("limit_type configured invalid value, use global configuration value");
 			}
 		}
-		xfree(tmp);
+		xfree(tmp);		
 	} else {
 		info("limit_type not configured, use global configuration value");
 	}
@@ -1951,6 +1949,16 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 		{"Priority", S_P_UINT16},
 		{"PriorityJobFactor", S_P_UINT16},
 		{"PriorityTier", S_P_UINT16},
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		{"PriorityFavorSmall", S_P_BOOLEAN},
+		{"PriorityWeightAge", S_P_UINT32},
+		{"PriorityWeightAssoc", S_P_UINT32},
+		{"PriorityWeightFairshare", S_P_UINT32},
+		{"PriorityWeightJobSize", S_P_UINT32},
+		{"PriorityWeightPartition", S_P_UINT32},
+		{"PriorityWeightQOS", S_P_UINT32},
+		{"PriorityWeightTRES", S_P_STRING},
+#endif
 		{"QOS", S_P_STRING},
 		{"RootOnly", S_P_BOOLEAN}, /* YES or NO */
 		{"ReqResv", S_P_BOOLEAN}, /* YES or NO */
@@ -1967,7 +1975,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 #endif
 		{"SuspendTime", S_P_STRING},
 		{"SuspendTimeout", S_P_UINT16},
-		{"TRESBillingWeights", S_P_STRING},
+		{"TRESBillingWeights", S_P_STRING},		
 		{NULL}
 	};
 
@@ -2185,7 +2193,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 		if (!s_p_get_boolean(&p->hetpart_flag, "HetPart", tbl) &&
-		    !s_p_get_boolean(&p->hetpart_flag, "HetPart", dflt))
+			!s_p_get_boolean(&p->hetpart_flag, "HetPart", dflt))
 			p->hetpart_flag = false;
 #endif
 
@@ -2237,6 +2245,40 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 				    "PriorityJobFactor", tbl))
 			s_p_get_uint16(&p->priority_job_factor,
 				       "PriorityJobFactor", dflt);
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		bool truth = false;
+		if (s_p_get_boolean(&truth, "PriorityFavorSmall", tbl)) {
+			if (truth) {
+				p->priority_favor_small = 1;
+			} else {
+				p->priority_favor_small = 0;
+			}
+		} else {
+			p->priority_favor_small = NO_VAL16;
+		}
+
+		if (!s_p_get_uint32(&p->priority_weight_age, "PriorityWeightAge", tbl))
+			s_p_get_uint32(&p->priority_weight_age, "PriorityWeightAge", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_assoc, "PriorityWeightAssoc", tbl))
+			s_p_get_uint32(&p->priority_weight_assoc, "PriorityWeightAssoc", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_fs, "PriorityWeightFairshare", tbl))
+			s_p_get_uint32(&p->priority_weight_fs, "PriorityWeightFairshare", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_js, "PriorityWeightJobSize", tbl))
+			s_p_get_uint32(&p->priority_weight_js, "PriorityWeightJobSize", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_part, "PriorityWeightPartition", tbl))
+			s_p_get_uint32(&p->priority_weight_part, "PriorityWeightPartition", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_qos, "PriorityWeightQOS", tbl))
+			s_p_get_uint32(&p->priority_weight_qos, "PriorityWeightQOS", dflt);
+
+		if (!s_p_get_string(&p->priority_weight_tres, "PriorityWeightTRES", tbl))
+			xfree(p->priority_weight_tres);
+#endif
 
 		if (!s_p_get_uint16(&p->priority_tier, "PriorityTier", tbl))
 			s_p_get_uint16(&p->priority_tier, "PriorityTier", dflt);
@@ -2406,6 +2448,16 @@ static void _init_conf_part(slurm_conf_partition_t *conf_part)
 	conf_part->state_up = PARTITION_UP;
 	conf_part->suspend_time = NO_VAL;
 	conf_part->suspend_timeout = NO_VAL16;
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	conf_part->priority_favor_small  = NO_VAL16;
+	conf_part->priority_weight_age   = NO_VAL;
+	conf_part->priority_weight_assoc = NO_VAL;
+	conf_part->priority_weight_fs    = NO_VAL;
+	conf_part->priority_weight_js    = NO_VAL;
+	conf_part->priority_weight_part  = NO_VAL;
+	conf_part->priority_weight_qos   = NO_VAL;
+	conf_part->priority_weight_tres  = NULL;
+#endif
 }
 
 static slurm_conf_partition_t *_create_conf_part(void)
@@ -2463,6 +2515,9 @@ static void _destroy_partitionname(void *ptr)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	xfree(p->standby_nodes);
 	xfree(p->standby_node_parameters);
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	xfree(p->priority_weight_tres);
 #endif
 	xfree(ptr);
 }
@@ -4819,12 +4874,6 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	if (s_p_get_boolean(&truth, "HealthCheckCarryNode", hashtbl) && truth)
 		conf->conf_flags |= CTL_CONF_HCN;
 #endif
-#ifdef __METASTACK_OPT_GRES_CONFIG
-	if (s_p_get_boolean(&truth, "SlurmctldLoadGres", hashtbl) && truth)
-		conf->slurmctld_load_gres = 1;
-	else
-		conf->slurmctld_load_gres = 0;
-#endif
 	if (s_p_get_string(&temp_str,
 			   "EnforcePartLimits", hashtbl)) {
 		uint16_t enforce_param;
@@ -5540,7 +5589,7 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	} else {
 		char *tmp_str = NULL, *last = NULL, *token = NULL;
 		double *js_maxcpu = NULL;
-		js_maxcpu = (double*)xmalloc(sizeof(double*));
+		js_maxcpu = (double*)xmalloc(sizeof(double));
 		tmp_str = xstrdup(conf->priority_jobsize_maxvalue);
 		token = strtok_r(tmp_str, ",", &last);
 		while (token) {

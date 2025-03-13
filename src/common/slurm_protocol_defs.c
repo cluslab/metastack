@@ -3466,10 +3466,17 @@ extern char *priority_flags_string(uint16_t priority_flags)
 			xstrcat(flag_str, ",");
 		xstrcat(flag_str, "MAX_TRES");
 	}
+#ifdef __METASTACK_BUG_SHOW_PRIO_FLAGS
+	if (priority_flags & PRIORITY_FLAGS_NO_NORMAL_ASSOC &&
+		priority_flags & PRIORITY_FLAGS_NO_NORMAL_PART  &&
+		priority_flags & PRIORITY_FLAGS_NO_NORMAL_QOS   &&
+		priority_flags & PRIORITY_FLAGS_NO_NORMAL_TRES) {
+#else	
 	if (priority_flags & (PRIORITY_FLAGS_NO_NORMAL_ASSOC |
 			      PRIORITY_FLAGS_NO_NORMAL_PART  |
 			      PRIORITY_FLAGS_NO_NORMAL_QOS   |
 			      PRIORITY_FLAGS_NO_NORMAL_TRES)) {
+#endif					
 		if (flag_str[0])
 			xstrcat(flag_str, ",");
 		xstrcat(flag_str, "NO_NORMAL_ALL");
@@ -4769,6 +4776,9 @@ extern void slurm_free_partition_info_members(partition_info_t * part)
 		xfree(part->borrowed_nodes);
 		xfree(part->standby_nodes);
 		xfree(part->standby_node_parameters);
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		xfree(part->priority_weight_tres);
 #endif
 	}
 }

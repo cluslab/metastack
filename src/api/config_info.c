@@ -413,6 +413,35 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 		if (p[i].priority_tier != 1)
 			fprintf(fp, " PriorityTier=%u",
 				p[i].priority_tier);
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		if (p[i].priority_favor_small == 1) {
+			fprintf(fp, " PriorityFavorSmall=Yes");
+		}
+		if (p[i].priority_favor_small == 0) {
+			fprintf(fp, " PriorityFavorSmall=No");
+		}
+		if (p[i].priority_weight_age != NO_VAL)
+			fprintf(fp, " PriorityWeightAge=%u",
+				p[i].priority_weight_age);
+		if (p[i].priority_weight_assoc != NO_VAL)
+			fprintf(fp, " PriorityWeightAssoc=%u",
+				p[i].priority_weight_assoc);
+		if (p[i].priority_weight_fs != NO_VAL)
+			fprintf(fp, " PriorityWeightFairshare=%u",
+				p[i].priority_weight_fs);
+		if (p[i].priority_weight_js != NO_VAL)
+			fprintf(fp, " PriorityWeightJobSize=%u",
+				p[i].priority_weight_js);
+		if (p[i].priority_weight_part != NO_VAL)
+			fprintf(fp, " PriorityWeightPartition=%u",
+				p[i].priority_weight_part);
+		if (p[i].priority_weight_qos != NO_VAL)
+			fprintf(fp, " PriorityWeightQOS=%u",
+				p[i].priority_weight_qos);																								
+		if (p[i].priority_weight_tres != NULL)
+			fprintf(fp, " PriorityWeightTRES=%s",
+				p[i].priority_weight_tres);				
+#endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES			
 		if (p[i].standby_node_parameters != NULL)
 		        fprintf(fp, " StandbyNodeParameters=%s", p[i].standby_node_parameters);
@@ -434,7 +463,7 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 	                fprintf(fp, " RootOnly=YES");
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 		if (p[i].meta_flags & PART_METAFLAG_HETPART)
-	                fprintf(fp, " HetPart=YES");
+					fprintf(fp, " HetPart=YES");
 #endif
 #ifdef __METASTACK_NEW_PART_RBN
 		if (p[i].meta_flags & PART_METAFLAG_RBN)
@@ -581,7 +610,7 @@ char *slurm_print_watch_dog_info(watch_dog_record_t *watch_dog_ptr, int one_line
 	if(watch_dog_ptr->script)
 		xstrfmtcat(out, "Script=%s", watch_dog_ptr->script);
 	if (watch_dog_ptr->init_time == 0)
-		xstrcat(out, " Init_time=0");
+		xstrcat(out, " Init_time=not set");
 	else
 		xstrfmtcat(out, " Init_time=%u",watch_dog_ptr->init_time);
 
@@ -1038,13 +1067,6 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->name = xstrdup("HealthCheckCarryNode");
 	key_pair->value = xstrdup(
 		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_HCN) ? "Yes" : "No");
-#endif
-#ifdef __METASTACK_OPT_GRES_CONFIG
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("SlurmctldLoadGres");
-	key_pair->value = xstrdup(
-		slurm_ctl_conf_ptr->slurmctld_load_gres ? "Yes" : "No");
-	list_append(ret_list, key_pair);
 #endif
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("EioTimeout");
