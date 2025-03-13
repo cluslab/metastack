@@ -62,12 +62,21 @@
 #define OPT_LONG_MPLANNED  0x111
 #define OPT_LONG_NOMPLANNED  0x112
 #endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+#define OPT_LONG_PRIOPARAMS  0x113
+#endif
 /* Global externs from scontrol.h */
 char *command_name;
 List clusters = NULL;
 int all_flag = 0;	/* display even hidden partitions */
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 int borrow_flag = 0;	/* display information related to standby nodes using '--borrow' */
+#endif
+#if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
+uint32_t meta_flags = 0;
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+int prioparams_flag = 0;
 #endif
 #ifdef __METASTACK_OPT_CACHE_QUERY
 bool cache_flag = false;  /*Display cache data information*/
@@ -165,6 +174,9 @@ int main(int argc, char **argv)
 		{"oneliner", 0, 0, 'o'},
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		{"planned",  0, 0, OPT_LONG_MPLANNED},
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		{"prioparams",  0, 0, OPT_LONG_PRIOPARAMS},
 #endif
 		{"quiet",    0, 0, 'Q'},
 		{"sibling",  0, 0, OPT_LONG_SIBLING},
@@ -289,6 +301,11 @@ int main(int argc, char **argv)
 		case (int)'o':
 			one_liner = 1;
 			break;
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		case OPT_LONG_PRIOPARAMS:
+			prioparams_flag = 1;
+			break;	
+#endif
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		case OPT_LONG_MPLANNED:
 			opt_planned_set = true;
@@ -579,52 +596,47 @@ static void _write_config(char *file_name)
 			return;
 		}
 
-		/* send the info off to be written */
-		slurm_write_ctl_conf (slurm_ctl_conf_ptr,
-				      node_info_ptr,
-				      part_info_ptr);
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
-		int error_code1 = SLURM_SUCCESS;
-		slurm_ctl_conf_info_msg_watch_dog_t  *slurm_watch_dog_ptr = NULL;
-		//watch_dog_record_t *watch_dog_ptr = NULL;    /* the watch dog records */
+	int error_code1 = SLURM_SUCCESS;
+	slurm_ctl_conf_info_msg_watch_dog_t  *slurm_watch_dog_ptr = NULL;
+    //watch_dog_record_t *watch_dog_ptr = NULL;    /* the watch dog records */
 
-		if (old_slurm_watch_dog_ptr) {
-			old_slurm_watch_dog_ptr->last_update = (time_t) 0;
-			error_code1 = slurm_load_ctl_conf_watch_dog (
-					old_slurm_watch_dog_ptr->last_update,
-					&slurm_watch_dog_ptr);
+	if (old_slurm_watch_dog_ptr) {
+		old_slurm_watch_dog_ptr->last_update = (time_t) 0;
+		error_code1 = slurm_load_ctl_conf_watch_dog (
+				old_slurm_watch_dog_ptr->last_update,
+				&slurm_watch_dog_ptr);
 
-			if (error_code1 == SLURM_SUCCESS)
-				slurm_free_ctl_conf_watch_dog(old_slurm_watch_dog_ptr);
-			else if (slurm_get_errno () == SLURM_NO_CHANGE_IN_DATA) {
-				slurm_watch_dog_ptr = old_slurm_watch_dog_ptr;
-				error_code1 = SLURM_SUCCESS;
-				if (quiet_flag == -1) {
-					printf ("slurm_load_ctl_conf_watch_dog no change "
-						"in data\n");
-				}
+		if (error_code1 == SLURM_SUCCESS)
+			slurm_free_ctl_conf_watch_dog(old_slurm_watch_dog_ptr);
+		else if (slurm_get_errno () == SLURM_NO_CHANGE_IN_DATA) {
+			slurm_watch_dog_ptr = old_slurm_watch_dog_ptr;
+			error_code1 = SLURM_SUCCESS;
+			if (quiet_flag == -1) {
+				printf ("slurm_load_ctl_conf_watch_dog no change "
+					"in data\n");
 			}
-		} else
-			error_code1 = slurm_load_ctl_conf_watch_dog ((time_t) NULL,
-							&slurm_watch_dog_ptr);
-
-		if (error_code1) {
-			exit_code = 1;
-			if (quiet_flag != 1)
-				slurm_perror ("slurm_load_ctl_conf_watch_dog error");
-		} else {
-			old_slurm_watch_dog_ptr = slurm_watch_dog_ptr;
 		}
+	} else
+		error_code1 = slurm_load_ctl_conf_watch_dog ((time_t) NULL,
+						  &slurm_watch_dog_ptr);
 
-			/* send the info off to be written */
-		slurm_write_ctl_conf (slurm_ctl_conf_ptr,
-						node_info_ptr,
-						part_info_ptr,
-						slurm_watch_dog_ptr);
+	if (error_code1) {
+		exit_code = 1;
+		if (quiet_flag != 1)
+			slurm_perror ("slurm_load_ctl_conf_watch_dog error");
+	} else {
+		old_slurm_watch_dog_ptr = slurm_watch_dog_ptr;
+	}
+
+		/* send the info off to be written */
+	slurm_write_ctl_conf (slurm_ctl_conf_ptr,
+					node_info_ptr,
+					part_info_ptr,
+					slurm_watch_dog_ptr);
 #endif
 	}
 }
-
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 /* printf watch dog parameter printing */
@@ -684,10 +696,11 @@ _print_config_watchdog(char *config_param)
 	}
 
 	if (print_cnt == 0) {
-		printf ("No watchdog present in the system or no match found for the specified name.\n");
+		printf ("No watchdog in the system\n");
 	}
 }
 #endif
+
 /*
  * _print_config - print the specified configuration parameter and value
  * IN config_param - NULL to print all parameters and values
@@ -2033,7 +2046,17 @@ static void _show_it(int argc, char **argv)
 	} else if (xstrncasecmp(tag, "partitions", MAX(tag_len, 2)) == 0 ||
 		   xstrncasecmp(tag, "partitionname", MAX(tag_len, 2)) == 0) {
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
-		scontrol_print_part (val, borrow_flag);
+		if (borrow_flag) {
+			meta_flags |= PART_METAFLAG_NODE_BORROW;
+		}
+#endif		
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT	
+		if (prioparams_flag) {
+			meta_flags |= PART_METAFLAG_PRIO_PARAMS;
+		}
+#endif
+#if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
+		scontrol_print_part (val, meta_flags);
 #else
 		scontrol_print_part (val);
 #endif		

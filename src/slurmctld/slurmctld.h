@@ -307,6 +307,9 @@ extern bitstr_t *power_node_bitmap;	/* Powered down nodes */
 extern bitstr_t *share_node_bitmap;	/* bitmap of sharable nodes */
 extern bitstr_t *up_node_bitmap;	/* bitmap of up nodes, not DOWN */
 extern bitstr_t *rs_node_bitmap;	/* next_state=resume nodes */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+extern bitstr_t *resv_node_bitmap;
+#endif
 
 /*****************************************************************************\
  *  FRONT_END parameters and data structures
@@ -376,6 +379,21 @@ typedef struct {
 	bitstr_t *standby_node_bitmap;
 	bitstr_t *borrowed_node_bitmap;
 } standby_nodes_t;
+#endif
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+typedef struct {
+	double   *tres_weights;			/* weight for each 'tres' on the system */
+    uint16_t priority_favor_small; /* favor small jobs over large */
+    uint32_t priority_weight_age; /* weight for age factor */
+    uint32_t priority_weight_assoc; /* weight for assoc factor */
+    uint32_t priority_weight_fs; /* weight for Fairshare factor */
+    uint32_t priority_weight_js; /* weight for Job Size factor */
+    uint32_t priority_weight_part; /* weight for Partition factor */
+    uint32_t priority_weight_qos; /* weight for QOS factor */
+    char    *priority_weight_tres; /* weights (str) for different TRES' */
+} priority_params_t;
+
 #endif
 
 typedef struct {
@@ -456,6 +474,9 @@ typedef struct {
 	bf_part_data_t *bf_data;/* backfill data, NO PACK */
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	standby_nodes_t *standby_nodes;
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	priority_params_t *priority_params; /* record of priority_favor_small and priority_weight */
 #endif		
 } part_record_t;
 
@@ -482,6 +503,10 @@ extern bitstr_t **para_sched_main_planned_bitmap;
 extern bitstr_t **para_sched_last_main_planned_bitmap;
 extern bitstr_t **para_sched_planned_update_bitmap;
 #endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+extern bitstr_t **para_sched_resv_node_bitmap;
+#endif
+
 
 extern void build_sched_resource(void);
 extern void free_para_sched_resource(void);
@@ -988,7 +1013,8 @@ struct job_record {
 	char *resv_name;		/* reservation name */
 	slurmctld_resv_t *resv_ptr;	/* reservation structure pointer */
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
-	bitstr_t *resv_bitmap; /*A reservation node in a partition*/
+	bitstr_t *resv_bitmap; /*Node bitmap reserved for each job*/
+	uint16_t resv_stage; /*The stage reserved for the last job*/
 #endif
 	uint32_t requid;	    	/* requester user ID */
 	char *resp_host;		/* host for srun communications */
@@ -1376,6 +1402,7 @@ extern part_record_t *create_part_record(const char *name);
  */
 watch_dog_record_t *create_watch_dog_record(const char *name);
 #endif
+
 /*
  * build_part_bitmap - update the total_cpus, total_nodes, and node_bitmap
  *	for the specified partition, also reset the partition pointers in
@@ -2292,6 +2319,7 @@ extern int list_find_feature(void *feature_entry, void *key);
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 int list_find_watch_dog(void *x, void *key);
 #endif
+
 /*
  * list_find_part - find an entry in the partition list, see common/list.h
  *	for documentation
@@ -2620,18 +2648,19 @@ extern int pack_ctld_job_step_info_response_msg(
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 /*
-	* pack_all_watch_dog - dump all watch dog information for all partitions in
-	*	machine independent form (for network transmission)
-	* OUT buffer_ptr - the pointer is set to the allocated buffer.
-	* OUT buffer_size - set to size of the buffer in bytes
-	* IN uid - uid of user making request (for watch dog filtering)
-	* IN protocol_version - slurm protocol version of client
-	* global: watch_dog_list - global list of watch dog records
-	* NOTE: the buffer at *buffer_ptr must be xfreed by the caller
-	*/
+ * pack_all_watch_dog - dump all watch dog information for all partitions in
+ *	machine independent form (for network transmission)
+ * OUT buffer_ptr - the pointer is set to the allocated buffer.
+ * OUT buffer_size - set to size of the buffer in bytes
+ * IN uid - uid of user making request (for watch dog filtering)
+ * IN protocol_version - slurm protocol version of client
+ * global: watch_dog_list - global list of watch dog records
+ * NOTE: the buffer at *buffer_ptr must be xfreed by the caller
+ */
 extern void pack_all_watch_dog(char **buffer_ptr, int *buffer_size,
-					uid_t uid, uint16_t protocol_version);
+			     uid_t uid, uint16_t protocol_version);
 #endif
+
 /*
  * pack_all_part - dump all partition information for all partitions in
  *	machine independent form (for network transmission)
@@ -2663,6 +2692,7 @@ extern void pack_all_part(char **buffer_ptr, int *buffer_size,
 extern void pack_job(job_record_t *dump_job_ptr, uint16_t show_flags,
 		     buf_t *buffer, uint16_t protocol_version, uid_t uid,
 		     bool has_qos_lock);
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 /*for scontrol show watchdog*/
 void pack_watch_dog(watch_dog_record_t *watch_dog_ptr, buf_t *buffer, uint16_t protocol_version);
@@ -2731,6 +2761,7 @@ extern List fill_assoc_list(uid_t uid, bool locked);
 extern part_record_t **build_visible_parts_user(slurmdb_user_rec_t *user_ret, 
 				bool skip, bool locked);
 #endif
+
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 //extern watch_dog_record_t **build_visible_watch_dogs(uid_t uid, bool skip) ;
@@ -3179,6 +3210,50 @@ extern int create_dynamic_reg_node(slurm_msg_t *msg);
  */
 extern int delete_nodes(char *names, char **err_msg);
 
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+/*
+ * check_partition_prio_weights - check whether the partition meets the 
+ * conditions for configuring priority weights
+ */
+extern void check_partition_prio_weights(part_record_t *part_ptr);
+
+/*
+ * Process string and set partition tres_weight fields to appropriate values if valid
+ *
+ * IN tres_weights_str - suggested tres weights
+ * IN part_ptr - pointer to partition
+ * IN fail - whether the inner function should fatal if the string is invalid.
+ * IN update_part - whether called from update_part
+ * RET return SLURM_ERROR on error, SLURM_SUCCESS otherwise.
+ */
+extern int set_partition_tres_weights(char *tres_weights_str,
+					 part_record_t *part_ptr, bool update_part);
+
+
+/*
+ * Determine whether the partition is configured with effective multi factor weights
+ *
+ * IN part_ptr  - pointer to partition
+ * IN PRIO_TYPE - type of prio_weight,see 
+ * RET return false on no config, true otherwise.
+ */
+extern bool partition_has_prio_weight(part_record_t *part_ptr, int PRIO_TYPE);
+
+/* 
+ * This is used to point out type of prio_weight for partition_has_prio_weight func
+ */
+enum {
+	PRIO_FAVOR_SMALL = 0,	
+	PRIO_AGE,
+	PRIO_ASSOC,
+	PRIO_FAIRSHARE,
+	PRIO_JOBSIZE,
+	PRIO_PARTITION,
+	PRIO_QOS,
+	PRIO_TRES
+};
+#endif
+
 /*
  * Process string and set partition fields to appropriate values if valid
  *
@@ -3237,6 +3312,7 @@ extern int validate_job_create_req(job_desc_msg_t * job_desc, uid_t submit_uid,
  */
 extern int _get_job_watch_dogs_and_check(char *job_desc_watchdog, watch_dog_record_t **watch_dog_ptr, char **err_msg);
 #endif
+
 /*
  * validate_jobs_on_node - validate that any jobs that should be on the node
  *	are actually running, if not clean up the job records and/or node

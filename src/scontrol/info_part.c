@@ -84,8 +84,8 @@ scontrol_load_partitions (partition_info_msg_t **part_buffer_pptr)
  */
 
 extern void
-#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
-scontrol_print_part (char *partition_name, int borrow_flag)
+#if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
+scontrol_print_part (char *partition_name, uint16_t meta_flags)
 #else
 scontrol_print_part (char *partition_name)
 #endif
@@ -133,9 +133,9 @@ scontrol_print_part (char *partition_name)
 		    xstrcmp (partition_name, part_ptr[i].name) != 0)
 			continue;
 		print_cnt++;
-#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
 		_slurm_print_partition_info (stdout, & part_ptr[i],
-		                            one_liner, borrow_flag) ;
+		                            one_liner, meta_flags) ;
 #else
 		slurm_print_partition_info (stdout, & part_ptr[i],
 		                            one_liner ) ;

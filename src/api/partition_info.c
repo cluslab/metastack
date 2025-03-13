@@ -93,18 +93,18 @@ void slurm_print_partition_info_msg ( FILE* out,
 
 }
 
-#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
 /*
  * _slurm_sprint_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions
  * IN part_ptr - an individual partition information record pointer
  * IN one_liner - print as a single line if true
- * IN borrow_flag - print information related to standby and borrowed nodes if true
+ * IN meta_flags - print additional information related if true
  * RET out - char * containing formatted output (must be freed after call)
  *           NULL is returned on failure.
  */
 char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
-				    int one_liner, int borrow_flag )
+				    int one_liner, uint16_t meta_flags )
 {
 	char *out = NULL, *allow_deny = NULL, *value = NULL;
 	uint16_t force, preempt_mode, val;
@@ -273,8 +273,9 @@ char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
 	xstrfmtcat(out, "Nodes=%s", part_ptr->nodes);
 	xstrcat(out, line_end);
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	/****** Lines for Standby Nodes ******/
-	if (borrow_flag) {
+	if (meta_flags & PART_METAFLAG_NODE_BORROW) {
 		xstrfmtcat(out, "NodesBorrowed=%s", part_ptr->borrowed_nodes);
 		xstrcat(out, line_end);		
 
@@ -284,7 +285,7 @@ char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
 		xstrfmtcat(out, "StandbyNodeParameters=%s", part_ptr->standby_node_parameters);
 		xstrcat(out, line_end);	
 	}	
-
+#endif
 	/****** Line 7 ******/
 
 	xstrfmtcat(out, "PriorityJobFactor=%u", part_ptr->priority_job_factor);
@@ -312,6 +313,59 @@ char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
 		xstrfmtcat(out, " OverSubscribe=YES:%u", val);
 
 	xstrcat(out, line_end);
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	/****** Line ******/
+	if (meta_flags & PART_METAFLAG_PRIO_PARAMS) {
+		if (part_ptr->priority_favor_small == 1) {
+			xstrfmtcat(out, "PriorityFavorSmall=YES");
+		} else if (part_ptr->priority_favor_small == 0) {
+			xstrfmtcat(out, "PriorityFavorSmall=NO");
+		} else {
+			xstrfmtcat(out, "PriorityFavorSmall=NONE");
+		}
+
+		xstrcat(out, line_end);
+
+		/****** Line ******/
+		if (part_ptr->priority_weight_age == NO_VAL)
+			xstrfmtcat(out, "PriorityWeightAge=0");
+		else
+			xstrfmtcat(out, "PriorityWeightAge=%u", part_ptr->priority_weight_age);
+		
+		if (part_ptr->priority_weight_assoc == NO_VAL)
+			xstrfmtcat(out, " PriorityWeightAssoc=0");
+		else
+			xstrfmtcat(out, " PriorityWeightAssoc=%u", part_ptr->priority_weight_assoc);
+		
+		if (part_ptr->priority_weight_fs == NO_VAL)
+			xstrfmtcat(out, " PriorityWeightFairShare=0");
+		else
+			xstrfmtcat(out, " PriorityWeightFairShare=%u", part_ptr->priority_weight_fs);
+		
+		if (part_ptr->priority_weight_js == NO_VAL)
+			xstrfmtcat(out, " PriorityWeightJobSize=0");
+		else
+			xstrfmtcat(out, " PriorityWeightJobSize=%u", part_ptr->priority_weight_js);
+
+		xstrcat(out, line_end);	
+
+		/****** Line ******/	
+		if (part_ptr->priority_weight_part == NO_VAL)
+			xstrfmtcat(out, "PriorityWeightPartition=0");
+		else
+			xstrfmtcat(out, "PriorityWeightPartition=%u", part_ptr->priority_weight_part);
+		
+		if (part_ptr->priority_weight_qos == NO_VAL)
+			xstrfmtcat(out, " PriorityWeightQOS=0");
+		else
+			xstrfmtcat(out, " PriorityWeightQOS=%u", part_ptr->priority_weight_qos);
+		
+		xstrfmtcat(out, " PriorityWeightTRES=%s", part_ptr->priority_weight_tres);
+
+		xstrcat(out, line_end);
+	}
+#endif
 
 	/****** Line ******/
 	if (part_ptr->over_time_limit == NO_VAL16)
@@ -450,9 +504,9 @@ char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
  * IN borrow_flag - print information related to standby and borrowed nodes if true
  */
 void _slurm_print_partition_info ( FILE* out, partition_info_t * part_ptr,
-				  int one_liner, int borrow_flag)
+				  int one_liner, uint16_t meta_flags)
 {
-	char *print_this = _slurm_sprint_partition_info(part_ptr, one_liner, borrow_flag);
+	char *print_this = _slurm_sprint_partition_info(part_ptr, one_liner, meta_flags);
 	fprintf ( out, "%s", print_this);
 	xfree(print_this);
 }

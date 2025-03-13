@@ -134,6 +134,16 @@ void slurm_init_part_desc_msg (update_part_msg_t * update_part_msg)
 	update_part_msg->preempt_mode 	= NO_VAL16;
 	update_part_msg->priority_job_factor = NO_VAL16;
 	update_part_msg->priority_tier	= NO_VAL16;
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	update_part_msg->priority_favor_small  = NO_VAL16;
+	update_part_msg->priority_weight_age   = NO_VAL;
+	update_part_msg->priority_weight_assoc = NO_VAL;
+	update_part_msg->priority_weight_fs    = NO_VAL;
+	update_part_msg->priority_weight_js    = NO_VAL;
+	update_part_msg->priority_weight_part  = NO_VAL;
+	update_part_msg->priority_weight_qos   = NO_VAL;
+	update_part_msg->priority_weight_tres  = NULL;
+#endif
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 	update_part_msg->suspend_idle = NO_VAL;
 #endif

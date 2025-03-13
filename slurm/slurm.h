@@ -406,6 +406,17 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_CUSTOM_EXCEPTION  
 #endif
 
+#ifndef __METASTACK_PART_PRIORITY_WEIGHT
+#define __METASTACK_PART_PRIORITY_WEIGHT
+#endif
+
+#ifndef __METASTACK_BUG_SHOW_PRIO_FLAGS
+#define __METASTACK_BUG_SHOW_PRIO_FLAGS
+#endif
+
+#ifndef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+#define __METASTACK_BUG_SRUN_RECVMSG_VERIF
+#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -2733,6 +2744,13 @@ typedef struct job_defaults {
 #define PART_METAFLAG_RBN_CLR 	0x0200  /* Clear RBN partition flag */
 #endif
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#define PART_METAFLAG_NODE_BORROW 	0x0001
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+#define PART_METAFLAG_PRIO_PARAMS 	0x0010
+#endif
+
 typedef struct partition_info {
 	char *allow_alloc_nodes;/* list names of allowed allocating
 				 * nodes */
@@ -2794,7 +2812,18 @@ typedef struct partition_info {
 	char     *borrowed_nodes; /* list names of nodes borrowed in partition */	
 	char     *standby_node_parameters; /* parameters about standby nodes in partition */	
 	char     *standby_nodes;  /* list names of standby nodes in partition */	
-#endif		
+#endif	
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	uint16_t priority_favor_small; /* favor small jobs over large */
+	uint32_t priority_weight_age; /* weight for age factor */
+	uint32_t priority_weight_assoc; /* weight for assoc factor */
+	uint32_t priority_weight_fs; /* weight for Fairshare factor */
+	uint32_t priority_weight_js; /* weight for Job Size factor */
+	uint32_t priority_weight_part; /* weight for Partition factor */
+	uint32_t priority_weight_qos; /* weight for QOS factor */
+	char    *priority_weight_tres; /* weights (str) for different TRES' */
+#endif	
+} partition_info_t;	
 } partition_info_t;
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
@@ -4940,30 +4969,31 @@ extern void slurm_free_partition_info_msg(partition_info_msg_t *part_info_ptr);
  */
 extern void slurm_print_partition_info_msg(FILE *out, partition_info_msg_t *part_info_ptr, int one_liner);
 
-#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+#if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
 /*
  * slurm_print_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions
  * IN out - file to write to
  * IN part_ptr - an individual partition information record pointer
  * IN one_liner - print as a single line if true
- * IN borrow_flag - print information related to standby and borrowed nodes if true
+ * IN meta_flags - print additional information related if true
  */
 extern void _slurm_print_partition_info(FILE *out,
 				       partition_info_t *part_ptr,
-				       int one_liner, int borrow_flag);
+				       int one_liner, uint16_t meta_flags);
 /*
  * _slurm_sprint_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions
  * IN part_ptr - an individual partition information record pointer
  * IN one_liner - print as a single line if true
- * IN borrow_flag - print information related to standby and borrowed nodes if true
+ * IN meta_flags - print additional information related if true
  * RET out - char * with formatted output (must be freed after call)
  *           NULL is returned on failure.
  */
 extern char *_slurm_sprint_partition_info(partition_info_t *part_ptr,
-					 int one_liner, int borrow_flag);
+					 int one_liner, uint16_t meta_flags);
 #endif
+
 /*
  * slurm_print_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions

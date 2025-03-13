@@ -1101,13 +1101,25 @@ static void _init_part_record(part_record_t *part_ptr)
     part_ptr->suspend_idle		= NO_VAL;
 #endif
 #if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
-    part_ptr->meta_flags			= 0;
+	part_ptr->meta_flags			= 0;
 #endif
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
 	part_ptr->standby_nodes->borrowed_node_bitmap = bit_alloc(node_record_count);
 	part_ptr->standby_nodes->standby_node_bitmap  = bit_alloc(node_record_count);
 #endif	
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	part_ptr->priority_params = xcalloc(1, sizeof(priority_params_t));
+	part_ptr->priority_params->priority_favor_small  = NO_VAL16;
+	part_ptr->priority_params->priority_weight_age   = NO_VAL;
+	part_ptr->priority_params->priority_weight_assoc = NO_VAL;
+	part_ptr->priority_params->priority_weight_fs    = NO_VAL;
+	part_ptr->priority_params->priority_weight_js    = NO_VAL;
+	part_ptr->priority_params->priority_weight_part  = NO_VAL;
+	part_ptr->priority_params->priority_weight_qos   = NO_VAL;
+	part_ptr->priority_params->priority_weight_tres  = NULL;
+	part_ptr->priority_params->tres_weights          = NULL;
+#endif
 }
 
 /*
@@ -1268,6 +1280,28 @@ static int _dump_part_state(void *x, void *arg)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
 #endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	priority_params_t *priority_params = part_ptr->priority_params;
+	if (!priority_params) {
+		pack16(NO_VAL16, buffer);
+		pack32(NO_VAL,   buffer);
+		pack32(NO_VAL,   buffer);
+		pack32(NO_VAL,   buffer);
+		pack32(NO_VAL,   buffer);
+		pack32(NO_VAL,   buffer);
+		pack32(NO_VAL,   buffer);
+		packnull(buffer);
+	} else {
+		pack16(priority_params->priority_favor_small,  buffer);
+		pack32(priority_params->priority_weight_age,   buffer);
+		pack32(priority_params->priority_weight_assoc, buffer);
+		pack32(priority_params->priority_weight_fs,    buffer);
+		pack32(priority_params->priority_weight_js,    buffer);
+		pack32(priority_params->priority_weight_part,  buffer);
+		pack32(priority_params->priority_weight_qos,   buffer);
+		packstr(priority_params->priority_weight_tres, buffer);
+	}
+#endif
 
 	return 0;
 }
@@ -1328,6 +1362,16 @@ int load_all_part_state(void)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	char *borrowed_nodes = NULL;
 #endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+    uint16_t priority_favor_small  = NO_VAL16;  /* favor small jobs over large */
+    uint32_t priority_weight_age   = NO_VAL;   /* weight for age factor */
+    uint32_t priority_weight_assoc = NO_VAL; /* weight for assoc factor */
+    uint32_t priority_weight_fs    = NO_VAL;    /* weight for Fairshare factor */
+    uint32_t priority_weight_js    = NO_VAL;    /* weight for Job Size factor */
+    uint32_t priority_weight_part  = NO_VAL;  /* weight for Partition factor */
+    uint32_t priority_weight_qos   = NO_VAL;   /* weight for QOS factor */
+    char    *priority_weight_tres  = NULL;  /* weights (str) for different TRES' */
+#endif
 	xassert(verify_lock(CONF_LOCK, READ_LOCK));
 
 	/* read the file */
@@ -1364,7 +1408,73 @@ int load_all_part_state(void)
 	while (remaining_buf(buffer) > 0) {
 #ifdef __META_PROTOCOL
         if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
-            if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+			if (protocol_version >= META_2_3_PROTOCOL_VERSION) {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			    safe_unpackstr_xmalloc(&borrowed_nodes, &name_len, buffer);
+#endif	
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+                safe_unpack16(&priority_favor_small,  buffer);
+				safe_unpack32(&priority_weight_age,   buffer);
+				safe_unpack32(&priority_weight_assoc, buffer);
+				safe_unpack32(&priority_weight_fs,    buffer);
+				safe_unpack32(&priority_weight_js,    buffer);
+				safe_unpack32(&priority_weight_part,  buffer);
+				safe_unpack32(&priority_weight_qos,   buffer);
+				safe_unpackstr_xmalloc(&priority_weight_tres, &name_len, buffer);
+#endif
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }			
+			} else if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
                 safe_unpack32(&cpu_bind, buffer);
                 safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
                 safe_unpack32(&grace_time, buffer);
@@ -1658,7 +1768,10 @@ int load_all_part_state(void)
 			xfree(nodes);
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 			xfree(borrowed_nodes);
-#endif			
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+			xfree(priority_weight_tres);
+#endif
 			error_code = EINVAL;
 			break;
 		}
@@ -1753,7 +1866,22 @@ int load_all_part_state(void)
 			part_ptr->standby_nodes = xcalloc(1, sizeof(standby_nodes_t));
 		}
 		part_ptr->standby_nodes->borrowed_nodes = borrowed_nodes;
-#endif	
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		if (part_ptr->priority_params) {
+			xfree(part_ptr->priority_params->priority_weight_tres);
+		} else {
+			part_ptr->priority_params = xcalloc(1, sizeof(priority_params_t));
+		}
+		part_ptr->priority_params->priority_favor_small  = priority_favor_small;
+		part_ptr->priority_params->priority_weight_age   = priority_weight_age;
+		part_ptr->priority_params->priority_weight_assoc = priority_weight_assoc;
+		part_ptr->priority_params->priority_weight_fs    = priority_weight_fs;
+		part_ptr->priority_params->priority_weight_js    = priority_weight_js;
+		part_ptr->priority_params->priority_weight_part  = priority_weight_part;
+		part_ptr->priority_params->priority_weight_qos   = priority_weight_qos;
+		part_ptr->priority_params->priority_weight_tres  = priority_weight_tres;
+#endif
 		xfree(part_name);
 	}
 
@@ -1769,6 +1897,17 @@ unpack_error:
 	free_buf(buffer);
 	return EFAULT;
 }
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+void prio_params_free(priority_params_t *priority_params)
+{
+	if (priority_params) {
+		xfree(priority_params->priority_weight_tres);
+		xfree(priority_params->tres_weights);
+		xfree(priority_params);
+	}
+}
+#endif
 
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 void standby_nodes_free(standby_nodes_t *standby_nodes)
@@ -1804,6 +1943,16 @@ extern int load_all_part_borrow_nodes(void)
 	uint16_t state_up, cr_type;
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
 	uint32_t suspend_idle;
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+    uint16_t priority_favor_small;  /* favor small jobs over large */
+    uint32_t priority_weight_age;   /* weight for age factor */
+    uint32_t priority_weight_assoc; /* weight for assoc factor */
+    uint32_t priority_weight_fs;    /* weight for Fairshare factor */
+    uint32_t priority_weight_js;    /* weight for Job Size factor */
+    uint32_t priority_weight_part;  /* weight for Partition factor */
+    uint32_t priority_weight_qos;   /* weight for QOS factor */
+    char    *priority_weight_tres = NULL;  /* weights (str) for different TRES' */
 #endif
 	part_record_t *part_ptr = NULL;
 	uint32_t name_len;
@@ -1851,7 +2000,73 @@ extern int load_all_part_borrow_nodes(void)
 	while (remaining_buf(buffer) > 0) {
 #ifdef __META_PROTOCOL
         if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
-            if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+            if (protocol_version >= META_2_3_PROTOCOL_VERSION) {
+                safe_unpack32(&cpu_bind, buffer);
+                safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
+                safe_unpack32(&grace_time, buffer);
+                safe_unpack32(&max_time, buffer);
+                safe_unpack32(&default_time, buffer);
+                safe_unpack32(&max_cpus_per_node, buffer);
+                safe_unpack32(&max_nodes, buffer);
+                safe_unpack32(&min_nodes, buffer);
+
+                safe_unpack16(&flags,        buffer);
+                safe_unpack16(&max_share,    buffer);
+                safe_unpack16(&over_time_limit, buffer);
+                safe_unpack16(&preempt_mode, buffer);
+
+                safe_unpack16(&priority_job_factor, buffer);
+                safe_unpack16(&priority_tier, buffer);
+                if (priority_job_factor > part_max_priority)
+                    part_max_priority = priority_job_factor;
+
+                safe_unpack16(&state_up, buffer);
+                safe_unpack16(&cr_type, buffer);
+
+                safe_unpackstr_xmalloc(&allow_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_groups,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&qos_char,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&allow_alloc_nodes, &name_len,
+                            buffer);
+                safe_unpackstr_xmalloc(&alternate, &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_accounts,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&deny_qos,
+                            &name_len, buffer);
+                safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+                safe_unpack32(&suspend_idle, buffer);
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+			    safe_unpackstr_xmalloc(&borrowed_nodes, &name_len, buffer);
+#endif	
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+				safe_unpack16(&priority_favor_small,  buffer);
+				safe_unpack32(&priority_weight_age,   buffer);
+				safe_unpack32(&priority_weight_assoc, buffer);
+				safe_unpack32(&priority_weight_fs,    buffer);
+				safe_unpack32(&priority_weight_js,    buffer);
+				safe_unpack32(&priority_weight_part,  buffer);
+				safe_unpack32(&priority_weight_qos,   buffer);
+				safe_unpackstr_xmalloc(&priority_weight_tres, &name_len, buffer);
+#endif				
+                if ((flags & PART_FLAG_DEFAULT_CLR)   ||
+                    (flags & PART_FLAG_EXC_USER_CLR)  ||
+                    (flags & PART_FLAG_HIDDEN_CLR)    ||
+                    (flags & PART_FLAG_NO_ROOT_CLR)   ||
+                    (flags & PART_FLAG_ROOT_ONLY_CLR) ||
+                    (flags & PART_FLAG_REQ_RESV_CLR)  ||
+                    (flags & PART_FLAG_LLN_CLR)) {
+                    error("Invalid data for partition %s: flags=%u",
+                        part_name, flags);
+                    error_code = EINVAL;
+                }							
+			} else if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
                 safe_unpack32(&cpu_bind, buffer);
                 safe_unpackstr_xmalloc(&part_name, &name_len, buffer);
                 safe_unpack32(&grace_time, buffer);
@@ -2105,7 +2320,7 @@ extern int load_all_part_borrow_nodes(void)
 					       &name_len, buffer);
 			safe_unpackstr_xmalloc(&deny_qos,
 					       &name_len, buffer);
-			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);
+			safe_unpackstr_xmalloc(&nodes, &name_len, buffer);		
 			if ((flags & PART_FLAG_DEFAULT_CLR)   ||
 			    (flags & PART_FLAG_EXC_USER_CLR)  ||
 			    (flags & PART_FLAG_HIDDEN_CLR)    ||
@@ -2135,7 +2350,9 @@ extern int load_all_part_borrow_nodes(void)
 		//xfree(part_name);
 		xfree(qos_char);
 		xfree(nodes);
-
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		xfree(priority_weight_tres);
+#endif
 		/* validity test as possible */
 		if (state_up > PARTITION_UP) {
 			error("Invalid data for partition %s: state_up=%u",
@@ -2378,6 +2595,10 @@ static void _list_delete_part(void *part_entry)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES	
 	standby_nodes_free(part_ptr->standby_nodes);
 	part_ptr->standby_nodes = NULL;
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	prio_params_free(part_ptr->priority_params);
+	part_ptr->priority_params = NULL;
 #endif
 
 	xfree(part_entry);
@@ -2837,6 +3058,7 @@ extern void pack_all_watch_dog(char **buffer_ptr, int *buffer_size,
 }
 #endif
 
+
 /*
  * pack_all_part - dump all partition information for all partitions in
  *	machine independent form (for network transmission)
@@ -2932,7 +3154,101 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 {
 #ifdef __META_PROTOCOL
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
-        if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
+        if (protocol_version >= META_2_3_PROTOCOL_VERSION) {
+            
+#ifdef __METASTACK_OPT_CACHE_QUERY
+            if(pack_cache){
+                if (default_cache_part_name && !xstrcmp(default_cache_part_name, part_ptr->name))
+                    part_ptr->flags |= PART_FLAG_DEFAULT;
+                else
+                    part_ptr->flags &= (~PART_FLAG_DEFAULT);
+            }else{
+                if (default_part_loc == part_ptr)
+                    part_ptr->flags |= PART_FLAG_DEFAULT;
+                else
+                    part_ptr->flags &= (~PART_FLAG_DEFAULT);
+            }
+#else
+            if (default_part_loc == part_ptr)
+                part_ptr->flags |= PART_FLAG_DEFAULT;
+            else
+                part_ptr->flags &= (~PART_FLAG_DEFAULT);
+#endif
+            packstr(part_ptr->name, buffer);
+            pack32(part_ptr->cpu_bind, buffer);
+            pack32(part_ptr->grace_time, buffer);
+            pack32(part_ptr->max_time, buffer);
+            pack32(part_ptr->default_time, buffer);
+            pack32(part_ptr->max_nodes_orig, buffer);
+            pack32(part_ptr->min_nodes_orig, buffer);
+            pack32(part_ptr->total_nodes, buffer);
+            pack32(part_ptr->total_cpus, buffer);
+            pack64(part_ptr->def_mem_per_cpu, buffer);
+            pack32(part_ptr->max_cpus_per_node, buffer);
+            pack64(part_ptr->max_mem_per_cpu, buffer);
+
+            pack16(part_ptr->flags,      buffer);
+            pack16(part_ptr->max_share,  buffer);
+            pack16(part_ptr->over_time_limit, buffer);
+            pack16(part_ptr->preempt_mode, buffer);
+            pack16(part_ptr->priority_job_factor, buffer);
+            pack16(part_ptr->priority_tier, buffer);
+            pack16(part_ptr->state_up, buffer);
+
+            pack16(part_ptr->cr_type, buffer);
+            pack16(part_ptr->resume_timeout, buffer);
+            pack16(part_ptr->suspend_timeout, buffer);
+            pack32(part_ptr->suspend_time, buffer);
+
+            packstr(part_ptr->allow_accounts, buffer);
+            packstr(part_ptr->allow_groups, buffer);
+            packstr(part_ptr->allow_alloc_nodes, buffer);
+            packstr(part_ptr->allow_qos, buffer);
+            packstr(part_ptr->qos_char, buffer);
+            packstr(part_ptr->alternate, buffer);
+            packstr(part_ptr->deny_accounts, buffer);
+            packstr(part_ptr->deny_qos, buffer);
+            packstr(part_ptr->nodes, buffer);
+            packstr(part_ptr->nodesets, buffer);
+            pack_bit_str_hex(part_ptr->node_bitmap, buffer);
+            packstr(part_ptr->billing_weights_str, buffer);
+            packstr(part_ptr->tres_fmt_str, buffer);
+            (void)slurm_pack_list(part_ptr->job_defaults_list,
+                        job_defaults_pack, buffer,
+                        protocol_version);
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+            pack32(part_ptr->suspend_idle, buffer);
+#endif
+#if (defined __METASTACK_NEW_HETPART_SUPPORT) || (defined __METASTACK_NEW_PART_RBN)
+			pack16(part_ptr->meta_flags,      buffer);
+#endif
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+            packstr(part_ptr->standby_nodes->borrowed_nodes, buffer);
+            packstr(part_ptr->standby_nodes->nodes, buffer);
+            packstr(part_ptr->standby_nodes->parameters, buffer);
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+			if (!part_ptr->priority_params) {
+				pack16(NO_VAL16, buffer);
+				pack32(NO_VAL,   buffer);
+				pack32(NO_VAL,   buffer);
+				pack32(NO_VAL,   buffer);
+				pack32(NO_VAL,   buffer);
+				pack32(NO_VAL,   buffer);
+				pack32(NO_VAL,   buffer);
+				packnull(buffer);
+			} else {
+				pack16(part_ptr->priority_params->priority_favor_small,    buffer);
+				pack32(part_ptr->priority_params->priority_weight_age,     buffer);
+				pack32(part_ptr->priority_params->priority_weight_assoc,   buffer);
+				pack32(part_ptr->priority_params->priority_weight_fs,      buffer);
+				pack32(part_ptr->priority_params->priority_weight_js,      buffer);
+				pack32(part_ptr->priority_params->priority_weight_part,    buffer);
+				pack32(part_ptr->priority_params->priority_weight_qos,     buffer);
+				packstr(part_ptr->priority_params->priority_weight_tres,   buffer);
+			}
+#endif	
+        } else if (protocol_version >= META_2_1_PROTOCOL_VERSION) {
             
 #ifdef __METASTACK_OPT_CACHE_QUERY
             if(pack_cache){
@@ -3209,6 +3525,188 @@ void pack_part(part_record_t *part_ptr, buf_t *buffer, uint16_t protocol_version
 	}
 }
 
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+/*
+ * check_partition_prio_weights - check whether the partition meets the 
+ * conditions for configuring priority weights
+ */
+extern void check_partition_prio_weights(part_record_t *part_ptr)
+{
+	bool prio_mul = false, with_slurmdbd = false;
+ 	priority_params_t *priority_params = NULL;
+
+	priority_params = part_ptr->priority_params;
+	if (!priority_params) {
+		error("%s: priority_params invalid for partition %s, ignoring", __func__, part_ptr->name);
+		return;
+	}
+
+	if (xstrcasecmp(slurm_conf.priority_type, "priority/multifactor") == 0) {
+		prio_mul = true;
+	}
+
+	if (xstrcasecmp(slurm_conf.accounting_storage_type, "accounting_storage/slurmdbd") == 0) {
+		with_slurmdbd = true;
+	}
+
+	if (!prio_mul) {/* not priority/multifactor */
+		if (priority_params->priority_favor_small != NO_VAL16) {
+			priority_params->priority_favor_small = NO_VAL16;
+			error("Only 'priority/multifactor' plugin support PriorityFavorSmall for partition %s, ignoring", part_ptr->name);
+		}
+
+		if (priority_params->priority_weight_age != NO_VAL) {
+			priority_params->priority_weight_age = NO_VAL;
+			error("Only 'priority/multifactor' plugin support PriorityWeightAge for partition %s, ignoring", part_ptr->name);				
+		}
+
+		if (priority_params->priority_weight_assoc != NO_VAL) {
+			priority_params->priority_weight_assoc = NO_VAL;
+			error("Only 'priority/multifactor' plugin support PriorityWeightAssoc for partition %s, ignoring", part_ptr->name);				
+		}		
+		if (priority_params->priority_weight_fs != NO_VAL) {
+			priority_params->priority_weight_fs = NO_VAL;
+			error("Only 'priority/multifactor' plugin support PriorityWeightFairshare for partition %s, ignoring", part_ptr->name);				
+		}
+		
+		if (priority_params->priority_weight_js != NO_VAL) {
+			priority_params->priority_weight_js = NO_VAL;
+			error("Only 'priority/multifactor' plugin support PriorityWeightJobSize for partition %s, ignoring", part_ptr->name);				
+		}
+		
+		if (priority_params->priority_weight_part != NO_VAL) {
+			priority_params->priority_weight_part = NO_VAL;
+			error("Only 'priority/multifactor' plugin support PriorityWeightPartition for partition %s, ignoring", part_ptr->name);				
+		}
+		
+		if (priority_params->priority_weight_qos != NO_VAL) {
+			priority_params->priority_weight_qos = NO_VAL;
+			error("Only 'priority/multifactor' plugin support PriorityWeightQOS for partition %s, ignoring", part_ptr->name);				
+		}
+
+		if (priority_params->priority_weight_tres) {
+			xfree(priority_params->priority_weight_tres);
+			error("Only 'priority/multifactor' plugin support PriorityWeightTRES for partition %s, ignoring", part_ptr->name);
+		}		
+	}
+
+	if (!with_slurmdbd) {
+		if (priority_params->priority_weight_age != NO_VAL) {
+			error("PriorityWeightAge for partition can only be used with SlurmDBD, ignoring");
+			priority_params->priority_weight_age = NO_VAL;
+		}
+
+		if (priority_params->priority_weight_fs != NO_VAL) {
+			error("PriorityWeightFairshare for partition can only be used with SlurmDBD, ignoring");
+			priority_params->priority_weight_fs = NO_VAL;
+		}
+	}
+}
+
+/*
+ * Process string and set partition tres_weight fields to appropriate values if valid
+ *
+ * IN tres_weights_str - suggested tres weights
+ * IN part_ptr - pointer to partition
+ * IN fail - whether the inner function should fatal if the string is invalid.
+ * RET return SLURM_ERROR on error, SLURM_SUCCESS otherwise.
+ */
+extern int set_partition_tres_weights(char *tres_weights_str,
+					 part_record_t *part_ptr, bool update_part)
+{
+	char *tmp_tres_weights_str = NULL;
+	double *tmp = NULL;
+
+	tmp_tres_weights_str = xstrdup(tres_weights_str);
+	if (!tmp_tres_weights_str || *tmp_tres_weights_str == '\0') {
+		/* Clear the weights */
+		xfree(part_ptr->priority_params->priority_weight_tres);
+		xfree(part_ptr->priority_params->tres_weights);
+	} else {
+		if (!(tmp = slurm_get_tres_weight_array(tmp_tres_weights_str,
+							slurmctld_tres_cnt,
+							false))) {
+			if (!update_part) {
+				xfree(part_ptr->priority_params->priority_weight_tres);
+				xfree(part_ptr->priority_params->tres_weights);
+				debug2("Clear tres weights for partition %s", part_ptr->name);
+			}
+			xfree(tmp_tres_weights_str);
+		    return SLURM_ERROR;
+		}
+
+		xfree(part_ptr->priority_params->priority_weight_tres);
+		xfree(part_ptr->priority_params->tres_weights);
+		part_ptr->priority_params->priority_weight_tres =
+			xstrdup(tmp_tres_weights_str);
+		part_ptr->priority_params->tres_weights = tmp;
+	}
+	xfree(tmp_tres_weights_str);
+
+	return SLURM_SUCCESS;
+}
+
+/*
+ * Determine whether the partition is configured with effective multi factor weights
+ *
+ * IN part_ptr  - pointer to partition
+ * IN PRIO_TYPE - type of prio_weight,see 
+ * RET return SLURM_ERROR on no config, SLURM_SUCCESS otherwise.
+ */
+extern bool partition_has_prio_weight(part_record_t *part_ptr, int PRIO_TYPE)
+{
+	bool rc = false;
+	if (!part_ptr || !part_ptr->priority_params) {
+		return rc;
+	}
+
+	switch (PRIO_TYPE) {
+	case PRIO_FAVOR_SMALL:
+		if (part_ptr->priority_params->priority_favor_small != NO_VAL16) {
+			rc = true;
+		}
+		break;
+	case PRIO_AGE:
+		if (part_ptr->priority_params->priority_weight_age != NO_VAL) {
+			rc = true;
+		}
+		break;
+	case PRIO_ASSOC:
+		if (part_ptr->priority_params->priority_weight_assoc != NO_VAL) {
+			rc = true;
+		}
+		break;
+	case PRIO_FAIRSHARE:
+		if (part_ptr->priority_params->priority_weight_fs != NO_VAL) {
+			rc = true;
+		}
+		break;
+	case PRIO_JOBSIZE:
+		if (part_ptr->priority_params->priority_weight_js != NO_VAL) {
+			rc = true;
+		}
+		break;
+	case PRIO_PARTITION:
+		if (part_ptr->priority_params->priority_weight_part != NO_VAL) {
+			rc = true;
+		}
+		break;
+	case PRIO_QOS:
+		if (part_ptr->priority_params->priority_weight_qos != NO_VAL) {
+			rc = true;
+		}
+		break;
+	case PRIO_TRES:
+		if (part_ptr->priority_params->priority_weight_tres) {
+			rc = true;
+		}
+		break;		
+	}
+
+	return rc;
+}
+#endif
+
 /*
  * Process string and set partition fields to appropriate values if valid
  *
@@ -3444,11 +3942,11 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 	if (part_desc->meta_flags & PART_METAFLAG_HETPART) {
 		info("%s: setting HetPart for partition %s", __func__,
-		     part_desc->name);
+			part_desc->name);
 		part_ptr->meta_flags |= PART_METAFLAG_HETPART;
 	} else if (part_desc->meta_flags & PART_METAFLAG_HETPART_CLR) {
 		info("%s: clearing HetPart for partition %s", __func__,
-		     part_desc->name);
+			part_desc->name);
 		part_ptr->meta_flags &= (~PART_METAFLAG_HETPART);
 	}
 #endif
@@ -3556,6 +4054,67 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 				(double)part_max_priority;
 		}
 	}
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	if (part_ptr->priority_params) {
+		if (part_desc->priority_favor_small != NO_VAL16) {
+			info("%s: setting PriorityFavorSmall to %u for partition %s",
+				__func__, part_desc->priority_favor_small, part_desc->name);		
+			part_ptr->priority_params->priority_favor_small = part_desc->priority_favor_small;
+		}
+
+		if (part_desc->priority_weight_age != NO_VAL) {
+			info("%s: setting PriorityWeightAge to %u for partition %s",
+				__func__, part_desc->priority_weight_age, part_desc->name);
+			part_ptr->priority_params->priority_weight_age = part_desc->priority_weight_age;
+		}
+
+		if (part_desc->priority_weight_assoc != NO_VAL) {
+			info("%s: setting PriorityWeightAssoc to %u for partition %s",
+				__func__, part_desc->priority_weight_assoc, part_desc->name);
+			part_ptr->priority_params->priority_weight_assoc = part_desc->priority_weight_assoc;
+		}
+
+		if (part_desc->priority_weight_fs != NO_VAL) {
+			info("%s: setting PriorityWeightFairshare to %u for partition %s",
+				__func__, part_desc->priority_weight_fs, part_desc->name);
+			part_ptr->priority_params->priority_weight_fs = part_desc->priority_weight_fs;
+		}
+
+		if (part_desc->priority_weight_js != NO_VAL) {
+			info("%s: setting PriorityWeightJobSize to %u for partition %s",
+				__func__, part_desc->priority_weight_js, part_desc->name);
+			part_ptr->priority_params->priority_weight_js = part_desc->priority_weight_js;
+		}
+
+		if (part_desc->priority_weight_part != NO_VAL) {
+			info("%s: setting PriorityWeightPartition to %u for partition %s",
+				__func__, part_desc->priority_weight_part, part_desc->name);
+			part_ptr->priority_params->priority_weight_part = part_desc->priority_weight_part;
+		}
+
+		if (part_desc->priority_weight_qos != NO_VAL) {
+			info("%s: setting PriorityWeightQOS to %u for partition %s",
+				__func__, part_desc->priority_weight_qos, part_desc->name);
+			part_ptr->priority_params->priority_weight_qos = part_desc->priority_weight_qos;
+		}
+
+		if (part_desc->priority_weight_tres) {
+			if (set_partition_tres_weights(part_desc->priority_weight_tres,
+							part_ptr, true) == SLURM_SUCCESS) {
+				info("%s: setting PriorityWeightTRES to %s for partition %s",
+					__func__, part_desc->priority_weight_tres, part_desc->name);
+			} else {
+				error("%s: Invalid PriorityWeightTRES(%s) given",
+					__func__, part_desc->priority_weight_tres);
+				error_code = ESLURM_INVALID_TRES;
+			}
+		}
+
+		check_partition_prio_weights(part_ptr);
+	}
+#endif
+
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
     if (part_desc->suspend_idle != NO_VAL) {
 		info("%s: setting SuspendKeepIdle to %u for partition %s",

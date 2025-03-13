@@ -50,9 +50,6 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#ifdef  __METASTACK_OPT_GRES_CONFIG
-#include <sys/time.h>
-#endif
 
 #include "src/common/assoc_mgr.h"
 #include "src/common/cpu_frequency.h"
@@ -74,9 +71,6 @@
 #include "src/common/switch.h"
 #include "src/common/xstring.h"
 #include "src/common/cgroup.h"
-#ifdef  __METASTACK_OPT_GRES_CONFIG
-#include "src/common/parse_config.h"
-#endif
 
 #include "src/slurmctld/acct_policy.h"
 #include "src/slurmctld/burst_buffer.h"
@@ -154,6 +148,7 @@ static void _init_watch_dog_record(watch_dog_record_t *watch_dog_ptr);
 void init_watch_dog_conf(void);
 static void _list_delete_watch_dog(void *watch_dog_entry);
 #endif
+
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 /* Global variables */
 int part_count = 0;     /* The number of all partitions */
@@ -177,6 +172,10 @@ bitstr_t **para_sched_main_planned_bitmap = NULL;
 bitstr_t **para_sched_last_main_planned_bitmap = NULL;
 bitstr_t **para_sched_planned_update_bitmap = NULL;
 #endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+bitstr_t **para_sched_resv_node_bitmap = NULL;
+#endif
+
 
 /*
  * build_sched_resource - build the resource array required for parallel scheduling
@@ -262,6 +261,9 @@ extern void build_sched_resource(void)
 			/* To be compatible with cache. */
 			para_sched_last_main_planned_bitmap = xcalloc(resource_count, sizeof(bitstr_t *));
 			para_sched_planned_update_bitmap = xcalloc(resource_count, sizeof(bitstr_t *));
+#endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+			para_sched_resv_node_bitmap = xcalloc(resource_count, sizeof(bitstr_t *));
 #endif
 
 			/* build para_sched node bitmap */
@@ -544,6 +546,10 @@ static void _init_bitmaps(void)
 	FREE_NULL_BITMAP(share_node_bitmap);
 	FREE_NULL_BITMAP(up_node_bitmap);
 	FREE_NULL_BITMAP(rs_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	FREE_NULL_BITMAP(resv_node_bitmap);
+	resv_node_bitmap = bit_alloc(node_record_count);
+#endif    
 	avail_node_bitmap = bit_alloc(node_record_count);
 	bf_ignore_node_bitmap = bit_alloc(node_record_count);
 	booting_node_bitmap = bit_alloc(node_record_count);
@@ -859,6 +865,7 @@ void init_watch_dog_conf(void)
 		watch_dog_list = list_create(_list_delete_watch_dog);
 }
 #endif
+
 /*
  * _init_all_slurm_conf - initialize or re-initialize the slurm
  *	configuration values.
@@ -1135,6 +1142,7 @@ static int _build_single_watchdogline_info(watch_dog_record_t *watch)
     return 0;
 }
 #endif
+
 /*
  * _build_single_partitionline_info - get a array of slurm_conf_partition_t
  *	structures from the slurm.conf reader, build table, and set values
@@ -1148,9 +1156,8 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 	part_record_t *part_ptr;
 
 	if (list_find_first(part_list, &list_find_part, part->name))
-		fatal("%s: duplicate entry for partition %s",
+		error("%s: duplicate entry for partition %s",
 		      __func__, part->name);
-
 	part_ptr = create_part_record(part->name);
 
 	if (part->default_flag) {
@@ -1227,8 +1234,21 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 	part_ptr->over_time_limit = part->over_time_limit;
 	part_ptr->preempt_mode   = part->preempt_mode;
 	part_ptr->priority_job_factor = part->priority_job_factor;
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	if (part_ptr->priority_params) {
+		part_ptr->priority_params->priority_favor_small  = part->priority_favor_small;
+		part_ptr->priority_params->priority_weight_age   = part->priority_weight_age;
+		part_ptr->priority_params->priority_weight_assoc = part->priority_weight_assoc;
+		part_ptr->priority_params->priority_weight_fs    = part->priority_weight_fs;
+		part_ptr->priority_params->priority_weight_js    = part->priority_weight_js;
+		part_ptr->priority_params->priority_weight_part  = part->priority_weight_part;
+		part_ptr->priority_params->priority_weight_qos   = part->priority_weight_qos;
+		part_ptr->priority_params->priority_weight_tres  = xstrdup(part->priority_weight_tres);
+		check_partition_prio_weights(part_ptr);
+	}
+#endif	
 	part_ptr->priority_tier  = part->priority_tier;
-	part_ptr->qos_char       = xstrdup(part->qos_char);
+	//part_ptr->qos_char       = xstrdup(part->qos_char);
 	part_ptr->resume_timeout = part->resume_timeout;
 	part_ptr->state_up       = part->state_up;
 	part_ptr->suspend_time   = part->suspend_time;
@@ -1247,6 +1267,13 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 	part_ptr->standby_nodes->nodes = xstrdup(part->standby_nodes);
 #endif
 	part_ptr->orig_nodes = xstrdup(part->nodes);
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	if (partition_has_prio_weight(part_ptr, PRIO_TRES)) {
+		set_partition_tres_weights(part_ptr->priority_params->priority_weight_tres,
+						part_ptr, false);
+	}
+#endif
 
 	if (part->billing_weights_str) {
 		set_partition_billing_weights(part->billing_weights_str,
@@ -1471,6 +1498,7 @@ static int _build_all_watchdog_info(void)
 	return SLURM_SUCCESS;
 }
 #endif
+
 /*
  * _build_all_partitionline_info - get a array of slurm_conf_partition_t
  *	structures from the slurm.conf reader, build table, and set values
@@ -1953,10 +1981,6 @@ void _sync_jobs_to_conf(void)
 				build_cg_bitmap(job_ptr);
 				was_running = true;
 			} else if (IS_JOB_SUSPENDED(job_ptr)) {
-#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
-				job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
-				job_ptr->end_time = job_ptr->suspend_time = now;
-#endif
 				job_ptr->end_time = job_ptr->suspend_time;
 				job_ptr->job_state =
 					JOB_NODE_FAIL | JOB_COMPLETING;
@@ -2788,105 +2812,6 @@ extern void update_feature_list(List feature_list, char *new_features,
 	node_features_updated = true;
 }
 
-#ifdef __METASTACK_OPT_GRES_CONFIG
-/**
- * Removes parentheses and their contents from a given string.
- * str IN - The input string to be modified.
- */
-static void remove_parentheses(char *str) {
-	if (str == NULL) {
-		return; 
-	}
-	char *src, *dst;
-	src = dst = str; 
-	while (*src != '\0') { 
-		if (*src != '(') { 
-			*dst++ = *src; 
-			src++; 
-		} else { 
-			src++; 
-			while (*src != '\0' && *src != ')') {
-				src++;
-			}
-			if (*src == ')') { 
-				src++; 
-			}
-		}
-	}
-	*dst = '\0'; 
-}
-
-/**
- * Parses the GRES count from a given GRES name string.
- * 
- * This function takes a GRES name string, removes any parentheses and their contents,
- * and then parses the count of GRES resources. It assumes the GRES name is in the format
- * "type:count" and can contain multiple entries separated by commas.
- * gres_name IN - The GRES name string to parse.
- * return - The total count of GRES resources.
- */
-static int parse_gres_count(const char *gres_name) {
-	if (gres_name == NULL) {
-		error("GRES name is NULL");
-		return -1;  
-	}
-	char *gres_copy = strdup(gres_name);
-	if (!gres_copy) {
-		error("Memory allocation failed");
-		return -1;
-	}
-	remove_parentheses(gres_copy);
-	char *token = strtok(gres_copy, ",");
-	int total_count = 0;
-
-	while (token != NULL) {
-		char *last_colon = strrchr(token, ':');
-		if (last_colon != NULL) {
-			char *endptr;
-			long num = strtol(last_colon + 1, &endptr, 10);
-			if (*endptr == '\0' && endptr > last_colon + 1) {
-				total_count += (int)num;
-			} else {
-				error("Failed to parse GRES number from gres_name");
-			}
-		} else {
-			error("No colon found in gres_name");
-		}
-		token = strtok(NULL, ",");
-	}
-
-	free(gres_copy);
-	return total_count;
-}
-/**
-* Cleans up and frees memory allocated within each element of a parsed lines array.
-*
-* This function iterates through each element of the parsed_lines array and frees
-* the memory allocated for the key, value, and new_leftover fields.  It also destroys
-* any associated hash table and host list.
-*
-* parsed_lines IN - Array of parsed lines to be cleaned up.
-* max_parsed_lines IN - Number of elements in the parsed_lines array.
-*/
-static void cleanup_parsed_lines(parsed_line_t *parsed_lines, int max_parsed_lines) {
-	if (parsed_lines == NULL || max_parsed_lines < 0) {
-		return; 
-	}
-	for (int i = 0; i < max_parsed_lines; i++) {
-		xfree(parsed_lines[i].key);
-		xfree(parsed_lines[i].value);
-		xfree(parsed_lines[i].new_leftover);
-		if (parsed_lines[i].hashtbl) {
-			s_p_hashtbl_destroy(parsed_lines[i].hashtbl); 
-		}
-		if (parsed_lines[i].hostlist) {
-			hostlist_destroy(parsed_lines[i].hostlist); 
-		}
-	}
-	xfree(parsed_lines);
-}
-#endif
-
 static void _gres_reconfig(bool reconfig)
 {
 	node_record_t *node_ptr;
@@ -2899,119 +2824,34 @@ static void _gres_reconfig(bool reconfig)
 		goto grab_includes;
 	}
 
-#ifdef __METASTACK_OPT_GRES_CONFIG
-	struct timeval start, end;
-	long seconds, useconds;
-	double mtime;
-	if(slurm_conf.slurmctld_load_gres){
-		int gres_number = -1;
-		int max_parsed_lines = 0;
-		int num_parsed_lines = 0;
-		char *gres_conf_file = NULL;
-		FILE *fg;
-		char ch;
-		gettimeofday(&start, NULL);
-		gres_conf_file = get_extra_conf_path("gres.conf");
-		fg = fopen(gres_conf_file, "r");
-		if (fg == NULL) {
-			error("_gres_reconfig: unable to read \"%s\": %m", gres_conf_file);
-			xfree(gres_conf_file);
-			return ;
-		}	
-		while ((ch = fgetc(fg)) != EOF) {
-			if (ch == '\n') {
-				max_parsed_lines++;
-			}
-		}
-		/* If the file is not empty and the last character is not a newline, increase the number of lines */
-		if (fseek(fg, 0, SEEK_END) == 0) {
-			if (ftell(fg) > 0) {
-				max_parsed_lines++;
-			}
-		}
-		max_parsed_lines++;
-		fclose(fg);
-		parsed_lines = xmalloc(sizeof(parsed_line_t) * max_parsed_lines);
-		if (parsed_lines == NULL) {
-			error("_gres_reconfig:Memory allocation failed");
-			return;
-		}
-		s_p_hashtbl_t *tbl;
-		tbl = gres_parse_config_file(gres_conf_file, parsed_lines, max_parsed_lines, &num_parsed_lines);
-		if (!tbl) {
-			error("Failed to parse GRES configuration file");
-			xfree(gres_conf_file); 
-			return;
-		}
-		xfree(gres_conf_file);
-		s_p_hashtbl_destroy(tbl);
-		for (i = 0; (node_ptr = next_node(&i)); i++) {
-			if (node_ptr->gres){
-				gres_name = node_ptr->gres;
-			}
-			else{
-				gres_name = node_ptr->config_ptr->gres;
-			}
-			if (gres_name == NULL) {
-				continue;
-			}
-			gres_number = parse_gres_count(gres_name);
-			gres_init_node_config(gres_name, &node_ptr->gres_list);
-			if(gres_g_node_config_loadgres(
-							node_ptr->config_ptr->cpus, node_ptr->name,
-							node_ptr->gres_list, NULL, NULL, parsed_lines, gres_number) ==SLURM_ERROR){
-				continue;
-			}	
-			gres_node_config_validate(
-				node_ptr->name, node_ptr->config_ptr->gres,
-				&node_ptr->gres, &node_ptr->gres_list,
-				node_ptr->config_ptr->threads,
-				node_ptr->config_ptr->cores,
-				node_ptr->config_ptr->tot_sockets,
-				slurm_conf.conf_flags & CTL_CONF_OR, NULL);
+	for (i = 0; (node_ptr = next_node(&i)); i++) {
+		if (node_ptr->gres)
+			gres_name = node_ptr->gres;
+		else
+			gres_name = node_ptr->config_ptr->gres;
+		gres_init_node_config(gres_name, &node_ptr->gres_list);
+		if (!IS_NODE_CLOUD(node_ptr))
+			continue;
 
-			gres_loaded = true;
-		}
-		if (parsed_lines != NULL) {
-			cleanup_parsed_lines(parsed_lines, max_parsed_lines);
-		}
-		gettimeofday(&end, NULL);
-		seconds = end.tv_sec - start.tv_sec;
-		useconds = end.tv_usec - start.tv_usec;
-		mtime = (seconds * 1000) + (useconds / 1000.0);
-		debug("Slurmctld load Gres config time: %.2f ms\n", mtime);
-	}else{
-		for (i = 0; (node_ptr = next_node(&i)); i++) {
-			if (node_ptr->gres)
-				gres_name = node_ptr->gres;
-			else
-				gres_name = node_ptr->config_ptr->gres;
-			gres_init_node_config(gres_name, &node_ptr->gres_list);
-			if (!IS_NODE_CLOUD(node_ptr))
-				continue;
+		/*
+		 * Load in GRES for node now. By default Slurm gets this
+		 * information when the node registers for the first
+		 * time, which can take a while for a node in the cloud
+		 * to boot.
+		 */
+		gres_g_node_config_load(
+			node_ptr->config_ptr->cpus, node_ptr->name,
+			node_ptr->gres_list, NULL, NULL);
+		gres_node_config_validate(
+			node_ptr->name, node_ptr->config_ptr->gres,
+			&node_ptr->gres, &node_ptr->gres_list,
+			node_ptr->config_ptr->threads,
+			node_ptr->config_ptr->cores,
+			node_ptr->config_ptr->tot_sockets,
+			slurm_conf.conf_flags & CTL_CONF_OR, NULL);
 
-			/*
-			 * Load in GRES for node now. By default Slurm gets this
-			 * information when the node registers for the first
-			 * time, which can take a while for a node in the cloud
-			 * to boot.
-			 */
-			gres_g_node_config_load(
-				node_ptr->config_ptr->cpus, node_ptr->name,
-				node_ptr->gres_list, NULL, NULL);
-			
-			gres_node_config_validate(
-				node_ptr->name, node_ptr->config_ptr->gres,
-				&node_ptr->gres, &node_ptr->gres_list,
-				node_ptr->config_ptr->threads,
-				node_ptr->config_ptr->cores,
-				node_ptr->config_ptr->tot_sockets,
-				slurm_conf.conf_flags & CTL_CONF_OR, NULL);
-
-			gres_loaded = true;
-		}		
+		gres_loaded = true;
 	}
-#endif
 
 grab_includes:
 	if (!gres_loaded) {
@@ -3510,7 +3350,53 @@ static int  _restore_part_state(List old_part_list, char *old_def_part_name,
 				else
 					part_ptr->meta_flags &= (~PART_METAFLAG_RBN);
 			}
-#endif			
+#endif	
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+			if (part_ptr->priority_params && old_part_ptr->priority_params) {
+				priority_params_t *prio_params = part_ptr->priority_params;
+				priority_params_t *old_prio_params = old_part_ptr->priority_params;
+				if (prio_params->priority_favor_small != old_prio_params->priority_favor_small) {
+					error("Partition %s PriorityFavorSmall differs from slurm.conf", part_ptr->name);
+					part_ptr->priority_params->priority_favor_small = old_prio_params->priority_favor_small;
+				}
+				
+				if (prio_params->priority_weight_age != old_prio_params->priority_weight_age) {
+					error("Partition %s PriorityWeightAge differs from slurm.conf", part_ptr->name);
+					part_ptr->priority_params->priority_weight_age = old_prio_params->priority_weight_age;
+				}
+
+				if (prio_params->priority_weight_assoc != old_prio_params->priority_weight_assoc) {
+					error("Partition %s PriorityWeightAssoc differs from slurm.conf", part_ptr->name);
+					part_ptr->priority_params->priority_weight_assoc = old_prio_params->priority_weight_assoc;
+				}
+
+				if (prio_params->priority_weight_fs != old_prio_params->priority_weight_fs) {
+					error("Partition %s PriorityWeightFairshare differs from slurm.conf", part_ptr->name);
+					part_ptr->priority_params->priority_weight_fs = old_prio_params->priority_weight_fs;
+				}
+
+				if (prio_params->priority_weight_js != old_prio_params->priority_weight_js) {
+					error("Partition %s PriorityWeightJobSize differs from slurm.conf", part_ptr->name);
+					part_ptr->priority_params->priority_weight_js = old_prio_params->priority_weight_js;
+				}
+
+				if (prio_params->priority_weight_part != old_prio_params->priority_weight_part) {
+					error("Partition %s PriorityWeightPartition differs from slurm.conf", part_ptr->name);
+					part_ptr->priority_params->priority_weight_part = old_prio_params->priority_weight_part;
+				}
+
+				if (prio_params->priority_weight_qos != old_prio_params->priority_weight_qos) {
+					error("Partition %s PriorityWeightQOS differs from slurm.conf", part_ptr->name);
+					part_ptr->priority_params->priority_weight_qos = old_prio_params->priority_weight_qos;
+				}
+
+				if (xstrcmp(prio_params->priority_weight_tres, old_prio_params->priority_weight_tres)) {
+					error("Partition %s PriorityWeightTRES differs from slurm.conf", part_ptr->name);
+					xfree(prio_params->priority_weight_tres);
+					part_ptr->priority_params->priority_weight_tres = xstrdup(old_prio_params->priority_weight_tres);
+				}
+			}
+#endif
 			if (part_ptr->grace_time != old_part_ptr->grace_time) {
 				error("Partition %s GraceTime differs from slurm.conf",
 				      part_ptr->name);

@@ -1173,7 +1173,11 @@ static void _destroy_allocation_response_socket(listen_t *listen)
  * OUT resp: resource allocation response message or List of them
  * RET 1 if resp is filled in, 0 otherwise */
 static int
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+_handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp, uint32_t job_id)
+#else
 _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp)
+#endif
 {
 	uid_t req_uid;
 	uid_t uid       = getuid();
@@ -1195,7 +1199,20 @@ _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp)
 		msg->data = NULL;
 		rc = 1;
 	} else if (msg->msg_type == SRUN_JOB_COMPLETE) {
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+		srun_job_complete_msg_t *job_msg = NULL;
+		job_msg = (srun_job_complete_msg_t *)msg->data;
+		if (job_msg) {
+			if (job_id && (job_msg->job_id == job_id)) {
+				info("Job has been cancelled");
+			} else {
+				verbose("%s: Ignoring job_complete for job %u because our job ID is %u", __func__, job_msg->job_id, job_id);
+				rc = 2;
+			}
+		}
+#else		
 		info("Job has been cancelled");
+#endif		
 	} else {
 		error("%s: received spurious message type: %u",
 		      __func__, msg->msg_type);
@@ -1209,12 +1226,20 @@ _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp)
  * OUT resp: resource allocation response message or List
  * RET 1 if resp is filled in, 0 otherwise */
 static int
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+_accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp, uint32_t job_id)
+#else
 _accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp)
+#endif
 {
 	int	     conn_fd;
 	slurm_msg_t  *msg = NULL;
 	slurm_addr_t cli_addr;
 	int          rc = 0;
+
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF	
+retry:
+#endif
 
 	conn_fd = slurm_accept_msg_conn(listen_fd, &cli_addr);
 	if (conn_fd < 0) {
@@ -1241,10 +1266,23 @@ _accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp)
 		return SLURM_ERROR;
 	}
 
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+	rc = _handle_msg(msg, msg_type, resp, job_id); /* xfer payload */
+#else
 	rc = _handle_msg(msg, msg_type, resp); /* xfer payload */
+#endif	
 	slurm_free_msg(msg);
 
 	close(conn_fd);
+
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+	/* recv SRUN_JOB_COM_LETE from other job */
+	if (rc == 2) {
+		rc = 0;
+		goto retry;
+	}	
+#endif
+
 	return rc;
 }
 
@@ -1307,7 +1345,11 @@ static void _wait_for_allocation_response(uint32_t job_id,
 	info("job %u queued and waiting for resources", job_id);
 	*resp = NULL;
 	if ((rc = _wait_for_alloc_rpc(listen, timeout)) == 1)
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+		rc = _accept_msg_connection(listen->fd, msg_type, resp, job_id);
+#else	
 		rc = _accept_msg_connection(listen->fd, msg_type, resp);
+#endif		
 	if (rc <= 0) {
 		errnum = errno;
 		/* Maybe the resource allocation response RPC got lost

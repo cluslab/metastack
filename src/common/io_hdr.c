@@ -147,7 +147,11 @@ extern int io_init_msg_validate(io_init_msg_t *msg, const char *sig,
 
 	if (msg->io_key_len != sig_len ||
 	    memcmp((void *) sig, (void *) msg->io_key, msg->io_key_len)) {
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+		verbose("Invalid IO init header signature");
+#else			
 		error("Invalid IO init header signature");
+#endif		
 		return SLURM_ERROR;
 	}
 
