@@ -535,11 +535,29 @@ again:
 			/*
 			 *  Print any valid credential data
 			 */
-			error("Munge decode failed: %s",
-			      munge_ctx_strerror(ctx));
-			_print_cred(ctx);
-			if (err == EMUNGE_CRED_REWOUND)
-				error("Check for out of sync clocks");
+#ifdef __METASTACK_TIME_SYNC_CHECK
+			uint16_t msg_type = slurm_msg_get_msg_type();
+			if (running_in_slurmctld() && msg_type == RESPONSE_PING_SLURMD ) {
+				debug2("Munge decode failed %s",
+				      munge_ctx_strerror(ctx));
+			} else {
+				error("Munge decode failed: %s",
+				      munge_ctx_strerror(ctx));
+				_print_cred(ctx);
+			}
+#endif
+#ifdef __METASTACK_TIME_SYNC_CHECK
+			if (err == EMUNGE_CRED_EXPIRED) {
+				error("MUNGE_CRED_EXPIRED:Check for out of sync clocks");
+				slurm_seterrno(ESLURM_AUTH_CRED_INVALID_TIME);
+				goto done; 
+			}
+			if (err == EMUNGE_CRED_REWOUND) {
+				error("MUNGE_CRED_EXPIRED:Check for out of sync clocks");
+				slurm_seterrno(ESLURM_AUTH_CRED_INVALID_TIME);
+				goto done;
+			}		
+#endif
 			slurm_seterrno(ESLURM_AUTH_CRED_INVALID);
 			goto done;
 #ifdef MULTIPLE_SLURMD

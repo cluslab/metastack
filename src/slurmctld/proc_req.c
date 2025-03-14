@@ -587,6 +587,11 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 
 	conf_ptr->task_epilog         = xstrdup(conf->task_epilog);
 	conf_ptr->task_prolog         = xstrdup(conf->task_prolog);
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	conf_ptr->time_sync_check     = conf->time_sync_check;
+	conf_ptr->time_sync_check_time_diff = conf->time_sync_check_time_diff;
+	conf_ptr->time_sync_check_retry_count = conf->time_sync_check_retry_count;
+#endif
 	conf_ptr->task_plugin         = xstrdup(conf->task_plugin);
 	conf_ptr->task_plugin_param   = conf->task_plugin_param;
 	conf_ptr->tcp_timeout         = conf->tcp_timeout;

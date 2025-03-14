@@ -194,6 +194,10 @@ typedef struct node_record node_record_t;
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 #define DEFAULT_CACHEDUP_INTERVAL   30
 #endif
+#ifdef __METASTACK_TIME_SYNC_CHECK
+#define TIME_DIFF_DEFAULT           120
+#define TIME_SYNC_CHECK_RETRY_COUNT 1
+#endif
 #if defined HAVE_NATIVE_CRAY
 #  define DEFAULT_SWITCH_TYPE         "switch/cray_aries"
 #else

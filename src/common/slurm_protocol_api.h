@@ -663,3 +663,8 @@ extern int slurm_hex_to_char(int v);
 extern int slurm_char_to_hex(int c);
 
 #endif
+
+#ifdef __METASTACK_TIME_SYNC_CHECK
+extern void slurm_msg_set_msg_type(uint16_t msg_type);
+extern uint16_t slurm_msg_get_msg_type(void);
+#endif

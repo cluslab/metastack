@@ -103,6 +103,9 @@
 #include "src/slurmctld/slurmscriptd.h"
 #include "src/slurmctld/state_save.h"
 #include "src/slurmctld/srun_comm.h"
+#ifdef __METASTACK_TIME_SYNC_CHECK
+#include "src/common/xhash.h"
+#endif
 
 #define MAX_RETRIES		100
 #define MAX_RPC_PACK_CNT	100
@@ -117,7 +120,10 @@ typedef enum {
 	DSH_DONE,       /* Request completed normally */
 	DSH_NO_RESP,    /* Request timed out */
 	DSH_FAILED,     /* Request resulted in error */
-	DSH_DUP_JOBID	/* Request resulted in duplicate job ID error */
+	DSH_DUP_JOBID,	/* Request resulted in duplicate job ID error */
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	DSH_TIME_SYNC
+#endif
 } state_t;
 
 typedef struct thd_complete {
@@ -182,6 +188,16 @@ typedef struct mail_info {
 	char *message;
 	char **environment; /* MailProg environment variables */
 } mail_info_t;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+typedef struct node_time_check {    
+	char *node_name;
+	int fail_count;
+	bool time_sync;
+} node_time_check_t;
+
+static xhash_t *node_time_checks = NULL;
+static pthread_mutex_t time_check_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 static void _agent_defer(void);
 static void _agent_retry(int min_wait, bool wait_too);
@@ -209,6 +225,15 @@ static void  _mail_free(void *arg);
 static void *_mail_proc(void *arg);
 static char *_mail_type_str(uint16_t mail_type);
 static char **_build_mail_env(job_record_t *job_ptr, uint32_t mail_type);
+
+#ifdef __METASTACK_TIME_SYNC_CHECK
+int timediff(time_t start, time_t end);
+static void _node_time_check_identify(void *item, const char **key, uint32_t *key_len);
+static void _init_node_time_checks(void);
+static void _node_time_check_free(void *item);
+static void _free_node_time_checks(void);
+static int _handle_time_sync_check(ret_data_info_t *ret_data_info, ping_slurmd_resp_msg_t *ping_resp);
+#endif
 
 static pthread_mutex_t defer_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t mail_mutex  = PTHREAD_MUTEX_INITIALIZER;
@@ -592,6 +617,13 @@ static void _update_wdog_state(thd_t *thread_ptr,
 	case DSH_DUP_JOBID:
 		thd_comp->fail_cnt++;
 		break;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	case DSH_TIME_SYNC:
+		if (thd_comp->max_delay < (int)thread_ptr->end_time){
+			thd_comp->max_delay = (int)thread_ptr->end_time;
+		}
+		break;
+#endif
 	}
 }
 
@@ -820,6 +852,13 @@ static void _notify_slurmctld_nodes(agent_info_t *agent_ptr,
 			case DSH_DONE:
 				node_did_resp(node_names);
 				break;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+			case DSH_TIME_SYNC:
+				node_did_resp(node_names);
+				drain_nodes(node_names, "Time Not sync",
+				            slurm_conf.slurm_user_id);
+				break;
+#endif
 			default:
 				error("unknown state returned for %s",
 				      node_names);
@@ -913,6 +952,10 @@ static void *_thread_per_group_rpc(void *args)
 	slurmctld_lock_t node_write_lock = {
 		NO_LOCK, NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
 	uint32_t job_id;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	slurmctld_lock_t conf_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+#endif
 
 	xassert(args != NULL);
 	xsignal(SIGUSR1, _sig_handler);
@@ -1032,6 +1075,14 @@ static void *_thread_per_group_rpc(void *args)
 			ping_slurmd_resp_msg_t *ping_resp;
 			ping_resp = (ping_slurmd_resp_msg_t *)
 				    ret_data_info->data;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+			lock_slurmctld(conf_read_lock);
+			if (slurm_conf.time_sync_check && ping_resp->ping_resp_time != 0) {
+				int errnum = _handle_time_sync_check(ret_data_info,ping_resp);
+				rc = errnum;
+			}
+			unlock_slurmctld(conf_read_lock);
+#endif
 			lock_slurmctld(node_write_lock);
 			reset_node_load(ret_data_info->node_name,
 					ping_resp->cpu_load);
@@ -1191,6 +1242,11 @@ static void *_thread_per_group_rpc(void *args)
 				 __func__, ret_data_info->node_name);
 			thread_state = DSH_DONE;
 			break;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+		case ESLURM_AUTH_CRED_INVALID_TIME:
+			thread_state = DSH_TIME_SYNC;
+			break;
+#endif
 		default:
 			if (!srun_agent) {
 				if (ret_data_info->err)
@@ -1219,6 +1275,15 @@ static void *_thread_per_group_rpc(void *args)
 		ret_data_info->err = thread_state;
 	}
 	list_iterator_destroy(itr);
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	lock_slurmctld(conf_read_lock);
+	if (!slurm_conf.time_sync_check) {
+		if (node_time_checks) {
+			_free_node_time_checks();
+		}
+	}
+	unlock_slurmctld(conf_read_lock);
+#endif
 
 cleanup:
 #ifdef __METASTACK_OPT_PMIX_AGENT
@@ -1487,7 +1552,14 @@ extern void agent_init(void)
 		slurm_mutex_unlock(&pending_mutex);
 		return;
 	}
-
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	if(slurm_conf.time_sync_check){
+		debug2("Initializing time sync check");
+		_init_node_time_checks();
+	}else{
+		debug2("TimeSyncCheck = No, TimeSyncCheck is disable");
+	}
+#endif
 	slurm_thread_create_detached(NULL, _agent_init, NULL);
 	pending_thread_running = true;
 	slurm_mutex_unlock(&pending_mutex);
@@ -1840,7 +1912,9 @@ extern void agent_purge(void)
 		slurm_mutex_unlock(&agent_msg_mutex);
 	}
 #endif
-
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	_free_node_time_checks();
+#endif
 	xfree(rpc_stat_counts);
 	xfree(rpc_stat_types);
 	xfree(rpc_type_list);
@@ -2449,3 +2523,132 @@ extern void set_agent_arg_r_uid(agent_arg_t *agent_arg_ptr, uid_t r_uid)
 	agent_arg_ptr->r_uid = r_uid;
 	agent_arg_ptr->r_uid_set = true;
 }
+
+#ifdef __METASTACK_TIME_SYNC_CHECK
+int timediff(time_t start, time_t end){
+	double diff = 0;
+	double abs_diff = 0;
+	int real_abs_diff = 0;
+
+	diff = difftime(end,start);
+	abs_diff = diff < 0 ? -diff : diff;
+	real_abs_diff = (int)abs_diff;
+	return real_abs_diff;
+}
+
+static int _handle_time_sync_check(ret_data_info_t *ret_data_info, ping_slurmd_resp_msg_t *ping_resp) {
+	time_t ctldtime,slurmdtime;
+	node_record_t *node_ptr;
+	int errnum = 0;
+	int retry_count = 0;
+	int time_diff = 0;
+	int diff = 0;
+	
+	ctldtime = time(NULL);
+	slurmdtime = ping_resp->ping_resp_time;
+	errnum = ping_resp->return_code;
+	retry_count = slurm_conf.time_sync_check_retry_count;
+	time_diff = slurm_conf.time_sync_check_time_diff;
+	diff = timediff(slurmdtime,ctldtime);
+	if (!node_time_checks) {
+		debug2("node_time_checks list not initialized");
+		_init_node_time_checks();
+	}
+	slurm_mutex_lock(&time_check_mutex);
+	node_time_check_t *check = xhash_get_str(node_time_checks, ret_data_info->node_name);
+	if (!check) {
+		check = xmalloc(sizeof(node_time_check_t));
+		check->node_name = xstrdup(ret_data_info->node_name);
+		check->fail_count = 0;
+		check->time_sync = false;
+		xhash_add(node_time_checks, check);
+	}
+	node_ptr = find_node_record(ret_data_info->node_name);
+	if(check->time_sync && !IS_NODE_DRAIN(node_ptr)){
+		check->time_sync = false;
+	}
+	if (diff > time_diff) {
+		if (!check->time_sync) {
+			if (errnum == ESLURM_AUTH_CRED_INVALID_TIME) {
+				debug2("Node %s has Time Sync error", ret_data_info->node_name);
+				errnum = SLURM_SUCCESS;
+			}
+			check->fail_count++;
+			debug2("Time difference between node %s and controller is %ds", 
+				   ret_data_info->node_name, diff);
+			debug2("Node %s time synchronization check failed %d times", 
+				   ret_data_info->node_name, check->fail_count);
+			if (check->fail_count >= retry_count) {
+				info("Node %s fails to pass time synchronization check for %d consecutive checks, setting to DRAIN",
+					   ret_data_info->node_name, retry_count);
+				if (errnum == SLURM_SUCCESS) {
+					errnum = ESLURM_AUTH_CRED_INVALID_TIME;
+				}
+				check->fail_count = 0;
+				check->time_sync = true;
+			}
+		} else {
+			debug2("Node %s needs time sync", ret_data_info->node_name);
+		}
+	} else {
+		check->fail_count = 0;
+		if (check->time_sync) {
+			check->time_sync = false;
+		}
+	}
+	slurm_mutex_unlock(&time_check_mutex);
+	return errnum;
+}
+
+static void _node_time_check_identify(void *item, const char **key, uint32_t *key_len)
+{
+	node_time_check_t *check = (node_time_check_t *)item;
+	*key = check->node_name;
+	*key_len = strlen(check->node_name);
+}
+
+
+static void _node_time_check_free(void *item)
+{
+	node_time_check_t *check = (node_time_check_t *)item;
+	if (check) {
+		xfree(check->node_name);
+		xfree(check);
+	}
+}
+
+
+static void _init_node_time_checks(void)
+{
+	slurm_mutex_lock(&time_check_mutex);
+	if (node_time_checks) {
+		slurm_mutex_unlock(&time_check_mutex);
+		return;
+	}
+
+	node_time_checks = xhash_init(_node_time_check_identify, 
+								 _node_time_check_free);
+	if (!node_time_checks) {
+		error("Failed to initialize node_time_checks hash table");
+		slurm_mutex_unlock(&time_check_mutex);
+		return;
+	}
+	debug2("node_time_checks hash table created successfully");
+	slurm_mutex_unlock(&time_check_mutex);
+}
+
+
+static void _free_node_time_checks(void)
+{
+	slurm_mutex_lock(&time_check_mutex);
+	if (!node_time_checks){
+		slurm_mutex_unlock(&time_check_mutex);
+		return;
+	}
+		
+	xhash_clear(node_time_checks);
+	xhash_free_ptr(&node_time_checks);
+	slurm_mutex_unlock(&time_check_mutex);
+	debug2("_free_node_time_checks(void)");
+}
+#endif

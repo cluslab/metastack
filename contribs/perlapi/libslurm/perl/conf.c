@@ -388,6 +388,11 @@ int slurm_ctl_conf_to_hv(slurm_conf_t *conf, HV *hv)
 	STORE_FIELD(hv, conf, task_plugin_param, uint32_t);
 	if (conf->task_prolog)
 		STORE_FIELD(hv, conf, task_prolog, charp);
+#ifdef  __METASTACK_TIME_SYNC_CHECK
+	STORE_FIELD(hv, conf, time_sync_check, uint16_t);
+	STORE_FIELD(hv, conf, time_sync_check_time_diff, uint16_t);
+	STORE_FIELD(hv, conf, time_sync_check_retry_count, uint16_t);
+#endif
 	if (conf->tmp_fs)
 		STORE_FIELD(hv, conf, tmp_fs, charp);
 	if (conf->topology_plugin)
@@ -643,6 +648,11 @@ int hv_to_slurm_ctl_conf(HV *hv, slurm_conf_t *conf)
 	FETCH_FIELD(hv, conf, task_plugin, charp, FALSE);
 	FETCH_FIELD(hv, conf, task_plugin_param, uint32_t, TRUE);
 	FETCH_FIELD(hv, conf, task_prolog, charp, FALSE);
+#ifdef  __METASTACK_TIME_SYNC_CHECK
+	FETCH_FIELD(hv, conf, time_sync_check, uint16_t, FALSE);
+	FETCH_FIELD(hv, conf, time_sync_check_time_diff, uint16_t, FALSE);
+	FETCH_FIELD(hv, conf, time_sync_check_retry_count, uint16_t, FALSE);
+#endif
 	FETCH_FIELD(hv, conf, tmp_fs, charp, FALSE);
 	FETCH_FIELD(hv, conf, topology_plugin, charp, FALSE);
 	FETCH_FIELD(hv, conf, tree_width, uint16_t, TRUE);

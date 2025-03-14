@@ -402,6 +402,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_PRIORITY_JOBSIZE
 #endif
 
+#ifndef __METASTACK_TIME_SYNC_CHECK
+#define __METASTACK_TIME_SYNC_CHECK
+#endif
+
 #ifndef __METASTACK_NEW_CUSTOM_EXCEPTION
 #define __METASTACK_NEW_CUSTOM_EXCEPTION  
 #endif
@@ -3468,6 +3472,11 @@ typedef struct {
 	char *task_plugin;	/* task launch plugin */
 	uint32_t task_plugin_param;	/* see CPU_BIND_* */
 	char *task_prolog;	/* pathname of task launch prolog */
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	uint16_t time_sync_check;
+	uint16_t time_sync_check_time_diff;
+	uint16_t time_sync_check_retry_count;
+#endif
 	uint16_t tcp_timeout;	/* tcp timeout */
 	char *tmp_fs;		/* pathname of temporary file system */
 	char *topology_param;	/* network topology parameters */
