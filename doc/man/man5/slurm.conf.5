@@ -5827,6 +5827,42 @@ Time permitted for TCP connection to be established. Default value is 2 seconds.
 .IP
 
 .TP
+\fBTimeSyncCheck\fR
+Time synchronization check toggle. Used to regularly check the time difference between 
+the management node and the compute nodes. If the time difference exceeds TimeSyncCheckTimeDiff 
+within a continuous count of TimeSyncCheckRetryCount, then the compute node that is out 
+of sync will be taken offline, with the node status set to DRAIN, and the reason for the 
+offline set to "Time Sync". It can be set to Yes/No, with the default value being No. 
+The time synchronization check interval depends on the SlurmdTimeOut value.
+Notice If this switch is enabled, the node whose status is down* due to time asynchronism 
+of the compute node changes to drain. The cause of this node, originally Not Responding, 
+will change to Time Sync. In addition, the TimeSyncCheckTimeDiff value can also 
+be set to certain limits. For details, see the introduction of TimeSyncCheckTimeDiff.
+.IP
+
+.TP
+\fBTimeSyncCheckTimeDiff\fR
+Time difference between the management node and compute node.  In this range,the management 
+node does not take the compute node offline.This value is related to the ttl of munge. The 
+ttl of munge is the lifetime of the munge certificate, which refers to the difference 
+between the encoding time and decoding time of the munge certificate. The default value of ttl 
+is 300 seconds. If the time difference between the management node and the compute node 
+is greater than 300 seconds, a munge certificate error is reported. If the TimeDiff 
+value is greater than 300 seconds, the munge error will be reported directly, which does not play 
+the role of time detection. In addition, the value is also related to job credentials. The ttl of 
+job credentials defaults to 120 seconds. If this value is exceeded, the job will fail to be submitted. 
+The value of the configuration item ranges from 0 to 65535. The unit of the configuration item is second
+.It is recommended that the timediff value be within 120 seconds.
+.IP
+
+.TP
+\fBTimeSyncCheckRetryCount\fR
+Number of continuous time dissynchronization times of a compute node. 
+If the number of consecutive times exceeds this threshold, 
+the management node will go offline for the node whose time is not synchronized.
+.IP
+
+.TP
 \fBTmpFS\fR
 Fully qualified pathname of the file system available to user jobs for
 temporary storage. This parameter is used in establishing a node's \fBTmpDisk\fR
