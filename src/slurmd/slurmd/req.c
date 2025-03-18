@@ -3288,6 +3288,10 @@ static void _rpc_ping(slurm_msg_t *msg)
 		get_cpu_load(&ping_resp.cpu_load);
 		get_free_mem(&ping_resp.free_mem);
 		slurm_msg_t_copy(&resp_msg, msg);
+#ifdef __METASTACK_TIME_SYNC_CHECK
+		ping_resp.ping_resp_time = time(NULL);
+		ping_resp.return_code = rc;
+#endif 
 		resp_msg.msg_type = RESPONSE_PING_SLURMD;
 		resp_msg.data     = &ping_resp;
 

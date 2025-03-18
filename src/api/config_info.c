@@ -2130,6 +2130,29 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 					 slurm_ctl_conf_ptr->tcp_timeout);
 	list_append(ret_list, key_pair);
 
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("TimeSyncCheck");
+	if (slurm_ctl_conf_ptr->time_sync_check == 1) {
+		key_pair->value = xstrdup("Yes");
+	} else {
+		key_pair->value = xstrdup("No");
+	}
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("TimeSyncCheckTimeDiff");
+	key_pair->value = xstrdup_printf("%u sec",
+					 slurm_ctl_conf_ptr->time_sync_check_time_diff);
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("TimeSyncCheckRetryCount");
+	key_pair->value = xstrdup_printf("%u",
+					 slurm_ctl_conf_ptr->time_sync_check_retry_count);
+	list_append(ret_list, key_pair);
+#endif
+
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("TmpFS");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->tmp_fs);

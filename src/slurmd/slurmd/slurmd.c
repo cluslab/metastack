@@ -596,7 +596,9 @@ _service_connection(void *arg)
 	conn_t *con = (conn_t *) arg;
 	slurm_msg_t *msg = xmalloc(sizeof(slurm_msg_t));
 	int rc = SLURM_SUCCESS;
-
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	int auth_rc = SLURM_SUCCESS;
+#endif
 	debug3("in the service_connection");
 	slurm_msg_t_init(msg);
 	if ((rc = slurm_receive_msg_and_forward(con->fd, con->cli_addr, msg))
@@ -610,6 +612,19 @@ _service_connection(void *arg)
 		if (msg->auth_uid_set)
 			slurm_send_rc_msg(msg, rc);
 		else {
+#ifdef __METASTACK_TIME_SYNC_CHECK
+			if ((rc == ESLURM_AUTH_CRED_INVALID_TIME) && msg->msg_type == REQUEST_PING) {
+				auth_rc = rc;
+				ping_slurmd_resp_msg_t ping_resp;
+				memset(&ping_resp, 0, sizeof(ping_resp));
+				get_cpu_load(&ping_resp.cpu_load);
+				get_free_mem(&ping_resp.free_mem);
+				ping_resp.ping_resp_time = time(NULL);
+				ping_resp.return_code = auth_rc;
+				debug2("Time sync check error, send error code %s to slurmctld",slurm_strerror(auth_rc));
+				slurm_send_msg(msg,RESPONSE_PING_SLURMD,&ping_resp);
+			}
+#endif
 			debug("%s: incomplete message", __func__);
 			forward_wait(msg);
 		}

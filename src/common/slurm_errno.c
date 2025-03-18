@@ -538,6 +538,10 @@ static slurm_errtab_t slurm_errtab[] = {
 	  "Cannot unpack credential"				},
 	{ ESLURM_AUTH_SKIP,
 	  "Authentication does not apply to request"		},
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	{ ESLURM_AUTH_CRED_INVALID_TIME,
+	  "Invalid authentication credential Time"       },
+#endif
 
 	/* accounting errors */
 	{ ESLURM_DB_CONNECTION,

@@ -478,6 +478,11 @@ s_p_options_t slurm_conf_options[] = {
 	{"SwitchType", S_P_STRING},
 	{"TaskEpilog", S_P_STRING},
 	{"TaskProlog", S_P_STRING},
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	{"TimeSyncCheck", S_P_STRING},
+	{"TimeSyncCheckTimeDiff", S_P_UINT16},
+	{"TimeSyncCheckRetryCount", S_P_UINT16},
+#endif
 	{"TaskPlugin", S_P_STRING},
 	{"TaskPluginParam", S_P_STRING},
 	{"TCPTimeout", S_P_UINT16},
@@ -3993,6 +3998,11 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->task_plugin_param		= 0;
 	xfree (ctl_conf_ptr->task_prolog);
 	ctl_conf_ptr->tcp_timeout		= NO_VAL16;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	ctl_conf_ptr->time_sync_check       = 0;
+	ctl_conf_ptr->time_sync_check_time_diff = 0;
+	ctl_conf_ptr->time_sync_check_retry_count = 0;
+#endif
 	xfree (ctl_conf_ptr->tmp_fs);
 	xfree (ctl_conf_ptr->topology_param);
 	xfree (ctl_conf_ptr->topology_plugin);
@@ -6208,6 +6218,32 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 
 	if (!s_p_get_uint16(&conf->tcp_timeout, "TCPTimeout", hashtbl))
 		conf->tcp_timeout = DEFAULT_TCP_TIMEOUT;
+
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	if (s_p_get_string(&temp_str, "TimeSyncCheck", hashtbl)) {
+		if (!xstrcasecmp(temp_str,"Yes")) {
+			conf->time_sync_check = 1;
+		} else {
+			conf->time_sync_check = 0;
+		}
+		xfree(temp_str);
+	} else {
+		conf->time_sync_check = 0;
+	}
+
+	if (!s_p_get_uint16(&conf->time_sync_check_time_diff, "TimeSyncCheckTimeDiff", hashtbl)) {
+		conf->time_sync_check_time_diff = TIME_DIFF_DEFAULT;
+	}
+
+	if (!s_p_get_uint16(&conf->time_sync_check_retry_count, "TimeSyncCheckRetryCount", hashtbl)) {
+		conf->time_sync_check_retry_count = TIME_SYNC_CHECK_RETRY_COUNT;
+	}
+	
+	if (conf->time_sync_check == 0) {
+		conf->time_sync_check_time_diff = 0;
+		conf->time_sync_check_retry_count = 0;
+	}
+#endif
 
 	if (!s_p_get_string(&conf->tmp_fs, "TmpFS", hashtbl))
 		conf->tmp_fs = xstrdup(DEFAULT_TMP_FS);
