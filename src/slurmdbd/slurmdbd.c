@@ -317,7 +317,7 @@ int main(int argc, char **argv)
 			pthread_join(rpc_handler_thread, NULL);
 			rpc_handler_thread = 0;
 		}
-	
+
 #ifdef __METASTACK_ASSOC_HASH
 		if (uid_save_thread) {
 			shutdown_uid_save();
@@ -387,7 +387,7 @@ extern void reconfig(void)
 #else
 	read_slurmdbd_conf();
 #endif
-
+	
 	assoc_mgr_set_missing_uids();
 	acct_storage_g_reconfig(NULL, 0);
 	_update_logging(false);

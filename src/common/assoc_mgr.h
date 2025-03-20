@@ -118,6 +118,32 @@ extern qos_hash_t *qos_hash;
 #endif
 
 #ifdef __METASTACK_ASSOC_HASH
+#include "uthash.h"
+
+typedef struct struct_assoc_hash {
+    char *key;
+    List value_assoc_list;
+    UT_hash_handle hh;
+} assoc_hash_t;
+
+/** build hash table, assign assoc to entry according to key. 
+ * IN:  hash table, assoc, hash_key, list del function
+ * OUT: assoc_hash
+ */
+extern void insert_assoc_hash(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *str_key, ListDelF del_function);
+
+/** find entry by key */ 
+extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key);
+
+/** delete assoc rec by key */
+extern void remove_assoc_rec(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *key);
+
+/** delete entry by key */
+extern void remove_assoc_entry(assoc_hash_t **assoc_hash, char *key);
+
+/** delete hash */
+extern void destroy_assoc_hash(assoc_hash_t **assoc_hash);
+
 typedef struct struct_str_key_hash {
 	char *key;
 	void *value;
@@ -128,6 +154,9 @@ extern void insert_str_key_hash(str_key_hash_t **str_key_hash, void *insert_valu
 extern void *find_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
 extern void remove_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
 extern void destroy_str_key_hash(str_key_hash_t **str_key_hash);
+
+/** destroy the hash table whose value is the assoc_hash table */
+extern void destroy_hash_value_hash(str_key_hash_t **str_key_hash);
 
 typedef struct struct_user_uid_hash {
 	char *username;
@@ -168,6 +197,8 @@ extern uid_user_hash_t *uid_user_hash;
 extern pthread_mutex_t uid_save_lock;
 extern pthread_cond_t  uid_save_cond;
 extern int save_uids;
+
+extern assoc_hash_t *assoc_mgr_user_assoc_hash;
 #endif
 
 extern List assoc_mgr_tres_list;

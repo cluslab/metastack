@@ -271,6 +271,11 @@ Task (I/O, Memory, ...) data is collected.
 .IP
 
 .TP
+\fBapptype\fR
+Job application type data is collected.
+.IP
+
+.TP
 \fBJobmonitor\fR
 The jobmonitor parameter is used to control whether the abnormal event and the corresponding data collection are put
 into the library.
@@ -309,12 +314,14 @@ Allows configuring multiple retention policies for different types of data to be
 2. \fBEVENTRP\fR - The retention policy for data of type Event.
 .br
 3. \fBSTEPDRP\fR - The retention policy for data of type Stepd.
+.br
+4. \fBAPPTYPERP\fR - The retention policy for data of type Apptype.
 
 Example:
 .br
 \fBProfileInfluxDBRTPolicy=autogen\fR
 .br
-\fBProfileInfluxDBRTPolicy=NATIVERP=rp1,EVENTRP=rp2,STEPDRP=rp3\fR
+\fBProfileInfluxDBRTPolicy=NATIVERP=rp1,EVENTRP=rp2,STEPDRP=rp3,APPTYPE=rp4\fR
 .IP
 
 .TP
@@ -356,15 +363,25 @@ If you wish to keep these fields as tags, it is recommended that you reduce the 
 a retention policy. If you want to keep as much data as possible, you can set ProfileInfluxDBSeriesReduce to yes,  
 so that job, step, task will be used as fields instead of tags, thus reducing index growth, but it may affect query 
 performance. Choose the setting according to the specific usage scenario.
+influxdb uses the {timestamp,tags} binary to uniquely identify data, turning on this option reduces the tag field, 
+thus causing data overwriting problems. To minimize the probability of this phenomenon, the timestamp of inserted 
+data will be changed from seconds to nanoseconds after turning on this option.
 
+If you do not want to modify the table structure, you can either leave this option unconfigured or set it to a 
+non-yes value
+
+influxdb uses the {timestamp,tags} binary to uniquely identify data, turning on this option reduces the tag field, 
+thus causing data overwriting problems. To minimize the probability of this phenomenon, the timestamp of inserted 
+data will be changed from seconds to nanoseconds after turning on this option.
+
+If you do not want to modify the table structure, you can either leave this option unconfigured or set it to a 
+non-yes value
 
 Example:
 .nf
 ProfileInfluxDBSeriesReduce=yes
 .fi
-.nf
-If you do not want to modify the table structure, you can either leave this option unconfigured or set it to a non-yes value
-.fi
+
 .IP
 
 .SS

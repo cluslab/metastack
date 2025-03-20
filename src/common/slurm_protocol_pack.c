@@ -18330,7 +18330,7 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 
 	case RESPONSE_PING_SLURMD:
 		_pack_ping_slurmd_resp((ping_slurmd_resp_msg_t *)msg->data,
-				       buffer, msg->protocol_version);
+				       buffer, msg->protocol_version);	
 		break;
 	case REQUEST_LICENSE_INFO:
 		_pack_license_info_request_msg((license_info_request_msg_t *)
@@ -19081,6 +19081,7 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 		rc = _unpack_ping_slurmd_resp((ping_slurmd_resp_msg_t **)
 					      &msg->data, buffer,
 					      msg->protocol_version);
+
 		break;
 	case RESPONSE_LICENSE_INFO:
 		rc = _unpack_license_info_msg((license_info_msg_t **)&(msg->data),

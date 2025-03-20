@@ -546,7 +546,7 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 		xstrdup(conf->slurmctld_primary_on_prog);
 	conf_ptr->slurmctld_syslog_debug = conf->slurmctld_syslog_debug;
 	conf_ptr->slurmctld_timeout   = conf->slurmctld_timeout;
-#ifdef  __METASTACK_OPT_GRES_CONFIG
+#ifdef  __METASTACK_OPT_GRES_CONFIG	
 	conf_ptr->slurmctld_load_gres= conf->slurmctld_load_gres;
 #endif
 	conf_ptr->slurmd_debug        = conf->slurmd_debug;
@@ -3217,6 +3217,7 @@ static void _slurm_rpc_job_step_create(slurm_msg_t * msg)
 		job_step_resp.enable_all_stepds = step_rec->enable_all_stepds;
 		job_step_resp.style_step 		= step_rec->style_step;
 #endif
+
 #ifdef __METASTACK_OPT_SRUN_STEP_CREATE
 		bool step_timeout_enhance = step_timeout_enhance_conf_init();
 #endif

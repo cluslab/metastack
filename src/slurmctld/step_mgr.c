@@ -3419,7 +3419,7 @@ extern int step_create(job_step_create_request_msg_t *step_specs,
 	}
 	step_ptr->start_time = time(NULL);
 	step_ptr->state      = JOB_RUNNING;
-
+	
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	/*Using srun to carry the watch dog again in snatch or sbatch requires verification here*/
 	if(step_specs->watch_dog) {
@@ -6022,6 +6022,7 @@ static int copy_job_step_state(step_record_t *src_step_ptr, step_record_t *des_s
 //		des_step_ptr->memory_allocated = xmalloc(i);
 //		memcpy(des_step_ptr->memory_allocated,src_step_ptr->memory_allocated, i);
 //	}
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
     des_step_ptr->watch_dog = NULL;
     des_step_ptr->watch_dog_script = NULL;

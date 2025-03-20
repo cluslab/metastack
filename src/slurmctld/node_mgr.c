@@ -113,6 +113,10 @@ bitstr_t *power_node_bitmap = NULL;	/* bitmap of powered down nodes */
 bitstr_t *share_node_bitmap = NULL;  	/* bitmap of sharable nodes */
 bitstr_t *up_node_bitmap    = NULL;  	/* bitmap of non-down nodes */
 bitstr_t *rs_node_bitmap    = NULL; 	/* bitmap of resuming nodes */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+bitstr_t *resv_node_bitmap    = NULL;  /* bitmap of hetpart resv nodes */
+#endif
+
 
 static void 	_dump_node_state(node_record_t *dump_node_ptr, buf_t *buffer);
 static void	_drain_node(node_record_t *node_ptr, char *reason,
@@ -4848,6 +4852,9 @@ extern void free_para_sched_resource(void)
 	xfree(para_sched_avail_node_bitmap);
 	xfree(para_sched_share_node_bitmap);
 	xfree(para_sched_idle_node_bitmap);		
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	xfree(para_sched_resv_node_bitmap); 
+#endif
 
 	debug("free para_sched resource");
 }
@@ -4867,7 +4874,11 @@ extern void node_fini (void)
 	FREE_NULL_BITMAP(power_node_bitmap);
 	FREE_NULL_BITMAP(share_node_bitmap);
 	FREE_NULL_BITMAP(up_node_bitmap);
-	FREE_NULL_BITMAP(rs_node_bitmap);	
+	FREE_NULL_BITMAP(rs_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	FREE_NULL_BITMAP(resv_node_bitmap);
+#endif  
+
 	node_fini2();
 }
 

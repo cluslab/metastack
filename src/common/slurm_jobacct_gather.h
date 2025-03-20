@@ -165,6 +165,10 @@ struct jobacctinfo {
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
     List pjobs;
 #endif
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+	time_t cur_time_ns;
+#endif
+
 };
 
 #ifdef __METASTACK_LOAD_ABNORMAL
@@ -173,7 +177,7 @@ struct jobacctinfo {
 #define LOAD_LOW   0x0000000000000001  /*cpu event*/
 #define PROC_AB    0x0000000000000010  /*pocess status read only*/
 #define JNODE_STAT 0x0000000000000100
-#define JOBACCTINFO_START_END_ARRAY_SIZE 200
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 #define JOBACCT_GATHER_PROFILE_ABNORMAL 0x0000000000000001
 /*
@@ -182,6 +186,9 @@ struct jobacctinfo {
 */
 #define JOBACCT_GATHER_PROFILE_APPTYPE 	0x0000000000000010
 #endif
+
+#define JOBACCTINFO_START_END_ARRAY_SIZE 200
+
 struct jobinfostat {
 	double job_avg_cpu;
 	double job_cpu_util;
@@ -299,6 +306,7 @@ extern int jobacctinfo_unpack_detial(jobacctinfo_t **jobacct, uint16_t rpc_versi
 			      uint16_t protocol_type, buf_t *buffer, bool alloc); 	
 extern void jobacctinfo_aggregate_2(jobacctinfo_t *dest, jobacctinfo_t *from);
 #endif
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 extern int	jobacct_gather_apptypepoll(uint16_t frequency, acct_gather_rank_t jobinfo);
 extern int apptype_properties_conf_init(void);
@@ -307,6 +315,7 @@ extern int apptype_properties_read_conf(int fd);
 extern int apptype_properties_conf_reconfig(void);
 extern int apptype_properties_conf_destory(void);
 #endif
+
 extern int  jobacct_gather_endpoll(void);
 extern void jobacct_gather_suspend_poll(void);
 extern void jobacct_gather_resume_poll(void);

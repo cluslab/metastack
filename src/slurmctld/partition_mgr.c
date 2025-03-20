@@ -2707,14 +2707,6 @@ static int validate_account(part_record_t *part_ptr, slurmdb_assoc_rec_t *assoc_
 	int rc = 0;
 	xassert(assoc_rec);
 
-	if (assoc_rec->partition != NULL) {
-		/* do not check part's allow or deny, when assoc's part is not null */
-		if (!xstrcasecmp(assoc_rec->partition, part_ptr->name))
-			rc = 1;
-		
-		goto cleanup;
-	}
-
 	if (part_ptr->allow_accounts == NULL) {
 		if (part_ptr->deny_accounts == NULL) {
 			// allow==null && deny==null, no limit
@@ -2782,7 +2774,8 @@ static bool _part_is_visible_assoc(part_record_t *part_ptr,
 		ListIterator itr_assoc = list_iterator_create(user->assoc_list);
 		while ((assoc_rec = list_next(itr_assoc))) {
 			if ((!(slurm_conf.accounting_storage_enforce & ACCOUNTING_ENFORCE_ASSOCS) || 
-					validate_account(part_ptr, assoc_rec)) &&
+                    ((!assoc_rec->partition || !xstrcasecmp(assoc_rec->partition, part_ptr->name)) && 
+                    validate_account(part_ptr, assoc_rec))) &&
 					(!(slurm_conf.accounting_storage_enforce & ACCOUNTING_ENFORCE_QOS) || 
 					validate_qos(part_ptr, assoc_rec))) {
 				rc = true;
@@ -2809,13 +2802,29 @@ extern List fill_assoc_list(uid_t uid, bool locked)
 	if (!locked)
 		assoc_mgr_lock(&locks);
 
-    assoc_list = list_create(NULL);
-	ListIterator itr = list_iterator_create(assoc_mgr_assoc_list);
-	while ((assoc_rec = list_next(itr))) {
-		if (assoc_rec->uid == uid)
-			list_append(assoc_list, assoc_rec);
+	assoc_list = list_create(NULL);
+
+#ifdef __METASTACK_ASSOC_HASH
+	assoc_hash_t *tmp_entry = NULL;
+
+	char *user = find_uid_user_hash(&uid_user_hash, uid);
+
+	if (user) {
+		tmp_entry = find_assoc_entry(&assoc_mgr_user_assoc_hash, user);
 	}
-	list_iterator_destroy(itr);
+
+	if (tmp_entry && tmp_entry->value_assoc_list) {
+		list_append_list(assoc_list, tmp_entry->value_assoc_list);
+		tmp_entry = NULL;
+	} else {
+		ListIterator itr = list_iterator_create(assoc_mgr_assoc_list);
+		while ((assoc_rec = list_next(itr))) {
+			if (assoc_rec->uid == uid)
+				list_append(assoc_list, assoc_rec);
+		}
+		list_iterator_destroy(itr);
+	}
+#endif
 
 	if (!locked)
 		assoc_mgr_unlock(&locks);
@@ -5103,6 +5112,10 @@ static void _copy_list_delete_part(void *part_entry)
 	standby_nodes_free(part_ptr->standby_nodes);
 	part_ptr->standby_nodes = NULL;
 #endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	prio_params_free(part_ptr->priority_params);
+	part_ptr->priority_params = NULL;
+#endif
 	xfree(part_ptr);
 }
 
@@ -5188,6 +5201,22 @@ static int copy_part(part_record_t *src_part_ptr, part_record_t *des_part_ptr)
 		des_part_ptr->standby_nodes->borrowed_node_bitmap = NULL;
 	}
 #endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+    des_part_ptr->priority_params = NULL;
+    if(src_part_ptr->priority_params){
+        des_part_ptr->priority_params = xcalloc(1, sizeof(priority_params_t));
+    	des_part_ptr->priority_params->priority_favor_small  = src_part_ptr->priority_params->priority_favor_small;
+    	des_part_ptr->priority_params->priority_weight_age   = src_part_ptr->priority_params->priority_weight_age;
+    	des_part_ptr->priority_params->priority_weight_assoc = src_part_ptr->priority_params->priority_weight_assoc;
+    	des_part_ptr->priority_params->priority_weight_fs    = src_part_ptr->priority_params->priority_weight_fs;
+    	des_part_ptr->priority_params->priority_weight_js    = src_part_ptr->priority_params->priority_weight_js;
+    	des_part_ptr->priority_params->priority_weight_part  = src_part_ptr->priority_params->priority_weight_part;
+    	des_part_ptr->priority_params->priority_weight_qos   = src_part_ptr->priority_params->priority_weight_qos;
+    	des_part_ptr->priority_params->priority_weight_tres  = xstrdup(src_part_ptr->priority_params->priority_weight_tres);
+        des_part_ptr->priority_params->tres_weights = NULL;
+    }
+#endif
+
 	des_part_ptr->billing_weights = NULL;
 	des_part_ptr->qos_ptr = NULL;
 	des_part_ptr->tres_cnt = NULL;
@@ -5214,6 +5243,10 @@ extern void del_cache_part_state_record(part_state_record_t *src_part_ptr)
     xfree(src_part_ptr->qos_char);
 	FREE_NULL_BITMAP(src_part_ptr->node_bitmap);
 	xfree(src_part_ptr->allow_accounts);
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+    prio_params_free(src_part_ptr->priority_params);
+    src_part_ptr->priority_params = NULL;
+#endif
 	xfree(src_part_ptr);
 }
 /*_add_part_state_to_queue: Copy the partition status update 
@@ -5249,6 +5282,23 @@ extern void _add_part_state_to_queue(part_record_t *part_ptr)
 			cache_msg->part_state_ptr->st_parameters = xstrdup(part_ptr->standby_nodes->parameters);
 		}
 #endif
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+        cache_msg->part_state_ptr->priority_params = NULL;
+        if(part_ptr->priority_params){
+            cache_msg->part_state_ptr->priority_params = xcalloc(1, sizeof(priority_params_t));
+            cache_msg->part_state_ptr->priority_params->priority_favor_small  = part_ptr->priority_params->priority_favor_small;
+            cache_msg->part_state_ptr->priority_params->priority_weight_age   = part_ptr->priority_params->priority_weight_age;
+            cache_msg->part_state_ptr->priority_params->priority_weight_assoc = part_ptr->priority_params->priority_weight_assoc;
+            cache_msg->part_state_ptr->priority_params->priority_weight_fs    = part_ptr->priority_params->priority_weight_fs;
+            cache_msg->part_state_ptr->priority_params->priority_weight_js    = part_ptr->priority_params->priority_weight_js;
+            cache_msg->part_state_ptr->priority_params->priority_weight_part  = part_ptr->priority_params->priority_weight_part;
+            cache_msg->part_state_ptr->priority_params->priority_weight_qos   = part_ptr->priority_params->priority_weight_qos;
+            cache_msg->part_state_ptr->priority_params->priority_weight_tres  = xstrdup(part_ptr->priority_params->priority_weight_tres);
+            cache_msg->part_state_ptr->priority_params->tres_weights = NULL;
+        }
+#endif
+
 		cache_msg->part_state_ptr->tres_fmt_str = xstrdup(part_ptr->tres_fmt_str);
 		cache_msg->part_state_ptr->allow_accounts = xstrdup(part_ptr->allow_accounts);
 		cache_msg->part_state_ptr->nodes = xstrdup(part_ptr->nodes);
@@ -5349,6 +5399,14 @@ extern int update_cache_part_record(part_state_record_t *src_part_ptr)
 			src_part_ptr->st_parameters = NULL;
 		}
 #endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT	
+        prio_params_free(des_part_ptr->priority_params);
+        if(src_part_ptr->priority_params){
+            des_part_ptr->priority_params = src_part_ptr->priority_params;
+            src_part_ptr->priority_params = NULL;
+        }
+#endif
+
 		if(src_part_ptr->node_bitmap){
 			des_part_ptr->node_bitmap = src_part_ptr->node_bitmap;
 			src_part_ptr->node_bitmap = NULL;

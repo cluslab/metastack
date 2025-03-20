@@ -1458,7 +1458,7 @@ int main(int argc ,char** argv) {
 
     spost_init(influxdb_data);
     /*16-bit encryption key*/
-    const uint8_t key[]="xxxxxxxxxxxxxxxx";
+    const uint8_t key[]="fcad715bd73b5cb0";
     rc = read_hex_bytes_from_file(configpath, key, influxdb_data);
     if(rc == SLURM_ERROR)
          goto file_fail;

@@ -1100,6 +1100,7 @@ static bool _opt_verify(void)
 	if (opt.watch_dog)
 		setenvf(NULL, "SBATCH_JOB_CUSTOM", "%s", opt.watch_dog);
 #endif
+
 #ifdef HAVE_NATIVE_CRAY
 	if (opt.network && opt.shared)
 		fatal("Requesting network performance counters requires "

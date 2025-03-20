@@ -2730,6 +2730,7 @@ extern void slurm_free_ping_slurmd_resp(ping_slurmd_resp_msg_t *msg)
 	xfree(msg);
 }
 
+
 /*
  * structured as a static lookup table, which allows this
  * to be thread safe while avoiding any heap allocation
@@ -3471,7 +3472,7 @@ extern char *priority_flags_string(uint16_t priority_flags)
 		priority_flags & PRIORITY_FLAGS_NO_NORMAL_PART  &&
 		priority_flags & PRIORITY_FLAGS_NO_NORMAL_QOS   &&
 		priority_flags & PRIORITY_FLAGS_NO_NORMAL_TRES) {
-#else	
+#else
 	if (priority_flags & (PRIORITY_FLAGS_NO_NORMAL_ASSOC |
 			      PRIORITY_FLAGS_NO_NORMAL_PART  |
 			      PRIORITY_FLAGS_NO_NORMAL_QOS   |

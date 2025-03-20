@@ -1198,6 +1198,11 @@ static void *_sched_agent(void *args)
 				
 				para_sched_share_node_bitmap[i] = bit_copy(para_sched_node_bitmap[i]);
 				bit_and(para_sched_share_node_bitmap[i], share_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				para_sched_resv_node_bitmap[i] = bit_copy(para_sched_node_bitmap[i]);
+				bit_and_not(para_sched_resv_node_bitmap[i], para_sched_avail_node_bitmap[i]);
+#endif
+
 
 				para_sched_parms[i].full_queue = full_queue;
 				para_sched_parms[i].index = i;
@@ -1222,6 +1227,10 @@ static void *_sched_agent(void *args)
 				FREE_NULL_BITMAP(para_sched_avail_node_bitmap[i]);
 				FREE_NULL_BITMAP(para_sched_share_node_bitmap[i]);
 				FREE_NULL_BITMAP(para_sched_idle_node_bitmap[i]);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				FREE_NULL_BITMAP(para_sched_resv_node_bitmap[i]);
+
+#endif                
 			}	
 			xfree(job_queues);
 			xfree(sched_threads);
@@ -1425,25 +1434,25 @@ static bool _is_resources_equal(job_record_t *job_ptr, RR_job_record_t **job_res
 	{
 		job_resource_ptr = xcalloc(1, sizeof(RR_job_record_t));
 		if(job_ptr->details->mc_ptr){
-			job_resource_ptr->job_resource_str = xstrdup_printf("%u %u %u %s %s %s %s %s %s %s %hu %hu %u %u %d %u %hu %hu %u %u %lu %s %hu %hu %hu %hu %hu",
+			job_resource_ptr->job_resource_str = xstrdup_printf("%u %u %u %s %s %s %s %s %s %s %s %hu %hu %u %u %d %u %hu %hu %u %u %lu %s %s %hu %hu %hu %hu %hu",
 				job_ptr->user_id, job_ptr->assoc_id, job_ptr->qos_id, job_ptr->partition, job_ptr->tres_req_str,
 				job_ptr->tres_per_job, job_ptr->tres_per_node, job_ptr->tres_per_socket, job_ptr->tres_per_task,
-				job_ptr->mem_per_tres, job_ptr->details->ntasks_per_tres, job_ptr->details->cpus_per_task, 
+				job_ptr->mem_per_tres, job_ptr->resv_name, job_ptr->details->ntasks_per_tres, job_ptr->details->cpus_per_task, 
 				job_ptr->details->max_nodes, job_ptr->details->min_cpus, job_ptr->details->min_gres_cpu, 
 				job_ptr->details->min_nodes, job_ptr->details->ntasks_per_node, job_ptr->details->ntasks_per_tres, 
 				job_ptr->details->num_tasks, job_ptr->details->pn_min_cpus, job_ptr->details->pn_min_memory, 
-				job_ptr->details->req_nodes, job_ptr->details->mc_ptr->cores_per_socket,
+				job_ptr->details->req_nodes, job_ptr->details->features, job_ptr->details->mc_ptr->cores_per_socket,
 				job_ptr->details->mc_ptr->sockets_per_node, job_ptr->details->mc_ptr->threads_per_core, 
 				job_ptr->details->mc_ptr->ntasks_per_socket, job_ptr->details->mc_ptr->ntasks_per_core);
 		}else{
-			job_resource_ptr->job_resource_str = xstrdup_printf("%u %u %u %s %s %s %s %s %s %s %hu %hu %u %u %d %u %hu %hu %u %u %lu %s",
+			job_resource_ptr->job_resource_str = xstrdup_printf("%u %u %u %s %s %s %s %s %s %s %s %hu %hu %u %u %d %u %hu %hu %u %u %lu %s %s",
 				job_ptr->user_id, job_ptr->assoc_id, job_ptr->qos_id, job_ptr->partition, job_ptr->tres_req_str,
 				job_ptr->tres_per_job, job_ptr->tres_per_node, job_ptr->tres_per_socket, job_ptr->tres_per_task,
-				job_ptr->mem_per_tres, job_ptr->details->ntasks_per_tres, job_ptr->details->cpus_per_task,
+				job_ptr->mem_per_tres, job_ptr->resv_name, job_ptr->details->ntasks_per_tres, job_ptr->details->cpus_per_task,
 				job_ptr->details->max_nodes, job_ptr->details->min_cpus,job_ptr->details->min_gres_cpu, 
 				job_ptr->details->min_nodes, job_ptr->details->ntasks_per_node, job_ptr->details->ntasks_per_tres, 
 				job_ptr->details->num_tasks, job_ptr->details->pn_min_cpus, job_ptr->details->pn_min_memory, 
-				job_ptr->details->req_nodes);
+				job_ptr->details->req_nodes, job_ptr->details->features);
 		}
 		*job_resource_pptr = job_resource_ptr;
 
@@ -1463,7 +1472,7 @@ static bool _is_resources_equal(job_record_t *job_ptr, RR_job_record_t **job_res
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		        _add_job_state_to_queue(job_ptr);
 #endif
-				sched_debug("%pJ unable to schedule in Partition=%s (per _is_resources_equal()). State=PENDING. Previous-Reason=%s. Previous-Desc=%s. New-Reason=Priority. Priority=%u.",
+				sched_debug3("%pJ unable to schedule in Partition=%s (per _is_resources_equal()). State=PENDING. Previous-Reason=%s. Previous-Desc=%s. New-Reason=Priority. Priority=%u.",
 							job_ptr, job_ptr->partition, job_reason_string( job_ptr->state_reason),
 							job_ptr->state_desc, job_ptr->priority);
 				job_ptr->repeat_job = true;
@@ -1980,9 +1989,18 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 	/* if para_sched, replace global node bitmap with resource area node bitmap */
 	if(para_sched) {
 		bit_or(para_sched_avail_node_bitmap[index], rs_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		bit_and_not(para_sched_resv_node_bitmap[index], para_sched_avail_node_bitmap[index]);
+		bit_or(para_sched_resv_node_bitmap[index], cg_node_bitmap);
+#endif
 	} else {
 		save_avail_node_bitmap = bit_copy(avail_node_bitmap);
 		bit_or(avail_node_bitmap, rs_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		bit_copybits(resv_node_bitmap, avail_node_bitmap);
+		bit_not(resv_node_bitmap);
+		bit_or(resv_node_bitmap, cg_node_bitmap);
+#endif
 	}
 #endif	
 
@@ -2055,18 +2073,6 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 	}
 	list_iterator_destroy(part_iterator);
 	part_iterator = NULL;
-#else
-	if (max_jobs_per_part) {
-		ListIterator part_iterator;
-		sched_part_ptr  = xcalloc(part_cnt, sizeof(part_record_t *));
-		sched_part_jobs = xmalloc(sizeof(int) * part_cnt);
-		part_iterator = list_iterator_create(part_list);
-		i = 0;
-		while ((part_ptr = list_next(part_iterator))) {
-			sched_part_ptr[i++] = part_ptr;
-		}
-		list_iterator_destroy(part_iterator);
-	}
 #endif
 	sched_debug("Running job scheduler %s.", full_queue ? "for full queue":"for default depth");
 	/*
@@ -2389,17 +2395,6 @@ next_task:
 		if (max_jobs_per_part) {
 #ifdef __METASTACK_OPT_PUBLIC_CODE_REUSE
 			if (sched_part_jobs[part_index]++ >= max_jobs_per_part) {
-#else
-			bool skip_job = false;
-			for (j = 0; j < part_cnt; j++) {
-				if (sched_part_ptr[j] != job_ptr->part_ptr)
-					continue;
-				if (sched_part_jobs[j]++ >=
-				    max_jobs_per_part)
-					skip_job = true;
-				break;
-			}
-			if (skip_job) {
 #endif
 				if (job_ptr->state_reason == WAIT_NO_REASON) {
 					xfree(job_ptr->state_desc);
@@ -2649,8 +2644,31 @@ next_task:
 #endif
 			continue;
 		}
+		if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+			FREE_NULL_BITMAP(job_ptr->resv_bitmap);		
+			job_ptr->resv_stage = RESV_STAGE_MAIN_SCHED;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			/*The node blacklist must be refreshed before scheduling each job.*/
+			if (para_sched) {
+				bit_or_not(para_sched_resv_node_bitmap[index], para_sched_avail_node_bitmap[index]);
+				if (get_log_level() >= LOG_LEVEL_DEBUG3){
+					char *_tmp_str = NULL;
+					_tmp_str = bit_fmt_hexmask(para_sched_resv_node_bitmap[index]);
+					sched_debug3("HetPart: para_sched_resv_node_bitmap=%s.", _tmp_str);
+					xfree(_tmp_str);
+				}
+			}else{
+				bit_or_not(resv_node_bitmap, avail_node_bitmap);
+				if (get_log_level() >= LOG_LEVEL_DEBUG3){
+					char *_tmp_str = NULL;
+					_tmp_str = bit_fmt_hexmask(resv_node_bitmap);
+					sched_debug3("HetPart: resv_node_bitmap=%s.", _tmp_str);
+					xfree(_tmp_str);
+				}
+			}
 
-		FREE_NULL_BITMAP(job_ptr->resv_bitmap);			
+#endif
+		}
 #endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -2660,10 +2678,10 @@ next_task:
 					job_ptr->details && job_ptr->details->req_node_bitmap &&
 					(!bit_super_set(job_ptr->details->req_node_bitmap, para_sched_avail_node_bitmap[index]))) {
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
-						/*The requested node is added to the blacklist to ensure the priority*/
+				/*The requested node is added to the blacklist to ensure the priority*/
 				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
-					bit_and_not(para_sched_avail_node_bitmap[index],job_ptr->details->req_node_bitmap);
-					if(!bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+					bit_or(para_sched_resv_node_bitmap[index],job_ptr->details->req_node_bitmap);
+					if(bit_super_set(para_sched_resv_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
 						fail_by_part = true;
 						do_sched_assoc_lock_unlock(false, job_ptr);
 						goto fail_this_part;
@@ -2679,10 +2697,10 @@ next_task:
 					job_ptr->details && job_ptr->details->req_node_bitmap &&
 					(!bit_super_set(job_ptr->details->req_node_bitmap, avail_node_bitmap))) {
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
-						/*The requested node is added to the blacklist to ensure the priority*/
+				/*The requested node is added to the blacklist to ensure the priority*/
 				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
-					bit_and_not(avail_node_bitmap,job_ptr->details->req_node_bitmap);
-					if(!bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+					bit_or(resv_node_bitmap, job_ptr->details->req_node_bitmap);
+					if(bit_super_set(job_ptr->part_ptr->node_bitmap, resv_node_bitmap)){
 						fail_by_part = true;
 						goto fail_this_part;
 					}
@@ -2726,69 +2744,11 @@ next_task:
 				     job_reason_string(job_ptr->state_reason),
 				     job_ptr->priority, job_ptr->partition);
 			fail_by_part = true;
-
-#ifdef __METASTACK_NEW_HETPART_SUPPORT
-			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
-				if(part_repeat_job_template && job_resource_ptr) {
-					_add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
-				}
+            if(part_repeat_job_template && job_resource_ptr) {
+                _add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
+            }
 #endif
-
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-				/*Call "test only" to get the nodes available to the job*/
-				error_code = select_nodes(job_ptr, true, NULL, NULL, false,
-					  	SLURMDB_JOB_FLAG_SCHED, true, index);
-				/* if para_sched, replace global node bitmap with resource area node bitmap */	
-				if(para_sched){
-					if (job_ptr->details->req_node_bitmap &&
-					(bit_set_count(job_ptr->details->req_node_bitmap) >=
-					job_ptr->details->min_nodes)) {
-						/* Do not schedule more jobs on nodes required by this
-						* job, but don't block the entire queue/partition. */
-						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->details->req_node_bitmap);
-						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
-                            do_sched_assoc_lock_unlock(false, job_ptr);
-			                do_sched_job_lock_unlock(false, job_ptr);
-							continue;
-						}
-					}else if (job_ptr->resv_bitmap && ((error_code == ESLURM_NODES_BUSY) || (error_code == ESLURM_NODE_NOT_AVAIL))){
-						/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
-						bit_and_not(para_sched_avail_node_bitmap[index],	job_ptr->resv_bitmap);
-						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
-                            do_sched_assoc_lock_unlock(false, job_ptr);
-			                do_sched_job_lock_unlock(false, job_ptr);
-							continue;
-						}
-					}else{
-                        do_sched_assoc_lock_unlock(false, job_ptr);
-			            do_sched_job_lock_unlock(false, job_ptr);
-						continue;
-					}
-				}else{
-					if (job_ptr->details->req_node_bitmap &&
-					(bit_set_count(job_ptr->details->req_node_bitmap) >=
-					job_ptr->details->min_nodes)) {
-						/* Do not schedule more jobs on nodes required by this
-						* job, but don't block the entire queue/partition. */
-						bit_and_not(avail_node_bitmap, job_ptr->details->req_node_bitmap);
-						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
-							continue;
-						}
-					}else if (job_ptr->resv_bitmap && ((error_code == ESLURM_NODES_BUSY) || (error_code == ESLURM_NODE_NOT_AVAIL))){
-						/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
-						bit_and_not(avail_node_bitmap,	job_ptr->resv_bitmap);
-						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
-							continue;
-						}
-					}else{
-						continue;
-					}
-				}
-#endif
-			}	
-#endif
-
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			do_sched_assoc_lock_unlock(false, job_ptr);
 #endif				
@@ -2815,37 +2775,6 @@ next_task:
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		    _add_job_state_to_queue(job_ptr);
 #endif		 
-			continue;
-		}
-#else
-		if (license_job_test(job_ptr, time(NULL), true) !=
-		    SLURM_SUCCESS) {
-			job_ptr->state_reason = WAIT_LICENSES;
-			xfree(job_ptr->state_desc);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		    _add_job_state_to_queue(job_ptr);
-#endif  
-			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u.",
-				     job_ptr,
-				     job_state_string(job_ptr->job_state),
-				     job_reason_string(job_ptr->state_reason),
-				     job_ptr->priority);
-			if (bf_licenses) {
-				sched_debug("%pJ is blocked on licenses. Stopping scheduling so license backfill can handle this",
-					    job_ptr);
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-				do_sched_assoc_lock_unlock(false, job_ptr);
-				do_sched_job_lock_unlock(false, job_ptr);
-				_last_job_update(now);
-#else
-				last_job_update = now;				
-#endif							
-				break;
-			}
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-			do_sched_assoc_lock_unlock(false, job_ptr);
-			do_sched_job_lock_unlock(false, job_ptr);
-#endif				
 			continue;
 		}
 #endif
@@ -2935,19 +2864,31 @@ skip_start:
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){	
 				/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/	
-				if (job_ptr->resv_bitmap && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
-				(bit_set_count(job_ptr->details->req_node_bitmap) < job_ptr->details->min_nodes))){
+				if (job_ptr->resv_bitmap && job_ptr->resv_stage == RESV_STAGE_HETPART_SELECT && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
+					(bit_set_count(job_ptr->details->req_node_bitmap) < job_ptr->details->min_nodes))){
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 					/* if para_sched, replace global node bitmap with resource area node bitmap */
 					if(para_sched){
-						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->resv_bitmap);
-						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
-                            do_sched_job_lock_unlock(false, job_ptr);
+						bit_or(para_sched_resv_node_bitmap[index], job_ptr->resv_bitmap);
+						if (get_log_level() >= LOG_LEVEL_DEBUG3){
+							char *_tmp_str = NULL;
+							_tmp_str = bit_fmt_hexmask(para_sched_resv_node_bitmap[index]);
+							sched_debug3("%pJ. HetPart: _select_nodes para_sched_resv_node_bitmap=%s.", job_ptr, _tmp_str);
+							xfree(_tmp_str);
+						}
+						if(!bit_super_set(para_sched_resv_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+							do_sched_job_lock_unlock(false, job_ptr);
 							continue;
 						}
 					}else{
-						bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
-						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						bit_or(resv_node_bitmap, job_ptr->resv_bitmap);
+						if (get_log_level() >= LOG_LEVEL_DEBUG3){
+							char *_tmp_str = NULL;
+							_tmp_str = bit_fmt_hexmask(resv_node_bitmap);
+							sched_debug3("%pJ. HetPart: _select_nodes resv_node_bitmap=%s.", job_ptr, _tmp_str);
+							xfree(_tmp_str);
+						}
+						if(!bit_super_set(job_ptr->part_ptr->node_bitmap, resv_node_bitmap)){
 							continue;
 						}
 					}
@@ -3074,7 +3015,7 @@ skip_start:
 					causes job_ptr already in a locked state, so 
 					there is no need to add another lock */
 					do_sched_job_lock_unlock(false, tmp);
-#endif						
+#endif
 					goto next_task;
 				}	
 			}		
@@ -3126,24 +3067,36 @@ skip_start:
 		}else if (error_code == ESLURM_NODE_NOT_AVAIL) {
 			if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
-			if(part_repeat_job_template && job_resource_ptr) {
-				_add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
-			}
+				if(part_repeat_job_template && job_resource_ptr) {
+					_add_failed_jobs(part_repeat_job_template, &job_resource_ptr, pending_job_ptr, part_index, pending_job_cnt, job_ptr);
+				}
 #endif
 				/*There are not enough resources to run the job, and the available nodes are added to the blacklist*/
-				if (job_ptr->resv_bitmap && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
+				if (job_ptr->resv_bitmap && job_ptr->resv_stage == RESV_STAGE_HETPART_SELECT && ( !job_ptr->details || !job_ptr->details->req_node_bitmap ||
 				(bit_set_count(job_ptr->details->req_node_bitmap) < job_ptr->details->min_nodes))){
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 					/* if para_sched, replace global node bitmap with resource area node bitmap */
 					if(para_sched){
-						bit_and_not(para_sched_avail_node_bitmap[index], job_ptr->resv_bitmap);
-						if(bit_overlap_any(para_sched_avail_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
-                            do_sched_job_lock_unlock(false, job_ptr);
+						bit_or(para_sched_resv_node_bitmap[index], job_ptr->resv_bitmap);
+						if (get_log_level() >= LOG_LEVEL_DEBUG3){
+							char *_tmp_str = NULL;
+							_tmp_str = bit_fmt_hexmask(para_sched_resv_node_bitmap[index]);
+							sched_debug3("%pJ. HetPart: _select_nodes para_sched_resv_node_bitmap=%s ", job_ptr, _tmp_str);
+							xfree(_tmp_str);
+						}
+						if(!bit_super_set(para_sched_resv_node_bitmap[index], job_ptr->part_ptr->node_bitmap)){
+							do_sched_job_lock_unlock(false, job_ptr);
 							continue;
 						}
 					}else{
-						bit_and_not(avail_node_bitmap, job_ptr->resv_bitmap);
-						if(bit_overlap_any(avail_node_bitmap, job_ptr->part_ptr->node_bitmap)){
+						bit_or(resv_node_bitmap, job_ptr->resv_bitmap);
+						if (get_log_level() >= LOG_LEVEL_DEBUG3){
+							char *_tmp_str = NULL;
+							_tmp_str = bit_fmt_hexmask(resv_node_bitmap);
+							sched_debug3("%pJ. HetPart: _select_nodes resv_node_bitmap=%s ", job_ptr, _tmp_str);
+							xfree(_tmp_str);
+						}
+						if(!bit_super_set(job_ptr->part_ptr->node_bitmap, resv_node_bitmap)){
 							continue;
 						}
 					}
@@ -3167,7 +3120,7 @@ skip_start:
 					job_ptr->details->req_node_bitmap);
 			else
 				bit_and_not(avail_node_bitmap,
-				    job_ptr->details->req_node_bitmap);		
+				    job_ptr->details->req_node_bitmap);
 #endif					
 		}
 		if (fail_by_part && job_ptr->resv_name) {
@@ -3202,7 +3155,9 @@ skip_start:
 			fail_by_part = false;
 		}
 
-fail_this_part:	if (fail_by_part) {
+fail_this_part:	
+
+        if (fail_by_part) {
 			/* Search for duplicates */
 			for (i = 0; i < failed_part_cnt; i++) {
 				if (failed_parts[i] == job_ptr->part_ptr) {

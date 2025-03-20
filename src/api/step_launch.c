@@ -346,9 +346,11 @@ extern int slurm_step_launch(slurm_step_ctx_t *ctx,
 	launch.ofname = params->remote_output_filename;
 	launch.efname = params->remote_error_filename;
 	launch.ifname = params->remote_input_filename;
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	launch.apptype = params->apptype;
 #endif
+
 	if (params->buffered_stdio)
 		launch.flags |= LAUNCH_BUFFERED_IO;
 	if (params->labelio)
@@ -529,6 +531,7 @@ extern int slurm_step_launch_add(slurm_step_ctx_t *ctx,
 	if (params->pty)
 		launch.flags |= LAUNCH_PTY;
 	launch.acctg_freq	= params->acctg_freq;
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
 	// launch.watch_dog         = params->watch_dog;	
 	// launch.watch_dog_script  = params->watch_dog_script;	
@@ -1251,12 +1254,42 @@ _job_complete_handler(struct step_launch_state *sls, slurm_msg_t *complete_msg)
 	srun_job_complete_msg_t *step_msg =
 		(srun_job_complete_msg_t *) complete_msg->data;
 
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF	
+	char *slurm_job_id = NULL;
+	uint32_t job_id = 0;
+
+	slurm_job_id = getenv("SLURM_JOB_ID");
+
+	if (slurm_job_id == NULL) {
+		return;
+	}
+
+	job_id = atol(slurm_job_id);
+
+	if (step_msg->step_id == NO_VAL) {
+		verbose("Complete job %u received",
+			step_msg->job_id);
+		if (step_msg->job_id != job_id) {
+			verbose("%s: Ignoring job_complete for job %u because our job ID is %u",
+				__func__, step_msg->job_id, job_id);
+			return;
+		}	
+	} else {
+		verbose("Complete %ps received", &step_msg->step_id);
+		if (step_msg->step_id != job_id) {
+			verbose("%s: Ignoring job_complete for job %u because our job ID is %u",
+				__func__, step_msg->step_id, job_id);
+			return;
+		}		
+	}	
+#else
 	if (step_msg->step_id == NO_VAL) {
 		verbose("Complete job %u received",
 			step_msg->job_id);
 	} else {
 		verbose("Complete %ps received", &step_msg->step_id);
 	}
+#endif
 
 	if (sls->callback.step_complete)
 		(sls->callback.step_complete)(step_msg);

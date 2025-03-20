@@ -50,6 +50,9 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+#include <sys/time.h>
+#endif
 
 #include "src/common/assoc_mgr.h"
 #include "src/common/cpu_frequency.h"
@@ -71,6 +74,9 @@
 #include "src/common/switch.h"
 #include "src/common/xstring.h"
 #include "src/common/cgroup.h"
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+#include "src/common/parse_config.h"
+#endif
 
 #include "src/slurmctld/acct_policy.h"
 #include "src/slurmctld/burst_buffer.h"
@@ -1981,7 +1987,10 @@ void _sync_jobs_to_conf(void)
 				build_cg_bitmap(job_ptr);
 				was_running = true;
 			} else if (IS_JOB_SUSPENDED(job_ptr)) {
-				job_ptr->end_time = job_ptr->suspend_time;
+#ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
+				job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
+				job_ptr->end_time = job_ptr->suspend_time = now;
+#endif
 				job_ptr->job_state =
 					JOB_NODE_FAIL | JOB_COMPLETING;
 				build_cg_bitmap(job_ptr);
@@ -2811,6 +2820,105 @@ extern void update_feature_list(List feature_list, char *new_features,
 	}
 	node_features_updated = true;
 }
+                           
+#ifdef __METASTACK_OPT_GRES_CONFIG
+/**
+ * Removes parentheses and their contents from a given string.
+ * str IN - The input string to be modified.
+ */
+static void remove_parentheses(char *str) {
+	if (str == NULL) {
+		return; 
+	}
+	char *src, *dst;
+	src = dst = str; 
+	while (*src != '\0') { 
+		if (*src != '(') { 
+			*dst++ = *src; 
+			src++; 
+		} else { 
+			src++; 
+			while (*src != '\0' && *src != ')') {
+				src++;
+			}
+			if (*src == ')') { 
+				src++; 
+			}
+		}
+	}
+	*dst = '\0'; 
+}
+
+/**
+ * Parses the GRES count from a given GRES name string.
+ * 
+ * This function takes a GRES name string, removes any parentheses and their contents,
+ * and then parses the count of GRES resources. It assumes the GRES name is in the format
+ * "type:count" and can contain multiple entries separated by commas.
+ * gres_name IN - The GRES name string to parse.
+ * return - The total count of GRES resources.
+ */
+static int parse_gres_count(const char *gres_name) {
+	if (gres_name == NULL) {
+		error("GRES name is NULL");
+		return -1;  
+	}
+	char *gres_copy = strdup(gres_name);
+	if (!gres_copy) {
+		error("Memory allocation failed");
+		return -1;
+	}
+	remove_parentheses(gres_copy);
+	char *token = strtok(gres_copy, ",");
+	int total_count = 0;
+
+	while (token != NULL) {
+		char *last_colon = strrchr(token, ':');
+		if (last_colon != NULL) {
+			char *endptr;
+			long num = strtol(last_colon + 1, &endptr, 10);
+			if (*endptr == '\0' && endptr > last_colon + 1) {
+				total_count += (int)num;
+			} else {
+				error("Failed to parse GRES number from gres_name");
+			}
+		} else {
+			error("No colon found in gres_name");
+		}
+		token = strtok(NULL, ",");
+	}
+
+	free(gres_copy);
+	return total_count;
+}
+/**
+* Cleans up and frees memory allocated within each element of a parsed lines array.
+*
+* This function iterates through each element of the parsed_lines array and frees
+* the memory allocated for the key, value, and new_leftover fields.  It also destroys
+* any associated hash table and host list.
+*
+* parsed_lines IN - Array of parsed lines to be cleaned up.
+* max_parsed_lines IN - Number of elements in the parsed_lines array.
+*/
+static void cleanup_parsed_lines(parsed_line_t *parsed_lines, int max_parsed_lines) {
+	if (parsed_lines == NULL || max_parsed_lines < 0) {
+		return; 
+	}
+	for (int i = 0; i < max_parsed_lines; i++) {
+		xfree(parsed_lines[i].key);
+		xfree(parsed_lines[i].value);
+		xfree(parsed_lines[i].new_leftover);
+		if (parsed_lines[i].hashtbl) {
+			s_p_hashtbl_destroy(parsed_lines[i].hashtbl); 
+		}
+		if (parsed_lines[i].hostlist) {
+			hostlist_destroy(parsed_lines[i].hostlist); 
+		}
+	}
+	xfree(parsed_lines);
+}
+#endif
 
 static void _gres_reconfig(bool reconfig)
 {
@@ -2824,34 +2932,119 @@ static void _gres_reconfig(bool reconfig)
 		goto grab_includes;
 	}
 
-	for (i = 0; (node_ptr = next_node(&i)); i++) {
-		if (node_ptr->gres)
-			gres_name = node_ptr->gres;
-		else
-			gres_name = node_ptr->config_ptr->gres;
-		gres_init_node_config(gres_name, &node_ptr->gres_list);
-		if (!IS_NODE_CLOUD(node_ptr))
-			continue;
+#ifdef __METASTACK_OPT_GRES_CONFIG
+	struct timeval start, end;
+	long seconds, useconds;
+	double mtime;
+	if(slurm_conf.slurmctld_load_gres){
+		int gres_number = -1;
+		int max_parsed_lines = 0;
+		int num_parsed_lines = 0;
+		char *gres_conf_file = NULL;
+		FILE *fg;
+		char ch;
+		gettimeofday(&start, NULL);
+		gres_conf_file = get_extra_conf_path("gres.conf");
+		fg = fopen(gres_conf_file, "r");
+		if (fg == NULL) {
+			error("_gres_reconfig: unable to read \"%s\": %m", gres_conf_file);
+			xfree(gres_conf_file);
+			return ;
+		}	
+		while ((ch = fgetc(fg)) != EOF) {
+			if (ch == '\n') {
+				max_parsed_lines++;
+			}
+		}
+		/* If the file is not empty and the last character is not a newline, increase the number of lines */
+		if (fseek(fg, 0, SEEK_END) == 0) {
+			if (ftell(fg) > 0) {
+				max_parsed_lines++;
+			}
+		}
+		max_parsed_lines++;
+		fclose(fg);
+		parsed_lines = xmalloc(sizeof(parsed_line_t) * max_parsed_lines);
+		if (parsed_lines == NULL) {
+			error("_gres_reconfig:Memory allocation failed");
+			return;
+		}
+		s_p_hashtbl_t *tbl;
+		tbl = gres_parse_config_file(gres_conf_file, parsed_lines, max_parsed_lines, &num_parsed_lines);
+		if (!tbl) {
+			error("Failed to parse GRES configuration file");
+			xfree(gres_conf_file); 
+			return;
+		}
+		xfree(gres_conf_file);
+		s_p_hashtbl_destroy(tbl);
+		for (i = 0; (node_ptr = next_node(&i)); i++) {
+			if (node_ptr->gres){
+				gres_name = node_ptr->gres;
+			}
+			else{
+				gres_name = node_ptr->config_ptr->gres;
+			}
+			if (gres_name == NULL) {
+				continue;
+			}
+			gres_number = parse_gres_count(gres_name);
+			gres_init_node_config(gres_name, &node_ptr->gres_list);
+			if(gres_g_node_config_loadgres(
+							node_ptr->config_ptr->cpus, node_ptr->name,
+							node_ptr->gres_list, NULL, NULL, parsed_lines, gres_number) ==SLURM_ERROR){
+				continue;
+			}	
+			gres_node_config_validate(
+				node_ptr->name, node_ptr->config_ptr->gres,
+				&node_ptr->gres, &node_ptr->gres_list,
+				node_ptr->config_ptr->threads,
+				node_ptr->config_ptr->cores,
+				node_ptr->config_ptr->tot_sockets,
+				slurm_conf.conf_flags & CTL_CONF_OR, NULL);
 
-		/*
-		 * Load in GRES for node now. By default Slurm gets this
-		 * information when the node registers for the first
-		 * time, which can take a while for a node in the cloud
-		 * to boot.
-		 */
-		gres_g_node_config_load(
-			node_ptr->config_ptr->cpus, node_ptr->name,
-			node_ptr->gres_list, NULL, NULL);
-		gres_node_config_validate(
-			node_ptr->name, node_ptr->config_ptr->gres,
-			&node_ptr->gres, &node_ptr->gres_list,
-			node_ptr->config_ptr->threads,
-			node_ptr->config_ptr->cores,
-			node_ptr->config_ptr->tot_sockets,
-			slurm_conf.conf_flags & CTL_CONF_OR, NULL);
+			gres_loaded = true;
+		}
+		if (parsed_lines != NULL) {
+			cleanup_parsed_lines(parsed_lines, max_parsed_lines);
+		}
+		gettimeofday(&end, NULL);
+		seconds = end.tv_sec - start.tv_sec;
+		useconds = end.tv_usec - start.tv_usec;
+		mtime = (seconds * 1000) + (useconds / 1000.0);
+		debug("Slurmctld load Gres config time: %.2f ms\n", mtime);
+	}else{
+		for (i = 0; (node_ptr = next_node(&i)); i++) {
+			if (node_ptr->gres)
+				gres_name = node_ptr->gres;
+			else
+				gres_name = node_ptr->config_ptr->gres;
+			gres_init_node_config(gres_name, &node_ptr->gres_list);
+			if (!IS_NODE_CLOUD(node_ptr))
+				continue;
 
-		gres_loaded = true;
+			/*
+			 * Load in GRES for node now. By default Slurm gets this
+			 * information when the node registers for the first
+			 * time, which can take a while for a node in the cloud
+			 * to boot.
+			 */
+			gres_g_node_config_load(
+				node_ptr->config_ptr->cpus, node_ptr->name,
+				node_ptr->gres_list, NULL, NULL);
+			
+			gres_node_config_validate(
+				node_ptr->name, node_ptr->config_ptr->gres,
+				&node_ptr->gres, &node_ptr->gres_list,
+				node_ptr->config_ptr->threads,
+				node_ptr->config_ptr->cores,
+				node_ptr->config_ptr->tot_sockets,
+				slurm_conf.conf_flags & CTL_CONF_OR, NULL);
+
+			gres_loaded = true;
+		}		
 	}
+#endif
 
 grab_includes:
 	if (!gres_loaded) {

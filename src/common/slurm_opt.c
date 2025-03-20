@@ -526,6 +526,7 @@ static slurm_cli_opt_t slurm_opt_account = {
 	.get_func = arg_get_account,
 	.reset_func = arg_reset_account,
 };
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 /*
 	This is mainly used to pass submit-line to cli_filter.lua, 
@@ -980,6 +981,7 @@ static slurm_cli_opt_t slurm_opt_comment = {
 	.get_func = arg_get_comment,
 	.reset_func = arg_reset_comment,
 };
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 /*
 	The apptype configuration entry is not open to the user and 
@@ -3399,7 +3401,6 @@ static slurm_cli_opt_t slurm_opt_predict_job = {
 	.reset_func = arg_reset_predict_job,
 };
 #endif
-
 
 COMMON_SRUN_BOOL_OPTION(no_alloc);
 static slurm_cli_opt_t slurm_opt_no_allocate = {
