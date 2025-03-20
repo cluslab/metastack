@@ -1335,7 +1335,7 @@ static int _get_users(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	assoc_mgr_lock_t locks = { .user = READ_LOCK };
 	bool flag = false;
 	/* Check if assoc_mgr_user_list is not NULL, if the uid has permissions, the request is from slurmctld, 
-	 * and user_cond meets the conditions, the cached user list (assoc_mgr_user_list) is used,
+	 * and user_cond meets the conditions, the cached user list (assoc_mgr_user_list) is used, 
 	 * otherwise, the user list is retrieved from the database. */
 	if (assoc_mgr_user_list && 
 		(*uid == slurm_conf.slurm_user_id || *uid == 0) && 
@@ -1343,7 +1343,7 @@ static int _get_users(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 		!user_cond->with_assocs && !user_cond->with_deleted && !user_cond->with_wckeys && 
 		(user_cond->with_coords == 1) && (user_cond->is_ctld == 1) &&
 		!user_cond->assoc_cond->only_defs) {
-		
+
 		assoc_mgr_lock(&locks);
 		list_msg.my_list = list_shallow_copy(assoc_mgr_user_list);
 		flag = true;

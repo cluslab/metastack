@@ -612,6 +612,12 @@ now[+\fIcount\fR[seconds(default)|minutes|hours|days|weeks]]
 .IP
 
 .TP
+\fB\-\-watch-dog\fR=<\fIOPT\fR>
+Specify the WatchDogName defined in slurm.conf. If --watch-dog=xxx is specified multiple times,
+ the last one will take precedence.
+.IP
+
+.TP
 \fB\-\-delay\-boot\fR=<\fIminutes\fR>
 Do not reboot nodes in order to satisfied this job's feature specification if
 the job has been eligible to run for less than this time period.

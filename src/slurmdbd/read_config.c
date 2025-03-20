@@ -586,8 +586,11 @@ extern int read_slurmdbd_conf(void)
 				   "SaveUid", tbl))
 			slurmdbd_conf->save_uid = false;
 		
-		if (reconfig && old_save_uid != slurmdbd_conf->save_uid)
-			error("SaveUid has changed during reconfig, slurmdbd must be restarted");
+		if (reconfig && old_save_uid != slurmdbd_conf->save_uid) {
+			slurmdbd_conf->save_uid = old_save_uid;
+			error("SaveUid configuration modification failed."
+				"Modifying this parameter requires restarting slurmdbd to take effect");
+		}
 
 		if (!s_p_get_string(&slurmdbd_conf->uid_save_location,
 				   "UidSaveLocation", tbl))

@@ -572,6 +572,7 @@ void _set_smaps_file(char **proc_smaps_file, pid_t pid)
 	else
 		xstrfmtcat(*proc_smaps_file, "/proc/%d/smaps", pid);
 }
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 static int _get_cmdline(char *proc_cmdline_file, jag_prec_t *prec)
 {
@@ -753,7 +754,7 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 bail_out:
 	xfree(prec->tres_data);
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
-    if(prec->command != NULL)
+    if (prec->command != NULL)
 		xfree(prec->command);
 #endif
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
@@ -827,7 +828,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		FIELD_EVENTTYPE3START,
 		FIELD_EVENTTYPE1END,
 		FIELD_EVENTTYPE2END,
-		FIELD_EVENTTYPE3END,	
+		FIELD_EVENTTYPE3END,		
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		/* APPTYPE */
 		FIELD_SENDFLAG,
@@ -835,7 +836,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		FIELD_APPTYPECLI,
 		FIELD_HAVERECOGN,
 		FIELD_CPUTIME,
-#endif						
+#endif				
 		FIELD_CNT
 	};
 
@@ -942,7 +943,6 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		data[FIELD_CPUTIME].u64 = send->cputime;
 	}
 #endif
-
 
 	log_flag(PROFILE, "PROFILE-Task: %s",
 		 acct_gather_profile_dataset_str(dataset, data, str,
@@ -1323,6 +1323,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		}
 	}
 #endif
+
 	(void)list_for_each(prec_list, (ListForF)_init_tres, NULL);
 	(*(callbacks->get_precs))(task_list, cont_id, callbacks);
 
@@ -1333,6 +1334,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	while ((jobacct = list_next(itr))) {
 		double cpu_calc;
 		double last_total_cputime;
+		jobacct->cur_time_ns = 0;
 		if (!(prec = list_find_first(prec_list, _find_prec,
 					     &jobacct->pid)))
 			continue;
@@ -1458,8 +1460,8 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		total_job_cputime += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
 #endif
 #ifdef __METASTACK_LOAD_ABNORMAL
-		if(data != NULL) {
-			if(stamp == false) {
+		if (data != NULL) {
+			if (stamp == false) {
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 				if (data->send_flag2 & JOBACCT_GATHER_PROFILE_ABNORMAL) {
 					jobacct->node_alloc_cpu = data->node_alloc_cpu;
@@ -1514,7 +1516,8 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				}
 				stamp = true;
 #endif
-			}
+			}	
+	
 		}
 		total_job_cpuutil += jobacct->cpu_util;
 		total_job_cpuutil_ave += jobacct->avg_cpu_util;
@@ -1589,7 +1592,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		itr1 = list_iterator_create(prec_list);
 
 		while ((prec1 = list_next(itr1))) {
-			if((prec1->flag) == 1) {
+			if ((prec1->flag) == 1) {
 				log_flag(JAG,"pid = %d  abnormal process status",prec1->pid);
 				pid_status = pid_status|PROC_AB;
 			} 
@@ -1615,6 +1618,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		collect->load_flag = collect->load_flag | pid_status;
 	}
 #endif
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	if(collect && collect->pids) {
 		collect->npids = 0;
@@ -1632,6 +1636,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		xfree(pids);
 	} 
 #endif
+
 	if (slurm_conf.job_acct_oom_kill)
 		jobacct_gather_handle_mem_limit(total_job_mem,
 						total_job_vsize);

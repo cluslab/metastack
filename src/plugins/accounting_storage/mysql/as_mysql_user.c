@@ -45,74 +45,9 @@
 #endif
 
 #ifdef __METASTACK_ASSOC_HASH
-
 #include "src/common/assoc_mgr.h"
 
 static str_key_hash_t *all_sub_acct_hash = NULL;
-
-/** build hash table, assign assoc to entry according to key. 
- * IN:  hash table, assoc
- * OUT: assoc_hash
- */
-extern void insert_assoc_hash(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *str_key) {
-    assoc_hash_t *entry = NULL;
-
-    if (!str_key)
-        return;
-
-    HASH_FIND_STR(*assoc_hash, str_key, entry);
-
-    if (entry == NULL) {
-        entry = xmalloc(sizeof(assoc_hash_t));
-        entry->key = xstrdup(str_key);
-        entry->value_assoc_list = list_create(slurmdb_destroy_assoc_rec);
-        HASH_ADD_KEYPTR(hh, *assoc_hash, entry->key, strlen(entry->key), entry);
-    }
-
-    // add assoc to entry->value_assoc_list
-    list_append(entry->value_assoc_list, assoc);
-}
-
-extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key) {
-    assoc_hash_t *entry = NULL;
-
-    if(!key)
-        return entry;
-    
-    HASH_FIND_STR(*assoc_hash, key, entry);
-
-    return entry;
-}
-
-/** delete hash */
-extern void destroy_assoc_hash(assoc_hash_t **assoc_hash) {
-    assoc_hash_t *current_entry, *tmp;
-
-    HASH_ITER(hh, *assoc_hash, current_entry, tmp) {
-        HASH_DEL(*assoc_hash, current_entry);
-        xfree(current_entry->key);
-        if (current_entry->value_assoc_list)
-            FREE_NULL_LIST(current_entry->value_assoc_list);
-        
-        xfree(current_entry);
-    }
-}
-
-/** destroy the hash table whose value is the assoc_hash table */
-extern void destroy_hash_value_hash(str_key_hash_t **str_key_hash) {
-	str_key_hash_t *current_entry = NULL, *tmp = NULL;
-
-	HASH_ITER(hh, *str_key_hash, current_entry, tmp) {
-		HASH_DEL(*str_key_hash, current_entry);
-		xfree(current_entry->key);
-		assoc_hash_t *hash_value = (assoc_hash_t *)current_entry->value;
-		if (hash_value) {
-			destroy_assoc_hash(&hash_value);
-		}
-		xfree(current_entry);
-	}
-
-}
 #endif
 
 static int _change_user_name(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user)
@@ -261,11 +196,11 @@ static void get_all_accts(mysql_conn_t *mysql_conn, slurmdb_assoc_cond_t *assoc_
 		itr = list_iterator_create(use_cluster_list);
 		char *cluster_name = NULL;
 		while ((cluster_name = list_next(itr))){
-			assoc_hash_t *sub_acct_hash = NULL;;
+			assoc_hash_t *sub_acct_hash = NULL;
 			query = xstrdup_printf("select distinct acct,user,parent_acct,deleted from \"%s_%s\" "
 								"where user='' && deleted=0", 
 								cluster_name, assoc_table);
-										
+								
 			DB_DEBUG(DB_ASSOC, mysql_conn->conn, "query\n%s", query);
 			if (!(result = mysql_db_query_ret(
 						mysql_conn, query, 0))) {
@@ -276,13 +211,13 @@ static void get_all_accts(mysql_conn_t *mysql_conn, slurmdb_assoc_cond_t *assoc_
 
 			while ((row = mysql_fetch_row(result))) {
 				assoc = xmalloc(sizeof(slurmdb_assoc_rec_t));
-				
+
 				if (row[2]) {
 					assoc->acct = xstrdup(row[0]);
 					assoc->parent_acct = xstrdup(row[2]);
 				}
 				
-				insert_assoc_hash(&sub_acct_hash, assoc, assoc->parent_acct);
+				insert_assoc_hash(&sub_acct_hash, assoc, assoc->parent_acct, slurmdb_destroy_assoc_rec);
 			}
 			mysql_free_result(result);
 			if (sub_acct_hash) {
@@ -451,7 +386,7 @@ static int _get_user_coords(mysql_conn_t *mysql_conn, slurmdb_user_rec_t *user)
 			if (find_str_key_hash(&coord_accts_hash, row[0])) {
 				continue;
 			}
-			#else
+#else
 			list_iterator_reset(itr);
 			while ((coord = list_next(itr))) {
 				if (!xstrcmp(coord->name, row[0]))
@@ -1628,7 +1563,7 @@ empty:
 	mysql_free_result(result);
 #ifdef __METASTACK_ASSOC_HASH
 	if (all_sub_acct_hash)
-		destroy_hash_value_hash(&all_sub_acct_hash);
+		destroy_hash_value_hash(&all_sub_acct_hash);	
 #endif
 
 	if (user_cond && (user_cond->with_assocs
@@ -1672,7 +1607,7 @@ empty:
             if (!assoc->user)
                 continue;
             
-            insert_assoc_hash(&assoc_hash, assoc, assoc->user);
+            insert_assoc_hash(&assoc_hash, assoc, assoc->user, slurmdb_destroy_assoc_rec);
             list_remove(assoc_itr);
         }
         list_iterator_destroy(assoc_itr);

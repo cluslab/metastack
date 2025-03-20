@@ -872,7 +872,7 @@ typedef struct job_step_specs {
 	// 					     *The default value is 60 seconds. */
 	// uint32_t period; 
 	// bool enbale_all_nodes;      	
-#endif	
+#endif
 } job_step_create_request_msg_t;
 
 typedef struct job_step_create_response_msg {
@@ -891,9 +891,9 @@ typedef struct job_step_create_response_msg {
 	char *watch_dog;
 	char *watch_dog_script;		/* location of the script */
 	uint32_t init_time;     /* Optional. This keyword specifies the delay 
-							* (in seconds) before starting the watchdog script after 
-							*the job starts. Specify a number greater than 30 seconds. 
-							*The default value is 60 seconds. */
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
 	uint32_t period;  
 	bool enable_all_nodes;    
 	bool enable_all_stepds;   
@@ -1384,6 +1384,7 @@ typedef struct ping_slurmd_resp_msg {
 #endif
 } ping_slurmd_resp_msg_t;
 
+
 typedef struct license_info_request_msg {
 	time_t last_update;
 	uint16_t show_flags;
@@ -1627,7 +1628,6 @@ extern void slurm_free_forward_data_msg(forward_data_msg_t *msg);
 extern void slurm_free_comp_msg_list(void *x);
 extern void slurm_free_composite_msg(composite_msg_t *msg);
 extern void slurm_free_ping_slurmd_resp(ping_slurmd_resp_msg_t *msg);
-
 #define	slurm_free_timelimit_msg(msg) \
 	slurm_free_kill_job_msg(msg)
 

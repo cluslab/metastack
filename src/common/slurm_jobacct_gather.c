@@ -98,6 +98,7 @@ strong_alias(jobacctinfo_pack, slurm_jobacctinfo_pack);
 strong_alias(jobacctinfo_unpack, slurm_jobacctinfo_unpack);
 strong_alias(jobacctinfo_create, slurm_jobacctinfo_create);
 strong_alias(jobacctinfo_destroy, slurm_jobacctinfo_destroy);
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 static buf_t *apptype_properties_apptype_buf = NULL;
 static pthread_mutex_t conf_mutex2 = PTHREAD_MUTEX_INITIALIZER;
@@ -112,6 +113,7 @@ static pthread_t apptype_recognition_thread_id = 0;
 static acct_gather_profile_timer_t *profile_apptype =
 	&acct_gather_profile_timer[PROFILE_APPTYPE];
 #endif
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 step_gather_t step_gather = {
 	PTHREAD_COND_INITIALIZER,
@@ -191,6 +193,7 @@ static char **_build_watch_dog_env(acct_gather_rank_t *watch_dog);
 static pthread_mutex_t watch_dog_env_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t watch_dog_all_env_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
+
 static int freq = 0;
 static List task_list = NULL;
 static uint64_t cont_id = NO_VAL64;
@@ -631,6 +634,7 @@ static void *apptype_recognition(void *args){
 	return NULL;
 }
 #endif
+
 #ifdef __METASTACK_LOAD_ABNORMAL
 /* _acct_send_step() issue RPC to aggregation job step data*/
 static void _acct_send_data_step(acct_gather_rank_t *job_send, step_gather_msg_t msg, int timeout)
@@ -1505,6 +1509,10 @@ done:
 		}
 	}
 #endif
+	if (retval != SLURM_SUCCESS)
+		fatal("can not open the %s plugin",
+		      slurm_conf.job_acct_gather_type);
+
 	return(retval);
 }
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
@@ -1518,6 +1526,7 @@ static int _get_option_from_file(s_p_options_t **full_options, int *full_options
 	conf_path = get_extra_conf_path("apptype.properties");
 	if ((conf_path == NULL) || (stat(conf_path, &buf) == -1)) {
 		debug2("No apptype.properties file (%s)", conf_path);
+		xfree(conf_path);
 		return SLURM_ERROR;
 	} 
 
@@ -1793,6 +1802,11 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobin
 		// return SLURM_SUCCESS;
 	}
 
+	if (frequency == 0 || !(jobinfo.switch_step) || !(jobinfo.timer > 0)) {   /* don't want dynamic monitoring? */
+		debug2("jobacct_gather send logging disabled");
+		return retval;
+	}
+	
 	acct_gather_rank_t *jobinfo_watch = NULL;
 	jobinfo_watch = xmalloc(sizeof(acct_gather_rank_t));
 	
@@ -1802,11 +1816,6 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobin
 	jobinfo_watch->frequency = frequency;	
 	jobinfo_watch->step_id = jobinfo.step_id;   
 	jobinfo_watch->node_alloc_cpu = jobinfo.node_alloc_cpu;
-
-	if (frequency == 0 || !(jobinfo.switch_step) || !(jobinfo.timer > 0)) {   /* don't want dynamic monitoring? */
-		debug2("jobacct_gather send logging disabled");
-		return retval;
-	}
 
 	slurm_thread_create(&watch_stepd_thread_id, step_collect, jobinfo_watch);
 	debug3("jobacct stepd gather dynamic logging enabled");
@@ -1971,8 +1980,6 @@ extern jobacctinfo_t *jobacct_gather_stat_task(pid_t pid)
 	collect = xmalloc(sizeof(collection_t));
 	//collect->mode = true;
 	_poll_data(0, collect, NULL);
-	if(collect)
-		xfree(collect);
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	if(collect) {
 		if(collect->pids)

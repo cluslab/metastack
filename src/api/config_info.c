@@ -610,7 +610,7 @@ char *slurm_print_watch_dog_info(watch_dog_record_t *watch_dog_ptr, int one_line
 	if(watch_dog_ptr->script)
 		xstrfmtcat(out, "Script=%s", watch_dog_ptr->script);
 	if (watch_dog_ptr->init_time == 0)
-		xstrcat(out, " Init_time=not set");
+		xstrcat(out, " Init_time=0");
 	else
 		xstrfmtcat(out, " Init_time=%u",watch_dog_ptr->init_time);
 
@@ -1067,6 +1067,13 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->name = xstrdup("HealthCheckCarryNode");
 	key_pair->value = xstrdup(
 		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_HCN) ? "Yes" : "No");
+#endif
+#ifdef __METASTACK_OPT_GRES_CONFIG
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("SlurmctldLoadGres");
+	key_pair->value = xstrdup(
+		slurm_ctl_conf_ptr->slurmctld_load_gres ? "Yes" : "No");
+	list_append(ret_list, key_pair);
 #endif
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("EioTimeout");

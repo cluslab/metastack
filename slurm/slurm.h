@@ -397,6 +397,7 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_GRES_CONFIG
 #endif
 
+
 /* Macro definitions that control the size of Jobsize */
 #ifndef __METASTACK_PRIORITY_JOBSIZE
 #define __METASTACK_PRIORITY_JOBSIZE
@@ -406,24 +407,25 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_TIME_SYNC_CHECK
 #endif
 
-#ifndef __METASTACK_NEW_CUSTOM_EXCEPTION
-#define __METASTACK_NEW_CUSTOM_EXCEPTION  
-#endif
-
 #ifndef __METASTACK_PART_PRIORITY_WEIGHT
 #define __METASTACK_PART_PRIORITY_WEIGHT
+#endif
+
+#ifndef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+#define __METASTACK_BUG_SRUN_RECVMSG_VERIF
 #endif
 
 #ifndef __METASTACK_BUG_SHOW_PRIO_FLAGS
 #define __METASTACK_BUG_SHOW_PRIO_FLAGS
 #endif
 
-#ifndef __METASTACK_BUG_SRUN_RECVMSG_VERIF
-#define __METASTACK_BUG_SRUN_RECVMSG_VERIF
-#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
+
+#ifndef __METASTACK_NEW_CUSTOM_EXCEPTION
+#define __METASTACK_NEW_CUSTOM_EXCEPTION  
+#endif
 
 /* INFINITE is used to identify unlimited configurations,  */
 /* eg. the maximum count of nodes any job may use in some partition */
@@ -2755,6 +2757,14 @@ typedef struct job_defaults {
 #define PART_METAFLAG_PRIO_PARAMS 	0x0010
 #endif
 
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+enum hetpart_resv_stage {
+	RESV_STAGE_MAIN_SCHED = 0,		/* Main scheduling starts */
+	RESV_STAGE_HETPART_SELECT,		/* Heterogeneous partition selects nodes */
+	RESV_STAGE_SUBMIT_OR_BACKFILL	/* Job submission or backfill scheduling */
+};
+#endif
+
 typedef struct partition_info {
 	char *allow_alloc_nodes;/* list names of allowed allocating
 				 * nodes */
@@ -2827,7 +2837,6 @@ typedef struct partition_info {
 	uint32_t priority_weight_qos; /* weight for QOS factor */
 	char    *priority_weight_tres; /* weights (str) for different TRES' */
 #endif	
-} partition_info_t;	
 } partition_info_t;
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
@@ -3440,7 +3449,7 @@ typedef struct {
 	char *slurmctld_params;	/* SlurmctldParameters */
 #ifdef  __METASTACK_OPT_GRES_CONFIG
 	uint16_t slurmctld_load_gres; /* slurmctld load gres */
-#endif
+#endif	
 	uint16_t slurmd_debug;	/* slurmd logging level */
 	char *slurmd_logfile;	/* where slurmd error log gets written */
 	char *slurmd_params;	/* SlurmdParameters */
@@ -3496,7 +3505,7 @@ typedef struct {
 	uint16_t query_port_count; /* Cache query number of communication ports */
 	uint16_t cachedup_interval; /*Data copy time interval*/ 
 	uint16_t cache_query; /*High Performance Query Switch*/
-    uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
+	uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
 #endif
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	void *rl_config;
@@ -4191,7 +4200,6 @@ extern void slurm_step_launch_fwd_wake(slurm_step_ctx_t *ctx);
  */
 extern long slurm_api_version(void);
 
-
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 /*
  * slurm_load_ctl_conf_watch_dog - issue RPC to get slurm control configuration
@@ -4234,7 +4242,6 @@ extern void slurm_print_watch_dog_conf(FILE *out, watch_dog_record_t *watch_dog_
  * IN slurm_ctl_conf_ptr - slurm control configuration pointer
  */
 extern void slurm_print_ctl_conf(FILE *out, slurm_conf_t *slurm_ctl_conf_ptr);
-
 
 /*
  * slurm_write_ctl_conf - write the contents of slurm control configuration
@@ -5002,7 +5009,6 @@ extern void _slurm_print_partition_info(FILE *out,
 extern char *_slurm_sprint_partition_info(partition_info_t *part_ptr,
 					 int one_liner, uint16_t meta_flags);
 #endif
-
 /*
  * slurm_print_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions
@@ -5016,7 +5022,6 @@ extern void slurm_print_partition_info(FILE *out,
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 extern char *slurm_print_watch_dog_info(watch_dog_record_t *watch_dog_ptr, int one_liner);	
 #endif		 					   
-				   
 /*
  * slurm_sprint_partition_info - output information about a specific Slurm
  *	partition based upon message as loaded using slurm_load_partitions

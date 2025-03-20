@@ -23387,7 +23387,8 @@ fi
 SpankMakeFile=contribs/spank/Makefile
 if test -f "$SpankMakeFile"; then
     sed -i '/^PREFIX/d' $SpankMakeFile
-    sed -i '1i\PREFIX ?= '$prefix''  $SpankMakeFile
+    sed -i "1i\exec_prefix = $prefix"  $SpankMakeFile
+    sed -i "2i\PREFIX ?= \$(DESTDIR)$libdir"  $SpankMakeFile
 fi
 
 # Update contribs/pyxis/Makefile if this file exists
@@ -23404,7 +23405,7 @@ SjinfoHeadFile=contribs/sjinfo/sjinfo.h
 SjaesHeadFile=contribs/sjinfo/sjaes.h
 if test -f "$SjinfoMakeFile"; then
     sed -i '/^PREFIX/d' $SjinfoMakeFile
-    sed -i '1i\PREFIX ?= '$prefix''  $SjinfoMakeFile
+    sed -i "1i\PREFIX ?= \$(DESTDIR)$prefix"  $SjinfoMakeFile
 fi
 
 if test -f "$SjinfoHeadFile"; then

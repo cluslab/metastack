@@ -45,53 +45,7 @@
 #endif
 
 #ifdef __METASTACK_ASSOC_HASH
-/** build hash table, assign assoc to entry according to key. 
- * IN:  hash table, assoc
- * OUT: assoc_hash
- */
-extern void insert_assoc_hash(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *str_key) {
-    assoc_hash_t *entry = NULL;
-
-    if (!str_key)
-        return;
-
-    HASH_FIND_STR(*assoc_hash, str_key, entry);
-
-    if (entry == NULL) {
-        entry = xmalloc(sizeof(assoc_hash_t));
-        entry->key = xstrdup(str_key);
-        entry->value_assoc_list = list_create(slurmdb_destroy_assoc_rec);
-        HASH_ADD_KEYPTR(hh, *assoc_hash, entry->key, strlen(entry->key), entry);
-    }
-
-    // add assoc to entry->value_assoc_list
-    list_append(entry->value_assoc_list, assoc);
-}
-
-extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key) {
-    assoc_hash_t *entry = NULL;
-
-    if(!key)
-        return entry;
-    
-    HASH_FIND_STR(*assoc_hash, key, entry);
-
-    return entry;
-}
-
-/** delete hash */
-extern void destroy_assoc_hash(assoc_hash_t **assoc_hash) {
-    assoc_hash_t *current_entry, *tmp;
-
-    HASH_ITER(hh, *assoc_hash, current_entry, tmp) {
-        HASH_DEL(*assoc_hash, current_entry);
-        xfree(current_entry->key);
-        if (current_entry->value_assoc_list)
-            FREE_NULL_LIST(current_entry->value_assoc_list);
-        
-        xfree(current_entry);
-    }
-}
+#include "src/common/assoc_mgr.h"
 #endif
 
 static int _change_user_name(kingbase_conn_t *kingbase_conn, slurmdb_user_rec_t *user)
@@ -1566,7 +1520,7 @@ empty:
             if (!assoc->user)
                 continue;
             
-            insert_assoc_hash(&assoc_hash, assoc, assoc->user);
+            insert_assoc_hash(&assoc_hash, assoc, assoc->user, slurmdb_destroy_assoc_rec);
             list_remove(assoc_itr);
         }
         list_iterator_destroy(assoc_itr);

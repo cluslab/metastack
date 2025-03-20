@@ -105,6 +105,7 @@ static char *keyvalue_pattern_easy =
 	"((\"([^\"]*)\")|([^[:space:]]+))" /* value: quoted or unquoted */
 	"([[:space:]]|$)";
 #endif
+
 struct s_p_values {
 	char *key;
 	int type;
@@ -2321,6 +2322,7 @@ int s_p_get_string(char **str, const char *key, const s_p_hashtbl_t *hashtbl)
 
 	return 0;
 }
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 static s_p_values_t* _get_check_2(slurm_parser_enum_t type,
 				const char* key, const s_p_hashtbl_t* hashtbl)

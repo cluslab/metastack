@@ -730,7 +730,7 @@ user in this way, you must restart slurmctld.
 
 .TP
 \fBSaveUid\fR
-Used to control whether the user UID is saved to a local file. If set to YES, 
+Used to control whether the user UID is saved to a local file. Boolean, if set to YES, 
 \fBslurmdbd\fR saves the user UID to a local file. The default value is NO, 
 which means that the user UID is not saved to a local file.
 A restart of slurmdbd is required for changes to this parameter to take effect.
@@ -890,6 +890,9 @@ SlurmUser=slurm_mgr
 StoragePass=password_to_database
 StorageType=accounting_storage/mysql
 StorageUser=database_mgr
+SaveUid=yes
+UidSaveLocation=/var/spool
+UidSaveInterval=300
 .fi
 
 .SH "COPYING"

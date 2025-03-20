@@ -606,7 +606,6 @@ _send_slurmstepd_init(int fd, int type, void *req,
 
 			if (children_gather == -1) {
 				error("reverse_tree_info: Sanity check fail, count fail");
-			
 			}
 			/*
 			* rank 0 always talks directly to the slurmctld. If
@@ -624,6 +623,8 @@ _send_slurmstepd_init(int fd, int type, void *req,
 					error("%s: stepd gther data failed getting address "
 						  "for parent NodeName %s (parent rank %d)",
 						__func__, parent_alias_gather, parent_rank_gather);
+				if(parent_alias_gather)
+					free(parent_alias_gather);
 			}
 		}
 #endif

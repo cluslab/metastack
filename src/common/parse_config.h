@@ -332,6 +332,7 @@ int s_p_parse_gres_file(s_p_hashtbl_t *hashtbl, uint32_t *hash_val, char *filena
 int s_p_parse_file_gres(s_p_hashtbl_t *hashtbl, char *filename,
 		   bool ignore_new, parsed_line_t *parsed_lines, int max_lines, char *gres_node_name);
 #endif
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 /**
  * In contrast to s_p_hashtbl_create, the s_p_hashtbl_create_2 function matches the 

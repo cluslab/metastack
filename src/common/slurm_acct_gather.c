@@ -530,6 +530,7 @@ extern bool acct_gather_check_acct_watch_dog_batch(uint32_t stepd,
 
 #endif
 
+
 extern int acct_gather_check_acct_freq_task(uint64_t job_mem_lim,
 					    char *acctg_freq)
 {

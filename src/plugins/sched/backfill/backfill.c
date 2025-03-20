@@ -2540,7 +2540,9 @@ next_task:
 		/* this is the time consuming operation */
 		debug2("entering _try_sched for %pJ.",
 		       job_ptr);
-
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+		job_ptr->resv_stage = RESV_STAGE_SUBMIT_OR_BACKFILL;
+#endif
 		if (!already_counted) {
 			slurmctld_diag_stats.bf_last_depth_try++;
 			already_counted = true;

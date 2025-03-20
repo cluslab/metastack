@@ -62,11 +62,11 @@
 static int command_shutdown = 0;
 static int child_proc_count = 0;
 static pthread_mutex_t proc_count_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 static int child_proc_watch_dog_count = 0;
 static pthread_mutex_t proc_watch_dog_count_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
+
 #define MAX_POLL_WAIT 500
 
 extern void run_command_add_to_script(char **script_body, char *new_str)
@@ -471,6 +471,7 @@ extern int run_watch_dog_command(run_command_args_t *args, pid_t* cpid, gid_t gi
 	return 0;
 }
 #endif
+
 /*
  * run_command_waitpid_timeout()
  *

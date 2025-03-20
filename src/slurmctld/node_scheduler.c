@@ -1957,6 +1957,15 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 					bit_and_not(node_set_ptr[i].my_bitmap,
 					    	cg_node_bitmap);
 				}
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+					/*Before the job select_g_job_test, remove the nodes in the blacklist from the bitmap.*/
+					bit_and_not(node_set_ptr[i].my_bitmap, para_sched_resv_node_bitmap[index]);
+					FREE_NULL_BITMAP(job_ptr->resv_bitmap);
+					job_ptr->resv_bitmap = bit_copy(idle_node_bitmap);
+					bit_and_not(job_ptr->resv_bitmap, para_sched_resv_node_bitmap[index]);
+				}
+#endif
 			} else {
 #endif						
 				if (!preempt_flag) {
@@ -1975,6 +1984,15 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 							cg_node_bitmap);
 				}
 #ifdef __METASTACK_NEW_PART_PARA_SCHED	
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (sched && job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+					/*Before the job select_g_job_test, remove the nodes in the blacklist from the bitmap.*/
+					bit_and_not(node_set_ptr[i].my_bitmap, resv_node_bitmap);
+					FREE_NULL_BITMAP(job_ptr->resv_bitmap);
+					job_ptr->resv_bitmap = bit_copy(idle_node_bitmap);
+					bit_and_not(job_ptr->resv_bitmap, resv_node_bitmap);
+				}
+#endif
 			}
 #endif
 			bit_and_not(node_set_ptr[i].my_bitmap,
@@ -2030,7 +2048,7 @@ try_sched:
 				if (job_ptr->details->req_node_bitmap == NULL)
 				bit_and(avail_bitmap, avail_node_bitmap);
 
-				bit_and(avail_bitmap, share_node_bitmap);				
+				bit_and(avail_bitmap, share_node_bitmap);
 			}
 #endif
 
@@ -2278,11 +2296,23 @@ try_sched:
 						para_sched_share_node_bitmap[index])) {
 					error_code = ESLURM_NODES_BUSY;
 				}
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART && 
+				!bit_super_set(job_ptr->details->req_node_bitmap, para_sched_resv_node_bitmap[index])) {
+					error_code = ESLURM_NODES_BUSY;
+				}
+#endif
 			} else {
 				if (!bit_super_set(job_ptr->details->req_node_bitmap,
 					   share_node_bitmap)) {
 					error_code = ESLURM_NODES_BUSY;
+				}     
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (sched && job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART &&
+				!bit_super_set(job_ptr->details->req_node_bitmap, resv_node_bitmap)) {
+					error_code = ESLURM_NODES_BUSY;
 				}
+#endif                       
 			}
 #endif			
 			if (bit_overlap_any(job_ptr->details->req_node_bitmap,
@@ -2303,6 +2333,19 @@ try_sched:
 		   bit_overlap_any(job_ptr->details->req_node_bitmap,
 				   cg_node_bitmap)) {
 		error_code = ESLURM_NODES_BUSY;
+
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+#ifdef __METASTACK_NEW_PART_PARA_SCHED	
+	} else if (para_sched && sched){
+		if(job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART && job_ptr->details->req_node_bitmap && 
+			bit_overlap_any(job_ptr->details->req_node_bitmap, para_sched_resv_node_bitmap[index]))
+				error_code = ESLURM_NODES_BUSY; 
+	}else if (sched){
+		if(job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART && job_ptr->details->req_node_bitmap && 
+			bit_overlap_any(job_ptr->details->req_node_bitmap, resv_node_bitmap))
+			error_code = ESLURM_NODES_BUSY;   
+#endif         
+#endif
 	}
 
 	if (error_code == SLURM_SUCCESS) {

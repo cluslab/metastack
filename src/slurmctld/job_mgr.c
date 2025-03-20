@@ -3698,6 +3698,152 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 #endif
 	/* unpack the job's details from the buffer */
 	if (protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
+		if (protocol_version >= META_2_3_PROTOCOL_VERSION) {
+			safe_unpack32(&min_cpus, buffer);
+			safe_unpack32(&max_cpus, buffer);
+			safe_unpack32(&min_nodes, buffer);
+			safe_unpack32(&max_nodes, buffer);
+			safe_unpack32(&num_tasks, buffer);
+
+			safe_unpackstr_xmalloc(&acctg_freq, &name_len, buffer);
+			safe_unpack16(&contiguous, buffer);
+			safe_unpack16(&core_spec, buffer);
+			safe_unpack16(&cpus_per_task, buffer);
+			safe_unpack32(&nice, buffer);
+			safe_unpack16(&ntasks_per_node, buffer);
+			safe_unpack16(&requeue, buffer);
+			safe_unpack32(&task_dist, buffer);
+
+			safe_unpack8(&share_res, buffer);
+			safe_unpack8(&whole_node, buffer);
+
+			safe_unpackstr_xmalloc(&cpu_bind, &name_len, buffer);
+			safe_unpack16(&cpu_bind_type, buffer);
+			safe_unpackstr_xmalloc(&mem_bind, &name_len, buffer);
+			safe_unpack16(&mem_bind_type, buffer);
+			safe_unpack16(&plane_size, buffer);
+
+			safe_unpack8(&open_mode, buffer);
+			safe_unpack8(&overcommit, buffer);
+			safe_unpack8(&prolog_running, buffer);
+
+			safe_unpack32(&pn_min_cpus, buffer);
+			safe_unpack64(&pn_min_memory, buffer);
+			safe_unpack32(&pn_min_tmp_disk, buffer);
+			safe_unpack32(&cpu_freq_min, buffer);
+			safe_unpack32(&cpu_freq_max, buffer);
+			safe_unpack32(&cpu_freq_gov, buffer);
+			safe_unpack_time(&begin_time, buffer);
+			safe_unpack_time(&accrue_time, buffer);
+			safe_unpack_time(&submit_time, buffer);
+
+			safe_unpackstr_xmalloc(&req_nodes,  &name_len, buffer);
+			safe_unpackstr_xmalloc(&exc_nodes,  &name_len, buffer);
+			safe_unpackstr_xmalloc(&features,   &name_len, buffer);
+			safe_unpackstr_xmalloc(&cluster_features, &name_len, buffer);
+			safe_unpackstr_xmalloc(&prefer, &name_len, buffer);
+			safe_unpack8(&features_use, buffer);
+
+			unpack_dep_list(&depend_list, buffer, protocol_version);
+			safe_unpackstr_xmalloc(&dependency, &name_len, buffer);
+			safe_unpackstr_xmalloc(&orig_dependency, &name_len, buffer);
+
+			safe_unpackstr_xmalloc(&err, &name_len, buffer);
+			safe_unpackstr_xmalloc(&in,  &name_len, buffer);
+			safe_unpackstr_xmalloc(&out, &name_len, buffer);
+			safe_unpackstr_xmalloc(&submit_line, &name_len, buffer);
+			safe_unpackstr_xmalloc(&work_dir, &name_len, buffer);
+
+			if (unpack_multi_core_data(&mc_ptr, buffer, protocol_version))
+				goto unpack_error;
+			safe_unpackstr_array(&argv, &argc, buffer);
+			safe_unpackstr_array(&env_sup, &env_cnt, buffer);
+
+			if (unpack_cron_entry((void **) &crontab_entry,
+						protocol_version, buffer))
+				goto unpack_error;
+			safe_unpackstr_xmalloc(&env_hash, &name_len, buffer);
+			safe_unpackstr_xmalloc(&script_hash, &name_len, buffer);
+	#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+			safe_unpackstr_xmalloc(&watch_dog, &name_len, buffer);
+			safe_unpackstr_xmalloc(&watch_dog_script, &name_len, buffer);
+			safe_unpack32(&init_time, buffer);
+			safe_unpack32(&period, buffer);
+			safe_unpackbool(&enable_all_nodes, buffer);
+			safe_unpackbool(&enable_all_stepds, buffer);
+			safe_unpack32(&style_step, buffer);
+	#endif
+	#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+			safe_unpackstr_xmalloc(&apptype, &name_len, buffer);
+	#endif
+		} else {
+			safe_unpack32(&min_cpus, buffer);
+			safe_unpack32(&max_cpus, buffer);
+			safe_unpack32(&min_nodes, buffer);
+			safe_unpack32(&max_nodes, buffer);
+			safe_unpack32(&num_tasks, buffer);
+
+			safe_unpackstr_xmalloc(&acctg_freq, &name_len, buffer);
+			safe_unpack16(&contiguous, buffer);
+			safe_unpack16(&core_spec, buffer);
+			safe_unpack16(&cpus_per_task, buffer);
+			safe_unpack32(&nice, buffer);
+			safe_unpack16(&ntasks_per_node, buffer);
+			safe_unpack16(&requeue, buffer);
+			safe_unpack32(&task_dist, buffer);
+
+			safe_unpack8(&share_res, buffer);
+			safe_unpack8(&whole_node, buffer);
+
+			safe_unpackstr_xmalloc(&cpu_bind, &name_len, buffer);
+			safe_unpack16(&cpu_bind_type, buffer);
+			safe_unpackstr_xmalloc(&mem_bind, &name_len, buffer);
+			safe_unpack16(&mem_bind_type, buffer);
+			safe_unpack16(&plane_size, buffer);
+
+			safe_unpack8(&open_mode, buffer);
+			safe_unpack8(&overcommit, buffer);
+			safe_unpack8(&prolog_running, buffer);
+
+			safe_unpack32(&pn_min_cpus, buffer);
+			safe_unpack64(&pn_min_memory, buffer);
+			safe_unpack32(&pn_min_tmp_disk, buffer);
+			safe_unpack32(&cpu_freq_min, buffer);
+			safe_unpack32(&cpu_freq_max, buffer);
+			safe_unpack32(&cpu_freq_gov, buffer);
+			safe_unpack_time(&begin_time, buffer);
+			safe_unpack_time(&accrue_time, buffer);
+			safe_unpack_time(&submit_time, buffer);
+
+			safe_unpackstr_xmalloc(&req_nodes,  &name_len, buffer);
+			safe_unpackstr_xmalloc(&exc_nodes,  &name_len, buffer);
+			safe_unpackstr_xmalloc(&features,   &name_len, buffer);
+			safe_unpackstr_xmalloc(&cluster_features, &name_len, buffer);
+			safe_unpackstr_xmalloc(&prefer, &name_len, buffer);
+			safe_unpack8(&features_use, buffer);
+
+			unpack_dep_list(&depend_list, buffer, protocol_version);
+			safe_unpackstr_xmalloc(&dependency, &name_len, buffer);
+			safe_unpackstr_xmalloc(&orig_dependency, &name_len, buffer);
+
+			safe_unpackstr_xmalloc(&err, &name_len, buffer);
+			safe_unpackstr_xmalloc(&in,  &name_len, buffer);
+			safe_unpackstr_xmalloc(&out, &name_len, buffer);
+			safe_unpackstr_xmalloc(&submit_line, &name_len, buffer);
+			safe_unpackstr_xmalloc(&work_dir, &name_len, buffer);
+
+			if (unpack_multi_core_data(&mc_ptr, buffer, protocol_version))
+				goto unpack_error;
+			safe_unpackstr_array(&argv, &argc, buffer);
+			safe_unpackstr_array(&env_sup, &env_cnt, buffer);
+
+			if (unpack_cron_entry((void **) &crontab_entry,
+						protocol_version, buffer))
+				goto unpack_error;
+			safe_unpackstr_xmalloc(&env_hash, &name_len, buffer);
+			safe_unpackstr_xmalloc(&script_hash, &name_len, buffer);
+		}	
+	} else if(protocol_version >= SLURM_22_05_PROTOCOL_VERSION) {
 		safe_unpack32(&min_cpus, buffer);
 		safe_unpack32(&max_cpus, buffer);
 		safe_unpack32(&min_nodes, buffer);
@@ -3763,18 +3909,6 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 			goto unpack_error;
 		safe_unpackstr_xmalloc(&env_hash, &name_len, buffer);
 		safe_unpackstr_xmalloc(&script_hash, &name_len, buffer);
-#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
-		safe_unpackstr_xmalloc(&watch_dog, &name_len, buffer);
-		safe_unpackstr_xmalloc(&watch_dog_script, &name_len, buffer);
-		safe_unpack32(&init_time, buffer);
-		safe_unpack32(&period, buffer);
-		safe_unpackbool(&enable_all_nodes, buffer);
-		safe_unpackbool(&enable_all_stepds, buffer);
-		safe_unpack32(&style_step, buffer);
-#endif
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-		safe_unpackstr_xmalloc(&apptype, &name_len, buffer);
-#endif
 	} else if (protocol_version >= SLURM_21_08_PROTOCOL_VERSION) {
 		safe_unpack32(&min_cpus, buffer);
 		safe_unpack32(&max_cpus, buffer);
@@ -4042,6 +4176,7 @@ static int _load_job_details(job_record_t *job_ptr, buf_t *buffer,
 	job_ptr->details->enable_all_stepds = enable_all_stepds;
 	job_ptr->details->style_step = style_step;
 #endif
+
 	switch (features_use) {
 	case 0:
 		break;
@@ -4813,7 +4948,7 @@ extern int kill_job_by_part_name(char *part_name)
 #ifdef __METASTACK_BUG_FIX_SUSPEND_TIME
 			job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
 			job_ptr->end_time = job_ptr->suspend_time = now;
-#endif	
+#endif			
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_ptr->job_state = suspend_job_state;
 			suspended = true;
@@ -6792,8 +6927,6 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_ptr->tot_sus_time += difftime(now, job_ptr->suspend_time);
 		job_ptr->end_time = job_ptr->suspend_time = now;
 #endif
-		job_ptr->end_time       = job_ptr->suspend_time;
-		job_ptr->tot_sus_time  += difftime(now, job_ptr->suspend_time);
 		job_ptr->job_state      = job_term_state | JOB_COMPLETING;
 		if (flags & KILL_FED_REQUEUE)
 			job_ptr->job_state |= JOB_REQUEUE;
@@ -7901,7 +8034,6 @@ fini:
 	return rc;
 }
 
-
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 // static int _match_watch_dog_ptr(void *watch_dog_ptr, void *key)
 // {
@@ -8869,8 +9001,8 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	job_ptr->bit_flags |= JOB_DEPENDENT;
 	job_ptr->last_sched_eval = time(NULL);
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
-	_copy_watch_dog(watch_dog_ptr, job_ptr); 
-    _set_watch_dog_step_style(job_desc, job_ptr);
+ 	_copy_watch_dog(watch_dog_ptr, job_ptr); 
+	_set_watch_dog_step_style(job_desc, job_ptr);
 #endif
 	part_ptr_list = NULL;
 
@@ -10093,6 +10225,11 @@ static int _copy_job_desc_to_job_record(job_desc_msg_t *job_desc,
 	job_ptr->command = NULL;
 #endif
 
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+    job_ptr->resv_stage = RESV_STAGE_SUBMIT_OR_BACKFILL;
+#endif
+
+
 	job_ptr->selinux_context = xstrdup(job_desc->selinux_context);
 
 	return SLURM_SUCCESS;
@@ -10718,8 +10855,8 @@ void job_time_limit(void)
 				if ((job_ptr->predict_job == 1) && job_ptr->time_min){
 
 					/* hard_end_time -- The actual end time of the job.
-					* next_end_time -- The predicted end time of the next round of job.
-					*/ 
+					 * next_end_time -- The predicted end time of the next round of job.
+					 */ 
 					time_t hard_end_time = time(NULL);
 					time_t next_end_time = time(NULL);
 					char old_end_time[32] = {0};
@@ -11613,9 +11750,9 @@ static int _pack_job(void *object, void *arg)
 		return SLURM_SUCCESS;
 
 	if (!pack_info->privileged) {
-		if (((pack_info->show_flags & SHOW_ALL) == 0) &&
-		    _all_parts_hidden(job_ptr, pack_info->visible_parts))
-			return SLURM_SUCCESS;
+		// if (((pack_info->show_flags & SHOW_ALL) == 0) &&
+		//     _all_parts_hidden(job_ptr, pack_info->visible_parts))
+		// 	return SLURM_SUCCESS;
 
 		if (_hide_job_user_rec(job_ptr, &pack_info->user_rec,
 				       pack_info->show_flags))
@@ -23227,10 +23364,17 @@ void pack_cache_job(job_record_t *dump_job_ptr, uint16_t show_flags, buf_t *buff
 			 * making sure that time is not in the past
 			 */
 			start_time = MAX(dump_job_ptr->start_time, time(NULL));
-			if (time_limit != NO_VAL) {
+#ifdef __METASTACK_NEW_TIME_PREDICT
+			if ((dump_job_ptr->predict_job == 1) && dump_job_ptr->time_min) {
 				end_time = MAX(dump_job_ptr->end_time,
-					       (start_time + time_limit * 60));
+					(start_time + (dump_job_ptr->time_min * 60)));
+			} else {
+				if (time_limit != NO_VAL) {
+					end_time = MAX(dump_job_ptr->end_time,
+						(start_time + time_limit * 60));
+				}
 			}
+#endif
 		} else if (begin_time > time(NULL)) {
 			/* earliest start time in the future */
 			start_time = begin_time;
@@ -23649,9 +23793,9 @@ static int _pack_cache_job(void *object, void *arg)
 		return SLURM_SUCCESS;
 
 	if (!pack_info->privileged) {
-		if (((pack_info->show_flags & SHOW_ALL) == 0) &&
-		    _all_cache_parts_hidden(job_ptr, pack_info->visible_parts))
-			return SLURM_SUCCESS;
+		// if (((pack_info->show_flags & SHOW_ALL) == 0) &&
+		//     _all_cache_parts_hidden(job_ptr, pack_info->visible_parts))
+		// 	return SLURM_SUCCESS;
 
 		if (_hide_job_user_rec(job_ptr, &pack_info->user_rec,
 				       pack_info->show_flags))

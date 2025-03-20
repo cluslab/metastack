@@ -1608,6 +1608,9 @@ typedef struct {
 	char     *st_nodes; 
 	char     *st_parameters;
 #endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	priority_params_t *priority_params; /* record of priority_favor_small and priority_weight */
+#endif
 }part_state_record_t;
 
 typedef struct {

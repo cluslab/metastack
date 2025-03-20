@@ -359,7 +359,7 @@ typedef struct slurm_conf_partition {
 	uint16_t preempt_mode;	/* See PREEMPT_MODE_* in slurm/slurm.h */
 	uint16_t priority_job_factor;	/* job priority weight factor */
 	uint16_t priority_tier;	/* tier for scheduling and preemption */
-	#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
 	uint16_t priority_favor_small; /* favor small jobs over large */
 	uint32_t priority_weight_age; /* weight for age factor */
 	uint32_t priority_weight_assoc; /* weight for assoc factor */
@@ -368,7 +368,7 @@ typedef struct slurm_conf_partition {
 	uint32_t priority_weight_part; /* weight for Partition factor */
 	uint32_t priority_weight_qos; /* weight for QOS factor */
 	char    *priority_weight_tres; /* weights (str) for different TRES' */
-#endif	
+#endif
 	char    *qos_char;      /* Name of QOS associated with partition */
 	bool     req_resv_flag; /* 1 if partition can only be used in a
 				 * reservation */
@@ -538,6 +538,7 @@ extern int slurm_conf_nodename_array(slurm_conf_node_t **ptr_array[]);
  * Return value is the length of the array.
  */
 extern int slurm_conf_partition_array(slurm_conf_partition_t **ptr_array[]);
+
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 /*

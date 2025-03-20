@@ -35,7 +35,7 @@ group.
 .IP
 
 .TP
-\fB\--borrow\fR
+\fB\-\-borrow\fR
 Causes the \fIshow partition\fR command to display details of standby_nodes 
 in the partition, including configuration and nodes already borrowed.
 .IP
@@ -112,6 +112,11 @@ Print information one line per record.
 .TP
 \fB\-\-planned\fR
 If set, display planned state set by main scheduler.
+.IP
+
+.TP
+\fB\-\-prioparams\fR
+If set, display parameters related to multifactor priority in this partition.
 .IP
 
 .TP
@@ -565,6 +570,11 @@ Displays statistics for the slurmd running on the current node.
 Displays statistics about all job steps by default. If an optional jobid
 is specified, details about steps for just that job will be displayed.
 If a jobid.stepid is specified, details for just that step will be displayed.
+.IP
+
+.TP
+\fBwatchdog\fR
+Print the WatchDogName options configured in slurm.conf.
 .IP
 
 .TP
@@ -2249,6 +2259,88 @@ partitions with lower priority tier values.  Note that a partition's
 priority tier takes precedence over a job's priority.  The value may
 not exceed 65533.  Also see PriorityJobFactor.
 .IP
+
+.TP
+\fBPriorityFavorSmall\fR={yes|no}
+Specifies that small jobs should be given preferential scheduling priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+Supported values are "YES" and "NO". When the partition is not configured, the default value is "NO",
+and uses the global PriorityFavorSmall. When the partition configuration is different from the global one, 
+the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightAge\fR=<\fIcount\fR>
+An integer value that sets the degree to which the queue wait time
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+Requires AccountingStorageType=accounting_storage/slurmdbd.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightAge. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightAssoc\fR=<\fIcount\fR>
+An integer value that sets the degree to which the association
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightAssoc. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightFairshare\fR=<\fIcount\fR>
+An integer value that sets the degree to which the fair\-share
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+Requires AccountingStorageType=accounting_storage/slurmdbd.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightFairshare. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightJobSize\fR=<\fIcount\fR>
+An integer value that sets the degree to which the job size
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightJobSize. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightPartition\fR=<\fIcount\fR>
+Partition factor used by priority/multifactor plugin in calculating job priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightPartition. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightQOS\fR=<\fIcount\fR>
+An integer value that sets the degree to which the Quality Of Service
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightQOS. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightTRES\fR
+A comma\-separated list of TRES Types and weights that sets the degree that each
+TRES Type contributes to the job's priority in this partition.
+.IP
+.nf
+e.g.
+PriorityWeightTRES=CPU=1000,Mem=2000,GRES/gpu=3000
+.fi
+
+Applicable only if PriorityType=priority/multifactor and if
+AccountingStorageTRES is configured with each TRES Type.
+Negative values are allowed.
+The default values are 0.
+.IP
+
+
 
 .TP
 \fBQOS\fR=<\fIQOSname\fR|\fIblank to remove\fR>

@@ -696,7 +696,7 @@ _print_config_watchdog(char *config_param)
 	}
 
 	if (print_cnt == 0) {
-		printf ("No watchdog in the system\n");
+		printf ("No watchdog present in the system or no match found for the specified name.\n");
 	}
 }
 #endif

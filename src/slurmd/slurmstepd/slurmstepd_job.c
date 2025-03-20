@@ -478,7 +478,7 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 		step_rank.node_alloc_cpu =  msg->node_cpus;
 	} else if(msg->step_id.step_id == SLURM_EXTERN_CONT)
 		step_rank.step = EXTERN_STEP;
-		
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	uint32_t stepd_id = msg->step_id.step_id;
 	bool head_node = false;
@@ -504,18 +504,18 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 		step_rank.head_node		   = head_node;
 		//step_rank.style_step       = 0;
 	}
-
+	
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	step_rank.apptype = xstrdup(msg->apptype);
-#endif	
+#endif		
 	acct_gather_profile_startpoll(msg->acctg_freq,
-						slurm_conf.job_acct_gather_freq, step_rank);	
+				      slurm_conf.job_acct_gather_freq, step_rank);	
 	xfree(step_rank.watch_dog);
 	xfree(step_rank.watch_dog_script);
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	xfree(step_rank.apptype);
 #endif
-#endif
+#endif	
 #endif
 	job->timelimit   = (time_t) -1;
 	job->flags       = msg->flags;
@@ -628,8 +628,7 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 
 	step_rank.step_id = job->step_id;
 	step_rank.node_alloc_cpu = job->cpus;
-	
-	#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	uint32_t stepd_id 			= job->step_id.step_id;
 	step_rank.enable_watchdog 	= false;
 	step_rank.job_id 			= job->step_id.job_id;
@@ -651,7 +650,7 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	}
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	step_rank.apptype = xstrdup(msg->apptype);
-#endif	
+#endif		
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
 	xfree(step_rank.watch_dog);
