@@ -16,7 +16,7 @@ sklearn_dir="$predictor_dir/prediction_methods/sklearn"
 
 # 要安装的文件
 # 预测工具文件
-FILES=("predictUsers" "predictionTool.lua" "getParameter.lua" "README.md" "updateJobHistory.sh" "configuration")
+FILES=("predictUsers" "predictionTool.lua" "getParameter.lua" "README.md" "updateJobHistory.sh" "configuration" "jobHistory")
 
 # AI随机森林文件
 SKLEARN_FILES=("prediction_methods/sklearn/generative_model.py" "prediction_methods/sklearn/prediction_time.py" "prediction_methods/sklearn/update_model.sh")

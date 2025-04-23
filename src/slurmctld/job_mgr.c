@@ -5717,6 +5717,16 @@ extern void rehash_jobs(void)
 		error ("MaxJobCount reset too high, restart slurmctld");
 		slurm_conf.max_job_cnt = hash_table_size;
 	}
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if (cache_job_hash == NULL) {
+		copy_hash_table_size = slurm_conf.max_job_cnt;
+		cache_job_hash = xcalloc(copy_hash_table_size, sizeof(job_record_t *));
+		cache_job_array_hash_j = xcalloc(copy_hash_table_size, sizeof(job_record_t *));
+		cache_job_array_hash_t = xcalloc(copy_hash_table_size, sizeof(job_record_t *));
+	}
+#endif
+
 }
 
 /* Create an exact copy of an existing job record for a job array.
@@ -6045,6 +6055,15 @@ extern job_record_t *job_array_split(job_record_t *job_ptr)
 			fed_mgr_submit_remote_dependencies(job_ptr, false,
 							   false);
 	}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if(cachedup_realtime && cache_queue){
+		slurm_cache_date_t *cache_msg = NULL;
+		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+		cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+		cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+		cache_enqueue(cache_msg);
+	}
+#endif
 
 	return job_ptr_pend;
 }
@@ -7668,9 +7687,6 @@ static int _job_complete(job_record_t *job_ptr, uid_t uid, bool requeue,
 		 * this is here to catch duplicate cancels from slowly
 		 * responding slurmds
 		 */
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif
 		return SLURM_SUCCESS;
 	} else {
 		if (job_ptr->part_ptr &&
@@ -7809,9 +7825,6 @@ extern int job_complete(uint32_t job_id, uid_t uid, bool requeue,
 					    node_fail, job_return_code);
 			if (rc1 != SLURM_SUCCESS)
 				rc = rc1;
-#ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
-#endif
 		}
 		list_iterator_destroy(iter);
 	} else {
@@ -17370,16 +17383,10 @@ extern int update_job_str(slurm_msg_t *msg, uid_t uid)
 					 * to the new job record copy */
 					bb_g_job_validate2(job_ptr, NULL);
 					job_ptr = new_job_ptr;
-				}
-#ifdef __METASTACK_OPT_CACHE_QUERY		
-				if(cachedup_realtime && cache_queue){
-					slurm_cache_date_t *cache_msg = NULL;
-					cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-					cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-					cache_msg->job_ptr = _add_job_to_queue(new_job_ptr);
-					cache_enqueue(cache_msg);
-				}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+					_add_job_state_to_queue(new_job_ptr);
 #endif
+				}
 			}
 			FREE_NULL_BITMAP(tmp_bitmap);
 		}
@@ -17552,6 +17559,10 @@ extern void job_pre_resize_acctg(job_record_t *job_ptr)
 	/* NOTE: job_completion_logger() calls
 	 *	 acct_policy_remove_job_submit() */
 	job_completion_logger(job_ptr, false);
+
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 
 	/* This doesn't happen in job_completion_logger, but gets
 	 * added back in with job_post_resize_acctg so remove it here. */
@@ -18569,6 +18580,9 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 	xfree(job_ptr->nodes_completing);
 	if (!IS_JOB_COMPLETING(job_ptr)) {	/* COMPLETED */
 		batch_requeue_fini(job_ptr);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 		return true;
 	} else
 		return false;
@@ -18697,9 +18711,6 @@ void batch_requeue_fini(job_record_t *job_ptr)
 			      job_ptr);
 		}
 	}
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 
 }
 
@@ -18900,9 +18911,6 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 			     (base_state == JOB_CANCELLED)))
 				mail_job_info(job_ptr, MAIL_JOB_END);
 		}
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif
 	}
 
 #ifdef __METASTACK_OPT_HIST_COMMAND
@@ -19555,14 +19563,18 @@ static int _job_suspend(job_record_t *job_ptr, uint16_t op, bool indf_susp)
 			if (rc1 != SLURM_SUCCESS)
 				rc = rc1;
 #ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
+			if(rc1 == SLURM_SUCCESS){
+				_add_job_state_to_queue(job_ptr);
+			}
 #endif
 		}
 		list_iterator_destroy(iter);
 	} else {
 		rc = _job_suspend_op(job_ptr, op, indf_susp);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
+		if(rc == SLURM_SUCCESS){
+			_add_job_state_to_queue(job_ptr);
+		}
 #endif
 	}
 
@@ -21091,9 +21103,6 @@ extern bool job_hold_requeue(job_record_t *job_ptr)
 	    base_job_ptr->array_recs) {
 		base_job_ptr->array_recs->array_flags |= ARRAY_TASK_REQUEUED;
 	}
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 	debug("%s: %pJ state 0x%x reason %u priority %d",
 	      __func__, job_ptr, job_ptr->job_state,
 	      job_ptr->state_reason, job_ptr->priority);
@@ -21315,19 +21324,13 @@ extern job_record_t *job_array_post_sched(job_record_t *job_ptr)
 			new_job_ptr->start_time = (time_t) 0;
 			/* Do NOT set the JOB_UPDATE_DB flag here, it
 			 * is handled when task_id_str is created elsewhere */
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(new_job_ptr);
+#endif
 		} else {
 			error("%s: Unable to copy record for %pJ",
 			      __func__, job_ptr);
 		}
-#ifdef __METASTACK_OPT_CACHE_QUERY		
-		if(cachedup_realtime && cache_queue){
-			slurm_cache_date_t *cache_msg = NULL;
-			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-			cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-			cache_msg->job_ptr = _add_job_to_queue(new_job_ptr);
-			cache_enqueue(cache_msg);
-		}
-#endif
 	}
 	return new_job_ptr;
 }
@@ -21986,7 +21989,23 @@ extern int job_get_node_inx(char *node_name, bitstr_t *node_bitmap)
 }
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
+
+/*
+* find specific job_id entry in the job list, key is job_id_ptr
+*/
+static int _list_find_cache_job_id(void *job_entry, void *key)
+{
+	job_record_t *job_ptr = (job_record_t *) job_entry;
+	uint32_t *job_id_ptr = (uint32_t *) key;
+
+	if (job_ptr->job_id == *job_id_ptr) {
+		return 1;
+	}
+
+	return 0;
+}
  
+
  static void _copy_job_details(struct job_details *src_detail_ptr, struct job_details *des_detail_ptr)
 {
 	int i;
@@ -22445,6 +22464,9 @@ extern void _list_delete_copy_job(void *job_entry)
 #ifdef __METASTACK_OPT_MSG_OUTPUT
 	xfree(job_ptr->reason_detail);
 #endif
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	slurm_mutex_destroy(&job_ptr->job_sched_lock);
+#endif
 
 
 //	xfree(job_ptr->alias_list);
@@ -22564,10 +22586,10 @@ static int copy_job(job_record_t *src_job_ptr, job_record_t *des_job_ptr)
 
 	if (src_job_ptr->array_recs) {
 		des_job_ptr->array_recs=xmalloc(sizeof(job_array_struct_t));
-	    memcpy(des_job_ptr->array_recs, src_job_ptr->array_recs, sizeof(struct job_array_struct));
-        des_job_ptr->array_recs->task_id_str = xstrdup(src_job_ptr->array_recs->task_id_str);
+		memcpy(des_job_ptr->array_recs, src_job_ptr->array_recs, sizeof(struct job_array_struct));
+		des_job_ptr->array_recs->task_id_str = xstrdup(src_job_ptr->array_recs->task_id_str);
 		if(src_job_ptr->array_recs->task_id_bitmap){
-        	des_job_ptr->array_recs->task_id_bitmap = bit_copy(src_job_ptr->array_recs->task_id_bitmap);
+			des_job_ptr->array_recs->task_id_bitmap = bit_copy(src_job_ptr->array_recs->task_id_bitmap);
 		}
 	}
 
@@ -22627,10 +22649,10 @@ static int copy_job(job_record_t *src_job_ptr, job_record_t *des_job_ptr)
 		des_job_ptr->fed_details = _dup_job_fed_details(src_job_ptr->fed_details);
 	}
     des_job_ptr->step_list = NULL;
-	if(src_job_ptr->step_list){
-		des_job_ptr->step_list = list_create(free_copy_step_record);
-		list_for_each_ro(src_job_ptr->step_list, _copy_job_step_state, des_job_ptr);
-	}
+//	if(src_job_ptr->step_list){
+//		des_job_ptr->step_list = list_create(free_copy_step_record);
+//		list_for_each_ro(src_job_ptr->step_list, _copy_job_step_state, des_job_ptr);
+//	}
 //	des_job_ptr->tres_alloc_str = xstrdup(src_job_ptr->tres_alloc_str);
 //	des_job_ptr->tres_req_str = xstrdup(src_job_ptr->tres_req_str);
 //	des_job_ptr->alias_list = xstrdup(src_job_ptr->alias_list);
@@ -22695,6 +22717,9 @@ static int copy_job(job_record_t *src_job_ptr, job_record_t *des_job_ptr)
 	des_job_ptr->nodes_completing = NULL;
 	des_job_ptr->nodes_pr = NULL;
 	des_job_ptr->origin_cluster = NULL;
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+	slurm_mutex_init(&des_job_ptr->job_sched_lock);
+#endif
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 	des_job_ptr->resv_bitmap = NULL;
 #endif	
@@ -22935,7 +22960,7 @@ extern job_record_t *_add_queue_job_to_cache(job_record_t *des_job_ptr)
 extern int _del_cache_job(uint32_t job_id)
 {
 	debug2("%s CACHE_QUERY  delete job %d ", __func__, job_id);
-	list_delete_all(cache_job_list, _list_find_job_id, (void *)&job_id);
+	list_delete_all(cache_job_list, _list_find_cache_job_id, (void *)&job_id);
 	return SLURM_SUCCESS;
 }
 
@@ -22953,6 +22978,11 @@ extern void del_cache_job_state_record(job_state_record_t *src_job_ptr)
     if(src_job_ptr->job_resrcs){
         free_job_resources(&src_job_ptr->job_resrcs);
     }
+	if (src_job_ptr->array_recs) {
+		FREE_NULL_BITMAP(src_job_ptr->array_recs->task_id_bitmap);
+		xfree(src_job_ptr->array_recs->task_id_str);
+		xfree(src_job_ptr->array_recs);
+	}
     if(src_job_ptr->gres_detail_str){
     	for (i = 0; i < src_job_ptr->gres_detail_cnt; i++)
     		xfree(src_job_ptr->gres_detail_str[i]);
@@ -23017,31 +23047,41 @@ extern void _add_job_state_to_queue(job_record_t *src_job_ptr)
 		cache_msg->job_state_ptr->nodes = xstrdup(src_job_ptr->nodes);
 		cache_msg->job_state_ptr->sched_nodes = xstrdup(src_job_ptr->sched_nodes);
 		cache_msg->job_state_ptr->batch_host = xstrdup(src_job_ptr->batch_host);
-        cache_msg->job_state_ptr->priority = src_job_ptr->priority;
-        cache_msg->job_state_ptr->deadline = src_job_ptr->deadline;
-        cache_msg->job_state_ptr->het_job_id = src_job_ptr->het_job_id;
-        cache_msg->job_state_ptr->het_job_offset = src_job_ptr->het_job_offset;
-        cache_msg->job_state_ptr->array_job_id = src_job_ptr->array_job_id;
-        cache_msg->job_state_ptr->array_task_id = src_job_ptr->array_task_id;
-        cache_msg->job_state_ptr->gres_detail_cnt = src_job_ptr->gres_detail_cnt;
-        cache_msg->job_state_ptr->partition = xstrdup(src_job_ptr->partition);
-        cache_msg->job_state_ptr->comment = xstrdup(src_job_ptr->comment);
-        cache_msg->job_state_ptr->gres_used = xstrdup(src_job_ptr->gres_used);
-        cache_msg->job_state_ptr->job_resrcs = NULL;
-        if(src_job_ptr->job_resrcs){
-        	cache_msg->job_state_ptr->job_resrcs = copy_job_resources(src_job_ptr->job_resrcs);
-        	cache_msg->job_state_ptr->job_resrcs->nodes = xstrdup(src_job_ptr->job_resrcs->nodes);
-        	cache_msg->job_state_ptr->job_resrcs->threads_per_core = src_job_ptr->job_resrcs->threads_per_core;
-        	cache_msg->job_state_ptr->job_resrcs->cr_type = src_job_ptr->job_resrcs->cr_type;
-        	
-        }
-        cache_msg->job_state_ptr->gres_detail_str = NULL;
-        if(src_job_ptr->gres_detail_cnt > 0){
-            cache_msg->job_state_ptr->gres_detail_str = xcalloc(src_job_ptr->gres_detail_cnt, sizeof(char *));
-            for (i = 0; i < src_job_ptr->gres_detail_cnt; i++) {
-                cache_msg->job_state_ptr->gres_detail_str[i] = xstrdup(src_job_ptr->gres_detail_str[i]);
-            }
-        }      
+		cache_msg->job_state_ptr->priority = src_job_ptr->priority;
+		cache_msg->job_state_ptr->deadline = src_job_ptr->deadline;
+		cache_msg->job_state_ptr->het_job_id = src_job_ptr->het_job_id;
+		cache_msg->job_state_ptr->het_job_offset = src_job_ptr->het_job_offset;
+		cache_msg->job_state_ptr->array_job_id = src_job_ptr->array_job_id;
+		cache_msg->job_state_ptr->array_task_id = src_job_ptr->array_task_id;
+		cache_msg->job_state_ptr->gres_detail_cnt = src_job_ptr->gres_detail_cnt;
+		cache_msg->job_state_ptr->partition = xstrdup(src_job_ptr->partition);
+		cache_msg->job_state_ptr->comment = xstrdup(src_job_ptr->comment);
+		cache_msg->job_state_ptr->gres_used = xstrdup(src_job_ptr->gres_used);
+		cache_msg->job_state_ptr->job_resrcs = NULL;
+		if(src_job_ptr->job_resrcs){
+			cache_msg->job_state_ptr->job_resrcs = copy_job_resources(src_job_ptr->job_resrcs);
+			cache_msg->job_state_ptr->job_resrcs->nodes = xstrdup(src_job_ptr->job_resrcs->nodes);
+			cache_msg->job_state_ptr->job_resrcs->threads_per_core = src_job_ptr->job_resrcs->threads_per_core;
+			cache_msg->job_state_ptr->job_resrcs->cr_type = src_job_ptr->job_resrcs->cr_type;
+			
+		}
+		cache_msg->job_state_ptr->array_recs = NULL;
+		if (src_job_ptr->array_recs) {
+			cache_msg->job_state_ptr->array_recs=xmalloc(sizeof(job_array_struct_t));
+			memcpy(cache_msg->job_state_ptr->array_recs, src_job_ptr->array_recs, sizeof(struct job_array_struct));
+			cache_msg->job_state_ptr->array_recs->task_id_str = xstrdup(src_job_ptr->array_recs->task_id_str);
+			cache_msg->job_state_ptr->array_recs->task_id_bitmap = NULL;
+			if(src_job_ptr->array_recs->task_id_bitmap){
+				cache_msg->job_state_ptr->array_recs->task_id_bitmap = bit_copy(src_job_ptr->array_recs->task_id_bitmap);
+			}
+		}
+		cache_msg->job_state_ptr->gres_detail_str = NULL;
+		if(src_job_ptr->gres_detail_cnt > 0){
+			cache_msg->job_state_ptr->gres_detail_str = xcalloc(src_job_ptr->gres_detail_cnt, sizeof(char *));
+			for (i = 0; i < src_job_ptr->gres_detail_cnt; i++) {
+				cache_msg->job_state_ptr->gres_detail_str[i] = xstrdup(src_job_ptr->gres_detail_str[i]);
+			}
+		}      
 		cache_msg->job_state_ptr->node_bitmap_cg = NULL;
 		if(src_job_ptr->node_bitmap_cg)
 			cache_msg->job_state_ptr->node_bitmap_cg = bit_copy(src_job_ptr->node_bitmap_cg);
@@ -23057,6 +23097,8 @@ extern void _add_job_state_to_queue(job_record_t *src_job_ptr)
 extern int update_cache_job_record(job_state_record_t *src_job_ptr)
 {
 	job_record_t *des_job_ptr = NULL;
+	part_record_t *part_ptr = NULL;
+	List part_ptr_list = NULL;
 	des_job_ptr = find_hash_job_record(src_job_ptr->job_id, 2);
 	if(des_job_ptr){
 		debug4("%s CACHE_QUERY  update job state to cache %d ", __func__, src_job_ptr->job_id);
@@ -23073,36 +23115,47 @@ extern int update_cache_job_record(job_state_record_t *src_job_ptr)
 #ifdef __METASTACK_NEW_TIME_PREDICT
 		des_job_ptr->predict_job = src_job_ptr->predict_job;
 #endif
-        des_job_ptr->priority = src_job_ptr->priority;
-        des_job_ptr->deadline = src_job_ptr->deadline;
-        des_job_ptr->het_job_id = src_job_ptr->het_job_id;
-        des_job_ptr->het_job_offset = src_job_ptr->het_job_offset;
-        des_job_ptr->array_job_id = src_job_ptr->array_job_id;
-        des_job_ptr->array_task_id = src_job_ptr->array_task_id;
-        xfree(des_job_ptr->partition);
-		des_job_ptr->partition = src_job_ptr->partition;
-		src_job_ptr->partition = NULL;
-        xfree(des_job_ptr->comment);
+		des_job_ptr->priority = src_job_ptr->priority;
+		des_job_ptr->deadline = src_job_ptr->deadline;
+		des_job_ptr->het_job_id = src_job_ptr->het_job_id;
+		des_job_ptr->het_job_offset = src_job_ptr->het_job_offset;
+		des_job_ptr->array_job_id = src_job_ptr->array_job_id;
+		xfree(des_job_ptr->comment);
 		des_job_ptr->comment = src_job_ptr->comment;
 		src_job_ptr->comment = NULL;
-        if(des_job_ptr->job_resrcs){
-            free_job_resources(&des_job_ptr->job_resrcs);
-        }
-        if(src_job_ptr->job_resrcs){
-            des_job_ptr->job_resrcs = src_job_ptr->job_resrcs;
-            src_job_ptr->job_resrcs = NULL;     
-        }
-        if(des_job_ptr->gres_detail_str){
-            _clear_job_gres_details(des_job_ptr);
-        }
-        des_job_ptr->gres_detail_cnt = src_job_ptr->gres_detail_cnt;
-        xfree(des_job_ptr->gres_used);
+		if(des_job_ptr->job_resrcs){
+			free_job_resources(&des_job_ptr->job_resrcs);
+		}
+		if(src_job_ptr->job_resrcs){
+			des_job_ptr->job_resrcs = src_job_ptr->job_resrcs;
+			src_job_ptr->job_resrcs = NULL;     
+		}
+		if (des_job_ptr->array_recs) {
+			FREE_NULL_BITMAP(des_job_ptr->array_recs->task_id_bitmap);
+			xfree(des_job_ptr->array_recs->task_id_str);
+			xfree(des_job_ptr->array_recs);
+		}
+		if (src_job_ptr->array_recs) {
+			des_job_ptr->array_recs = src_job_ptr->array_recs;
+			src_job_ptr->array_recs = NULL;
+			if(des_job_ptr->array_recs->task_cnt <= 0 && des_job_ptr->array_task_id != src_job_ptr->array_task_id){
+				des_job_ptr->array_task_id = src_job_ptr->array_task_id;
+				_add_copy_job_array_hash(des_job_ptr, cache_job_array_hash_j, cache_job_array_hash_t);
+			}
+		}else{
+			des_job_ptr->array_task_id = src_job_ptr->array_task_id;
+		}
+		if(des_job_ptr->gres_detail_str){
+			_clear_job_gres_details(des_job_ptr);
+		}
+		des_job_ptr->gres_detail_cnt = src_job_ptr->gres_detail_cnt;
+		xfree(des_job_ptr->gres_used);
 		des_job_ptr->gres_used = src_job_ptr->gres_used;
 		src_job_ptr->gres_used = NULL;
-        if(src_job_ptr->gres_detail_str){
-            des_job_ptr->gres_detail_str = src_job_ptr->gres_detail_str;
+		if(src_job_ptr->gres_detail_str){
+			des_job_ptr->gres_detail_str = src_job_ptr->gres_detail_str;
 			src_job_ptr->gres_detail_str = NULL;
-        }  
+		}  
 		if(des_job_ptr->details && src_job_ptr->details_ptr){
 			des_job_ptr->details->max_nodes = src_job_ptr->de_max_nodes;
 			des_job_ptr->details->ntasks_per_node = src_job_ptr->de_ntasks_per_node;
@@ -23142,6 +23195,30 @@ extern int update_cache_job_record(job_state_record_t *src_job_ptr)
 					des_job_ptr->details->mc_ptr->ntasks_per_core = src_job_ptr->de_mc_ntasks_per_core;
 				}
 		}
+
+		if(xstrcmp(des_job_ptr->partition, src_job_ptr->partition)){
+			xfree(des_job_ptr->partition);
+			des_job_ptr->partition = src_job_ptr->partition;
+			src_job_ptr->partition = NULL;
+			part_ptr = find_copy_part_record(des_job_ptr->partition, cache_part_list);
+			if (part_ptr == NULL) {
+				part_ptr_list = get_cache_part_list(des_job_ptr->partition);
+				if (part_ptr_list) {
+					part_ptr = list_peek(part_ptr_list);
+					if (list_count(part_ptr_list) == 1)
+						FREE_NULL_LIST(part_ptr_list);
+				}
+			}
+			des_job_ptr->part_ptr = part_ptr;
+			if(des_job_ptr->part_ptr_list)
+				FREE_NULL_LIST(des_job_ptr->part_ptr_list);
+			des_job_ptr->part_ptr_list = part_ptr_list;
+		}else{
+			xfree(des_job_ptr->partition);
+			des_job_ptr->partition = src_job_ptr->partition;
+			src_job_ptr->partition = NULL;
+		}
+		
 		FREE_NULL_BITMAP(des_job_ptr->node_bitmap_cg);
 		des_job_ptr->node_bitmap_cg = src_job_ptr->node_bitmap_cg;
 		src_job_ptr->node_bitmap_cg = NULL;

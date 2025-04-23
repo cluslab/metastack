@@ -24,6 +24,15 @@
 #ifndef _SJINFO_H
 #define _SJINFO_H
 
+
+
+#define CPU_ABNORMAL_FLAG "cpu"
+#define PROCESS_ABNORMAL_FLAG "process"
+#define NODE_ABNORMAL_FLAG "node"
+#define CPU_ABNORMAL_FLAG_DESC "CPU utilization below threshold"
+#define PROCESS_ABNORMAL_FLAG_DESC "Operational process anomalies"
+#define NODE_ABNORMAL_FLAG_DESC "Node communication exception"
+
 #include <stdio.h>
 typedef struct c_string {
     char *str;
@@ -89,5 +98,5 @@ const char *c_string_peek(const c_string_t *cs);
 
 extern void print_fields_str(print_field_t *field, char *value, int last);
 
-#define KEYDIR "/opt/gridview/slurm"
+#define KEYDIR "/public/binary/2.3.0"
 #endif /* !_SJINFO_H */

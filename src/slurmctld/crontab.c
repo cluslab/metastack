@@ -199,11 +199,10 @@ static int _clear_requeue_cron(void *x, void *y)
 			job_ptr->end_time = now;
 			job_ptr->exit_code = 1;
 			job_completion_logger(job_ptr, false);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
-#endif
-
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 	}
 
 	return 0;

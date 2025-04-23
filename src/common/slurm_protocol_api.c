@@ -1502,7 +1502,7 @@ List slurm_receive_msgs(int fd, int steps, int timeout)
 	    _check_hash(buffer, &header, &msg, auth_cred) ||
 	    (unpack_msg(&msg, buffer) != SLURM_SUCCESS)) {
 #ifdef __METASTACK_TIME_SYNC_CHECK
-		if(header.msg_type == RESPONSE_PING_SLURMD && errnum != SLURM_SUCCESS ){
+		if(slurm_conf.time_sync_check && header.msg_type == RESPONSE_PING_SLURMD && errnum != SLURM_SUCCESS ){
 			unpack_msg(&msg, buffer);
 		}
 #endif
@@ -1550,7 +1550,7 @@ total_return:
 				}
 			}else{
 				ret_data_info->type = RESPONSE_FORWARD_FAILED;
-				ret_data_info->data = msg.data;	
+				ret_data_info->data = NULL;	
 			}
 			list_push(ret_list, ret_data_info);
 		}
@@ -1564,10 +1564,10 @@ total_return:
 		}else if(!slurm_conf.time_sync_check && running_in_slurmctld()){
 			if(rc != SLURM_SUCCESS){
 				if(rc == SLURM_PROTOCOL_SOCKET_ZERO_BYTES_SENT){
-					debug("slurm recv zero bytes from peer %s",peer);//发送注册信号，ctld接收不到消息，对此进行处理
+					debug("slurm recv zero bytes from peer %s",peer);
 				}else{
 					rc = SLURM_PROTOCOL_AUTHENTICATION_ERROR;
-					debug("%s may have time sync err, need to time sync",peer);//发送request_ping信号，但是会返回消息，对该消息进行处理
+					debug("%s may have time sync err, need to time sync",peer);
 				}
 			}
 		}else{

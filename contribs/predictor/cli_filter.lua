@@ -11,26 +11,114 @@ function slurm_cli_pre_submit(options, pack_offset)
 		options["apptype"] = apptype_result
 	end
 
-	-- 判断configuration文件是否缺失，并读取相关路径
-	local file = io.open(configuration_path, "r")
+	-- 加载预测工具并预测作业运行时间
+	load_prediction_tool(options, pack_offset)
 
-	if file then
-		file:close()
+	return slurm.SUCCESS
+
+end
+
+function slurm_cli_setup_defaults(options, early_pass)
+
+        return slurm.SUCCESS
+end
+
+function slurm_cli_post_submit(offset, job_id, step_id)
+
+        return slurm.SUCCESS
+end
+
+-- 加载预测工具
+function load_prediction_tool(options, pack_offset)
+
+	-- 默认关闭预测功能
+	predictionFunction = "0"  
+
+	-- 判断configuration文件是否缺失，并读取相关路径
+	configuration_file = io.open(configuration_path, "r")
+
+	if configuration_file then
+		configuration_file:close()
 
 		-- 预测功能开关
 		-- predictionFunction=0关闭预测流程
 		-- predictionFunction=1开启预测流程只适用于白名单用户
 		-- predictionFunction=2开启预测流程适用全部用户
-		predictionFunction=get_config_value("predictionFunction")
-                
-		-- etc配置路径
-		etc_path=get_config_value("etc_path")
-                
-		-- 预测工具路径
-		predictor_path=get_config_value("predictor_path")
+		predictionFunction = get_config_value("predictionFunction")
 
-		-- 预测功能白名单
-		predictUsers=predictor_path .. "/predictUsers"
+		-- 当预测功能开启时,判断基础工具,只有存在时才可预测
+		if (predictionFunction ~= "0") then
+
+			-- etc配置路径
+			etc_path = get_config_value("etc_path")
+
+			-- 预测工具路径
+			predictor_path = get_config_value("predictor_path")
+
+			-- 预测功能白名单
+			predictUsers_file = predictor_path .. "/predictUsers"
+
+			-- 获取作业参数脚本 getParameter.lua
+			getParameter_file = predictor_path .. "/getParameter.lua"
+
+			-- 预测工具脚本 predictionTool.lua
+			predictionTool_file = predictor_path .. "/predictionTool.lua"
+
+			-- 作业集 jobHistory
+			jobHistory_file = predictor_path .. "/jobHistory"
+
+			-- 检查文件是否存在
+			local puf = io.open(predictUsers_file, "r")
+			local gpf = io.open(getParameter_file, "r")
+			local ptf = io.open(predictionTool_file, "r")
+			local jhf = io.open(jobHistory_file, "r")
+
+			if not (puf and gpf and ptf and jhf) then
+				-- 如果任一文件不存在，则关闭预测功能
+				predictionFunction = "0"
+			end
+
+			-- 关闭文件句柄
+			if puf then puf:close() end
+			if gpf then gpf:close() end
+			if ptf then ptf:close() end
+			if jhf then jhf:close() end
+		end
+
+		-- 判断AI法所需要的工具
+		if (predictionFunction ~= "0") then
+
+			-- 预测工具使用的方法
+			-- 均值法:predictionMethod=0
+			-- AI随机森林算法:predictionMethod=1
+			predictionMethod_value=get_config_value("predictionMethod")
+
+			if (predictionMethod_value == "1") then 
+
+				-- python 3.9 执行路径
+				python_executable_path=get_config_value("python_executable")
+
+				-- AI随机森林工具路径
+				sklearn_path=get_config_value("sklearn_path")
+
+				-- AI建模python脚本
+				prediction_script_file=sklearn_path .. "/prediction_time.py"
+
+				local pep = io.open(python_executable_path, "r")
+				local psf = io.open(prediction_script_file, "r")
+
+				if not (pep and psf) then
+					-- 如果任一文件不存在，则关闭预测功能
+					predictionFunction = "0"
+				end
+
+				-- 关闭文件句柄
+				if pep then pep:close() end
+				if psf then psf:close() end
+
+			end
+
+		end
 
 	end
 
@@ -38,7 +126,7 @@ function slurm_cli_pre_submit(options, pack_offset)
 	if (predictionFunction == "1") then
 
 		-- 加载参数获取工具
-		dofile(predictor_path .. "/getParameter.lua")
+		dofile(getParameter_file)
 
 		-- 获取初始参数
 		getParameter(options)
@@ -51,30 +139,21 @@ function slurm_cli_pre_submit(options, pack_offset)
 
 		-- 判断作业是否已指定TimeMin，若未指定走预测流程
 		if (time_min == -1) then
-
-			-- 判断白名单文件是否缺失
-			local file = io.open(predictUsers, "r")
-			if file then
-				file:close()
 			
-				-- 预测功能校验用户，若为预测功能用户，执行时间预测模块
-				if (checkValueInFile(predictUsers, user_name) == 1) then
+			-- 预测功能校验用户，若为预测功能用户，执行时间预测模块
+			if (checkValueInFile(predictUsers_file, user_name) == 1) then
 
-					-- 加载预测工具
-					dofile(predictor_path .. "/predictionTool.lua")
+				-- 加载预测工具
+				dofile(predictionTool_file)
 	
-					-- 预测作业运行时间
-					timePredict(options, user_name, partition_list, req_cpu, req_mem, req_node, time_limit)
+				-- 预测作业运行时间
+				timePredict(options, user_name, partition_list, req_cpu, req_mem, req_node, time_limit)
 	
-				-- 若不为预测功能用户，直接跳过预测模块
-				else
-					options["predict-job"] = -1
-					-- slurm.log_info("The user %s is not in the prediction userlist.", user_name)
-				end
-		
+			-- 若不为预测功能用户，直接跳过预测模块
 			else
+				
 				options["predict-job"] = -1
-				-- slurm.log_info("The predictUsers file is missing.")
+				-- slurm.log_info("The user %s is not in the prediction userlist.", user_name)
 			end
 	
 		-- 若已指定TimeMin，直接跳过预测模块
@@ -87,7 +166,7 @@ function slurm_cli_pre_submit(options, pack_offset)
 	elseif (predictionFunction == "2") then
 
 		-- 加载参数获取工具
-		dofile(predictor_path .. "/getParameter.lua")
+		dofile(getParameter_file)
 
 		-- 获取初始参数
 		getParameter(options)
@@ -102,7 +181,7 @@ function slurm_cli_pre_submit(options, pack_offset)
 		if (time_min == -1) then
 
 			-- 加载预测工具
-			dofile(predictor_path .. "/predictionTool.lua")
+			dofile(predictionTool_file)
 	
 			-- 预测作业运行时间
 			timePredict(options, user_name, partition_list, req_cpu, req_mem, req_node, time_limit)
@@ -121,18 +200,6 @@ function slurm_cli_pre_submit(options, pack_offset)
 
 	end
 
-	return slurm.SUCCESS
-
-end
-
-function slurm_cli_setup_defaults(options, early_pass)
-
-        return slurm.SUCCESS
-end
-
-function slurm_cli_post_submit(offset, job_id, step_id)
-
-        return slurm.SUCCESS
 end
 
 -- 从配置文件中获取变量的值

@@ -1222,7 +1222,8 @@ static void _set_user_default_acct(slurmdb_assoc_rec_t *assoc)
 	/* set up the default if this is it */
 	if ((assoc->is_def == 1) && (assoc->uid != NO_VAL)) {
 #ifdef __METASTACK_ASSOC_HASH
-		slurmdb_user_rec_t *user = NULL, *user_name = NULL;
+		slurmdb_user_rec_t *user = NULL;
+		char *user_name = NULL;
 		if (!assoc->user) {
 			user_name = find_uid_user_hash(&uid_user_hash, assoc->uid);
 		} else {
@@ -1271,7 +1272,8 @@ static void _clear_user_default_acct(slurmdb_assoc_rec_t *assoc)
 	/* set up the default if this is it */
 	if ((assoc->is_def == 0) && (assoc->uid != NO_VAL)) {
 #ifdef __METASTACK_ASSOC_HASH
-		slurmdb_user_rec_t *user = NULL, *user_name = NULL;
+		slurmdb_user_rec_t *user = NULL;
+		char *user_name = NULL;
 		if (!assoc->user) {
 			user_name = find_uid_user_hash(&uid_user_hash, assoc->uid);
 		} else {
@@ -1310,7 +1312,8 @@ static void _set_user_default_wckey(slurmdb_wckey_rec_t *wckey)
 	/* set up the default if this is it */
 	if ((wckey->is_def == 1) && (wckey->uid != NO_VAL)) {
 #ifdef __METASTACK_ASSOC_HASH
-		slurmdb_user_rec_t *user = NULL, *user_name = NULL;
+		slurmdb_user_rec_t *user = NULL;
+		char *user_name = NULL;
 		if (!wckey->user) {
 			user_name = find_uid_user_hash(&uid_user_hash, wckey->uid);
 		} else {

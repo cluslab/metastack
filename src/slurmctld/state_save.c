@@ -436,7 +436,22 @@ extern void *slurmctld_state_copy(void *no_data)
 		}
 	}
 	unlock_slurmctld(config_read_lock);
-	
+
+	slurm_mutex_lock(&cache_queue->mutex);
+	if (cache_queue->copy_all_data){
+		cache_queue->copy_all_data = false;
+	}
+	slurm_mutex_unlock(&cache_queue->mutex);
+	if (list_count(cache_queue->work)){
+		list_flush(cache_queue->work);
+	}
+	_update_cache_record();
+
+	slurm_mutex_lock(&query_mgr_lock);
+	cache_copy_comp = true;
+	slurm_cond_signal(&query_mgr_cond);
+	slurm_mutex_unlock(&query_mgr_lock);
+
 	while (true) {
 		slurm_mutex_lock(&cache_queue->mutex);
 	 	if (cache_queue->shutdown) {

@@ -2449,7 +2449,7 @@ int read_slurm_conf(int recover, bool reconfig)
 		rebuild = _restore_all_partition_nodes_borrowed_info(reconfig, part_list);
 	}	
 	if (rebuild) {
-		build_resource = validate_all_partitions_borrow_nodes(part_list);
+		build_resource = validate_all_partitions_borrow_nodes(part_list, false);
 	}
 	_purge_old_part_state(old_part_list, old_def_part_name);
 #endif
