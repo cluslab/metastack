@@ -60,7 +60,7 @@
 #define no_argument		0
 #define required_argument	1
 #define optional_argument	2
-#define SJINFO_VERSION_STRING "SLURM220508-0.0.3"
+#define SJINFO_VERSION_STRING "SLURM220508-0.0.4"
 #define PACKAGE_NAME "sjinfo "
 #define NO_VAL     (0xfffffffe)
 #define NO_VAL64   (0xfffffffffffffffe)
@@ -203,6 +203,7 @@ typedef struct {
    int type1;   // Marking cpu frequency anomalies
    int type2;   // identify process anomalies
    int type3;   // identifies node communication anomalies
+   char *type;
    /* overall */
    unsigned long end_last;
    unsigned long start_last;
@@ -533,6 +534,18 @@ char *xstrdup(const char *str)
 	return result;
 }
 
+int xstrcmp(const char *s1, const char *s2)
+{
+	if (!s1 && !s2)
+		return 0;
+	else if (!s1)
+		return -1;
+	else if (!s2)
+		return 1;
+	else
+		return strcmp(s1, s2);
+}
+
 
 void print_fields_header(List print_fields_list);
 void field_split(char *field_str, print_field_t* fields_tmp, List sj_list);
@@ -586,7 +599,7 @@ static char* _parse_rt_policy(const char *rt_policy, RPType type) {
             value++;        
 
             for (i = 0; i < RPCNT; i++) {
-                if (strcmp(token, RPTypeNames[i]) == 0) {
+                if (xstrcmp(token, RPTypeNames[i]) == 0) {
                     found_any_keyword = 1;
                     if (i == (int)type) {
                         char *result = xstrdup(value);
@@ -1830,28 +1843,28 @@ void parse_json_tag(const char *response) {
                     /* Skip invalid columns or values */
                     if (!column_name || !value) continue; 
 
-                    if (strcmp(column_name, "record_time") == 0) {
+                    if (xstrcmp(column_name, "record_time") == 0) {
                         record->record_time = json_integer_value(value);
-                    } else if (strcmp(column_name, "data") == 0) {
+                    } else if (xstrcmp(column_name, "data") == 0) {
                         const char *data = json_string_value(value);
                         if(strlen(data) < 4096)
                             record->data = xmalloc(strlen(data) * sizeof(char)+1);
                         else
                              record->data = xmalloc(4097 * sizeof(char));
                         strncpy(record->data, data, (strlen(data) < 4096) ? strlen(data):4096);
-                    } else if (strcmp(column_name, "jobid") == 0) {
+                    } else if (xstrcmp(column_name, "jobid") == 0) {
                         record->jobid = json_integer_value(value);
-                    } else if (strcmp(column_name, "uid") == 0) {
+                    } else if (xstrcmp(column_name, "uid") == 0) {
                         const char *uid = json_string_value(value);
                         record->uid = xstrdup(uid ? uid : "0");
-                    } else if (strcmp(column_name, "username") == 0) {
+                    } else if (xstrcmp(column_name, "username") == 0) {
                         const char *username = json_string_value(value);
                         record->username = xstrdup(username ? username : "unknown");
-                    } else if (strcmp(column_name, "step") == 0) {
+                    } else if (xstrcmp(column_name, "step") == 0) {
                         const char *step =json_string_value(value);
                         if(step)
                             record->stepid = atoi(step);
-                    } else if (strcmp(column_name, "sendnode") == 0) {
+                    } else if (xstrcmp(column_name, "sendnode") == 0) {
                         const char *node =json_string_value(value);
                         if(node)
                             record->nodename = xstrdup(node ? node : "0");
@@ -1949,27 +1962,27 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
-                        if ((strcmp(tmp_name, "last_stepavecpu") == 0)) {
+                        if ((xstrcmp(tmp_name, "last_stepavecpu") == 0)) {
                             iinfo->stepcpuave = json_real_value(value);
-                        } else if (strcmp(tmp_name, "last_stepcpu") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_stepcpu") == 0) {
                             iinfo->stepcpu = json_real_value(value);
-                        } else if (strcmp(tmp_name, "last_stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_stepmem") == 0) {
                             iinfo->stepmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "last_stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_stepvmem") == 0) {
                             iinfo->stepvmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "last_steppages") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_steppages") == 0) {
                             iinfo->steppages = (long long)json_integer_value(value);
-                        }  else if (strcmp(tmp_name, "max_stepcpu") == 0) {
+                        }  else if (xstrcmp(tmp_name, "max_stepcpu") == 0) {
                             iinfo->stepcpumax = json_real_value(value);
-                        } else if (strcmp(tmp_name, "min_stepcpu") == 0) {
+                        } else if (xstrcmp(tmp_name, "min_stepcpu") == 0) {
                             iinfo->stepcpumin = json_real_value(value);
-                        } else if (strcmp(tmp_name, "max_stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "max_stepmem") == 0) {
                             iinfo->stepmemmax = json_integer_value(value);
-                        } else if (strcmp(tmp_name, "min_stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "min_stepmem") == 0) {
                             iinfo->stepmemmin = json_integer_value(value);
-                        } else if (strcmp(tmp_name, "max_stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "max_stepvmem") == 0) {
                             iinfo->stepvmemmax = json_integer_value(value);
-                        } else if (strcmp(tmp_name, "min_stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "min_stepvmem") == 0) {
                             iinfo->stepvmemmin = json_integer_value(value);
                         } 
                     }
@@ -2006,15 +2019,15 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
-                        if ((strcmp(tmp_name, "apptype_cli")) == 0) {
+                        if ((xstrcmp(tmp_name, "apptype_cli")) == 0) {
                             iinfo->apptype_cli = xstrdup(json_string_value(value));
-                        } else if (strcmp(tmp_name, "apptype_step") == 0) {
+                        } else if (xstrcmp(tmp_name, "apptype_step") == 0) {
                             iinfo->apptype_step = xstrdup(json_string_value(value));
-                        } else if (strcmp(tmp_name, "cputime") == 0) {
+                        } else if (xstrcmp(tmp_name, "cputime") == 0) {
                             iinfo->cputime = (uint64_t)strtoull(json_string_value(value), NULL, 10);
-                        } else if (strcmp(tmp_name, "step") == 0) {
+                        } else if (xstrcmp(tmp_name, "step") == 0) {
                             iinfo->stepid = (int)strtol(json_string_value(value), NULL, 10);
-                        } else if (strcmp(tmp_name, "username") == 0) {
+                        } else if (xstrcmp(tmp_name, "username") == 0) {
                             iinfo->username = xstrdup(json_string_value(value));
                         }
                     }
@@ -2085,46 +2098,75 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     strcpy(iinfo->username, username);
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
-                        if(value == NULL)
+                        if (value == NULL)
+                            continue;
+                        if (value->type == JSON_NULL)
                             continue;
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
-                        if (strcmp(tmp_name, "stepcpu") == 0) {
+                        if (xstrcmp(tmp_name, "stepcpu") == 0) {
                             iinfo->stepcpu = json_real_value(value);
-                        } else if (strcmp(tmp_name, "stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "stepmem") == 0) {
                             iinfo->stepmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "stepvmem") == 0) {
                             iinfo->stepvmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "steppages") == 0) {
+                        } else if (xstrcmp(tmp_name, "steppages") == 0) {
                             iinfo->steppages = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "cputhreshold") == 0) {
+                        } else if (xstrcmp(tmp_name, "cputhreshold") == 0) {
                             iinfo->cputhreshold = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "start") == 0) {
+                        } else if (xstrcmp(tmp_name, "start") == 0) {
                             iinfo->start = (unsigned long)json_integer_value(value);
                             iinfo_overall->start_last = ((unsigned long)json_integer_value(value) > iinfo_overall->start_last) ? (unsigned long)json_integer_value(value) : iinfo_overall->start_last;
-                        } else if (strcmp(tmp_name, "end") == 0) {
+                        } else if (xstrcmp(tmp_name, "end") == 0) {
                             iinfo->end = (unsigned long)json_integer_value(value);
                             iinfo_overall->end_last = ((unsigned long)json_integer_value(value) > iinfo_overall->end_last) ? (unsigned long)json_integer_value(value) : iinfo_overall->end_last;
-                        } else if (strcmp(tmp_name, "type1") == 0) {
-                            iinfo->type1 = atoi(json_string_value(value));
-                            if(iinfo->type1)
-                                iinfo_overall->sum_cpu++;
-                        } else if (strcmp(tmp_name, "type2") == 0) {
-                            iinfo->type2 = atoi(json_string_value(value));
-                            if(iinfo->type2) 
-                                iinfo_overall->sum_pid++;
-                        } else if (strcmp(tmp_name, "type3") == 0) {
-                            iinfo->type3 = atoi(json_string_value(value));
-                            if(iinfo->type3) 
-                                iinfo_overall->sum_node++;
+                        } else if (xstrcmp(tmp_name, "tag_type1") == 0) {
+                            const char *type1 = json_string_value(value);
+                            if (type1)
+                                iinfo->type1 = atoi(type1);
+                        } else if (xstrcmp(tmp_name, "tag_type2") == 0) {
+                            const char *type2 = json_string_value(value);
+                            if (type2) 
+                                iinfo->type2 = atoi(type2);
+                        } else if (xstrcmp(tmp_name, "tag_type3") == 0) {
+                            const char *type3 = json_string_value(value);
+                            if (type3)
+                                iinfo->type3 = atoi(type3);
+                        } else if (xstrcmp(tmp_name, "field_type1") == 0) {
+                            iinfo->type1 = json_integer_value(value);
+                        } else if (xstrcmp(tmp_name, "field_type2") == 0) {
+                            iinfo->type2 = json_integer_value(value);
+                        } else if (xstrcmp(tmp_name, "field_type3") == 0) {
+                            iinfo->type3 = json_integer_value(value);
+                        } else if (xstrcmp(tmp_name, "type") == 0) {
+                            const char *type = json_string_value(value);
+                            if (type)
+                                iinfo->type = xstrdup(type);
                         }
+
                     }
-                    if (params.level & INFLUXDB_EVENT) {
+                    if ((iinfo->type1 || iinfo->type2 || iinfo->type3 || iinfo->type != NULL) && 
+                        ((params.level & INFLUXDB_EVENT) || params.level & INFLUXDB_OVERALL)) {
+                        if (iinfo->type1) 
+                            iinfo_overall->sum_cpu++;
+                        if (iinfo->type2) 
+                            iinfo_overall->sum_pid++;
+                        if (iinfo->type3) 
+                            iinfo_overall->sum_node++;
+                        if(xstrcmp(iinfo->type, CPU_ABNORMAL_FLAG) == 0) {
+                            iinfo_overall->sum_cpu++;
+                        } else if (xstrcmp(iinfo->type, PROCESS_ABNORMAL_FLAG) == 0) {
+                            iinfo_overall->sum_pid++;
+                        } else if (xstrcmp(iinfo->type, NODE_ABNORMAL_FLAG) == 0) {
+                            iinfo_overall->sum_node++;
+                        }
                         list_append(print_events_value_list, iinfo);
                     } else {
                         xfree(iinfo->time);
                         xfree(iinfo->username);
+                        xfree(iinfo->type);
                         xfree(iinfo);
                     }
+
                     (params.desc_set ? --i : ++i);
                 }
 
@@ -2141,13 +2183,13 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
-                        if (strcmp(tmp_name, "ctime") == 0) {
+                        if (xstrcmp(tmp_name, "ctime") == 0) {
                             ctime = json_string_value(value);
                             if (!ctime) {
                                 fprintf(stderr, "Error: ctime is NULL at row %zu\n", i);
                                 continue;
                             }
-                        } else if (strcmp(tmp_name, "interval_time") == 0) {
+                        } else if (xstrcmp(tmp_name, "interval_time") == 0) {
                             if (json_is_integer(value)) {
                                 interval_time = (unsigned long)json_integer_value(value);
                             } else {
@@ -2239,8 +2281,8 @@ void print_sjinfo_help(void)
 "        '--format='    JobID,StepID,StepCPU,StepAVECPU,StepMEM,StepVMEM,         \n"
 "                       StepPages,MaxStepCPU,MinStepCPU,MaxStepMEM,            \n"
 "                       MinStepMEM,MaxStepVMEM,MinStepVMEM,CPUthreshold,        \n"
-"                       Start,End,Type,Last_start,Last_end,Sum_CPU,     \n"
-"                       Sum_PID,Sum_NODE     \n"
+"                       Start,End,Type,Last_start,Last_end,CPU_Abnormal_CNT,     \n"
+"                       PROC_Abnormal_CNT,NODE_Abnormal_CNT     \n"
 "                                                                           \n"
 "        Fields related to resource consumption:                           \n"
 "        JobID:         Job ID                                                 \n"
@@ -2273,9 +2315,9 @@ void print_sjinfo_help(void)
 "        Fields related to abnormal events overall:                             \n"
 "        Last_start:    The start time of the most recent anomaly.        \n"
 "        Last_end:      The end time of the most recent anomaly.                \n"
-"        Sum_CPU:       Total number of CPU abnormal events.                   \n"
-"        Sum_PID:       Total number of PROCESS abnormal events.                    \n"
-"        Sum_NODE:      Total number of NODE abnormal events.                    \n"
+"        CPU_Abnormal_CNT:       Total number of CPU abnormal events.                   \n"
+"        PROC_Abnormal_CNT:       Total number of PROCESS abnormal events.                    \n"
+"        NODE_Abnormal_CNT:      Total number of NODE abnormal events.                    \n"
 "     -O, --overall:                                                           \n"
 "        Displays general information about the abnormal event          \n"
 "     -r, --running:                                                           \n"
@@ -2356,6 +2398,7 @@ extern void destroy_config_vale(void *object)
 	if (key_pair_ptr) {
 		xfree(key_pair_ptr->time);
 		xfree(key_pair_ptr->username);
+        xfree(key_pair_ptr->type);
         xfree(key_pair_ptr->apptype_cli);
         xfree(key_pair_ptr->apptype_step);
         xfree(key_pair_ptr->apptype);
@@ -2371,6 +2414,7 @@ extern void destroy_config_key_pair(void *object)
 	if (key_pair_ptr) {
 		xfree(key_pair_ptr->time);
 		xfree(key_pair_ptr->username);
+        xfree(key_pair_ptr->type);
         xfree(key_pair_ptr->apptype_cli);
         xfree(key_pair_ptr->apptype_step);
         xfree(key_pair_ptr->apptype);
@@ -3377,7 +3421,11 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     char sql_apptype_head[] = "SELECT * ";
 
     /*Event event sql statement assembly*/
-    char sql_event_head[] = "SELECT * ";
+    // char sql_event_head[] = "SELECT \"cputhreshold\",\"end\",\"jobid\",\"start\",\"step\",\"stepcpu\",\"stepmem\",\"steppages\",\"stepvmem\",\"type1\"::tag,\"type2\"::tag,\"type3\"::tag,\"username\" ";
+    char sql_event_head[] = "SELECT \"cputhreshold\",\"end\",\"jobid\",\"start\",\"step\",\"stepcpu\",\"stepmem\",\"steppages\",\"stepvmem\","
+                            "\"type1\"::tag as tag_type1,\"type2\"::tag as tag_type2,\"type3\"::tag as tag_type3,"
+                            "\"type1\"::field as field_type1,\"type2\"::field as field_type2,\"type3\"::field as field_type3,"
+                            "\"type\",\"username\" ";
     
     char *sql_runjob_head = "SELECT time as ctime,LAST(\"interval_time\") as interval_time ";
     char *sql_runjob_tail = " group by jobid";
@@ -3692,9 +3740,7 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
 
         const char and[] = " and ";
         const char or[] = " or ";
-        const char prefix1[] = "type1 = ";
-        const char prefix2[] = "type2 = ";
-        const char prefix3[] = "type3 = ";
+        const char prefix[] = "type = ";
         const char delimiters[] = ",";
         if(events == NULL) {
             events = xmalloc(strlen(deauft_events)+1);
@@ -3709,17 +3755,15 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
                 first = true;
             } else
                 c_string_append_str(tmp_events, or);
-            
             if (strcasecmp(event, "CPUUSA") == 0) { 
-                c_string_append_str(tmp_events, prefix1);
-                c_string_append_str(tmp_events, "'1'");
+                c_string_append_str(tmp_events, prefix);
+                c_string_append_str(tmp_events, "'cpu'");
             } else if (strcasecmp(event, "PidSA") == 0) {
-                c_string_append_str(tmp_events, prefix2);
-                c_string_append_str(tmp_events, "'1'");
-               
+                c_string_append_str(tmp_events, prefix);
+                c_string_append_str(tmp_events, "'process'");
             } else if (strcasecmp(event, "NodeSA") == 0) {
-                c_string_append_str(tmp_events, prefix3);
-                c_string_append_str(tmp_events, "'1'");
+                c_string_append_str(tmp_events, prefix);
+                c_string_append_str(tmp_events, "'node'");
             } else 
                 splicing = true;
             event = strtok(NULL, delimiters);
@@ -4178,7 +4222,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         tmp_uint64 = sjinfo_print->stepmem;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
@@ -4189,7 +4233,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         tmp_uint64 = sjinfo_print->stepvmem;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
@@ -4218,7 +4262,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         tmp_uint64 = sjinfo_print->stepmemmax;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
@@ -4229,7 +4273,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         tmp_uint64 = sjinfo_print->stepmemmin;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
@@ -4240,7 +4284,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         tmp_uint64 = sjinfo_print->stepvmemmax;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
@@ -4252,7 +4296,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         tmp_uint64 = sjinfo_print->stepvmemmin;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
@@ -4293,14 +4337,20 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         break; 
                     
                     case PRINT_TYPE:
-                        if(sjinfo_print->type1) {
-                            strcat(tmp_char, "|Abnormal CPU utilization|");
+                        if(sjinfo_print->type1 || xstrcmp(sjinfo_print->type, CPU_ABNORMAL_FLAG) == 0) {
+                            if(tmp_char != NULL && tmp_char[0] != '\0')
+                                strcat(tmp_char, ",");
+                            strcat(tmp_char, CPU_ABNORMAL_FLAG_DESC);
                         } 
-                        if(sjinfo_print->type2) {
-                            strcat(tmp_char, "|Operational process anomalies|");
+                        if(sjinfo_print->type2 || xstrcmp(sjinfo_print->type, PROCESS_ABNORMAL_FLAG) == 0) {
+                            if(tmp_char != NULL && tmp_char[0] != '\0')
+                                strcat(tmp_char, ",");
+                            strcat(tmp_char, PROCESS_ABNORMAL_FLAG_DESC);
                         }
-                        if(sjinfo_print->type3) {
-                            strcat(tmp_char, "|Node communication exception|");
+                        if(sjinfo_print->type3 || xstrcmp(sjinfo_print->type, NODE_ABNORMAL_FLAG) == 0) {
+                            if(tmp_char != NULL && tmp_char[0] != '\0')
+                                strcat(tmp_char, ",");
+                            strcat(tmp_char, NODE_ABNORMAL_FLAG_DESC);
                         }
                         field->print_routine(field,
                         tmp_char,
@@ -4383,7 +4433,7 @@ void field_split(char *field_str, print_field_t* fields_tmp, List sj_list)
 
         if ((tmp_char = strstr(start, "\%"))) {
             newlen_set = true;
-            newlen = atoi(tmp_char+1);
+            newlen = atoi(tmp_char + 1);
             tmp_char[0] = '\0';
         }
 
@@ -4432,7 +4482,7 @@ void print_field(uint64_t level)
     char base_event_field[] = "JobID,StepID,StepCPU,"
                 "StepMEM,StepVMEM,StepPages,CPUthreshold,Start,End,Type,";
     char base_overall_field[] = "JobID,StepID,Last_start,"
-                "Last_end,SUM_CPU,SUM_PID,SUM_NODE";
+                "Last_end,CPU_Abnormal_CNT,PROC_Abnormal_CNT,NODE_Abnormal_CNT";
     char base_apptype_field[] = "JobID,StepID,Apptype_CLI,Apptype_STEP,UserName";
     char base_apptype_job_field[] = "JobID,Apptype,UserName";
 
@@ -4463,7 +4513,7 @@ void print_field(uint64_t level)
     	{12, "CPUthreshold",    print_fields_str,   PRINT_CPUTHRESHOLD},
         {22, "Start",           print_fields_str,   PRINT_START}, 
         {22, "End",             print_fields_str,   PRINT_END},
-        {24, "Type",            print_fields_str,   PRINT_TYPE}, 
+        {31, "Type",            print_fields_str,   PRINT_TYPE}, 
         {0,  NULL,              NULL,               0}
     };
 
@@ -4472,9 +4522,9 @@ void print_field(uint64_t level)
         {6,  "StepID",      print_fields_str,   PRINT_STEPID},       
         {22, "Last_start",  print_fields_str,   PRINT_LASTSTART},
         {22, "Last_end",    print_fields_str,   PRINT_LASTEND},      
-    	{12, "Sum_CPU",     print_fields_str,   PRINT_SUMCPU},
-        {12, "Sum_PID",     print_fields_str,   PRINT_SUMPID},
-    	{12, "Sum_NODE",    print_fields_str,   PRINT_SUMNODE},
+    	{16, "CPU_Abnormal_CNT",     print_fields_str,   PRINT_SUMCPU},
+        {17, "PROC_Abnormal_CNT",     print_fields_str,   PRINT_SUMPID},
+    	{17, "NODE_Abnormal_CNT",    print_fields_str,   PRINT_SUMNODE},
         {0,  NULL,          NULL,               0}
     };
 
@@ -4594,7 +4644,7 @@ int main(int argc ,char** argv) {
     int rc = 0 ;
     char tmp_conf[] = "/etc/acct_gather.conf.key";
 
-    if(strcmp(KEYDIR, "NONE") == 0) {
+    if(xstrcmp(KEYDIR, "NONE") == 0) {
          configpath = my_strdup("/etc/slurm/acct_gather.conf.key");
     } else {
         char* def_conf = NULL;

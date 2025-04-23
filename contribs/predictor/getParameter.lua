@@ -47,8 +47,10 @@ function getParameter(options)
 	-- 当未指定partition时,获取默认分区
 	if partition == 0 then
 
+		local default_partition = "none"
+
 		local command = string.format(
-			"cat %s/slurm_partition.conf | grep -v '#' | grep 'Default=YES' | awk '{for(i=1;i<=NF;i++) if($i ~ /^PartitionName=/) print substr($i, length(\"PartitionName=\")+1)}'",
+			"cat %s/slurm_partition.conf | grep -v '#' | grep -i 'Default=YES' | tail -n 1 | awk '{for(i=1;i<=NF;i++) if($i ~ /^PartitionName=/) print substr($i, length(\"PartitionName=\")+1)}'",
 			etc_path
 		)
 
@@ -58,17 +60,17 @@ function getParameter(options)
 		if handle then
 
 			-- 读取输出
-			local default_partition = handle:read("*l"):gsub("%s+", "")
+			local line = handle:read("*a")
 			handle:close()
 
 			-- 更新partition
-			if default_partition and default_partition ~= "" then
-				partition = default_partition
-			else
-				partition = "none"
+			if line and line ~= "" then
+				default_partition = line:gsub("%s+", "")
 			end
 
 		end
+
+		partition = default_partition
         
 	end
 

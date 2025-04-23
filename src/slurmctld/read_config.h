@@ -57,13 +57,14 @@ extern void _build_node_partitions(node_record_t *node_ptr, part_record_t *part_
 extern int  load_all_part_borrow_nodes(void);
 extern void _remove_node_from_parts(node_record_t *node_ptr, bool clear_flag);
 extern void _return_borrowed_node(node_record_t *node_ptr);
+extern void _update_borrowed_node_up(node_record_t *node_ptr, time_t now);
 extern void update_all_parts_resource(bool update_resv);
 extern int  _select_node_to_borrow(part_record_t *part_ptr, int nodes_need_borrow);
 extern bool _standby_node_avail(node_record_t *node_ptr);
 extern int build_part_standby_nodes_bitmap(part_record_t *part_ptr);
 extern int valid_standby_node_parameters(part_record_t *part_ptr);
 extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *part_ptr, bool borrowed);
-extern bool validate_all_partitions_borrow_nodes(List part_list);
+extern bool validate_all_partitions_borrow_nodes(List part_list, bool update_resv);
 extern bool validate_partition_borrow_nodes(part_record_t *part_ptr);
 #endif
 

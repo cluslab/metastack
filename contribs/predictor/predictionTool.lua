@@ -178,8 +178,9 @@ function timePredict(options, user_name, partition_list, min_cpus, req_mem, min_
 					predictTool_p_time = sklearn_prediction(user_name, partition_p, req_cpu, req_mem, req_nodes, ai_time_limit)
 
 					-- 当AI法预测为负值或0时,进行全匹配修正
-					predictTool_p_time = tonumber(predictTool_p_time)
-					if ((predictTool_p_time <= 0) or predictTool_p_time == nil or predictTool_p_time == "") then
+					predictTool_p_time = tonumber(predictTool_p_time) or 0 
+
+					if (predictTool_p_time == nil or predictTool_p_time == "" or (predictTool_p_time <= 0)) then
 						-- slurm.log_info("The AI predicted value is abnormal, and full matching is carried out to find the mean correction.")
 						local corrected_value = read_and_find_job_ai(file_path, user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard)
 
@@ -667,27 +668,28 @@ end
 function sklearn_prediction(user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard)
 
 	-- 判断 Python 可执行文件是否存在
-	if not file_exists(python_executable) then
-		-- slurm.log_info("python3.9 executable is missing")
+	if file_exists(python_executable) and file_exists(prediction_script) then
+
+		-- 构建 Python 命令
+		local command = string.format(
+			"%s -u %s %s %s %s %s %s %s",
+			python_executable, prediction_script, user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard
+		)
+
+		-- 执行命令并捕获输出
+		local handle = io.popen(command)
+		local result = handle:read("*a")
+		handle:close()
+
+		return result
+
+	else
+
+		-- 文件缺失时返回默认值
+		return 0
+
 	end
-
-	-- 判断 prediction_time.py 是否存在
-	if not file_exists(prediction_script) then
-		-- slurm.log_info("prediction_time.py file is missing")
-	end
-
-	-- 构建 Python 命令
-	local command = string.format(
-		"%s -u %s %s %s %s %s %s %s",
-		python_executable, prediction_script, user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard
-	)
-
-	-- 执行命令并捕获输出
-	local handle = io.popen(command)
-	local result = handle:read("*a")
-	handle:close()
-
-	return result
+	
 end
 
 -- 检查文件是否存在的函数

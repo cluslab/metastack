@@ -195,6 +195,28 @@ extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *pa
 }
 
 /* 
+ * _update_node_up - update node state to up
+ * IN node_ptr - pointer to the borrowed node
+ */
+
+extern void _update_borrowed_node_up(node_record_t *node_ptr, time_t now)
+{
+	if (!node_ptr) {
+		return;
+	}
+
+	node_ptr->node_state &= (~NODE_STATE_DRAIN);
+	clusteracct_storage_g_node_up(
+		acct_db_conn,
+		node_ptr,
+		now);
+	
+	last_node_update = now;
+	debug("%s: node %s remove drain state", __func__, node_ptr->name);
+}		
+
+
+/* 
  * _return_borrowed_node - return borrowed node
  * IN node_ptr - pointer to the borrowed node
  */
@@ -203,6 +225,7 @@ extern void _return_borrowed_node(node_record_t *node_ptr)
 	_remove_node_from_parts(node_ptr, true);
 	_add_node_to_parts(node_ptr, NULL);
 	_update_node_borrow_state(node_ptr, NULL, false);
+	last_node_update = time(NULL);
 }
 
 
@@ -243,6 +266,7 @@ extern int _select_node_to_borrow(part_record_t *part_ptr, int nodes_need_borrow
 		/* add node to new partition */
 		_add_node_to_parts(standby_node_ptr, part_ptr);
 		_update_node_borrow_state(standby_node_ptr, part_ptr, true);
+		last_node_update = time(NULL);
 
 		node_borrowed++;
 		nodes_need_borrow--;

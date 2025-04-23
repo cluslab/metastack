@@ -602,7 +602,7 @@ extern void update_all_parts_resource(bool update_resv)
 	START_TIMER;
 	ListIterator part_iterator = list_iterator_create(part_list);
 	while ((part_ptr = list_next(part_iterator))) {
-		if (update_resv) {
+		if (update_resv && resv_list) {
 			update_part_nodes_in_resv(part_ptr);
 		}
 
@@ -738,6 +738,17 @@ extern bool validate_partition_borrow_nodes(part_record_t *part_ptr)
 	nodes_offline  = part_ptr->standby_nodes->nodes_offline;
 	nodes_borrowed = part_ptr->standby_nodes->nodes_borrowed - nodes_borrowed_unavail;
 
+	/* no offline nodes, return all borrowed nodes */
+	if (nodes_offline == 0) {
+		part_change |= return_over_borrowed_nodes(part_ptr, nodes_borrowed,
+			wait_return_borrow_nodes, &nodes_borrow_wait_return);
+
+		xfree(wait_return_borrow_nodes);
+		xfree(work_borrow_nodes);
+		xfree(idle_borrow_nodes);		
+		return part_change;
+	}
+
 	/* Return additional borrowed nodes */
 	if (nodes_borrowed > max_can_borrow) {
 		part_change |= return_over_borrowed_nodes(part_ptr, nodes_borrowed - max_can_borrow, 
@@ -753,7 +764,7 @@ extern bool validate_partition_borrow_nodes(part_record_t *part_ptr)
 	if (nodes_need_borrow >= nodes_borrowed_worked) {
 		nodes_need_borrow -= nodes_borrowed_worked;
 	} else {
-		part_change |= return_over_borrowed_nodes(part_ptr, nodes_borrowed_worked - nodes_need_borrow,
+		part_change |= return_over_borrowed_nodes(part_ptr, nodes_borrowed - nodes_need_borrow,
 				wait_return_borrow_nodes, &nodes_borrow_wait_return);
 		xfree(wait_return_borrow_nodes);
 		xfree(work_borrow_nodes);
@@ -781,12 +792,7 @@ extern bool validate_partition_borrow_nodes(part_record_t *part_ptr)
 			if (!node_ptr) {
 				continue;
 			}
-			node_ptr->node_state &= (~NODE_STATE_DRAIN);
-				clusteracct_storage_g_node_up(
-					acct_db_conn,
-					node_ptr,
-					now);
-			debug("%s: node %s remove drain state", __func__, node_ptr->name);							
+			_update_borrowed_node_up(node_ptr, now);
 			nodes_need_borrow--;	
 #ifdef __METASTACK_OPT_CACHE_QUERY
             _add_node_state_to_queue(node_ptr, true);
@@ -801,12 +807,7 @@ extern bool validate_partition_borrow_nodes(part_record_t *part_ptr)
 			if (!node_ptr) {
 				continue;
 			}
-			node_ptr->node_state &= (~NODE_STATE_DRAIN);
-			clusteracct_storage_g_node_up(
-				acct_db_conn,
-				node_ptr,
-				now);
-			debug("%s: node %s remove drain state", __func__, node_ptr->name);				
+			_update_borrowed_node_up(node_ptr, now);
 			nodes_need_borrow--;
 #ifdef __METASTACK_OPT_CACHE_QUERY
             _add_node_state_to_queue(node_ptr, true);
@@ -827,7 +828,7 @@ extern bool validate_partition_borrow_nodes(part_record_t *part_ptr)
 	return part_change;
 }
 
-extern bool validate_all_partitions_borrow_nodes(List part_list)
+extern bool validate_all_partitions_borrow_nodes(List part_list, bool update_resv)
 {
 	bool rebuild = false;
 	part_record_t *part_ptr = NULL;
@@ -846,7 +847,8 @@ extern bool validate_all_partitions_borrow_nodes(List part_list)
 	list_iterator_destroy(part_iterator);
 
 	if (rebuild) {
-		update_all_parts_resource(true);
+		update_all_parts_resource(update_resv);
+		last_part_update = time(NULL);		
 	}
 	
 	END_TIMER;
@@ -2828,7 +2830,6 @@ extern List fill_assoc_list(uid_t uid, bool locked)
 
 	if (!locked)
 		assoc_mgr_unlock(&locks);
-
 	return assoc_list;
 }
 #else

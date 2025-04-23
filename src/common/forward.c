@@ -552,6 +552,7 @@ static void _start_msg_tree_internal_nhc(hostlist_t hl, hostlist_t* sp_hl,
 							data_node_rec_state_array->node_rec_state_info_array[k].name = xstrdup((*(node_rec_state_array_split_t **)fwd_tree_in->orig_msg->data)->node_rec_state_array_data[0]->node_rec_state_info_array[i].name);
 							data_node_rec_state_array->node_rec_state_info_array[k].node_state = (*(node_rec_state_array_split_t **)fwd_tree_in->orig_msg->data)->node_rec_state_array_data[0]->node_rec_state_info_array[i].node_state;
 							data_node_rec_state_array->node_rec_state_info_array[k].reason = xstrdup((*(node_rec_state_array_split_t **)fwd_tree_in->orig_msg->data)->node_rec_state_array_data[0]->node_rec_state_info_array[i].reason);
+							break;
 						}
 					}
 					k++;
