@@ -353,8 +353,8 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_LOAD_ABNORMAL
 #endif
 
-#ifndef __METASTACK_JOB_USELESS_RUNNING_WARNING
-#define __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifndef __METASTACK_OPT_INFLUXDB_PERFORMANCE
+#define __METASTACK_OPT_INFLUXDB_PERFORMANCE
 #endif
 
 #ifndef __METASTACK_BUG_FIX_SUSPEND_TIME
@@ -403,6 +403,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_PRIORITY_JOBSIZE
 #endif
 
+#ifndef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+#define __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+#endif
+
 #ifndef __METASTACK_TIME_SYNC_CHECK
 #define __METASTACK_TIME_SYNC_CHECK
 #endif
@@ -418,6 +422,7 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_BUG_SHOW_PRIO_FLAGS
 #define __METASTACK_BUG_SHOW_PRIO_FLAGS
 #endif
+
 
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES

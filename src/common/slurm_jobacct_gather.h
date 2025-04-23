@@ -165,7 +165,7 @@ struct jobacctinfo {
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
     List pjobs;
 #endif
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	time_t cur_time_ns;
 #endif
 

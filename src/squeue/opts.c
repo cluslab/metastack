@@ -476,13 +476,15 @@ parse_command_line( int argc, char* *argv )
 	if (getenv("SQUEUE_SIB") || getenv("SQUEUE_SIBLING"))
 		params.sibling_flag = true;
 #ifdef __METASTACK_OPT_CACHE_QUERY
-    if ((env_val = getenv("SQUEUE_CACHE_QUERY"))){
-        if(!xstrcmp(env_val, "cache")){
-            params.cache_query = true;
-        }else if(!xstrcmp(env_val, "nocache")){
-            params.nocache_query = true;
-        }
-    }
+	if ((env_val = getenv("SQUEUE_CACHE_QUERY"))){
+		if(!xstrcmp(env_val, "cache")){
+			params.cache_query = true;
+			params.nocache_query = false;
+		}else if(!xstrcmp(env_val, "nocache")){
+			params.nocache_query = true;
+			params.cache_query = false;
+		}
+	}
 #endif
 	while ((opt_char = getopt_long(argc, argv,
 					   "A:ahi:j::lL:n:M:O:o:p:Pq:R:rs::S:t:u:U:vVw:",

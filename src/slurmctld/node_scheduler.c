@@ -441,9 +441,6 @@ extern void deallocate_nodes(job_record_t *job_ptr, bool timeout,
 		node_count++;
 	}
 #endif
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 
 	if (job_ptr->details->prolog_running) {
 		/*
@@ -1893,6 +1890,14 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 			avail_bitmap = bit_copy(job_ptr->details->
 						req_node_bitmap);
 			bit_and_not(avail_bitmap, rs_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+#ifdef __METASTACK_NEW_PART_PARA_SCHED							   
+			if(para_sched && sched)
+				bit_and_not(avail_bitmap, para_sched_resv_node_bitmap[index]);
+			else
+				bit_and_not(avail_bitmap, resv_node_bitmap);
+#endif
+#endif
 		}
 		for (i = 0; i < node_set_size; i++) {
 			int count1 = 0, count2 = 0;

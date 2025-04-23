@@ -580,8 +580,8 @@ extern void _update_cluster_nodes(void)
 	assoc_mgr_unlock(&locks);
 
 	slurm_mutex_unlock(&cluster_hl_mutex);
-
-	FREE_NULL_BITMAP(total_node_bitmap);
+	// Fix BUG sacct - N hostname query data incomplete
+	// FREE_NULL_BITMAP(total_node_bitmap);
 }
 
 /*

@@ -1,7 +1,9 @@
+import os
 import numpy as np
 import joblib
 import argparse
 import warnings
+import sys
 
 # 禁用不必要的警告
 warnings.filterwarnings("ignore")
@@ -25,9 +27,21 @@ configuration_path='/opt/gridview/slurm/etc/luaconfig/predictor/configuration'
 sklearn_path = get_config_value('sklearn_path', configuration_path)
 
 # 全局加载模型和标签编码器，避免重复加载
-model = joblib.load(f"{sklearn_path}/sklearn_model.pkl")
-model.n_jobs = -1  # 使用所有可用CPU核心进行预测
-label_encoders = joblib.load(f"{sklearn_path}/sklearn_label_encoders.pkl")
+# 初始化模型和编码器为 None
+model = None
+label_encoders = None
+
+# 检查模型文件和编码器是否存在
+model_path = f"{sklearn_path}/sklearn_model.pkl"
+encoder_path = f"{sklearn_path}/sklearn_label_encoders.pkl"
+
+if os.path.exists(model_path) and os.path.exists(encoder_path):
+    model = joblib.load(model_path)
+    model.n_jobs = -1  # 使用所有可用CPU核心进行预测
+    label_encoders = joblib.load(encoder_path)
+else:
+    print(0)
+    sys.exit(0)
 
 # 直接使用NumPy进行预测操作，优化特征编码处理
 def predict_elapsed(model, label_encoders, user, partition, req_cpus, req_mem, req_nodes, timelimit):

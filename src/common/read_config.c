@@ -7283,31 +7283,31 @@ extern void slurm_conf_remove_node(char *node_name)
 extern bool update_client_port(bool cache_query, bool nocache_query)
 {
 
-    if(cache_query && nocache_query){
-        printf ("The --cache and --nocache options cannot be used simultaneously!\n");
-			return SLURM_ERROR;
-    }
+//	if(cache_query && nocache_query){
+//		printf ("The --cache and --nocache options cannot be used simultaneously!\n");
+//		return SLURM_ERROR;
+//	}
 	if(conf_ptr->cache_query==2){
 		if(conf_ptr->query_port_count != 1){
 			printf ("CacheQueryPort configuration error, please contact the administrator!\n");
 			return SLURM_ERROR;
 		}
-        if (!nocache_query){
-		    conf_ptr->slurmctld_port =  conf_ptr->query_port; 
-		    conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
-        }
+		if (!nocache_query){
+			conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+			conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+		}
 	}else if(conf_ptr->cache_query == 1){
-        if(conf_ptr->query_port_count != 1){
-            printf ("CacheQueryPort configuration error, please contact the administrator!\n");
-            return SLURM_ERROR;
-        }
-        if (cache_query){
-            conf_ptr->slurmctld_port =  conf_ptr->query_port; 
-            conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
-        }
-	}else if (cache_query){
-		printf ("Parameter error, cache query function not enabled!\n");
-		return SLURM_ERROR;
+		if(conf_ptr->query_port_count != 1){
+			printf ("CacheQueryPort configuration error, please contact the administrator!\n");
+			return SLURM_ERROR;
+		}
+		if (cache_query){
+			conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+			conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+		}
+//	}else if (cache_query){
+//		printf ("Parameter error, cache query function not enabled!\n");
+//		return SLURM_ERROR;
 	}
 	return SLURM_SUCCESS;
 }

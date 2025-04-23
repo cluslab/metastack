@@ -270,6 +270,11 @@ static bool         _wait_for_server_thread(void);
 static void *       _wait_primary_prog(void *arg);
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
+
+pthread_mutex_t query_mgr_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t  query_mgr_cond = PTHREAD_COND_INITIALIZER;
+bool cache_copy_comp = false;
+
 static bool         _wait_for_query_thread(void);
 static void *       _slurmctld_query_mgr(void *no_data);
 static void *       _query_connection(void *arg);
@@ -945,9 +950,11 @@ int main(int argc, char **argv)
 	/* Purge our local data structures */
 	configless_clear();
 	power_save_fini();
+#ifdef __METASTACK_OPT_CACHE_QUERY
 	purge_cache_part_data();
 	purge_cache_node_data();
 	purge_cache_job_data();
+#endif
 	job_fini();
 	part_fini();	/* part_fini() must precede node_fini() */
 	node_fini();
@@ -1484,6 +1491,7 @@ cleanup:
 static void *_slurmctld_query_mgr(void *no_data)
 {
 	int *newsockfd;
+    time_t now;
 	struct pollfd *fds;
 	slurm_addr_t cli_addr, srv_addr;
 	int fd_next = 0, i, nports;
@@ -1542,6 +1550,16 @@ static void *_slurmctld_query_mgr(void *no_data)
 	 */
 	xsignal(SIGUSR1, _sig_handler);
 	xsignal_unblock(sigarray);
+    now = time(NULL);
+	slurm_mutex_lock(&query_mgr_lock);
+	while (!cache_copy_comp) {
+        struct timespec ts = {0, 0};
+		ts.tv_sec = now + 1;
+		slurm_cond_timedwait(&query_mgr_cond, &query_mgr_lock, &ts);
+        now = time(NULL);
+	}
+    cache_copy_comp = false;
+	slurm_mutex_unlock(&query_mgr_lock);
 
 	/*
 	 * Process incoming RPCs until told to shutdown
@@ -2644,7 +2662,7 @@ static void *_slurmctld_background(void *no_data)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 			borrow_cache_nodes = true;
 #endif
-			validate_all_partitions_borrow_nodes(part_list);
+			validate_all_partitions_borrow_nodes(part_list, true);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 			borrow_cache_nodes = false;
 #endif

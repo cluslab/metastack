@@ -126,14 +126,14 @@ fi
 
 # 同步执行生成模型更新的脚本
 sklearn_path=$(grep "^[^#]*sklearn_path=" "$configuration_path" | awk -F '=' '{print $2}')
-. $sklearn_path/update_model.sh
+. $sklearn_path/update_model.sh 2>&1 | tee -a "$predictor_path/update.log"
 
 #打印提示
 echo " " >> $predictor_path/update.log
 echo "$(date '+%Y-%m-%d %H:%M:%S') ################################################################################################" >> $predictor_path/update.log
-echo "$(date '+%Y-%m-%d %H:%M:%S') ###   Start date is: $start_date                                                              ###" >> $predictor_path/update.log
-echo "$(date '+%Y-%m-%d %H:%M:%S') ###   End date is: $end_date                                                                ###" >> $predictor_path/update.log
-echo "$(date '+%Y-%m-%d %H:%M:%S') ###   Today is: $current_date                                                                   ###" >> $predictor_path/update.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') ###   Start date is   :   $start_date                                                         ###" >> $predictor_path/update.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') ###   End date is     :   $end_date                                                         ###" >> $predictor_path/update.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') ###   Today is        :   $current_date                                                         ###" >> $predictor_path/update.log
 echo "$(date '+%Y-%m-%d %H:%M:%S') ###   The jobs in the above time interval are saved in 'jobHistory_$current_date'               ###" >> $predictor_path/update.log
 echo "$(date '+%Y-%m-%d %H:%M:%S') ################################################################################################" >> $predictor_path/update.log
 echo " " >> $predictor_path/update.log

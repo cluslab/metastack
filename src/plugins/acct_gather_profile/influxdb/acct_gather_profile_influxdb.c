@@ -111,7 +111,7 @@ typedef struct {
 #ifdef __METASTACK_LOAD_ABNORMAL
 	char* workdir;
 #endif	
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	char* series_reduce;
 #endif
 } slurm_influxdb_conf_t;
@@ -137,6 +137,26 @@ union data_t{
 #endif
 };
 
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
+typedef enum {
+    EVENT_CPU = 0,
+    EVENT_PROCESS,
+    EVENT_NODE,
+    EVENT_COUNT 
+} EventType;
+
+typedef struct {
+    uint64_t flag;
+    const char* name;
+} EventConfig;
+
+static const EventConfig EVENT_CONFIGS[] = {
+    {0x0000000000000001, "cpu"},
+    {0x0000000000000010, "process"},
+    {0x0000000000000100, "node"}
+};
+#endif
+
 static slurm_influxdb_conf_t influxdb_conf;
 static uint32_t g_profile_running = ACCT_GATHER_PROFILE_NOT_SET;
 static stepd_step_rec_t *g_job = NULL;
@@ -148,7 +168,7 @@ static table_t *tables = NULL;
 static size_t tables_max_len = 0;
 static size_t tables_cur_len = 0;
 
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 static char *stepd_datastr = NULL;  /* Save the data to send to the stepd retention policy */
 static char *event_datastr = NULL;	/* Save the data to send to the event retention policy */
 static char *buffer_file_stepd = NULL;
@@ -315,7 +335,7 @@ static size_t _write_callback(void *contents, size_t size, size_t nmemb,
 	return realsize;
 }
 
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType type)
 {
 	CURL *curl_handle = NULL;
@@ -533,7 +553,7 @@ static int count_file_row(char *path)
 /*At the end of the job, 
  *check whether the influxdb cache file is generated,and if so, 
  *try to send it again.*/
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 static int _last_resend(const char *data, RPType type)
 {
 	struct stat st;
@@ -681,7 +701,7 @@ static int _last_resend(const char *data, RPType type)
 #endif
 
 /* Try to send data to influxdb */
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 static int _send_data(const char *data, RPType type)
 #endif
 {
@@ -693,7 +713,7 @@ static int _send_data(const char *data, RPType type)
 	static int error_cnt = 0;
 	char *url = NULL;
 	size_t length;
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	char* rt_policy = NULL;
 #endif
 
@@ -732,7 +752,7 @@ static int _send_data(const char *data, RPType type)
 		rc = SLURM_ERROR;
 		goto cleanup_easy_init;
 	}
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	rt_policy = _parse_rt_policy(influxdb_conf.rt_policy, type);
 	/* If open ProfileInfluxDBSeriesReduce, need to increase the time accuracy in order to avoid data overwrite */
 	if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
@@ -845,7 +865,7 @@ extern int init(void)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	apptype_datastr = xmalloc(BUF_SIZE);
 #endif
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	influxdb_conf.series_reduce = NULL;
 	influxdb_conf.workdir = NULL;
 #endif
@@ -863,7 +883,7 @@ extern int fini(void)
 	xfree(influxdb_conf.password);
 	xfree(influxdb_conf.rt_policy);
 	xfree(influxdb_conf.username);
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 	xfree(influxdb_conf.workdir);
 	xfree(influxdb_conf.series_reduce);
 	xfree(stepd_datastr);
@@ -893,7 +913,7 @@ extern void acct_gather_profile_p_conf_options(s_p_options_t **full_options,
 #ifdef __METASTACK_LOAD_ABNORMAL
 		{"ProfileInfluxDBWorkdir", S_P_STRING},
 #endif	
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 		{"ProfileInfluxDBSeriesReduce", S_P_STRING},
 #endif
 		{NULL} };
@@ -931,7 +951,7 @@ extern void acct_gather_profile_p_conf_set(s_p_hashtbl_t *tbl)
 		s_p_get_string(&influxdb_conf.workdir,
 			       "ProfileInfluxDBWorkdir", tbl);
 #endif
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 		s_p_get_string(&influxdb_conf.series_reduce,
 			       "ProfileInfluxDBSeriesReduce", tbl);
 #endif
@@ -1034,7 +1054,7 @@ extern int acct_gather_profile_p_task_start(uint32_t taskid)
 extern int acct_gather_profile_p_task_end(pid_t taskpid)
 {
 	debug3("%s %s called", plugin_type, __func__);
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	/*
 		Starting from 1, skip NATIVERP
@@ -1111,7 +1131,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	table_t *table = &tables[table_id];
 	int i = 0;
 	char *str = NULL;
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	time_t ct = 0, ct_ns = 0;
 	struct timespec now;
 #endif
@@ -1132,7 +1152,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 			List process;
 	};
 	struct data_pack * pdata = (struct data_pack*)data;
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
 		clock_gettime(CLOCK_REALTIME, &now);
 		ct_ns = now.tv_nsec;
@@ -1147,7 +1167,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	for(; i < table->size; i++) {
 		switch (table->types[i]) {
 		case PROFILE_FIELD_UINT64:
-#if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 			if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
 				xstrfmtcat(str, "%s,host=%s,username=%s"
 					" job=%d,step=%d,task=%s,value=%"PRIu64" "
@@ -1168,7 +1188,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 #endif
 			break;
 		case PROFILE_FIELD_DOUBLE:
-#if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 			if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
 				xstrfmtcat(str, "%s,host=%s,username=%s "
 				   " job=%d,step=%d,task=%s,value=%.2f %"PRIu64""
@@ -1192,7 +1212,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 			break;
 		}
 	}
-#if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_JOB_USELESS_RUNNING_WARNING)
+#if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 	if(pdata->process != NULL  ) {
 		ListIterator itr = list_iterator_create(pdata->process);
 		jag_prec_t *prec;
@@ -1239,9 +1259,6 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	char *str2 = NULL;
 #endif
-	uint64_t event1 = 0x0000000000000001;
-	uint64_t event2 = 0x0000000000000010;
-	uint64_t event3 = 0x0000000000000100;
 
 	enum {
 		/*PROFILE*/
@@ -1250,7 +1267,7 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 		FIELD_STEPMEM,	
 		FIELD_STEPVMEM,		
 		FIELD_STEPPAGES,
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 		FIELD_TIMER,
 #endif
 		/*EVENT*/
@@ -1290,7 +1307,7 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 					break;
 #endif
 				xstrfmtcat(str1,"Stepd,username=%s,jobid=%d,step=%d stepcpu=%.2f,"
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 				"stepcpuave=%.2f,stepmem=%.2f,stepvmem=%.2f,interval_time=%"PRIu64","
 #endif
 				"steppages=%"PRIu64" %"PRIu64"\n", 
@@ -1304,36 +1321,38 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 				((union data_t*)data)[FIELD_TIMER].u,
 				((union data_t*)data)[FIELD_STEPPAGES].u,
 				(uint64_t)sample_time);
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 				_send_data2(str1, g_job->step_id.job_id, g_job->step_id.step_id, STEPDRP);
 #endif
 				if (str1)
 					xfree(str1);
 				break;
 			case SLUR_SEND_EVENT_TYPE:
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 				if (((union data_t*)data)[FIELD_FLAG].u == 0 || 
 					!(((union data_t*)data)[FIELD_SENDFLAG].u & JOBACCT_GATHER_PROFILE_ABNORMAL)) 
 					break;	
 #endif
-				xstrfmtcat(str,"Event,username=%s,jobid=%d,step=%d,type1=%d,type2=%d,type3=%d "
-				"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,"
-				"stepvmem=%.2f,steppages=%"PRIu64",start=%"PRIu64",end=%"PRIu64" %"PRIu64"\n",
-				g_job->user_name,
-				g_job->step_id.job_id, 
-				g_job->step_id.step_id,
-				((((union data_t*)data)[FIELD_FLAG].u & event1) ? 1 : 0),
-				((((union data_t*)data)[FIELD_FLAG].u & event2) ? 1 : 0),
-				((((union data_t*)data)[FIELD_FLAG].u & event3) ? 1 : 0),
-				((union data_t*)data)[FIELD_CPUTHRESHOLD].d,
-				((union data_t*)data)[FIELD_STEPCPU].d,
-				((union data_t*)data)[FIELD_STEPMEM].d,
-				((union data_t*)data)[FIELD_STEPVMEM].d,
-				((union data_t*)data)[FIELD_STEPPAGES].u,
-				((union data_t*)data)[FIELD_EVENTTYPE1START].u,
-				((union data_t*)data)[FIELD_EVENTTYPE1END].u,
-				(uint64_t)sample_time);
+				for (int i = 0; i < EVENT_COUNT; i++) {
+					if (((union data_t*)data)[FIELD_FLAG].u & EVENT_CONFIGS[i].flag) {
+						xstrfmtcat(str, "Event,username=%s,jobid=%d,step=%d,type=%s "
+										"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,"
+										"stepvmem=%.2f,steppages=%"PRIu64",start=%"PRIu64",end=%"PRIu64" %"PRIu64"\n",
+								g_job->user_name,
+								g_job->step_id.job_id,
+								g_job->step_id.step_id,
+								EVENT_CONFIGS[i].name,
+								((union data_t*)data)[FIELD_CPUTHRESHOLD].d,
+								((union data_t*)data)[FIELD_STEPCPU].d,
+								((union data_t*)data)[FIELD_STEPMEM].d,
+								((union data_t*)data)[FIELD_STEPVMEM].d,
+								((union data_t*)data)[FIELD_STEPPAGES].u,
+								((union data_t*)data)[FIELD_EVENTTYPE1START].u,
+								((union data_t*)data)[FIELD_EVENTTYPE1END].u,
+								(uint64_t)sample_time);
+					}
+				}
 				_send_data2(str, g_job->step_id.job_id, g_job->step_id.step_id, EVENTRP);
 #endif
 				if (str)
@@ -1432,7 +1451,7 @@ extern void acct_gather_profile_p_conf_values(List *data)
 	key_pair->value = xstrdup(influxdb_conf.workdir);
 	list_append(*data, key_pair);
 #endif
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("ProfileInfluxDBSeriesReduce");
 	key_pair->value = xstrdup(influxdb_conf.series_reduce);

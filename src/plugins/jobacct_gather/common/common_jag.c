@@ -814,7 +814,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		FIELD_STEPMEM,	
 		FIELD_STEPVMEM,		
 		FIELD_STEPPAGES,
-#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 		FIELD_TIMER,
 #endif
 		/*EVENT*/
