@@ -21,12 +21,10 @@ $(PLUGIN_NAME).so: $(PLUGIN_OBJECTS)
 clean:
 	rm -f $(PLUGIN_OBJECTS) $(PLUGIN_NAME).so
 
-install:
-	mkdir -p $(PREFIX)/lib/slurm
-	cp $(PLUGIN_NAME).so $(PREFIX)/lib/slurm/
-	ldconfig
+install: all
+	mkdir -p $(PREFIX)/slurm
+	cp $(PLUGIN_NAME).so $(PREFIX)/slurm/
 
 uninstall:
-	rm -f $(PREFIX)/lib/slurm/$(PLUGIN_NAME).so
-	ldconfig
+	rm -f $(PREFIX)/slurm/$(PLUGIN_NAME).so
 

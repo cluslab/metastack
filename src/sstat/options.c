@@ -72,14 +72,20 @@ sstat [<OPTION>] -j <job(.stepid)>                                          \n\
       -a, --allsteps:                                                       \n\
                    Print all steps for the given job(s) when no step is     \n\
                    specified.                                               \n\
+      -d,          The resource consumption information and abnormal events \n\
+                   of each job step are displayed in units of job steps.	\n\
+                   If no anomaly detection parameter is specified when the  \n\
+                   job is submitted, or slurm.conf is not configured        \n\
+                   (see --job-monitor for details), the data displayed      \n\
+                   will be empty                                            \n\
       -e, --helpformat:                                                     \n\
 	           Print a list of fields that can be specified with the    \n\
 	           '--format' option                                        \n\
-     -h, --help:   Print this description of use.                           \n\
-     -i, --pidformat:                                                       \n\
+      -h, --help:   Print this description of use.                           \n\
+      -i, --pidformat:                                                       \n\
                    Predefined format to list the pids running for each      \n\
                    job step.  (JobId,Nodes,Pids)                            \n\
-     -j, --jobs:                                                            \n\
+      -j, --jobs:                                                            \n\
 	           Format is <job(.step)>. Stat this job step               \n\
                    or comma-separated list of job steps. This option is     \n\
                    required.  The step portion will default to the lowest   \n\
@@ -90,21 +96,21 @@ sstat [<OPTION>] -j <job(.stepid)>                                          \n\
                    information about the batch step. A step id of 'extern'  \n\
                    will display the information about the extern step       \n\
                    when using PrologFlags=contain.                          \n\
-     -n, --noheader:                                                        \n\
+      -n, --noheader:                                                        \n\
 	           No header will be added to the beginning of output.      \n\
                    The default is to print a header.                        \n\
-     --noconvert:  Don't convert units from their original type             \n\
+      --noconvert:  Don't convert units from their original type             \n\
 		   (e.g. 2048M won't be converted to 2G).                   \n\
-     -o, --format:                                                          \n\
+      -o, --format:                                                          \n\
 	           Comma separated list of fields. (use \"--helpformat\"    \n\
                    for a list of available fields).                         \n\
-     -p, --parsable: output will be '|' delimited with a '|' at the end     \n\
-     -P, --parsable2: output will be '|' delimited without a '|' at the end \n\
-     --usage:      Display brief usage message.                             \n\
-     -v, --verbose:                                                         \n\
+      -p, --parsable: output will be '|' delimited with a '|' at the end     \n\
+      -P, --parsable2: output will be '|' delimited without a '|' at the end \n\
+      --usage:      Display brief usage message.                             \n\
+      -v, --verbose:                                                         \n\
 	           Primarily for debugging purposes, report the state of    \n\
                    various variables during processing.                     \n\
-     -V, --version: Print version.                                          \n\
+      -V, --version: Print version.                                          \n\
 \n");
 
 	return;

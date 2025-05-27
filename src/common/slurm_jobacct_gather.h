@@ -165,6 +165,10 @@ struct jobacctinfo {
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
     List pjobs;
 #endif
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
+	time_t cur_time_ns;
+#endif
+
 };
 
 #ifdef __METASTACK_LOAD_ABNORMAL
@@ -173,6 +177,16 @@ struct jobacctinfo {
 #define LOAD_LOW   0x0000000000000001  /*cpu event*/
 #define PROC_AB    0x0000000000000010  /*pocess status read only*/
 #define JNODE_STAT 0x0000000000000100
+
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+#define JOBACCT_GATHER_PROFILE_ABNORMAL 0x0000000000000001
+/*
+	It represents that the purpose of this collection is to collect 
+	content related to application name recognition
+*/
+#define JOBACCT_GATHER_PROFILE_APPTYPE 	0x0000000000000010
+#endif
+
 #define JOBACCTINFO_START_END_ARRAY_SIZE 200
 
 struct jobinfostat {
@@ -198,6 +212,18 @@ typedef struct {
 	time_t node_end;
 	uint64_t node_alloc_cpu;
     uint64_t timer;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	pid_t *pids;
+	int npids;
+	bool update;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char* apptype_step;	 /* Save the application type obtained by the jobacctgather plugin */
+	uint64_t send_flag2; /* Used to indicate what kind of data was sent, exception event data, or application type data */
+	uint64_t have_recogn; 	 /* Flag whether data needs to be saved or sent to influxdb */
+	char* apptype_cli;	 /* Save the application type obtained by the cli_filter plugin */
+	uint64_t cputime;	/*  cputime is consumed by the most important processes */
+#endif
 } write_t;
 
 typedef struct {
@@ -211,6 +237,18 @@ typedef struct {
 	uint64_t vmem_step;
 	uint64_t step_pages;
 	time_t start;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	pid_t *pids;
+	int   npids;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char **cmdlines;
+	char **commands;
+	int app_rec_cnt;
+	uint64_t collect_flag;
+	uint64_t max_cpu_time;
+	char *max_cputime_comm;
+#endif
 } collection_t;
 extern collection_t share_data;
 
@@ -239,6 +277,12 @@ typedef struct {
 extern step_gather_t step_gather;
 #endif
 
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/*
+	Defines the duration of the apptype recognition
+*/
+#define JOBACCTGATHER_APPTYPE_DURATION 60
+#endif
 /* Define jobacctinfo_t below to avoid including extraneous slurm headers */
 #ifndef __jobacctinfo_t_defined
 #  define  __jobacctinfo_t_defined
@@ -247,6 +291,11 @@ extern step_gather_t step_gather;
 
 extern int jobacct_gather_init(void); /* load the plugin */
 extern int jobacct_gather_fini(void); /* unload the plugin */
+
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern int jobacct_gather_watchdog(int frequency, acct_gather_rank_t jobinfo);
+#endif
 
 #ifdef __METASTACK_LOAD_ABNORMAL
 extern int  jobacct_gather_startpoll(uint16_t frequency, acct_gather_rank_t job_set);
@@ -257,6 +306,16 @@ extern int jobacctinfo_unpack_detial(jobacctinfo_t **jobacct, uint16_t rpc_versi
 			      uint16_t protocol_type, buf_t *buffer, bool alloc); 	
 extern void jobacctinfo_aggregate_2(jobacctinfo_t *dest, jobacctinfo_t *from);
 #endif
+
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+extern int	jobacct_gather_apptypepoll(uint16_t frequency, acct_gather_rank_t jobinfo);
+extern int apptype_properties_conf_init(void);
+extern int apptype_properties_write_conf(int fd);
+extern int apptype_properties_read_conf(int fd);
+extern int apptype_properties_conf_reconfig(void);
+extern int apptype_properties_conf_destory(void);
+#endif
+
 extern int  jobacct_gather_endpoll(void);
 extern void jobacct_gather_suspend_poll(void);
 extern void jobacct_gather_resume_poll(void);

@@ -729,6 +729,33 @@ user in this way, you must restart slurmctld.
 .IP
 
 .TP
+\fBSaveUid\fR
+Used to control whether the user UID is saved to a local file. Boolean, if set to YES, 
+\fBslurmdbd\fR saves the user UID to a local file. The default value is NO, 
+which means that the user UID is not saved to a local file.
+A restart of slurmdbd is required for changes to this parameter to take effect.
+.IP
+
+.TP
+\fBUidSaveLocation\fR
+Fully qualified pathname of the directory where \fBslurmdbd\fR saves 
+user UID. All user UIDs will be saved here to quickly start the slurmdbd 
+service or recover from system failures.
+\fBSlurmUser\fR must be able to create files in this directory.
+If you have a secondary \fBDbdHost\fR configured, this location should be
+readable and writable by both systems.
+The use of a reliable file system (e.g. RAID) is recommended.
+The default value is "/var/spool".
+.IP
+
+.TP
+\fBUidSaveInterval\fR
+The interval between saving user UID twice. This option is only applicable 
+when \fBSaveUid\fR is set to "\fByes\fR". The value range is 60 to 65533 seconds. 
+The default value is 300 seconds.
+.IP
+
+.TP
 \fBStorageHost\fR
 Define the name of the host the database is running where we are going
 to store the data.
@@ -863,6 +890,9 @@ SlurmUser=slurm_mgr
 StoragePass=password_to_database
 StorageType=accounting_storage/mysql
 StorageUser=database_mgr
+SaveUid=yes
+UidSaveLocation=/var/spool
+UidSaveInterval=300
 .fi
 
 .SH "COPYING"

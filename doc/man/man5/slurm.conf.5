@@ -668,7 +668,12 @@ No cli_filter plugins are used by default. Acceptable values at present are:
 .TP
 \fBcli_filter/lua\fR
 This plugin allows you to write your own implementation of a cli_filter
-using lua.
+using lua. If application name collection is enabled through the apptype 
+subitem of JobAcctGatherFrequency, this configuration item can also be 
+used to analyze script information to determine the application type. A 
+sample file cli_filter_apptype.lua.example is provided in the etc path 
+of the source code installation to enable the identification of the 
+application type from the script.
 .IP
 
 .TP
@@ -1620,6 +1625,14 @@ may be specified. Supported datatypes are as follows:
 where \fI<interval>\fR is the task sampling interval in seconds
 for the jobacct_gather plugins and for task
 profiling by the acct_gather_profile plugin.
+.IP
+
+.TP
+\fBapptype=\fI<interval>\fR
+where \fI<interval>\fR is the apptype sampling interval in seconds
+for the jobacct_gather plugins and for job application type
+profiling by the acct_gather_profile plugin.The maximum value is 60. 
+Setting it to 0 or not will not collect job application type data
 .IP
 
 .TP
@@ -5311,6 +5324,18 @@ and "StandardError=null" to the respective service files or override files.
 .IP
 
 .TP
+\fBSlurmctldLoadGres\fR
+Specifies whether Slurmctld should load the GRES configuration when starting up. 
+If set to "Yes", regardless of whether the Slurm daemon service is running, 
+the management node will preload all nodes' GRES configurations when starting 
+Slurmctld service, which can effectively prevent the submission of jobs that do
+not meet the core-to-GPU ratio requirements.
+Configuration method:
+SlurmctldLoadGres=Yes  enables Slurmctld to read GRES configuration functionality.
+SlurmctldLoadGres=No  disables Slurmctld to read GRES configuration functionality.
+.IP
+
+.TP
 \fBSlurmdTimeout\fR
 The interval, in seconds, that the Slurm controller waits for \fBslurmd\fR
 to respond before configuring that node's state to DOWN.
@@ -5812,6 +5837,42 @@ Function in TaskPlugin
 .TP
 \fBTCPTimeout\fR
 Time permitted for TCP connection to be established. Default value is 2 seconds.
+.IP
+
+.TP
+\fBTimeSyncCheck\fR
+Time synchronization check toggle. Used to regularly check the time difference between 
+the management node and the compute nodes. If the time difference exceeds TimeSyncCheckTimeDiff 
+within a continuous count of TimeSyncCheckRetryCount, then the compute node that is out 
+of sync will be taken offline, with the node status set to DRAIN, and the reason for the 
+offline set to "Time Sync". It can be set to Yes/No, with the default value being No. 
+The time synchronization check interval depends on the SlurmdTimeOut value.
+Notice If this switch is enabled, the node whose status is down* due to time asynchronism 
+of the compute node changes to drain. The cause of this node, originally Not Responding, 
+will change to Time Sync. In addition, the TimeSyncCheckTimeDiff value can also 
+be set to certain limits. For details, see the introduction of TimeSyncCheckTimeDiff.
+.IP
+
+.TP
+\fBTimeSyncCheckTimeDiff\fR
+Time difference between the management node and compute node.  In this range,the management 
+node does not take the compute node offline.This value is related to the ttl of munge. The 
+ttl of munge is the lifetime of the munge certificate, which refers to the difference 
+between the encoding time and decoding time of the munge certificate. The default value of ttl 
+is 300 seconds. If the time difference between the management node and the compute node 
+is greater than 300 seconds, a munge certificate error is reported. If the TimeDiff 
+value is greater than 300 seconds, the munge error will be reported directly, which does not play 
+the role of time detection. In addition, the value is also related to job credentials. The ttl of 
+job credentials defaults to 120 seconds. If this value is exceeded, the job will fail to be submitted. 
+The value of the configuration item ranges from 0 to 65535. The unit of the configuration item is second
+.It is recommended that the timediff value be within 120 seconds.
+.IP
+
+.TP
+\fBTimeSyncCheckRetryCount\fR
+Number of continuous time dissynchronization times of a compute node. 
+If the number of consecutive times exceeds this threshold, 
+the management node will go offline for the node whose time is not synchronized.
 .IP
 
 .TP
@@ -6792,6 +6853,65 @@ exclusive.
 .IP
 
 .TP
+\fBWatchDogName\fR
+Used to configure custom exception handling functionality. If the same option 
+is set multiple times, the last one takes effect.
+.IP
+.RS
+.TP
+\fBWatchDogName\fR
+Specifies the name of the watchdog, which can be provided 
+to sbatch, srun, or salloc. The value is case-sensitive. It cannot be 
+empty and must not contain special characters such as #, !, &, *, %, $, @. 
+.IP
+.TP
+\fBScript\fR
+This keyword specifies the file path to an external monitoring 
+script that checks application data and other information. This file must 
+have appropriate execution permissions for the job-submitting user.  
+.IP
+.TP
+\fBInitTime\fR
+Specifies the delay (in seconds) before starting the monitoring 
+script after the job starts. The default value is 0 seconds.  
+.IP
+.TP
+\fBPeriod\fR
+Specifies the interval (in seconds) for starting the monitoring 
+script after the previous execution. The default value is 0 seconds. If set to 0, 
+the feature will be disabled.
+.IP
+.TP
+\fBEnableAllNodes\fR
+Setting this to Yes enables the monitoring script for all job steps across 
+all nodes.  
+.IP
+.TP
+\fBEnableAllStepd\fR
+If EnableAllNodes is set to No and EnableAllStepd is set to Yes, the script 
+will run threads on all job steps of the head node. If both EnableAllStepd 
+and EnableAllNodes are set to No, the script will only run for one job step. 
+For sbatch, this will be the batch job step; for srun, it will be .0 job step; 
+and for salloc, it will be the external job step (extern).  
+.IP
+.TP
+\fBDescribe\fR
+Describes the purpose of the script.  
+.IP
+.TP
+\fBAccounts\fR
+This serves only as a prompt for which users the settings apply to and does not 
+have actual control functionality.
+.IP
+.TP
+\fBexample\fR
+WatchDogName=watchdog1 Script=/opt/gridview/slurm/etc/xxx.sh initTime=5 Period=5 Describe="this is for appa" 
+EnableAllNodes=yes EnableAllStepds=yes
+.IP
+.RE
+.IP
+
+.TP
 \fBDenyAccounts\fR
 Comma\-separated list of accounts which may not execute jobs in the partition.
 By default, no accounts are denied access
@@ -7206,6 +7326,86 @@ jobs in partition(s) with lower \fBPriorityTier\fR values if
 \fIPreemptType=preempt/partition_prio\fR.
 The value may not exceed 65533.
 Also see PriorityJobFactor.
+.IP
+
+.TP
+\fBPriorityFavorSmall\fR
+Specifies that small jobs should be given preferential scheduling priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+Supported values are "YES" and "NO". When the partition is not configured, the default value is "NO",
+and uses the global PriorityFavorSmall. When the partition configuration is different from the global one, 
+the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightAge\fR
+An integer value that sets the degree to which the queue wait time
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+Requires AccountingStorageType=accounting_storage/slurmdbd.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightAge. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightAssoc\fR
+An integer value that sets the degree to which the association
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightAssoc. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightFairshare\fR
+An integer value that sets the degree to which the fair\-share
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+Requires AccountingStorageType=accounting_storage/slurmdbd.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightFairshare. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightJobSize\fR
+An integer value that sets the degree to which the job size
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightJobSize. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightPartition\fR
+Partition factor used by priority/multifactor plugin in calculating job priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightPartition. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightQOS\fR
+An integer value that sets the degree to which the Quality Of Service
+component contributes to the job's priority in this partition.
+Applicable only if PriorityType=priority/multifactor.
+When the partition is not configured, the default value is 0, and uses the global PriorityWeightQOS. 
+When the partition configuration is different from the global one, the partition configuration takes effect.
+.IP
+
+.TP
+\fBPriorityWeightTRES\fR
+A comma\-separated list of TRES Types and weights that sets the degree that each
+TRES Type contributes to the job's priority in this partition.
+.IP
+.nf
+e.g.
+PriorityWeightTRES=CPU=1000,Mem=2000,GRES/gpu=3000
+.fi
+
+Applicable only if PriorityType=priority/multifactor and if
+AccountingStorageTRES is configured with each TRES Type.
+Negative values are allowed.
+The default values are 0.
 .IP
 
 .TP

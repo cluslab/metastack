@@ -1064,6 +1064,13 @@ extern void slurm_free_job_desc_msg(job_desc_msg_t *msg)
 		xfree(msg->work_dir);
 		xfree(msg->x11_magic_cookie);
 		xfree(msg->x11_target);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+        /*submit job need free malloc*/
+		xfree(msg->watch_dog);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		xfree(msg->apptype);
+#endif
 		xfree(msg);
 	}
 }
@@ -1107,7 +1114,9 @@ extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 		xfree(msg->std_out);
 		xfree(msg->work_dir);
 		xfree(msg->user_name);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		xfree(msg->apptype);
+#endif
 		xfree(msg->x11_alloc_host);
 		xfree(msg->x11_magic_cookie);
 		xfree(msg->x11_target);
@@ -1118,7 +1127,11 @@ extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 			xfree(msg->spank_job_env);
 		}
 		slurm_cred_destroy(msg->cred);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		/*agent rpc for slurmd or slurmstepd,don't need accout or explain struct*/
+		xfree(msg->watch_dog);
+		xfree(msg->watch_dog_script);
+#endif
 		xfree(msg);
 	}
 }
@@ -1172,6 +1185,16 @@ extern void slurm_free_job_launch_msg(batch_job_launch_msg_t * msg)
 		xfree(msg->tres_freq);
 		xfree(msg->user_name);
 		xfree(msg->work_dir);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		/*agent rpc for slurmd or slurmstepd,
+		* don't need accout or explain struct
+		*/
+		xfree(msg->watch_dog);
+		xfree(msg->watch_dog_script);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		xfree(msg->apptype);
+#endif
 		xfree(msg);
 	}
 }
@@ -1419,6 +1442,10 @@ extern void slurm_free_job_step_create_request_msg(
 		xfree(msg->tres_per_node);
 		xfree(msg->tres_per_socket);
 		xfree(msg->tres_per_task);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		xfree(msg->watch_dog);
+		// xfree(msg->watch_dog_script);
+#endif
 		xfree(msg);
 	}
 }
@@ -1613,7 +1640,14 @@ extern void slurm_free_launch_tasks_request_msg(launch_tasks_request_msg_t * msg
 	xfree(msg->x11_alloc_host);
 	xfree(msg->x11_magic_cookie);
 	xfree(msg->x11_target);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	/*RPC REQUEST_LAUNCH_TASKS */
+	xfree(msg->watch_dog);
+	xfree(msg->watch_dog_script);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	xfree(msg->apptype);
+#endif
 	xfree(msg);
 }
 
@@ -2696,6 +2730,7 @@ extern void slurm_free_ping_slurmd_resp(ping_slurmd_resp_msg_t *msg)
 	xfree(msg);
 }
 
+
 /*
  * structured as a static lookup table, which allows this
  * to be thread safe while avoiding any heap allocation
@@ -3432,10 +3467,17 @@ extern char *priority_flags_string(uint16_t priority_flags)
 			xstrcat(flag_str, ",");
 		xstrcat(flag_str, "MAX_TRES");
 	}
+#ifdef __METASTACK_BUG_SHOW_PRIO_FLAGS
+	if (priority_flags & PRIORITY_FLAGS_NO_NORMAL_ASSOC &&
+		priority_flags & PRIORITY_FLAGS_NO_NORMAL_PART  &&
+		priority_flags & PRIORITY_FLAGS_NO_NORMAL_QOS   &&
+		priority_flags & PRIORITY_FLAGS_NO_NORMAL_TRES) {
+#else
 	if (priority_flags & (PRIORITY_FLAGS_NO_NORMAL_ASSOC |
 			      PRIORITY_FLAGS_NO_NORMAL_PART  |
 			      PRIORITY_FLAGS_NO_NORMAL_QOS   |
 			      PRIORITY_FLAGS_NO_NORMAL_TRES)) {
+#endif					
 		if (flag_str[0])
 			xstrcat(flag_str, ",");
 		xstrcat(flag_str, "NO_NORMAL_ALL");
@@ -4418,6 +4460,48 @@ extern void slurm_free_submit_response_response_msg(submit_response_msg_t * msg)
 	}
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/*free scontrol show watchdog struct*/
+extern void slurm_free_watch_dog_info_members(watch_dog_record_t * watch_dog)
+{
+	if (watch_dog) {
+		xfree(watch_dog->account);
+		xfree(watch_dog->watch_dog);
+		xfree(watch_dog->script);
+		xfree(watch_dog->describe);
+	}
+}
+
+static void  _free_all_watch_dogs(slurm_ctl_conf_info_msg_watch_dog_t *msg)
+{
+	int i;
+
+	if ((msg == NULL) ||
+	    (msg->watch_dog_array == NULL))
+		return;
+
+	for (i = 0; i < msg->record_count; i++)
+		slurm_free_watch_dog_info_members(
+			&msg->watch_dog_array[i]);
+
+}
+
+/*
+ * slurm_free_ctl_conf_watch_dog - free slurm control information response message
+ * IN msg - pointer to slurm control information response message
+ */
+extern void slurm_free_ctl_conf_watch_dog(slurm_ctl_conf_info_msg_watch_dog_t * msg)
+{
+	if (msg) {
+		if (msg->watch_dog_array) {
+			_free_all_watch_dogs(msg);
+			xfree(msg->watch_dog_array);
+		}
+		xfree(msg);
+	}
+}
+
+#endif
 
 /*
  * slurm_free_ctl_conf - free slurm control information response message
@@ -4693,6 +4777,9 @@ extern void slurm_free_partition_info_members(partition_info_t * part)
 		xfree(part->borrowed_nodes);
 		xfree(part->standby_nodes);
 		xfree(part->standby_node_parameters);
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		xfree(part->priority_weight_tres);
 #endif
 	}
 }
@@ -5150,6 +5237,9 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 		slurm_free_task_exit_msg(data);
 		break;
 	case REQUEST_BUILD_INFO:
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	case REQUEST_BUILD_WATCH_DOG_INFO:
+#endif
 		slurm_free_last_update_msg(data);
 		break;
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -6083,6 +6173,12 @@ rpc_num2string(uint16_t opcode)
 #ifdef __METASTACK_LOAD_ABNORMAL
 	case REQUEST_JOB_STEP_DATA:	
 		return "REQUEST_JOB_STEP_DATA";
+#endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	case REQUEST_BUILD_WATCH_DOG_INFO:
+		return "REQUEST_BUILD_WATCH_DOG_INFO";
+	case RESPONSE_BUILD_WATCH_DOG_INFO:
+		return "RESPONSE_BUILD_WATCH_DOG_INFO";
 #endif
 	default:
 		(void) snprintf(buf, sizeof(buf), "%u", opcode);

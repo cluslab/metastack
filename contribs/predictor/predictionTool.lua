@@ -5,7 +5,7 @@ configuration_path="/opt/gridview/slurm/etc/luaconfig/predictor/configuration"
 function get_config_value(key)
 	local file = io.open(configuration_path, "r")
 	if not file then
-		slurm.log_debug("Could not open config file: %s", configuration_path)
+		-- slurm.log_info("Could not open config file: %s", configuration_path)
 	end
 
 	for line in file:lines() do
@@ -48,11 +48,11 @@ sklearn_path=get_config_value("sklearn_path")
 -- AI建模python脚本
 prediction_script=sklearn_path .. "/prediction_time.py"
 
--- slurm.log_debug("etc_path is : %s", etc_path)
--- slurm.log_debug("sklearn_path is : %s", sklearn_path)
--- slurm.log_debug("prediction_script is : %s", prediction_script)
+-- slurm.log_info("etc_path is : %s", etc_path)
+-- slurm.log_info("sklearn_path is : %s", sklearn_path)
+-- slurm.log_info("prediction_script is : %s", prediction_script)
 
-function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min_nodes, time_limit)
+function timePredict(options, user_name, partition_list, min_cpus, req_mem, min_nodes, time_limit)
 
 	-- 获取user_name
 	local user_name = user_name
@@ -91,7 +91,7 @@ function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min
 				time_limit_standard = conversion_time_limit(time_limit)
 			else
 				local command = string.format(
-					"cat %s/slurm_partition.conf | grep -v \"\\#\" | grep -i \"PartitionName=%s\" | grep -i DefaultTime | awk -F 'DefaultTime=' '{print $2}' | awk '{print $1}'",
+					"cat %s/slurm_partition.conf | grep -v \"\\#\" | grep -i \"PartitionName=%s\\>\" | grep -i DefaultTime | awk -F 'DefaultTime=' '{print $2}' | awk '{print $1}'",
 					etc_path, partition_p
 				)
 
@@ -103,7 +103,7 @@ function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min
 				-- 去除换行符和空格
 				result = result:gsub("%s+", "")
 
-				slurm.log_debug2("partition's DefaultTime is %s", result)
+				-- slurm.log_info("partition's DefaultTime is %s", result)
 				-- 检查结果是否为空
 				if (result == nil or result == "") then
 					time_limit_standard = "UNLIMITED"
@@ -127,8 +127,27 @@ function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min
 					req_mem = req_p_mem * req_cpu
 
 				-- 未特殊配置,则使用全局DefMemPerCPU
-				else 
-					req_mem = DefMemPerCPU * req_cpu
+				else
+					local command = string.format(
+						"cat %s/slurm.conf | grep -v \"\\#\" | grep -i DefMemPerCPU= | awk -F'=' '{print $2}'",
+						etc_path
+					)
+
+					-- 执行命令并读取结果
+					local handle = io.popen(command)
+					local result = handle:read("*a")
+					handle:close()
+
+					-- 去除换行符和空格
+					result = result:gsub("%s+", "")
+
+					-- 检查结果是否为空
+					if (result == nil or result == "") then
+						req_mem = -1
+					else
+						req_mem = result * req_cpu
+					end
+
 				end
 			end
 	
@@ -143,7 +162,7 @@ function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min
 				-- 选择对应预测方法预测
 				if (predictionMethod == "0" or predictionMethod == "") then
 
-					slurm.log_debug2("The input parameters of the prediction tool are:user_name:%s, partition:%s, req_cpus:%s, req_mem:%s, req_nodes:%s, time_limit_standard:%s", user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard)
+					-- slurm.log_info("The input parameters of the prediction tool are:user_name:%s, partition:%s, req_cpus:%s, req_mem:%s, req_nodes:%s, time_limit_standard:%s", user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard)
 
 					-- 使用均值法,对作业进行全匹配,并预测作业运行时间
 	        			predictTool_p_time = predict_time_min(user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard)
@@ -153,15 +172,16 @@ function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min
 					-- AI预测时传入时间格式为数值
 					local ai_time_limit = parse_time(time_limit_standard)
 
-					slurm.log_debug2("The input parameters of the prediction tool are:user_name:%s, partition:%s, req_cpus:%s, req_mem:%s, req_nodes:%s, ai_time_limit:%s", user_name, partition_p, req_cpu, req_mem, req_nodes, ai_time_limit)
+					-- slurm.log_info("The input parameters of the prediction tool are:user_name:%s, partition:%s, req_cpus:%s, req_mem:%s, req_nodes:%s, ai_time_limit:%s", user_name, partition_p, req_cpu, req_mem, req_nodes, ai_time_limit)
 
 					-- AI随机森林回归算法,预测作业运行时间
 					predictTool_p_time = sklearn_prediction(user_name, partition_p, req_cpu, req_mem, req_nodes, ai_time_limit)
 
 					-- 当AI法预测为负值或0时,进行全匹配修正
-					predictTool_p_time = tonumber(predictTool_p_time)
-					if ((predictTool_p_time <= 0) or predictTool_p_time == nil or predictTool_p_time == "") then
-						slurm.log_debug2("The AI predicted value is abnormal, and full matching is carried out to find the mean correction.")
+					predictTool_p_time = tonumber(predictTool_p_time) or 0 
+
+					if (predictTool_p_time == nil or predictTool_p_time == "" or (predictTool_p_time <= 0)) then
+						-- slurm.log_info("The AI predicted value is abnormal, and full matching is carried out to find the mean correction.")
 						local corrected_value = read_and_find_job_ai(file_path, user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard)
 
 						corrected_value = tonumber(corrected_value)
@@ -179,19 +199,19 @@ function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min
 
 				-- 计算并打印花费的时间
 				-- local elapsed_time = end_time - start_time
-				-- slurm.log_debug("Prediction took %.4f seconds", elapsed_time)
+				-- slurm.log_info("Prediction took %.4f seconds", elapsed_time)
 	        		
 			end
 
 	        predictTool_time = tonumber(predictTool_time)
 			predictTool_p_time = tonumber(predictTool_p_time)
-			slurm.log_debug3("predictTool_p_time is %d", predictTool_p_time)
+			-- slurm.log_info("predictTool_p_time is %d", predictTool_p_time)
 
 			-- 在该分区内未找到相似作业,没有预测值时,或AI预测为负值时,做模糊匹配
 			-- 找该用户对应分区得最近10条作业求平均值
 			if ((predictTool_p_time <= 0) or (req_mem == -1)) then
 				local fuzzy_value = read_and_find_job(file_path, user_name, partition_p)
-				slurm.log_debug2("No similar job is found, fuzzy matching is performed, and the predicted value is %s minutes", fuzzy_value)
+				-- slurm.log_info("No similar job is found, fuzzy matching is performed, and the predicted value is %s minutes", fuzzy_value)
 				
 				fuzzy_value = tonumber(fuzzy_value)
 				
@@ -222,43 +242,43 @@ function timePredict(job_desc, user_name, partition_list, min_cpus, req_mem, min
 			-- 预测值小于0或大于time_limit时,重置预测值为0,走后续赋值流程
 			if (predictTool_time < 0 or predictTool_time > time_limit_e) then
 				predictTool_time = 0
-				slurm.log_debug2("The predicted value of job running time is less than 0 or greater than the time_limit, reset the predicted value to 0.")
+				-- slurm.log_info("The predicted value of job running time is less than 0 or greater than the time_limit, reset the predicted value to 0.")
 			end
 
 		else
 			if (predictTool_time < 0) then
 				predictTool_time = 0
-				slurm.log_debug2("The predicted value is not reasonable, set it to 0 and go through the subsequent assignment process")
+				-- slurm.log_info("The predicted value is not reasonable, set it to 0 and go through the subsequent assignment process")
 			end
 		end
 
 		predictTool_time = tostring(predictTool_time or "0")
 
-		slurm.log_debug2("predictTool_time is %s", predictTool_time)
+		-- slurm.log_info("predictTool_time is %s", predictTool_time)
 
 		-- 为作业替换预测值
 		-- 作业有预测值
 		if (predictTool_time ~= "0") then
-			job_desc.predict_job = 1
-			job_desc.time_min = predictTool_time
-			slurm.log_debug("The predicted value of %s job running time is %s minutes, updating it to TimeMin.", user_name, predictTool_time)
+			options["predict-job"] = 1
+			options["time-min"] = predictTool_time
+			-- slurm.log_info("The predicted value of %s job running time is %s minutes, updating it to TimeMin.", user_name, predictTool_time)
 		
 		-- 模糊匹配后依然没有预测值,但作业指定了TimeLimit
 		elseif (predictTool_time == "0" and time_limit ~= -1) then
-			job_desc.predict_job = 1
-			job_desc.time_min = math.ceil(time_limit / 2)
-			slurm.log_debug("No similar job set for %s job is found, setting TimeMin to half of TimeLimit with a value of %s minutes.", user_name, job_desc.time_min)
+			options["predict-job"] = 1
+			options["time-min"] = math.ceil(time_limit / 2)
+			-- slurm.log_info("No similar job set for %s job is found, setting TimeMin to half of TimeLimit with a value of %s minutes.", user_name, options["time-min"])
 			
 		-- 模糊匹配后依然没有预测值,且作业未指定TimeLimit,但分区有DefaultTime,预测值为DefaultTime的一半
 		elseif (predictTool_time == "0" and time_limit == -1 and time_limit_standard ~= "UNLIMITED") then
 			time_limit_standard = time_string_to_minutes(time_limit_standard)
-			job_desc.predict_job = 1
-			job_desc.time_min = math.ceil(time_limit_standard / 2)
-			slurm.log_debug("No similar job set for %s job is found and TimeLimit parameter is missing, setting TimeMin to half of partition's DefaultTime with a value of %s minutes.", user_name, job_desc.time_min)
+			options["predict-job"] = 1
+			options["time-min"] = math.ceil(time_limit_standard / 2)
+			-- slurm.log_info("No similar job set for %s job is found and TimeLimit parameter is missing, setting TimeMin to half of partition's DefaultTime with a value of %s minutes.", user_name, options["time-min"])
 			
 		-- 模糊匹配后依然没有预测值,且作业未指定TimeLimit,分区没有DefaultTime,无法给出预测值
 		elseif (predictTool_time == "0" and time_limit == -1 and time_limit_standard == "UNLIMITED") then
-			slurm.log_debug("No similar job set for %s job is found, TimeLimit parameter and partition's DefaultTime are missing, No predicted value can be given.", user_name)
+			-- slurm.log_info("No similar job set for %s job is found, TimeLimit parameter and partition's DefaultTime are missing, No predicted value can be given.", user_name)
 
 		end
 
@@ -318,7 +338,7 @@ function predict_time_min(user_name, partition, req_cpu, req_mem, req_nodes, tim
 
 	-- 预测
 	local predictTool_time_min_p = get_avg_time(user_name, partition, req_cpu, req_mem, req_nodes, time_limit)
-	 slurm.log_debug3("predictTool_time_min_p is %s", predictTool_time_min_p)    
+	-- slurm.log_info("predictTool_time_min_p is %s", predictTool_time_min_p)    
 
 	predictTool_time_min_p = tonumber(predictTool_time_min_p)
 
@@ -362,13 +382,13 @@ function get_avg_time(user_name, partition, req_cpu, req_mem, req_nodes, time_li
 	if matched_times and #matched_times > 0 then
 		local average_time = calculate_average_time(matched_times)	
 	
-		slurm.log_debug3("average_time is %s", average_time)
+		-- slurm.log_info("average_time is %s", average_time)
 		avg_time = time_string_to_minutes(average_time)
 	else
 		avg_time = 0
 	end
 
-	-- slurm.log_debug3("avg_time is %s", avg_time)
+	-- slurm.log_info("avg_time is %s", avg_time)
 	-- 返回平均时间	
 	return avg_time
 end
@@ -434,7 +454,7 @@ function read_and_find_job(file_path, user_name, partition)
 	if matched_times and #matched_times > 0 then
 		local average_time = calculate_average_time(matched_times)	
 	
-		slurm.log_debug3("average_time is %s", average_time)
+		-- slurm.log_info("average_time is %s", average_time)
 		avg_time = time_string_to_minutes(average_time)
 	else
 		avg_time = 0
@@ -479,7 +499,7 @@ function read_and_find_job_ai(file_path, user_name, partition, req_cpu, req_mem,
 	if matched_times and #matched_times > 0 then
 		local average_time = calculate_average_time(matched_times)	
 	
-		slurm.log_debug3("average_time is %s", average_time)
+		-- slurm.log_info("average_time is %s", average_time)
 		avg_time = time_string_to_minutes(average_time)
 	else
 		avg_time = 0
@@ -502,7 +522,7 @@ function calculate_average_time(time_list)
 
 	-- 计算平均时间
 	local average_seconds = total_seconds / count
-        slurm.log_debug2("The number of similar jobs is:%d, and the average time is: %d seconds", count, average_seconds)
+        -- slurm.log_info("The number of similar jobs is:%d, and the average time is: %d seconds", count, average_seconds)
 	
 	-- 返回标准格式的时间
 	return format_time(average_seconds)
@@ -584,7 +604,7 @@ function time_string_to_minutes(time_string)
 		seconds = tonumber(seconds)
 	end
 
-	-- slurm.log_debug3("days is %d, hours is %d, minutes is %d, secondsis %d", days, hours, minutes, seconds)
+	-- slurm.log_info("days is %d, hours is %d, minutes is %d, secondsis %d", days, hours, minutes, seconds)
 
 	-- 计算总分钟数
 	local total_minutes = (days * 24 * 60) + (hours * 60) + minutes + (seconds / 60)
@@ -648,27 +668,28 @@ end
 function sklearn_prediction(user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard)
 
 	-- 判断 Python 可执行文件是否存在
-	if not file_exists(python_executable) then
-		slurm.log_debug("python3.9 executable is missing")
+	if file_exists(python_executable) and file_exists(prediction_script) then
+
+		-- 构建 Python 命令
+		local command = string.format(
+			"%s -u %s %s %s %s %s %s %s",
+			python_executable, prediction_script, user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard
+		)
+
+		-- 执行命令并捕获输出
+		local handle = io.popen(command)
+		local result = handle:read("*a")
+		handle:close()
+
+		return result
+
+	else
+
+		-- 文件缺失时返回默认值
+		return 0
+
 	end
-
-	-- 判断 prediction_time.py 是否存在
-	if not file_exists(prediction_script) then
-		slurm.log_debug("prediction_time.py file is missing")
-	end
-
-	-- 构建 Python 命令
-	local command = string.format(
-		"%s -u %s %s %s %s %s %s %s",
-		python_executable, prediction_script, user_name, partition_p, req_cpu, req_mem, req_nodes, time_limit_standard
-	)
-
-	-- 执行命令并捕获输出
-	local handle = io.popen(command)
-	local result = handle:read("*a")
-	handle:close()
-
-	return result
+	
 end
 
 -- 检查文件是否存在的函数

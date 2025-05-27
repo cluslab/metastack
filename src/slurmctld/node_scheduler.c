@@ -441,9 +441,6 @@ extern void deallocate_nodes(job_record_t *job_ptr, bool timeout,
 		node_count++;
 	}
 #endif
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 
 	if (job_ptr->details->prolog_running) {
 		/*
@@ -1893,6 +1890,14 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 			avail_bitmap = bit_copy(job_ptr->details->
 						req_node_bitmap);
 			bit_and_not(avail_bitmap, rs_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+#ifdef __METASTACK_NEW_PART_PARA_SCHED							   
+			if(para_sched && sched)
+				bit_and_not(avail_bitmap, para_sched_resv_node_bitmap[index]);
+			else
+				bit_and_not(avail_bitmap, resv_node_bitmap);
+#endif
+#endif
 		}
 		for (i = 0; i < node_set_size; i++) {
 			int count1 = 0, count2 = 0;
@@ -1957,6 +1962,15 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 					bit_and_not(node_set_ptr[i].my_bitmap,
 					    	cg_node_bitmap);
 				}
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+					/*Before the job select_g_job_test, remove the nodes in the blacklist from the bitmap.*/
+					bit_and_not(node_set_ptr[i].my_bitmap, para_sched_resv_node_bitmap[index]);
+					FREE_NULL_BITMAP(job_ptr->resv_bitmap);
+					job_ptr->resv_bitmap = bit_copy(idle_node_bitmap);
+					bit_and_not(job_ptr->resv_bitmap, para_sched_resv_node_bitmap[index]);
+				}
+#endif
 			} else {
 #endif						
 				if (!preempt_flag) {
@@ -1975,6 +1989,15 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 							cg_node_bitmap);
 				}
 #ifdef __METASTACK_NEW_PART_PARA_SCHED	
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (sched && job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+					/*Before the job select_g_job_test, remove the nodes in the blacklist from the bitmap.*/
+					bit_and_not(node_set_ptr[i].my_bitmap, resv_node_bitmap);
+					FREE_NULL_BITMAP(job_ptr->resv_bitmap);
+					job_ptr->resv_bitmap = bit_copy(idle_node_bitmap);
+					bit_and_not(job_ptr->resv_bitmap, resv_node_bitmap);
+				}
+#endif
 			}
 #endif
 			bit_and_not(node_set_ptr[i].my_bitmap,
@@ -2030,7 +2053,7 @@ try_sched:
 				if (job_ptr->details->req_node_bitmap == NULL)
 				bit_and(avail_bitmap, avail_node_bitmap);
 
-				bit_and(avail_bitmap, share_node_bitmap);				
+				bit_and(avail_bitmap, share_node_bitmap);
 			}
 #endif
 
@@ -2278,11 +2301,23 @@ try_sched:
 						para_sched_share_node_bitmap[index])) {
 					error_code = ESLURM_NODES_BUSY;
 				}
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART && 
+				!bit_super_set(job_ptr->details->req_node_bitmap, para_sched_resv_node_bitmap[index])) {
+					error_code = ESLURM_NODES_BUSY;
+				}
+#endif
 			} else {
 				if (!bit_super_set(job_ptr->details->req_node_bitmap,
 					   share_node_bitmap)) {
 					error_code = ESLURM_NODES_BUSY;
+				}     
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+				if (sched && job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART &&
+				!bit_super_set(job_ptr->details->req_node_bitmap, resv_node_bitmap)) {
+					error_code = ESLURM_NODES_BUSY;
 				}
+#endif                       
 			}
 #endif			
 			if (bit_overlap_any(job_ptr->details->req_node_bitmap,
@@ -2303,6 +2338,19 @@ try_sched:
 		   bit_overlap_any(job_ptr->details->req_node_bitmap,
 				   cg_node_bitmap)) {
 		error_code = ESLURM_NODES_BUSY;
+
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+#ifdef __METASTACK_NEW_PART_PARA_SCHED	
+	} else if (para_sched && sched){
+		if(job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART && job_ptr->details->req_node_bitmap && 
+			bit_overlap_any(job_ptr->details->req_node_bitmap, para_sched_resv_node_bitmap[index]))
+				error_code = ESLURM_NODES_BUSY; 
+	}else if (sched){
+		if(job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART && job_ptr->details->req_node_bitmap && 
+			bit_overlap_any(job_ptr->details->req_node_bitmap, resv_node_bitmap))
+			error_code = ESLURM_NODES_BUSY;   
+#endif         
+#endif
 	}
 
 	if (error_code == SLURM_SUCCESS) {
@@ -3234,7 +3282,15 @@ extern void launch_prolog(job_record_t *job_ptr)
 		job_ptr->node_bitmap_pr = bit_copy(job_ptr->node_bitmap);
 #endif
 	}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	prolog_msg_ptr->watch_dog = xstrdup(job_ptr->details->watch_dog);
+	prolog_msg_ptr->watch_dog_script =  xstrdup(job_ptr->details->watch_dog_script);
+	prolog_msg_ptr->init_time = job_ptr->details->init_time;
+	prolog_msg_ptr->period = job_ptr->details->period;
+	prolog_msg_ptr->enable_all_nodes = job_ptr->details->enable_all_nodes;	
+	prolog_msg_ptr->enable_all_stepds = job_ptr->details->enable_all_stepds;
+	prolog_msg_ptr->style_step = job_ptr->details->style_step;
+#endif
 	prolog_msg_ptr->job_gres_info =
 		 gres_g_epilog_build_env(job_ptr->gres_list_req,job_ptr->nodes);
 	prolog_msg_ptr->job_id = job_ptr->job_id;
@@ -3262,7 +3318,9 @@ extern void launch_prolog(job_record_t *job_ptr)
 	prolog_msg_ptr->spank_job_env_size = job_ptr->spank_job_env_size;
 	prolog_msg_ptr->spank_job_env = xduparray(job_ptr->spank_job_env_size,
 						  job_ptr->spank_job_env);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	prolog_msg_ptr->apptype = xstrdup(job_ptr->details->apptype);
+#endif
 	xassert(job_ptr->job_resrcs);
 	job_resrcs_ptr = job_ptr->job_resrcs;
 	setup_cred_arg(&cred_arg, job_ptr);

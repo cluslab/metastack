@@ -24,10 +24,29 @@
 #ifndef _SJINFO_H
 #define _SJINFO_H
 
-#include <stdio.h>
 
-struct c_string;
-typedef struct c_string c_string_t;
+
+#define CPU_ABNORMAL_FLAG "cpu"
+#define PROCESS_ABNORMAL_FLAG "process"
+#define NODE_ABNORMAL_FLAG "node"
+#define CPU_ABNORMAL_FLAG_DESC "CPU utilization below threshold"
+#define PROCESS_ABNORMAL_FLAG_DESC "Operational process anomalies"
+#define NODE_ABNORMAL_FLAG_DESC "Node communication exception"
+
+#include <stdio.h>
+typedef struct c_string {
+    char *str;
+    size_t alloced;
+    size_t len;
+} c_string_t;
+
+typedef struct print_field {
+	int len;  /* what is the width of the print */
+	char *name;  /* name to be printed in header */
+	void (*print_routine) (); /* what is the function to print with  */
+	uint16_t type; /* defined in the local function */
+} print_field_t;
+
 /* */
 /**
  * Creates and initializes a new c_string_t object.
@@ -77,5 +96,7 @@ const char *c_string_peek(const c_string_t *cs);
 
 // /* Names for the values of the `has_arg' field of `struct option'.  */
 
-#define KEYDIR "/opt/gridview/slurm"
+extern void print_fields_str(print_field_t *field, char *value, int last);
+
+#define KEYDIR "/public/binary/2.3.0"
 #endif /* !_SJINFO_H */

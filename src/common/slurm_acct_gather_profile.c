@@ -114,7 +114,19 @@ static const char *syms[] = {
 };
 
 acct_gather_profile_timer_t acct_gather_profile_timer[PROFILE_CNT];
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+acct_gather_profile_timer_t acct_gather_profile_timer_watch_dog;
+static bool init_watch_dog = false;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+/*
+	This variable controls how many times the acctg_apptype thread is woked, which only collects 
+	job data early in the job run to analyze the application type. When the variable is set to 
+	zero, the acctg_apptype thread is woked one last time and exited to keep thread overhead as 
+	low as possible
+*/
+int apptype_recongn_count = 0;
+#endif
 static bool acct_gather_profile_running = false;
 static pthread_mutex_t profile_running_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -185,6 +197,23 @@ static void _set_freq_2(int type, char *freq, char *freq_def, acct_gather_rank_t
 }
 #endif
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static void _set_freq_watch_dog(acct_gather_rank_t step_rank)
+{
+	if(step_rank.enable_watchdog) {
+		if(step_rank.period < 2147483647)
+			acct_gather_profile_timer_watch_dog.freq = (int)step_rank.period;
+		else {
+			acct_gather_profile_timer_watch_dog.freq = 0;
+			debug("the period (%d) is too large. Please contact the administrator to "
+					"set a reasonable value; the value must be less than 2147483647",step_rank.period);
+		}
+
+	} else
+		acct_gather_profile_timer_watch_dog.freq = 0;
+}
+#endif
+
 static void _set_freq(int type, char *freq, char *freq_def)
 {
 	if ((acct_gather_profile_timer[type].freq =
@@ -211,7 +240,9 @@ static void *_timer_thread(void *args)
 		      __func__, "acctg_prof");
 	}
 #endif
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	acct_gather_rank_t * rank_stepd = (acct_gather_rank_t *) args;
+#endif
 	/* setup timer */
 	gettimeofday(&tvnow, NULL);
 	abs.tv_sec = tvnow.tv_sec;
@@ -221,6 +252,89 @@ static void *_timer_thread(void *args)
 		slurm_mutex_lock(&g_context_lock);
 		now = time(NULL);
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		for (i=0; i<PROFILE_CNT + 1; i++) {
+			if(i < PROFILE_CNT) {
+				if (acct_gather_suspend_test()) {
+					/* Handle suspended time as if it
+					* didn't happen */
+					if (!acct_gather_profile_timer[i].freq)
+						continue;
+					if (acct_gather_profile_timer[i].last_notify)
+						acct_gather_profile_timer[i].
+							last_notify += SLEEP_TIME;
+					else
+						acct_gather_profile_timer[i].
+							last_notify = now;
+					continue;
+				}
+
+				diff = now - acct_gather_profile_timer[i].last_notify;
+				/* info ("%d is %d and %d", i, */
+				/*       acct_gather_profile_timer[i].freq, */
+				/*       diff); */
+				if (!acct_gather_profile_timer[i].freq
+					|| (diff < acct_gather_profile_timer[i].freq))
+					continue;
+				if (!acct_gather_profile_test())
+					break;	/* Shutting down */
+				debug2("profile signaling type %s",
+					acct_gather_profile_type_t_name(i));
+
+				/* signal poller to start */
+				slurm_mutex_lock(&acct_gather_profile_timer[i].
+						notify_mutex);
+				slurm_cond_signal(
+					&acct_gather_profile_timer[i].notify);
+				slurm_mutex_unlock(&acct_gather_profile_timer[i].
+						notify_mutex);
+				acct_gather_profile_timer[i].last_notify = now;
+			} else {
+				if (acct_gather_suspend_test()) {
+					/* Handle suspended time as if it
+						* didn't happen */
+					if (!acct_gather_profile_timer_watch_dog.freq)
+						continue;
+					if (acct_gather_profile_timer_watch_dog.last_notify)
+						acct_gather_profile_timer_watch_dog.
+							last_notify += SLEEP_TIME;
+					else
+						acct_gather_profile_timer_watch_dog.
+							last_notify = now;
+					continue;
+				}
+				diff = now - acct_gather_profile_timer_watch_dog.last_notify;
+
+				/* info ("%d is %d and %d", i, */
+				/*       acct_gather_profile_timer[i].freq, */
+				/*       diff); */
+				if(!acct_gather_profile_timer_watch_dog.freq)
+					continue;
+
+				if(((rank_stepd->init_time > 0) && (!init_watch_dog))) {
+					if(diff < (acct_gather_profile_timer_watch_dog.freq + rank_stepd->init_time))
+						continue;
+				} else if ((diff < acct_gather_profile_timer_watch_dog.freq))
+					continue;
+
+				if((!init_watch_dog) && (acct_gather_profile_timer_watch_dog.last_notify != 0))
+               		 init_watch_dog = true;
+
+				if (!acct_gather_profile_test())
+					break;	/* Shutting down */
+
+				/* signal poller to start */
+				slurm_mutex_lock(&acct_gather_profile_timer_watch_dog.
+							notify_mutex);
+				slurm_cond_signal(
+					&acct_gather_profile_timer_watch_dog.notify);
+				slurm_mutex_unlock(&acct_gather_profile_timer_watch_dog.
+							notify_mutex);
+				acct_gather_profile_timer_watch_dog.last_notify = now;
+			}
+
+		}
+#else
 		for (i=0; i<PROFILE_CNT; i++) {
 			if (acct_gather_suspend_test()) {
 				/* Handle suspended time as if it
@@ -256,7 +370,10 @@ static void *_timer_thread(void *args)
 			slurm_mutex_unlock(&acct_gather_profile_timer[i].
 					   notify_mutex);
 			acct_gather_profile_timer[i].last_notify = now;
+
+			
 		}
+#endif
 		slurm_mutex_unlock(&g_context_lock);
 
 		/*
@@ -270,7 +387,12 @@ static void *_timer_thread(void *args)
 				     &abs);
 		slurm_mutex_unlock(&timer_thread_mutex);
 	}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
+	if(rank_stepd) {
+		xfree(rank_stepd->watch_dog_script);
+		xfree(rank_stepd);
+	}
+#endif
 	return NULL;
 }
 
@@ -342,6 +464,10 @@ extern int acct_gather_profile_fini(void)
 		case PROFILE_STEPD:
 			break;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		case PROFILE_APPTYPE:
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -396,7 +522,14 @@ extern void acct_gather_profile_to_string_r(uint32_t profile,
 				strcat(profile_str, ",");
 			strcat(profile_str, "Jobmonitor");
 		}
-#endif		
+#endif	
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		if (profile & ACCT_GATHER_PROFILE_APPTYPE) {
+			if (profile_str[0])
+				strcat(profile_str, ",");
+			strcat(profile_str, "Apptype");
+		}
+#endif
 	}
 }
 
@@ -433,6 +566,10 @@ extern uint32_t acct_gather_profile_from_string(const char *profile_str)
 #ifdef __METASTACK_LOAD_ABNORMAL
 		if (xstrcasestr(profile_str, "jobmonitor"))
 			profile |= ACCT_GATHER_PROFILE_STEPD;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		if (xstrcasestr(profile_str, "apptype"))
+			profile |= ACCT_GATHER_PROFILE_APPTYPE;
 #endif
 	}
 
@@ -489,6 +626,11 @@ extern char *acct_gather_profile_type_t_name(acct_gather_profile_type_t type)
 	/*The name of the newly opened thread*/
 	case PROFILE_STEPD:
 		return "Jobmonitor";
+		break;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	case PROFILE_APPTYPE:
+		return "Apptype";
 		break;
 #endif
 	default:
@@ -559,12 +701,12 @@ static void acct_gather_set_parameters(char *freq, char* freq_def, acct_gather_r
 		step_rank->cpu_min_load = acct_gather_parse_cpu_load(freq, freq_def);
         if((step_rank->cpu_min_load < 0 ) || (step_rank->cpu_min_load > 100 )) {
 			if(step_rank->cpu_min_load < 0) {
-				error("If the avecpuutil is not set or the value is faulty," 
+				debug3("If the avecpuutil is not set or the value is faulty," 
 				  "set it to the default value.(avecpuutil=0)");	
 				  step_rank->cpu_min_load = 0;			
 			} 
 			if(step_rank->cpu_min_load > 100) {
-				error("If the avecpuutil is not set or the value is faulty," 
+				debug3("If the avecpuutil is not set or the value is faulty," 
 				  "set it to the default value.(avecpuutil=100)");
 				  step_rank->cpu_min_load = 100;					
 			} 
@@ -601,7 +743,7 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 	if(step_rank.step != EXTERN_STEP)
 	 	acct_gather_set_parameters(freq, freq_def, &step_rank);
 #endif
-	if (acct_gather_profile_init() < 0)
+	if (acct_gather_profile_init() < 0) 
 		return SLURM_ERROR;
 
 	slurm_mutex_lock(&profile_running_mutex);
@@ -615,6 +757,13 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 
 	(*(ops.get))(ACCT_GATHER_PROFILE_RUNNING, &profile);
 	xassert(profile != ACCT_GATHER_PROFILE_NOT_SET);
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	memset(&acct_gather_profile_timer_watch_dog, 0,
+		       sizeof(acct_gather_profile_timer_t));
+	slurm_cond_init(&acct_gather_profile_timer_watch_dog.notify, NULL);
+	slurm_mutex_init(&acct_gather_profile_timer_watch_dog.notify_mutex);
+#endif
 
 	for (i=0; i < PROFILE_CNT; i++) {
 		memset(&acct_gather_profile_timer[i], 0,
@@ -645,6 +794,15 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 			} 
 			jobacct_gather_startpoll(
 				acct_gather_profile_timer[i].freq, step_rank);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+			if(step_rank.enable_watchdog) {
+                /*set the frequency of new threads*/
+				_set_freq_watch_dog(step_rank);
+				
+				jobacct_gather_watchdog(
+					acct_gather_profile_timer_watch_dog.freq, step_rank);
+			}
+#endif
 #endif
 			break;
 		case PROFILE_FILESYSTEM:
@@ -673,6 +831,23 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 			}
 			break;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		case PROFILE_APPTYPE:
+			/*
+				ProfileInfluxDBDefault If apptype is not enabled, the acctg_apptype thread will 
+				not be started. This is because apptype's query means are dependent on influxdb 
+				plugin, independent of slurm.
+			*/
+			if (!(profile & ACCT_GATHER_PROFILE_APPTYPE))
+				break;
+			/*
+				The frequency of passing NULL to represent acctg_apptype is not affected by the 
+				user side and depends only on slurm.conf
+			*/
+			_set_freq(i, NULL, freq_def);
+			jobacct_gather_apptypepoll(acct_gather_profile_timer[i].freq, step_rank);
+			break;
+#endif
 		default:
 			fatal("Unhandled profile option %d please update "
 			      "slurm_acct_gather_profile.c "
@@ -680,8 +855,16 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 		}
 	}
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	/* create polling thread */
-	slurm_thread_create(&timer_thread_id, _timer_thread, NULL);
+	acct_gather_rank_t *load_args = xmalloc(sizeof(acct_gather_rank_t));
+	load_args->enable_watchdog  = true;
+	load_args->watch_dog_script = xstrdup(step_rank.watch_dog_script);
+	load_args->period           = step_rank.period;
+	load_args->init_time        = step_rank.init_time;
+	load_args->style_step       = step_rank.style_step;
+	slurm_thread_create(&timer_thread_id, _timer_thread, load_args);
+#endif
 
 	debug3("acct_gather_profile_startpoll dynamic logging enabled");
 
@@ -710,6 +893,9 @@ extern void acct_gather_profile_endpoll(void)
 		switch (i) {
 		case PROFILE_ENERGY:
 			break;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		case PROFILE_APPTYPE:
+#endif
 #ifdef __METASTACK_LOAD_ABNORMAL
 		case PROFILE_STEPD:
 #endif

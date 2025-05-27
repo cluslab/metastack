@@ -69,6 +69,12 @@ extern int acct_gather_parse_abnormal_dete(int type, char *freq);
 extern int acct_gather_parse_freq(int type, char *freq);
 extern int acct_gather_check_acct_freq_task(uint64_t job_mem_lim,
 					    char *acctg_freq);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern bool acct_gather_check_acct_watch_dog_task(uint32_t stepd, bool *head_node,
+						launch_tasks_request_msg_t *msg);
+extern bool acct_gather_check_acct_watch_dog_batch(uint32_t stepd,
+						batch_job_launch_msg_t *msg);
+#endif
 extern void acct_gather_suspend_poll(void);
 extern void acct_gather_resume_poll(void);
 extern bool acct_gather_suspend_test(void);

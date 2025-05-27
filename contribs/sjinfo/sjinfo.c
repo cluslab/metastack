@@ -1,3 +1,39 @@
+/*****************************************************************************\
+ *  sjinfo.c - implementation-independent job of influxdb info
+ *  functions
+ *****************************************************************************
+ *  Copyright (C) 2005 Hewlett-Packard Development Company, L.P.
+
+ *  Slurm is free software; you can redistribute it and/or modify it under
+ *  the terms of the GNU General Public License as published by the Free
+ *  Software Foundation; either version 2 of the License, or (at your option)
+ *  any later version.
+ *
+ *  In addition, as a special exception, the copyright holders give permission
+ *  to link the code of portions of this program with the OpenSSL library under
+ *  certain conditions as described in each individual source file, and
+ *  distribute linked combinations including the two. You must obey the GNU
+ *  General Public License in all respects for all of the code used other than
+ *  OpenSSL. If you modify file(s) with this exception, you may extend this
+ *  exception to your version of the file(s), but you are not obligated to do
+ *  so. If you do not wish to do so, delete this exception statement from your
+ *  version.  If you delete this exception statement from all source files in
+ *  the program, then also delete it here.
+ *
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ *  details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
+\*****************************************************************************/
+
+/*****************************************************************************\
+ *  Modification history
+ *
+\*****************************************************************************/
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
@@ -24,19 +60,27 @@
 #define no_argument		0
 #define required_argument	1
 #define optional_argument	2
-#define SJINFO_VERSION_STRING "SLURM220508-0.0.2"
+#define SJINFO_VERSION_STRING "SLURM220508-0.0.4"
 #define PACKAGE_NAME "sjinfo "
 #define NO_VAL     (0xfffffffe)
 #define NO_VAL64   (0xfffffffffffffffe)
 #define C_STRING_INIT_SIZE 2048
-
+#define XMALLOC_MAGIC 0x42
+#define xmalloc(__sz) \
+	slurm_xcalloc(1, __sz, true, false, __FILE__, __LINE__)
+#define xrecalloc(__p, __cnt, __sz) \
+        slurm_xrecalloc((void **)&(__p), __cnt, __sz, true, false, __FILE__, __LINE__)
+#define xrealloc(__p, __sz) \
+        slurm_xrecalloc((void **)&(__p), 1, __sz, true, false, __FILE__, __LINE__)
+#define xfree(__p) slurm_xfree((void **)&(__p))
 #define LIST_MAGIC 0xDEADBEEF
 #define LIST_ITR_MAGIC 0xDEADBEFF
-#define list_iterator_free(_i) free(_i)
-#define list_node_free(_p) free(_p)
-#define list_free(_l) free(l)
-#define list_node_alloc() malloc(sizeof(struct listNode))
-#define list_iterator_alloc() malloc(sizeof(struct listIterator))
+#define list_iterator_free(_i) xfree(_i)
+#define list_node_free(_p) xfree(_p)
+#define list_free(_l) xfree(l)
+#define list_node_alloc() xmalloc(sizeof(struct listNode))
+#define list_iterator_alloc() xmalloc(sizeof(struct listIterator))
+
 
 
 //struct tm *localtime_r(const time_t *timep, struct tm *result);
@@ -52,6 +96,16 @@
 #define CONVERT_NUM_UNIT_EXACT 0x00000001
 #define CONVERT_NUM_UNIT_NO    0x00000002
 #define CONVERT_NUM_UNIT_RAW   0x00000004
+
+#define INFLUXDB_NONE           0x0000000000000000
+#define INFLUXDB_STEPD          0x0000000000000001
+#define INFLUXDB_EVENT          0x0000000000000010
+#define INFLUXDB_OVERALL        0x0000000000000100
+#define INFLUXDB_EVENT_FLAG     0x0000000000001000
+#define INFLUXDB_APPTYPE        0X0000000000010000
+#define INFLUXDB_ALL            0x0000000000010111
+
+// #define xstrfmtcat(__p, __fmt, args...)	_xstrfmtcat(&(__p), __fmt, ## args)
 //# define PRIu64		__PRI64_PREFIX "u"
 /* unit types */
 enum {
@@ -68,6 +122,7 @@ enum {
 	UNIT_STEP,
 	UNIT_EVENT,
     UNIT_OVERALL,
+    UNIT_APPTYPE,
     UNIT_RUNJOB
 };
 
@@ -121,6 +176,7 @@ typedef struct {
     uint64_t level;
     bool desc_set;      /* output data in reverse order*/
     bool only_run_job;  /* querying for running jobs*/
+    bool show_jobstep_apptype;  /* Displays the apptype information for each job step */
 } sjinfo_parameters_t;
 
 typedef struct {
@@ -147,15 +203,172 @@ typedef struct {
    int type1;   // Marking cpu frequency anomalies
    int type2;   // identify process anomalies
    int type3;   // identifies node communication anomalies
+   char *type;
    /* overall */
    unsigned long end_last;
    unsigned long start_last;
    unsigned long sum_cpu;
    unsigned long sum_pid;
    unsigned long sum_node;
+   /* apptype */
+   char *apptype_cli;
+   char *apptype_step;
+   char *apptype;
+   unsigned long cputime;
 } interface_sjinfo_t;
 
 
+/* Log out of memory without message buffering */
+void log_oom(const char *file, int line)
+{
+	printf("%s %d malloc failed\n",file, line);
+}
+
+
+/*
+ * Free which takes a pointer to object to free, which it turns into a null
+ * object.
+ *   item (IN/OUT)	double-pointer to allocated space
+ */
+void slurm_xfree(void **item)
+{
+	if (*item != NULL) {
+		size_t *p = (size_t *)*item - 2;
+		/* magic cookie still there? */
+		assert(p[0] == XMALLOC_MAGIC);
+		p[0] = 0;	/* make sure xfree isn't called twice */
+		free(p);
+		*item = NULL;
+	}
+}
+
+/*
+ * "Safe" version of malloc().
+ *   size (IN)	number of bytes to malloc
+ *   clear (IN) initialize to zero
+ *   RETURN	pointer to allocate heap space
+ */
+void *slurm_xcalloc(size_t count, size_t size, bool clear, bool try,
+		    const char *file, int line)
+{
+	size_t total_size;
+	size_t count_size;
+	size_t *p;
+
+	if (!size || !count)
+		return NULL;
+
+	/*
+	 * Detect overflow of the size calculation and abort().
+	 * Ensure there is sufficient space for the two header words used to
+	 * store the magic value and the allocation length by dividing by two,
+	 * and because on 32-bit systems, if a 2GB allocation request isn't
+	 * sufficient (which would attempt to allocate 2GB + 8Bytes),
+	 * then we're going to run into other problems anyways.
+	 * (And on 64-bit, if a 2EB + 16Bytes request isn't sufficient...)
+	 */
+	if ((count != 1) && (count > SIZE_MAX / size / 4)) {
+		if (try)
+			return NULL;
+		log_oom(file, line);
+		abort();
+	}
+
+	count_size = count * size;
+	total_size = count_size + 2 * sizeof(size_t);
+
+	if (clear)
+		p = calloc(1, total_size);
+	else
+		p = malloc(total_size);
+
+	if (!p && try) {
+		return NULL;
+	} else if (!p) {
+		/* out of memory */
+		log_oom(file, line);
+		abort();
+	}
+	p[0] = XMALLOC_MAGIC;	/* add "secret" magic cookie */
+	p[1] = count_size;	/* store size in buffer */
+
+	return &p[2];
+}
+
+/*
+ * "Safe" version of realloc() / reallocarray().
+ * Args are different: pass in a pointer to the object to be
+ * realloced instead of the object itself.
+ *   item (IN/OUT)	double-pointer to allocated space
+ *   newcount (IN)	requested count
+ *   newsize (IN)	requested size
+ *   clear (IN)		initialize to zero
+ */
+void * slurm_xrecalloc(void **item, size_t count, size_t size,
+			      bool clear, bool try, const char *file,
+			      int line)
+{
+	size_t total_size;
+	size_t count_size;
+	size_t *p;
+
+	if (!size || !count)
+		return NULL;
+
+	/*
+	 * Detect overflow of the size calculation and abort().
+	 * Ensure there is sufficient space for the two header words used to
+	 * store the magic value and the allocation length by dividing by two,
+	 * and because on 32-bit systems, if a 2GB allocation request isn't
+	 * sufficient (which would attempt to allocate 2GB + 8Bytes),
+	 * then we're going to run into other problems anyways.
+	 * (And on 64-bit, if a 2EB + 16Bytes request isn't sufficient...)
+	 */
+	if ((count != 1) && (count > SIZE_MAX / size / 4))
+		goto error;
+
+	count_size = count * size;
+	total_size = count_size + 2 * sizeof(size_t);
+
+	if (*item != NULL) {
+		size_t old_size;
+		p = (size_t *)*item - 2;
+
+		/* magic cookie still there? */
+		assert(p[0] == XMALLOC_MAGIC);
+		old_size = p[1];
+
+		p = realloc(p, total_size);
+		if (p == NULL)
+			goto error;
+
+		if (old_size < count_size) {
+			char *p_new = (char *)(&p[2]) + old_size;
+			if (clear)
+				memset(p_new, 0, (count_size - old_size));
+		}
+		assert(p[0] == XMALLOC_MAGIC);
+	} else {
+		/* Initalize new memory */
+		if (clear)
+			p = calloc(1, total_size);
+		else
+			p = malloc(total_size);
+		if (p == NULL)
+			goto error;
+		p[0] = XMALLOC_MAGIC;
+	}
+
+	p[1] = count_size;
+	*item = &p[2];
+	return *item;
+
+error:
+	if (try)
+		return NULL;
+	log_oom(file, line);
+	abort();
+}
 
 typedef void (*ListDelF) (void *x);
 struct listNode {
@@ -192,7 +405,7 @@ sjinfo_parameters_t params;
 #define FORMAT_STRING_SIZE 34
 char outbuf[FORMAT_STRING_SIZE];
 
-#define list_alloc() malloc(sizeof(struct xlist))
+#define list_alloc() xmalloc(sizeof(struct xlist))
 /*
 *External application output data memory, used to store encrypted data
 *External application output data memory, used to store decrypted data
@@ -217,6 +430,8 @@ List print_fields_list = NULL;
 List print_value_list = NULL;
 ListIterator print_fields_itr = NULL;
 
+List print_query_value_list = NULL;
+
 /*event table*/
 List print_events_list = NULL;
 List print_events_value_list = NULL;
@@ -226,6 +441,16 @@ ListIterator print_events_itr = NULL;
 List print_overall_list = NULL;
 List print_overall_value_list = NULL;
 ListIterator print_overall_itr = NULL;
+
+/*apptype table*/
+List print_apptype_list = NULL;
+List print_apptype_value_list = NULL;
+ListIterator print_apptype_itr = NULL;
+
+/*apptype table only job*/
+List print_apptype_job_list = NULL;
+List print_apptype_job_value_list = NULL;
+ListIterator print_apptype_job_itr = NULL;
 
 c_string_t *job_list = NULL;
 
@@ -251,6 +476,10 @@ typedef enum {
     PRINT_MAXSTEPVMEM,
     PRINT_MINSTEPVMEM,
     PRINT_CPUTHRESHOLD,
+    PRINT_USERNAME,
+    PRINT_UID,  
+    PRINT_RECORD, 
+    PRINT_TIME, 
     PRINT_START,
     PRINT_END,
     PRINT_LASTSTART,
@@ -258,129 +487,155 @@ typedef enum {
     PRINT_SUMCPU,
     PRINT_SUMPID,
     PRINT_SUMNODE,
-    PRINT_TYPE      
+    PRINT_SENDNODE,
+    PRINT_TYPE,
+    PRINT_APPTYPE_CLI,
+    PRINT_APPTYPE_STEP,
+    PRINT_APPTYPE,
+    PRINT_CPUTIME
 } sjinfo_print_types_t;
 
 #define MAX_POLICY_NAME_LENGTH 256	/* Set the maximum length of the reservation policy name */
 typedef enum {
 	NATIVERP,
 	STEPDRP,
-	EVENTRP
+	EVENTRP,
+	APPTYPERP,
+	RPCNT
 } RPType;
-/**
- *
- * This function extracts and returns the appropriate retention policy based on the input string `rt_policy`
- * and the specified retention policy type (`NATIVERP`, `STEPDRP`, or `EVENTRP`). 
- * If specific policies for `NATIVERP`, `STEPDRP`, or `EVENTRP` are found in the input string,
- * they will be used accordingly. If not, the function returns a fallback value from other policy types.
- * If no valid policy is specified, the function defaults to "autogen".
- *
- * rt_policy[in]	A string containing comma-separated key-value pairs that specify 
- *                 	the retention policies. For example: "NATIVERP=30d,STEPDRP=7d,EVENTRP=14d".
- *					If `NULL` or empty, the function defaults to "autogen".
- * type[in]			The retention policy type, which determines which policy to extract 
- *					(can be `NATIVERP`, `STEPDRP`, or `EVENTRP`).
- *
- * return 			A dynamically allocated string representing the retention policy for the given type.
- *         			The caller is responsible for freeing the returned string.
- *         			If no valid retention policy is found, the function returns "autogen".
+static const char *RPTypeNames[] = {
+	"NATIVERP",
+    "STEPDRP",
+    "EVENTRP",
+    "APPTYPERP",
+};
+
+
+
+/*
+ * Duplicate a string.
+ *   str (IN)		string to duplicate
+ *   RETURN		copy of string
  */
-static char* _parse_rt_policy(const char *rt_policy, RPType type) {
-    if(rt_policy == NULL || rt_policy[0] == '\0'){
-        return strdup("autogen");
-    }
+char *xstrdup(const char *str)
+{
+	size_t siz;
+	char *result;
 
-    // Initialize the values
-    char native_retention_policy[MAX_POLICY_NAME_LENGTH], stepd_retention_policy[MAX_POLICY_NAME_LENGTH], event_retention_policy[MAX_POLICY_NAME_LENGTH];
-    char *token = NULL, *rest = NULL, *copy = NULL, *rval = NULL;
-	bool native_set = false, stepd_set = false, event_set = false;
-    copy = strdup(rt_policy);
-	/*
-		Compatible with the original way of setting up retention policies
-	*/
-    strncpy(native_retention_policy, copy, sizeof(native_retention_policy) - 1);
-    native_retention_policy[sizeof(native_retention_policy) - 1] = '\0'; // Ensure null termination
+	if (!str)
+		return NULL;
 
-    strncpy(stepd_retention_policy, copy, sizeof(stepd_retention_policy) - 1);
-    stepd_retention_policy[sizeof(stepd_retention_policy) - 1] = '\0';
+	siz = strlen(str) + 1;
+	result = xmalloc(siz);
 
-    strncpy(event_retention_policy, copy, sizeof(event_retention_policy) - 1);
-    event_retention_policy[sizeof(event_retention_policy) - 1] = '\0';
+	/* includes terminating NUL from source string */
+	(void) memcpy(result, str, siz);
 
-    token = strtok_r(copy, ",", &rest);
+	return result;
+}
 
-    while (token != NULL) {
-        // Extracting key and value
-        char *key = strtok(token, "=");
-        char *value = strtok(NULL, "=");
-
-        if (key != NULL && value != NULL) {
-            if (strcmp(key, "NATIVERP") == 0) {
-                if(strlen(value) >= MAX_POLICY_NAME_LENGTH)
-					printf("warning: Retention policy names(%s) too long, Maximum length allowed : %d\n", value, MAX_POLICY_NAME_LENGTH);
-				native_set = true;
-                strncpy(native_retention_policy, value, sizeof(native_retention_policy) - 1);
-                native_retention_policy[sizeof(native_retention_policy) - 1] = '\0';
-            } else if (strcmp(key, "STEPDRP") == 0) {
-                if(strlen(value) >= MAX_POLICY_NAME_LENGTH)
-					printf("warning: Retention policy names(%s) too long, Maximum length allowed : %d\n", value, MAX_POLICY_NAME_LENGTH);
-				stepd_set = true;
-				strncpy(stepd_retention_policy, value, sizeof(stepd_retention_policy) - 1);
-                stepd_retention_policy[sizeof(stepd_retention_policy) - 1] = '\0';
-			} else if (strcmp(key, "EVENTRP") == 0) {
-                if(strlen(value) >= MAX_POLICY_NAME_LENGTH)
-					printf("warning: Retention policy names(%s) too long, Maximum length allowed : %d\n", value, MAX_POLICY_NAME_LENGTH);
-				event_set = true;
-				strncpy(event_retention_policy, value, sizeof(event_retention_policy) - 1);
-                event_retention_policy[sizeof(event_retention_policy) - 1] = '\0';
-			}
-        }
-        token = strtok_r(NULL, ",", &rest);
-    }
-    free(copy);
-    switch (type)
-    {
-    case NATIVERP:
-		if(native_set)
-			rval = strdup(native_retention_policy);
-		else
-			rval = event_set ? strdup(event_retention_policy) : strdup(stepd_retention_policy);
-        break;
-	case STEPDRP:
-		if(stepd_set)
-			rval = strdup(stepd_retention_policy);
-		else
-			rval = event_set ? strdup(event_retention_policy) : strdup(native_retention_policy);
-        break;
-	case EVENTRP:
-		if(event_set)
-			rval = strdup(event_retention_policy);
-		else
-			rval = stepd_set ? strdup(stepd_retention_policy) : strdup(native_retention_policy);
-        break;
-    default:
-        rval = strdup("autogen");
-        break;
-    }
-    return rval;
+int xstrcmp(const char *s1, const char *s2)
+{
+	if (!s1 && !s2)
+		return 0;
+	else if (!s1)
+		return -1;
+	else if (!s2)
+		return 1;
+	else
+		return strcmp(s1, s2);
 }
 
 
-typedef struct {
-	int len;  /* what is the width of the print */
-	char *name;  /* name to be printed in header */
-	void (*print_routine) (); /* what is the function to print with  */
-	uint16_t type; /* defined in the local function */
-} print_field_t;
+void print_fields_header(List print_fields_list);
+void field_split(char *field_str, print_field_t* fields_tmp, List sj_list);
+/**
+ * @brief Parses the runtime policy string and extracts the policy value matching the specified type.
+ *
+ * This function takes a runtime policy string (rt_policy) and a target policy type (type), and parses the comma-separated
+ * components of the policy string. If a matching type is found, it returns the associated value. If no matching policy is found,
+ * it returns the default value "autogen". If the input rt_policy is NULL or an empty string, it directly returns "autogen".
+ *
+ * If the rt_policy string contains a standalone value (without any key-value pairs), it is treated as the default return value.
+ * If no matching key is found, but a standalone value exists, the function returns that value.
+ * If the string does not contain any valid key-value pairs, it is returned as is.
+ *
+ * @param rt_policy The runtime policy string, consisting of comma-separated key-value pairs (e.g., "type1=value1,type2=value2")
+ *                  or a single default value.
+ * @param type The target policy type, used to match a specific policy value. This is an enum representing different policy types.
+ *
+ * @return A string containing the policy value corresponding to the specified type.
+ *         - If a matching key is found, returns its associated value.
+ *         - If no matching key is found but a standalone default value exists, returns that value.
+ *         - If no valid key-value pairs are found, returns the original rt_policy string.
+ *         - If the input is NULL or empty, returns "autogen".
+ *         - If at least one key is found but the requested type is missing, returns "autogen".
+ */
+static char* _parse_rt_policy(const char *rt_policy, RPType type) {
+    int i = 0;
+    if (rt_policy == NULL || rt_policy[0] == '\0') {
+        return xstrdup("autogen");
+    }
+
+    // If rt_policy does not contain ',' or '=', return it directly
+    if (strchr(rt_policy, ',') == NULL && strchr(rt_policy, '=') == NULL) {
+        return xstrdup(rt_policy);
+    }
+
+    int found_any_keyword = 0;
+    char *default_value = NULL; 
+    char *policy_copy = xstrdup(rt_policy);
+    if (!policy_copy) {
+        return xstrdup("autogen");
+    }
+
+    char *saveptr = NULL;
+    char *token = strtok_r(policy_copy, ",", &saveptr);
+
+    while (token) {
+        char *value = strchr(token, '=');
+        if (value) {
+            *value = '\0';  
+            value++;        
+
+            for (i = 0; i < RPCNT; i++) {
+                if (xstrcmp(token, RPTypeNames[i]) == 0) {
+                    found_any_keyword = 1;
+                    if (i == (int)type) {
+                        char *result = xstrdup(value);
+                        xfree(default_value);
+                        xfree(policy_copy);
+                        return result;
+                    }
+                }
+            }
+        } else {
+            // If no '=' is found, treat it as the default value
+            xfree(default_value);
+            default_value = xstrdup(token);
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    xfree(policy_copy);
+
+    // Return the default value if no match is found
+    if (default_value) {
+        return default_value;
+    }
+
+    // If a key is found but no match for type, return "autogen"
+    if (found_any_keyword) {
+        return xstrdup("autogen");
+    }
+
+    // If no key-value structure is found, return the original string
+    return xstrdup(rt_policy);
+}
+
 /*
     ##########  Custom string types for dynamic scaling  ##########
 */
-typedef struct c_string
-{
-    char *str;
-    size_t alloced;
-    size_t len;
-} c_string_t;
 
 c_string_t *c_string_create(void) {
     c_string_t *cs;
@@ -411,7 +666,7 @@ static void c_string_ensure_space(c_string_t *cs, size_t add_len) {
             cs->alloced--;
         }
     }
-    cs->str = realloc(cs->str, cs->alloced);
+    cs->str = xrealloc(cs->str, cs->alloced);
 }
 
 void c_string_append_str(c_string_t *cs, const char *str) {
@@ -458,7 +713,7 @@ size_t safe_strlen(const char *str) {
 
 char *my_strdup(const char *s) {
     size_t len = strlen(s) + 1;
-    char *new_s = malloc(len);
+    char *new_s = xmalloc(len);
     if (new_s == NULL) {
         return NULL; 
     }
@@ -1330,6 +1585,7 @@ int read_hex_bytes_from_file(char *path_tmp, const uint8_t *key, slurm_influxdb 
     uint8_t *aes_data3 = NULL;
     char *influxdb[3];
     if(path_tmp == NULL || key == NULL || data== NULL) {
+        printf("read_hex_bytes_from_file function error \n");
         return -1;
     }
 
@@ -1339,17 +1595,17 @@ int read_hex_bytes_from_file(char *path_tmp, const uint8_t *key, slurm_influxdb 
              
 			  switch (count) {
                 case 1:
-                    aes_data1 = (uint8_t *)malloc(strlen(tmp_str));
+                    aes_data1 = (uint8_t *)xmalloc(strlen(tmp_str));
                     for (i = 0; i < strlen(tmp_str)-1; i+=2) {
                         char byte[2] = {tmp_str[i], tmp_str[i + 1]};
                         sscanf(byte, "%02X", (unsigned int *)&aes_data1[i / 2]);
                     }
                     aesDecrypt(key, 16, aes_data1, plain1, 32);
 
-                    free(aes_data1);
+                    xfree(aes_data1);
                     break;
                 case 2:
-                    aes_data2 = (uint8_t *)malloc(strlen(tmp_str));   
+                    aes_data2 = (uint8_t *)xmalloc(strlen(tmp_str));   
 
                     for (i = 0; i <  strlen(tmp_str)-1; i+=2) {
                         char byte[2] = {tmp_str[i], tmp_str[i + 1]};
@@ -1357,22 +1613,22 @@ int read_hex_bytes_from_file(char *path_tmp, const uint8_t *key, slurm_influxdb 
                     }
 
                     aesDecrypt(key, 16, aes_data2, plain2, 32);
-                    free(aes_data2);
+                    xfree(aes_data2);
                     break;
 
                 case 3:
-                    aes_data3 = (uint8_t *)malloc(strlen(tmp_str));
+                    aes_data3 = (uint8_t *)xmalloc(strlen(tmp_str));
                     
                     for (i = 0; i < strlen(tmp_str)-1; i+=2) {
                         char byte[2] = {tmp_str[i], tmp_str[i + 1]};
                         sscanf(byte, "%02X", (unsigned int *)&aes_data3[i / 2]);
                     }
                     aesDecrypt(key, 16, aes_data3, plain3, 32);
-                    free(aes_data3);
+                    xfree(aes_data3);
                     break;
                 default:
                     if(count >= 4 && count <= 6) {
-                        influxdb[count-4] = (char *)malloc(strlen(tmp_str));
+                        influxdb[count-4] = (char *)xmalloc(strlen(tmp_str));
                         for (i = 0; i < strlen(tmp_str)-1; i += 2) {
                             char byte[2] = {tmp_str[i], tmp_str[i + 1]};
                             sscanf(byte, "%02X", (unsigned int *)&influxdb[count-4][i / 2]);
@@ -1389,7 +1645,7 @@ int read_hex_bytes_from_file(char *path_tmp, const uint8_t *key, slurm_influxdb 
                         if((count - 4)==2) {
                             strcpy(data->policy, influxdb[count-4]);
                         }  
-                        free(influxdb[count-4]);
+                        xfree(influxdb[count-4]);
 
                     }              
                     break;
@@ -1428,8 +1684,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb,
 {
 	size_t realsize = size * nmemb;
 	struct http_response *mem = (struct http_response *) userp;
-
-	mem->message = realloc(mem->message, mem->size + realsize + 1);
+	mem->message = xrealloc(mem->message, mem->size + realsize + 1);
 	memcpy(&(mem->message[mem->size]), contents, realsize);
 	mem->size += realsize;
 	mem->message[mem->size] = 0;
@@ -1445,7 +1700,6 @@ char* influxdb_connect(slurm_influxdb *data, const char* sql, int type)
     /*Assuming the maximum length of the URL does not exceed 2048 characters*/
     // char url[2048]; 
     //const char *needle = "select";
-
     if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
         printf("influxdb_connect init curl global all failed \n");
         return NULL;
@@ -1454,18 +1708,18 @@ char* influxdb_connect(slurm_influxdb *data, const char* sql, int type)
         return NULL;      
     }
 
-    chunk.message = malloc(1);
+    chunk.message = xmalloc(1);
 	chunk.size = 0;
     
     // Initialize libcurl
 
     if(curl) {
        
-        char *url1 = (char*)malloc(200);
-        char *url2 = (char*)malloc(100 + strlen(sql));
+        char *url1 = (char*)xmalloc(200);
+        char *url2 = (char*)xmalloc(100 + strlen(sql));
         char *policy = _parse_rt_policy(data->policy, type);
         sprintf(url1, "%s/query?db=%s&rp=%s&precision=s", data->host, data->database, policy);
-        if(policy) free(policy);
+        if(policy) xfree(policy);
         sprintf(url2,"q=%s;",sql);
         curl_easy_setopt(curl, CURLOPT_URL, url1);
 
@@ -1489,7 +1743,7 @@ char* influxdb_connect(slurm_influxdb *data, const char* sql, int type)
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
  
         /*Perform the HTTP GET request*/
-        	static int error_cnt = 0;
+        static int error_cnt = 0;
 
         res = curl_easy_perform(curl);
 
@@ -1500,14 +1754,153 @@ char* influxdb_connect(slurm_influxdb *data, const char* sql, int type)
             printf("curl_easy_perform failed to send data (discarded). Reason %s\n", curl_easy_strerror(res));
         }
         curl_easy_cleanup(curl);
-        free(url1);
-        free(url2);
+        xfree(url1);
+        xfree(url2);
     }
     if(res != CURLE_OK)
         return NULL;
     else
         return chunk.message;
     
+}
+
+typedef struct {
+
+    int jobid;
+    int stepid;
+    time_t record_time;
+    char *uid;
+    char *username;
+    char *data;
+    char *nodename;
+} spost_record_t;
+
+
+void parse_json_tag(const char *response) {
+    json_t *root = NULL;
+    json_error_t error;
+    /* Loading JSON */
+    //printf("response =%s  /n",response);
+    root = json_loads(response, 0, &error);
+    if (!root) {
+        fprintf(stderr, "Error: on line %d: %s\n", error.line, error.text);
+        return;
+    }
+
+    /* Extract results */
+    json_t *results = json_object_get(root, "results");
+    if (!results || !json_is_array(results)) {
+        fprintf(stderr, "Error: The specified job number may not have saved custom information\n");
+        json_decref(root);
+        return;
+    }
+    size_t num_results = json_array_size(results);
+
+   /* Iterate over the results array */
+    size_t i = 0;
+    for (i = 0; i < num_results; ++i) {
+        json_t *series = json_object_get(json_array_get(results, i), "series");
+        if (!series || !json_is_array(series)) {
+            fprintf(stderr, "debug: There is no content in the specified jobid.\n");
+            continue;// Skip this result if there's no valid series
+        }
+        size_t num_series = json_array_size(series);
+        /* Iterating over series */
+        size_t j = 0;
+        for (j = 0; j < num_series; ++j) {
+            json_t *series_element = json_array_get(series, j);
+            json_t *columns = json_object_get(series_element, "columns");
+            json_t *values = json_object_get(series_element, "values");
+
+            if (!columns || !json_is_array(columns) || !values || !json_is_array(values)) {
+                fprintf(stderr, "Error: 'columns' or 'values' is not a valid array\n");
+                continue;
+            }
+            size_t num_columns = json_array_size(columns);
+            size_t num_values = json_array_size(values);
+
+            /* Iterate through the values array*/
+            size_t k  = 0;
+            for ( k = 0; k < num_values; ++k) {
+                json_t *row = json_array_get(values, k);
+                if (!row || !json_is_array(row)) {
+                    fprintf(stderr, "Error: 'row' is not an array\n");
+                    continue; 
+                }
+
+                /* Skip invalid lines */ 
+                spost_record_t *record = xmalloc(sizeof(spost_record_t));
+               
+                if (!record) {
+                    fprintf(stderr, "Memory allocation failed for record\n");
+                    continue; //Skip current record
+                }
+                /* Iterate over columns and rows */
+                size_t m = 0;
+                for (m = 0; m < num_columns; ++m) {
+                    const char *column_name = json_string_value(json_array_get(columns, m));
+                    json_t *value = json_array_get(row, m);
+                    /* Skip invalid columns or values */
+                    if (!column_name || !value) continue; 
+
+                    if (xstrcmp(column_name, "record_time") == 0) {
+                        record->record_time = json_integer_value(value);
+                    } else if (xstrcmp(column_name, "data") == 0) {
+                        const char *data = json_string_value(value);
+                        if(strlen(data) < 4096)
+                            record->data = xmalloc(strlen(data) * sizeof(char)+1);
+                        else
+                             record->data = xmalloc(4097 * sizeof(char));
+                        strncpy(record->data, data, (strlen(data) < 4096) ? strlen(data):4096);
+                    } else if (xstrcmp(column_name, "jobid") == 0) {
+                        record->jobid = json_integer_value(value);
+                    } else if (xstrcmp(column_name, "uid") == 0) {
+                        const char *uid = json_string_value(value);
+                        record->uid = xstrdup(uid ? uid : "0");
+                    } else if (xstrcmp(column_name, "username") == 0) {
+                        const char *username = json_string_value(value);
+                        record->username = xstrdup(username ? username : "unknown");
+                    } else if (xstrcmp(column_name, "step") == 0) {
+                        const char *step =json_string_value(value);
+                        if(step)
+                            record->stepid = atoi(step);
+                    } else if (xstrcmp(column_name, "sendnode") == 0) {
+                        const char *node =json_string_value(value);
+                        if(node)
+                            record->nodename = xstrdup(node ? node : "0");
+                    }
+
+                } 
+                if(record->jobid> 0)                                                             
+                    list_append(print_query_value_list, record);
+            }
+
+        }
+    }
+
+        // ListIterator itr = NULL;
+        // spost_record_t* sjinfo_print = NULL;
+        // itr = list_iterator_create(print_query_value_list);
+        
+        // int count = 0;
+		// while ((sjinfo_print = list_next(itr))) {
+        //      count++;
+        // }
+        // list_iterator_destroy(itr);   
+    json_decref(root);
+}
+
+extern void destroy_query_key_pair(void *object)
+{
+	spost_record_t *key_query_ptr = (spost_record_t *)object;
+
+	if (key_query_ptr) {
+        xfree(key_query_ptr->nodename);
+		xfree(key_query_ptr->username);
+		xfree(key_query_ptr->data);
+    	xfree(key_query_ptr->uid);    
+		xfree(key_query_ptr);
+	}
 }
 
 /*Parse JSON data*/
@@ -1538,9 +1931,9 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
             const char* jobid = json_string_value(json_object_get(tags, "jobid"));
             json_t *columns = json_object_get(series_element, "columns");
             json_t *values = json_object_get(series_element, "values");
-            iinfo_overall = malloc(sizeof(*iinfo_overall));
-            iinfo_overall->time = malloc(60);
-            iinfo_overall->username = malloc(60);
+            iinfo_overall = xmalloc(sizeof(*iinfo_overall));
+            iinfo_overall->time = xmalloc(60);
+            iinfo_overall->username = xmalloc(60);
             if(jobid)
                 iinfo_overall->jobid = atoi(jobid);
             if(step)
@@ -1548,7 +1941,6 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
             iinfo_overall->sum_cpu = 0;
             iinfo_overall->sum_pid = 0;
             iinfo_overall->sum_node = 0;
-            
             strcpy(iinfo_overall->username, username);
 
             if(flag == UNIT_STEP) {
@@ -1557,10 +1949,10 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                 i = params.desc_set ? num_rows - 1 : 0;
                 while(i < num_rows){
                     json_t *row = json_array_get(values, i);
-                    interface_sjinfo_t *iinfo = malloc(sizeof(*iinfo));  
+                    interface_sjinfo_t *iinfo = xmalloc(sizeof(*iinfo));  
 
-                    iinfo->time = malloc(60);
-                    iinfo->username = malloc(60);
+                    iinfo->time = xmalloc(60);
+                    iinfo->username = xmalloc(60);
                     if(jobid)
                         iinfo->jobid = atoi(jobid);
                     if(step)
@@ -1570,42 +1962,135 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
-                        if ((strcmp(tmp_name, "last_stepavecpu") == 0)) {
+                        if ((xstrcmp(tmp_name, "last_stepavecpu") == 0)) {
                             iinfo->stepcpuave = json_real_value(value);
-                        } else if (strcmp(tmp_name, "last_stepcpu") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_stepcpu") == 0) {
                             iinfo->stepcpu = json_real_value(value);
-                        } else if (strcmp(tmp_name, "last_stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_stepmem") == 0) {
                             iinfo->stepmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "last_stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_stepvmem") == 0) {
                             iinfo->stepvmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "last_steppages") == 0) {
+                        } else if (xstrcmp(tmp_name, "last_steppages") == 0) {
                             iinfo->steppages = (long long)json_integer_value(value);
-                        }  else if (strcmp(tmp_name, "max_stepcpu") == 0) {
+                        }  else if (xstrcmp(tmp_name, "max_stepcpu") == 0) {
                             iinfo->stepcpumax = json_real_value(value);
-                        } else if (strcmp(tmp_name, "min_stepcpu") == 0) {
+                        } else if (xstrcmp(tmp_name, "min_stepcpu") == 0) {
                             iinfo->stepcpumin = json_real_value(value);
-                        } else if (strcmp(tmp_name, "max_stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "max_stepmem") == 0) {
                             iinfo->stepmemmax = json_integer_value(value);
-                        } else if (strcmp(tmp_name, "min_stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "min_stepmem") == 0) {
                             iinfo->stepmemmin = json_integer_value(value);
-                        } else if (strcmp(tmp_name, "max_stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "max_stepvmem") == 0) {
                             iinfo->stepvmemmax = json_integer_value(value);
-                        } else if (strcmp(tmp_name, "min_stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "min_stepvmem") == 0) {
                             iinfo->stepvmemmin = json_integer_value(value);
                         } 
                     }
                     list_append(print_value_list, iinfo);
                     (params.desc_set ? --i : ++i);
                 }
-            }else if(flag == UNIT_EVENT) {
+            } else if(flag == UNIT_APPTYPE) {
+                size_t i,j;
+                size_t num_rows = json_array_size(values);
+
+                uint64_t max_cputime = 0; /* 保留cputime的最大值 */
+                char* max_username = NULL;
+                char* max_apptype = NULL;  /* cputime最大值对应的进程名称 */
+                interface_sjinfo_t *iinfo_job = xmalloc(sizeof(*iinfo_job));
+                iinfo_job->time = xmalloc(60);
+                iinfo_job->username = xmalloc(60);
+                if(jobid)
+                    iinfo_job->jobid = atoi(jobid);
+                if(step)
+                    iinfo_job->stepid = atoi(step);
+                strcpy(iinfo_job->username, username);
+
+                i = params.desc_set ? num_rows - 1 : 0;
+                while(i < num_rows){
+                    json_t *row = json_array_get(values, i);
+                    interface_sjinfo_t *iinfo = xmalloc(sizeof(*iinfo));  
+
+                    iinfo->time = xmalloc(60);
+                    if(jobid)
+                        iinfo->jobid = atoi(jobid);
+                    if(step)
+                        iinfo->stepid = atoi(step);
+
+                    for (j = 0; j < json_array_size(columns); ++j) {
+                        json_t *value = json_array_get(row, j);
+                        const char * tmp_name = json_string_value(json_array_get(columns, j));
+                        if ((xstrcmp(tmp_name, "apptype_cli")) == 0) {
+                            iinfo->apptype_cli = xstrdup(json_string_value(value));
+                        } else if (xstrcmp(tmp_name, "apptype_step") == 0) {
+                            iinfo->apptype_step = xstrdup(json_string_value(value));
+                        } else if (xstrcmp(tmp_name, "cputime") == 0) {
+                            iinfo->cputime = (uint64_t)strtoull(json_string_value(value), NULL, 10);
+                        } else if (xstrcmp(tmp_name, "step") == 0) {
+                            iinfo->stepid = (int)strtol(json_string_value(value), NULL, 10);
+                        } else if (xstrcmp(tmp_name, "username") == 0) {
+                            iinfo->username = xstrdup(json_string_value(value));
+                        }
+                    }
+                    if (iinfo && iinfo->cputime >= max_cputime) {
+                        max_cputime = iinfo->cputime;
+                        if (max_apptype) 
+                            xfree(max_apptype);
+                        max_apptype = xstrdup(iinfo->apptype_step);
+                        if (max_username) 
+                            xfree(max_username);
+                        max_username = xstrdup(iinfo->username);
+                    }
+                    if (params.level & INFLUXDB_APPTYPE) {
+                        if (params.show_jobstep_apptype) {
+                            list_append(print_apptype_value_list, iinfo);
+                        } else {
+                            xfree(iinfo->time);
+                            xfree(iinfo->username);
+                            xfree(iinfo->apptype_cli);
+                            xfree(iinfo->apptype_step);
+                            xfree(iinfo);
+                        }
+                    } else {
+                        xfree(iinfo->time);
+                        xfree(iinfo->username);
+                        xfree(iinfo->apptype_cli);
+                        xfree(iinfo->apptype_step);
+                        xfree(iinfo);
+                    }
+                    (params.desc_set ? --i : ++i);
+                }
+                if (!params.show_jobstep_apptype) {
+                    if (iinfo_job->apptype) 
+                        xfree(iinfo_job->apptype);
+                    iinfo_job->apptype = xstrdup(max_apptype);
+                    if (iinfo_job->username) 
+                        xfree(iinfo_job->username);
+                    iinfo_job->username = xstrdup(max_username);
+                    if (params.level & INFLUXDB_APPTYPE) {
+                        list_append(print_apptype_job_value_list, iinfo_job);
+                    } else {
+                        xfree(iinfo_job->time);
+                        xfree(iinfo_job->username);
+                        xfree(iinfo_job->apptype);
+                        xfree(iinfo_job);
+                    }
+                } else {
+                    xfree(iinfo_job->time);
+                    xfree(iinfo_job->username);
+                    xfree(iinfo_job->apptype);
+                    xfree(iinfo_job);
+                }
+                xfree(max_apptype);
+                xfree(max_username);
+            } else if(flag == UNIT_EVENT) {
                 size_t i,j;
                 size_t num_rows = json_array_size(values);
                 i = params.desc_set ? num_rows - 1 : 0;
                 while(i < num_rows){
                     json_t *row = json_array_get(values, i);
-                    interface_sjinfo_t *iinfo = malloc(sizeof(*iinfo));
-                    iinfo->time = malloc(60);
-                    iinfo->username = malloc(60);
+                    interface_sjinfo_t *iinfo = xmalloc(sizeof(*iinfo));
+                    iinfo->time = xmalloc(60);
+                    iinfo->username = xmalloc(60);
                     if(jobid)
                         iinfo->jobid = atoi(jobid);
                     if(step)
@@ -1613,49 +2098,79 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     strcpy(iinfo->username, username);
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
-                        if(value == NULL)
+                        if (value == NULL)
+                            continue;
+                        if (value->type == JSON_NULL)
                             continue;
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
-                        if (strcmp(tmp_name, "stepcpu") == 0) {
+                        if (xstrcmp(tmp_name, "stepcpu") == 0) {
                             iinfo->stepcpu = json_real_value(value);
-                        } else if (strcmp(tmp_name, "stepmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "stepmem") == 0) {
                             iinfo->stepmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "stepvmem") == 0) {
+                        } else if (xstrcmp(tmp_name, "stepvmem") == 0) {
                             iinfo->stepvmem = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "steppages") == 0) {
+                        } else if (xstrcmp(tmp_name, "steppages") == 0) {
                             iinfo->steppages = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "cputhreshold") == 0) {
+                        } else if (xstrcmp(tmp_name, "cputhreshold") == 0) {
                             iinfo->cputhreshold = (long long)json_integer_value(value);
-                        } else if (strcmp(tmp_name, "start") == 0) {
+                        } else if (xstrcmp(tmp_name, "start") == 0) {
                             iinfo->start = (unsigned long)json_integer_value(value);
                             iinfo_overall->start_last = ((unsigned long)json_integer_value(value) > iinfo_overall->start_last) ? (unsigned long)json_integer_value(value) : iinfo_overall->start_last;
-                        } else if (strcmp(tmp_name, "end") == 0) {
+                        } else if (xstrcmp(tmp_name, "end") == 0) {
                             iinfo->end = (unsigned long)json_integer_value(value);
                             iinfo_overall->end_last = ((unsigned long)json_integer_value(value) > iinfo_overall->end_last) ? (unsigned long)json_integer_value(value) : iinfo_overall->end_last;
-                        } else if (strcmp(tmp_name, "type1") == 0) {
-                            iinfo->type1 = atoi(json_string_value(value));
-                            if(iinfo->type1)
-                                iinfo_overall->sum_cpu++;
-                        } else if (strcmp(tmp_name, "type2") == 0) {
-                            iinfo->type2 = atoi(json_string_value(value));
-                            if(iinfo->type2) 
-                                iinfo_overall->sum_pid++;
-                        } else if (strcmp(tmp_name, "type3") == 0) {
-                            iinfo->type3 = atoi(json_string_value(value));
-                            if(iinfo->type3) 
-                                iinfo_overall->sum_node++;
+                        } else if (xstrcmp(tmp_name, "tag_type1") == 0) {
+                            const char *type1 = json_string_value(value);
+                            if (type1)
+                                iinfo->type1 = atoi(type1);
+                        } else if (xstrcmp(tmp_name, "tag_type2") == 0) {
+                            const char *type2 = json_string_value(value);
+                            if (type2) 
+                                iinfo->type2 = atoi(type2);
+                        } else if (xstrcmp(tmp_name, "tag_type3") == 0) {
+                            const char *type3 = json_string_value(value);
+                            if (type3)
+                                iinfo->type3 = atoi(type3);
+                        } else if (xstrcmp(tmp_name, "field_type1") == 0) {
+                            iinfo->type1 = json_integer_value(value);
+                        } else if (xstrcmp(tmp_name, "field_type2") == 0) {
+                            iinfo->type2 = json_integer_value(value);
+                        } else if (xstrcmp(tmp_name, "field_type3") == 0) {
+                            iinfo->type3 = json_integer_value(value);
+                        } else if (xstrcmp(tmp_name, "type") == 0) {
+                            const char *type = json_string_value(value);
+                            if (type)
+                                iinfo->type = xstrdup(type);
                         }
+
                     }
-                    if(params.level & 0x0010){
+                    if ((iinfo->type1 || iinfo->type2 || iinfo->type3 || iinfo->type != NULL) && 
+                        ((params.level & INFLUXDB_EVENT) || params.level & INFLUXDB_OVERALL)) {
+                        if (iinfo->type1) 
+                            iinfo_overall->sum_cpu++;
+                        if (iinfo->type2) 
+                            iinfo_overall->sum_pid++;
+                        if (iinfo->type3) 
+                            iinfo_overall->sum_node++;
+                        if(xstrcmp(iinfo->type, CPU_ABNORMAL_FLAG) == 0) {
+                            iinfo_overall->sum_cpu++;
+                        } else if (xstrcmp(iinfo->type, PROCESS_ABNORMAL_FLAG) == 0) {
+                            iinfo_overall->sum_pid++;
+                        } else if (xstrcmp(iinfo->type, NODE_ABNORMAL_FLAG) == 0) {
+                            iinfo_overall->sum_node++;
+                        }
                         list_append(print_events_value_list, iinfo);
-                    }else{
-                        free(iinfo->time);
-                        free(iinfo->username);
-                        free(iinfo);
+                    } else {
+                        xfree(iinfo->time);
+                        xfree(iinfo->username);
+                        xfree(iinfo->type);
+                        xfree(iinfo);
                     }
+
                     (params.desc_set ? --i : ++i);
                 }
-            }else if(flag == UNIT_RUNJOB) {
+
+            } else if(flag == UNIT_RUNJOB) {
                 size_t i, j;
                 size_t num_rows = json_array_size(values);
                 i = params.desc_set ? num_rows - 1 : 0;
@@ -1668,13 +2183,13 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
-                        if (strcmp(tmp_name, "ctime") == 0) {
+                        if (xstrcmp(tmp_name, "ctime") == 0) {
                             ctime = json_string_value(value);
                             if (!ctime) {
                                 fprintf(stderr, "Error: ctime is NULL at row %zu\n", i);
                                 continue;
                             }
-                        } else if (strcmp(tmp_name, "interval_time") == 0) {
+                        } else if (xstrcmp(tmp_name, "interval_time") == 0) {
                             if (json_is_integer(value)) {
                                 interval_time = (unsigned long)json_integer_value(value);
                             } else {
@@ -1714,12 +2229,12 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                 }
             }
             (params.desc_set ? --s : ++s);
-            if((params.level & 0x0100) && (flag == UNIT_EVENT)) {
+            if ((params.level & 0x0100) && (flag == UNIT_EVENT)) {
                 list_append(print_overall_value_list, iinfo_overall);
-            }else{
-                free(iinfo_overall->time);
-                free(iinfo_overall->username);
-                free(iinfo_overall);
+            } else {
+                xfree(iinfo_overall->time);
+                xfree(iinfo_overall->username);
+                xfree(iinfo_overall);
             }
         }
     }
@@ -1766,8 +2281,8 @@ void print_sjinfo_help(void)
 "        '--format='    JobID,StepID,StepCPU,StepAVECPU,StepMEM,StepVMEM,         \n"
 "                       StepPages,MaxStepCPU,MinStepCPU,MaxStepMEM,            \n"
 "                       MinStepMEM,MaxStepVMEM,MinStepVMEM,CPUthreshold,        \n"
-"                       Start,End,Type,Last_start,Last_end,Sum_CPU,     \n"
-"                       Sum_PID,Sum_NODE     \n"
+"                       Start,End,Type,Last_start,Last_end,CPU_Abnormal_CNT,     \n"
+"                       PROC_Abnormal_CNT,NODE_Abnormal_CNT     \n"
 "                                                                           \n"
 "        Fields related to resource consumption:                           \n"
 "        JobID:         Job ID                                                 \n"
@@ -1800,9 +2315,9 @@ void print_sjinfo_help(void)
 "        Fields related to abnormal events overall:                             \n"
 "        Last_start:    The start time of the most recent anomaly.        \n"
 "        Last_end:      The end time of the most recent anomaly.                \n"
-"        Sum_CPU:       Total number of CPU abnormal events.                   \n"
-"        Sum_PID:       Total number of PROCESS abnormal events.                    \n"
-"        Sum_NODE:      Total number of NODE abnormal events.                    \n"
+"        CPU_Abnormal_CNT:       Total number of CPU abnormal events.                   \n"
+"        PROC_Abnormal_CNT:       Total number of PROCESS abnormal events.                    \n"
+"        NODE_Abnormal_CNT:      Total number of NODE abnormal events.                    \n"
 "     -O, --overall:                                                           \n"
 "        Displays general information about the abnormal event          \n"
 "     -r, --running:                                                           \n"
@@ -1817,12 +2332,25 @@ void print_sjinfo_help(void)
 "        Specify the steps.                                               \n"
 "     -S, --start:                                                         \n"
 "        The start time of the job's abnormal event (e.g., 2024-05-07T08:00:00). \n"
+"     -t, --apptype:                                                          \n"
+"        Displays application type information for the job. Specifying any  \n"
+"        parameter will display the application type information at the job step level \n"
 "     -V, --version:                                                       \n"
 "        Print sjinfo version.                                              \n"
 "     -m                                                                    \n"
 "        Convert KB to MB (default is in KB).                               \n"
 "     -g                                                                    \n"
 "        Convert KB to GB (default is in KB).                               \n"
+"     -q,--query                                                            \n"
+"        Query user-defined messages.                                       \n"
+"        jobid: Job ID.                                                     \n"
+"        Username: user name.                                               \n"
+"        StepID: Job Step ID,                                               \n"
+"        If \"JSNS\" appears in the job step, it indicates that the         \n"
+"        job step was not specified when the spost was written.             \n"
+"        Uid: User UID                                                      \n"
+"        Messages: User-defined messages                                    \n"
+"        PostTime: The time when the user sent the data to the database     \n"
 "\n");
 }
 
@@ -1831,7 +2359,7 @@ void time_format(char *time_go, time_t tran_time, bool now)
    
     time_t rawtime = time(NULL);
     
-    if(now) {
+    if (now) {
         struct tm *timeinfo = gmtime(&rawtime);
         char time_go1[21];
         strftime(time_go1, sizeof(time_go1), "%Y-%m-%dT%H:%M:%SZ", timeinfo);
@@ -1868,9 +2396,13 @@ extern void destroy_config_vale(void *object)
 	interface_sjinfo_t *key_pair_ptr = (interface_sjinfo_t *)object;
 
 	if (key_pair_ptr) {
-		free(key_pair_ptr->time);
-		free(key_pair_ptr->username);
-		free(key_pair_ptr);
+		xfree(key_pair_ptr->time);
+		xfree(key_pair_ptr->username);
+        xfree(key_pair_ptr->type);
+        xfree(key_pair_ptr->apptype_cli);
+        xfree(key_pair_ptr->apptype_step);
+        xfree(key_pair_ptr->apptype);
+		xfree(key_pair_ptr);
 	}
     
 }
@@ -1880,20 +2412,24 @@ extern void destroy_config_key_pair(void *object)
 	interface_sjinfo_t *key_pair_ptr = (interface_sjinfo_t *)object;
 
 	if (key_pair_ptr) {
-		free(key_pair_ptr->time);
-		free(key_pair_ptr->username);
-		free(key_pair_ptr);
+		xfree(key_pair_ptr->time);
+		xfree(key_pair_ptr->username);
+        xfree(key_pair_ptr->type);
+        xfree(key_pair_ptr->apptype_cli);
+        xfree(key_pair_ptr->apptype_step);
+        xfree(key_pair_ptr->apptype);
+		xfree(key_pair_ptr);
 	}
 }
 
 void sjinfo_init(slurm_influxdb *influxdb_data)
 {
     /*given sufficient length*/
-    influxdb_data->username = malloc(32) ;
-    influxdb_data->password = malloc(32);
-    influxdb_data->database = malloc(640) ;
-    influxdb_data->host = malloc(640);
-    influxdb_data->policy = malloc(640);
+    influxdb_data->username = xmalloc(32) ;
+    influxdb_data->password = xmalloc(32);
+    influxdb_data->database = xmalloc(640) ;
+    influxdb_data->host = xmalloc(640);
+    influxdb_data->policy = xmalloc(640);
     /*step table*/
 	print_fields_list = list_create(NULL);
 	print_fields_itr = list_iterator_create(print_fields_list);
@@ -1909,17 +2445,29 @@ void sjinfo_init(slurm_influxdb *influxdb_data)
 	print_overall_itr = list_iterator_create(print_overall_list);
     print_overall_value_list = list_create(destroy_config_key_pair);
 
+    /*apptype table*/
+    print_apptype_list = list_create(NULL);
+	print_apptype_itr = list_iterator_create(print_apptype_list);
+    print_apptype_value_list = list_create(destroy_config_key_pair);
+
+    /*apptype job table*/
+    print_apptype_job_list = list_create(NULL);
+	print_apptype_job_itr = list_iterator_create(print_apptype_job_list);
+    print_apptype_job_value_list = list_create(destroy_config_key_pair);
+
+    print_query_value_list = list_create(destroy_query_key_pair);
+
     job_list = c_string_create();
 }
 
 
 void sjinfo_fini(slurm_influxdb * influxdb_data)
 {
-    free(influxdb_data->username);
-    free(influxdb_data->password);
-    free(influxdb_data->database);
-    free(influxdb_data->host);
-    free(influxdb_data->policy);
+    xfree(influxdb_data->username);
+    xfree(influxdb_data->password);
+    xfree(influxdb_data->database);
+    xfree(influxdb_data->host);
+    xfree(influxdb_data->policy);
     /*step table*/
 	if (print_fields_itr)
 		list_iterator_destroy(print_fields_itr);
@@ -1936,6 +2484,16 @@ void sjinfo_fini(slurm_influxdb * influxdb_data)
     if(print_events_value_list)
 	    FREE_NULL_LIST(print_events_value_list);
     
+    /*apptype table*/
+    if(print_apptype_itr)
+        list_iterator_destroy(print_apptype_itr);
+    if(print_apptype_list)
+        FREE_NULL_LIST(print_apptype_list);
+    if(print_apptype_value_list)
+	    FREE_NULL_LIST(print_apptype_value_list);
+    if(print_apptype_job_value_list)
+	    FREE_NULL_LIST(print_apptype_job_value_list);
+    
     /*event overall table*/
     if(print_overall_itr)
         list_iterator_destroy(print_overall_itr);
@@ -1943,7 +2501,8 @@ void sjinfo_fini(slurm_influxdb * influxdb_data)
         FREE_NULL_LIST(print_overall_list);
     if(print_overall_value_list)
 	    FREE_NULL_LIST(print_overall_value_list);
-    
+    if(print_query_value_list)
+	    FREE_NULL_LIST(print_query_value_list);   
 }
 
 time_t slurm_mktime(struct tm *tp)
@@ -2154,6 +2713,158 @@ static int _get_date(const char *time_str, int *pos, int *month, int *mday,
 
  prob:	*pos = offset;
 	return -1;
+}
+
+int contains_non_digit(const char *str) {
+       /* Check if the string is empty */
+    if (str == NULL) {
+        return -1;
+    }
+    /* Check if the first character is a negative sign */
+    if (*str == '-') {
+        str++; // Skip the negative sign and check the rest of the string
+    }
+
+    /* Traverse the string until encountering the null terminator '\0' */
+    while (*str) {
+        /* if the current character is not a digit */
+        if (!isdigit((unsigned char)*str)) { 
+            /* non-digit character exists*/
+            return -1; 
+        }
+        str++;
+    }
+    /*all characters are digits*/ 
+    return 0; 
+}
+
+int strcat_stepd(const char* jobids, uint32_t* job_id, int* stepd)
+{
+    char *job = NULL;
+    char *stepids = NULL;
+    int rc = 0;
+    char *p  = strchr(jobids, '.');
+    if(p != NULL && p[0] !='\0') {
+        stepids  = xmalloc(sizeof(char) * 300);
+        job      = xmalloc(sizeof(char) * 300);
+        memset(stepids, 0, 300);
+        memset(job, 0, 300);
+        strncpy(job, jobids, p - jobids); // 分配并复制第一部分
+        job[p - jobids] = '\0';
+        strcpy(stepids, p + 1); // 分配并复制第二部分
+    } else {
+        if(contains_non_digit(jobids) != 0) {
+            printf("There is an error in the job ID format specification.\n");
+            rc = -1;
+            goto fail_stepd;
+        }
+        *job_id = (uint32_t) atol(jobids);
+        rc = 2;
+        goto fail_stepd;
+    }
+
+    if(job != NULL) {
+        if(contains_non_digit(job) != 0) {
+            printf("There is an error in the job ID format specification \n");
+            rc = -1;
+            goto fail_stepd;
+        } 
+        *job_id = (uint32_t) atol(job);
+    } else {
+        if(contains_non_digit(jobids) != 0) {
+            printf("There is an error in the job ID format specification.\n");
+            rc = -1;
+            goto fail_stepd;
+        }
+
+        *job_id = (uint32_t) atol(jobids);
+    }
+
+    if(stepids) {
+        if(strncmp(stepids, "batch", 5) == 0) {
+            *stepd = -5;
+        } else if(strncmp(stepids, "extern", 6) == 0){
+            *stepd = -4;
+        } else if(contains_non_digit(stepids) == 0) {
+            *stepd = atol(stepids);
+        } else {
+            printf("Invalid characters have been specified. (other: only one job can be specified). \n");
+            rc = -1;
+            goto fail_stepd;
+        }
+    }
+fail_stepd:
+    if(stepids)
+        xfree(stepids);
+    if(job)
+        xfree(job);
+    return rc;
+}
+
+
+int strcat_jobid_tag(char *sql, const char *str, bool flag) 
+{   
+    int rc = 0;
+    if(sql == NULL || str == NULL) {
+        rc =-1;
+        return rc;
+    }
+    const char and[] = " and ";
+    const char or[] = " or ";   
+    bool first =  false;     
+    char *jobids = my_strdup(str);
+    //int length = strlen(jobids);
+    char* tmp_jobids = NULL;
+    const char delimiters[] = ",";
+    char tmp[40960] = {'\0'};
+    char *jobid = strtok(jobids, delimiters);
+    int num = 0;
+    tmp_jobids = xmalloc(5000 * sizeof(char) );
+    /* Traverse and print the split string */
+    while (jobid != NULL) {      
+        num++;
+        if(num > 10000)
+            break; 
+        if(!first) {
+            if(flag) {
+                strcat(tmp_jobids, and); 
+            }
+            first = true;
+        } else {
+            strcat(tmp_jobids, or); 
+        }
+        
+        //strcat(tmp_jobids, prefix);  
+        uint32_t job_id = 0;
+        int stepd_id = 0x7FFFFFFF;
+        rc = strcat_stepd(jobid, &job_id, &stepd_id);
+        if(rc == -1) {
+            if(tmp_jobids)
+                xfree(tmp_jobids);
+            if (jobids)
+                xfree(jobids);
+            return rc;
+        } else if (rc == 2) {
+            sprintf(tmp, "jobid = %d", job_id);
+        } else {
+            sprintf(tmp, "jobid = %d and step= \'%d\'",job_id, stepd_id );
+        }
+    
+        strcat(tmp_jobids, tmp);
+        jobid = strtok(NULL, delimiters);
+    }
+
+    if((strlen(tmp_jobids) + strlen(sql)) > 81920) {
+        printf("jobid is too long \n");
+        rc = -1;
+    }
+    if(rc!=-1)
+        strcat(sql, tmp_jobids);
+    xfree(tmp_jobids);
+
+    if (jobids)
+        xfree(jobids);
+    return rc;
 }
 
 /* convert time differential string into a number of seconds
@@ -2514,7 +3225,7 @@ char* reassemble_job_ids(const char *input) {
     }
     
     /*Allocate enough memory to store the output string*/
-    output = (char*)malloc(output_size);
+    output = (char*)xmalloc(output_size);
     if (output == NULL) {
         printf("Memory allocation error.\n");
         return NULL;
@@ -2527,7 +3238,7 @@ char* reassemble_job_ids(const char *input) {
         /*Append one " or jobid = 'token'" to the output string each time.
          *Add 7 to make room for " or " and the string terminator '\0'
          */
-        output = realloc(output, output_size + strlen(token) + strlen(prefix) + strlen(suffix) + 7); 
+        output = xrealloc(output, output_size + strlen(token) + strlen(prefix) + strlen(suffix) + 7); 
         if (output == NULL) {
             printf("Memory allocation error.\n");
             return NULL;
@@ -2552,6 +3263,7 @@ int strcat_field(c_string_t* sql, const char *str, int field)
     int rc = 0;
     if(sql == NULL || str == NULL || c_string_peek(sql) == NULL) {
         rc = -1;
+        printf("strcat_field error.\n");
         return rc;
     }
 
@@ -2576,7 +3288,7 @@ int strcat_field(c_string_t* sql, const char *str, int field)
     const char or[] = " or ";
     bool first = false;
 
-    char *fields = strdup(str);
+    char *fields = xstrdup(str);
     if(!fields) {
         printf("strdup failed !\n");
         return -1; // strdup failed
@@ -2594,6 +3306,7 @@ int strcat_field(c_string_t* sql, const char *str, int field)
             c_string_append_str(tmp_fields, or);
         }
         c_string_append_str(tmp_fields, prefix);
+
         c_string_append_str(tmp_fields, ((field == STEP && strcasecmp(field_value, "batch") == 0) ? "-5" : field_value));
         c_string_append_str(tmp_fields, suffix);
         field_value = strtok(NULL, delimiters);
@@ -2605,7 +3318,7 @@ int strcat_field(c_string_t* sql, const char *str, int field)
     }
     c_string_destory(tmp_fields);
     if(fields) {
-        free(fields);
+        xfree(fields);
     }
     return rc;
 }
@@ -2642,7 +3355,7 @@ int stract_time(bool start_label, bool jobid_out, time_t usage_start,
         //do nothing
 
     } else if(!start_label && !jobid_out) {
-        start = malloc(100);
+        start = xmalloc(100);
         //char tmp_start[80];
         const char and[] = " and ";
         const char time[] = " time >= ";
@@ -2650,7 +3363,7 @@ int stract_time(bool start_label, bool jobid_out, time_t usage_start,
         c_string_append_str(sql_str, and);
         c_string_append_str(sql_str, time);
         c_string_append_str(sql_str, start);
-        free(start);
+        xfree(start);
     }
     return rc;
        
@@ -2675,6 +3388,10 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     bool step_out = false;
     bool no_step= false;
     bool no_jobid = false;
+
+    bool qurey_label = false;
+    char* sql_query = NULL;
+
     char deauft_events[] = "CPUUSA,PidSA,NodeSA"; 
     if(data == NULL) {
         rc = -1;
@@ -2682,28 +3399,39 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     }
     c_string_t *sql_step = c_string_create();
     c_string_t *sql_event = c_string_create();
+    c_string_t *sql_apptype = c_string_create();
     c_string_t *sql_runjob = c_string_create();
-    char *buffer_str = malloc(2048);
+    char *buffer_str = xmalloc(2048);
     
-    end = malloc(100);
-    start = malloc(100);
+    end = xmalloc(100);
+    start = xmalloc(100);
  
+    sql_query = xmalloc(81920*sizeof(char));
+    char sql_query_head[] = "select * from ";
+    char sheet_query[] = "Spost";
     char sheet_step[] = "Stepd";
     char sheet_event[] = "Event";
+    char sheet_apptype[] = "Apptype";
     /*Parameter collection sql statement assembly*/
     char sql_step_head[] = "SELECT LAST(\"stepcpuave\") AS last_stepavecpu,LAST(\"stepcpu\") AS last_stepcpu, "
                 "LAST(\"stepmem\") AS last_stepmem, LAST(\"stepvmem\") AS last_stepvmem, LAST(\"steppages\") AS last_steppages, "
                 "MAX(\"stepcpu\") AS max_stepcpu, MIN(\"stepcpu\") AS min_stepcpu, MAX(\"stepmem\") AS max_stepmem, "
                 "MIN(\"stepmem\") AS min_stepmem, MAX(\"stepvmem\") AS max_stepvmem, "
                 "MIN(\"stepvmem\") AS min_stepvmem";
+    char sql_apptype_head[] = "SELECT * ";
 
     /*Event event sql statement assembly*/
-    char sql_event_head[] = "SELECT * ";
+    // char sql_event_head[] = "SELECT \"cputhreshold\",\"end\",\"jobid\",\"start\",\"step\",\"stepcpu\",\"stepmem\",\"steppages\",\"stepvmem\",\"type1\"::tag,\"type2\"::tag,\"type3\"::tag,\"username\" ";
+    char sql_event_head[] = "SELECT \"cputhreshold\",\"end\",\"jobid\",\"start\",\"step\",\"stepcpu\",\"stepmem\",\"steppages\",\"stepvmem\","
+                            "\"type1\"::tag as tag_type1,\"type2\"::tag as tag_type2,\"type3\"::tag as tag_type3,"
+                            "\"type1\"::field as field_type1,\"type2\"::field as field_type2,\"type3\"::field as field_type3,"
+                            "\"type\",\"username\" ";
     
     char *sql_runjob_head = "SELECT time as ctime,LAST(\"interval_time\") as interval_time ";
     char *sql_runjob_tail = " group by jobid";
 
     char sql_tail[] = " group by step,jobid";
+    char sql_tail_apptype[] = " group by jobid";
     struct passwd *pw;
     /* record start time */
     time_t usage_start = 0;
@@ -2717,7 +3445,7 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     /*
         |-e|overall|event|load|
     */
-    params.level = 0x0000;
+    params.level = INFLUXDB_NONE;
     assert(params.opt_uid != -1);
     pw = getpwuid(params.opt_uid);
 	static struct option long_options[] = {
@@ -2732,32 +3460,40 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
                 {"format",      required_argument,  0,      'o'},
                 {"running",     no_argument,        0,      'r'},
                 {"steps",       required_argument,  0,      's'},
-                {"start",       required_argument,  0,      'S'},   
-                {"user",        required_argument,  0,      'u'},      
+                {"start",       required_argument,  0,      'S'}, 
+                {"apptype",     optional_argument,  0,      't'},
+                {"user",        required_argument,  0,      'u'},
+                {"query",       no_argument,        0,      'q'},         
                 {"version",     no_argument,        0,      'V'},
                 {"overall",     no_argument,        0,      'O'},
                 {0,             0,                  0,      0}};
-    while (1) {		/* now cycle through the command line */
-		c = getopt_long(argc, argv,
-				"de:E:j:s:lo:rS:u:VOmgaAh",
-				long_options, &optionIndex);      
+    
+    optind = 0;
+    while ((c = getopt_long(argc, argv,
+				       "dt:e:E:j:s:lo:rS:u:VOmgaAhq",
+				       long_options, &optionIndex)) != -1) {
+    
+    // while (1) {		/* now cycle through the command line */
+	// 	c = getopt_long(argc, argv,
+	// 			"dt::e:E:j:s:lo:rS:u:VOmgaAhq",
+	// 			long_options, &optionIndex);      
         if (c == -1) {
             no_jobid = true;
             no_step = true;
         }
         switch (c) {
             case 'a':
-                params.level |= 0x0111;
+                params.level |= INFLUXDB_ALL;
                 break;
             case 'A':
-                params.level |= 0x0010;
+                params.level |= INFLUXDB_EVENT;
                 break;
             case 'd':
                 params.desc_set = true;
                 break;
         	case 'e':
-                params.level |= 0x1000;
-                events = malloc(strlen(optarg)+30);
+                params.level |= INFLUXDB_EVENT_FLAG;
+                events = xmalloc(strlen(optarg)+30);
                 sprintf(events,"%s",optarg);
                 break;
         	case 'E':
@@ -2769,22 +3505,22 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
                 exit(0);
                 break;
         	case 'j':
-                jobids = malloc(strlen(optarg)+20);
+                jobids = xmalloc(strlen(optarg)+20);
                 sprintf(jobids,"%s",optarg);
                 jobid_out = true;
                 break;
             case 'l':
-                params.level |= 0x0001;
+                params.level |= INFLUXDB_STEPD;
                 break;
         	case 'o':
-                params.opt_field_list = malloc(strlen(optarg)+20);
+                params.opt_field_list = xmalloc(strlen(optarg)+20);
                 sprintf(params.opt_field_list,"%s",optarg);
                 break;
             case 'r':
                 params.only_run_job = true;
                 break;
             case 's':
-                steps = malloc(strlen(optarg)+20);
+                steps = xmalloc(strlen(optarg)+20);
                 sprintf(steps,"%s",optarg);
                 step_out = true;
                 break;
@@ -2792,9 +3528,24 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
                 start_label = true;
                 usage_start = parse_time(optarg, 1);
                 break;
+            case (int)'t':
+                if (optarg) {
+                    if (strcasecmp(optarg, "job") == 0) {
+                        params.show_jobstep_apptype = false;
+                    } else if (strcasecmp(optarg, "step") == 0) {
+                        params.show_jobstep_apptype = true;
+                    } else {
+                        fprintf(stderr, "Invalid argument for -t: %s. Expected 'job' or 'step'.\n", optarg);
+                        exit(EXIT_FAILURE);
+                    }
+                } else {
+                    params.show_jobstep_apptype = false;
+                }
+                params.level |= INFLUXDB_APPTYPE;
+                break;
         	case 'u':
                 user_label = true;
-                user = malloc(strlen(optarg)+20);
+                user = xmalloc(strlen(optarg)+20);
                 sprintf(user,"%s",optarg);
                 break;
             case 'V':
@@ -2807,20 +3558,57 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
                 params.units = UNIT_GIGA;
                 break;
             case 'O':
-                params.level |= 0x0100;
+                params.level |= INFLUXDB_OVERALL;
                 break;
+            case 'q':
+                qurey_label = true;    
+                break;                 
     		case '?':	/* getopt() has explained it */
 			    exit(1);
             default:
-            break;
+                break;
         }
         if(no_jobid || no_step)
             break;
     }
 
-    if(params.level == 0x0000 || params.level == 0x1000) 
-        params.level |= 0x0001;
-    if((params.level & 0x0001) && (params.level & 0x1000)){
+    if(jobid_out &&  jobids && strlen(jobids) >= 6000 ) {
+        rc = -1;
+        goto fail;
+    }
+
+    if(qurey_label) {
+        if(jobid_out) {
+            if(params.opt_uid != 0 ) {
+                sprintf(sql_query,"%s %s where uid=\'%d\' and  username=\'%s\'", sql_query_head, sheet_query, params.opt_uid, pw->pw_name);
+                rc = strcat_jobid_tag(sql_query, jobids, true);
+            } else {
+                sprintf(sql_query,"%s %s where ", sql_query_head, sheet_query);
+                rc = strcat_jobid_tag(sql_query, jobids, false);                
+            }
+            if(rc == -1)
+                goto fail;
+        }
+        else
+            printf("Please specify the job ID using -j.\n");
+
+        char * response = influxdb_connect(data, sql_query, RPCNT);
+        if(response)
+            parse_json_tag(response);
+        else {
+            rc = -1;
+            goto fail;
+        }
+        if(response)
+            xfree(response); 
+
+        rc = 2;
+        goto fail;
+    }
+
+    if(params.level == INFLUXDB_NONE || params.level == INFLUXDB_EVENT_FLAG)
+        params.level |= INFLUXDB_STEPD;
+    if((params.level & INFLUXDB_STEPD) && (params.level & INFLUXDB_EVENT_FLAG)){
         printf("The -e option must be used with either -A or -O !\n");
         exit(1);
     }
@@ -2835,7 +3623,7 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
         time_format(start, usage_start, false);
     }
 
-    if(params.level & 0x0001) {
+    if(params.level & INFLUXDB_STEPD) {
         sprintf(buffer_str,"%s from %s where time <= %s ",sql_step_head, sheet_step, end);
         c_string_append_str(sql_step, buffer_str);
         memset(buffer_str, 0, 2048);
@@ -2846,9 +3634,14 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
         data is counted at the same time as the exception event overview data, so when -O is 
         specified, the -A flow is still executed, but the -A message is not output
     */
-    if(params.level & 0x0110) {
+    if((params.level & INFLUXDB_OVERALL) || (params.level & INFLUXDB_EVENT)) {
         sprintf(buffer_str,"%s from %s where time <= %s ",sql_event_head, sheet_event, end);
         c_string_append_str(sql_event, buffer_str);
+        memset(buffer_str, 0, 2048);
+    }
+    if(params.level & INFLUXDB_APPTYPE) {
+        sprintf(buffer_str,"%s from %s where time <= %s ",sql_apptype_head, sheet_apptype, end);
+        c_string_append_str(sql_apptype, buffer_str);
         memset(buffer_str, 0, 2048);
     }
 
@@ -2901,10 +3694,10 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             goto fail;
         }
         if(response)
-            free(response);
+            xfree(response);
         if(c_string_len(job_list) != 0) {
-            if(jobids) free(jobids);
-            jobids = strdup(c_string_peek(job_list));
+            if(jobids) xfree(jobids);
+            jobids = xstrdup(c_string_peek(job_list));
             jobid_out = true;
             c_string_destory(job_list);
             printf("jobids = %s\n", jobids);
@@ -2915,40 +3708,42 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     }
 
     if(jobid_out) {
-        if(params.level & 0x0001) {
+        if(params.level & INFLUXDB_STEPD) {
             rc = strcat_field(sql_step, jobids, JOBID);
             if(rc == -1) goto fail;
         }
-        if(params.level & 0x0110) {
+        if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
             rc = strcat_field(sql_event, jobids, JOBID);
+            if(rc == -1) goto fail;
+        }
+        if(params.level & INFLUXDB_APPTYPE) {
+            rc = strcat_field(sql_apptype, jobids, JOBID);
             if(rc == -1) goto fail;
         }
     }
 
     if(step_out) {
-        if(params.level & 0x0001) {
+        if(params.level & INFLUXDB_STEPD) {
             rc = strcat_field(sql_step, steps, STEP);
             if(rc == -1) goto fail;
         }
-        if(params.level & 0x0110) {
+        if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
             rc = strcat_field(sql_event, steps, STEP);
             if(rc == -1) goto fail;
         }
     }
 
 
-    if(params.level & 0x1000) {
+    if(params.level & INFLUXDB_EVENT_FLAG) {
         bool splicing = false;
         c_string_t *tmp_events = c_string_create();
 
         const char and[] = " and ";
         const char or[] = " or ";
-        const char prefix1[] = "type1 = ";
-        const char prefix2[] = "type2 = ";
-        const char prefix3[] = "type3 = ";
+        const char prefix[] = "type = ";
         const char delimiters[] = ",";
         if(events == NULL) {
-            events = malloc(strlen(deauft_events)+1);
+            events = xmalloc(strlen(deauft_events)+1);
             strcpy(events, deauft_events);
         }
         char *event = strtok(events, delimiters);
@@ -2960,17 +3755,15 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
                 first = true;
             } else
                 c_string_append_str(tmp_events, or);
-            
             if (strcasecmp(event, "CPUUSA") == 0) { 
-                c_string_append_str(tmp_events, prefix1);
-                c_string_append_str(tmp_events, "'1'");
+                c_string_append_str(tmp_events, prefix);
+                c_string_append_str(tmp_events, "'cpu'");
             } else if (strcasecmp(event, "PidSA") == 0) {
-                c_string_append_str(tmp_events, prefix2);
-                c_string_append_str(tmp_events, "'1'");
-               
+                c_string_append_str(tmp_events, prefix);
+                c_string_append_str(tmp_events, "'process'");
             } else if (strcasecmp(event, "NodeSA") == 0) {
-                c_string_append_str(tmp_events, prefix3);
-                c_string_append_str(tmp_events, "'1'");
+                c_string_append_str(tmp_events, prefix);
+                c_string_append_str(tmp_events, "'node'");
             } else 
                 splicing = true;
             event = strtok(NULL, delimiters);
@@ -2988,43 +3781,59 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
   
     }
 
-    if(params.level & 0x0001) {
+    if(params.level & INFLUXDB_STEPD) {
         rc =  stract_time(start_label, jobid_out, usage_start,
                             usage_end, start, sql_step);
         if(rc == -1)
             goto fail;
     }
-    if(params.level & 0x0110) {
+    if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
         rc = stract_time(start_label, jobid_out, usage_start,
                             usage_end, start, sql_event);
         if(rc == -1)
           goto fail;
     }
+    if(params.level & INFLUXDB_APPTYPE) {
+        rc =  stract_time(start_label, jobid_out, usage_start,
+                            usage_end, start, sql_apptype);
+        if(rc == -1)
+            goto fail;
+    }
 
     if(params.opt_uid != 0) {
-        if( params.level & 0x0001) {
+        if(params.level & INFLUXDB_STEPD) {
             char user[60] ={'0'};
             sprintf(user," and username = '%s' ", pw->pw_name);
             c_string_append_str(sql_step, user);
         }
-        if( params.level & 0x0110) {
+        if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
             char user[60] ={'0'};
             sprintf(user," and username = '%s' ", pw->pw_name);
             c_string_append_str(sql_event, user);
         }
+        if(params.level & INFLUXDB_APPTYPE) {
+            char user[60] ={'0'};
+            sprintf(user," and username = '%s' ", pw->pw_name);
+            c_string_append_str(sql_apptype, user);
+        }
     } else if(user_label) {
-        if(params.level & 0x0001){
+        if(params.level & INFLUXDB_STEPD) {
             rc = strcat_field(sql_step, user, USERNAME);
+            if(rc == -1)
+                goto fail; 
+        }
+        if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
+            rc = strcat_field(sql_event, user, USERNAME);
+            if(rc == -1)
+                goto fail;  
+        }
+        if(params.level & INFLUXDB_APPTYPE) {
+            rc = strcat_field(sql_apptype, user, USERNAME);
             if(rc == -1)
             goto fail; 
         }
-        if(params.level & 0x0110){
-            rc = strcat_field(sql_event, user, USERNAME);
-            if(rc == -1)
-            goto fail;  
-        }
     }
-    if(params.level & 0x0001) {
+    if(params.level & INFLUXDB_STEPD) {
         c_string_append_str(sql_step, sql_tail);
         /* debug */
         // printf("sql_step = %s\n", c_string_peek(sql_step));
@@ -3038,9 +3847,25 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             goto fail;
         }
         if(response)
-            free(response);    
+            xfree(response);    
     } 
-    if(params.level & 0x0110) {
+    if(params.level & INFLUXDB_APPTYPE) {
+        c_string_append_str(sql_apptype, sql_tail_apptype);
+        /* debug */
+        // printf("sql_apptype = %s\n", c_string_peek(sql_apptype));
+        char * response = influxdb_connect(data, c_string_peek(sql_apptype), APPTYPERP);
+        /* debug */
+        // printf("response_apptype = %s\n", response);
+        if(response)
+            parse_json(response, pw->pw_name, UNIT_APPTYPE, 0);
+        else {
+            rc = -1;
+            goto fail;
+        }
+        if(response)
+            xfree(response);    
+    } 
+    if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
         c_string_append_str(sql_event, sql_tail);
         /* debug */
         // printf("sql_event = %s\n", c_string_peek(sql_event));
@@ -3054,30 +3879,159 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             goto fail;
         }
         if(response)
-            free(response);    
+            xfree(response);    
     } 
 fail:
     if(events)
-        free(events);  
+        xfree(events);  
     if(sql_step)
         c_string_destory(sql_step);
     if(sql_event)
         c_string_destory(sql_event);
     if(sql_runjob)
         c_string_destory(sql_runjob);
+    if(sql_apptype)
+        c_string_destory(sql_apptype);
     if(buffer_str)
-        free(buffer_str);
+        xfree(buffer_str);
     if(jobids)
-        free(jobids);    
+        xfree(jobids);    
     if(start)
-        free(start);
+        xfree(start);
     if(steps)
-        free(steps);
+        xfree(steps);
     if(end)
-        free(end);    
+        xfree(end);    
     if(user)
-        free(user);
+        xfree(user);
+    if(sql_query)
+        xfree(sql_query);
     return rc;
+}
+
+void print_query_options(List print_list)
+{
+        int field_count = list_count(print_list);
+
+        /*Print title*/
+        print_fields_header(print_list);
+        print_field_t *field = NULL;
+
+        spost_record_t * sjinfo_print = NULL;
+        int curr_inx = 1;
+        char tmp_char[4097] = {'0'};
+        char buffer[180]= {'0'};
+        //int tmp_int = NO_VAL;
+        //struct tm *timeinfo = 0;
+        time_t raw_time = 0;
+
+        ListIterator itr = NULL;
+        itr = list_iterator_create(print_query_value_list);
+		while ((sjinfo_print = list_next(itr))) {
+            ListIterator  print_query_itr = list_iterator_create(print_fields_list);
+            while ((field = list_next(print_query_itr))) {
+                raw_time = sjinfo_print->record_time;
+                struct tm *local_time = localtime(&raw_time);
+                if(local_time)
+                     strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", local_time);
+                memset(tmp_char,'\0',sizeof(tmp_char));
+                switch (field->type) {
+                    case PRINT_JOBID:
+                        sprintf(tmp_char, "%d", sjinfo_print->jobid);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break;   
+                    case PRINT_USERNAME:
+                        if(sjinfo_print->username != NULL)
+                            sprintf(tmp_char, "%s", sjinfo_print->username);
+                        else
+                            sprintf(tmp_char, "no username");
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break;                   
+                    case PRINT_UID:
+                        sprintf(tmp_char, "%s", sjinfo_print->uid);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break;  
+                    case PRINT_RECORD:
+                        sprintf(tmp_char, "%s", sjinfo_print->data);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break;     
+                    case PRINT_STEPID:
+                        if(sjinfo_print->stepid == -5)
+                            sprintf(tmp_char, "batch");
+                        else if(sjinfo_print->stepid == -4)
+                            sprintf(tmp_char, "extern");
+                        else if (sjinfo_print->stepid == 0x7FFFFFFF)
+                            sprintf(tmp_char, "JSNS");
+                        else
+                            sprintf(tmp_char, "%d", sjinfo_print->stepid);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break; 
+                    case PRINT_TIME:
+                        sprintf(tmp_char, "%s", buffer);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break;    
+                    case PRINT_SENDNODE:
+                        sprintf(tmp_char, "%s", sjinfo_print->nodename);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break;  
+
+                }
+            }
+            list_iterator_destroy(print_query_itr);    
+            printf("\n");
+        }
+		list_iterator_destroy(itr);    
+}
+
+
+void print_query()
+{
+    char *opt_query_list = xmalloc(160);
+    char base_query_field[] = "Jobid,StepID,SendNode,UserName,Uid,Message,PostTime"; 
+    print_field_t fields[] = {
+    	{12, "JobID",               print_fields_str, PRINT_JOBID},
+        {12, "StepID",              print_fields_str, PRINT_STEPID},
+        {8,  "Username",            print_fields_str, PRINT_USERNAME},
+        {8,  "Sendnode",            print_fields_str, PRINT_SENDNODE},
+        {12, "Uid",                 print_fields_str, PRINT_UID},        
+        {24, "Message",             print_fields_str, PRINT_RECORD},
+        {24, "PostTime",            print_fields_str, PRINT_TIME},
+        {0,   NULL,                 NULL,             0}
+    };
+
+    if(!params.opt_field_list) {
+        /*Consider the scenario where only one side of the field has it*/
+        strcpy(opt_query_list, base_query_field);
+        field_split(opt_query_list, fields, print_fields_list);
+    } else {
+        field_split(params.opt_field_list, fields, print_fields_list);
+    }
+
+    if(list_count(print_fields_list) > 0){
+        printf("*************************************************************************************************\n");
+        printf("******                            Display User-defined exception                           ******\n");
+        printf("*************************************************************************************************\n");
+        printf("\n");
+        
+        print_query_options(print_fields_list);
+        printf("\n");
+    }
+    xfree(opt_query_list);
+
 }
 
 extern void print_fields_str(print_field_t *field, char *value, int last)
@@ -3120,7 +4074,7 @@ extern void print_fields_str(print_field_t *field, char *value, int last)
 	}
 }
 
-extern void print_fields_header(List print_fields_list)
+void print_fields_header(List print_fields_list)
 {
 	ListIterator itr = NULL;
 	print_field_t *field = NULL;
@@ -3183,7 +4137,8 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
         int curr_inx = 1;
         uint64_t tmp_uint64 = NO_VAL64;
         char tmp_char[200] = {'0'};
-        char tmp_extern[] = "batch";
+        char tmp_batch[] = "batch";
+        char tmp_extern[] = "extern";
         //int tmp_int = NO_VAL;
         struct tm *timeinfo;
 
@@ -3201,119 +4156,160 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         tmp_char,
                         (curr_inx == field_count));
                     break;
+                    case PRINT_APPTYPE_CLI:
+                        sprintf(tmp_char, "%s", sjinfo_print->apptype_cli);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                        xfree(sjinfo_print->apptype_cli);
+                    break;
+                    case PRINT_APPTYPE_STEP:
+                        sprintf(tmp_char, "%s", sjinfo_print->apptype_step);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                        xfree(sjinfo_print->apptype_step);
+                    break;
+                    case PRINT_APPTYPE:
+                        sprintf(tmp_char, "%s", sjinfo_print->apptype);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                        xfree(sjinfo_print->apptype);
+                    break;
+                    case PRINT_CPUTIME:
+                        if(sjinfo_print->cputime == UINT64_MAX)
+                            sprintf(tmp_char, "%s", "SUCCESS MAPPING");
+                        else
+                            sprintf(tmp_char, "%"PRIu64"", sjinfo_print->cputime);
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));    
+                    break; 
+                    case PRINT_USERNAME:
+                        if(sjinfo_print->username != NULL)
+                            sprintf(tmp_char, "%s", sjinfo_print->username);
+                        else
+                            sprintf(tmp_char, "no username");
+                        field->print_routine(field,
+                        tmp_char,
+                        (curr_inx == field_count));
+                    break;
                     case PRINT_STEPID:
                         if((sjinfo_print->stepid == -5))
+                            sprintf(tmp_char, "%s", tmp_batch);
+                        else if((sjinfo_print->stepid == -4))
                             sprintf(tmp_char, "%s", tmp_extern);
                         else
                             sprintf(tmp_char, "%d", sjinfo_print->stepid);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
-                    break;
+                        break;
                     case PRINT_STEPAVECPU:
                         sprintf(tmp_char, "%.2f", sjinfo_print->stepcpuave);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));                            
-                    break;
+                        break;
                     case PRINT_STEPCPU:
                         sprintf(tmp_char, "%.2f", sjinfo_print->stepcpu);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
-                    break;
+                        break;
                     case PRINT_STEPMEM:
                         tmp_uint64 = sjinfo_print->stepmem;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
                                     outbuf,
                                     (curr_inx == field_count));    
-                    break;   
+                        break;   
                     case PRINT_STEPVMEM:
                         tmp_uint64 = sjinfo_print->stepvmem;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
                                     outbuf,
                                     (curr_inx == field_count));    
-                    break; 
+                        break; 
                     case PRINT_STEPPAGES:
                         sprintf(tmp_char, "%lu", sjinfo_print->steppages);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
-                    break; 
+                        break; 
                     case PRINT_MAXSTEPCPU:
                         sprintf(tmp_char, "%.2f", sjinfo_print->stepcpumax);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
-                    break;
+                        break;
                     case PRINT_MINSTEPCPU:
                         sprintf(tmp_char, "%.2f", sjinfo_print->stepcpumin);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
-                    break;      
+                        break;      
                     case PRINT_MAXSTEPMEM:
                         tmp_uint64 = sjinfo_print->stepmemmax;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
                                     outbuf,
                                     (curr_inx == field_count));  
-                    break; 
+                        break; 
                     case PRINT_MINSTEPMEM:
                         tmp_uint64 = sjinfo_print->stepmemmin;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
                                     outbuf,
                                     (curr_inx == field_count));  
-                    break; 
+                        break; 
                     case PRINT_MAXSTEPVMEM:
                         tmp_uint64 = sjinfo_print->stepvmemmax;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
                                     outbuf,
                                     (curr_inx == field_count));    
-                    break;
+                        break;
                     case PRINT_MINSTEPVMEM:
                         //sprintf(tmp_char, "%lld", sjinfo_print->stepvmemmin);
                         tmp_uint64 = sjinfo_print->stepvmemmin;
                         if (tmp_uint64 != NO_VAL64)
                             convert_num_unit((double)tmp_uint64, outbuf,
-                                    sizeof(outbuf), UNIT_NONE,
+                                    sizeof(outbuf), UNIT_KILO,
                                     params.units,
                                     params.convert_flags);
                         field->print_routine(field,
                                     outbuf,
                                     (curr_inx == field_count));      
-                    break;   
+                        break;   
 
                     case PRINT_CPUTHRESHOLD:
                         sprintf(tmp_char, "%lu%%", sjinfo_print->cputhreshold);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
-                    break; 
+                        break; 
 
                     case PRINT_START:
                         timeinfo = localtime((const time_t *)&sjinfo_print->start);
@@ -3325,7 +4321,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         }else{
                             fprintf(stderr, "Error: Failed to convert time from start. Value: %lu\n", sjinfo_print->start);
                         }
-                    break;  
+                        break;  
 
                     case PRINT_END:
                         timeinfo = localtime((const time_t *)&sjinfo_print->end);
@@ -3338,43 +4334,49 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                             fprintf(stderr, "Error: Failed to convert time from end. Value: %lu\n", sjinfo_print->end);
                         }
                         
-                    break; 
+                        break; 
                     
                     case PRINT_TYPE:
-                        if(sjinfo_print->type1) {
-                            strcat(tmp_char, "|Abnormal CPU utilization|");
+                        if(sjinfo_print->type1 || xstrcmp(sjinfo_print->type, CPU_ABNORMAL_FLAG) == 0) {
+                            if(tmp_char != NULL && tmp_char[0] != '\0')
+                                strcat(tmp_char, ",");
+                            strcat(tmp_char, CPU_ABNORMAL_FLAG_DESC);
                         } 
-                        if(sjinfo_print->type2) {
-                            strcat(tmp_char, "|Operational process anomalies|");
+                        if(sjinfo_print->type2 || xstrcmp(sjinfo_print->type, PROCESS_ABNORMAL_FLAG) == 0) {
+                            if(tmp_char != NULL && tmp_char[0] != '\0')
+                                strcat(tmp_char, ",");
+                            strcat(tmp_char, PROCESS_ABNORMAL_FLAG_DESC);
                         }
-                        if(sjinfo_print->type3) {
-                            strcat(tmp_char, "|Node communication exception|");
+                        if(sjinfo_print->type3 || xstrcmp(sjinfo_print->type, NODE_ABNORMAL_FLAG) == 0) {
+                            if(tmp_char != NULL && tmp_char[0] != '\0')
+                                strcat(tmp_char, ",");
+                            strcat(tmp_char, NODE_ABNORMAL_FLAG_DESC);
                         }
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
-                    break;   
+                        break;   
 
                     case PRINT_SUMCPU:
                         sprintf(tmp_char, "%lu", sjinfo_print->sum_cpu);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
-                    break;
+                        break;
 
                     case PRINT_SUMPID:
                         sprintf(tmp_char, "%lu", sjinfo_print->sum_pid);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
-                    break;
+                        break;
 
                     case PRINT_SUMNODE:
                         sprintf(tmp_char, "%lu", sjinfo_print->sum_node);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
-                    break;
+                        break;
 
                     case PRINT_LASTSTART:
                         timeinfo = localtime((const time_t *)&sjinfo_print->start_last);
@@ -3386,7 +4388,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         }else{
                             fprintf(stderr, "Error: Failed to convert time from start_last. Value: %lu\n", sjinfo_print->start_last);
                         }
-                    break;
+                        break;
 
                     case PRINT_LASTEND:
                         timeinfo = localtime((const time_t *)&sjinfo_print->end_last);
@@ -3398,7 +4400,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         }else{
                             fprintf(stderr, "Error: Failed to convert time from end_last. Value: %lu\n", sjinfo_print->end_last);
                         }
-                    break; 
+                        break; 
                     }
              
             }
@@ -3413,7 +4415,7 @@ void field_split(char *field_str, print_field_t* fields_tmp, List sj_list)
 {
     int i = 0;
     char *end = NULL, *start = NULL;
-    char *field_copy = malloc(strlen(field_str) + 10);
+    char *field_copy = xmalloc(strlen(field_str) + 10);
     strcpy(field_copy, field_str);
     start = field_copy;
     strcat(start,",");
@@ -3431,7 +4433,7 @@ void field_split(char *field_str, print_field_t* fields_tmp, List sj_list)
 
         if ((tmp_char = strstr(start, "\%"))) {
             newlen_set = true;
-            newlen = atoi(tmp_char+1);
+            newlen = atoi(tmp_char + 1);
             tmp_char[0] = '\0';
         }
 
@@ -3453,7 +4455,7 @@ void field_split(char *field_str, print_field_t* fields_tmp, List sj_list)
                 goto foundfield;
         }
         continue;
-    foundfield:
+foundfield:
         if (newlen_set)
             fields_tmp[i].len = newlen;
 
@@ -3462,23 +4464,27 @@ void field_split(char *field_str, print_field_t* fields_tmp, List sj_list)
 
     }
     if(field_copy)
-        free(field_copy);
+        xfree(field_copy);
 
 }
 
 void print_field(uint64_t level)
 {
 
-    char *opt_step_list = malloc(160);
-    char *opt_event_list = malloc(160);
-    char *opt_overall_list = malloc(160);
+    char *opt_step_list = xmalloc(160);
+    char *opt_event_list = xmalloc(160);
+    char *opt_overall_list = xmalloc(160);
+    char *opt_apptype_list = xmalloc(160);
+    char *opt_apptype_job_list = xmalloc(160);
     char base_step_field[] = "JobID,StepID,StepCPU,"
                 "StepAVECPU,StepMEM,StepVMEM,StepPages,MaxStepCPU,"
                 "MinStepCPU,MaxStepMEM,MinStepMEM,MaxStepVMEM,MinStepVMEM,";
     char base_event_field[] = "JobID,StepID,StepCPU,"
                 "StepMEM,StepVMEM,StepPages,CPUthreshold,Start,End,Type,";
     char base_overall_field[] = "JobID,StepID,Last_start,"
-                "Last_end,SUM_CPU,SUM_PID,SUM_NODE";
+                "Last_end,CPU_Abnormal_CNT,PROC_Abnormal_CNT,NODE_Abnormal_CNT";
+    char base_apptype_field[] = "JobID,StepID,Apptype_CLI,Apptype_STEP,UserName";
+    char base_apptype_job_field[] = "JobID,Apptype,UserName";
 
     print_field_t fields[] = {
     	{12, "JobID",           print_fields_str,   PRINT_JOBID},
@@ -3507,7 +4513,7 @@ void print_field(uint64_t level)
     	{12, "CPUthreshold",    print_fields_str,   PRINT_CPUTHRESHOLD},
         {22, "Start",           print_fields_str,   PRINT_START}, 
         {22, "End",             print_fields_str,   PRINT_END},
-        {24, "Type",            print_fields_str,   PRINT_TYPE}, 
+        {31, "Type",            print_fields_str,   PRINT_TYPE}, 
         {0,  NULL,              NULL,               0}
     };
 
@@ -3516,36 +4522,67 @@ void print_field(uint64_t level)
         {6,  "StepID",      print_fields_str,   PRINT_STEPID},       
         {22, "Last_start",  print_fields_str,   PRINT_LASTSTART},
         {22, "Last_end",    print_fields_str,   PRINT_LASTEND},      
-    	{12, "Sum_CPU",     print_fields_str,   PRINT_SUMCPU},
-        {12, "Sum_PID",     print_fields_str,   PRINT_SUMPID},
-    	{12, "Sum_NODE",    print_fields_str,   PRINT_SUMNODE},
+    	{16, "CPU_Abnormal_CNT",     print_fields_str,   PRINT_SUMCPU},
+        {17, "PROC_Abnormal_CNT",     print_fields_str,   PRINT_SUMPID},
+    	{17, "NODE_Abnormal_CNT",    print_fields_str,   PRINT_SUMNODE},
+        {0,  NULL,          NULL,               0}
+    };
+
+    print_field_t field_apptype[] = {
+        {12, "JobID",       print_fields_str,   PRINT_JOBID},
+        {6,  "StepID",      print_fields_str,   PRINT_STEPID},
+        {8,  "Username",    print_fields_str,   PRINT_USERNAME},
+        {15, "CpuTime",     print_fields_str,   PRINT_CPUTIME},
+        {12, "Apptype_CLI", print_fields_str,   PRINT_APPTYPE_CLI},
+        {12, "Apptype_STEP",print_fields_str,   PRINT_APPTYPE_STEP},
+        {0,  NULL,          NULL,               0}
+    };
+
+    print_field_t field_apptype_job[] = {
+        {12, "JobID",       print_fields_str,   PRINT_JOBID},
+        {12, "Apptype",     print_fields_str,   PRINT_APPTYPE},
+        {8,  "Username",    print_fields_str,   PRINT_USERNAME},
         {0,  NULL,          NULL,               0}
     };
 
     if(!params.opt_field_list) {
         /*Consider the scenario where only one side of the field has it*/
-        if(level & 0x0001) {
+        if(level & INFLUXDB_STEPD) {
             strcpy(opt_step_list,base_step_field);
             field_split(opt_step_list, fields, print_fields_list);
         } 
 
-        if(level & 0x0010)  {
+        if(level & INFLUXDB_EVENT)  {
             strcpy(opt_event_list,base_event_field);
             field_split(opt_event_list, field_event, print_events_list);
         }
 
-        if(level & 0x0100) {
+        if(level & INFLUXDB_OVERALL) {
             strcpy(opt_overall_list,base_overall_field);
             field_split(opt_overall_list, field_overall, print_overall_list);
         }
 
+        if(level & INFLUXDB_APPTYPE) {
+            if(params.show_jobstep_apptype){
+                strcpy(opt_apptype_list, base_apptype_field);
+                field_split(opt_apptype_list, field_apptype, print_apptype_list);
+            }else{
+                strcpy(opt_apptype_job_list, base_apptype_job_field);
+                field_split(opt_apptype_job_list, field_apptype_job, print_apptype_job_list);
+            }
+        }
     } else {
-        if(level & 0x0001) 
+        if(level & INFLUXDB_STEPD) 
             field_split(params.opt_field_list, fields, print_fields_list);
-        if(level & 0x0010)
+        if(level & INFLUXDB_EVENT)
             field_split(params.opt_field_list, field_event, print_events_list);
-        if(level & 0x0100) {
+        if(level & INFLUXDB_OVERALL) 
             field_split(params.opt_field_list, field_overall, print_overall_list);
+        if(level & INFLUXDB_APPTYPE){
+            if(params.show_jobstep_apptype)
+                field_split(params.opt_field_list, field_apptype, print_apptype_list);
+            else
+                field_split(params.opt_field_list, field_apptype_job, print_apptype_job_list);
         }
     }
 
@@ -3576,27 +4613,45 @@ void print_field(uint64_t level)
         print_options(print_overall_list, print_overall_value_list, print_overall_itr);
     }
 
-    free(opt_step_list);
-    free(opt_event_list);
-    free(opt_overall_list);
+    if(list_count(print_apptype_list) > 0) {
+        printf("***************************************************************************** \n");
+        printf("*******             Display job step apptype information              ******* \n");
+        printf("***************************************************************************** \n");
+        printf("\n");
+        print_options(print_apptype_list, print_apptype_value_list, print_apptype_itr);
+    }
+
+    if(list_count(print_apptype_job_list) > 0) {
+        printf("***************************************************************************** \n");
+        printf("*******                Display job apptype information                ******* \n");
+        printf("***************************************************************************** \n");
+        printf("\n");
+        print_options(print_apptype_job_list, print_apptype_job_value_list, print_apptype_job_itr);
+    }
+
+    xfree(opt_step_list);
+    xfree(opt_event_list);
+    xfree(opt_overall_list);
+    xfree(opt_apptype_list);
+    xfree(opt_apptype_job_list);
 }
 
 
 int main(int argc ,char** argv) {
 
-    slurm_influxdb* influxdb_data = malloc(sizeof(slurm_influxdb));
+    slurm_influxdb* influxdb_data = xmalloc(sizeof(slurm_influxdb));
     char* configpath = NULL;
     int rc = 0 ;
     char tmp_conf[] = "/etc/acct_gather.conf.key";
 
-    if(strcmp(KEYDIR, "NONE") == 0) {
+    if(xstrcmp(KEYDIR, "NONE") == 0) {
          configpath = my_strdup("/etc/slurm/acct_gather.conf.key");
     } else {
         char* def_conf = NULL;
-        def_conf = malloc(strlen(KEYDIR)+strlen(tmp_conf)+2);
+        def_conf = xmalloc(strlen(KEYDIR)+strlen(tmp_conf)+2);
         sprintf(def_conf, "%s%s",KEYDIR,tmp_conf);
         configpath = my_strdup(def_conf);
-        free(def_conf);
+        xfree(def_conf);
     }
 
     struct stat statbuf;
@@ -3605,9 +4660,8 @@ int main(int argc ,char** argv) {
         goto file_fail;
     }
 
-
     /*16-bit encryption key*/
-    const uint8_t key[]="xxx";
+    const uint8_t key[]="fcad715bd73b5cb0";
     
     sjinfo_init(influxdb_data);
 
@@ -3615,19 +4669,23 @@ int main(int argc ,char** argv) {
     if(rc == -1)
          goto file_fail;
     rc =  parse_command_and_query(argc, argv, influxdb_data);
+
     if(rc == -1)
          goto file_fail;
+    if( rc != 2 )
+        print_field(params.level);
+    else
+        print_query();
 
-    print_field(params.level);
     sjinfo_fini(influxdb_data);
 file_fail:
     if (configpath)
-        free(configpath);
+        xfree(configpath);
     if(rc == -1 )
          sjinfo_fini(influxdb_data);
-    free(influxdb_data);
+    xfree(influxdb_data);
     if(params.opt_field_list)
-        free(params.opt_field_list);
+        xfree(params.opt_field_list);
 
     return 0;
 }

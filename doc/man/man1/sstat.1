@@ -35,6 +35,13 @@ Print all steps for the given job(s) when no step is specified.
 .IP
 
 .TP
+\fB\-d\fR
+The resource consumption information and abnormal events of each job step are displayed in units of job steps.
+If no anomaly detection parameter is specified when the job is submitted, or slurm.conf is not configured 
+(see --job-monitor for details), the data displayed will be empty
+.IP
+
+.TP
 \fB\-o\fR, \fB\-\-format\fR, \fB\-\-fields\fR
 Comma separated list of fields.
 (use '\-\-helpformat' for a list of available fields).

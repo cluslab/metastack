@@ -1,0 +1,52 @@
+#!/usr/bin/env bats
+
+load ./common
+
+function setup() {
+    enroot_cleanup name-test name-test2 || true
+}
+
+function teardown() {
+    enroot_cleanup name-test name-test2 || true
+}
+
+@test "unnamed container cleanup" {
+    run_srun --container-image=ubuntu:18.04 sh -c 'echo $SLURM_JOB_ID.$SLURM_STEP_ID'
+    container_name="${lines[-1]}"
+
+    # Container removal is done async after the job is finished, poll for a while
+    i=0
+    while [ "$(enroot list | grep -c ${container_name})" -ne 0 ]; do
+	((i++ == 100)) && exit 1
+	sleep 0.1s
+    done
+}
+
+@test "named container persistence" {
+    run_srun --container-image=ubuntu:18.04 bash -c '! which file'
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test which file
+    run_srun --container-name=name-test which file
+
+    run_srun --container-image=ubuntu:18.04 bash -c '! which file'
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test2 true
+    run_srun --container-image=ubuntu:18.04 bash -c '! which file'
+}
+
+@test "named container manual remove" {
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
+    run_srun --container-name=name-test which file
+    run_enroot remove -f pyxis_name-test || run_enroot remove -f pyxis_${SLURM_JOB_ID}_name-test
+
+    run_srun_unchecked --container-name=name-test which file
+    [ "${status}" -ne 0 ]
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test bash -c '! which file'
+    run_srun --container-name=name-test bash -c '! which file'
+}
+
+@test "--container-name create flag" {
+    run_srun --container-image=ubuntu:22.04 --container-name=name-test sleep 1s
+
+    run_srun_unchecked --container-name=name-test:create true
+    [ "${status}" -ne 0 ]
+}

@@ -113,6 +113,10 @@ bitstr_t *power_node_bitmap = NULL;	/* bitmap of powered down nodes */
 bitstr_t *share_node_bitmap = NULL;  	/* bitmap of sharable nodes */
 bitstr_t *up_node_bitmap    = NULL;  	/* bitmap of non-down nodes */
 bitstr_t *rs_node_bitmap    = NULL; 	/* bitmap of resuming nodes */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+bitstr_t *resv_node_bitmap    = NULL;  /* bitmap of hetpart resv nodes */
+#endif
+
 
 static void 	_dump_node_state(node_record_t *dump_node_ptr, buf_t *buffer);
 static void	_drain_node(node_record_t *node_ptr, char *reason,
@@ -191,6 +195,28 @@ extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *pa
 }
 
 /* 
+ * _update_node_up - update node state to up
+ * IN node_ptr - pointer to the borrowed node
+ */
+
+extern void _update_borrowed_node_up(node_record_t *node_ptr, time_t now)
+{
+	if (!node_ptr) {
+		return;
+	}
+
+	node_ptr->node_state &= (~NODE_STATE_DRAIN);
+	clusteracct_storage_g_node_up(
+		acct_db_conn,
+		node_ptr,
+		now);
+	
+	last_node_update = now;
+	debug("%s: node %s remove drain state", __func__, node_ptr->name);
+}		
+
+
+/* 
  * _return_borrowed_node - return borrowed node
  * IN node_ptr - pointer to the borrowed node
  */
@@ -199,6 +225,7 @@ extern void _return_borrowed_node(node_record_t *node_ptr)
 	_remove_node_from_parts(node_ptr, true);
 	_add_node_to_parts(node_ptr, NULL);
 	_update_node_borrow_state(node_ptr, NULL, false);
+	last_node_update = time(NULL);
 }
 
 
@@ -239,6 +266,7 @@ extern int _select_node_to_borrow(part_record_t *part_ptr, int nodes_need_borrow
 		/* add node to new partition */
 		_add_node_to_parts(standby_node_ptr, part_ptr);
 		_update_node_borrow_state(standby_node_ptr, part_ptr, true);
+		last_node_update = time(NULL);
 
 		node_borrowed++;
 		nodes_need_borrow--;
@@ -4848,6 +4876,9 @@ extern void free_para_sched_resource(void)
 	xfree(para_sched_avail_node_bitmap);
 	xfree(para_sched_share_node_bitmap);
 	xfree(para_sched_idle_node_bitmap);		
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	xfree(para_sched_resv_node_bitmap); 
+#endif
 
 	debug("free para_sched resource");
 }
@@ -4867,7 +4898,11 @@ extern void node_fini (void)
 	FREE_NULL_BITMAP(power_node_bitmap);
 	FREE_NULL_BITMAP(share_node_bitmap);
 	FREE_NULL_BITMAP(up_node_bitmap);
-	FREE_NULL_BITMAP(rs_node_bitmap);	
+	FREE_NULL_BITMAP(rs_node_bitmap);
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	FREE_NULL_BITMAP(resv_node_bitmap);
+#endif  
+
 	node_fini2();
 }
 

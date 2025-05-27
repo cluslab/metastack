@@ -140,8 +140,13 @@ static void _signal_while_allocating(int signo)
 static void _job_complete_handler(srun_job_complete_msg_t *msg)
 {
 	if (!is_het_job && pending_job_id && (pending_job_id != msg->job_id)) {
+#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
+		verbose("Ignoring job_complete for job %u because our job ID is %u",
+		      msg->job_id, pending_job_id);
+#else		
 		error("Ignoring job_complete for job %u because our job ID is %u",
 		      msg->job_id, pending_job_id);
+#endif		  
 		return;
 	}
 

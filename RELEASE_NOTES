@@ -1,104 +1,55 @@
-metastack2.2版本发布说明
+metastack2.3版本发布说明
 
 重要提示：
-metastack 是基于 Slurm 的功能增强和性能优化的版本, metastack2.2基于Slurm-22.05.8版本进行开发。
+metastack 是基于 Slurm 的功能增强和性能优化的版本, metastack2.3基于Slurm-22.05.8版本进行开发。
 
 如果使用 slurmdbd(Slurm 数据库守护进程)，则必须先更新此版本。
 
 注意: 如果使用主备DBD, 则必须首先启动主数据库才能进行任何数据库转换。
 
-metastack2.2的slurmdbd将与metastack2.0及以上版本、Slurm-20.11及以上版本的Slurm守护程序兼容。不需同时更新所有集群, 但是在更新其他使用slurmdbd的集群之前, 需首先更新slurmdbd并使其运行。
+metastack2.3的slurmdbd将与metastack2.0及以上版本、Slurm-20.11及以上版本的Slurm守护程序兼容。不需同时更新所有集群, 但是在更新其他使用slurmdbd的集群之前, 需首先更新slurmdbd并使其运行。
 
-metastack2.2可以从metastack2.0及以上版本、Slurm-20.11或Slurm-21.08版本直接升级到该版本，不会丢失作业或其他状态信息。直接从早期版本的 Slurm 升级将导致状态信息的丢失。
+metastack2.3可以从metastack2.0及以上版本、Slurm-20.11或Slurm-21.08版本直接升级到该版本，不会丢失作业或其他状态信息。直接从早期版本的 Slurm 升级将导致状态信息的丢失。
 
-从其他版本升级到metastack2.2时, 所有SPANK插件必须重新编译。
+从其他版本升级到metastack2.3时, 所有SPANK插件必须重新编译。
 
 
 要点
 =====================================================================
--- 支持作业运行时间预测
--- 支持低版本兼容, 兼容metastack低版本与slurm官方版本
--- 优化常见作业提交报错、排队原因易用性
--- 优化多因子优先级中JobSize计算策略
--- 优化高优先级作业资源不足排队时空闲节点的展示状态
--- 优化调度/查询服务分离，应对服务高负载场景
+-- 支持分区级别优先级权重配置
+-- 支持作业应用名称识别
+-- 支持自定义作业异常检测
+-- 支持时间不同步自动标记并下线节点
+-- 支持MetaStack版本安装标准化
+-- 支持enroot容器调度
+-- 优化作业运行时间预测效率
 -- 优化slurmctld/slurmdbd服务启动时间
--- 优化单位时间内用户请求流量控制功能
--- 优化作业运行信息采集功能中influxdb在大规模集群的可用性
--- 适配华为昇腾系列加速卡
--- 适配国产数据库KingbaseES V008R006C008M020B0025版本
+-- 优化单双路异构分区调度效率
 -- 修复bug若干
-
 
 配置文件更改(详见man page帮助手册)
 =====================================================================
 -- slurm.conf
-    - SlurmctldParameters新增配置子项enable_reason_detail
-    - SchedulerParameters新增配置子项sched_planned
-    - GresTypes新增配置子项npu
-    - AccountingStorageTRES新增配置子项gres/npu
-    - PrivateData新增配置子项planned
-    - 新增配置项RlConfig、RlUsers
-    - 新增配置项PriorityJobSizeMaxValue
-    - 新增配置项ExtraMsgFile
-    - 新增配置项CacheDupAbsRealTime
+    - JobAcctGatherFrequency新增配置子项apptype
+    - 新增配置项TimeSyncCheck、TimeSyncCheckTimeDiff、TimeSyncCheckRetryCount
+    - 新增配置项SlurmctldLoadGres
+    - 新增配置项WatchDogName
 -- slurmdbd.conf
-    - StorageType新增配置子项accounting_storage/kingbase
+    - 新增配置项SaveUid、UidSaveLocation、UidSaveInterval
 -- acct_gather.conf
-    - ProfileInfluxDBRTPolicy新增配置子项NATIVERP、EVENTRP和STEPDRP
-    - 新增配置项ProfileInfluxDBSeriesReduce
--- gres.conf
-    - AutoDetect新增配置子项dsmi
-    - Type新增配置子项npu
-
+    - ProfileInfluxDBDefault新增配置子项apptype
+    - ProfileInfluxDBRTPolicy新增配置子项APPTYPERP
+-- slurm_partition.conf
+    - 新增配置项PriorityFavorSmall、PriorityWeightAge、PriorityWeightAssoc、PriorityWeightFairshare、
+    PriorityWeightJobSize、PriorityWeightPartition、PriorityWeightQOS、PriorityWeightTRES
+-- plugstack.conf
+    - 新增配置项required /opt/gridview/slurm/lib/slurm/spank_pyxis.so
 
 命令更改(详见man page帮助手册)
 =====================================================================
--- sinfo
-    - 新增--planned参数
-    - 新增--noplanned参数
--- scontrol 
-    - 新增--planned参数
-    - 新增--noplanned参数
 -- sbatch
-    - 新增--cpus-per-npu参数
-    - 新增--npus参数
-    - 新增--npu-bind参数
-    - 新增--npu-freq参数
-    - 新增--npus-per-node参数
-    - 新增--npus-per-socket参数
-    - 新增--npus-per-task参数
-    - 新增--mem-per-npu参数
-    - 新增--gres=npu:<x>参数
+    - 新增--watchdog参数
 -- srun
-    - 新增--cpus-per-npu参数
-    - 新增--npus参数
-    - 新增--npu-bind参数
-    - 新增--npu-freq参数
-    - 新增--npus-per-node参数
-    - 新增--npus-per-socket参数
-    - 新增--npus-per-task参数
-    - 新增--mem-per-npu参数
-    - 新增--gres=npu:<x>参数
+    - 新增--watchdog参数
 -- salloc
-    - 新增--cpus-per-npu参数
-    - 新增--npus参数
-    - 新增--npu-bind参数
-    - 新增--npu-freq参数
-    - 新增--npus-per-node参数
-    - 新增--npus-per-socket参数
-    - 新增--npus-per-task参数
-    - 新增--mem-per-npu参数
-    - 新增--gres=npu:<x>参数
-
-
-环境变量更改(详见man page帮助手册)  
-=====================================================================
--- 新增环境变量SLURM_MAIN_PLANNED
-
-
-编译参数更改(详见configure --help)  
-=====================================================================
--- 新增编译参数--with-dsmi
--- 新增编译参数--with-kingbase_config
--- 新增编译参数--with-kingbase_ssl_lib
+    - 新增--watchdog参数

@@ -92,7 +92,9 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 	desc->account = xstrdup(opt.account);
 	desc->comment = xstrdup(opt.comment);
 	desc->qos = xstrdup(opt.qos);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	desc->apptype = xstrdup(opt.apptype);
+#endif
 	/* job constraints */
 	if (opt.pn_min_cpus > -1)
 		desc->pn_min_cpus = opt.pn_min_cpus;
@@ -211,5 +213,8 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 	xfmt_tres(&desc->tres_per_task, "gres:npu", opt.npus_per_task);
 	if (opt.mem_per_npu != NO_VAL64)
 		xstrfmtcat(desc->mem_per_tres, "gres:npu:%"PRIu64, opt.mem_per_npu);
+#endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	desc->watch_dog = xstrdup(opt.watch_dog);
 #endif
 }

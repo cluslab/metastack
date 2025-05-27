@@ -91,6 +91,10 @@ strong_alias(get_unit_type, slurm_get_unit_type);
 /* STATIC VARIABLES */
 static int message_timeout = -1;
 
+#ifdef __METASTACK_TIME_SYNC_CHECK
+static __thread uint16_t tls_msg_type = 0;
+#endif
+
 /* STATIC FUNCTIONS */
 static char *_global_auth_key(void);
 static void  _remap_slurmctld_errno(void);
@@ -1346,6 +1350,9 @@ List slurm_receive_msgs(int fd, int steps, int timeout)
 	List ret_list = NULL;
 	int orig_timeout = timeout;
 	char *peer = NULL;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	int errnum = SLURM_SUCCESS;
+#endif
 
 	xassert(fd >= 0);
 
@@ -1453,12 +1460,21 @@ List slurm_receive_msgs(int fd, int steps, int timeout)
 		goto total_return;
 	}
 	msg.auth_index = slurm_auth_index(auth_cred);
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	slurm_msg_set_msg_type(header.msg_type);
+#endif
 	if (header.flags & SLURM_GLOBAL_AUTH_KEY) {
 		rc = auth_g_verify(auth_cred, _global_auth_key());
 	} else {
 		rc = auth_g_verify(auth_cred, slurm_conf.authinfo);
 	}
-
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	slurm_msg_set_msg_type(0);
+	if(header.msg_type == RESPONSE_PING_SLURMD && rc!= SLURM_SUCCESS){
+		errnum = ESLURM_AUTH_CRED_INVALID_TIME;
+		rc = SLURM_SUCCESS;
+	}
+#endif
 	if (rc != SLURM_SUCCESS) {
 		/* peer may have not been resolved already */
 		if (!peer)
@@ -1485,6 +1501,11 @@ List slurm_receive_msgs(int fd, int steps, int timeout)
 	if ((header.body_length > remaining_buf(buffer)) ||
 	    _check_hash(buffer, &header, &msg, auth_cred) ||
 	    (unpack_msg(&msg, buffer) != SLURM_SUCCESS)) {
+#ifdef __METASTACK_TIME_SYNC_CHECK
+		if(slurm_conf.time_sync_check && header.msg_type == RESPONSE_PING_SLURMD && errnum != SLURM_SUCCESS ){
+			unpack_msg(&msg, buffer);
+		}
+#endif
 		(void) auth_g_destroy(auth_cred);
 		free_buf(buffer);
 		rc = ESLURM_PROTOCOL_INCOMPLETE_PACKET;
@@ -1506,13 +1527,54 @@ total_return:
 			ret_data_info->data = NULL;
 			list_push(ret_list, ret_data_info);
 		}
-
+#ifdef __METASTACK_TIME_SYNC_CHECK
+		int errnum2 = SLURM_SUCCESS;
+		if (header.msg_type == RESPONSE_PING_SLURMD) {
+			if(!ret_list){
+				ret_list = list_create(destroy_data_info);
+			}
+				ret_data_info = xmalloc(sizeof(ret_data_info_t));
+				ret_data_info->err = rc;
+			if(slurm_conf.time_sync_check){
+				if (errnum != SLURM_SUCCESS) {
+					rc = SLURM_PROTOCOL_AUTHENTICATION_ERROR;
+				}
+				errnum2 = ((ping_slurmd_resp_msg_t *)msg.data)->return_code;
+				debug2("ctld receive errcode %s",slurm_strerror(errnum2));
+				if (errnum2 == ESLURM_AUTH_CRED_INVALID_TIME) {
+					ret_data_info->type = header.msg_type;
+					ret_data_info->data = msg.data;
+				} else {
+					ret_data_info->type = RESPONSE_FORWARD_FAILED;
+					ret_data_info->data = msg.data;	
+				}
+			}else{
+				ret_data_info->type = RESPONSE_FORWARD_FAILED;
+				ret_data_info->data = NULL;	
+			}
+			list_push(ret_list, ret_data_info);
+		}
+#endif
 		/* peer may have not been resolved already */
 		if (!peer)
 			peer = fd_resolve_peer(fd);
-
-		error("%s: [%s] failed: %s",
-		      __func__, peer, slurm_strerror(rc));
+#ifdef __METASTACK_TIME_SYNC_CHECK
+		if(errnum2 == ESLURM_AUTH_CRED_INVALID_TIME && running_in_slurmctld()){
+			debug4("pass print error");
+		}else if(!slurm_conf.time_sync_check && running_in_slurmctld()){
+			if(rc != SLURM_SUCCESS){
+				if(rc == SLURM_PROTOCOL_SOCKET_ZERO_BYTES_SENT){
+					debug("slurm recv zero bytes from peer %s",peer);
+				}else{
+					rc = SLURM_PROTOCOL_AUTHENTICATION_ERROR;
+					debug("%s may have time sync err, need to time sync",peer);
+				}
+			}
+		}else{
+			error("%s: [%s] failed: %s",
+		      	__func__, peer, slurm_strerror(rc));
+		}
+#endif
 		usleep(10000);	/* Discourage brute force attack */
 	} else {
 		if (!ret_list)
@@ -1744,6 +1806,9 @@ int slurm_receive_msg_and_forward(int fd, slurm_addr_t *orig_addr,
 	void *auth_cred = NULL;
 	buf_t *buffer;
 	char *peer = NULL;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	int errnum = SLURM_SUCCESS;
+#endif
 
 	xassert(fd >= 0);
 
@@ -1882,7 +1947,11 @@ int slurm_receive_msg_and_forward(int fd, slurm_addr_t *orig_addr,
 	} else {
 		rc = auth_g_verify(auth_cred, slurm_conf.authinfo);
 	}
-
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	if(rc != SLURM_SUCCESS && header.msg_type == REQUEST_PING){
+		errnum = slurm_get_errno();
+	}
+#endif
 	if (rc != SLURM_SUCCESS) {
 		/* peer may have not been resolved already */
 		if (!peer)
@@ -1921,10 +1990,19 @@ int slurm_receive_msg_and_forward(int fd, slurm_addr_t *orig_addr,
 
 total_return:
 	destroy_forward(&header.forward);
-
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	if(errnum == ESLURM_AUTH_CRED_INVALID_TIME && header.msg_type == REQUEST_PING){
+		rc = errnum;	
+	}
+#endif
 	slurm_seterrno(rc);
 	if (rc != SLURM_SUCCESS) {
 		msg->msg_type = RESPONSE_FORWARD_FAILED;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+		if(errnum == ESLURM_AUTH_CRED_INVALID_TIME && header.msg_type == REQUEST_PING){
+			msg->msg_type = REQUEST_PING;
+		}
+#endif
 		msg->auth_cred = (void *) NULL;
 		msg->data = NULL;
 		/* peer may have not been resolved already */
@@ -3486,3 +3564,13 @@ extern int slurm_char_to_hex(int c)
 	else
 		return -1;
 }
+#ifdef __METASTACK_TIME_SYNC_CHECK
+extern void slurm_msg_set_msg_type(uint16_t msg_type)
+{
+	tls_msg_type = msg_type;
+}
+extern uint16_t slurm_msg_get_msg_type(void)
+{
+	return tls_msg_type;
+}
+#endif

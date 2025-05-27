@@ -488,22 +488,22 @@ scontrol_print_step (char *job_step_id_str)
 		show_flags |= SHOW_ALL;
 	if (local_flag)
 		show_flags |= SHOW_LOCAL;
-	
+/*	
 #ifdef __METASTACK_OPT_CACHE_QUERY
-    char *env_val = NULL;
-    if ((env_val = getenv("SCONTROL_STEP_CACHE_QUERY"))){
-        if(!cache_flag && !nocache_flag){
-            if(!xstrcmp(env_val, "cache"))
-                cache_flag = true;
-            else if(!xstrcmp(env_val, "nocache"))
-                nocache_flag = true;
-        }
-    }
+	char *env_val = NULL;
+	if ((env_val = getenv("SCONTROL_STEP_CACHE_QUERY"))){
+		if(!cache_flag && !nocache_flag){
+			if(!xstrcmp(env_val, "cache"))
+				cache_flag = true;
+			else if(!xstrcmp(env_val, "nocache"))
+				nocache_flag = true;
+		}
+	}
 	if(update_client_port(cache_flag, nocache_flag)){
 		return;
 	}
 #endif
-
+*/
 	if ((old_job_step_info_ptr) && (last_job_id == step_id.job_id) &&
 	    (last_array_id == array_id) && (last_step_id == step_id.step_id)) {
 		if (last_show_flags != show_flags)

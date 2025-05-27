@@ -734,7 +734,7 @@ int main() {
     } 
 
     /*16位加密key*/
-    const uint8_t key[]="xxx";
+    const uint8_t key[]="fcad715bd73b5cb0";
 
     /*加密32字节明文*/
     sprintf(data3, "%ld:%ld", strlen(influxdb_data->username), strlen(influxdb_data->password));

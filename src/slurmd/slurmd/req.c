@@ -526,7 +526,10 @@ _send_slurmstepd_init(int fd, int type, void *req,
 	/* send acct_gather.conf over to slurmstepd */
 	if (acct_gather_write_conf(fd) < 0)
 		goto rwfail;
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	if (apptype_properties_write_conf(fd) < 0)
+		goto rwfail;
+#endif
 	/* send type over to slurmstepd */
 	safe_write(fd, &type, sizeof(int));
 
@@ -603,7 +606,6 @@ _send_slurmstepd_init(int fd, int type, void *req,
 
 			if (children_gather == -1) {
 				error("reverse_tree_info: Sanity check fail, count fail");
-			
 			}
 			/*
 			* rank 0 always talks directly to the slurmctld. If
@@ -621,6 +623,8 @@ _send_slurmstepd_init(int fd, int type, void *req,
 					error("%s: stepd gther data failed getting address "
 						  "for parent NodeName %s (parent rank %d)",
 						__func__, parent_alias_gather, parent_rank_gather);
+				if(parent_alias_gather)
+					free(parent_alias_gather);
 			}
 		}
 #endif
@@ -2237,7 +2241,18 @@ static int _spawn_prolog_stepd(slurm_msg_t *msg)
 						  sizeof(uint16_t));
 	launch_req->uid			= req->uid;
 	launch_req->user_name		= req->user_name;
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	launch_req->watch_dog			= req->watch_dog;
+	launch_req->watch_dog_script	= req->watch_dog_script;
+	launch_req->init_time			= req->init_time;
+	launch_req->period	= req->period;
+	launch_req->enable_all_nodes	= req->enable_all_nodes;
+	launch_req->enable_all_stepds	= req->enable_all_stepds;
+	launch_req->style_step			= req->style_step;
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	launch_req->apptype			= req->apptype;
+#endif
 	/*
 	 * determine which node this is in the allocation and if
 	 * it should setup the x11 forwarding or not
@@ -3274,6 +3289,10 @@ static void _rpc_ping(slurm_msg_t *msg)
 		get_cpu_load(&ping_resp.cpu_load);
 		get_free_mem(&ping_resp.free_mem);
 		slurm_msg_t_copy(&resp_msg, msg);
+#ifdef __METASTACK_TIME_SYNC_CHECK
+		ping_resp.ping_resp_time = time(NULL);
+		ping_resp.return_code = rc;
+#endif 
 		resp_msg.msg_type = RESPONSE_PING_SLURMD;
 		resp_msg.data     = &ping_resp;
 

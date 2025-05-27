@@ -546,6 +546,9 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 		xstrdup(conf->slurmctld_primary_on_prog);
 	conf_ptr->slurmctld_syslog_debug = conf->slurmctld_syslog_debug;
 	conf_ptr->slurmctld_timeout   = conf->slurmctld_timeout;
+#ifdef  __METASTACK_OPT_GRES_CONFIG	
+	conf_ptr->slurmctld_load_gres= conf->slurmctld_load_gres;
+#endif
 	conf_ptr->slurmd_debug        = conf->slurmd_debug;
 	conf_ptr->slurmd_logfile      = xstrdup(conf->slurmd_logfile);
 	conf_ptr->slurmd_params	      = xstrdup(conf->slurmd_params);
@@ -584,6 +587,11 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 
 	conf_ptr->task_epilog         = xstrdup(conf->task_epilog);
 	conf_ptr->task_prolog         = xstrdup(conf->task_prolog);
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	conf_ptr->time_sync_check     = conf->time_sync_check;
+	conf_ptr->time_sync_check_time_diff = conf->time_sync_check_time_diff;
+	conf_ptr->time_sync_check_retry_count = conf->time_sync_check_retry_count;
+#endif
 	conf_ptr->task_plugin         = xstrdup(conf->task_plugin);
 	conf_ptr->task_plugin_param   = conf->task_plugin_param;
 	conf_ptr->tcp_timeout         = conf->tcp_timeout;
@@ -1221,7 +1229,11 @@ static void _slurm_rpc_allocate_het_job(slurm_msg_t * msg)
 			error_code = ESLURM_INVALID_ARRAY;
 			break;
 		}
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
+		watch_dog_record_t *watch_dog_ptr = NULL;
+		if(job_desc_msg->watch_dog)
+			error_code = _get_job_watch_dogs_and_check(job_desc_msg->watch_dog, &watch_dog_ptr, &err_msg);
+#endif
 		if (job_desc_msg->immediate) {
 			error_code = ESLURM_CAN_NOT_START_IMMEDIATELY;
 			break;
@@ -2493,6 +2505,41 @@ static void _slurm_rpc_dump_node_single(slurm_msg_t * msg)
 	xfree(dump);
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/* _slurm_rpc_dump_conf_watch_dog - process RPC for Slurm configuration information */
+static void _slurm_rpc_dump_conf_watch_dog(slurm_msg_t * msg)
+{
+	DEF_TIMERS;
+	slurm_msg_t response_msg;
+	char *dump = NULL;
+	int dump_size = 0;
+	last_update_msg_t *last_time_msg = (last_update_msg_t *) msg->data;
+
+	START_TIMER;
+
+	/* check to see if configuration data has changed */
+	if ((last_time_msg->last_update - 1) >= last_watch_dog_update) {
+
+		debug2("_slurm_rpc_dump_watch_dog_conf, no change");
+		slurm_send_rc_msg(msg, SLURM_NO_CHANGE_IN_DATA);
+	} else {
+		pack_all_watch_dog(&dump, &dump_size,
+			      msg->auth_uid, msg->protocol_version);
+
+
+		END_TIMER2("_slurm_rpc_dump_watch_dog_conf");
+
+		response_init(&response_msg, msg);
+		response_msg.msg_type = RESPONSE_BUILD_WATCH_DOG_INFO;
+		response_msg.data = dump;
+		response_msg.data_size = dump_size;
+		/* send message */
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+		xfree(dump);
+	}
+}
+#endif
+
 /* _slurm_rpc_dump_partitions - process RPC for partition state information */
 static void _slurm_rpc_dump_partitions(slurm_msg_t * msg)
 {
@@ -3161,6 +3208,15 @@ static void _slurm_rpc_job_step_create(slurm_msg_t * msg)
 			switch_g_duplicate_jobinfo(step_rec->switch_job,
 						   &switch_job);
 		job_step_resp.switch_job = switch_job;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		job_step_resp.watch_dog         = step_rec->watch_dog;
+		job_step_resp.watch_dog_script  = step_rec->watch_dog_script;
+		job_step_resp.init_time         = step_rec->init_time;
+		job_step_resp.period 		    = step_rec->period;
+		job_step_resp.enable_all_nodes  = step_rec->enable_all_nodes;
+		job_step_resp.enable_all_stepds = step_rec->enable_all_stepds;
+		job_step_resp.style_step 		= step_rec->style_step;
+#endif
 
 #ifdef __METASTACK_OPT_SRUN_STEP_CREATE
 		bool step_timeout_enhance = step_timeout_enhance_conf_init();
@@ -7415,6 +7471,12 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 	},{
 		.msg_type = REQUEST_BUILD_INFO,
 		.func = _slurm_rpc_dump_conf,
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	},{
+		/*printf watch dog parameter printing*/
+		.msg_type = REQUEST_BUILD_WATCH_DOG_INFO,
+		.func = _slurm_rpc_dump_conf_watch_dog,
+#endif
 	},{
 		.msg_type = REQUEST_JOB_INFO,
 		.func = _slurm_rpc_dump_jobs,
@@ -7858,8 +7920,8 @@ void slurmctld_query_req(slurm_msg_t *msg)
 		msg_type = REQUEST_CACHE_JOB_INFO;
 	}else if(msg->msg_type == REQUEST_JOB_USER_INFO){
 		msg_type = REQUEST_CACHE_JOB_USER_INFO;
-	}else if(msg->msg_type == REQUEST_JOB_STEP_INFO){
-		msg_type = REQUEST_CACHE_JOB_STEP_INFO;
+//	}else if(msg->msg_type == REQUEST_JOB_STEP_INFO){
+//		msg_type = REQUEST_CACHE_JOB_STEP_INFO;
 	}else if(msg->msg_type == REQUEST_JOB_INFO_SINGLE){
 		msg_type = REQUEST_CACHE_JOB_INFO_SINGLE;
 	}else if(msg->msg_type == REQUEST_PARTITION_INFO){

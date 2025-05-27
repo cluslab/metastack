@@ -125,6 +125,9 @@ static bool conf_initialized = false;
 static s_p_hashtbl_t *default_frontend_tbl;
 static s_p_hashtbl_t *default_nodename_tbl;
 static s_p_hashtbl_t *default_partition_tbl;
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static s_p_hashtbl_t *default_watch_dog_tbl = NULL;
+#endif
 static log_level_t lvl = LOG_LEVEL_FATAL;
 static int	local_test_config_rc = SLURM_SUCCESS;
 static bool     no_addr_cache = false;
@@ -181,6 +184,16 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 				const char *key, const char *value,
 				const char *line, char **leftover);
 static slurm_conf_partition_t *_create_conf_part(void);
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION 
+/* read slurm.conf */
+static int _parse_watch_dog_name(void **dest, slurm_parser_enum_t type,
+			       const char *key, const char *value,
+			       const char *line, char **leftover);
+static watch_dog_record_t *_create_conf_watch_dog(void);
+static void _init_conf_watch_dog(watch_dog_record_t *conf_watch_dog);
+static void _destroy_watch_dog(void *ptr);
+#endif
 static void _init_conf_part(slurm_conf_partition_t *conf_part);
 static void _destroy_partitionname(void *ptr);
 static int _parse_downnodes(void **dest, slurm_parser_enum_t type,
@@ -438,6 +451,9 @@ s_p_options_t slurm_conf_options[] = {
 	{"SlurmctldSyslogDebug", S_P_STRING},
 	{"SlurmctldTimeout", S_P_UINT16},
 	{"SlurmctldParameters", S_P_STRING},
+#ifdef  __METASTACK_OPT_GRES_CONFIG
+	{"SlurmctldLoadGres", S_P_BOOLEAN},
+#endif
 	{"SlurmdDebug", S_P_STRING},
 	{"SlurmdLogFile", S_P_STRING},
 	{"SlurmdParameters", S_P_STRING},
@@ -465,6 +481,11 @@ s_p_options_t slurm_conf_options[] = {
 	{"SwitchType", S_P_STRING},
 	{"TaskEpilog", S_P_STRING},
 	{"TaskProlog", S_P_STRING},
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	{"TimeSyncCheck", S_P_STRING},
+	{"TimeSyncCheckTimeDiff", S_P_UINT16},
+	{"TimeSyncCheckRetryCount", S_P_UINT16},
+#endif
 	{"TaskPlugin", S_P_STRING},
 	{"TaskPluginParam", S_P_STRING},
 	{"TCPTimeout", S_P_UINT16},
@@ -491,6 +512,10 @@ s_p_options_t slurm_conf_options[] = {
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	{"RlConfig", S_P_ARRAY, _parse_rl_config, _destroy_rl_config},
 	{"RlUsers", S_P_ARRAY, _parse_rl_users, _destroy_rl_users},
+#endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	{"WatchDogName", S_P_ARRAY, _parse_watch_dog_name,
+	 _destroy_watch_dog},
 #endif
 	{NULL}
 };
@@ -828,7 +853,7 @@ extern void parse_limit_type(const char *parameters, int global_limit_type, int*
 			info("limit_type not configured, use global configuration value");
 			xfree(tmp);
 			return;
-		}
+		}		
 		tok = strtok_r(tmp, ",", &save_ptr);
 		if (!tok) {
 			info("limit_type not configured, use global configuration value");
@@ -843,7 +868,7 @@ extern void parse_limit_type(const char *parameters, int global_limit_type, int*
 				info("limit_type configured invalid value, use global configuration value");
 			}
 		}
-		xfree(tmp);
+		xfree(tmp);		
 	} else {
 		info("limit_type not configured, use global configuration value");
 	}
@@ -1829,6 +1854,57 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static int _parse_watch_dog_name(void **dest, slurm_parser_enum_t type,
+			       const char *key, const char *value,
+			       const char *line, char **leftover)
+{
+	s_p_hashtbl_t *tbl = NULL, *dflt = NULL;
+	static s_p_options_t _watch_dog_options[] = {
+		{"Accounts", S_P_STRING},
+		{"Script", S_P_STRING},
+		{"Describe", S_P_STRING},
+		{"InitTime", S_P_UINT32},
+		{"Period", S_P_UINT32},
+		{"EnableAllNodes", S_P_BOOLEAN},
+		{"EnableAllStepds", S_P_BOOLEAN},
+		{NULL}
+	};
+	tbl = s_p_hashtbl_create(_watch_dog_options);
+	s_p_parse_line(tbl, *leftover, leftover);
+	watch_dog_record_t *p = _create_conf_watch_dog();
+	dflt = default_watch_dog_tbl;
+	if(value != NULL) {
+		p->watch_dog = xstrdup(value);
+		if (!s_p_get_string(&p->account, "Accounts",tbl)) 
+				s_p_get_string(&p->account,"Accounts", dflt);
+		if (!s_p_get_string(&p->script, "Script",tbl)) 
+				s_p_get_string(&p->script,"Script", dflt);
+		if (!s_p_get_string(&p->describe, "Describe",tbl)) 
+				s_p_get_string(&p->describe,"Describe", dflt);
+
+		if (!s_p_get_uint32(&p->init_time, "InitTime",tbl))
+			s_p_get_uint32(&p->init_time, "InitTime",dflt);		
+		if (!s_p_get_uint32(&p->period, "Period",tbl))
+			s_p_get_uint32(&p->period, "Period",dflt);	
+
+		if (!s_p_get_boolean(&p->enable_all_nodes, "EnableAllNodes", tbl))
+			s_p_get_boolean(&p->enable_all_nodes, "EnableAllNodes", dflt);
+
+		if (!s_p_get_boolean(&p->enable_all_stepds, "EnableAllStepds", tbl))
+			s_p_get_boolean(&p->enable_all_stepds, "EnableAllStepds", dflt);
+
+		s_p_hashtbl_destroy(tbl);
+		*dest = (void *)p;
+		return 1;	
+	} else	{
+		s_p_hashtbl_destroy(tbl);
+		return 0;
+	}
+		
+}
+#endif
+
 static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			       const char *key, const char *value,
 			       const char *line, char **leftover)
@@ -1881,6 +1957,16 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 		{"Priority", S_P_UINT16},
 		{"PriorityJobFactor", S_P_UINT16},
 		{"PriorityTier", S_P_UINT16},
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		{"PriorityFavorSmall", S_P_BOOLEAN},
+		{"PriorityWeightAge", S_P_UINT32},
+		{"PriorityWeightAssoc", S_P_UINT32},
+		{"PriorityWeightFairshare", S_P_UINT32},
+		{"PriorityWeightJobSize", S_P_UINT32},
+		{"PriorityWeightPartition", S_P_UINT32},
+		{"PriorityWeightQOS", S_P_UINT32},
+		{"PriorityWeightTRES", S_P_STRING},
+#endif
 		{"QOS", S_P_STRING},
 		{"RootOnly", S_P_BOOLEAN}, /* YES or NO */
 		{"ReqResv", S_P_BOOLEAN}, /* YES or NO */
@@ -1897,7 +1983,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 #endif
 		{"SuspendTime", S_P_STRING},
 		{"SuspendTimeout", S_P_UINT16},
-		{"TRESBillingWeights", S_P_STRING},
+		{"TRESBillingWeights", S_P_STRING},		
 		{NULL}
 	};
 
@@ -2115,7 +2201,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 		if (!s_p_get_boolean(&p->hetpart_flag, "HetPart", tbl) &&
-		    !s_p_get_boolean(&p->hetpart_flag, "HetPart", dflt))
+			!s_p_get_boolean(&p->hetpart_flag, "HetPart", dflt))
 			p->hetpart_flag = false;
 #endif
 
@@ -2167,6 +2253,40 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 				    "PriorityJobFactor", tbl))
 			s_p_get_uint16(&p->priority_job_factor,
 				       "PriorityJobFactor", dflt);
+
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+		bool truth = false;
+		if (s_p_get_boolean(&truth, "PriorityFavorSmall", tbl)) {
+			if (truth) {
+				p->priority_favor_small = 1;
+			} else {
+				p->priority_favor_small = 0;
+			}
+		} else {
+			p->priority_favor_small = NO_VAL16;
+		}
+
+		if (!s_p_get_uint32(&p->priority_weight_age, "PriorityWeightAge", tbl))
+			s_p_get_uint32(&p->priority_weight_age, "PriorityWeightAge", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_assoc, "PriorityWeightAssoc", tbl))
+			s_p_get_uint32(&p->priority_weight_assoc, "PriorityWeightAssoc", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_fs, "PriorityWeightFairshare", tbl))
+			s_p_get_uint32(&p->priority_weight_fs, "PriorityWeightFairshare", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_js, "PriorityWeightJobSize", tbl))
+			s_p_get_uint32(&p->priority_weight_js, "PriorityWeightJobSize", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_part, "PriorityWeightPartition", tbl))
+			s_p_get_uint32(&p->priority_weight_part, "PriorityWeightPartition", dflt);
+
+		if (!s_p_get_uint32(&p->priority_weight_qos, "PriorityWeightQOS", tbl))
+			s_p_get_uint32(&p->priority_weight_qos, "PriorityWeightQOS", dflt);
+
+		if (!s_p_get_string(&p->priority_weight_tres, "PriorityWeightTRES", tbl))
+			xfree(p->priority_weight_tres);
+#endif
 
 		if (!s_p_get_uint16(&p->priority_tier, "PriorityTier", tbl))
 			s_p_get_uint16(&p->priority_tier, "PriorityTier", dflt);
@@ -2336,6 +2456,16 @@ static void _init_conf_part(slurm_conf_partition_t *conf_part)
 	conf_part->state_up = PARTITION_UP;
 	conf_part->suspend_time = NO_VAL;
 	conf_part->suspend_timeout = NO_VAL16;
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	conf_part->priority_favor_small  = NO_VAL16;
+	conf_part->priority_weight_age   = NO_VAL;
+	conf_part->priority_weight_assoc = NO_VAL;
+	conf_part->priority_weight_fs    = NO_VAL;
+	conf_part->priority_weight_js    = NO_VAL;
+	conf_part->priority_weight_part  = NO_VAL;
+	conf_part->priority_weight_qos   = NO_VAL;
+	conf_part->priority_weight_tres  = NULL;
+#endif
 }
 
 static slurm_conf_partition_t *_create_conf_part(void)
@@ -2345,6 +2475,34 @@ static slurm_conf_partition_t *_create_conf_part(void)
 
 	return p;
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+static void _init_conf_watch_dog(watch_dog_record_t *conf_watch_dog)
+{
+	conf_watch_dog->init_time = 0;
+	conf_watch_dog->period    = 0;
+	conf_watch_dog->show_flags = 0;
+	conf_watch_dog->enable_all_nodes = false;
+	conf_watch_dog->enable_all_stepds = false;
+}
+static watch_dog_record_t *_create_conf_watch_dog(void)
+{
+	watch_dog_record_t *p = xmalloc(sizeof(watch_dog_record_t));
+	_init_conf_watch_dog(p);
+
+	return p;
+}
+static void _destroy_watch_dog(void *ptr)
+{
+	watch_dog_record_t *p = (watch_dog_record_t *)ptr;
+	xfree(p->account);
+	xfree(p->watch_dog);
+	xfree(p->script);
+	xfree(p->describe);
+
+	xfree(ptr);
+}
+#endif
 
 static void _destroy_partitionname(void *ptr)
 {
@@ -2365,6 +2523,9 @@ static void _destroy_partitionname(void *ptr)
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	xfree(p->standby_nodes);
 	xfree(p->standby_node_parameters);
+#endif
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+	xfree(p->priority_weight_tres);
 #endif
 	xfree(ptr);
 }
@@ -2550,6 +2711,23 @@ static void _destroy_slurmctld_host(void *ptr)
 	xfree(p->addr);
 	xfree(ptr);
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+int slurm_conf_watch_dog_array(watch_dog_record_t **watr_array[])
+{
+	int count = 0;
+	watch_dog_record_t **ptr = NULL;
+
+	if (s_p_get_array((void ***)&ptr, &count, "WatchDogName",
+			  conf_hashtbl)) {
+		*watr_array = ptr;
+		return count;
+	} else {
+		*watr_array = NULL;
+		return 0;
+	}
+}
+#endif
 
 int slurm_conf_partition_array(slurm_conf_partition_t **ptr_array[])
 {
@@ -3823,6 +4001,11 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->task_plugin_param		= 0;
 	xfree (ctl_conf_ptr->task_prolog);
 	ctl_conf_ptr->tcp_timeout		= NO_VAL16;
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	ctl_conf_ptr->time_sync_check       = 0;
+	ctl_conf_ptr->time_sync_check_time_diff = 0;
+	ctl_conf_ptr->time_sync_check_retry_count = 0;
+#endif
 	xfree (ctl_conf_ptr->tmp_fs);
 	xfree (ctl_conf_ptr->topology_param);
 	xfree (ctl_conf_ptr->topology_plugin);
@@ -3953,6 +4136,12 @@ _destroy_slurm_conf(void)
 		s_p_hashtbl_destroy(default_partition_tbl);
 		default_partition_tbl = NULL;
 	}
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if (default_watch_dog_tbl != NULL) {
+		s_p_hashtbl_destroy(default_watch_dog_tbl);
+		default_watch_dog_tbl = NULL;
+	}
+#endif
 	free_slurm_conf(conf_ptr, true);
 	memset(conf_ptr, 0, sizeof(slurm_conf_t));
 	conf_initialized = false;
@@ -4698,6 +4887,12 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	if (s_p_get_boolean(&truth, "HealthCheckCarryNode", hashtbl) && truth)
 		conf->conf_flags |= CTL_CONF_HCN;
 #endif
+#ifdef __METASTACK_OPT_GRES_CONFIG
+	if (s_p_get_boolean(&truth, "SlurmctldLoadGres", hashtbl) && truth)
+		conf->slurmctld_load_gres = 1;
+	else
+		conf->slurmctld_load_gres = 0;
+#endif
 	if (s_p_get_string(&temp_str,
 			   "EnforcePartLimits", hashtbl)) {
 		uint16_t enforce_param;
@@ -5413,7 +5608,7 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	} else {
 		char *tmp_str = NULL, *last = NULL, *token = NULL;
 		double *js_maxcpu = NULL;
-		js_maxcpu = (double*)xmalloc(sizeof(double*));
+		js_maxcpu = (double*)xmalloc(sizeof(double));
 		tmp_str = xstrdup(conf->priority_jobsize_maxvalue);
 		token = strtok_r(tmp_str, ",", &last);
 		while (token) {
@@ -6032,6 +6227,32 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 
 	if (!s_p_get_uint16(&conf->tcp_timeout, "TCPTimeout", hashtbl))
 		conf->tcp_timeout = DEFAULT_TCP_TIMEOUT;
+
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	if (s_p_get_string(&temp_str, "TimeSyncCheck", hashtbl)) {
+		if (!xstrcasecmp(temp_str,"Yes")) {
+			conf->time_sync_check = 1;
+		} else {
+			conf->time_sync_check = 0;
+		}
+		xfree(temp_str);
+	} else {
+		conf->time_sync_check = 0;
+	}
+
+	if (!s_p_get_uint16(&conf->time_sync_check_time_diff, "TimeSyncCheckTimeDiff", hashtbl)) {
+		conf->time_sync_check_time_diff = TIME_DIFF_DEFAULT;
+	}
+
+	if (!s_p_get_uint16(&conf->time_sync_check_retry_count, "TimeSyncCheckRetryCount", hashtbl)) {
+		conf->time_sync_check_retry_count = TIME_SYNC_CHECK_RETRY_COUNT;
+	}
+	
+	if (conf->time_sync_check == 0) {
+		conf->time_sync_check_time_diff = 0;
+		conf->time_sync_check_retry_count = 0;
+	}
+#endif
 
 	if (!s_p_get_string(&conf->tmp_fs, "TmpFS", hashtbl))
 		conf->tmp_fs = xstrdup(DEFAULT_TMP_FS);
@@ -7062,31 +7283,31 @@ extern void slurm_conf_remove_node(char *node_name)
 extern bool update_client_port(bool cache_query, bool nocache_query)
 {
 
-    if(cache_query && nocache_query){
-        printf ("The --cache and --nocache options cannot be used simultaneously!\n");
-			return SLURM_ERROR;
-    }
+//	if(cache_query && nocache_query){
+//		printf ("The --cache and --nocache options cannot be used simultaneously!\n");
+//		return SLURM_ERROR;
+//	}
 	if(conf_ptr->cache_query==2){
 		if(conf_ptr->query_port_count != 1){
 			printf ("CacheQueryPort configuration error, please contact the administrator!\n");
 			return SLURM_ERROR;
 		}
-        if (!nocache_query){
-		    conf_ptr->slurmctld_port =  conf_ptr->query_port; 
-		    conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
-        }
+		if (!nocache_query){
+			conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+			conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+		}
 	}else if(conf_ptr->cache_query == 1){
-        if(conf_ptr->query_port_count != 1){
-            printf ("CacheQueryPort configuration error, please contact the administrator!\n");
-            return SLURM_ERROR;
-        }
-        if (cache_query){
-            conf_ptr->slurmctld_port =  conf_ptr->query_port; 
-            conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
-        }
-	}else if (cache_query){
-		printf ("Parameter error, cache query function not enabled!\n");
-		return SLURM_ERROR;
+		if(conf_ptr->query_port_count != 1){
+			printf ("CacheQueryPort configuration error, please contact the administrator!\n");
+			return SLURM_ERROR;
+		}
+		if (cache_query){
+			conf_ptr->slurmctld_port =  conf_ptr->query_port; 
+			conf_ptr->slurmctld_port_count = conf_ptr->query_port_count;
+		}
+//	}else if (cache_query){
+//		printf ("Parameter error, cache query function not enabled!\n");
+//		return SLURM_ERROR;
 	}
 	return SLURM_SUCCESS;
 }

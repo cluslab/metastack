@@ -454,6 +454,10 @@ extern int slurm_lua_job_record_field(lua_State *L, const job_record_t *job_ptr,
 			lua_pushnumber(L, job_ptr->details->nice);
 		else
 			lua_pushnumber(L, NO_VAL16);
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	} else if (!xstrcmp(name, "predict_job")) {
+		lua_pushnumber(L, job_ptr->predict_job);
+#endif
 	} else if (!xstrcmp(name, "nodes")) {
 		lua_pushstring(L, job_ptr->nodes);
 	} else if (!xstrcmp(name, "origin_cluster")) {

@@ -488,6 +488,10 @@ typedef enum {
 #ifdef __METASTACK_LOAD_ABNORMAL
 	REQUEST_JOB_STEP_DATA,
 #endif
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	REQUEST_BUILD_WATCH_DOG_INFO,
+	RESPONSE_BUILD_WATCH_DOG_INFO,
+#endif
 } slurm_msg_type_t;
 
 /*****************************************************************************\
@@ -859,6 +863,16 @@ typedef struct job_step_specs {
 	char *tres_per_socket;	/* semicolon delimited list of TRES=# values */
 	char *tres_per_task;	/* semicolon delimited list of TRES=# values */
 	uint32_t user_id;	/* user the job runs as */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	// char *watch_dog_script;		/* location of the script */
+	// uint32_t init_time;     /* Optional. This keyword specifies the delay 
+	// 						 * (in seconds) before starting the watchdog script after 
+	// 					     *the job starts. Specify a number greater than 30 seconds. 
+	// 					     *The default value is 60 seconds. */
+	// uint32_t period; 
+	// bool enbale_all_nodes;      	
+#endif
 } job_step_create_request_msg_t;
 
 typedef struct job_step_create_response_msg {
@@ -873,6 +887,18 @@ typedef struct job_step_create_response_msg {
 	uint16_t use_protocol_ver;   /* Lowest protocol version running on
 				      * the slurmd's in this step.
 				      */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	char *watch_dog_script;		/* location of the script */
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period;  
+	bool enable_all_nodes;    
+	bool enable_all_stepds;   
+	uint32_t style_step;     /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/
+#endif
 } job_step_create_response_msg_t;
 
 #define LAUNCH_PARALLEL_DEBUG	SLURM_BIT(0)
@@ -980,6 +1006,21 @@ typedef struct launch_tasks_request_msg {
 	char *x11_magic_cookie;		/* X11 auth cookie to abuse */
 	char *x11_target;		/* X11 target host, or unix socket */
 	uint16_t x11_target_port;	/* X11 target port */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	char *watch_dog_script;		/* location of the script */
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period; 
+	bool enable_all_nodes;      
+	bool enable_all_stepds;    
+	uint32_t style_step;  /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/ 
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype;
+#endif
 } launch_tasks_request_msg_t;
 
 typedef struct partition_info partition_desc_msg_t;
@@ -1116,6 +1157,21 @@ typedef struct prolog_launch_msg {
 	char *x11_magic_cookie;		/* X11 auth cookie to abuse */
 	char *x11_target;		/* X11 target host, or unix socket */
 	uint16_t x11_target_port;	/* X11 target port */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	char *watch_dog_script;		/* location of the script */
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period;      
+	bool enable_all_nodes;   
+	bool enable_all_stepds;   
+	uint32_t style_step;      /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/  
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype;
+#endif
 } prolog_launch_msg_t;
 
 typedef struct batch_job_launch_msg {
@@ -1183,6 +1239,21 @@ typedef struct batch_job_launch_msg {
 	char *tres_bind;	/* task binding to TRES (e.g. GPUs),
 				 * included for possible future use */
 	char *tres_freq;	/* frequency/power for TRES (e.g. GPUs) */
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	char *watch_dog;
+	char *watch_dog_script;		/* location of the script */
+	uint32_t init_time;     /* Optional. This keyword specifies the delay 
+							 * (in seconds) before starting the watchdog script after 
+						     *the job starts. Specify a number greater than 30 seconds. 
+						     *The default value is 60 seconds. */
+	uint32_t period;      
+	bool enable_all_nodes;   
+	bool enable_all_stepds;   
+	uint32_t style_step;      /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/  
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	char *apptype;		/*	--apptype	*/
+#endif
 } batch_job_launch_msg_t;
 
 typedef struct job_id_request_msg {
@@ -1307,7 +1378,12 @@ typedef struct suspend_int_msg {
 typedef struct ping_slurmd_resp_msg {
 	uint32_t cpu_load;	/* CPU load * 100 */
 	uint64_t free_mem;	/* Free memory in MiB */
+#ifdef __METASTACK_TIME_SYNC_CHECK
+	time_t ping_resp_time;
+	uint32_t return_code;
+#endif
 } ping_slurmd_resp_msg_t;
+
 
 typedef struct license_info_request_msg {
 	time_t last_update;
@@ -1552,7 +1628,6 @@ extern void slurm_free_forward_data_msg(forward_data_msg_t *msg);
 extern void slurm_free_comp_msg_list(void *x);
 extern void slurm_free_composite_msg(composite_msg_t *msg);
 extern void slurm_free_ping_slurmd_resp(ping_slurmd_resp_msg_t *msg);
-
 #define	slurm_free_timelimit_msg(msg) \
 	slurm_free_kill_job_msg(msg)
 
@@ -1644,6 +1719,10 @@ extern void slurm_free_job_step_create_response_msg(
 extern void slurm_free_submit_response_response_msg(
 		submit_response_msg_t * msg);
 extern void slurm_free_ctl_conf(slurm_ctl_conf_info_msg_t * config_ptr);
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+extern void slurm_free_ctl_conf_watch_dog(slurm_ctl_conf_info_msg_watch_dog_t * config_ptr);
+extern void slurm_free_watch_dog_info_members(watch_dog_record_t * watch_dog);
+#endif
 extern void slurm_free_job_info_msg(job_info_msg_t * job_buffer_ptr);
 extern void slurm_free_job_step_info_response_msg(
 		job_step_info_response_msg_t * msg);

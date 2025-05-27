@@ -537,16 +537,21 @@ static bool _is_preemptable(job_record_t *job_ptr, List preemptee_candidates)
 *Recursively select the node types that can be used in the -N+-n job scenario
 
 * IN: max_nodes    - maximum number of nodes requested
-* IN/OUT: cpu_size    - Number of cpus available for different types of nodes
+* IN/OUT: cpu_size - IN ：The total number of nodes with the number of cores per 
+*						node as the index.
+*					 OUT：The maximum number of nodes of each type that a job can use.
 * IN: min_cpus - Minimum number of cpus used by the job
 * IN: bit_index - Node type index value
 */
 
 static int _select_node_hetpart(uint32_t max_nodes, int *cpu_size, uint32_t min_cpus, int bit_index)
 {
-	int i = bit_index, j, count = 0;
-	int min_nodes_tmp = 0;
-	if(max_nodes<=0){
+	int i = bit_index, j = 0, k = 0, h = 0;
+	int count = 0;
+	int tmp_max_nodes = max_nodes;
+	int tmp_min_cpus = min_cpus;
+	int tmp_max_cpus, tmp_sp_cpus;
+	if(max_nodes <= 0){
 		return count;
 	}
 	while ((i > 0) && (cpu_size[i] <= 0))
@@ -556,29 +561,95 @@ static int _select_node_hetpart(uint32_t max_nodes, int *cpu_size, uint32_t min_
 	if(i <= 0){
 		return count;
 	}
-	if(cpu_size[i] * i >= min_cpus)
-	{
-		min_nodes_tmp = (min_cpus + i -1)/i;
-		if (min_nodes_tmp == max_nodes){
-			count++;
-			min_cpus = min_cpus - (min_nodes_tmp - 1) * i;
-			max_nodes = 1;
-			cpu_size[i] = -1;
-			count += _select_node_hetpart(max_nodes, cpu_size, min_cpus, i-1);
-		}else if (min_nodes_tmp < max_nodes){
-			for(j = i; j > 0; j--){
-				if(cpu_size[j] > 0){
-					cpu_size[j] = -1;
+
+	if(cpu_size[i] >= max_nodes &&  max_nodes * i >= min_cpus){
+		/*The maximum core resources are sufficient for job running*/
+		cpu_size[i] = max_nodes; 
+		count++;
+
+		for(j = i-1; j > 0; j--){
+			if(cpu_size[j] <= 0)
+				continue;
+				/*The maximum number of nodes that can be used by the current resource type*/
+			if(max_nodes > cpu_size[j])
+				k = cpu_size[j];
+			else
+				k = max_nodes;
+			for(; k > 0; k--){
+				if(((k * j) + ((max_nodes - k) * i)) >=   min_cpus){
+					cpu_size[j] = k;
 					count++;
+					break;
 				}
 			}
+			if(k == 0){
+				for(h = j; h > 0; h--){
+					cpu_size[h] = 0;
+				}
+				return count;
+			}
 		}
-	}else if(cpu_size[i] < max_nodes){
-		max_nodes -= cpu_size[i];
-		min_cpus -= cpu_size[i] * i;
-		count += _select_node_hetpart(max_nodes, cpu_size, min_cpus, i-1);
-		if(count > 0){
-			cpu_size[i] = -1;
+	}else if(cpu_size[i] >= max_nodes){
+		/*All resource types are not sufficient for job running*/
+		return count;
+	}else{
+		/*The maximum resource type is not sufficient for job running*/
+		tmp_max_cpus = i;
+		tmp_max_nodes = tmp_max_nodes - cpu_size[i];
+		tmp_min_cpus = tmp_min_cpus - cpu_size[i] * i;
+		/*Calculate the critical value of the node type that satisfies the operation of the job*/
+		for(i = i-1; i > 0; i--){
+			if(cpu_size[i] <= 0)
+				continue;
+			if(cpu_size[i] < tmp_max_nodes){
+				tmp_max_nodes = tmp_max_nodes - cpu_size[i];
+				tmp_min_cpus = tmp_min_cpus - cpu_size[i] * i;
+			}else if(tmp_max_nodes * i >= tmp_min_cpus ){
+				break;
+			}else{
+				return count;
+			}
+		}
+		if(i == 0)
+			return count;
+		tmp_sp_cpus = i;
+		for(; i > 0; i--){
+			if(cpu_size[i] <= 0)
+				continue;
+			/*The maximum number of nodes that can be used by the current resource type*/
+			tmp_max_nodes = max_nodes;
+			tmp_min_cpus = min_cpus;
+			for(j = tmp_max_cpus; j >= tmp_sp_cpus; j--){
+				if(cpu_size[j] <= 0)
+					continue;
+				if(cpu_size[i] + cpu_size[j] < tmp_max_nodes){
+					tmp_max_nodes = tmp_max_nodes - cpu_size[j];
+					tmp_min_cpus = tmp_min_cpus - cpu_size[j] * j;
+				}else {
+					if(cpu_size[i] < tmp_max_nodes)
+						k = cpu_size[i];
+					else
+						k = tmp_max_nodes; 
+					for(; k > 0 && (tmp_max_nodes - k) <= cpu_size[j] ; k--){
+						if((tmp_max_nodes - k) * j  + k * i >= tmp_min_cpus){
+							cpu_size[i] = k;
+							count++;
+							break;
+						}
+					}
+					if(k==0){
+						for(h = i; h > 0; h--){
+							cpu_size[h] = 0;
+						}
+						return count;
+					}else if((tmp_max_nodes - k) > cpu_size[j]){
+						tmp_max_nodes = tmp_max_nodes - cpu_size[j];
+						tmp_min_cpus = tmp_min_cpus - cpu_size[j] * j;
+					}else{
+						break;
+					}
+				}
+			}
 		}
 	}
 	return count;
@@ -596,9 +667,10 @@ static int _select_node_hetpart(uint32_t max_nodes, int *cpu_size, uint32_t min_
 */
 
 static bitstr_t *_job_choose_nodes(job_record_t *job_ptr, bitstr_t *node_map,
-			uint32_t min_nodes,	uint32_t max_nodes,	avail_res_t **avail_res_array)
+			uint32_t min_nodes,	uint32_t max_nodes,	avail_res_t **avail_res_array, bitstr_t *idle_bitmap)
 {
-	int i, i_first, i_last;
+	int i = 0, i_first = 0, i_last = 0, j = 0;
+	int r_first = 0, r_last = 0;
 	bitstr_t *reqmap = NULL;
 	int *cpu_size = NULL, node_count ;
 	bitstr_t *node_bitmap = NULL;
@@ -652,9 +724,46 @@ static bitstr_t *_job_choose_nodes(job_record_t *job_ptr, bitstr_t *node_map,
 		node_count = _select_node_hetpart(max_nodes, cpu_size, job_ptr->details->min_cpus, max_node_cpu);
 		if(node_count > 0){
 			node_bitmap = bit_alloc(node_record_count);
-			for (i = 0; i < node_record_count; i++) {
-				if (bit_test(node_map, i) && cpu_size[avail_res_array[i]->avail_cpus] == -1 ){
-					bit_set(node_bitmap,i);
+			bit_clear_all(node_bitmap);
+			if(reqmap){
+				r_first = bit_ffs(reqmap);
+				if (r_first >= 0){
+					r_last = bit_fls(reqmap);
+				}else{
+					r_last = r_first - 1;
+				}
+				bit_or(node_bitmap, reqmap);
+				for (i = r_first; i <= r_last; i++) {
+    				if (bit_test(node_bitmap, i) && bit_test(node_map, i) && cpu_size[avail_res_array[i]->avail_cpus] > 0){
+						cpu_size[avail_res_array[i]->avail_cpus]--;
+    				}
+    			}
+				if(idle_bitmap){
+					for (i = i_first; i <= i_last; i++) {
+						if (bit_test(node_map, i) && !bit_test(node_bitmap, i) && cpu_size[avail_res_array[i]->avail_cpus] > 0 && bit_test(idle_bitmap, i) ){
+							cpu_size[avail_res_array[i]->avail_cpus]--;
+							bit_set(node_bitmap,i);
+						}
+					}
+				}
+			}else{
+				if(idle_bitmap){
+					for (i = i_first; i <= i_last; i++) {
+						if (bit_test(node_map, i) && cpu_size[avail_res_array[i]->avail_cpus] > 0 && bit_test(idle_bitmap, i) ){
+							cpu_size[avail_res_array[i]->avail_cpus]--;
+							bit_set(node_bitmap,i);
+						}
+					}
+				}
+			}
+			/*If idle resources do not meet the job request, add all bitmaps of the same type to the blacklist.*/
+            for (i = 0; i <= max_node_cpu; i++) {
+				if (cpu_size[i] > 0){
+                    for (j = i_first; j <= i_last; j++) {
+        				if (bit_test(node_map, j) && avail_res_array[j]->avail_cpus == i && !bit_test(node_bitmap, j)){
+        					bit_set(node_bitmap,j);
+        				}
+        			}
 				}
 			}
 		}
@@ -708,16 +817,12 @@ static avail_res_t **_select_nodes(job_record_t *job_ptr, uint32_t min_nodes,
 		     bit_set_count(node_bitmap), min_nodes);
 #endif
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
-		if (test_only && job_ptr->part_ptr && (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART)){
+		if (test_only && job_ptr->part_ptr && (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART) &&
+		 job_ptr->resv_stage != RESV_STAGE_SUBMIT_OR_BACKFILL){
 			/*Not enough selectable nodes*/
 			FREE_NULL_BITMAP(job_ptr->resv_bitmap);
 			job_ptr->resv_bitmap = bit_copy(node_bitmap);
-			if(job_ptr->resv_bitmap){
-				char *_tmp_str = NULL;
-				_tmp_str = bit_fmt_hexmask(job_ptr->resv_bitmap);
-				debug2("%pJ. HetPart: _select_nodes AvailNodes < MinNodes job_ptr->resv_bitmap=%s.", job_ptr, _tmp_str);
-				xfree(_tmp_str);
-			}
+			job_ptr->resv_stage = RESV_STAGE_HETPART_SELECT;
 		}
 #endif
 		return NULL;
@@ -726,10 +831,15 @@ static avail_res_t **_select_nodes(job_record_t *job_ptr, uint32_t min_nodes,
 	core_array_log("_select_nodes/enter", node_bitmap, avail_core);
 #ifdef __METASTACK_OPT_HIGH_THROUGHPUT
 	if (enable_high_throughput &&
+		    (max_nodes == 1 || details_ptr->num_tasks == 1 || details_ptr->num_tasks == details_ptr->ntasks_per_node ) &&
             (req_nodes == 1) &&
             (job_ptr->details && !job_ptr->details->req_node_bitmap) &&
             !(cr_type & CR_LLN) &&
-            (job_ptr->part_ptr && !(job_ptr->part_ptr->flags & PART_FLAG_LLN))) {
+            (job_ptr->part_ptr &&
+#ifdef __METASTACK_NEW_HETPART_SUPPORT            
+			!(job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART) &&
+#endif            
+            !(job_ptr->part_ptr->flags & PART_FLAG_LLN))) {
             log_flag(SELECT_TYPE, "enable_high_throughput:%d, job_ptr->details->min_cpus: %d, rep_nodes: %d", enable_high_throughput, job_ptr->details->min_cpus, req_nodes);
             avail_res_array = _get_res_avail2(job_ptr, node_bitmap, avail_core,
                                          node_usage, cr_type, test_only,
@@ -768,28 +878,24 @@ static avail_res_t **_select_nodes(job_record_t *job_ptr, uint32_t min_nodes,
 		min_nodes = MAX(min_nodes, i);
 	}
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
-	if (test_only && job_ptr->part_ptr && (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART)){
+	if (test_only && job_ptr->part_ptr && (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART) &&
+	 job_ptr->resv_stage != RESV_STAGE_SUBMIT_OR_BACKFILL){
 		/*The -N+-n scenario is processed separately from the other scenarios*/
 		if((details_ptr->min_nodes == details_ptr->max_nodes) && details_ptr->num_tasks &&
 			!details_ptr->ntasks_per_node && details_ptr->mc_ptr && 
 			(details_ptr->mc_ptr->ntasks_per_core ==  INFINITE16) && 
 			(details_ptr->mc_ptr->ntasks_per_socket ==  INFINITE16)){
-			FREE_NULL_BITMAP(job_ptr->resv_bitmap);
-			job_ptr->resv_bitmap = _job_choose_nodes(job_ptr, node_bitmap, min_nodes,  max_nodes, avail_res_array);
-			if(job_ptr->resv_bitmap){
-				char *_tmp_str = NULL;
-				_tmp_str = bit_fmt_hexmask(job_ptr->resv_bitmap);
-				debug2("%pJ. HetPart: _select_nodes _job_choose_nodes job_ptr->resv_bitmap=%s.", job_ptr, _tmp_str);
-				xfree(_tmp_str);
-			}
+				bitstr_t *node_bitmap_t = NULL;
+				node_bitmap_t = _job_choose_nodes(job_ptr, node_bitmap, min_nodes,  max_nodes, avail_res_array,job_ptr->resv_bitmap);
+				FREE_NULL_BITMAP(job_ptr->resv_bitmap);
+				job_ptr->resv_bitmap = node_bitmap_t;
+				job_ptr->resv_stage = RESV_STAGE_HETPART_SELECT;
 		}else{
 			FREE_NULL_BITMAP(job_ptr->resv_bitmap);
 			job_ptr->resv_bitmap = bit_copy(node_bitmap);
-			if(job_ptr->resv_bitmap){
-				char *_tmp_str = NULL;
-				_tmp_str = bit_fmt_hexmask(job_ptr->resv_bitmap);
-				debug2("%pJ. HetPart: _select_nodes job_ptr->resv_bitmap=%s.", job_ptr, _tmp_str);
-				xfree(_tmp_str);
+			job_ptr->resv_stage = RESV_STAGE_HETPART_SELECT;
+			if(details_ptr->req_node_bitmap){
+				bit_or(job_ptr->resv_bitmap, details_ptr->req_node_bitmap);
 			}
 		}
 	}

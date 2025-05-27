@@ -414,6 +414,14 @@ extern int acct_gather_parse_freq(int type, char *freq)
 			freq_int = _get_int(sub_str + 5);
 		break;
 #endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	case PROFILE_APPTYPE:
+		if ((sub_str = xstrcasestr(freq, "apptype="))){
+			freq_int = _get_int(sub_str + 8);
+			freq_int = freq_int > JOBACCTGATHER_APPTYPE_DURATION ? JOBACCTGATHER_APPTYPE_DURATION : freq_int;
+		}
+		break;
+#endif
 	default:
 		fatal("Unhandled profile option %d please update "
 		      "slurm_acct_gather.c "
@@ -422,6 +430,106 @@ extern int acct_gather_parse_freq(int type, char *freq)
 
 	return freq_int;
 }
+
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+/* whether the job step enables thread support watchdog */
+extern bool acct_gather_check_acct_watch_dog_task(uint32_t stepd, bool *head_node, 
+										launch_tasks_request_msg_t *msg)
+{
+	bool watch_dog_start = false;
+	slurm_mutex_lock(&step_gather.lock);
+	int tmp = step_gather.parent_rank_gather;
+	if(tmp == -1)
+		*head_node = true;
+	slurm_mutex_unlock(&step_gather.lock);
+
+	if(msg == NULL)
+		return watch_dog_start;
+
+	if((msg->period > 0) && msg->watch_dog && msg->watch_dog_script) {
+		
+		if(msg->enable_all_nodes == true) {
+			/*enable all nodes and all job steps*/
+			watch_dog_start = true;
+
+		} else if(((msg->enable_all_nodes == false) && (msg->enable_all_stepds == true) && (tmp == -1))) {
+			/*enable the head node of all job steps*/
+			watch_dog_start = true;
+			//*head_node = true;
+		} else if((msg->enable_all_nodes == false) && ((msg->enable_all_stepds == false)) && (tmp == -1)) {
+			/*use srun/sbatch start the data stepd*/
+			if((msg->style_step  == 0x010) && (stepd == 0))
+				watch_dog_start = true;
+			/*use salloc submit job*/
+			if((msg->style_step  == 0x100) && (stepd == SLURM_EXTERN_CONT))
+				watch_dog_start = true;
+			//*head_node = true;
+		}
+	}
+
+ 	if(msg->watch_dog) {
+		if((msg->period <= 0)) {
+			debug2("The %s configured period(%d) has an issue, "
+				"but this error will not affect the job.",msg->watch_dog,msg->period);
+		}
+		if(msg->watch_dog_script == NULL) {
+			debug2("The current %s has not specified an execution script, "
+			            "however, this error will not affect the job.",msg->watch_dog);
+		}
+	}
+
+	if(watch_dog_start) {
+
+		if ((msg->watch_dog_script == NULL) ||  (msg->watch_dog_script[0] == '\0')
+					|| (msg->watch_dog_script[0] != '/')) {
+			debug2("%s: no script specified or is not fully qualified pathname (%s)", 
+														__func__, msg->watch_dog_script);
+			watch_dog_start = false;
+			return watch_dog_start;
+		}
+
+		if (access(msg->watch_dog_script, R_OK | X_OK) < 0) {
+			debug2("%s:watch dog (%s) can not be executed",__func__, msg->watch_dog_script);
+			watch_dog_start = false;
+			return watch_dog_start;
+		}
+	}
+
+	return watch_dog_start;
+}
+
+
+extern bool acct_gather_check_acct_watch_dog_batch(uint32_t stepd,
+										batch_job_launch_msg_t *msg)
+{
+	bool watch_dog_start = false;
+	if(msg == NULL)
+		return watch_dog_start;
+
+	if((msg->period > 0) && msg->watch_dog && msg->watch_dog_script) {
+		watch_dog_start = true;
+	}
+
+	if(watch_dog_start) {
+		if ((msg->watch_dog_script[0] == '\0')
+					|| (msg->watch_dog_script[0] != '/')) {
+			debug("%s: no script specified or is not fully qualified pathname (%s)", 
+														__func__, msg->watch_dog_script);
+			watch_dog_start = false;
+			return watch_dog_start;
+		}
+		if (access(msg->watch_dog_script, R_OK | X_OK) < 0) {
+			debug("%s:watch dog (%s) can not be executed",__func__, msg->watch_dog_script);
+			watch_dog_start = false;
+			return watch_dog_start;
+		}
+	}
+
+	return watch_dog_start;
+}
+
+#endif
+
 
 extern int acct_gather_check_acct_freq_task(uint64_t job_mem_lim,
 					    char *acctg_freq)

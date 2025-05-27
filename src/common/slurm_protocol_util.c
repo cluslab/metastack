@@ -75,7 +75,8 @@ int check_header_version(header_t * header)
          * should check all supported META_PROTOCOL_VERSION and official version.
          */
 		if ((header->version != SLURM_PROTOCOL_VERSION)     &&
-			(header->version != META_2_1_PROTOCOL_VERSION)  &&
+            (header->version != META_2_2_PROTOCOL_VERSION)  &&		
+            (header->version != META_2_1_PROTOCOL_VERSION)  &&
             (header->version != META_2_0_PROTOCOL_VERSION)  &&
 		    (header->version != SLURM_22_05_PROTOCOL_VERSION)     &&
 		    (header->version != SLURM_ONE_BACK_PROTOCOL_VERSION) &&
@@ -113,7 +114,8 @@ int check_header_version(header_t * header)
              * should check all supported META_PROTOCOL_VERSION and official version.
              */
 			if ((header->version != SLURM_PROTOCOL_VERSION)     &&
-				(header->version != META_2_1_PROTOCOL_VERSION)  &&
+                (header->version != META_2_2_PROTOCOL_VERSION)  &&			
+                (header->version != META_2_1_PROTOCOL_VERSION)  &&
                 (header->version != META_2_0_PROTOCOL_VERSION)  &&
 				(header->version != SLURM_22_05_PROTOCOL_VERSION)     &&
 				(header->version != SLURM_ONE_BACK_PROTOCOL_VERSION) &&

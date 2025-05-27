@@ -190,7 +190,10 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 	}
 #endif
 
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if (opt_local->watch_dog)
+		step_req->watch_dog = xstrdup(opt_local->watch_dog);
+#endif
 	step_req->exc_nodes = xstrdup(opt_local->exclude);
 	step_req->features = xstrdup(opt_local->constraint);
 
