@@ -3533,6 +3533,17 @@ static int  _restore_part_state(List old_part_list, char *old_def_part_name,
 					part_ptr->flags &= (~PART_FLAG_LLS);
 			}
 #endif
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+			if ((part_ptr->meta_flags & PART_METAFLAG_HETPART) !=
+				(old_part_ptr->meta_flags & PART_METAFLAG_HETPART)) {
+				error("Partition %s HetPart differs from "
+					"slurm.conf", part_ptr->name);
+				if (old_part_ptr->meta_flags & PART_METAFLAG_HETPART)
+					part_ptr->meta_flags |= PART_METAFLAG_HETPART;
+				else
+					part_ptr->meta_flags &= (~PART_METAFLAG_HETPART);
+			}
+#endif	
 #ifdef __METASTACK_NEW_PART_RBN
 			if ((part_ptr->meta_flags & PART_METAFLAG_RBN) !=
 			    (old_part_ptr->meta_flags & PART_METAFLAG_RBN)) {

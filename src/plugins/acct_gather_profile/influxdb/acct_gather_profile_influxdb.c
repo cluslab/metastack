@@ -378,11 +378,12 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType
 #endif
 	DEF_TIMERS;
 	START_TIMER;
-	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
-		error("%s %s: curl_global_init: %m", plugin_type, __func__);
-		rc = SLURM_ERROR;
-		goto cleanup_global_init;
-	} else if ((curl_handle = curl_easy_init()) == NULL) {
+	// if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
+	// 	error("%s %s: curl_global_init: %m", plugin_type, __func__);
+	// 	rc = SLURM_ERROR;
+	// 	goto cleanup_global_init;
+	// } else 
+	if ((curl_handle = curl_easy_init()) == NULL) {
 		error("%s %s: curl_easy_init: %m", plugin_type, __func__);
 		rc = SLURM_ERROR;
 		goto cleanup_easy_init;
@@ -454,8 +455,8 @@ cleanup:
 	xfree(url);
 cleanup_easy_init:
 	curl_easy_cleanup(curl_handle);
-cleanup_global_init:
-	curl_global_cleanup();
+// cleanup_global_init:
+// 	curl_global_cleanup();
 	END_TIMER;
 	log_flag(PROFILE, "%s %s: took %s to send data ",
 		 plugin_type, __func__, TIME_STR);
@@ -743,6 +744,13 @@ static int _send_data(const char *data, RPType type)
 	DEF_TIMERS;
 	START_TIMER;
 
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+	if ((curl_handle = curl_easy_init()) == NULL) {
+		error("%s %s: curl_easy_init: %m", plugin_type, __func__);
+		rc = SLURM_ERROR;
+		goto cleanup_easy_init;
+	}
+#else
 	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
 		error("%s %s: curl_global_init: %m", plugin_type, __func__);
 		rc = SLURM_ERROR;
@@ -752,6 +760,8 @@ static int _send_data(const char *data, RPType type)
 		rc = SLURM_ERROR;
 		goto cleanup_easy_init;
 	}
+#endif
+
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	rt_policy = _parse_rt_policy(influxdb_conf.rt_policy, type);
 	/* If open ProfileInfluxDBSeriesReduce, need to increase the time accuracy in order to avoid data overwrite */
@@ -825,9 +835,10 @@ cleanup:
 	xfree(url);
 cleanup_easy_init:
 	curl_easy_cleanup(curl_handle);
-cleanup_global_init:
-	curl_global_cleanup();
-
+#ifdef 	__METASTACK_LOAD_ABNORMAL
+// cleanup_global_init:
+// 	curl_global_cleanup();
+#endif
 	END_TIMER;
 	log_flag(PROFILE, "%s %s: took %s to send data",
 		 plugin_type, __func__, TIME_STR);
@@ -857,6 +868,13 @@ extern int init(void)
 	if (!running_in_slurmstepd())
 		return SLURM_SUCCESS;
 
+#ifdef __METASTACK_LOAD_ABNORMAL
+	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
+		error("%s %s: curl_global_init: %m", plugin_type, __func__);
+		return SLURM_ERROR;
+	}
+#endif
+
 	datastr = xmalloc(BUF_SIZE);
 #ifdef __METASTACK_LOAD_ABNORMAL
 	stepd_datastr = xmalloc(BUF_SIZE);
@@ -875,7 +893,9 @@ extern int init(void)
 extern int fini(void)
 {
 	debug3("%s %s called", plugin_type, __func__);
-
+#ifdef __METASTACK_LOAD_ABNORMAL
+	curl_global_cleanup();
+#endif
 	_free_tables();
 	xfree(datastr);
 	xfree(influxdb_conf.host);

@@ -53,6 +53,7 @@
 #ifdef __METASTACK_OPT_CACHE_QUERY
 #include "src/slurmctld/locks.h"
 #include "src/common/list.h"
+#include "src/common/select.h"
 #endif
 
 /* Maximum delay for pending state save to be processed, in seconds */
@@ -377,11 +378,24 @@ static void _update_cache_record()
 {
 	slurmctld_lock_t copy_write_lock = {
 			NO_LOCK, WRITE_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
+	slurmctld_lock_t node_write_lock = {
+		READ_LOCK, NO_LOCK, WRITE_LOCK, READ_LOCK, NO_LOCK };
+	slurmctld_lock_t data_read_lock = {
+			READ_LOCK, READ_LOCK, READ_LOCK, READ_LOCK, NO_LOCK };
 	DEF_TIMERS;
 	START_TIMER;
+	lock_slurmctld(node_write_lock);
+	select_g_select_nodeinfo_set_all();
+	unlock_slurmctld(node_write_lock);
+	
+	lock_slurmctld(data_read_lock);
 	copy_all_part_state();
 	copy_all_node_state();
 	copy_all_job_state();
+	if (list_count(cache_queue->work)){
+		list_flush(cache_queue->work);
+	}
+	unlock_slurmctld(data_read_lock);
 	END_TIMER2(__func__);
 	debug2("%s: CACHE_QUERY copy_all_state, %s", __func__, TIME_STR);
 	lock_cache_query(copy_write_lock);
@@ -442,9 +456,6 @@ extern void *slurmctld_state_copy(void *no_data)
 		cache_queue->copy_all_data = false;
 	}
 	slurm_mutex_unlock(&cache_queue->mutex);
-	if (list_count(cache_queue->work)){
-		list_flush(cache_queue->work);
-	}
 	_update_cache_record();
 
 	slurm_mutex_lock(&query_mgr_lock);
@@ -462,9 +473,6 @@ extern void *slurmctld_state_copy(void *no_data)
 		} else if (cache_queue->copy_all_data){
 			cache_queue->copy_all_data = false;
 			slurm_mutex_unlock(&cache_queue->mutex);
-			if (list_count(cache_queue->work)){
-				list_flush(cache_queue->work);
-			}
 			_update_cache_record();
 			continue;
 		}

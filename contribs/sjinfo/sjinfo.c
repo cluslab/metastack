@@ -32,7 +32,7 @@
 
 /*****************************************************************************\
  *  Modification history
- *
+ *  
 \*****************************************************************************/
 #include <stdio.h>
 #include <time.h>
@@ -54,6 +54,7 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <math.h> 
 #include "sjinfo.h"
 
 /* Names for the values of the `has_arg' field of `struct option'.  */
@@ -80,9 +81,9 @@
 #define list_free(_l) xfree(l)
 #define list_node_alloc() xmalloc(sizeof(struct listNode))
 #define list_iterator_alloc() xmalloc(sizeof(struct listIterator))
+#define LINE_WIDTH 103
 
-
-
+#define NOT_FIND -1
 //struct tm *localtime_r(const time_t *timep, struct tm *result);
 
 #ifndef MAX
@@ -103,6 +104,7 @@
 #define INFLUXDB_OVERALL        0x0000000000000100
 #define INFLUXDB_EVENT_FLAG     0x0000000000001000
 #define INFLUXDB_APPTYPE        0X0000000000010000
+#define INFLUXDB_DISPLAY        0x0000000000100000
 #define INFLUXDB_ALL            0x0000000000010111
 
 // #define xstrfmtcat(__p, __fmt, args...)	_xstrfmtcat(&(__p), __fmt, ## args)
@@ -123,7 +125,8 @@ enum {
 	UNIT_EVENT,
     UNIT_OVERALL,
     UNIT_APPTYPE,
-    UNIT_RUNJOB
+    UNIT_RUNJOB,
+    UNIT_BRIEF,
 };
 
 enum {
@@ -177,36 +180,37 @@ typedef struct {
     bool desc_set;      /* output data in reverse order*/
     bool only_run_job;  /* querying for running jobs*/
     bool show_jobstep_apptype;  /* Displays the apptype information for each job step */
+    bool display;        /*user show job */ 
 } sjinfo_parameters_t;
 
 typedef struct {
    char *  username;
    /*stepd*/ 
-   char *time;
+   time_t time;
    unsigned long jobid;
    int stepid;
    double stepcpu; 
    double stepcpumin; 
    double stepcpumax;  
    double stepcpuave;
-   unsigned long stepmem;
-   unsigned long stepmemmin;
-   unsigned long stepmemmax;
-   unsigned long stepvmem;
-   unsigned long stepvmemmin;
-   unsigned long stepvmemmax; 
-   unsigned long steppages;
+   unsigned long int stepmem;
+   unsigned long int stepmemmin;
+   unsigned long int stepmemmax;
+   unsigned long int stepvmem;
+   unsigned long int stepvmemmin;
+   unsigned long int stepvmemmax; 
+   unsigned long int steppages;
    /*event*/
    unsigned long cputhreshold;
-   unsigned long start;
-   unsigned long end;
+   time_t start;
+   time_t end;
    int type1;   // Marking cpu frequency anomalies
    int type2;   // identify process anomalies
    int type3;   // identifies node communication anomalies
    char *type;
    /* overall */
-   unsigned long end_last;
-   unsigned long start_last;
+   time_t end_last;
+   time_t start_last;
    unsigned long sum_cpu;
    unsigned long sum_pid;
    unsigned long sum_node;
@@ -215,8 +219,9 @@ typedef struct {
    char *apptype_step;
    char *apptype;
    unsigned long cputime;
+   long long int req_mem;
+   long long int alloc_cpu;
 } interface_sjinfo_t;
-
 
 /* Log out of memory without message buffering */
 void log_oom(const char *file, int line)
@@ -404,7 +409,7 @@ typedef struct listNode * ListNode;
 sjinfo_parameters_t params;
 #define FORMAT_STRING_SIZE 34
 char outbuf[FORMAT_STRING_SIZE];
-
+long int jobid_digit = 0;
 #define list_alloc() xmalloc(sizeof(struct xlist))
 /*
 *External application output data memory, used to store encrypted data
@@ -424,6 +429,9 @@ char data3[32] = {0};
 int print_fields_parsable_print = 0;
 int print_fields_have_header = 1;
 char *fields_delimiter = NULL;
+
+/*display table*/
+List print_display_list = NULL;
 
 /*stepd table*/
 List print_fields_list = NULL;
@@ -549,6 +557,9 @@ int xstrcmp(const char *s1, const char *s2)
 
 void print_fields_header(List print_fields_list);
 void field_split(char *field_str, print_field_t* fields_tmp, List sj_list);
+int parse_sacct_line(const char *line, int count, List print_head_list);
+
+int sacct_get();
 /**
  * @brief Parses the runtime policy string and extracts the policy value matching the specified type.
  *
@@ -834,6 +845,76 @@ static void *_list_node_create(List l, ListNode *pp, void *x)
 	return x;
 }
 
+/* safe strcasecmp */
+int xstrcasecmp(const char *s1, const char *s2)
+{
+	if (!s1 && !s2)
+		return 0;
+	else if (!s1)
+		return -1;
+	else if (!s2)
+		return 1;
+	else
+		return strcasecmp(s1, s2);
+}
+
+extern int slurm_find_char_in_list(void *x, void *key)
+{
+	sacct_entry_t *get_rec = (sacct_entry_t *)x;
+	long long int stepd_id = *(long long int *)key;
+
+	if (get_rec->stepdid == stepd_id)
+		return 1;
+
+	return 0;
+}
+
+static void * _list_next_locked(ListIterator i)
+{
+	ListNode p;
+
+	if ((p = i->pos))
+		i->pos = p->next;
+	if (*i->prev != p)
+		i->prev = &(*i->prev)->next;
+
+	return (p ? p->data : NULL);
+}
+
+static void *_list_find_first_locked(List l, ListFindF f, void *key)
+{
+    ListNode p;
+	for (p = l->head; p; p = p->next) {
+		if (f(p->data, key))
+			return p->data;
+	}
+
+	return NULL;
+}
+
+
+static void *_list_find_first_lock(List l, ListFindF f, void *key)
+{
+	void *v = NULL;
+
+	assert(l != NULL);
+	assert(f != NULL);
+	assert(l->magic == LIST_MAGIC);
+
+	v = _list_find_first_locked(l, f, key);
+
+
+	return v;
+}
+
+/* list_find()
+ */
+void *
+list_find_first (List l, ListFindF f, void *key)
+{
+    return _list_find_first_lock(l, f, key);
+}
+
 /* _list_append_locked()
  *
  * Append an item to the list. The function assumes
@@ -1064,19 +1145,6 @@ list_iterator_create (List l)
 
 	return i;
 }
-
-static void * _list_next_locked(ListIterator i)
-{
-	ListNode p;
-
-	if ((p = i->pos))
-		i->pos = p->next;
-	if (*i->prev != p)
-		i->prev = &(*i->prev)->next;
-
-	return (p ? p->data : NULL);
-}
-
 
 /* list_next()
  */
@@ -1718,8 +1786,11 @@ char* influxdb_connect(slurm_influxdb *data, const char* sql, int type)
         char *url1 = (char*)xmalloc(200);
         char *url2 = (char*)xmalloc(100 + strlen(sql));
         char *policy = _parse_rt_policy(data->policy, type);
-        sprintf(url1, "%s/query?db=%s&rp=%s&precision=s", data->host, data->database, policy);
-        if(policy) xfree(policy);
+        if (params.display)
+            sprintf(url1, "%s/query?db=%s&rp=%s&epoch=s", data->host, data->database, policy);
+        else
+            sprintf(url1, "%s/query?db=%s&rp=%s&precision=s", data->host, data->database, policy);
+        xfree(policy);
         sprintf(url2,"q=%s;",sql);
         curl_easy_setopt(curl, CURLOPT_URL, url1);
 
@@ -1878,15 +1949,6 @@ void parse_json_tag(const char *response) {
         }
     }
 
-        // ListIterator itr = NULL;
-        // spost_record_t* sjinfo_print = NULL;
-        // itr = list_iterator_create(print_query_value_list);
-        
-        // int count = 0;
-		// while ((sjinfo_print = list_next(itr))) {
-        //      count++;
-        // }
-        // list_iterator_destroy(itr);   
     json_decref(root);
 }
 
@@ -1903,22 +1965,70 @@ extern void destroy_query_key_pair(void *object)
 	}
 }
 
-/*Parse JSON data*/
+extern void destroy_brief_key_pair(void *object)
+{
+	sacct_entry_t *key_brief_ptr = (sacct_entry_t *)object;
+
+	if (key_brief_ptr) { 
+		xfree(key_brief_ptr);
+	}
+}
+
+void free_interface_sjinfo(interface_sjinfo_t* iinfo) {
+    if (iinfo == NULL)
+        return;
+    xfree(iinfo->username);
+    xfree(iinfo->type);
+    xfree(iinfo->apptype_cli);
+    xfree(iinfo->apptype_step);
+    xfree(iinfo->apptype);
+    xfree(iinfo);
+}
+
+/**
+ * @brief Parse the response string in JSON format and fill the extracted data into the corresponding global 
+ *        linked list for the display of job resource usage information.
+ *
+ * @param response     JSON strings, typically from InfluxDB query results.
+ * @param username     The username of the current task owner, used to fill the `username` field in the result structure.
+ * @param flag         Control the parsing mode, and the following values are supported:
+ *                     - UNIT_STEP：Resource consumption information for job step
+ *                     - UNIT_BRIEF：Brief information, combined with the fields of `sacct`.
+ *                     - UNIT_APPTYPE：Extract Application type data.
+ *                     - UNIT_EVENT：Extract Event type data.
+ * @param current_time Current timestamp.
+ *
+ */
 void parse_json(const char *response,  char *username, int flag, time_t current_time) {
     json_t *root = NULL;
     json_error_t error;
-    size_t r;
+    size_t r = 0;
+    List print_head_list = NULL;
+    long long int reqmem = 0;
+    // ListIterator itr = NULL;
+
     root = json_loads(response, 0, &error);
     if (!root) {
         fprintf(stderr, "error: on line %d: %s\n", error.line, error.text);
         return;
     }
+
+    if(flag == UNIT_BRIEF) {
+        print_head_list = list_create(destroy_brief_key_pair);
+        sacct_get(print_head_list);
+        int defaut_step = -1; //sacct 查询出的 jobid那一栏，作业步赋值是-1
+        sacct_entry_t *sacct_field_tmp = list_find_first(print_head_list, slurm_find_char_in_list, &defaut_step);
+        if(sacct_field_tmp)
+            reqmem = sacct_field_tmp->reqmem;
+        else
+            reqmem = NOT_FIND;
+     }
     /*Get the "results" array*/ 
     json_t *results = json_object_get(root, "results");
     size_t num_results = json_array_size(results);
     /*Iterate through each result*/ 
     for ( r = 0; r < num_results; ++r) {
-        size_t s;
+        size_t s = 0;
         json_t *result = json_array_get(results, r);
         json_t *series = json_object_get(result, "series");
         size_t num_series = json_array_size(series);
@@ -1932,8 +2042,7 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
             json_t *columns = json_object_get(series_element, "columns");
             json_t *values = json_object_get(series_element, "values");
             iinfo_overall = xmalloc(sizeof(*iinfo_overall));
-            iinfo_overall->time = xmalloc(60);
-            iinfo_overall->username = xmalloc(60);
+            iinfo_overall->username = xmalloc(strlen(username) + 1);
             if(jobid)
                 iinfo_overall->jobid = atoi(jobid);
             if(step)
@@ -1942,25 +2051,24 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
             iinfo_overall->sum_pid = 0;
             iinfo_overall->sum_node = 0;
             strcpy(iinfo_overall->username, username);
-
+            
             if(flag == UNIT_STEP) {
-                size_t i,j;
-                size_t num_rows = json_array_size(values);
+                /* Analyze the data of Stepd measurement */
+                size_t i =0, j = 0, num_rows = json_array_size(values);
                 i = params.desc_set ? num_rows - 1 : 0;
                 while(i < num_rows){
                     json_t *row = json_array_get(values, i);
                     interface_sjinfo_t *iinfo = xmalloc(sizeof(*iinfo));  
-
-                    iinfo->time = xmalloc(60);
-                    iinfo->username = xmalloc(60);
+                    iinfo->username = xmalloc(strlen(username) + 1);
                     if(jobid)
                         iinfo->jobid = atoi(jobid);
                     if(step)
                         iinfo->stepid = atoi(step);
                     strcpy(iinfo->username, username);
-
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
+                        if (value == NULL || value->type == JSON_NULL)
+                            continue;
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
                         if ((xstrcmp(tmp_name, "last_stepavecpu") == 0)) {
                             iinfo->stepcpuave = json_real_value(value);
@@ -1989,16 +2097,53 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     list_append(print_value_list, iinfo);
                     (params.desc_set ? --i : ++i);
                 }
-            } else if(flag == UNIT_APPTYPE) {
-                size_t i,j;
-                size_t num_rows = json_array_size(values);
+            } else if (flag == UNIT_BRIEF && print_head_list && (list_count(print_head_list)>0)) { 
+                size_t i = 0, j = 0, num_rows = json_array_size(values);
+                i = params.desc_set ? num_rows - 1 : 0;
+                while(i < num_rows){
+                    json_t *row = json_array_get(values, i);
+                    interface_sjinfo_t *iinfo = xmalloc(sizeof(*iinfo)); 
+                    iinfo->username = xmalloc(strlen(username) + 1);
+                    if(jobid)
+                        iinfo->jobid = atoi(jobid);
+                    if(step)
+                        iinfo->stepid = atoi(step);
+                    strcpy(iinfo->username, username);
+                    iinfo->req_mem = reqmem;
+                    for (j = 0; j < json_array_size(columns); ++j) {
+                        json_t *value = json_array_get(row, j);
+                        if (value == NULL || value->type == JSON_NULL)
+                            continue;
+                        const char * tmp_name = json_string_value(json_array_get(columns, j));
+                        if (xstrcmp(tmp_name, "time") == 0) {
+                            iinfo->time = (time_t)json_integer_value(value);
+                        } else if ((xstrcmp(tmp_name, "stepcpu") == 0)) {
+                            iinfo->stepcpu = json_real_value(value);
+                        } else if (xstrcmp(tmp_name, "stepmem") == 0) {
+                            iinfo->stepmem = json_integer_value(value);
+                        } 
+                    }
+                    long long int tmp = iinfo->stepid;
+                    sacct_entry_t *sacct_field_tmp = list_find_first(print_head_list, slurm_find_char_in_list, &tmp);
+                    if(!sacct_field_tmp) {
+                        (params.desc_set ? --i : ++i);
+                        free_interface_sjinfo(iinfo);
+                        continue; 
+                    }
+                    iinfo->alloc_cpu = sacct_field_tmp->alloc_cpu;
+                    list_append(print_display_list, iinfo);
+                    (params.desc_set ? --i : ++i);
+                }
+               
+            } else if (flag == UNIT_APPTYPE) {
+                /* Analyze the data of Apptype measurement */
+                size_t i = 0, j = 0, num_rows = json_array_size(values);
+                uint64_t max_cputime = 0; /* Keep the maximum value of cputime */
+                char* max_username = NULL, *max_apptype = NULL;  /* The process name and user name corresponding to the maximum value of cputime */
 
-                uint64_t max_cputime = 0; /* 保留cputime的最大值 */
-                char* max_username = NULL;
-                char* max_apptype = NULL;  /* cputime最大值对应的进程名称 */
                 interface_sjinfo_t *iinfo_job = xmalloc(sizeof(*iinfo_job));
-                iinfo_job->time = xmalloc(60);
-                iinfo_job->username = xmalloc(60);
+                iinfo_job->username = xmalloc(strlen(username) + 1);
+
                 if(jobid)
                     iinfo_job->jobid = atoi(jobid);
                 if(step)
@@ -2010,7 +2155,6 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     json_t *row = json_array_get(values, i);
                     interface_sjinfo_t *iinfo = xmalloc(sizeof(*iinfo));  
 
-                    iinfo->time = xmalloc(60);
                     if(jobid)
                         iinfo->jobid = atoi(jobid);
                     if(step)
@@ -2018,6 +2162,8 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
 
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
+                        if (value == NULL || value->type == JSON_NULL)
+                            continue;
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
                         if ((xstrcmp(tmp_name, "apptype_cli")) == 0) {
                             iinfo->apptype_cli = xstrdup(json_string_value(value));
@@ -2028,69 +2174,43 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                         } else if (xstrcmp(tmp_name, "step") == 0) {
                             iinfo->stepid = (int)strtol(json_string_value(value), NULL, 10);
                         } else if (xstrcmp(tmp_name, "username") == 0) {
+                            xfree(iinfo->username);
                             iinfo->username = xstrdup(json_string_value(value));
                         }
                     }
                     if (iinfo && iinfo->cputime >= max_cputime) {
                         max_cputime = iinfo->cputime;
-                        if (max_apptype) 
-                            xfree(max_apptype);
+                        xfree(max_apptype);
                         max_apptype = xstrdup(iinfo->apptype_step);
-                        if (max_username) 
-                            xfree(max_username);
+                        xfree(max_username);
                         max_username = xstrdup(iinfo->username);
                     }
-                    if (params.level & INFLUXDB_APPTYPE) {
-                        if (params.show_jobstep_apptype) {
-                            list_append(print_apptype_value_list, iinfo);
-                        } else {
-                            xfree(iinfo->time);
-                            xfree(iinfo->username);
-                            xfree(iinfo->apptype_cli);
-                            xfree(iinfo->apptype_step);
-                            xfree(iinfo);
-                        }
+                    if ((params.level & INFLUXDB_APPTYPE) && params.show_jobstep_apptype) {
+                        list_append(print_apptype_value_list, iinfo);
                     } else {
-                        xfree(iinfo->time);
-                        xfree(iinfo->username);
-                        xfree(iinfo->apptype_cli);
-                        xfree(iinfo->apptype_step);
-                        xfree(iinfo);
+                        free_interface_sjinfo(iinfo);
                     }
                     (params.desc_set ? --i : ++i);
                 }
-                if (!params.show_jobstep_apptype) {
-                    if (iinfo_job->apptype) 
-                        xfree(iinfo_job->apptype);
-                    iinfo_job->apptype = xstrdup(max_apptype);
-                    if (iinfo_job->username) 
-                        xfree(iinfo_job->username);
-                    iinfo_job->username = xstrdup(max_username);
-                    if (params.level & INFLUXDB_APPTYPE) {
-                        list_append(print_apptype_job_value_list, iinfo_job);
-                    } else {
-                        xfree(iinfo_job->time);
-                        xfree(iinfo_job->username);
-                        xfree(iinfo_job->apptype);
-                        xfree(iinfo_job);
-                    }
-                } else {
-                    xfree(iinfo_job->time);
-                    xfree(iinfo_job->username);
+                if (!params.show_jobstep_apptype && params.level & INFLUXDB_APPTYPE) {
                     xfree(iinfo_job->apptype);
-                    xfree(iinfo_job);
+                    iinfo_job->apptype = xstrdup(max_apptype);
+                    xfree(iinfo_job->username);
+                    iinfo_job->username = xstrdup(max_username);
+                    list_append(print_apptype_job_value_list, iinfo_job);
+                } else {
+                    free_interface_sjinfo(iinfo_job);
                 }
                 xfree(max_apptype);
                 xfree(max_username);
-            } else if(flag == UNIT_EVENT) {
-                size_t i,j;
-                size_t num_rows = json_array_size(values);
+            } else if (flag == UNIT_EVENT) {
+                /* Analyze the data of Event measurement */
+                size_t i = 0, j = 0, num_rows = json_array_size(values);
                 i = params.desc_set ? num_rows - 1 : 0;
                 while(i < num_rows){
                     json_t *row = json_array_get(values, i);
                     interface_sjinfo_t *iinfo = xmalloc(sizeof(*iinfo));
-                    iinfo->time = xmalloc(60);
-                    iinfo->username = xmalloc(60);
+                    iinfo->username = xmalloc(strlen(username) + 1);
                     if(jobid)
                         iinfo->jobid = atoi(jobid);
                     if(step)
@@ -2098,9 +2218,7 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     strcpy(iinfo->username, username);
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
-                        if (value == NULL)
-                            continue;
-                        if (value->type == JSON_NULL)
+                        if (value == NULL || value->type == JSON_NULL)
                             continue;
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
                         if (xstrcmp(tmp_name, "stepcpu") == 0) {
@@ -2114,11 +2232,11 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                         } else if (xstrcmp(tmp_name, "cputhreshold") == 0) {
                             iinfo->cputhreshold = (long long)json_integer_value(value);
                         } else if (xstrcmp(tmp_name, "start") == 0) {
-                            iinfo->start = (unsigned long)json_integer_value(value);
-                            iinfo_overall->start_last = ((unsigned long)json_integer_value(value) > iinfo_overall->start_last) ? (unsigned long)json_integer_value(value) : iinfo_overall->start_last;
+                            iinfo->start = (time_t)json_integer_value(value);
+                            iinfo_overall->start_last = MAX(iinfo->start, iinfo_overall->start_last);
                         } else if (xstrcmp(tmp_name, "end") == 0) {
-                            iinfo->end = (unsigned long)json_integer_value(value);
-                            iinfo_overall->end_last = ((unsigned long)json_integer_value(value) > iinfo_overall->end_last) ? (unsigned long)json_integer_value(value) : iinfo_overall->end_last;
+                            iinfo->end = (time_t)json_integer_value(value);
+                            iinfo_overall->end_last = MAX(iinfo->end, iinfo_overall->end_last);
                         } else if (xstrcmp(tmp_name, "tag_type1") == 0) {
                             const char *type1 = json_string_value(value);
                             if (type1)
@@ -2161,66 +2279,38 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                         }
                         list_append(print_events_value_list, iinfo);
                     } else {
-                        xfree(iinfo->time);
-                        xfree(iinfo->username);
-                        xfree(iinfo->type);
-                        xfree(iinfo);
+                        free_interface_sjinfo(iinfo);
                     }
 
                     (params.desc_set ? --i : ++i);
                 }
 
-            } else if(flag == UNIT_RUNJOB) {
-                size_t i, j;
-                size_t num_rows = json_array_size(values);
+            } else if (flag == UNIT_RUNJOB) {
+                /* According to the Stepd measurement, obtain the list of running jobs */
+                size_t i = 0, j = 0, num_rows = json_array_size(values);
                 i = params.desc_set ? num_rows - 1 : 0;
-                while(i < num_rows){
+                while(i < num_rows) {
                     json_t *row = json_array_get(values, i);
-                    unsigned long interval_time = 0;
-                    const char *ctime = NULL;
-                    struct tm timeinfo;
-                    int year, month, day, hour, minute, second;
+                    time_t interval_time = 0, ctime = 0, diff = 0;
                     for (j = 0; j < json_array_size(columns); ++j) {
                         json_t *value = json_array_get(row, j);
+                        if (value == NULL || value->type == JSON_NULL)
+                            continue;
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
                         if (xstrcmp(tmp_name, "ctime") == 0) {
-                            ctime = json_string_value(value);
-                            if (!ctime) {
-                                fprintf(stderr, "Error: ctime is NULL at row %zu\n", i);
-                                continue;
-                            }
+                            ctime = (time_t)json_integer_value(value);
                         } else if (xstrcmp(tmp_name, "interval_time") == 0) {
                             if (json_is_integer(value)) {
-                                interval_time = (unsigned long)json_integer_value(value);
+                                interval_time = (time_t)json_integer_value(value);
                             } else {
                                 fprintf(stderr, "Error: interval_time is not an integer at row %zu\n", i);
                                 continue;
                             }
                         }
                     }
-                    if (ctime) {
-                        int matched = sscanf(ctime, "%d-%d-%dT%d:%d:%dZ", &year, &month, &day, &hour, &minute, &second);
-                        if (matched != 6) {
-                            fprintf(stderr, "Error: Failed to parse time string '%s'. Matched fields: %d\n", ctime, matched);
-                            continue;
-                        }
-                    } else {
-                        fprintf(stderr, "Error: ctime is not set for row %zu\n", i);
-                        continue;
-                    }
-                    
-                    memset(&timeinfo, 0, sizeof(struct tm));
-                    timeinfo.tm_year = year - 1900;
-                    timeinfo.tm_mon = month - 1;
-                    timeinfo.tm_mday = day;
-                    timeinfo.tm_hour = hour;
-                    timeinfo.tm_min = minute;
-                    timeinfo.tm_sec = second;
-                    time_t job_time = timegm(&timeinfo); // Convert to UTC time
-                    double diff = difftime(current_time, job_time);
-
+                    diff = labs(current_time - ctime);
                     if (diff <= interval_time) {
-                        if(c_string_len(job_list) != 0){
+                        if (c_string_len(job_list) != 0) {
                             c_string_append_str(job_list, ",");
                         }
                         c_string_append_str(job_list, jobid);
@@ -2229,14 +2319,15 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                 }
             }
             (params.desc_set ? --s : ++s);
-            if ((params.level & 0x0100) && (flag == UNIT_EVENT)) {
+            if ((params.level & INFLUXDB_OVERALL) && (flag == UNIT_EVENT)) {
                 list_append(print_overall_value_list, iinfo_overall);
             } else {
-                xfree(iinfo_overall->time);
-                xfree(iinfo_overall->username);
-                xfree(iinfo_overall);
+                free_interface_sjinfo(iinfo_overall);
             }
         }
+    }
+    if (flag == UNIT_BRIEF) {
+        FREE_NULL_LIST(print_head_list);
     }
     json_decref(root);
 }
@@ -2261,6 +2352,8 @@ void print_sjinfo_help(void)
 "        Displays information about abnormal events during job execution   \n"
 "     -d, --desc:                                                      \n"
 "        Output data in reverse order  \n"
+"     -D, --display:                                                      \n"
+"       Print brief job information. CPU Efficiency and MEM Efficiency are normalized values. \n"
 "     -e, --event:                                                        \n"
 "        Print the abnormal events of the jobs.                            \n"
 "        Supported fields:                                                 \n"
@@ -2396,7 +2489,6 @@ extern void destroy_config_vale(void *object)
 	interface_sjinfo_t *key_pair_ptr = (interface_sjinfo_t *)object;
 
 	if (key_pair_ptr) {
-		xfree(key_pair_ptr->time);
 		xfree(key_pair_ptr->username);
         xfree(key_pair_ptr->type);
         xfree(key_pair_ptr->apptype_cli);
@@ -2412,7 +2504,6 @@ extern void destroy_config_key_pair(void *object)
 	interface_sjinfo_t *key_pair_ptr = (interface_sjinfo_t *)object;
 
 	if (key_pair_ptr) {
-		xfree(key_pair_ptr->time);
 		xfree(key_pair_ptr->username);
         xfree(key_pair_ptr->type);
         xfree(key_pair_ptr->apptype_cli);
@@ -2422,6 +2513,19 @@ extern void destroy_config_key_pair(void *object)
 	}
 }
 
+extern void destroy_brief_print_key_pair(void *object)
+{
+	interface_sjinfo_t *key_pair_ptr = (interface_sjinfo_t *)object;
+
+	if (key_pair_ptr) {
+		xfree(key_pair_ptr->username);
+        xfree(key_pair_ptr->type);
+        xfree(key_pair_ptr->apptype_cli);
+        xfree(key_pair_ptr->apptype_step);
+        xfree(key_pair_ptr->apptype);
+		xfree(key_pair_ptr);
+	}
+}
 void sjinfo_init(slurm_influxdb *influxdb_data)
 {
     /*given sufficient length*/
@@ -2430,6 +2534,10 @@ void sjinfo_init(slurm_influxdb *influxdb_data)
     influxdb_data->database = xmalloc(640) ;
     influxdb_data->host = xmalloc(640);
     influxdb_data->policy = xmalloc(640);
+    /*display table*/
+    print_display_list = list_create(destroy_brief_print_key_pair);
+	// print_display_itr = list_iterator_create(print_display_list);
+
     /*step table*/
 	print_fields_list = list_create(NULL);
 	print_fields_itr = list_iterator_create(print_fields_list);
@@ -2468,6 +2576,9 @@ void sjinfo_fini(slurm_influxdb * influxdb_data)
     xfree(influxdb_data->database);
     xfree(influxdb_data->host);
     xfree(influxdb_data->policy);
+    if(print_display_list)
+	    FREE_NULL_LIST(print_display_list);
+
     /*step table*/
 	if (print_fields_itr)
 		list_iterator_destroy(print_fields_itr);
@@ -3369,6 +3480,7 @@ int stract_time(bool start_label, bool jobid_out, time_t usage_start,
        
 }
 
+
 int parse_command_and_query(int argc, char **argv, slurm_influxdb *data) 
 {
     int rc = 0;
@@ -3397,23 +3509,23 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
         rc = -1;
         return rc;
     }
-    c_string_t *sql_step = c_string_create();
-    c_string_t *sql_event = c_string_create();
-    c_string_t *sql_apptype = c_string_create();
-    c_string_t *sql_runjob = c_string_create();
-    char *buffer_str = xmalloc(2048);
-    
-    end = xmalloc(100);
-    start = xmalloc(100);
- 
-    sql_query = xmalloc(81920*sizeof(char));
+    c_string_t *sql_step       = c_string_create();
+    c_string_t *sql_event      = c_string_create();
+    c_string_t *sql_apptype    = c_string_create();
+    c_string_t *sql_runjob     = c_string_create();
+    c_string_t *sql_brief_step = c_string_create();
+    char *buffer_str           = xmalloc(2048);
+    end                        = xmalloc(100);
+    start                      = xmalloc(100);
+    sql_query                  = xmalloc(8192*sizeof(char));
+
     char sql_query_head[] = "select * from ";
-    char sheet_query[] = "Spost";
-    char sheet_step[] = "Stepd";
-    char sheet_event[] = "Event";
-    char sheet_apptype[] = "Apptype";
+    char sheet_query[]    = "Spost";
+    char sheet_step[]     = "Stepd";
+    char sheet_event[]    = "Event";
+    char sheet_apptype[]  = "Apptype";
     /*Parameter collection sql statement assembly*/
-    char sql_step_head[] = "SELECT LAST(\"stepcpuave\") AS last_stepavecpu,LAST(\"stepcpu\") AS last_stepcpu, "
+    char sql_step_head[]  = "SELECT LAST(\"stepcpuave\") AS last_stepavecpu,LAST(\"stepcpu\") AS last_stepcpu, "
                 "LAST(\"stepmem\") AS last_stepmem, LAST(\"stepvmem\") AS last_stepvmem, LAST(\"steppages\") AS last_steppages, "
                 "MAX(\"stepcpu\") AS max_stepcpu, MIN(\"stepcpu\") AS min_stepcpu, MAX(\"stepmem\") AS max_stepmem, "
                 "MIN(\"stepmem\") AS min_stepmem, MAX(\"stepvmem\") AS max_stepvmem, "
@@ -3421,8 +3533,7 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     char sql_apptype_head[] = "SELECT * ";
 
     /*Event event sql statement assembly*/
-    // char sql_event_head[] = "SELECT \"cputhreshold\",\"end\",\"jobid\",\"start\",\"step\",\"stepcpu\",\"stepmem\",\"steppages\",\"stepvmem\",\"type1\"::tag,\"type2\"::tag,\"type3\"::tag,\"username\" ";
-    char sql_event_head[] = "SELECT \"cputhreshold\",\"end\",\"jobid\",\"start\",\"step\",\"stepcpu\",\"stepmem\",\"steppages\",\"stepvmem\","
+    char sql_event_head[]  = "SELECT \"cputhreshold\",\"end\",\"jobid\",\"start\",\"step\",\"stepcpu\",\"stepmem\",\"steppages\",\"stepvmem\","
                             "\"type1\"::tag as tag_type1,\"type2\"::tag as tag_type2,\"type3\"::tag as tag_type3,"
                             "\"type1\"::field as field_type1,\"type2\"::field as field_type2,\"type3\"::field as field_type3,"
                             "\"type\",\"username\" ";
@@ -3432,6 +3543,14 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
 
     char sql_tail[] = " group by step,jobid";
     char sql_tail_apptype[] = " group by jobid";
+    /*exam SELECT stepcpu,stepmem FROM "Stepd" WHERE "jobid"='603537634' 
+     *group by step  ORDER BY time DESC LIMIT 1
+     */
+    char sql_brief_head []  = "select time,stepcpu,stepmem ";
+    char sql_brief_tail[]  = " group by step,jobid ORDER BY time DESC LIMIT 1";
+    char *buffer_brief_str = xmalloc(2048);
+
+
     struct passwd *pw;
     /* record start time */
     time_t usage_start = 0;
@@ -3451,7 +3570,8 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
 	static struct option long_options[] = {
                 {"abnormal",    no_argument,        0,      'A'},
                 {"all",         no_argument,        0,      'a'},
-                {"desc",        no_argument,        0,      'd'},
+                {"desc",        no_argument,        0,      'd'},        
+                {"display ",    no_argument,        0,      'D'},
                 {"event",       required_argument,  0,      'e'},
                 {"end",         required_argument,  0,      'E'},
                 {"help",        no_argument,        0,      'h'},
@@ -3470,13 +3590,8 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     
     optind = 0;
     while ((c = getopt_long(argc, argv,
-				       "dt:e:E:j:s:lo:rS:u:VOmgaAhq",
-				       long_options, &optionIndex)) != -1) {
-    
-    // while (1) {		/* now cycle through the command line */
-	// 	c = getopt_long(argc, argv,
-	// 			"dt::e:E:j:s:lo:rS:u:VOmgaAhq",
-	// 			long_options, &optionIndex);      
+				       "dt:e:E:j:s:lo:rS:u:VOmgaAhqD",
+				       long_options, &optionIndex)) != -1) {   
         if (c == -1) {
             no_jobid = true;
             no_step = true;
@@ -3490,6 +3605,11 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
                 break;
             case 'd':
                 params.desc_set = true;
+                break;
+            case 'D':
+                params.display = true;
+                params.level |= INFLUXDB_DISPLAY;
+                //params.level |= INFLUXDB_STEPD;
                 break;
         	case 'e':
                 params.level |= INFLUXDB_EVENT_FLAG;
@@ -3576,6 +3696,37 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
         rc = -1;
         goto fail;
     }
+    if(params.display == true) {
+        if(jobid_out == false) {
+            printf("You need to specify a job ID using the -j option. For example: sjinfo -j 666 -D\n");
+            goto fail;
+        }
+
+        rc = contains_non_digit(jobids);
+        if(rc == -1) {
+            printf("Specifying `-D` only supports a single job ID. For example: sjinfo -j 666 -D\n");
+            goto fail;
+        }
+
+        if(qurey_label == true) {
+            printf("The `-D` and `-q` options cannot be used together.\n");
+            goto fail;
+        }
+        if(params.opt_field_list) {
+            printf("The `-D` and `-o` options cannot be used together.\n");
+            goto fail;
+        }
+        if(params.level & INFLUXDB_EVENT) {
+            printf("The `-D` and `-A` options cannot be used together.\n");
+            goto fail;
+        }
+        if(params.level & INFLUXDB_ALL) {
+            printf("The `-D`, `-l`, and `-a` options cannot be specified at the same time.\n");
+            goto fail;
+        }
+        jobid_digit = atoi(jobids);
+        params.level |= INFLUXDB_STEPD;
+    }
 
     if(qurey_label) {
         if(jobid_out) {
@@ -3608,10 +3759,13 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
 
     if(params.level == INFLUXDB_NONE || params.level == INFLUXDB_EVENT_FLAG)
         params.level |= INFLUXDB_STEPD;
+
     if((params.level & INFLUXDB_STEPD) && (params.level & INFLUXDB_EVENT_FLAG)){
         printf("The -e option must be used with either -A or -O !\n");
         exit(1);
     }
+
+
     if(!end_label) {
         time_format(end, 0, true);
         end_label = true;
@@ -3627,8 +3781,17 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
         sprintf(buffer_str,"%s from %s where time <= %s ",sql_step_head, sheet_step, end);
         c_string_append_str(sql_step, buffer_str);
         memset(buffer_str, 0, 2048);
+
     } 
 
+    if(params.level & INFLUXDB_DISPLAY) {
+        sprintf(buffer_brief_str,"%s from %s where time <= %s ",sql_brief_head, sheet_step, end);
+        c_string_append_str(sql_brief_step, buffer_brief_str);
+        memset(buffer_brief_str, 0, 2048);
+        if(params.level & INFLUXDB_DISPLAY)  
+            rc = 3;  
+    } 
+     
     /*
         The reason we bitwise 0x0110 instead of 0x0010 is that the exception event overview 
         data is counted at the same time as the exception event overview data, so when -O is 
@@ -3674,19 +3837,21 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
         if(rc == -1) goto fail;
 
         if(params.opt_uid != 0) {
-            char user[60] ={'0'};
-            sprintf(user," and username = '%s' ", pw->pw_name);
+            // char user[60] ={'0'};
+            // sprintf(user," and username = '%s' ", pw->pw_name);
+            char *user = xmalloc(strlen(pw->pw_name) + 25); // 多出的字符给 SQL 语法
+            sprintf(user, " and username = '%s' ", pw->pw_name);
             c_string_append_str(sql_runjob, user);
+            xfree(user);
         } else if(user_label) {
             rc = strcat_field(sql_runjob, user, USERNAME);
             if(rc == -1) goto fail;  
         }
         c_string_append_str(sql_runjob, sql_runjob_tail);
-        /* debug */
-        // printf("sql_runjob = %s\n", c_string_peek(sql_runjob));
+        bool temp = params.display;
+        params.display = true;
         char * response = influxdb_connect(data, c_string_peek(sql_runjob), STEPDRP);
-        /* debug */
-        // printf("response_runjob = %s\n", response);
+        params.display = temp;
         if(response){
             parse_json(response, pw->pw_name, UNIT_RUNJOB, time(NULL));
         }else {
@@ -3700,7 +3865,6 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             jobids = xstrdup(c_string_peek(job_list));
             jobid_out = true;
             c_string_destory(job_list);
-            printf("jobids = %s\n", jobids);
         }else{
             c_string_destory(job_list);
             goto fail;
@@ -3720,6 +3884,10 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             rc = strcat_field(sql_apptype, jobids, JOBID);
             if(rc == -1) goto fail;
         }
+        if(params.level & INFLUXDB_DISPLAY) {
+            rc = strcat_field(sql_brief_step, jobids, JOBID);
+            if(rc == -1) goto fail;
+        }
     }
 
     if(step_out) {
@@ -3731,6 +3899,11 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             rc = strcat_field(sql_event, steps, STEP);
             if(rc == -1) goto fail;
         }
+        if(params.level & INFLUXDB_DISPLAY) {
+            rc = strcat_field(sql_brief_step, steps, STEP);
+            if(rc == -1) goto fail;
+        }
+
     }
 
 
@@ -3787,12 +3960,14 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
         if(rc == -1)
             goto fail;
     }
+
     if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
         rc = stract_time(start_label, jobid_out, usage_start,
                             usage_end, start, sql_event);
         if(rc == -1)
           goto fail;
     }
+
     if(params.level & INFLUXDB_APPTYPE) {
         rc =  stract_time(start_label, jobid_out, usage_start,
                             usage_end, start, sql_apptype);
@@ -3800,21 +3975,45 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             goto fail;
     }
 
+    if(params.level & INFLUXDB_DISPLAY) {
+        rc =  stract_time(start_label, jobid_out, usage_start,
+                            usage_end, start, sql_brief_step);
+        if(rc == -1)
+            goto fail;
+    }
+
     if(params.opt_uid != 0) {
         if(params.level & INFLUXDB_STEPD) {
-            char user[60] ={'0'};
-            sprintf(user," and username = '%s' ", pw->pw_name);
+            // char user[60] ={'0'};
+            // sprintf(user," and username = '%s' ", pw->pw_name);
+            char *user = xmalloc(strlen(pw->pw_name) + 25); // 多出的字符给 SQL 语法
+            sprintf(user, " and username = '%s' ", pw->pw_name);
             c_string_append_str(sql_step, user);
+            xfree(user);
         }
         if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
-            char user[60] ={'0'};
-            sprintf(user," and username = '%s' ", pw->pw_name);
+            // char user[60] ={'0'};
+            // sprintf(user," and username = '%s' ", pw->pw_name);
+            char *user = xmalloc(strlen(pw->pw_name) + 25); // 多出的字符给 SQL 语法
+            sprintf(user, " and username = '%s' ", pw->pw_name);
             c_string_append_str(sql_event, user);
+            xfree(user);
         }
         if(params.level & INFLUXDB_APPTYPE) {
-            char user[60] ={'0'};
-            sprintf(user," and username = '%s' ", pw->pw_name);
+            // char user[60] ={'0'};
+            // sprintf(user," and username = '%s' ", pw->pw_name);
+            char *user = xmalloc(strlen(pw->pw_name) + 25); // 多出的字符给 SQL 语法
+            sprintf(user, " and username = '%s' ", pw->pw_name);       
             c_string_append_str(sql_apptype, user);
+            xfree(user);
+        }
+        if(params.level & INFLUXDB_DISPLAY) {
+            // char user[60] ={'0'};
+            // sprintf(user," and username = '%s' ", pw->pw_name);
+            char *user = xmalloc(strlen(pw->pw_name) + 25); // 多出的字符给 SQL 语法
+            sprintf(user, " and username = '%s' ", pw->pw_name);
+            c_string_append_str(sql_brief_step, user);
+            xfree(user);
         }
     } else if(user_label) {
         if(params.level & INFLUXDB_STEPD) {
@@ -3832,7 +4031,31 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             if(rc == -1)
             goto fail; 
         }
+        if(params.level & INFLUXDB_DISPLAY) {
+            rc = strcat_field(sql_brief_step, user, USERNAME);
+            if(rc == -1)
+            goto fail; 
+        }
+
     }
+
+    if(params.level & INFLUXDB_DISPLAY) {
+        c_string_append_str(sql_brief_step, sql_brief_tail);
+        /* debug */
+        // printf("sql_step = %s\n", c_string_peek(sql_step));
+        char * response = influxdb_connect(data, c_string_peek(sql_brief_step), STEPDRP);
+        /* debug */
+        if(response)
+            parse_json(response, pw->pw_name, UNIT_BRIEF, 0);
+        else {
+            rc = -1;
+            goto fail;
+        }
+        if(response)
+            xfree(response);
+
+    } 
+
     if(params.level & INFLUXDB_STEPD) {
         c_string_append_str(sql_step, sql_tail);
         /* debug */
@@ -3847,8 +4070,9 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             goto fail;
         }
         if(response)
-            xfree(response);    
+            xfree(response);
     } 
+
     if(params.level & INFLUXDB_APPTYPE) {
         c_string_append_str(sql_apptype, sql_tail_apptype);
         /* debug */
@@ -3890,22 +4114,18 @@ fail:
         c_string_destory(sql_event);
     if(sql_runjob)
         c_string_destory(sql_runjob);
+    if(sql_brief_step)
+        c_string_destory(sql_brief_step);
     if(sql_apptype)
         c_string_destory(sql_apptype);
-    if(buffer_str)
-        xfree(buffer_str);
-    if(jobids)
-        xfree(jobids);    
-    if(start)
-        xfree(start);
-    if(steps)
-        xfree(steps);
-    if(end)
-        xfree(end);    
-    if(user)
-        xfree(user);
-    if(sql_query)
-        xfree(sql_query);
+    xfree(buffer_str);
+    xfree(buffer_brief_str);
+    xfree(jobids);    
+    xfree(start);
+    xfree(steps);
+    xfree(end);    
+    xfree(user);
+    xfree(sql_query);
     return rc;
 }
 
@@ -4133,7 +4353,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
         print_fields_header(print_list);
         print_field_t *field = NULL;
 
-        interface_sjinfo_t * sjinfo_print;
+        interface_sjinfo_t * sjinfo_print = NULL;
         int curr_inx = 1;
         uint64_t tmp_uint64 = NO_VAL64;
         char tmp_char[200] = {'0'};
@@ -4467,24 +4687,225 @@ foundfield:
         xfree(field_copy);
 
 }
+// 解析单行字符串到结构体
+int parse_sacct_line(const char *line, int count, List print_head_list) {
+    int result = -1;
+    sacct_entry_t *sacct_field = NULL;
+    sacct_field = xmalloc(sizeof(sacct_entry_t));
+    if(count == 1) {
+        long long int field1 = 0; 
+        long long int field2 = 0;
+        long long int field3 = 0;      
+        result = sscanf(line, "%lld %lld %lld", &field1, &field2, &field3);
+        if (result == 3) {
+            sacct_field->jobid     = field1;
+            sacct_field->alloc_cpu = field2;
+            sacct_field->stepdid   = -1; //作业默认为-1
+            sacct_field->reqmem    = field3; 
+            list_append(print_head_list, sacct_field); 
+        } else {
+            xfree(sacct_field);
+            return -1;
+        }
+        
+    } else {
+        sacct_field->stepdid   = -2; //数字作业步默认为-2
+        long long int field1   = 0; 
+        char field2[50]        = {'\0'};
+        long long int field3   = 0;    
+        result = sscanf(line, "%lld %49s %lld", &field1, field2, &field3);
+        /*成功读取3个变量*/
+        if (result == 3) {
+            
+            sacct_field->jobid = field1;
+           
+            if (strstr(field2, "batch")) {
+                sacct_field->stepdid = -5; //batch作业对应的数字作业步为-5
+            } else {
+                if (field2[0] == '.') {
+                    int value = atoi(field2 + 1);  // 提取整数
+                    sacct_field->stepdid = value;
+                } else {
+                    printf("Extracted integer: %s failed \n", field2);
+                    return -1;
+                }
+            }
+            sacct_field->alloc_cpu = field3;
+            list_append(print_head_list, sacct_field);           
+        } else {
+            xfree(sacct_field);
+            return -1;
+        }       
+    }
+    return result;
+}
+
+int sacct_get(List print_head_list) 
+{
+    FILE *fp;
+    int count = 0;
+    int rc = 0;
+    char cmd[2048] = {'\0'};
+    char line[4096] = {'\0'};  // 用更大的buffer存结果行（比如4096字节）
+
+    sprintf(cmd, "sacct -j %ld -o  jobid%%24,AllocC%%24,reqmem%%36 --unit=m --noheader|grep -v extern", jobid_digit);
+    // 执行命令并打开管道
+    fp = popen(cmd, "r");
+    if (fp == NULL) {
+        perror("popen failed");
+        rc = -1;
+        return rc;
+    }
+
+    // 读取命令输出
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        count++;
+        rc = parse_sacct_line(line, count, print_head_list);
+        if(rc == -1) 
+            break;
+    }
+    // 关闭管道
+    pclose(fp);
+    return rc;
+}
+
+int parse_iso8601_utc_to_local(time_t utc_time , char *out_buf, size_t buf_len) {
+
+    if (utc_time == (time_t) -1) {
+        return -1;
+    }
+
+    // 转换为本地时间（会自动根据当前时区调整）
+    struct tm *local_tm = localtime(&utc_time);
+    if (!local_tm) {
+        return -1;
+    }
+    // 格式化为本地时间字符串
+    if (strftime(out_buf, buf_len, "%Y-%m-%d %H:%M:%S", local_tm) == 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+
+void print_star_line(const char *content) {
+    int content_len = strlen(content);
+    //int pad = LINE_WIDTH - 2 - content_len;
+
+    char line[LINE_WIDTH + 1];
+    memset(line, ' ', LINE_WIDTH);
+    line[0] = '*';
+    line[LINE_WIDTH - 1] = '*';
+    line[LINE_WIDTH] = '\0';
+
+    memcpy(line + 1, content, content_len); // 左对齐内容
+    printf("%s\n", line);
+}
+
+
+void print_efficiency(interface_sjinfo_t *sjinfo_print, const char *time_str) {\
+
+    char info_buf[LINE_WIDTH] = {'\0'};
+    char stepid_buf[32] = {'\0'};
+    char m[6] = " MB   ";
+    char g[6] = " GB   ";
+    char t[6] = " TB   ";
+    char p[6] = " PB   ";
+    char cpu_unit_buf[6] = "CORES";
+    char at[3] = "at";
+    char stepid_mem[64] = {'\0'};
+    char stepid_cpu[64] = {'\0'};
+    char jobstep_buf[32] = {'\0'};
+     
+    /*test*/
+    // sjinfo_print->alloc_cpu =10000;
+    // sjinfo_print->stepmem =123113LL*1024;
+    // sjinfo_print->req_mem = 14313213;
+    //sjinfo_print->jobid = 1;
+    if (sjinfo_print->stepid == -5) {
+        snprintf(stepid_buf, sizeof(stepid_buf), "batch");
+    } else {
+        snprintf(stepid_buf, sizeof(stepid_buf), "%d", sjinfo_print->stepid);
+    }
+   
+    snprintf(jobstep_buf, sizeof(jobstep_buf), "%ld.%-8s", sjinfo_print->jobid, stepid_buf);
+    /* mem字符串转化 */
+
+    // int count = num_digits(sjinfo_print->req_mem);
+
+    // if(count == -1)
+    //     return;
+    double result = (double)(sjinfo_print->stepmem * 100.0/1024/sjinfo_print->req_mem); 
+    if (sjinfo_print->req_mem > 1024*1024 && sjinfo_print->req_mem <= 1024*1024*1024) {
+        snprintf(stepid_mem, sizeof(stepid_mem), "%6.2f of %10lld %6s", result, sjinfo_print->req_mem/1024, g);
+    } else if (sjinfo_print->req_mem > 1024*1024*1024 && sjinfo_print->req_mem <= (long int)(1024L*1024L*1024L*1024L)) {
+        snprintf(stepid_mem, sizeof(stepid_mem), "%6.2f of %10lld %6s", result, sjinfo_print->req_mem/1024/1024, t);
+    } else if (sjinfo_print->req_mem > (long int)(1024L*1024L*1024L*1024L)) {
+        snprintf(stepid_mem, sizeof(stepid_mem), "%6.2f of %10lld %6s", result, sjinfo_print->req_mem/1024/1024/1024, p);
+    } else {
+        snprintf(stepid_mem, sizeof(stepid_mem), "%6.2f of %10lld %6s", result, sjinfo_print->req_mem, m);
+    }
+
+    /* cpu字段字符串转化 */
+    snprintf(stepid_cpu, sizeof(stepid_cpu), "%6.2f of %10lld %6s", (double)(sjinfo_print->stepcpu),sjinfo_print->alloc_cpu,cpu_unit_buf);
+    /* CPU Efficiency 行 */
+    snprintf(info_buf, sizeof(info_buf),
+             "    %-20s %-18s %26s %3s %-20s",
+             jobstep_buf, "CPU Efficiency(%)", stepid_cpu,at,time_str);
+    print_star_line(info_buf);
+
+    /* MEM Efficiency 行 */
+    snprintf(info_buf, sizeof(info_buf),
+             "    %-20s %-18s %26s %3s %-20s",
+             jobstep_buf, "MEM Efficiency(%)", stepid_mem,at,time_str);
+    print_star_line(info_buf);
+}
+
+void job_brief(List print_list, List value_list, ListIterator print_itr)
+{
+    ListIterator print_display_itr = NULL;
+    interface_sjinfo_t  * sjinfo_print = NULL;
+    char beijing_buf[64] = {'\0'};
+    printf("******************************************************************************************************* \n");
+    printf("*                                Display brief information of job steps                               *\n");
+    print_display_itr = list_iterator_create(print_display_list);
+    while ((sjinfo_print = list_next(print_display_itr))) {
+        int rc =  parse_iso8601_utc_to_local(sjinfo_print->time, beijing_buf, sizeof(beijing_buf));
+        if( rc == -1 || sjinfo_print->req_mem == NOT_FIND || sjinfo_print->req_mem == 0) {
+            printf("*                                No request information available                                     *\n");
+        } else {
+            print_efficiency(sjinfo_print, beijing_buf);
+        }
+    }
+    list_iterator_destroy(print_display_itr);
+    printf("******************************************************************************************************* \n");
+    printf("\n");
+    print_options(print_list, value_list ,print_itr);
+    printf("\n");
+}
 
 void print_field(uint64_t level)
 {
 
-    char *opt_step_list = xmalloc(160);
-    char *opt_event_list = xmalloc(160);
-    char *opt_overall_list = xmalloc(160);
-    char *opt_apptype_list = xmalloc(160);
-    char *opt_apptype_job_list = xmalloc(160);
-    char base_step_field[] = "JobID,StepID,StepCPU,"
+    char *opt_step_list           = xmalloc(160);
+    char *opt_event_list          = xmalloc(160);
+    char *opt_overall_list        = xmalloc(160);
+    char *opt_apptype_list        = xmalloc(160);
+    char *opt_apptype_job_list    = xmalloc(160);
+    // char *opt_display             = xmalloc(160);
+    char base_step_field[]        = "JobID,StepID,StepCPU,"
                 "StepAVECPU,StepMEM,StepVMEM,StepPages,MaxStepCPU,"
                 "MinStepCPU,MaxStepMEM,MinStepMEM,MaxStepVMEM,MinStepVMEM,";
-    char base_event_field[] = "JobID,StepID,StepCPU,"
+    char base_event_field[]       = "JobID,StepID,StepCPU,"
                 "StepMEM,StepVMEM,StepPages,CPUthreshold,Start,End,Type,";
-    char base_overall_field[] = "JobID,StepID,Last_start,"
+    char base_overall_field[]     = "JobID,StepID,Last_start,"
                 "Last_end,CPU_Abnormal_CNT,PROC_Abnormal_CNT,NODE_Abnormal_CNT";
-    char base_apptype_field[] = "JobID,StepID,Apptype_CLI,Apptype_STEP,UserName";
+    char base_apptype_field[]     = "JobID,StepID,Apptype_CLI,Apptype_STEP,UserName";
     char base_apptype_job_field[] = "JobID,Apptype,UserName";
+    char base_display_field[]     = "JobID,StepID,"
+                "StepAVECPU,MaxStepCPU,"
+                "MinStepCPU,MaxStepMEM,MinStepMEM,";
 
     print_field_t fields[] = {
     	{12, "JobID",           print_fields_str,   PRINT_JOBID},
@@ -4545,30 +4966,39 @@ void print_field(uint64_t level)
         {0,  NULL,          NULL,               0}
     };
 
+
     if(!params.opt_field_list) {
-        /*Consider the scenario where only one side of the field has it*/
-        if(level & INFLUXDB_STEPD) {
-            strcpy(opt_step_list,base_step_field);
+        if(level & INFLUXDB_DISPLAY) {
+            strcpy(opt_step_list, base_display_field);
             field_split(opt_step_list, fields, print_fields_list);
-        } 
+            job_brief(print_fields_list, print_value_list ,print_fields_itr);
+            goto endit;
+            return;
+        }else {
+            /*Consider the scenario where only one side of the field has it*/
+            if(level & INFLUXDB_STEPD) {
+                strcpy(opt_step_list, base_step_field);
+                field_split(opt_step_list, fields, print_fields_list);
+            } 
 
-        if(level & INFLUXDB_EVENT)  {
-            strcpy(opt_event_list,base_event_field);
-            field_split(opt_event_list, field_event, print_events_list);
-        }
+            if(level & INFLUXDB_EVENT)  {
+                strcpy(opt_event_list,base_event_field);
+                field_split(opt_event_list, field_event, print_events_list);
+            }
 
-        if(level & INFLUXDB_OVERALL) {
-            strcpy(opt_overall_list,base_overall_field);
-            field_split(opt_overall_list, field_overall, print_overall_list);
-        }
+            if(level & INFLUXDB_OVERALL) {
+                strcpy(opt_overall_list,base_overall_field);
+                field_split(opt_overall_list, field_overall, print_overall_list);
+            }
 
-        if(level & INFLUXDB_APPTYPE) {
-            if(params.show_jobstep_apptype){
-                strcpy(opt_apptype_list, base_apptype_field);
-                field_split(opt_apptype_list, field_apptype, print_apptype_list);
-            }else{
-                strcpy(opt_apptype_job_list, base_apptype_job_field);
-                field_split(opt_apptype_job_list, field_apptype_job, print_apptype_job_list);
+            if(level & INFLUXDB_APPTYPE) {
+                if(params.show_jobstep_apptype){
+                    strcpy(opt_apptype_list, base_apptype_field);
+                    field_split(opt_apptype_list, field_apptype, print_apptype_list);
+                }else{
+                    strcpy(opt_apptype_job_list, base_apptype_job_field);
+                    field_split(opt_apptype_job_list, field_apptype_job, print_apptype_job_list);
+                }
             }
         }
     } else {
@@ -4583,6 +5013,9 @@ void print_field(uint64_t level)
                 field_split(params.opt_field_list, field_apptype, print_apptype_list);
             else
                 field_split(params.opt_field_list, field_apptype_job, print_apptype_job_list);
+        }
+        if(level & INFLUXDB_DISPLAY) {
+            printf("The -o option is no longer supported when using the -D flag.\n");
         }
     }
 
@@ -4628,7 +5061,7 @@ void print_field(uint64_t level)
         printf("\n");
         print_options(print_apptype_job_list, print_apptype_job_value_list, print_apptype_job_itr);
     }
-
+endit:
     xfree(opt_step_list);
     xfree(opt_event_list);
     xfree(opt_overall_list);
@@ -4672,11 +5105,10 @@ int main(int argc ,char** argv) {
 
     if(rc == -1)
          goto file_fail;
-    if( rc != 2 )
+    else if( rc != 2 )
         print_field(params.level);
     else
         print_query();
-
     sjinfo_fini(influxdb_data);
 file_fail:
     if (configpath)
@@ -4689,4 +5121,5 @@ file_fail:
 
     return 0;
 }
+
 

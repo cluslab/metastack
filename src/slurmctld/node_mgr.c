@@ -6368,23 +6368,13 @@ void copy_all_node_state()
 {
 	int i;
 	node_record_t *node_ptr = NULL;
-	slurmctld_lock_t node_write_lock = {
-		READ_LOCK, NO_LOCK, WRITE_LOCK, READ_LOCK, NO_LOCK };
-	slurmctld_lock_t node_read_lock = {
-			READ_LOCK, NO_LOCK, READ_LOCK, READ_LOCK, NO_LOCK };
 
-	lock_slurmctld(node_write_lock);
-	select_g_select_nodeinfo_set_all();
-	unlock_slurmctld(node_write_lock);
-
-	lock_slurmctld(node_read_lock);
 	init_node_record_table_ptr();
 	for (i = 0; (node_ptr = next_node(&i)); i++) {
 		if ((node_ptr->name == NULL) || (node_ptr->name[0] == '\0'))
 			continue;	/* vestigial record */
 		_copy_node(node_ptr);
 	}
-	unlock_slurmctld(node_read_lock);
 }
 
 void purge_cache_node_data()

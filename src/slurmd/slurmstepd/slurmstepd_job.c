@@ -487,10 +487,14 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 	step_rank.gid	 = job->gid;
 	step_rank.watch_dog = NULL;
 	step_rank.watch_dog_script = NULL;
+	step_rank.job_stdout = NULL;
+	step_rank.job_stderr = NULL;
 	if (acct_gather_check_acct_watch_dog_task(stepd_id, &head_node, msg)) {
 		step_rank.enable_watchdog  = true;
 		step_rank.watch_dog        = xstrdup(msg->watch_dog);
 		step_rank.watch_dog_script = xstrdup(msg->watch_dog_script);
+		// step_rank.job_stdout       = xstrdup(msg->std_out);
+		// step_rank.job_stderr       = xstrdup(msg->std_err);		
 		step_rank.period           = msg->period;
 		step_rank.init_time        = msg->init_time;
 		step_rank.style_step       = msg->style_step;
@@ -510,8 +514,14 @@ extern stepd_step_rec_t *stepd_step_rec_create(launch_tasks_request_msg_t *msg,
 #endif		
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);	
-	xfree(step_rank.watch_dog);
-	xfree(step_rank.watch_dog_script);
+	if(step_rank.watch_dog)
+		xfree(step_rank.watch_dog);
+	if(step_rank.watch_dog_script)
+		xfree(step_rank.watch_dog_script);
+	// if(step_rank.job_stdout)
+	// 	xfree(step_rank.job_stdout);
+	// if(step_rank.job_stderr)
+	// 	xfree(step_rank.job_stderr);
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	xfree(step_rank.apptype);
 #endif
@@ -637,10 +647,14 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	step_rank.gid				= job->gid;
 	step_rank.watch_dog			= NULL;
 	step_rank.watch_dog_script	= NULL;
+	step_rank.job_stdout        = NULL;
+	step_rank.job_stderr        = NULL;
 	if (acct_gather_check_acct_watch_dog_batch(stepd_id, msg) ) {
 		step_rank.enable_watchdog  = true;
 		step_rank.watch_dog        = xstrdup(msg->watch_dog);
 		step_rank.watch_dog_script = xstrdup(msg->watch_dog_script);
+		step_rank.job_stdout       = xstrdup(msg->std_out);
+		step_rank.job_stderr       = xstrdup(msg->std_err);		
 		step_rank.period           = msg->period;
 		step_rank.init_time        = msg->init_time;
 		step_rank.style_step       = msg->style_step;
@@ -653,8 +667,14 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 #endif		
 	acct_gather_profile_startpoll(msg->acctg_freq,
 				      slurm_conf.job_acct_gather_freq, step_rank);
-	xfree(step_rank.watch_dog);
-	xfree(step_rank.watch_dog_script);
+	if(step_rank.watch_dog)
+		xfree(step_rank.watch_dog);
+	if(step_rank.watch_dog_script)
+		xfree(step_rank.watch_dog_script);
+	if(step_rank.job_stdout)
+		xfree(step_rank.job_stdout);
+	if(step_rank.job_stderr)
+		xfree(step_rank.job_stderr);
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	xfree(step_rank.apptype);
 #endif

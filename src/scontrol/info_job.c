@@ -488,7 +488,7 @@ scontrol_print_step (char *job_step_id_str)
 		show_flags |= SHOW_ALL;
 	if (local_flag)
 		show_flags |= SHOW_LOCAL;
-/*	
+/*
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	char *env_val = NULL;
 	if ((env_val = getenv("SCONTROL_STEP_CACHE_QUERY"))){

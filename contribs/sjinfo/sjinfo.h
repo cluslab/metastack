@@ -32,7 +32,7 @@
 #define CPU_ABNORMAL_FLAG_DESC "CPU utilization below threshold"
 #define PROCESS_ABNORMAL_FLAG_DESC "Operational process anomalies"
 #define NODE_ABNORMAL_FLAG_DESC "Node communication exception"
-
+#define SACCT_MAX_ENTRIES 200
 #include <stdio.h>
 typedef struct c_string {
     char *str;
@@ -47,6 +47,15 @@ typedef struct print_field {
 	uint16_t type; /* defined in the local function */
 } print_field_t;
 
+typedef struct sacct_entry{
+    long long int jobid;
+    long long int stepdid;
+    long long int reqmem;
+    long long int alloc_cpu;
+
+} sacct_entry_t;
+
+typedef int (*ListFindF) (void *x, void *key);
 /* */
 /**
  * Creates and initializes a new c_string_t object.
@@ -98,5 +107,6 @@ const char *c_string_peek(const c_string_t *cs);
 
 extern void print_fields_str(print_field_t *field, char *value, int last);
 
-#define KEYDIR "/public/binary/2.3.0"
+#define KEYDIR "NONE"
 #endif /* !_SJINFO_H */
+

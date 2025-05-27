@@ -125,7 +125,6 @@ extern int acct_gather_conf_init(void)
 		debug2("No acct_gather.conf file (%s)", conf_path);
 	} else {
 		debug2("Reading acct_gather.conf file %s", conf_path);
-
 		if (s_p_parse_file(tbl, NULL, conf_path, false, NULL) ==
 		    SLURM_ERROR) {
 			fatal("Could not open/read/parse acct_gather.conf file "

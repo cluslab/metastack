@@ -27,5 +27,5 @@
 #include <stdio.h>
 // /* Names for the values of the `has_arg' field of `struct option'.  */
 
-#define KEYDIR "/opt/gridview/slurm"
+#define KEYDIR "NONE"
 #endif /* !_SJAES_H */

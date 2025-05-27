@@ -6868,7 +6868,13 @@ empty and must not contain special characters such as #, !, &, *, %, $, @.
 \fBScript\fR
 This keyword specifies the file path to an external monitoring 
 script that checks application data and other information. This file must 
-have appropriate execution permissions for the job-submitting user.  
+have appropriate execution permissions for the job-submitting user. Supported environment variables.
+SLURM_JOB_ID:Job ID. SLURM_STEP_ID:Job step ID. SLURM_JOB_UID: User ID. SLURM_JOB_GID: User GID. SLURM_STEP_WATCH_DOG: Watchdog script specified for the job step. 
+SLURM_JOB_STDOUT: Job standard output file. SLURM_JOB_STDERR: Job standard error file. SLURM_JOB_NODE_AVE_CPU: Node-level average CPU utilization of the job step. 
+SLURM_JOB_NODE_NOW_CPU: Node-level current CPU utilization of the job step. SLURM_JOB_NODE_MEM: Node-level current memory usage of the job step. 
+SLURM_JOB_NODE_VMEM: Node-level current virtual memory (vmem) usage of the job step. SLURM_JOB_NODE_PAGES: Node-level current page usage of the job step.
+The SLURM_JOB_STDOUT and SLURM_JOB_STDERR environment variables are only effective in the script called by the batch job step, while
+you need to specify '-o' and '-e' in job script.
 .IP
 .TP
 \fBInitTime\fR
@@ -6903,6 +6909,7 @@ Describes the purpose of the script.
 This serves only as a prompt for which users the settings apply to and does not 
 have actual control functionality.
 .IP
+
 .TP
 \fBexample\fR
 WatchDogName=watchdog1 Script=/opt/gridview/slurm/etc/xxx.sh initTime=5 Period=5 Describe="this is for appa" 

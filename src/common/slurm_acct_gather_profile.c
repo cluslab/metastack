@@ -757,7 +757,9 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 
 	(*(ops.get))(ACCT_GATHER_PROFILE_RUNNING, &profile);
 	xassert(profile != ACCT_GATHER_PROFILE_NOT_SET);
-
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	step_rank.profile = profile;
+#endif
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	memset(&acct_gather_profile_timer_watch_dog, 0,
 		       sizeof(acct_gather_profile_timer_t));
@@ -833,13 +835,15 @@ extern int acct_gather_profile_startpoll(char *freq, char *freq_def, acct_gather
 #endif
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		case PROFILE_APPTYPE:
+			// Comment the code below to apply apptype recognition decoupled from the influxdb plugin
 			/*
 				ProfileInfluxDBDefault If apptype is not enabled, the acctg_apptype thread will 
 				not be started. This is because apptype's query means are dependent on influxdb 
 				plugin, independent of slurm.
+				if (!(profile & ACCT_GATHER_PROFILE_APPTYPE))
+					break;
 			*/
-			if (!(profile & ACCT_GATHER_PROFILE_APPTYPE))
-				break;
+
 			/*
 				The frequency of passing NULL to represent acctg_apptype is not affected by the 
 				user side and depends only on slurm.conf

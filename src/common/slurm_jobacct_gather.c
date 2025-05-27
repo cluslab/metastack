@@ -453,14 +453,18 @@ static bool _init_run_test(void)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 static void *apptype_recognition(void *args){
 	bool have_recogn = false, have_recogn_weak = false;
-	char *apptype = (char *) args;
+	apptype_recogn_thread_args_t *arg = (apptype_recogn_thread_args_t *)args;
+	char *apptype_cli = arg->apptype_cli;
+	uint32_t profile = arg->profile;
+	char *apptype_step = NULL;
 	s_p_hashtbl_t *tbl = NULL;
 	char *temp = NULL, *temp_weak = NULL, *weak_apptype = NULL;
 	collection_t *collect = NULL;
 	write_t *write_data = NULL;
 	/* Prepare exit criteria */
 	if (acct_gather_profile_timer[PROFILE_APPTYPE].freq <= 0) {
-		xfree(apptype);
+		xfree(arg->apptype_cli);
+		xfree(arg);
 		apptype_recongn_count = 0;
 		return NULL;
 	}
@@ -569,47 +573,57 @@ static void *apptype_recognition(void *args){
 		xfree(collect);
 
 		if (have_recogn || have_recogn_weak) {
-			/* send_data */
-			write_data = xmalloc(sizeof(write_t));
-			write_data->send_flag2 = JOBACCT_GATHER_PROFILE_APPTYPE;
-			write_data->apptype_step = have_recogn ? xstrdup(temp) : xstrdup(temp_weak);
-			write_data->apptype_cli = xstrdup(apptype);
-			write_data->have_recogn = true;
-			/*
-				If the application type is identified, cputime is recorded as the maximum value.
-				If the application type is not identified, the process with the largest cputime 
-					is selected as the identification result, and the real value of cputime is emitted together.
-				Setting cputime to its maximum value also makes a difference.
-			*/
-			write_data->cputime = UINT64_MAX;
-			/* send job apptype data to influxdb */
-			_poll_data(1, NULL, write_data);
+			if (profile & ACCT_GATHER_PROFILE_APPTYPE) {
+				/* send_data */
+				write_data = xmalloc(sizeof(write_t));
+				write_data->send_flag2 = JOBACCT_GATHER_PROFILE_APPTYPE;
+				write_data->apptype_step = have_recogn ? xstrdup(temp) : xstrdup(temp_weak);
+				write_data->apptype_cli = xstrdup(apptype_cli);
+				write_data->have_recogn = true;
+				/*
+					If the application type is identified, cputime is recorded as the maximum value.
+					If the application type is not identified, the process with the largest cputime 
+						is selected as the identification result, and the real value of cputime is emitted together.
+					Setting cputime to its maximum value also makes a difference.
+				*/
+				write_data->cputime = UINT64_MAX;
+				/* send job apptype data to influxdb */
+				_poll_data(1, NULL, write_data);
 
-			xfree(write_data->apptype_step);
-			xfree(write_data->apptype_cli);
-			xfree(write_data);
-			/* The thread is exited when the application type is successfully mapped */
+				xfree(write_data->apptype_step);
+				xfree(write_data->apptype_cli);
+				xfree(write_data);
+				/* The thread is exited when the application type is successfully mapped */
+			}
+			if (apptype_step) 
+				xfree(apptype_step);
+			apptype_step = have_recogn ? xstrdup(temp) : xstrdup(temp_weak);
 			break;
 		} else {
 			apptype_recongn_count--;
-			write_data = xmalloc(sizeof(write_t));
-			write_data->send_flag2 = JOBACCT_GATHER_PROFILE_APPTYPE;
-			write_data->apptype_step = xstrdup(max_cputime_proc);
-			write_data->apptype_cli = xstrdup(apptype);
-			write_data->cputime = total_cpu_time;
-			if (apptype_recongn_count <= 0) {
-				/* send job apptype data to influxdb */
-				write_data->have_recogn = true;
-				_poll_data(1, NULL, write_data);
-				
-			} else {
-				/* send job apptype data to influxdb plugin but no send data to influxdb, just cache */
-				write_data->have_recogn = false;
-				_poll_data(0, NULL, write_data);
+			if (profile & ACCT_GATHER_PROFILE_APPTYPE) {
+				write_data = xmalloc(sizeof(write_t));
+				write_data->send_flag2 = JOBACCT_GATHER_PROFILE_APPTYPE;
+				write_data->apptype_step = xstrdup(max_cputime_proc);
+				write_data->apptype_cli = xstrdup(apptype_cli);
+				write_data->cputime = total_cpu_time;
+				if (apptype_recongn_count <= 0) {
+					/* send job apptype data to influxdb */
+					write_data->have_recogn = true;
+					_poll_data(1, NULL, write_data);
+					
+				} else {
+					/* send job apptype data to influxdb plugin but no send data to influxdb, just cache */
+					write_data->have_recogn = false;
+					_poll_data(0, NULL, write_data);
+				}
+				xfree(write_data->apptype_step);
+				xfree(write_data->apptype_cli);
+				xfree(write_data);
 			}
-			xfree(write_data->apptype_step);
-			xfree(write_data->apptype_cli);
-			xfree(write_data);
+			if (apptype_step)
+				xfree(apptype_step);
+			apptype_step = xstrdup(max_cputime_proc);
 		}
 
 		if (apptype_recongn_count <= 0) 
@@ -619,8 +633,14 @@ static void *apptype_recognition(void *args){
 		if (!_init_run_test())
 			break;
 	}
+	if (apptype_step)
+		debug3("apptype recognition: apptype_step is %s", apptype_step);
+	else
+		debug3("apptype recognition: apptype_step not recognized");
 	/* free memory */
-	xfree(apptype);
+	xfree(apptype_step);
+	xfree(arg->apptype_cli);
+	xfree(arg);
 	xfree(weak_apptype);
 	xfree(temp_weak);
 	xfree(temp);
@@ -631,6 +651,7 @@ static void *apptype_recognition(void *args){
 		access to the process cmdline information in _poll_data 
 	*/
 	apptype_recongn_count = 0;
+	debug3("acctg_apptype thread exit");
 	return NULL;
 }
 #endif
@@ -688,6 +709,10 @@ static char **_build_watch_dog_env(acct_gather_rank_t *watch_dog)
 	setenvf(&my_env, "SLURM_JOB_UID", "%u", watch_dog->uid);
 	setenvf(&my_env, "SLURM_JOB_GID", "%u", watch_dog->gid);
 	setenvf(&my_env, "SLURM_STEP_WATCH_DOG", "%s", watch_dog->watch_dog);
+	if(watch_dog->job_stdout != NULL)
+		setenvf(&my_env, "SLURM_JOB_STDOUT", "%s", watch_dog->job_stdout);
+	if(watch_dog->job_stderr != NULL)
+		setenvf(&my_env, "SLURM_JOB_STDERR", "%s", watch_dog->job_stderr);
 
 	slurm_mutex_lock(&watch_dog_env_lock);
 	if((watch_dog_node_step_collect.update == true) || (update_watch_dog == true)) {
@@ -814,6 +839,10 @@ static void *step_watch_dog(void *args)
 	if(watch_dog_tran) {
 		xfree(watch_dog_tran->watch_dog);
 		xfree(watch_dog_tran->watch_dog_script);
+		if(watch_dog_tran->job_stdout)
+			xfree(watch_dog_tran->job_stdout);
+		if(watch_dog_tran->job_stderr)
+			xfree(watch_dog_tran->job_stderr);
 		xfree(watch_dog_tran);
 	}
 	return NULL;
@@ -1600,6 +1629,10 @@ extern int apptype_properties_conf_init(void)
 		return SLURM_SUCCESS;
 	inited = 1;
 
+	/* slurmctld daemon is no need to read apptype.properties */
+	if (running_in_slurmctld())
+		return SLURM_SUCCESS;
+
 	rc += _get_option_from_file(&full_options, &full_options_cnt);
 	xrealloc(full_options,
 		 ((full_options_cnt + 1) * sizeof(s_p_options_t)));
@@ -1769,6 +1802,10 @@ extern int jobacct_gather_watchdog(int frequency, acct_gather_rank_t step_rank)
 	acct_gather_rank_t *load_args 	= xmalloc(sizeof(acct_gather_rank_t));
 	load_args->watch_dog_script 	= xstrdup(step_rank.watch_dog_script);
 	load_args->watch_dog        	= xstrdup(step_rank.watch_dog);
+	if(step_rank.job_stdout)
+		load_args->job_stdout 		= xstrdup(step_rank.job_stdout);
+	if(step_rank.job_stderr)
+		load_args->job_stderr       = xstrdup(step_rank.job_stderr);
 	load_args->init_time 			= step_rank.init_time;
 	load_args->period 				= step_rank.period;
 	load_args->enable_watchdog 		= step_rank.enable_watchdog;
@@ -1827,7 +1864,7 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobin
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 extern int	jobacct_gather_apptypepoll(uint16_t frequency, acct_gather_rank_t jobinfo) 
 {
-	char *apptype = NULL;
+	apptype_recogn_thread_args_t *args = NULL;
 	if (!plugin_polling)
 		return SLURM_SUCCESS;
 
@@ -1839,22 +1876,27 @@ extern int	jobacct_gather_apptypepoll(uint16_t frequency, acct_gather_rank_t job
 		jobacct_shutdown = false;
 		slurm_mutex_unlock(&jobacct_shutdown_mutex);
 	}
-	/* There is no need to apply apptype identification */
+	/* There is no need to apply apptype recognition */
 	if (frequency <= 0) {
-		debug2("jobacct_gather no need to apply apptype identification");
+		debug2("jobacct_gather no need to apply apptype recognition");
 		return SLURM_SUCCESS;
 	}
 	/* Non-head nodes do not start the thread */
-	if(step_gather.parent_rank_gather != -1) 
+	if (step_gather.parent_rank_gather != -1) 
 		return SLURM_SUCCESS;
-
 	/*
 		Limit the number of apptype_regn threads collected
 		+1 to ensure that the thread can collect one more time before exiting
 	*/
+	args = xmalloc(sizeof(apptype_recogn_thread_args_t));
 	apptype_recongn_count = (frequency <= 0 ? 0 : ((JOBACCTGATHER_APPTYPE_DURATION / frequency) + 1));
-	apptype = xstrdup(jobinfo.apptype);
-	slurm_thread_create(&apptype_recognition_thread_id, apptype_recognition, apptype);
+	args->apptype_cli = xstrdup(jobinfo.apptype);
+	args->profile = jobinfo.profile;
+	if (args != NULL && args->apptype_cli)
+		debug3("apptype recognition: apptype_client is %s", args->apptype_cli);
+	else
+		debug3("apptype recognition: apptype_client not recognized");
+	slurm_thread_create(&apptype_recognition_thread_id, apptype_recognition, args);
 	debug3("jobacct apptype gather dynamic logging enabled");
 
 	return SLURM_SUCCESS;

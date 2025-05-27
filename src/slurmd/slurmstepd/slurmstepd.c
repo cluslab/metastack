@@ -591,6 +591,30 @@ _init_from_slurmd(int sock, char **argv,
 
 	slurm_conf.slurmd_port = conf->port;
 	setenvf(NULL, "SLURMD_NODENAME", "%s", conf->node_name);
+
+#ifdef __METASTACK_FIX_BUG_READ_CONF
+	/* Remain consistent with the profile plugin used by slurmd. */
+	int proflie_type = 0;
+	safe_read(sock, &proflie_type,sizeof(int));
+	
+	if((proflie_type == 0) && 
+			(!xstrcasecmp("acct_gather_profile/none", slurm_conf.acct_gather_profile_type) == 0)) {
+		debug3("slurmd uses the acct_gather_profile/none plugin, while slurmstepd was using %s. It has been changed to match slurmd.", slurm_conf.acct_gather_profile_type);
+		xfree(slurm_conf.acct_gather_profile_type);
+		slurm_conf.acct_gather_profile_type = xstrdup("acct_gather_profile/none");
+		
+	} else if((proflie_type == 1) && 
+			(!xstrcasecmp("acct_gather_profile/influxdb", slurm_conf.acct_gather_profile_type) == 0)) {
+		debug3("slurmd uses the acct_gather_profile/influxdb plugin, while slurmstepd was using %s. It has been changed to match slurmd.", slurm_conf.acct_gather_profile_type);		
+		xfree(slurm_conf.acct_gather_profile_type);
+		slurm_conf.acct_gather_profile_type = xstrdup("acct_gather_profile/influxdb");
+
+	} else if((proflie_type == 2) && 
+			(!xstrcasecmp("acct_gather_profile/hdf5", slurm_conf.acct_gather_profile_type) == 0)) {
+		xfree(slurm_conf.acct_gather_profile_type);
+		slurm_conf.acct_gather_profile_type = xstrdup("acct_gather_profile/hdf5");
+	}
+#endif
 	/* receive acct_gather conf from slurmd */
 	if (acct_gather_read_conf(sock) != SLURM_SUCCESS)
 		fatal("Failed to read acct_gather conf from slurmd");
