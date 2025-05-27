@@ -1602,6 +1602,10 @@ typedef struct {
     char *deny_accounts;
     char *allow_groups;
     char *qos_char;
+	char *allow_qos;
+	char *deny_qos;
+	bitstr_t *allow_qos_bitstr;
+	bitstr_t *deny_qos_bitstr;
     uint32_t default_time;  /* minutes, NO_VAL or INFINITE */
     uint32_t max_time;  /* minutes or INFINITE */
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES

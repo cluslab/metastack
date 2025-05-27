@@ -523,6 +523,19 @@ _send_slurmstepd_init(int fd, int type, void *req,
 	if (cgroup_write_conf(fd) < 0)
 		goto rwfail;
 
+#ifdef __METASTACK_FIX_BUG_READ_CONF
+	int profile_type = 0;
+	if(slurm_conf.acct_gather_profile_type) {
+		if(!xstrcasecmp("acct_gather_profile/none", slurm_conf.acct_gather_profile_type))
+			profile_type = 0;
+		else if(!xstrcasecmp("acct_gather_profile/influxdb", slurm_conf.acct_gather_profile_type))
+			profile_type = 1;
+		else if(!xstrcasecmp("acct_gather_profile/hdf5", slurm_conf.acct_gather_profile_type))
+			profile_type = 2;
+	}
+	debug3("profile_type is profile_type=%d", profile_type);
+	safe_write(fd, &profile_type, sizeof(int));
+#endif
 	/* send acct_gather.conf over to slurmstepd */
 	if (acct_gather_write_conf(fd) < 0)
 		goto rwfail;

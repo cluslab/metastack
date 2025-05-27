@@ -2513,19 +2513,23 @@ static void _slurm_rpc_dump_conf_watch_dog(slurm_msg_t * msg)
 	slurm_msg_t response_msg;
 	char *dump = NULL;
 	int dump_size = 0;
+	/* Locks: Read configuration and watch dog */
+	slurmctld_lock_t watch_dog_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 	last_update_msg_t *last_time_msg = (last_update_msg_t *) msg->data;
 
 	START_TIMER;
-
+	lock_slurmctld(watch_dog_read_lock);
 	/* check to see if configuration data has changed */
 	if ((last_time_msg->last_update - 1) >= last_watch_dog_update) {
 
 		debug2("_slurm_rpc_dump_watch_dog_conf, no change");
+		unlock_slurmctld(watch_dog_read_lock);
 		slurm_send_rc_msg(msg, SLURM_NO_CHANGE_IN_DATA);
 	} else {
 		pack_all_watch_dog(&dump, &dump_size,
 			      msg->auth_uid, msg->protocol_version);
-
+		unlock_slurmctld(watch_dog_read_lock);
 
 		END_TIMER2("_slurm_rpc_dump_watch_dog_conf");
 

@@ -149,7 +149,7 @@ static int _get_info(bool clear_old, bool log_cluster_name )
 			return SLURM_ERROR;
 		}
 #endif
-		return _print_job(clear_old, log_cluster_name);  
+		return _print_job(clear_old, log_cluster_name);
 	}
 }
 

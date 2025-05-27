@@ -89,12 +89,21 @@ typedef struct {
 	uint32_t	   style_step;      		/*which stepd, 0x001 is sbatch submit, 
 											 *0x010 is srun submit, 0x100 is salloc submit*/
 	char           *watch_dog; 
+	char           *job_stdout;
+	char           *job_stderr;	
 #endif
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-	char *apptype;
+	char *apptype;			/* apptype returned from the cli_filer plugin */
+	uint32_t profile;		/* acct_gather.conf configuration file ProfileInfluxDBDefault configuration entry corresponding to the incoming data type */
 #endif
 } acct_gather_rank_t;
 
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+typedef struct {
+	char *apptype_cli;
+	uint32_t profile;
+} apptype_recogn_thread_args_t;
+#endif
 typedef enum {
 	PROFILE_ABNORMAL_DETE_MINUTE,
 	PROFILE_ABNORMAL_DETE_CPUMINLOAD,

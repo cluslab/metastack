@@ -606,7 +606,7 @@ char *slurm_print_watch_dog_info(watch_dog_record_t *watch_dog_ptr, int one_line
 	xstrcat(out, line_end);
 	/****** Line 2 ******/
 	if(watch_dog_ptr->account)
-		xstrfmtcat(out, "Accounts=%s", watch_dog_ptr->account);
+		xstrfmtcat(out, "Accounts=%s ", watch_dog_ptr->account);
 	if(watch_dog_ptr->script)
 		xstrfmtcat(out, "Script=%s", watch_dog_ptr->script);
 	if (watch_dog_ptr->init_time == 0)

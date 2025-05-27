@@ -5174,9 +5174,9 @@ static int copy_part(part_record_t *src_part_ptr, part_record_t *des_part_ptr)
 	des_part_ptr->orig_nodes = xstrdup(src_part_ptr->orig_nodes);
 	if(src_part_ptr->node_bitmap)
 		des_part_ptr->node_bitmap = bit_copy(src_part_ptr->node_bitmap);
-	if(src_part_ptr->allow_qos_bitstr)
+	if(src_part_ptr->allow_qos && src_part_ptr->allow_qos_bitstr)
 		des_part_ptr->allow_qos_bitstr = bit_copy(src_part_ptr->allow_qos_bitstr);
-	if(src_part_ptr->deny_qos_bitstr)
+	if(src_part_ptr->deny_qos && src_part_ptr->deny_qos_bitstr)
 		des_part_ptr->deny_qos_bitstr = bit_copy(src_part_ptr->deny_qos_bitstr);
 	des_part_ptr->billing_weights_str = xstrdup(src_part_ptr->billing_weights_str);
 	des_part_ptr->tres_fmt_str = xstrdup(src_part_ptr->tres_fmt_str);
@@ -5242,6 +5242,10 @@ extern void del_cache_part_state_record(part_state_record_t *src_part_ptr)
     xfree(src_part_ptr->deny_accounts);
     xfree(src_part_ptr->allow_groups);
     xfree(src_part_ptr->qos_char);
+	xfree(src_part_ptr->allow_qos);
+	xfree(src_part_ptr->deny_qos);
+	FREE_NULL_BITMAP(src_part_ptr->allow_qos_bitstr);
+	FREE_NULL_BITMAP(src_part_ptr->deny_qos_bitstr);
 	FREE_NULL_BITMAP(src_part_ptr->node_bitmap);
 	xfree(src_part_ptr->allow_accounts);
 #ifdef __METASTACK_PART_PRIORITY_WEIGHT
@@ -5308,6 +5312,14 @@ extern void _add_part_state_to_queue(part_record_t *part_ptr)
         cache_msg->part_state_ptr->deny_accounts = xstrdup(part_ptr->deny_accounts);
         cache_msg->part_state_ptr->allow_groups = xstrdup(part_ptr->allow_groups);
         cache_msg->part_state_ptr->qos_char = xstrdup(part_ptr->qos_char);
+		cache_msg->part_state_ptr->allow_qos = xstrdup(part_ptr->allow_qos);
+		cache_msg->part_state_ptr->deny_qos = xstrdup(part_ptr->deny_qos);
+		cache_msg->part_state_ptr->allow_qos_bitstr = NULL;
+		if(part_ptr->allow_qos && part_ptr->allow_qos_bitstr)
+			cache_msg->part_state_ptr->allow_qos_bitstr = bit_copy(part_ptr->allow_qos_bitstr);
+		cache_msg->part_state_ptr->deny_qos_bitstr = NULL;
+		if(part_ptr->deny_qos && part_ptr->deny_qos_bitstr)
+			cache_msg->part_state_ptr->deny_qos_bitstr = bit_copy(part_ptr->deny_qos_bitstr);
         cache_msg->part_state_ptr->default_time= part_ptr->default_time;
         cache_msg->part_state_ptr->max_time = part_ptr->max_time;
         cache_msg->part_state_ptr->node_bitmap = NULL;
@@ -5376,6 +5388,30 @@ extern int update_cache_part_record(part_state_record_t *src_part_ptr)
 		xfree(des_part_ptr->tres_fmt_str);
 		des_part_ptr->tres_fmt_str = src_part_ptr->tres_fmt_str;
 		src_part_ptr->tres_fmt_str = NULL;
+		xfree(des_part_ptr->allow_qos);
+		des_part_ptr->allow_qos = src_part_ptr->allow_qos;
+		src_part_ptr->allow_qos = NULL;
+		if(des_part_ptr->allow_qos_bitstr){
+			FREE_NULL_BITMAP(des_part_ptr->allow_qos_bitstr);
+		}
+		if(src_part_ptr->allow_qos_bitstr){
+			des_part_ptr->allow_qos_bitstr = src_part_ptr->allow_qos_bitstr;
+			src_part_ptr->allow_qos_bitstr = NULL;
+		}
+		xfree(des_part_ptr->deny_qos);
+		des_part_ptr->deny_qos = src_part_ptr->deny_qos;
+		src_part_ptr->deny_qos = NULL;
+		if(des_part_ptr->deny_qos_bitstr){
+			FREE_NULL_BITMAP(des_part_ptr->deny_qos_bitstr);
+		}
+		if(src_part_ptr->deny_qos_bitstr){
+			des_part_ptr->deny_qos_bitstr = src_part_ptr->deny_qos_bitstr;
+			src_part_ptr->deny_qos_bitstr = NULL;
+		}
+		accounts_list_build(des_part_ptr->allow_accounts, &des_part_ptr->allow_account_array);
+		accounts_list_build(des_part_ptr->deny_accounts,  &des_part_ptr->deny_account_array);
+		xfree(des_part_ptr->allow_uids);
+		des_part_ptr->allow_uids = get_groups_members(des_part_ptr->allow_groups);
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 		if(des_part_ptr->standby_nodes && src_part_ptr->standby_nodes_ptr){
 			xfree(des_part_ptr->standby_nodes->borrowed_nodes);
@@ -5602,17 +5638,13 @@ static int _copy_part(void *object, void *arg)
 
 void copy_all_part_state()
 {
-	slurmctld_lock_t config_read_lock = {
-			NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
 	copy_part_list = list_create(_copy_list_delete_part);
-	lock_slurmctld(config_read_lock);
 	if(part_list){
 		list_for_each_ro(part_list, _copy_part, NULL);
 	}
 	if(default_part_name){
 		default_copy_part_name = xstrdup(default_part_name);
 	}
-	unlock_slurmctld(config_read_lock);
 }
 
 void purge_cache_part_data()

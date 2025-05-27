@@ -23400,19 +23400,25 @@ if test -f "$PyxisMakeFile"; then
 fi
 
 # Update contribs/sjinfoexit/Makefile if this file exists
+if [ "$prefix" = "NONE" ] || [ -z "$prefix" ]; then
+    sjinfo_prefix="$ac_default_prefix"
+else
+    sjinfo_prefix="$prefix"
+fi
+
 SjinfoMakeFile=contribs/sjinfo/Makefile
 SjinfoHeadFile=contribs/sjinfo/sjinfo.h
 SjaesHeadFile=contribs/sjinfo/sjaes.h
 if test -f "$SjinfoMakeFile"; then
     sed -i '/^PREFIX/d' $SjinfoMakeFile
-    sed -i "1i\PREFIX ?= \$(DESTDIR)$prefix"  $SjinfoMakeFile
+    sed -i "1i\PREFIX ?= \$(DESTDIR)$sjinfo_prefix"  $SjinfoMakeFile
 fi
 
 if test -f "$SjinfoHeadFile"; then
-  sed -i 's|^#define KEYDIR .*$|#define KEYDIR '\"$prefix\"'|' "$SjinfoHeadFile"
+  sed -i 's|^#define KEYDIR .*$|#define KEYDIR '\"$sjinfo_prefix\"'|' "$SjinfoHeadFile"
 fi
 if test -f "$SjaesHeadFile"; then
-  sed -i 's|^#define KEYDIR .*$|#define KEYDIR '\"$prefix\"'|' "$SjaesHeadFile"
+  sed -i 's|^#define KEYDIR .*$|#define KEYDIR '\"$sjinfo_prefix\"'|' "$SjaesHeadFile"
 fi
 
   _x_ac_hwloc_dirs="/usr /usr/local"

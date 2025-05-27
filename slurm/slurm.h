@@ -423,6 +423,9 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_SHOW_PRIO_FLAGS
 #endif
 
+#ifndef __METASTACK_FIX_BUG_READ_CONF
+#define __METASTACK_FIX_BUG_READ_CONF
+#endif
 
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
