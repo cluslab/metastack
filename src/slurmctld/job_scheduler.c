@@ -510,20 +510,36 @@ extern void get_para_sched_part_names(void)
  * IN part_names - All partition names in resource region
  * IN part_ptr - An individual partition information record pointer
  * OUT: index - Index of the  resource region containing this partition 
- * OUT: 0 - Part_ptr is NULL or can't find this partition in all  resource region
+ * OUT: -1 - part_ptr is NULL or can't find this partition in all  resource region
  */
 extern int _get_job_part_index(char** part_names, part_record_t *part_ptr)
 {
-	if(!part_ptr)
-		return 0;
-	
-	int i;
-	for(i=0; i<resource_count; i++){
-		if(xstrstr(part_names[i], part_ptr->name))
-			return i;
+    int i = 0;
+    char *str = NULL, *token = NULL, *saveptr = NULL;
+
+	if (!part_ptr || !part_names || !part_ptr->name) {
+		return -1;
 	}
 
-	return 0;
+	for (i = 0; i < resource_count; i++) {
+		str = xstrdup(part_names[i]);
+		if (!str) {
+			error("%s: resource region %d partition names is NULL, return", __func__, i);
+			return -1;
+		}
+
+		token = strtok_r(str, " ", &saveptr);
+		while (token != NULL) {
+			if (xstrcmp(token, part_ptr->name) == 0) {
+				xfree(str);
+				return i;
+			}
+			token = strtok_r(NULL, " ", &saveptr);
+		}
+		xfree(str);
+	}
+
+	return -1;
 }
 
 /* 
@@ -727,16 +743,9 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 			/* Do NOT clear db_index here, it is handled when
 			 * task_id_str is created elsewhere */
 			(void) bb_g_job_validate2(job_ptr, NULL);
-#ifdef __METASTACK_OPT_CACHE_QUERY		
-			if(cachedup_realtime && cache_queue){
-				slurm_cache_date_t *cache_msg = NULL;
-				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-				cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-				cache_msg->job_ptr = _add_job_to_queue(new_job_ptr);
-				cache_enqueue(cache_msg);
-			}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(new_job_ptr);
 #endif
-
 		} else {
 			error("%s: Unable to copy record for %pJ",
 			      __func__, job_ptr);
@@ -794,16 +803,9 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 			new_job_ptr->start_time = (time_t) 0;
 			/* Do NOT clear db_index here, it is handled when
 			 * task_id_str is created elsewhere */
-#ifdef __METASTACK_OPT_CACHE_QUERY		
-			if(cachedup_realtime && cache_queue){
-				slurm_cache_date_t *cache_msg = NULL;
-				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-				cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-				cache_msg->job_ptr = _add_job_to_queue(new_job_ptr);
-				cache_enqueue(cache_msg);
-			}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(new_job_ptr);
 #endif
-
 		} else {
 			error("%s: Unable to copy record for %pJ",
 			      __func__, job_ptr);
@@ -875,6 +877,14 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 					/* else build one job_queue include all parttions */
 					if(para_sched && !backfill){
 						part_index = _get_job_part_index(para_sched_part_names ,part_ptr);
+						if (part_index < 0) {
+							error("Could not find resource index for %pJ partition %s", job_ptr, part_ptr->name);
+							continue;
+						}
+						if (!sched_job_queue) {
+							error("sched_job_queue is NULL, can't build job_queue for %pJ", job_ptr);
+							continue;
+						}	
 						_job_queue_append(sched_job_queue[part_index], job_ptr,
 									part_ptr,
 									job_ptr->
@@ -892,6 +902,14 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 					/* else build one job_queue include all parttions */
 					if(para_sched && !backfill){
 						part_index = _get_job_part_index(para_sched_part_names, part_ptr);	
+						if (part_index < 0) {
+							error("Could not find resource index for %pJ partition %s", job_ptr, part_ptr->name);
+							continue;
+						}
+						if (!sched_job_queue) {
+							error("sched_job_queue is NULL, can't build job_queue for %pJ", job_ptr);
+							continue;
+						}	
 						_job_queue_append(sched_job_queue[part_index], job_ptr,
 									part_ptr,
 									job_ptr->priority);
@@ -926,6 +944,14 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 			/* else build one job_queue include all parttions */
 			if(para_sched && !backfill){
 				part_index = _get_job_part_index(para_sched_part_names, job_ptr->part_ptr);
+				if (part_index < 0) {
+					error("Could not find resource index for %pJ partition %s", job_ptr, part_ptr->name);
+					continue;
+				}
+				if (!sched_job_queue) {
+					error("sched_job_queue is NULL, can't build job_queue for %pJ", job_ptr);
+					continue;
+				}				
 				_job_queue_append(sched_job_queue[part_index], job_ptr,
 						job_ptr->part_ptr, job_ptr->priority);		
 			} else
@@ -937,12 +963,18 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 	list_iterator_destroy(job_iterator);
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
-	if(para_sched && !backfill){
+	if(para_sched && !backfill && sched_job_queue) {
 		slurmctld_diag_stats.schedule_queue_len = 0;
-		for(i=0; i<resource_count; i++)
-			slurmctld_diag_stats.schedule_queue_len += list_count(sched_job_queue[i]);
+		for(i=0; i<resource_count; i++) {
+			if (!sched_job_queue[i]) {
+				continue;
+			}
+			uint32_t list_len = list_count(sched_job_queue[i]);
+			slurmctld_diag_stats.schedule_queue_len += list_len;
+			debug2("build %u jobs for resource region %d", list_len, i);
+		}
 
-		debug2("total build %d jobs", slurmctld_diag_stats.schedule_queue_len);
+		debug2("total build %u jobs", slurmctld_diag_stats.schedule_queue_len);
 		FREE_NULL_LIST(job_queue);
 	}
 #endif
@@ -6463,9 +6495,6 @@ void cleanup_completing(job_record_t *job_ptr)
 	delete_step_records(job_ptr);
 	job_ptr->job_state &= (~JOB_COMPLETING);
 	job_hold_requeue(job_ptr);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 
 	/*
 	 * Clear alloc tres fields after a requeue. job_set_alloc_tres will

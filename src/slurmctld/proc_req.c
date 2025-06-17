@@ -7858,8 +7858,8 @@ void slurmctld_query_req(slurm_msg_t *msg)
 		msg_type = REQUEST_CACHE_JOB_INFO;
 	}else if(msg->msg_type == REQUEST_JOB_USER_INFO){
 		msg_type = REQUEST_CACHE_JOB_USER_INFO;
-	}else if(msg->msg_type == REQUEST_JOB_STEP_INFO){
-		msg_type = REQUEST_CACHE_JOB_STEP_INFO;
+//	}else if(msg->msg_type == REQUEST_JOB_STEP_INFO){
+//		msg_type = REQUEST_CACHE_JOB_STEP_INFO;
 	}else if(msg->msg_type == REQUEST_JOB_INFO_SINGLE){
 		msg_type = REQUEST_CACHE_JOB_INFO_SINGLE;
 	}else if(msg->msg_type == REQUEST_PARTITION_INFO){

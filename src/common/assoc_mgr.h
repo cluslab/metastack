@@ -118,6 +118,33 @@ extern qos_hash_t *qos_hash;
 #endif
 
 #ifdef __METASTACK_ASSOC_HASH
+#include "uthash.h"
+
+typedef struct struct_assoc_hash {
+    char *key;
+    List value_assoc_list;
+    UT_hash_handle hh;
+} assoc_hash_t;
+
+/** build hash table, assign assoc to entry according to key. 
+ * IN:  hash table, assoc, hash_key, list del function
+ * OUT: assoc_hash
+ */
+extern void insert_assoc_hash(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *str_key, ListDelF del_function);
+
+/** find entry by key */ 
+extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key);
+
+/** delete assoc rec by key */
+extern void remove_assoc_rec(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *key);
+
+/** delete entry by key */
+extern void remove_assoc_entry(assoc_hash_t **assoc_hash, char *key);
+
+/** delete hash */
+extern void destroy_assoc_hash(assoc_hash_t **assoc_hash);
+
+
 typedef struct struct_str_key_hash {
 	char *key;
 	void *value;
@@ -128,10 +155,43 @@ extern void insert_str_key_hash(str_key_hash_t **str_key_hash, void *insert_valu
 extern void *find_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
 extern void remove_str_key_hash(str_key_hash_t **str_key_hash, char *str_key);
 extern void destroy_str_key_hash(str_key_hash_t **str_key_hash);
-extern void update_user_hash(slurmdb_user_rec_t *user, str_key_hash_t *rec_user_entry, str_key_hash_t *rec_user_uid_entry);
+typedef struct struct_user_uid_hash {
+	char *username;
+	uid_t  uid;
+	UT_hash_handle hh;
+} user_uid_hash_t;
+
+extern void insert_user_uid_hash(user_uid_hash_t **user_uid_hash, uid_t value, char *str_key);
+extern uid_t find_user_uid_hash(user_uid_hash_t **user_uid_hash, char *str_key);
+extern void remove_user_uid_hash(user_uid_hash_t **user_uid_hash, char *str_key);
+extern void destroy_user_uid_hash(user_uid_hash_t **user_uid_hash);
+
+typedef struct struct_uid_user_hash {
+	uid_t  uid;
+	char *username;
+	UT_hash_handle hh;
+} uid_user_hash_t;
+
+extern void insert_uid_user_hash(uid_user_hash_t **uid_user_hash, char *value, uid_t key);
+extern char *find_uid_user_hash(uid_user_hash_t **uid_user_hash, uid_t key);
+extern void remove_uid_user_hash(uid_user_hash_t **uid_user_hash, uid_t key);
+extern void destroy_uid_user_hash(uid_user_hash_t **uid_user_hash);
+
+/*
+ * update user_hash, user_uid_hash and uid_user_hash
+ * IN:  user - slurmdb_user_rec_t of user to update
+ * IN:  rec_user_entry - NULL or the key pair of the user to be updated in user_hash
+ * IN:  rec_user_uid_entry - NULL or the key pair of the user to be updated in user_uid_hash
+ */
+extern void update_user_hash(slurmdb_user_rec_t *user,
+				     str_key_hash_t *rec_user_entry, 
+				     user_uid_hash_t *rec_user_uid_entry);
 
 extern str_key_hash_t *user_hash;
-extern str_key_hash_t *user_uid_hash;
+extern user_uid_hash_t *user_uid_hash;
+extern uid_user_hash_t *uid_user_hash;
+
+extern assoc_hash_t *assoc_mgr_user_assoc_hash;
 #endif
 
 extern List assoc_mgr_tres_list;

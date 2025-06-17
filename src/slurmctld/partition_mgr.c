@@ -2458,7 +2458,7 @@ static int validate_account(part_record_t *part_ptr, slurmdb_assoc_rec_t *assoc_
 		/* do not check part's allow or deny, when assoc's part is not null */
 		if (!xstrcasecmp(assoc_rec->partition, part_ptr->name))
 			rc = 1;
-		
+
 		goto cleanup;
 	}
 
@@ -2556,17 +2556,32 @@ extern List fill_assoc_list(uid_t uid, bool locked)
 	if (!locked)
 		assoc_mgr_lock(&locks);
 
-    assoc_list = list_create(NULL);
-	ListIterator itr = list_iterator_create(assoc_mgr_assoc_list);
-	while ((assoc_rec = list_next(itr))) {
-		if (assoc_rec->uid == uid)
-			list_append(assoc_list, assoc_rec);
+	assoc_list = list_create(NULL);
+
+#ifdef __METASTACK_ASSOC_HASH
+	assoc_hash_t *tmp_entry = NULL;
+
+	char *user = find_uid_user_hash(&uid_user_hash, uid);
+
+	if (user) {
+		tmp_entry = find_assoc_entry(&assoc_mgr_user_assoc_hash, user);
 	}
-	list_iterator_destroy(itr);
+
+	if (tmp_entry && tmp_entry->value_assoc_list) {
+		list_append_list(assoc_list, tmp_entry->value_assoc_list);
+		tmp_entry = NULL;
+	} else {
+		ListIterator itr = list_iterator_create(assoc_mgr_assoc_list);
+		while ((assoc_rec = list_next(itr))) {
+			if (assoc_rec->uid == uid)
+				list_append(assoc_list, assoc_rec);
+		}
+		list_iterator_destroy(itr);
+	}
+#endif
 
 	if (!locked)
 		assoc_mgr_unlock(&locks);
-
 	return assoc_list;
 }
 #else
@@ -4874,17 +4889,13 @@ static int _copy_part(void *object, void *arg)
 
 void copy_all_part_state()
 {
-	slurmctld_lock_t config_read_lock = {
-			NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK, NO_LOCK };
 	copy_part_list = list_create(_copy_list_delete_part);
-	lock_slurmctld(config_read_lock);
 	if(part_list){
 		list_for_each_ro(part_list, _copy_part, NULL);
 	}
 	if(default_part_name){
 		default_copy_part_name = xstrdup(default_part_name);
 	}
-	unlock_slurmctld(config_read_lock);
 }
 
 void purge_cache_part_data()

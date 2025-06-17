@@ -389,6 +389,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #ifndef __METASTACK_PRIORITY_JOBSIZE
 #define __METASTACK_PRIORITY_JOBSIZE
 #endif
+
+#ifndef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+#define __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/

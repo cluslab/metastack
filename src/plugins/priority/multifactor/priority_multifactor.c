@@ -2168,7 +2168,7 @@ extern void set_priority_factors(time_t start_time, job_record_t *job_ptr)
 				4)Job Submission Format: -n + other parameters  or -w node_list(node_number = 1)
 					**min_nodes = (uint32_t)ceil((double)cpu_cnt / (double)job_ptr->part_ptr->max_core_cnt);**
 			*/
-			if (job_ptr->details && job_ptr->details->min_nodes && !job_ptr->details->max_nodes) {
+			if (job_ptr->details && job_ptr->details->min_nodes && !job_ptr->details->max_nodes && job_ptr->part_ptr && job_ptr->part_ptr->max_core_cnt > 0) {
 				if (job_ptr->details->num_tasks && job_ptr->details->ntasks_per_node) {
 					min_nodes = (uint32_t)ceil((double)job_ptr->details->num_tasks / (double)job_ptr->details->ntasks_per_node);
 				} else if (job_ptr->details->min_nodes > 1) {

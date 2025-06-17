@@ -881,6 +881,9 @@ static void _record_profile(struct jobacctinfo *jobacct)
 		FIELD_PAGES,
 		FIELD_READ,
 		FIELD_WRITE,
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+		FIELD_TIMENS,
+#endif
 		FIELD_CNT
 	};
 
@@ -977,7 +980,9 @@ static void _record_profile(struct jobacctinfo *jobacct)
 		data[FIELD_READ].d /= 1048576.0;
 		data[FIELD_WRITE].d /= 1048576.0;
 	}
-
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+	data[FIELD_TIMENS].u64 = (uint64_t)jobacct->cur_time * 1000000000 + (uint64_t)jobacct->cur_time_ns;
+#endif
 	log_flag(PROFILE, "PROFILE-Task: %s",
 		 acct_gather_profile_dataset_str(dataset, data, str,
 						 sizeof(str)));
@@ -1181,6 +1186,10 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	char sbuf[72];
 	int energy_counted = 0;
 	time_t ct;
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+	time_t ct_ns;
+	struct timespec now;
+#endif
 	int i = 0;
 #ifdef __METASTACK_LOAD_ABNORMAL
 	double total_job_cpuutil = 0;
@@ -1206,8 +1215,12 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 
 	if (!callbacks->get_precs)
 		callbacks->get_precs = _get_precs;
-
-	ct = time(NULL);
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+	clock_gettime(CLOCK_REALTIME, &now);
+	ct = now.tv_sec;
+	ct_ns = now.tv_nsec;
+	// ct = time(NULL);
+#endif
 
 	(void)list_for_each(prec_list, (ListForF)_init_tres, NULL);
 	(*(callbacks->get_precs))(task_list, cont_id, callbacks);
@@ -1219,6 +1232,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	while ((jobacct = list_next(itr))) {
 		double cpu_calc;
 		double last_total_cputime;
+		jobacct->cur_time_ns = 0;
 		if (!(prec = list_find_first(prec_list, _find_prec,
 					     &jobacct->pid)))
 			continue;
@@ -1383,6 +1397,9 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				jobacct->acct_flag = 1;
 				if(data && profile &&  acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_STEPD)) {	
 					jobacct->cur_time = ct;
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+					jobacct->cur_time_ns = ct_ns;
+#endif
 					_record_profile2(jobacct, data);
 				}
 			}	
@@ -1436,6 +1453,9 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 			jobacct->cur_time = ct;
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
 		    _get_son_process(prec_list, prec, jobacct);
+#endif
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+			jobacct->cur_time_ns = ct_ns;
 #endif
 			_record_profile(jobacct);
 

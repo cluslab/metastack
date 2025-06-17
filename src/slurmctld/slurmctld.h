@@ -1429,8 +1429,9 @@ extern void copy_all_node_state();
 extern void replace_cache_node_data();
 extern void purge_cache_node_data();
 
-
-
+extern pthread_cond_t query_mgr_cond;
+extern pthread_mutex_t query_mgr_lock;
+extern bool cache_copy_comp;
 
 
 typedef enum {
@@ -1482,19 +1483,20 @@ typedef struct {
 	bitstr_t *node_bitmap;
 	uint32_t total_nodes;
 	uint32_t node_cnt_wag;
-    uint32_t priority;      /* relative priority of the job,
-                         * zero == held (don't initiate) */
-    time_t deadline;        /* deadline */                        
-    char *partition;        /* name of job partition(s) */
-    uint32_t het_job_id;        /* job ID of HetJob leader */
-    uint32_t het_job_offset;    /* HetJob component index */   
-    uint32_t array_job_id;      /* job_id of a job array or 0 if N/A */
-    uint32_t array_task_id;     /* task_id of a job array */ 
-    char *comment;
-    char *gres_used;
-    job_resources_t *job_resrcs;	/* details of allocated cores */
-    uint32_t gres_detail_cnt;	/* Count of gres_detail_str records,
-					 * one per allocated node */
+	uint32_t priority;      /* relative priority of the job,
+						* zero == held (don't initiate) */
+	time_t deadline;        /* deadline */                        
+	char *partition;        /* name of job partition(s) */
+	uint32_t het_job_id;        /* job ID of HetJob leader */
+	uint32_t het_job_offset;    /* HetJob component index */   
+	uint32_t array_job_id;      /* job_id of a job array or 0 if N/A */
+	uint32_t array_task_id;     /* task_id of a job array */ 
+	char *comment;
+	char *gres_used;
+	job_resources_t *job_resrcs;	/* details of allocated cores */
+	job_array_struct_t *array_recs;
+	uint32_t gres_detail_cnt;	/* Count of gres_detail_str records,
+					* one per allocated node */
 	char **gres_detail_str;		/* Details of GRES index alloc per node */
 	bool details_ptr;
 	uint32_t de_max_nodes;
@@ -1504,8 +1506,8 @@ typedef struct {
 	uint16_t de_cpus_per_task;
 	time_t de_submit_time;		/* time of submission */
 	time_t de_begin_time;		/* start at this time (srun --begin),
-					 * resets to time first eligible
-					 * (all dependencies satisfied) */
+					* resets to time first eligible
+					* (all dependencies satisfied) */
 	bool de_mc_ptr;
 	uint16_t de_mc_ntasks_per_core;
 }job_state_record_t;

@@ -198,15 +198,15 @@ void _event_print(uint64_t count, uint64_t  *start, uint64_t  *end, abnormal_eve
 	switch (flag) {
 	case LOW_CPU_UTIL:
 		printf("Display of CPU exception events\n");
-		xstrfmtcat(event_desc, event_str[LOW_CPU_UTIL]); 
+		event_desc = xstrdup(event_str[LOW_CPU_UTIL]);
 		break;
 	case PROC_ABNORMAL:
 		printf("Display of PROCESS exception events\n");
-		xstrfmtcat(event_desc, event_str[PROC_ABNORMAL]); 
+		event_desc = xstrdup(event_str[PROC_ABNORMAL]);
 		break;
 	case NODE_ABNORMAL:
 		printf("Display of Node exception events\n");
-		xstrfmtcat(event_desc, event_str[NODE_ABNORMAL]); 
+		event_desc = xstrdup(event_str[NODE_ABNORMAL]);
 		break;
 	}
 	if(count <= JOBACCTINFO_START_END_ARRAY_SIZE) {
@@ -222,7 +222,7 @@ void _event_print(uint64_t count, uint64_t  *start, uint64_t  *end, abnormal_eve
 			localtime_r(&tmptimeValueEnd, &timeInfoEnd);
 			strftime(timeStringStart, sizeof(timeStringStart), "%Y-%m-%d-%H:%M:%S", &timeInfoStart);
 			strftime(timeStringEnd, sizeof(timeStringEnd), "%Y-%m-%d-%H:%M:%S", &timeInfoEnd);
-			xstrfmtcat(nodenames, event_desc);
+			nodenames = xstrdup(event_desc);
 			xstrfmtcat(nodenames, "between %s and %s ", timeStringStart, timeStringEnd);
 			printf("\n%s\n",nodenames);
 			if(nodenames) 
@@ -239,11 +239,9 @@ void _event_print(uint64_t count, uint64_t  *start, uint64_t  *end, abnormal_eve
 			struct tm timeInfoEnd;
 			localtime_r(&tmptimeValueStart, &timeInfoStart);
 			localtime_r(&tmptimeValueEnd, &timeInfoEnd);
-
 			strftime(timeStringStart, sizeof(timeStringStart), "%Y-%m-%d-%H:%M:%S", &timeInfoStart);
 			strftime(timeStringEnd, sizeof(timeStringEnd), "%Y-%m-%d-%H:%M:%S", &timeInfoEnd);
-
-			xstrfmtcat(nodenames, event_desc);
+			nodenames = xstrdup(event_desc);
 			xstrfmtcat(nodenames, "between %s and %s ", timeStringStart, timeStringEnd);
 			printf("\n%s\n",nodenames);
 			if(nodenames) 

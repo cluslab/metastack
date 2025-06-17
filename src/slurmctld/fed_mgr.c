@@ -5021,9 +5021,6 @@ extern int fed_mgr_job_revoke(job_record_t *job_ptr, bool job_complete,
 	job_ptr->end_time   = start_time;
 	job_ptr->state_reason = WAIT_NO_REASON;
 	xfree(job_ptr->state_desc);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 
 	/*
 	 * Since the job is purged/revoked quickly on the non-origin side it's
@@ -5042,6 +5039,9 @@ extern int fed_mgr_job_revoke(job_record_t *job_ptr, bool job_complete,
 
 	job_completion_logger(job_ptr, false);
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
 	/* Don't remove the origin job */
 	if (origin_id == fed_mgr_cluster_rec->fed.id)
 		return SLURM_SUCCESS;
