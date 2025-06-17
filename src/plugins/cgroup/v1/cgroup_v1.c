@@ -105,6 +105,10 @@ static uint64_t oom_kill_count = 0;
 static int oom_pipe[2] = { -1, -1 };
 static pthread_t oom_thread;
 static pthread_mutex_t oom_mutex = PTHREAD_MUTEX_INITIALIZER;
+#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+static pthread_cond_t oom_destroy_cond = PTHREAD_COND_INITIALIZER;
+static int ready_to_destroy = 1;
+#endif
 
 /* Task tracking artifacts */
 List g_task_list[CG_CTL_CNT];
@@ -1125,6 +1129,9 @@ static void *_oom_event_monitor(void *x)
 	int ret = -1;
 	uint64_t res;
 	struct pollfd fds[2];
+#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+	ready_to_destroy = 0;
+#endif
 
 	debug("started.");
 
@@ -1214,6 +1221,13 @@ static void *_oom_event_monitor(void *x)
 	if ((oom_pipe[0] >= 0) && (close(oom_pipe[0]) == -1))
 		error("close(oom_pipe[0]): %m");
 	xfree(args);
+
+#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+    slurm_mutex_lock(&oom_mutex);
+	ready_to_destroy = 1;
+	slurm_cond_signal(&oom_destroy_cond);
+	slurm_mutex_unlock(&oom_mutex);
+#endif
 
 	debug("stopping.");
 
@@ -1374,6 +1388,10 @@ extern cgroup_oom_t *cgroup_p_step_stop_oom_mgr(stepd_step_rec_t *job)
 	cgroup_oom_t *results = NULL;
 	uint64_t stop_msg;
 	ssize_t ret;
+#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+	struct timespec ts = {0, 0};
+	time_t now;
+#endif
 
 	if (oom_kill_type == OOM_KILL_NONE) {
 		error("OOM events were not monitored: couldn't read memory.oom_control or subscribe to its events.");
@@ -1457,7 +1475,18 @@ fail_oom_results:
 		error("close() failed on oom_pipe[1] fd, %ps: %m",
 		      &job->step_id);
 	}
+#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
+    slurm_mutex_lock(&oom_mutex);
+	while (!ready_to_destroy) {
+		now = time(NULL);
+	    ts.tv_sec = now + 2;
+		debug3("waiting for oom_destroy_cond.");
+		slurm_cond_timedwait(&oom_destroy_cond, &oom_mutex, &ts);
+	}
+	slurm_mutex_unlock(&oom_mutex);
 	slurm_mutex_destroy(&oom_mutex);
+	slurm_cond_destroy(&oom_destroy_cond);
+#endif
 
 	return results;
 }

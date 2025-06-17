@@ -3939,6 +3939,9 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 	if (!_valid_job_assoc(job_ptr)) {
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = FAIL_ACCOUNT;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 		return false;
 	}
 
@@ -4156,7 +4159,9 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 end_it:
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
+	if(!rc){
+		_add_job_state_to_queue(job_ptr);
+	}
 #endif
 
 	if (!assoc_mgr_locked)
@@ -4640,7 +4645,9 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 	}
 end_it:
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
+	if(!rc){
+		_add_job_state_to_queue(job_ptr);
+	}
 #endif
 
 	if (!assoc_mgr_locked)
@@ -5022,9 +5029,6 @@ extern bool acct_policy_job_time_out(job_record_t *job_ptr)
 			break;
 	}
 job_failed:
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 	assoc_mgr_unlock(&locks);
 	slurmdb_free_qos_rec_members(&qos_rec);
 

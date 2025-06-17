@@ -76,7 +76,114 @@ qos_hash_t *qos_hash = NULL;
 #ifdef __METASTACK_ASSOC_HASH
 
 str_key_hash_t *user_hash = NULL;
-str_key_hash_t *user_uid_hash = NULL;
+user_uid_hash_t *user_uid_hash = NULL;
+uid_user_hash_t *uid_user_hash = NULL;
+
+assoc_hash_t *assoc_mgr_user_assoc_hash = NULL;
+
+/** build hash table, assign assoc to entry according to key. 
+ * IN:  hash table, assoc, hash_key, list del function
+ * OUT: assoc_hash
+ */
+extern void insert_assoc_hash(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *str_key, ListDelF del_function) {
+    assoc_hash_t *entry = NULL;
+
+    if (!str_key || !assoc)
+        return;
+
+    HASH_FIND_STR(*assoc_hash, str_key, entry);
+
+    if (entry == NULL) {
+        entry = xmalloc(sizeof(assoc_hash_t));
+        entry->key = xstrdup(str_key);
+        entry->value_assoc_list = list_create(del_function);
+        HASH_ADD_KEYPTR(hh, *assoc_hash, entry->key, strlen(entry->key), entry);
+    }
+
+    // add assoc to entry->value_assoc_list
+    list_append(entry->value_assoc_list, assoc);
+}
+
+extern assoc_hash_t *find_assoc_entry(assoc_hash_t **assoc_hash, char *key) {
+    assoc_hash_t *entry = NULL;
+
+    if(!key)
+        return entry;
+    
+    HASH_FIND_STR(*assoc_hash, key, entry);
+
+	if (entry && entry->value_assoc_list && list_count(entry->value_assoc_list)) {
+		return entry;
+	}
+
+    return NULL;
+}
+
+/* delete assoc rec by key*/  
+extern void remove_assoc_rec(assoc_hash_t **assoc_hash, slurmdb_assoc_rec_t *assoc, char *key) {
+	assoc_hash_t *entry = NULL;
+
+	if (!key || !assoc) {
+		return;
+	}
+
+	HASH_FIND_STR(*assoc_hash, key, entry);
+
+	if (entry && entry->value_assoc_list) {
+		ListIterator itr = list_iterator_create(entry->value_assoc_list);
+		slurmdb_assoc_rec_t *assoc_rec = NULL;
+		while ((assoc_rec = list_next(itr))) {
+			if (assoc_rec->id == assoc->id) {
+				list_remove(itr);
+				break;
+			}
+		}
+		list_iterator_destroy(itr);
+	}
+
+	if (entry && (!(entry->value_assoc_list) || !list_count(entry->value_assoc_list))) {
+		HASH_DEL(*assoc_hash, entry);
+		xfree(entry->key);
+		if (entry->value_assoc_list) {
+			FREE_NULL_LIST(entry->value_assoc_list);
+		}
+		xfree(entry);
+	}
+}
+
+/*delete entry by key*/
+extern void remove_assoc_entry(assoc_hash_t **assoc_hash, char *key) {
+	assoc_hash_t *entry = NULL;
+
+	if (!key) {
+		return;
+	}
+
+	HASH_FIND_STR(*assoc_hash, key, entry);
+
+	if (entry) {
+		HASH_DEL(*assoc_hash, entry);
+		xfree(entry->key);
+		if (entry->value_assoc_list) {
+			FREE_NULL_LIST(entry->value_assoc_list);
+		}
+		xfree(entry);
+	}
+}
+
+/** delete hash */
+extern void destroy_assoc_hash(assoc_hash_t **assoc_hash) {
+    assoc_hash_t *current_entry = NULL, *tmp = NULL;
+
+    HASH_ITER(hh, *assoc_hash, current_entry, tmp) {
+        HASH_DEL(*assoc_hash, current_entry);
+        xfree(current_entry->key);
+        if (current_entry->value_assoc_list)
+            FREE_NULL_LIST(current_entry->value_assoc_list);
+        
+        xfree(current_entry);
+    }
+}
 
 /** build hash table, assign value to entry according to key. 
  * IN:  hash table, value, key
@@ -85,7 +192,7 @@ str_key_hash_t *user_uid_hash = NULL;
 extern void insert_str_key_hash(str_key_hash_t **str_key_hash, void *insert_value, char *str_key) {
 	str_key_hash_t *entry = NULL;
 
-	if (!str_key)
+	if (!str_key || !insert_value)
 		return;
 
 	HASH_FIND_STR(*str_key_hash, str_key, entry);
@@ -133,7 +240,7 @@ extern void remove_str_key_hash(str_key_hash_t **str_key_hash, char *str_key) {
 
 /** destroy hash table */
 extern void destroy_str_key_hash(str_key_hash_t **str_key_hash) {
-	str_key_hash_t *current_entry, *tmp;
+	str_key_hash_t *current_entry = NULL, *tmp = NULL;
 
 	HASH_ITER(hh, *str_key_hash, current_entry, tmp) {
 		HASH_DEL(*str_key_hash, current_entry);
@@ -142,9 +249,172 @@ extern void destroy_str_key_hash(str_key_hash_t **str_key_hash) {
 	}
 }
 
-/** update user_hash and user_uid_hash */
-extern void update_user_hash(slurmdb_user_rec_t *user, str_key_hash_t *rec_user_entry, str_key_hash_t *rec_user_uid_entry) 
+/** build hash table, assign uid to entry according to username. 
+ * IN:  hash table, uid, username
+ * OUT: hash table
+ */
+extern void insert_user_uid_hash(user_uid_hash_t **user_uid_hash, uid_t value, char *str_key) {
+	user_uid_hash_t *entry = NULL;
+
+	if (!str_key || value == NO_VAL || value == INFINITE || 
+		(value == 0 && xstrcmp(str_key, "root")) )
+		return;
+
+	HASH_FIND_STR(*user_uid_hash, str_key, entry);
+
+	if (entry == NULL) {
+		entry = xmalloc(sizeof(user_uid_hash_t));
+		entry->username = xstrdup(str_key);
+		entry->uid = value;
+		HASH_ADD_STR(*user_uid_hash, username, entry);
+	} 
+
+}
+
+/* retrieve the uid from hash table using a username. */
+extern uid_t find_user_uid_hash(user_uid_hash_t **user_uid_hash, char *str_key) {
+	user_uid_hash_t *entry = NULL;
+	
+	if (!str_key)
+		return NO_VAL;
+	
+	HASH_FIND_STR(*user_uid_hash, str_key, entry);
+	
+	if (entry) {
+		return entry->uid;
+	}
+
+	return NO_VAL;
+}
+
+/** remove an entry from hash table based on a username. */
+extern void remove_user_uid_hash(user_uid_hash_t **user_uid_hash, char *str_key) {
+	user_uid_hash_t *entry = NULL;
+
+	if (!str_key)
+		return;
+	
+	HASH_FIND_STR(*user_uid_hash, str_key, entry);
+
+	if (entry) {
+		HASH_DEL(*user_uid_hash, entry);
+		xfree(entry->username);
+		xfree(entry);
+	}
+}
+
+/** destroy hash table */
+extern void destroy_user_uid_hash(user_uid_hash_t **user_uid_hash) {
+	user_uid_hash_t *current_entry = NULL, *tmp = NULL;
+
+	HASH_ITER(hh, *user_uid_hash, current_entry, tmp) {
+		HASH_DEL(*user_uid_hash, current_entry);
+		xfree(current_entry->username);
+		xfree(current_entry);
+	}
+}
+
+/** build hash table, assign username to entry according to uid. 
+ * IN:  hash table, username, uid
+ * OUT: hash table
+ */
+extern void insert_uid_user_hash(uid_user_hash_t **uid_user_hash, char *value, uid_t key) {
+	uid_user_hash_t *entry = NULL;
+
+	if (key == NO_VAL || key == INFINITE || !value
+		|| (key == 0 && xstrcmp(value, "root")))
+		return;
+
+	HASH_FIND_INT(*uid_user_hash, &key, entry);
+
+	if (entry == NULL) {
+		entry = xmalloc(sizeof(uid_user_hash_t));
+		entry->uid = key;
+		entry->username = xstrdup(value);
+		HASH_ADD_INT(*uid_user_hash, uid, entry);
+	} 
+
+}
+
+/* retrieve the username from hash table using a uid. */
+extern char *find_uid_user_hash(uid_user_hash_t **uid_user_hash, uid_t key) {
+	uid_user_hash_t *entry = NULL;
+	
+	if (key == NO_VAL || key == INFINITE)
+		return NULL;
+	
+	HASH_FIND_INT(*uid_user_hash, &key, entry);
+	
+	if (entry && entry->username) {
+		return entry->username;
+	}
+
+	return NULL;
+}
+
+/** remove an entry from hash table based on a uid. */
+extern void remove_uid_user_hash(uid_user_hash_t **uid_user_hash, uid_t key) {
+	uid_user_hash_t *entry = NULL;
+
+	if (key == NO_VAL || key == INFINITE)
+		return;
+	
+	HASH_FIND_INT(*uid_user_hash, &key, entry);
+
+	if (entry) {
+		HASH_DEL(*uid_user_hash, entry);
+		if (entry->username) {
+			xfree(entry->username);
+		}
+		xfree(entry);
+	}
+}
+
+/** destroy hash table */
+extern void destroy_uid_user_hash(uid_user_hash_t **uid_user_hash) {
+	uid_user_hash_t *current_entry = NULL, *tmp = NULL;
+
+	HASH_ITER(hh, *uid_user_hash, current_entry, tmp) {
+		HASH_DEL(*uid_user_hash, current_entry);
+		if (current_entry->username) {
+			xfree(current_entry->username);
+		}
+		xfree(current_entry);
+	}
+}
+
+/** if the user exists, refresh its uid */
+static void refresh_repeat_uid(char *username) 
 {
+	slurmdb_user_rec_t *rec = NULL;
+	ListIterator itr = NULL;
+	uid_t pw_uid = NO_VAL;
+
+	if (!username) {
+		return;
+	}
+
+	itr = list_iterator_create(assoc_mgr_user_list);
+	while ((rec = list_next(itr))) {
+		if (!xstrcasecmp(rec->name, username)) {
+			if (uid_from_string(rec->name, &pw_uid) < 0) {
+				debug("%s: couldn't get a uid for user: %s",
+			      __func__, rec->name);
+				rec->uid = NO_VAL;
+			} else {
+				rec->uid = pw_uid;
+			}
+			break;
+		}
+	}
+	list_iterator_destroy(itr);
+}
+
+/** update user_hash, user_uid_hash and uid_user_hash */
+extern void update_user_hash(slurmdb_user_rec_t *user, 
+	str_key_hash_t *rec_user_entry, user_uid_hash_t *rec_user_uid_entry) 
+{
+	char *username = NULL;
 
 	if (!user)
 		return;
@@ -157,10 +427,30 @@ extern void update_user_hash(slurmdb_user_rec_t *user, str_key_hash_t *rec_user_
 	}
 
 	/** update user_uid_hash */
-	if (rec_user_uid_entry) {
-		rec_user_uid_entry->value = &(user->uid);
-	} else {
-		insert_str_key_hash(&user_uid_hash, &(user->uid), user->name);
+	if (user->uid != NO_VAL) {
+		username = find_uid_user_hash(&uid_user_hash, user->uid);
+	}
+
+	if (rec_user_uid_entry && user->uid != NO_VAL) {
+		if (user->uid != rec_user_uid_entry->uid) {
+			remove_uid_user_hash(&uid_user_hash, rec_user_uid_entry->uid);
+			if (username) {
+				remove_user_uid_hash(&user_uid_hash, username);
+				remove_uid_user_hash(&uid_user_hash, user->uid);
+			}
+			rec_user_uid_entry->uid = user->uid;
+			insert_uid_user_hash(&uid_user_hash, user->name, user->uid);
+		}
+	} else if (rec_user_uid_entry) {
+		remove_uid_user_hash(&uid_user_hash, rec_user_uid_entry->uid);
+		remove_user_uid_hash(&user_uid_hash, user->name);
+	} else if (user->uid != NO_VAL) {
+		if (username) {
+			remove_user_uid_hash(&user_uid_hash, username);
+			remove_uid_user_hash(&uid_user_hash, user->uid);
+		}
+		insert_user_uid_hash(&user_uid_hash, user->uid, user->name);
+		insert_uid_user_hash(&uid_user_hash, user->name, user->uid);
 	}
 }
 
@@ -698,43 +988,87 @@ static int _change_user_name(slurmdb_user_rec_t *user)
 	xassert(user->old_name);
 
 #ifdef __METASTACK_ASSOC_HASH
-	if (!(find_str_key_hash(&user_uid_hash, user->name))) {
-		if (uid_from_string(user->name, &pw_uid) < 0) {
-			debug("%s: couldn't get new uid for user %s",
-				__func__, user->name);
-			user->uid = NO_VAL;
-		} else {
-			user->uid = pw_uid;
-			remove_str_key_hash(&user_uid_hash, user->name);
-			insert_str_key_hash(&user_uid_hash, &(user->uid), user->name);
-		}
+	remove_user_uid_hash(&user_uid_hash, user->name);
+	if (uid_from_string(user->name, &pw_uid) < 0) {
+		debug("%s: couldn't get new uid for user %s",
+		      __func__, user->name);
+		user->uid = NO_VAL;
 	} else {
-		user->uid = *(uid_t *)find_str_key_hash(&user_uid_hash, user->name);
+		user->uid = pw_uid;
+			
+		char *username = find_uid_user_hash(&uid_user_hash, pw_uid);
+		if (username) {
+			remove_user_uid_hash(&user_uid_hash, username);
+			remove_uid_user_hash(&uid_user_hash, pw_uid);
+		}
+		insert_user_uid_hash(&user_uid_hash, user->uid, user->name);
+		insert_uid_user_hash(&uid_user_hash, user->name, user->uid);
 	}
-#endif
 
-	if (assoc_mgr_assoc_list) {
-		itr = list_iterator_create(assoc_mgr_assoc_list);
+	bool run_in_ctld = false;
+	if (running_in_slurmctld()) {
+		run_in_ctld = true;
+	}
+
+	assoc_hash_t *tmp_entry = NULL;
+
+	tmp_entry = find_assoc_entry(&assoc_mgr_user_assoc_hash, user->old_name);
+	if (tmp_entry && tmp_entry->value_assoc_list) {
+		itr = list_iterator_create(tmp_entry->value_assoc_list);
 		while ((assoc = list_next(itr))) {
-			if (!assoc->user)
-				continue;
-			if (!xstrcmp(user->old_name, assoc->user)) {
-				/* Since the uid changed the
-				   hash as well will change.  Remove
-				   the assoc from the hash before the
-				   change or you won't find it.
-				*/
-				_delete_assoc_hash(assoc);
+			_delete_assoc_hash(assoc);
 
-				xfree(assoc->user);
-				assoc->user = xstrdup(user->name);
-				assoc->uid = user->uid;
-				_add_assoc_hash(assoc);
-				debug3("changing assoc %d", assoc->id);
+			xfree(assoc->user);
+			assoc->user = xstrdup(user->name);
+			assoc->uid = user->uid;
+
+			_add_assoc_hash(assoc);
+			if (run_in_ctld) {
+				insert_assoc_hash(&assoc_mgr_user_assoc_hash, assoc, assoc->user, NULL);
 			}
+
+			debug3("changing assoc %d", assoc->id);
 		}
 		list_iterator_destroy(itr);
+
+		if (run_in_ctld) {
+			remove_assoc_entry(&assoc_mgr_user_assoc_hash, user->old_name);
+		}
+		tmp_entry = NULL;
+	} else {
+		if (assoc_mgr_assoc_list) {
+			itr = list_iterator_create(assoc_mgr_assoc_list);
+			while ((assoc = list_next(itr))) {
+				if (!assoc->user)
+					continue;
+				if (!xstrcmp(user->old_name, assoc->user)) {
+					/* Since the uid changed the
+					   hash as well will change.  Remove
+					   the assoc from the hash before the
+					   change or you won't find it.
+					*/
+					_delete_assoc_hash(assoc);
+	
+					if (run_in_ctld) {
+						remove_assoc_rec(&assoc_mgr_user_assoc_hash, assoc, assoc->user);
+					}
+	
+					xfree(assoc->user);
+					assoc->user = xstrdup(user->name);
+					assoc->uid = user->uid;
+					_add_assoc_hash(assoc);
+	
+					if (run_in_ctld) {
+						insert_assoc_hash(&assoc_mgr_user_assoc_hash, assoc, assoc->user, NULL);
+					}
+	
+					debug3("changing assoc %d", assoc->id);
+				}
+			}
+			list_iterator_destroy(itr);
+		}
 	}
+#endif
 
 	if (assoc_mgr_wckey_list) {
 		itr = list_iterator_create(assoc_mgr_wckey_list);
@@ -863,6 +1197,12 @@ static void _set_user_default_acct(slurmdb_assoc_rec_t *assoc)
 	if ((assoc->is_def == 1) && (assoc->uid != NO_VAL)) {
 #ifdef __METASTACK_ASSOC_HASH
 		slurmdb_user_rec_t *user = NULL;
+		if (!assoc->user) {
+			char *user_name = find_uid_user_hash(&uid_user_hash, assoc->uid);
+			if (user_name) {
+				assoc->user = xstrdup(user_name);
+			}
+		}
 		if (user_hash && assoc->user) {
 			user = find_str_key_hash(&user_hash, assoc->user);
 		} 
@@ -907,6 +1247,12 @@ static void _clear_user_default_acct(slurmdb_assoc_rec_t *assoc)
 	if ((assoc->is_def == 0) && (assoc->uid != NO_VAL)) {
 #ifdef __METASTACK_ASSOC_HASH
 		slurmdb_user_rec_t *user = NULL;
+		if (!assoc->user) {
+			char *user_name = find_uid_user_hash(&uid_user_hash, assoc->uid);
+			if (user_name) {
+				assoc->user = xstrdup(user_name);
+			}
+		}
 		if (user_hash && assoc->user) {
 			user = find_str_key_hash(&user_hash, assoc->user);
 		} 
@@ -939,9 +1285,24 @@ static void _set_user_default_wckey(slurmdb_wckey_rec_t *wckey)
 
 	/* set up the default if this is it */
 	if ((wckey->is_def == 1) && (wckey->uid != NO_VAL)) {
-		slurmdb_user_rec_t *user = list_find_first(
-			assoc_mgr_user_list, _list_find_uid, &wckey->uid);
-
+#ifdef __METASTACK_ASSOC_HASH
+		slurmdb_user_rec_t *user = NULL;
+		if (!wckey->user) {
+			char *user_name = find_uid_user_hash(&uid_user_hash, wckey->uid);
+			if (user_name) {
+				wckey->user = xstrdup(user_name);
+			}
+		}
+		if (user_hash && wckey->user) {
+			user = find_str_key_hash(&user_hash, wckey->user);
+		} 
+		
+		if (!user) {
+			user = list_find_first(
+				assoc_mgr_user_list, _list_find_uid, &wckey->uid);
+		}
+#endif
+	
 		if (!user)
 			return;
 		if (!user->default_wckey
@@ -1002,11 +1363,7 @@ static slurmdb_assoc_rec_t* _find_assoc_parent(
 	return parent;
 }
 
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-static int _set_assoc_parent_and_user(slurmdb_assoc_rec_t *assoc, bool flag)
-#else
 static int _set_assoc_parent_and_user(slurmdb_assoc_rec_t *assoc)
-#endif
 {
 	xassert(verify_assoc_lock(ASSOC_LOCK, WRITE_LOCK));
 	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
@@ -1098,25 +1455,28 @@ static int _set_assoc_parent_and_user(slurmdb_assoc_rec_t *assoc)
 		if (assoc->uid == NO_VAL || assoc->uid == INFINITE ||
 				assoc->uid == 0) {
 #ifdef __METASTACK_ASSOC_HASH
-			if (!(find_str_key_hash(&user_uid_hash, assoc->user))) {
+			pw_uid = find_user_uid_hash(&user_uid_hash, assoc->user);
+			if (pw_uid == NO_VAL) {
 				if (uid_from_string(assoc->user, &pw_uid) < 0)
 					assoc->uid = NO_VAL;
 				else {
 					assoc->uid = pw_uid;
-					remove_str_key_hash(&user_uid_hash, assoc->user);
-					insert_str_key_hash(&user_uid_hash, &(assoc->uid), assoc->user);
+					remove_user_uid_hash(&user_uid_hash, assoc->user);
+					char *username = find_uid_user_hash(&uid_user_hash, pw_uid);
+					if (username) {
+						remove_user_uid_hash(&user_uid_hash, username);
+						remove_uid_user_hash(&uid_user_hash, pw_uid);
+					} 
+					insert_user_uid_hash(&user_uid_hash, assoc->uid, assoc->user);
+					insert_uid_user_hash(&uid_user_hash, assoc->user, assoc->uid);
 				}
 			} else {
-				assoc->uid = *(uid_t *)find_str_key_hash(&user_uid_hash, assoc->user);
+				assoc->uid = pw_uid;
 			}
 #endif
 		}
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-		if(flag)
-			_set_user_default_acct(assoc);
-#else
+
 		_set_user_default_acct(assoc);
-#endif
 
 		/* get the qos bitmap here */
 		if (g_qos_count > 0) {
@@ -1281,15 +1641,23 @@ static int _post_assoc_list(void)
 
 	itr = list_iterator_create(assoc_mgr_assoc_list);
 
+#ifdef __METASTACK_ASSOC_HASH
+	bool run_in_ctld = false;
+	if (running_in_slurmctld()) {
+		run_in_ctld = true;
+	}
+#endif
+
 	//START_TIMER;
 	g_user_assoc_count = 0;
 	while ((assoc = list_next(itr))) {
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-		_set_assoc_parent_and_user(assoc, true);
-#else
 		_set_assoc_parent_and_user(assoc);
-#endif
 		_add_assoc_hash(assoc);
+#ifdef __METASTACK_ASSOC_HASH
+		if (run_in_ctld && assoc->user) {
+			insert_assoc_hash(&assoc_mgr_user_assoc_hash, assoc, assoc->user, NULL);
+		}
+#endif
 		assoc_mgr_set_assoc_tres_cnt(assoc);
 	}
 
@@ -1341,15 +1709,27 @@ static int _post_user_list(List user_list)
 			user->default_wckey = xstrdup("");
 
 #ifdef __METASTACK_ASSOC_HASH
+		char *username = NULL;
 
-		/** build a user hash  to store all users  */
+		/* build a user hash  to store all users  */
 		insert_str_key_hash(&user_hash, user, user->name);
 
-		/** build a user_uid_hash to store the user's uid*/
+		/* build a user_uid_hash to store the user's uid.
+		   slurmctld directly retrieves the assoc_mgr_user_list 
+		   from slurmdbd, which includes the user UID. 
+		 */
 		if (user->uid != NO_VAL && user->uid != INFINITE &&
-				(user->uid != 0 || !strcmp(user->name, "root"))) {
-			insert_str_key_hash(&user_uid_hash, &(user->uid), user->name);
-			continue;
+				(user->uid != 0 || !xstrcmp(user->name, "root"))) {
+			username = find_uid_user_hash(&uid_user_hash, user->uid);
+			if (username) {
+				refresh_repeat_uid(username);
+				remove_user_uid_hash(&user_uid_hash, username);
+				remove_uid_user_hash(&uid_user_hash, user->uid);
+			} else {
+				insert_user_uid_hash(&user_uid_hash, user->uid, user->name);
+				insert_uid_user_hash(&uid_user_hash, user->name, user->uid);
+				continue;
+			}
 		}
 
 #endif
@@ -1363,7 +1743,15 @@ static int _post_user_list(List user_list)
 
 #ifdef __METASTACK_ASSOC_HASH
 		if (user->uid != NO_VAL) {
-			insert_str_key_hash(&user_uid_hash, &(user->uid), user->name);
+			username = find_uid_user_hash(&uid_user_hash, user->uid);
+			if (username) {
+				refresh_repeat_uid(username);
+
+				remove_user_uid_hash(&user_uid_hash, username);
+				remove_uid_user_hash(&uid_user_hash, user->uid);
+			}
+			insert_user_uid_hash(&user_uid_hash, user->uid, user->name);
+			insert_uid_user_hash(&uid_user_hash, user->name, user->uid);
 		}
 #endif
 	}
@@ -1382,8 +1770,8 @@ static int _post_wckey_list(List wckey_list)
 
 #ifdef __METASTACK_ASSOC_HASH
 	while ((wckey = list_next(itr))) {
-		if (!(find_str_key_hash(&user_uid_hash, wckey->user))) {
-			uid_t pw_uid;
+		uid_t pw_uid = find_user_uid_hash(&user_uid_hash, wckey->user);
+		if (pw_uid == NO_VAL) {
 			if (uid_from_string (wckey->user, &pw_uid) < 0) {
 				if (slurmdbd_conf)
 					debug("post wckey: couldn't get a uid "
@@ -1392,11 +1780,17 @@ static int _post_wckey_list(List wckey_list)
 				wckey->uid = NO_VAL;
 			} else {
 				wckey->uid = pw_uid;
-				remove_str_key_hash(&user_uid_hash, wckey->user);
-				insert_str_key_hash(&user_uid_hash, &(wckey->uid), wckey->user);
+				remove_user_uid_hash(&user_uid_hash, wckey->user);
+				char *username = find_uid_user_hash(&uid_user_hash, pw_uid);
+				if (username) {
+					remove_user_uid_hash(&user_uid_hash, username);
+					remove_uid_user_hash(&uid_user_hash, pw_uid);
+				}
+				insert_user_uid_hash(&user_uid_hash, wckey->uid, wckey->user);
+				insert_uid_user_hash(&uid_user_hash, wckey->user, wckey->uid);
 			}
 		} else {
-			wckey->uid = *(uid_t *)find_str_key_hash(&user_uid_hash, wckey->user);
+			wckey->uid = pw_uid;
 		}
 		_set_user_default_wckey(wckey);
 	}
@@ -1843,6 +2237,11 @@ static int _get_assoc_mgr_assoc_list(void *db_conn, int enforce)
 
 //	DEF_TIMERS;
 	assoc_mgr_lock(&locks);
+#ifdef __METASTACK_ASSOC_HASH
+	if (running_in_slurmctld()) {
+		destroy_assoc_hash(&assoc_mgr_user_assoc_hash);
+	}
+#endif
 	FREE_NULL_LIST(assoc_mgr_assoc_list);
 
 	memset(&assoc_q, 0, sizeof(slurmdb_assoc_cond_t));
@@ -1978,7 +2377,8 @@ static int _get_assoc_mgr_user_list(void *db_conn, int enforce)
 	assoc_mgr_lock(&locks);
 #ifdef __METASTACK_ASSOC_HASH
 	destroy_str_key_hash(&user_hash);
-	destroy_str_key_hash(&user_uid_hash);
+	destroy_user_uid_hash(&user_uid_hash);
+	destroy_uid_user_hash(&uid_user_hash);
 #endif
 	FREE_NULL_LIST(assoc_mgr_user_list);
 	assoc_mgr_user_list = acct_storage_g_get_users(db_conn, uid, &user_q);
@@ -2087,6 +2487,11 @@ static int _refresh_assoc_mgr_assoc_list(void *db_conn, int enforce)
 	assoc_mgr_lock(&locks);
 
 	current_assocs = assoc_mgr_assoc_list;
+#ifdef __METASTACK_ASSOC_HASH
+	if (running_in_slurmctld()) {
+		destroy_assoc_hash(&assoc_mgr_user_assoc_hash);
+	}
+#endif
 
 //	START_TIMER;
 	assoc_mgr_assoc_list =
@@ -2252,7 +2657,8 @@ static int _refresh_assoc_mgr_user_list(void *db_conn, int enforce)
 #ifdef __METASTACK_ASSOC_HASH
 	assoc_mgr_lock(&locks);
 	destroy_str_key_hash(&user_hash);
-	destroy_str_key_hash(&user_uid_hash);
+	destroy_user_uid_hash(&user_uid_hash);
+	destroy_uid_user_hash(&uid_user_hash);
 	assoc_mgr_unlock(&locks);
 #endif
 
@@ -2521,7 +2927,10 @@ extern int assoc_mgr_fini(bool save_state)
 
 #ifdef __METASTACK_ASSOC_HASH
 	destroy_str_key_hash(&user_hash);
-	destroy_str_key_hash(&user_uid_hash);
+	destroy_user_uid_hash(&user_uid_hash);
+	destroy_uid_user_hash(&uid_user_hash);
+
+	destroy_assoc_hash(&assoc_mgr_user_assoc_hash);
 #endif
 
 	FREE_NULL_LIST(assoc_mgr_assoc_list);
@@ -2727,18 +3136,34 @@ extern int assoc_mgr_get_user_assocs(void *db_conn,
 
 	xassert(assoc_mgr_assoc_list);
 
-	itr = list_iterator_create(assoc_mgr_assoc_list);
-	while ((found_assoc = list_next(itr))) {
-		if (assoc->uid != found_assoc->uid) {
-			debug4("not the right user %u != %u",
-			       assoc->uid, found_assoc->uid);
-			continue;
-		}
+#ifdef __METASTACK_ASSOC_HASH
+	assoc_hash_t *tmp_entry = NULL;
 
-		list_append(assoc_list, found_assoc);
-		set = 1;
+	char *found_assoc_user = find_uid_user_hash(&uid_user_hash, assoc->uid);
+
+	if (found_assoc_user) {
+		tmp_entry = find_assoc_entry(&assoc_mgr_user_assoc_hash, found_assoc_user);
 	}
-	list_iterator_destroy(itr);
+	
+	if (tmp_entry && tmp_entry->value_assoc_list) {
+		list_append_list(assoc_list, tmp_entry->value_assoc_list);
+		set = 1;
+		tmp_entry = NULL;
+	} else {
+		itr = list_iterator_create(assoc_mgr_assoc_list);
+		while ((found_assoc = list_next(itr))) {
+			if (assoc->uid != found_assoc->uid) {
+				debug4("not the right user %u != %u",
+					   assoc->uid, found_assoc->uid);
+				continue;
+			}
+	
+			list_append(assoc_list, found_assoc);
+			set = 1;
+		}
+		list_iterator_destroy(itr);
+	}
+#endif
 
 	if (!set) {
 		debug("UID %u has no associations", assoc->uid);
@@ -3096,8 +3521,14 @@ extern int assoc_mgr_fill_in_user(void *db_conn, slurmdb_user_rec_t *user,
 	}
 
 #ifdef __METASTACK_ASSOC_HASH
-	if (user_hash && user->name) {
-		found_user = find_str_key_hash(&user_hash, user->name);
+	char *user_name = NULL;
+	if (!user->name) {
+		user_name = find_uid_user_hash(&uid_user_hash, user->uid);
+	} else {
+		user_name = user->name;
+	}
+	if (user_hash && user_name) {
+		found_user = find_str_key_hash(&user_hash, user_name);
 	}
 	if (!found_user) {
 		itr = list_iterator_create(assoc_mgr_user_list);
@@ -3149,6 +3580,7 @@ extern int assoc_mgr_fill_in_user(void *db_conn, slurmdb_user_rec_t *user,
 
 	if (!locked)
 		assoc_mgr_unlock(&locks);
+
 	return SLURM_SUCCESS;
 
 }
@@ -3488,7 +3920,17 @@ extern slurmdb_admin_level_t assoc_mgr_get_admin_level(void *db_conn,
 		return SLURMDB_ADMIN_NOTSET;
 	}
 
-	found_user = list_find_first(assoc_mgr_user_list, _list_find_uid, &uid);
+#ifdef __METASTACK_ASSOC_HASH
+	char *user_name = find_uid_user_hash(&uid_user_hash, uid);
+
+	if (user_hash && user_name) {
+		found_user = find_str_key_hash(&user_hash, user_name);
+	}
+
+	if (!found_user) {
+		found_user = list_find_first(assoc_mgr_user_list, _list_find_uid, &uid);
+	}
+#endif
 
 	if (found_user)
 		level = found_user->admin_level;
@@ -3520,8 +3962,17 @@ extern bool assoc_mgr_is_user_acct_coord(void *db_conn,
 		return false;
 	}
 
-	found_user = list_find_first(assoc_mgr_user_list, _list_find_uid,
-				     &uid);
+#ifdef __METASTACK_ASSOC_HASH
+	char *user_name = find_uid_user_hash(&uid_user_hash, uid);
+
+	if (user_hash && user_name) {
+		found_user = find_str_key_hash(&user_hash, user_name);
+	}
+	if (!found_user) {
+		found_user = list_find_first(assoc_mgr_user_list, _list_find_uid,
+			&uid);
+	}
+#endif
 
 	if (!found_user || !found_user->coord_accts) {
 		assoc_mgr_unlock(&locks);
@@ -4162,6 +4613,11 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 #ifdef __METASTACK_ASSOC_HASH
 	assoc_mgr_lock_t locks = { .assoc = WRITE_LOCK, .qos = WRITE_LOCK,
 				   .tres = READ_LOCK, .user = WRITE_LOCK, .uid = WRITE_LOCK };
+
+	bool run_in_ctld = false;
+	if (running_in_slurmctld()) {
+		run_in_ctld = true;
+	}
 #endif
 
 	if (!locked)
@@ -4546,6 +5002,11 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 				redo_priority = 2;
 
 			_delete_assoc_hash(rec);
+#ifdef __METASTACK_ASSOC_HASH
+			if (run_in_ctld && rec->user) {
+				remove_assoc_rec(&assoc_mgr_user_assoc_hash, rec, rec->user);
+			}	
+#endif
 			_remove_from_assoc_list(rec);
 			if (init_setup.remove_assoc_notify) {
 				/* since there are some deadlock
@@ -4620,20 +5081,27 @@ extern int assoc_mgr_update_assocs(slurmdb_update_object_t *update, bool locked)
 				addit = true;
 			/* _set_assoc_parent_and_user() may change the uid if
 			 * unset which changes the hash value. */
+#ifdef __METASTACK_ASSOC_HASH
 			if (object->user &&
-			    (object->uid == NO_VAL || object->uid == 0)) {
+			    (object->uid == NO_VAL || (object->uid == 0 && xstrcmp(object->user, "root")))) {
 				_delete_assoc_hash(object);
+
+				if (run_in_ctld) {
+					remove_assoc_rec(&assoc_mgr_user_assoc_hash, object, object->user);
+				}
+#endif
 				addit = true;
 			}
 
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-			_set_assoc_parent_and_user(object,false);
-#else
 			_set_assoc_parent_and_user(object);
-#endif
 
 			if (addit)
 				_add_assoc_hash(object);
+#ifdef __METASTACK_ASSOC_HASH
+			if (addit && run_in_ctld && object->user) {
+				insert_assoc_hash(&assoc_mgr_user_assoc_hash, object, object->user, NULL);
+			}
+#endif
 		}
 		/* Now that we have set up the parents correctly we
 		   can update the used limits
@@ -4813,7 +5281,8 @@ extern int assoc_mgr_update_wckeys(slurmdb_update_object_t *update, bool locked)
 				break;
 			}
 #ifdef __METASTACK_ASSOC_HASH 
-		if (!(find_str_key_hash(&user_uid_hash, object->user))) {
+		pw_uid = find_user_uid_hash(&user_uid_hash, object->user);
+		if (pw_uid == NO_VAL) {
 			if (uid_from_string (object->user, &pw_uid) < 0) {
 				debug("wckey add couldn't get a uid "
 				      "for user %s",
@@ -4821,11 +5290,17 @@ extern int assoc_mgr_update_wckeys(slurmdb_update_object_t *update, bool locked)
 				object->uid = NO_VAL;
 			} else {
 				object->uid = pw_uid;
-				remove_str_key_hash(&user_uid_hash, object->user);
-				insert_str_key_hash(&user_uid_hash, &(object->uid), object->user);
+				remove_user_uid_hash(&user_uid_hash, object->user);
+				char *username = find_uid_user_hash(&uid_user_hash, pw_uid);
+				if (username) {
+					remove_user_uid_hash(&user_uid_hash, username);
+					remove_uid_user_hash(&uid_user_hash, pw_uid);
+				}
+				insert_user_uid_hash(&user_uid_hash, object->uid, object->user);
+				insert_uid_user_hash(&uid_user_hash, object->user, object->uid);
 			}
 		} else {
-			object->uid = *(uid_t *)find_str_key_hash(&user_uid_hash, object->user);
+			object->uid = pw_uid;
 		}
 #endif
 
@@ -4875,7 +5350,7 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 	uid_t pw_uid;
 #ifdef __METASTACK_ASSOC_HASH
 	str_key_hash_t *rec_user_entry = NULL;
-	str_key_hash_t *rec_user_uid_entry= NULL;
+	user_uid_hash_t *rec_user_uid_entry= NULL;
 	assoc_mgr_lock_t locks = { .assoc = WRITE_LOCK, .user = WRITE_LOCK,
 				   .wckey = WRITE_LOCK, .uid = WRITE_LOCK };
 #endif
@@ -4927,7 +5402,8 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 					remove_str_key_hash(&user_hash, username);
 				}
 				if (rec_user_uid_entry)	{
-					remove_str_key_hash(&user_uid_hash, username);
+					remove_uid_user_hash(&uid_user_hash, rec_user_uid_entry->uid);
+					remove_user_uid_hash(&user_uid_hash, username);
 				}				
 #endif
 
@@ -4945,6 +5421,14 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 					      rec->name);
 					break;
 				}
+#ifdef __METASTACK_ASSOC_HASH
+				remove_str_key_hash(&user_hash, username);
+				remove_uid_user_hash(&uid_user_hash, rec->uid);
+				remove_user_uid_hash(&user_uid_hash, username);
+
+				HASH_FIND_STR(user_hash, rec->name, rec_user_entry);
+				HASH_FIND_STR(user_uid_hash,rec->name, rec_user_uid_entry);
+#endif
 				xfree(rec->old_name);
 				rec->old_name = rec->name;
 				rec->name = object->name;
@@ -4996,7 +5480,8 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 				remove_str_key_hash(&user_hash, username);
 			}
 			if (rec_user_uid_entry)	{
-				remove_str_key_hash(&user_uid_hash, username);
+				remove_uid_user_hash(&uid_user_hash, rec_user_uid_entry->uid);
+				remove_user_uid_hash(&user_uid_hash, username);
 			}				
 #endif
 			if (!rec) {
@@ -5015,7 +5500,8 @@ extern int assoc_mgr_update_users(slurmdb_update_object_t *update, bool locked)
 					remove_str_key_hash(&user_hash, username);
 				}
 				if (rec_user_uid_entry)	{
-					remove_str_key_hash(&user_uid_hash, username);
+					remove_uid_user_hash(&uid_user_hash, rec_user_uid_entry->uid);
+					remove_user_uid_hash(&user_uid_hash, username);
 				}				
 #endif
 				break;
@@ -6774,6 +7260,9 @@ extern int load_assoc_mgr_state(bool only_tres)
 				error("No associations retrieved");
 				break;
 			}
+#ifdef __METASTACK_ASSOC_HASH
+			destroy_assoc_hash(&assoc_mgr_user_assoc_hash);
+#endif
 			FREE_NULL_LIST(assoc_mgr_assoc_list);
 			assoc_mgr_assoc_list = msg->my_list;
 			_post_assoc_list();
@@ -6794,7 +7283,8 @@ extern int load_assoc_mgr_state(bool only_tres)
 			}
 #ifdef __METASTACK_ASSOC_HASH
 			destroy_str_key_hash(&user_hash);
-			destroy_str_key_hash(&user_uid_hash);
+			destroy_user_uid_hash(&user_uid_hash);
+			destroy_uid_user_hash(&uid_user_hash);
 #endif
 			FREE_NULL_LIST(assoc_mgr_user_list);
 			assoc_mgr_user_list = msg->my_list;
@@ -6968,8 +7458,14 @@ extern int assoc_mgr_set_missing_uids()
 
 					object->uid = pw_uid;
 #ifdef __METASTACK_ASSOC_HASH
-					remove_str_key_hash(&user_uid_hash, object->user);
-					insert_str_key_hash(&user_uid_hash, &(object->uid), object->user);
+					remove_user_uid_hash(&user_uid_hash, object->user);
+					char *username = find_uid_user_hash(&uid_user_hash, pw_uid);
+					if (username) {
+						remove_user_uid_hash(&user_uid_hash, username);
+						remove_uid_user_hash(&uid_user_hash, pw_uid);
+					}
+					insert_user_uid_hash(&user_uid_hash, object->uid, object->user);
+					insert_uid_user_hash(&uid_user_hash, object->user, object->uid);
 #endif
 					_add_assoc_hash(object);
 				}
@@ -6984,7 +7480,8 @@ extern int assoc_mgr_set_missing_uids()
 		while ((object = list_next(itr))) {
 			if (object->user && (object->uid == NO_VAL)) {
 #ifdef __METASTACK_ASSOC_HASH
-				if (!find_str_key_hash(&user_uid_hash, object->user)) {
+				pw_uid = find_user_uid_hash(&user_uid_hash, object->user);
+				if (pw_uid == NO_VAL) {
 					if (uid_from_string(
 							object->user, &pw_uid) < 0) {
 						debug2("refresh wckey "
@@ -6993,11 +7490,17 @@ extern int assoc_mgr_set_missing_uids()
 					} else {
 						object->uid = pw_uid;
 
-						remove_str_key_hash(&user_uid_hash, object->user);
-						insert_str_key_hash(&user_uid_hash, &(object->uid), object->user);
+						remove_user_uid_hash(&user_uid_hash, object->user);
+						char *username = find_uid_user_hash(&uid_user_hash, pw_uid);
+						if (username) {
+							remove_user_uid_hash(&user_uid_hash, username);
+							remove_uid_user_hash(&uid_user_hash, pw_uid);
+						}
+						insert_user_uid_hash(&user_uid_hash, object->uid, object->user);
+						insert_uid_user_hash(&uid_user_hash, object->user, object->uid);
 					}
 				} else {
-					object->uid = *(uid_t*)find_str_key_hash(&user_uid_hash, object->user);
+					object->uid = pw_uid;
 				}
 #endif
 			}
@@ -7011,7 +7514,8 @@ extern int assoc_mgr_set_missing_uids()
 		while ((object = list_next(itr))) {
 			if (object->name && (object->uid == NO_VAL)) {
 #ifdef __METASTACK_ASSOC_HASH
-				if (!(find_str_key_hash(&user_uid_hash, object->name))) {
+				pw_uid = find_user_uid_hash(&user_uid_hash, object->name);
+				if (pw_uid == NO_VAL) {
 					if (uid_from_string(
 							object->name, &pw_uid) < 0) {
 						debug3("%s: refresh user couldn't get uid for user %s",
@@ -7021,11 +7525,17 @@ extern int assoc_mgr_set_missing_uids()
 							__func__, pw_uid, object->name);
 						object->uid = pw_uid;
 
-						remove_str_key_hash(&user_uid_hash, object->name);
-						insert_str_key_hash(&user_uid_hash, &(object->uid), object->name);
+						remove_user_uid_hash(&user_uid_hash, object->name);
+						char *username = find_uid_user_hash(&uid_user_hash, pw_uid);
+						if (username) {
+							remove_user_uid_hash(&user_uid_hash, username);
+							remove_uid_user_hash(&uid_user_hash, pw_uid);
+						}
+						insert_user_uid_hash(&user_uid_hash, object->uid, object->name);
+						insert_uid_user_hash(&uid_user_hash, object->name, object->uid);
 					}
 				} else {
-					object->uid = *(uid_t*)find_str_key_hash(&user_uid_hash, object->name);
+					object->uid = pw_uid;
 				}
 #endif
 			}

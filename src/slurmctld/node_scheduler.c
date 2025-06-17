@@ -441,9 +441,6 @@ extern void deallocate_nodes(job_record_t *job_ptr, bool timeout,
 		node_count++;
 	}
 #endif
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
 
 	if (job_ptr->details->prolog_running) {
 		/*

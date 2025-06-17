@@ -1132,6 +1132,11 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobin
 		// return SLURM_SUCCESS;
 	}
 
+	if (frequency == 0 || !(jobinfo.switch_step) || !(jobinfo.timer > 0)) {   /* don't want dynamic monitoring? */
+		debug2("jobacct_gather send logging disabled");
+		return retval;
+	}
+
 	acct_gather_rank_t *jobinfo_watch = NULL;
 	jobinfo_watch = xmalloc(sizeof(acct_gather_rank_t));
 	
@@ -1141,11 +1146,6 @@ extern int	jobacct_gather_stepdpoll(uint16_t frequency, acct_gather_rank_t jobin
 	jobinfo_watch->frequency = frequency;	
 	jobinfo_watch->step_id = jobinfo.step_id;   
 	jobinfo_watch->node_alloc_cpu = jobinfo.node_alloc_cpu;
-
-	if (frequency == 0 || !(jobinfo.switch_step) || !(jobinfo.timer > 0)) {   /* don't want dynamic monitoring? */
-		debug2("jobacct_gather send logging disabled");
-		return retval;
-	}
 
 	slurm_thread_create(&watch_stepd_thread_id, step_collect, jobinfo_watch);
 	debug3("jobacct stepd gather dynamic logging enabled");

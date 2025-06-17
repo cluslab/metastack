@@ -44,6 +44,10 @@
 #include "as_mysql_usage.h"
 #endif
 
+#ifdef __METASTACK_ASSOC_HASH
+#include "src/common/assoc_mgr.h"
+#endif
+
 /* Fill in all the users that are coordinator for this account.  This
  * will fill in if there are coordinators from a parent account also.
  */
@@ -785,7 +789,7 @@ empty:
             if (!assoc->acct)
                 continue;
             
-            insert_assoc_hash(&assoc_hash, assoc, assoc->acct);
+            insert_assoc_hash(&assoc_hash, assoc, assoc->acct, slurmdb_destroy_assoc_rec);
             list_remove(assoc_itr);
         }
         list_iterator_destroy(assoc_itr);

@@ -657,8 +657,14 @@ static int _send_data(const char *data, RPType type)
 	}
 #ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
 	rt_policy = _parse_rt_policy(influxdb_conf.rt_policy, type);
-	xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=s", influxdb_conf.host,
+	/* If open ProfileInfluxDBSeriesReduce, need to increase the time accuracy in order to avoid data overwrite */
+	if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
+		xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=ns", influxdb_conf.host,
 		   influxdb_conf.database, rt_policy);
+	} else {
+		xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=s", influxdb_conf.host,
+		   influxdb_conf.database, rt_policy);
+	}
 	xfree(rt_policy);
 #endif
 
@@ -1025,6 +1031,9 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 		FIELD_PAGES,
 		FIELD_READ,
 		FIELD_WRITE,
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+		FIELD_TIMENS,
+#endif
 		FIELD_CNT
 	};
 	struct data_pack{
@@ -1032,6 +1041,11 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 			List process;
 	};
 	struct data_pack * pdata = (struct data_pack*)data;
+#ifdef __METASTACK_JOB_USELESS_RUNNING_WARNING
+	if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
+		sample_time = (uint64_t)((union data_t*)(pdata->data))[FIELD_TIMENS].u;
+	}
+#endif
 #endif
 	debug3("%s %s called", plugin_type, __func__);
 
@@ -1087,6 +1101,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	if(pdata->process != NULL  ) {
 		ListIterator itr = list_iterator_create(pdata->process);
 		jag_prec_t *prec;
+		int i = 0;
 		while((prec = list_next(itr))) {
 			if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
 				xstrfmtcat(str, "Command,host=%s,username=%s "
@@ -1097,10 +1112,11 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 					table->name,prec->pid, prec->ppid, prec->command, 
 					((union data_t*)(pdata->data))[FIELD_RSS].u,
 					((union data_t*)(pdata->data))[FIELD_VMSIZE].u,prec->cpu_util,
-					(uint64_t)sample_time);
+					(uint64_t)sample_time + i);
+				i++;
 			}else{
 				xstrfmtcat(str, "Command,job=%d,step=%d,username=%s,task=%s,"
-					"host=%s pid=%d,ppid=%d,command=\"%s\","
+					"host=%s,pid=%d,ppid=%d command=\"%s\","
 					"rss=%"PRIu64",vmsize=%"PRIu64",value=%.2f %"PRIu64"\n",
 					g_job->step_id.job_id, g_job->step_id.step_id,g_job->user_name,
 					table->name, g_job->node_name,
@@ -1109,7 +1125,6 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 					((union data_t*)(pdata->data))[FIELD_VMSIZE].u,prec->cpu_util,
 					(uint64_t)sample_time);
 			}
-            
 		}
 		list_iterator_destroy(itr);
 	}

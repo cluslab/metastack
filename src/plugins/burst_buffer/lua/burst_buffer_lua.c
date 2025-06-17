@@ -2976,11 +2976,10 @@ static void _kill_job(job_record_t *job_ptr, bool hold_job)
 	job_ptr->job_state  = JOB_REQUEUE;
 	job_completion_logger(job_ptr, true);
 	job_ptr->job_state = JOB_PENDING | JOB_COMPLETING;
+	deallocate_nodes(job_ptr, false, false, false);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	_add_job_state_to_queue(job_ptr);
 #endif
-
-	deallocate_nodes(job_ptr, false, false, false);
 }
 
 static void *_start_pre_run(void *x)
