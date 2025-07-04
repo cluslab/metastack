@@ -140,6 +140,7 @@ List queue_license_list;
 #endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+static bool no_need_assoc_lock = false;
 static void *_schedule_part(void *arg);
 static int para_sched_job_count = 0;
 static pthread_mutex_t sched_job_update = PTHREAD_MUTEX_INITIALIZER;
@@ -566,7 +567,7 @@ void *_schedule_part(void *arg)
  */
 extern void do_sched_assoc_lock_unlock(bool do_lock, job_record_t *job_ptr)
 {
-	if(!para_sched || !job_ptr)
+	if (no_need_assoc_lock || !job_ptr)
 		return;
 
 	slurmdb_assoc_rec_t *assoc = job_ptr->assoc_ptr;
@@ -574,7 +575,7 @@ extern void do_sched_assoc_lock_unlock(bool do_lock, job_record_t *job_ptr)
 
 	if(do_lock) {
 			/* assoc lock */
-			while (assoc && assoc->is_lock_init && assoc->usage && assoc->parent_id) {
+			while (assoc && assoc->parent_id && assoc->usage && assoc->is_lock_init) {
 				slurm_mutex_lock(&assoc->assoc_sched_lock);
 				assoc = assoc->usage->parent_assoc_ptr;
 			}
@@ -583,7 +584,7 @@ extern void do_sched_assoc_lock_unlock(bool do_lock, job_record_t *job_ptr)
 				slurm_mutex_lock(&job_qos->qos_sched_lock);
 	} else {
 			/* assoc unlock */
-			while (assoc && assoc->is_lock_init && assoc->usage && assoc->parent_id) {
+			while (assoc && assoc->parent_id && assoc->usage && assoc->is_lock_init) {
 				slurm_mutex_unlock(&assoc->assoc_sched_lock);
 				assoc = assoc->usage->parent_assoc_ptr;
 			}
@@ -1705,6 +1706,11 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 			assoc_limit_stop = true;
 		else
 			assoc_limit_stop = false;
+
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		/* Only when both para sched and accounting_enforce_limit enable, will do assoc lock */
+		no_need_assoc_lock = !(para_sched && (accounting_enforce & ACCOUNTING_ENFORCE_LIMITS));
+#endif
 
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
 		part_repeat_job_template = 0;

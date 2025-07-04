@@ -1132,15 +1132,29 @@ extern void set_job_failed_assoc_qos_ptr(job_record_t *job_ptr)
 		                            accounting_enforce,
 		                            &job_ptr->assoc_ptr, false) ==
 		    SLURM_SUCCESS) {
-			job_ptr->assoc_id = assoc_rec.id;
-			debug("%s: Filling in assoc for %pJ Assoc=%u",
-			      __func__, job_ptr, job_ptr->assoc_id);
-
-			job_ptr->state_reason = WAIT_NO_REASON;
-			xfree(job_ptr->state_desc);
-			last_job_update = time(NULL);
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+			if (job_ptr->assoc_ptr && (job_ptr->assoc_ptr->uid != job_ptr->user_id)) {
+				error("%s: JobId=%u assoc_id %u assoc_ptr->uid %u does not match job_ptr->user_id %u",
+						__func__, job_ptr->job_id, job_ptr->assoc_ptr->id, job_ptr->assoc_ptr->uid, job_ptr->user_id);
+				xfree(job_ptr->state_desc);
+				job_ptr->state_reason = FAIL_ACCOUNT;
+				job_ptr->assoc_ptr = NULL;
+				last_job_update = time(NULL);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
+				_add_job_state_to_queue(job_ptr);
+#endif
+			} else {
+				job_ptr->assoc_id = assoc_rec.id;
+				debug("%s: Filling in assoc for %pJ Assoc=%u",
+					__func__, job_ptr, job_ptr->assoc_id);
+
+				job_ptr->state_reason = WAIT_NO_REASON;
+				xfree(job_ptr->state_desc);
+				last_job_update = time(NULL);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+				_add_job_state_to_queue(job_ptr);
+#endif
+			}
 #endif
 		}
 	}
@@ -9060,6 +9074,8 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 #ifdef __METASTACK_NEW_TIME_PREDICT
 	if ((job_ptr->predict_job == 1) && (job_ptr->time_min > 0)) {
 		info("JobId=%d is a predict job, and The TimeMin is %d minutes.", job_ptr->job_id, job_ptr->time_min);
+	} else {
+		info("JobId=%d is not a predict job.", job_ptr->job_id);
 	}
 #endif
 
@@ -10865,10 +10881,12 @@ void job_time_limit(void)
 				over_run = now - YEAR_SECONDS;
 			else
 				over_run = now - (over_time_limit  * 60);
-			if (job_ptr->end_time <= over_run) {
+/*  The detection cycle of the job_time_limit process is advanced by one to two rounds(45s). 
+	During this period, the EndTime and TimeMin of the jobs with the prediction function are dynamically updated.
+ */
 #ifdef __METASTACK_NEW_TIME_PREDICT
-				if ((job_ptr->predict_job == 1) && job_ptr->time_min){
-
+			if ((job_ptr->predict_job == 1) && job_ptr->time_min){
+				if (job_ptr->end_time <= (over_run + 45)) {
 					/* hard_end_time -- The actual end time of the job.
 					 * next_end_time -- The predicted end time of the next round of job.
 					 */ 
@@ -10884,26 +10902,29 @@ void job_time_limit(void)
 					// The actual end time of the job is greater than now, update EndTime & TimeMin. Otherwise cancel job
 					if (hard_end_time > over_run) {
 						next_end_time = job_ptr->end_time + (60 * 60);
+						slurm_make_time_str(&job_ptr->end_time, old_end_time, sizeof(old_end_time));
 						if (next_end_time > hard_end_time) {
-							slurm_make_time_str(&job_ptr->end_time, old_end_time, sizeof(old_end_time));
 							slurm_make_time_str(&hard_end_time, new_end_time, sizeof(new_end_time));
-							job_ptr->end_time = hard_end_time;
-							info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s", job_ptr->job_id, old_end_time, new_end_time);
-
+							if (job_ptr->end_time != hard_end_time) {
+								job_ptr->end_time = hard_end_time;
+								info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s by using Timelimit.", job_ptr->job_id, old_end_time, new_end_time);
+							}
+							
 							old_time_min = job_ptr->time_min;
 							new_time_min = job_ptr->time_limit;
-							job_ptr->time_min = new_time_min;
-							info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes", job_ptr->job_id, old_time_min, new_time_min);
+							if (old_time_min != new_time_min) {
+								job_ptr->time_min = new_time_min;
+								info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes by using Timelimit.", job_ptr->job_id, old_time_min, new_time_min);
+							}
 						} else {
-							slurm_make_time_str(&job_ptr->end_time, old_end_time, sizeof(old_end_time));
 							slurm_make_time_str(&next_end_time, new_end_time, sizeof(new_end_time));
 							job_ptr->end_time = next_end_time;
-							info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s", job_ptr->job_id, old_end_time, new_end_time);
+							info("JobId=%d RunTime exceeds TimeMin, update EndTime from %s to %s by adding one hour", job_ptr->job_id, old_end_time, new_end_time);
 
 							old_time_min = job_ptr->time_min;
 							new_time_min = job_ptr->time_min + 60;
 							job_ptr->time_min = new_time_min;
-							info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes", job_ptr->job_id, old_time_min, new_time_min);
+							info("JobId=%d RunTime exceeds TimeMin, update TimeMin from %d minutes to %d minutes by adding one hour", job_ptr->job_id, old_time_min, new_time_min);
 						}
 					} else {
 						last_job_update = now;
@@ -10913,7 +10934,9 @@ void job_time_limit(void)
 						xfree(job_ptr->state_desc);
 						goto time_check;
 					}
-				} else {
+				}
+			} else {
+				if (job_ptr->end_time <= over_run) {
 					last_job_update = now;
 					info("Time limit exhausted for %pJ", job_ptr);
 					_job_timed_out(job_ptr, false);
@@ -10921,8 +10944,8 @@ void job_time_limit(void)
 					xfree(job_ptr->state_desc);
 					goto time_check;
 				}
-#endif
 			}
+#endif
 		}
 
 		if (job_ptr->resv_ptr &&

@@ -2985,11 +2985,11 @@ static void _gres_reconfig(bool reconfig)
 			else{
 				gres_name = node_ptr->config_ptr->gres;
 			}
+			gres_init_node_config(gres_name, &node_ptr->gres_list);
 			if (gres_name == NULL) {
 				continue;
 			}
 			gres_number = parse_gres_count(gres_name);
-			gres_init_node_config(gres_name, &node_ptr->gres_list);
 			if(gres_g_node_config_loadgres(
 							node_ptr->config_ptr->cpus, node_ptr->name,
 							node_ptr->gres_list, NULL, NULL, parsed_lines, gres_number) ==SLURM_ERROR){

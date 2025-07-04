@@ -37,6 +37,10 @@ Python 3.9.19、pandas、numpy、sklearnjoblib、os、sys、argparse、warnings
 
 # 配置使用
 
+​		slurm.conf配置文件中需配置CliFilterPlugins=cli_filter/lua
+
+​		slurm_partition.conf配置文件中分区需配置DefaultTime
+
 ​		安装包中contribs\predictor下有configuration文件，其中包含所有开关及路径的配置项。
 
 ​		其中包含配置相关：
