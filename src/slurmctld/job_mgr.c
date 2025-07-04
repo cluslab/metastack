@@ -6056,12 +6056,14 @@ extern job_record_t *job_array_split(job_record_t *job_ptr)
 							   false);
 	}
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(cachedup_realtime && cache_queue){
-		slurm_cache_date_t *cache_msg = NULL;
-		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-		cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-		cache_msg->job_ptr = _add_job_to_queue(job_ptr);
-		cache_enqueue(cache_msg);
+	if(job_ptr && find_job_record(job_ptr->job_id)){
+		if(cachedup_realtime && cache_queue){
+			slurm_cache_date_t *cache_msg = NULL;
+			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+			cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+			cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+			cache_enqueue(cache_msg);
+		}
 	}
 #endif
 
@@ -22141,7 +22143,6 @@ static void _remove_copy_job_hash(job_record_t *job_entry, job_hash_type_t type)
 
 	while ((job_pptr != NULL) && (*job_pptr != NULL) &&
 	       ((job_ptr = *job_pptr) != job_entry)) {
-		xassert(job_ptr->magic == JOB_MAGIC);
 		switch (type) {
 		case JOB_HASH_JOB:
 			job_pptr = &job_ptr->job_next;
@@ -22219,8 +22220,6 @@ static void _delete_copy_job_details(job_record_t *job_entry)
 
 	if (job_entry->details == NULL)
 		return;
-
-	xassert (job_entry->details->magic == DETAILS_MAGIC);
 
 	/*
 	 * Queue up job to have the batch script and environment deleted.
@@ -22403,7 +22402,7 @@ extern void _list_delete_copy_job(void *job_entry)
 //	int  i;
 
 	xassert(job_entry);
-	xassert (job_ptr->magic == JOB_MAGIC);
+
 	job_ptr->magic = 0;	/* make sure we don't delete record twice */
 
 	_delete_copy_job_common(job_ptr);
@@ -22932,6 +22931,8 @@ extern job_record_t *_add_queue_job_to_cache(job_record_t *des_job_ptr)
 {
 	part_record_t *part_ptr = NULL;
 	List part_ptr_list = NULL;
+	if(!des_job_ptr)
+		return NULL;
 	debug2("%s CACHE_QUERY  add job to cache %d ", __func__, des_job_ptr->job_id);
 	if (find_hash_job_record(des_job_ptr->job_id, 2)){
 		_delete_copy_job_state(des_job_ptr);
@@ -22969,6 +22970,8 @@ extern int _del_cache_job(uint32_t job_id)
 extern void del_cache_job_state_record(job_state_record_t *src_job_ptr)
 {
     int i;
+	if(!src_job_ptr)
+		return;
 	xfree(src_job_ptr->state_desc);
 	xfree(src_job_ptr->nodes);
 	xfree(src_job_ptr->sched_nodes);
@@ -23101,6 +23104,8 @@ extern int update_cache_job_record(job_state_record_t *src_job_ptr)
 	bool task_id_update = false;
 	part_record_t *part_ptr = NULL;
 	List part_ptr_list = NULL;
+	if(!src_job_ptr)
+		return 0;
 	des_job_ptr = find_hash_job_record(src_job_ptr->job_id, 2);
 	if(des_job_ptr){
 		debug4("%s CACHE_QUERY  update job state to cache %d ", __func__, src_job_ptr->job_id);
@@ -23870,8 +23875,6 @@ static int _pack_cache_job(void *object, void *arg)
 {
 	job_record_t *job_ptr = (job_record_t *)object;
 	_foreach_pack_job_info_t *pack_info = (_foreach_pack_job_info_t *)arg;
-
-	xassert (job_ptr->magic == JOB_MAGIC);
 
 	if ((pack_info->filter_uid != NO_VAL) &&
 	    (pack_info->filter_uid != job_ptr->user_id))

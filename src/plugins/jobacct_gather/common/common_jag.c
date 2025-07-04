@@ -707,7 +707,7 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 		xfree(proc_file);
 		xstrfmtcat(proc_file, "/proc/%u/cmdline", pid);
 		if (_get_cmdline(proc_file, prec) == -1)
-			goto bail_out;
+			log_flag(JAG, "problem retrieving cmdline data");
 	}
 #endif
 	xfree(proc_file);

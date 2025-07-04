@@ -330,6 +330,7 @@ static void _list_delete_cache_record(void *entry)
 	switch (msg_ptr->msg_type) {
 		case CREATE_CACHE_JOB_RECORD:
 			_delete_copy_job_state(msg_ptr->job_ptr);
+			msg_ptr->job_ptr = NULL;
 			break;
 		case CREATE_CACHE_NODE_RECORD:
 			_list_delete_copy_config(msg_ptr->node_ptr->config_ptr);
@@ -338,21 +339,27 @@ static void _list_delete_cache_record(void *entry)
 				for (i = 0; i < msg_ptr->node_ptr->part_cnt; i++) {
 					xfree(part_pptr_t[i]);
 				}
+				xfree(part_pptr_t);
 			}
 			purge_cache_node_rec(msg_ptr->node_ptr);
+			msg_ptr->node_ptr = NULL;
 			break;
 		case CREATE_CACHE_PART_RECORD:
             xfree(msg_ptr->default_part_name);
 			_list_delete_cache_part(msg_ptr->part_ptr);
+			msg_ptr->part_ptr = NULL;
 			break;
 		case UPDATE_CACHE_JOB_RECORD:
 			del_cache_job_state_record(msg_ptr->job_state_ptr);
+			msg_ptr->job_state_ptr = NULL;
 			break;
 		case UPDATE_CACHE_NODE_RECORD:
 			del_cache_node_state_record(msg_ptr->node_state_ptr);
+			msg_ptr->node_state_ptr = NULL;
 			break;
 		case UPDATE_CACHE_NODE_INFO:
 			del_cache_node_info_record(msg_ptr->select_nodeinfo,msg_ptr->node_record_count);
+			msg_ptr->select_nodeinfo = NULL;
 			break;
         case UPDATE_CACHE_NODE_STATE:
             FREE_NULL_BITMAP(msg_ptr->node_state_bitmap);
@@ -361,6 +368,7 @@ static void _list_delete_cache_record(void *entry)
 		case UPDATE_CACHE_PART_RECORD:
             xfree(msg_ptr->default_part_name);
 			del_cache_part_state_record(msg_ptr->part_state_ptr);
+			msg_ptr->part_state_ptr = NULL;
 			break;
 		case DELETE_CACHE_NODE_RECORD:
 			xfree(msg_ptr->node_name);

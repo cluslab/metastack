@@ -5333,15 +5333,17 @@ extern int create_dynamic_reg_node(slurm_msg_t *msg)
 	select_g_reconfigure();
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(node_cachedup_realtime == 1){
-		_add_cache_node(node_ptr);
-	}else if(node_cachedup_realtime == 2 && cache_queue){
-		slurm_cache_date_t *cache_msg = NULL;
-		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-		cache_msg->msg_type = CREATE_CACHE_NODE_RECORD;
-		cache_msg->node_record_count = node_record_count;
-		cache_msg->node_ptr = _add_node_to_queue(node_ptr, true);
-		cache_enqueue(cache_msg);
+	if(node_ptr && find_node_record(node_ptr->name)){
+		if(node_cachedup_realtime == 1){
+			_add_cache_node(node_ptr);
+		}else if(node_cachedup_realtime == 2 && cache_queue){
+			slurm_cache_date_t *cache_msg = NULL;
+			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+			cache_msg->msg_type = CREATE_CACHE_NODE_RECORD;
+			cache_msg->node_record_count = node_record_count;
+			cache_msg->node_ptr = _add_node_to_queue(node_ptr, true);
+			cache_enqueue(cache_msg);
+		}
 	}
 #endif
 
@@ -5922,6 +5924,8 @@ extern int update_cache_node_info(dynamic_plugin_data_t **select_nodeinfo, int n
 	int n;
 	node_record_t *des_node_ptr = NULL;	
 	dynamic_plugin_data_t *des_select_nodeinfo = NULL;	
+	if(!select_nodeinfo)
+		return 0;
 	debug4("%s CACHE_QUERY  udpate node info to cache ", __func__);
 	for (n = 0; n < node_record_count; n++) {
 		if (!(des_select_nodeinfo = select_nodeinfo[n]))
@@ -5992,6 +5996,8 @@ extern int update_cache_node_record(node_state_record_t *src_node_ptr)
 //	hostlist_t alias_list;
 //	char *alias = NULL;
 	part_record_t *part_ptr = NULL;
+	if(!src_node_ptr)
+		return 0;
 	des_node_ptr = find_cache_node_record(src_node_ptr->name);
 	if(des_node_ptr){
 		debug4("%s CACHE_QUERY  update node state to cache %s ", __func__, src_node_ptr->name);
@@ -6248,6 +6254,8 @@ extern node_record_t * _add_queue_node_to_cache(node_record_t *des_node_ptr)
 	int i,j;
 	part_record_t *part_ptr = NULL;
 	config_record_t *config_ptr = NULL;
+	if(!des_node_ptr)
+		return NULL;
 	debug2("%s CACHE_QUERY  add node to cache %s ", __func__, des_node_ptr->name);
 	if(find_cache_node_record(des_node_ptr->name)){
 		if(des_node_ptr->config_ptr){
