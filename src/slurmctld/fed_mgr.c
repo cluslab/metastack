@@ -1721,14 +1721,16 @@ static int _fed_mgr_job_allocate_sib(char *sib_name, job_desc_msg_t *job_desc,
 		error_code = ESLURM_CAN_NOT_START_IMMEDIATELY;
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	if (!reject_job){
-		if(job_cachedup_realtime == 1){
-			_add_cache_job(job_ptr);
-		}else if(job_cachedup_realtime == 2 && cache_queue){
-			slurm_cache_date_t *cache_msg = NULL;
-			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-			cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-			cache_msg->job_ptr = _add_job_to_queue(job_ptr);
-			cache_enqueue(cache_msg);
+		if(job_ptr && find_job_record(job_ptr->job_id)){
+			if(job_cachedup_realtime == 1){
+				_add_cache_job(job_ptr);
+			}else if(job_cachedup_realtime == 2 && cache_queue){
+				slurm_cache_date_t *cache_msg = NULL;
+				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+				cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+				cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+				cache_enqueue(cache_msg);
+			}
 		}
 	}
 #endif
@@ -4419,14 +4421,16 @@ extern int fed_mgr_job_allocate(slurm_msg_t *msg, job_desc_msg_t *job_desc,
 	job_ptr->fed_details->siblings_active = job_desc->fed_siblings_active;
 	update_job_fed_details(job_ptr);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if(job_cachedup_realtime == 1){
-		_add_cache_job(job_ptr);
-	}else if(job_cachedup_realtime == 2 && cache_queue){
-		slurm_cache_date_t *cache_msg = NULL;
-		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-		cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-		cache_msg->job_ptr = _add_job_to_queue(job_ptr);
-		cache_enqueue(cache_msg);
+	if(job_ptr && find_job_record(job_ptr->job_id)){
+		if(job_cachedup_realtime == 1){
+			_add_cache_job(job_ptr);
+		}else if(job_cachedup_realtime == 2 && cache_queue){
+			slurm_cache_date_t *cache_msg = NULL;
+			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+			cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+			cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+			cache_enqueue(cache_msg);
+		}
 	}
 #endif
 	/* Add record to fed job table */

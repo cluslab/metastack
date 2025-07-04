@@ -1532,10 +1532,12 @@ extern int jobacct_gather_init(void)
 done:
 	slurm_mutex_unlock(&g_context_lock);
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	/*
+		Do not execute apptype_properties_conf_init conditionally. Otherwise, it may cause 
+		the slurmd service to crash under multi-threading conditions.
+	*/
 	if (retval == SLURM_SUCCESS) {
-		if(acct_gather_parse_freq(PROFILE_APPTYPE, slurm_conf.job_acct_gather_freq) > 0){
-			retval = apptype_properties_conf_init();
-		}
+		retval = apptype_properties_conf_init();
 	}
 #endif
 	if (retval != SLURM_SUCCESS)
@@ -1633,6 +1635,18 @@ extern int apptype_properties_conf_init(void)
 	if (running_in_slurmctld())
 		return SLURM_SUCCESS;
 
+	/*
+		If apptype recognition is not configured, then use init_buf(0). The reason for this is 
+		that in version 22 of slurmstepd, it reads the local configuration file instead of being 
+		sent by slurmd. Therefore, if buf is not initialized, it may cause the content received 
+		by the slurmstep end and the content sent by the slurmd end to be mismatched, thereby 
+		leading to service failure.
+	*/
+	if (acct_gather_parse_freq(PROFILE_APPTYPE, slurm_conf.job_acct_gather_freq) <= 0) {
+		apptype_properties_apptype_buf = init_buf(0);
+		return SLURM_SUCCESS;
+	}
+
 	rc += _get_option_from_file(&full_options, &full_options_cnt);
 	xrealloc(full_options,
 		 ((full_options_cnt + 1) * sizeof(s_p_options_t)));
@@ -1715,7 +1729,7 @@ extern int apptype_properties_conf_destory(void)
 	inited = false;
 
 	FREE_NULL_BUFFER(apptype_properties_apptype_buf);
-
+	slurm_mutex_destroy(&conf_mutex2);
 	return rc;
 }
 
