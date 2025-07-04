@@ -1570,6 +1570,8 @@ extern void delete_cache_node_record(node_record_t *node_ptr)
 extern void del_cache_node_state_record(node_state_record_t *src_node_ptr)
 {	
 	int i;
+	if(!src_node_ptr)
+		return;
 	xfree(src_node_ptr->name);
     xfree(src_node_ptr->arch);
     xfree(src_node_ptr->os);
@@ -1595,6 +1597,8 @@ extern void del_cache_node_state_record(node_state_record_t *src_node_ptr)
 extern void del_cache_node_info_record(dynamic_plugin_data_t **select_nodeinfo, int node_record_count)
 {	int n;
 	dynamic_plugin_data_t *des_select_nodeinfo = NULL;
+	if(!select_nodeinfo)
+		return;
 	for (n = 0; n < node_record_count; n++) {
 		if (!(des_select_nodeinfo = select_nodeinfo[n]))
 			continue;

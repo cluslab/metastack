@@ -878,7 +878,7 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 					if(para_sched && !backfill){
 						part_index = _get_job_part_index(para_sched_part_names ,part_ptr);
 						if (part_index < 0) {
-							error("Could not find resource index for %pJ partition %s", job_ptr, part_ptr->name);
+							error("Could not find resource index for %pJ partition %s", job_ptr, job_ptr->partition);
 							continue;
 						}
 						if (!sched_job_queue) {
@@ -903,7 +903,7 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 					if(para_sched && !backfill){
 						part_index = _get_job_part_index(para_sched_part_names, part_ptr);	
 						if (part_index < 0) {
-							error("Could not find resource index for %pJ partition %s", job_ptr, part_ptr->name);
+							error("Could not find resource index for %pJ partition %s", job_ptr, job_ptr->partition);
 							continue;
 						}
 						if (!sched_job_queue) {
@@ -945,7 +945,7 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 			if(para_sched && !backfill){
 				part_index = _get_job_part_index(para_sched_part_names, job_ptr->part_ptr);
 				if (part_index < 0) {
-					error("Could not find resource index for %pJ partition %s", job_ptr, part_ptr->name);
+					error("Could not find resource index for %pJ partition %s", job_ptr, job_ptr->partition);
 					continue;
 				}
 				if (!sched_job_queue) {

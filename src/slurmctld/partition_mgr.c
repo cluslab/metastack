@@ -4443,20 +4443,24 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 #endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-	if (create_flag && part_cachedup_realtime == 1) {
-		_add_cache_part(part_ptr);
-        xfree(default_cache_part_name);
-        if(default_part_name)
-            default_cache_part_name = xstrdup(default_part_name);
-	}else if(create_flag && part_cachedup_realtime == 2 && cache_queue){
-		slurm_cache_date_t *cache_msg = NULL;
-		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-		cache_msg->msg_type = CREATE_CACHE_PART_RECORD;
-		cache_msg->part_ptr = _add_part_to_queue(part_ptr);
-        cache_msg->default_part_name = xstrdup(default_part_name);
-		cache_enqueue(cache_msg);
-	}else if(!create_flag){
-       _add_part_state_to_queue(part_ptr);
+	if(create_flag){
+		if(part_ptr && find_part_record(part_ptr->name)){
+			if (part_cachedup_realtime == 1) {
+				_add_cache_part(part_ptr);
+				xfree(default_cache_part_name);
+				if(default_part_name)
+					default_cache_part_name = xstrdup(default_part_name);
+			}else if(part_cachedup_realtime == 2 && cache_queue){
+				slurm_cache_date_t *cache_msg = NULL;
+				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+				cache_msg->msg_type = CREATE_CACHE_PART_RECORD;
+				cache_msg->part_ptr = _add_part_to_queue(part_ptr);
+				cache_msg->default_part_name = xstrdup(default_part_name);
+				cache_enqueue(cache_msg);
+			}
+		}
+	}else{
+		_add_part_state_to_queue(part_ptr);
 	}
 #endif
 	if (error_code == SLURM_SUCCESS) {
@@ -5229,6 +5233,8 @@ static int copy_part(part_record_t *src_part_ptr, part_record_t *des_part_ptr)
  *update messages in the message queue.*/
 extern void del_cache_part_state_record(part_state_record_t *src_part_ptr)
 {
+	if(!src_part_ptr)
+		return;
 	xfree(src_part_ptr->name);
 	xfree(src_part_ptr->nodes);
 	xfree(src_part_ptr->nodesets);
@@ -5341,6 +5347,8 @@ extern int update_cache_part_record(part_state_record_t *src_part_ptr)
 //	bitstr_t *and_node_bitmap = NULL;
 //	node_record_t *part_node_ptr = NULL;
 //	char *alias = NULL;
+	if(!src_part_ptr)
+		return 0;
 	des_part_ptr = find_copy_part_record(src_part_ptr->name, cache_part_list);
 	if(des_part_ptr){
 		debug4("%s CACHE_QUERY  update part to cache %s ", __func__, src_part_ptr->name);
@@ -5587,6 +5595,8 @@ extern part_record_t *_add_queue_part_to_cache(part_record_t *des_part_ptr)
 //	node_record_t *part_node_ptr = NULL;
 //	hostlist_t alias_list;
 //	char *alias = NULL;
+	if(!des_part_ptr)
+		return NULL;
 	debug2("%s CACHE_QUERY  add part to cache %s ", __func__, des_part_ptr->name);
 	if(find_copy_part_record(des_part_ptr->name, cache_part_list)){
 		_list_delete_cache_part(des_part_ptr);
@@ -5620,6 +5630,8 @@ extern part_record_t *_add_queue_part_to_cache(part_record_t *des_part_ptr)
 /*_del_cache_part: Copy the partition source data directly into the cached data.*/
 extern int _del_cache_part(char *part_name)
 {
+	if(!part_name)
+		return 0;
 	debug2("%s CACHE_QUERY  delete part %s ", __func__, part_name);
 	kill_cache_job_by_cache_part_name(part_name);
 	list_delete_all(cache_part_list, list_find_part, part_name);

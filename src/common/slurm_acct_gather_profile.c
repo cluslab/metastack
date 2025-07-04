@@ -278,8 +278,16 @@ static void *_timer_thread(void *args)
 					continue;
 				if (!acct_gather_profile_test())
 					break;	/* Shutting down */
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+				/*
+					Avoid printing invalid logs related to apptype recognition
+				*/
+				if (i != PROFILE_APPTYPE)
+					debug2("profile signaling type %s", acct_gather_profile_type_t_name(i));
+#else
 				debug2("profile signaling type %s",
 					acct_gather_profile_type_t_name(i));
+#endif
 
 				/* signal poller to start */
 				slurm_mutex_lock(&acct_gather_profile_timer[i].
