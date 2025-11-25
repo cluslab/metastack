@@ -337,9 +337,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_OPT_LIST_USER
 #endif
 
+/*
 #ifndef __METASTACK_BUG_MSGSIZE_FIX
 #define __METASTACK_BUG_MSGSIZE_FIX
 #endif
+*/
 
 #ifndef __METASTACK_QOS_HASH
 #define __METASTACK_QOS_HASH

@@ -683,6 +683,22 @@ extern void scontrol_print_assoc_mgr_info(int argc, char **argv)
 		}
 	}
 
+	/**fix bug 103731: For slurmctld security, root user cannot perform full queries. */
+	if ((geteuid() == 0) && 
+		((!req.acct_list || !list_count(req.acct_list)) || !(req.flags & ASSOC_MGR_INFO_FLAG_ASSOC)) && 
+		((!req.qos_list || !list_count(req.qos_list)) || !(req.flags & ASSOC_MGR_INFO_FLAG_QOS))&& 
+		((!req.user_list || !list_count(req.user_list)) || !(req.flags & ASSOC_MGR_INFO_FLAG_USERS))) {
+		exit_code = 1;
+		if (quiet_flag != 1) {
+			fprintf(stderr, "Error: root user must explicitly specify the query target.\n");
+			fprintf(stderr, "Usage examples:\n"
+							"  scontrol show assoc flags=assoc accounts=<account_name>\n"
+							"  scontrol show assoc flags=users users=<user_name>\n"
+							"  scontrol show assoc flags=qos qos=<qos_name>\n");
+		}
+		goto endit;
+	}
+
 	if (!req.flags)
 		req.flags = ASSOC_MGR_INFO_FLAG_ASSOC |
 			ASSOC_MGR_INFO_FLAG_USERS |
