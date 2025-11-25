@@ -114,6 +114,41 @@ extern void closeall(int fd)
 	closedir(d);
 }
 
+#ifdef __METASTACK_BUG_FORKSTEPD_FD_LEAK
+void set_open_fd_close_on_exec(int fd)
+{
+        char *name = "/proc/self/fd";
+        DIR *d;
+        int i;
+        struct dirent *dir;
+
+        /*
+         * Blindly closing all file descriptors is slow.
+         *
+         * The number 512 is an arbitrary value obtained from testing on a 128-core machine.
+         */
+        if (!(d = opendir(name))) {
+                error("Could not read open files from %s: %m, set the close flag for all file descriptors from 3 to 512.",
+                      name);
+                for (i=3; i<512; i++) {
+                        (void) fcntl(i, F_SETFD, FD_CLOEXEC);
+                }
+                return;
+        }
+
+        while ((dir = readdir(d))) {
+                /* Ignore "." and ".." entries */
+                if (dir->d_type != DT_DIR) {
+                        int open_fd = atoi(dir->d_name);
+
+                        if ((open_fd >= fd))
+                                (void) fcntl(open_fd, F_SETFD, FD_CLOEXEC);
+                }
+        }
+        closedir(d);
+}
+#endif
+
 void fd_set_close_on_exec(int fd)
 {
 	xassert(fd >= 0);
