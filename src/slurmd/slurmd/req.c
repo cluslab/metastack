@@ -970,9 +970,13 @@ _forkexec_slurmstepd(uint16_t type, void *req,
 		 * setting it for those that we open.  The number 256
 		 * is an arbitrary number based off test7.9.
 		 */
+#ifdef __METASTACK_BUG_FORKSTEPD_FD_LEAK
+		set_open_fd_close_on_exec(3);
+#else
 		for (i=3; i<256; i++) {
 			(void) fcntl(i, F_SETFD, FD_CLOEXEC);
 		}
+#endif
 
 		/*
 		 * Grandchild exec's the slurmstepd
