@@ -407,22 +407,24 @@ extern bool run_watch_dog_wait(pid_t* cpid, bool send_terminate)
 
 extern int run_watch_dog_command(run_command_args_t *args, pid_t* cpid, gid_t gid, uid_t uid, bool send_terminate )
 {
-
+	if(args == NULL) {
+	    return -1;
+	}
 	if ((args->script_path == NULL) || (args->script_path[0] == '\0')) {
 		error("%s: no script specified", __func__);
-		*(args->status) = 127;
+		//*(args->status) = 127;
 		return -1;
 	}
 	if (args->script_path[0] != '/') {
 		error("%s: %s is not fully qualified pathname (%s)",
 				__func__, args->script_type, args->script_path);
-		*(args->status) = 127;
+		//*(args->status) = 127;
 		return -1;
 	}
 	if (access(args->script_path, R_OK | X_OK) < 0) {
 		error("%s: %s can not be executed (%s) %m",
 				__func__, args->script_type, args->script_path);
-		*(args->status) = 127;
+		//*(args->status) = 127;
 		return -1;
 	}
 	slurm_mutex_lock(&proc_watch_dog_count_mutex);

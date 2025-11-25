@@ -1208,7 +1208,10 @@ static void *_sched_agent(void *args)
 		slurmctld_lock_t job_write_lock =
 			{ READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
 
-		lock_slurmctld(job_write_lock);		
+		lock_slurmctld(job_write_lock);	
+		/* Only when both para sched and accounting_enforce_limit enable, will do assoc lock */
+		no_need_assoc_lock = !(para_sched && (accounting_enforce & ACCOUNTING_ENFORCE_LIMITS));
+		
 		if(para_sched) {
 			int i;			
 			para_sched_job_count = 0;
@@ -1268,15 +1271,13 @@ static void *_sched_agent(void *args)
 			xfree(job_queues);
 			xfree(sched_threads);
 			/* end sched */
-			xfree(para_sched_parms);
-			unlock_slurmctld(job_write_lock);				
+			xfree(para_sched_parms);			
 			job_cnt = para_sched_job_count;
 
 			/* for log */
 			double ret = (double)(DELTA_TIMER / 1000000.0f );
 			sched_info("%d jobs, cost %lfsec, ava sched speed:%d/sec", job_cnt, ret, (int)(job_cnt/ret));
 		} else {
-			unlock_slurmctld(job_write_lock);
 			START_TIMER;
 			job_cnt = _schedule(full_queue, 0, NULL);
 			END_TIMER;
@@ -1285,6 +1286,7 @@ static void *_sched_agent(void *args)
 			double ret = (double)(DELTA_TIMER / 1000000.0f );
 			sched_info("%d jobs, cost %lfsec, ava sched speed:%d/sec", job_cnt, ret, (int)(job_cnt/ret));
 		}
+		unlock_slurmctld(job_write_lock);
 #else
 		job_cnt = _schedule(full_queue);
 #endif		
@@ -1645,8 +1647,8 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 	part_record_t **sched_part_ptr = NULL;
 	int *sched_part_jobs = NULL, bb_wait_cnt = 0;
 	/* Locks: Read config, write job, write node, read partition */
-	slurmctld_lock_t job_write_lock =
-		{ READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+	// slurmctld_lock_t job_write_lock =
+	// 	{ READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
 	bool is_job_array_head;
 	static time_t sched_update = 0;
 	static bool fifo_sched = false;
@@ -1707,10 +1709,6 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 		else
 			assoc_limit_stop = false;
 
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-		/* Only when both para sched and accounting_enforce_limit enable, will do assoc lock */
-		no_need_assoc_lock = !(para_sched && (accounting_enforce & ACCOUNTING_ENFORCE_LIMITS));
-#endif
 
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
 		part_repeat_job_template = 0;
@@ -1968,10 +1966,8 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 		goto out;
 	}
 
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-	if(!para_sched)
-#endif
-		lock_slurmctld(job_write_lock);
+
+
 	now = time(NULL);
 	sched_start = now;
 	last_job_sched_start = now;
@@ -2002,19 +1998,11 @@ static int _schedule(bool full_queue, int index, List sched_job_queue)
 		}
 		list_iterator_destroy(job_iterator);
 
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-		if(!para_sched)
-#endif
-			unlock_slurmctld(job_write_lock);
 		sched_debug("schedule() returning, no front end nodes are available");
 		goto out;
 	}
 
 	if (!reduce_completing_frag && job_is_completing(NULL)) {
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
-		if(!para_sched)
-#endif		
-			unlock_slurmctld(job_write_lock);
 		sched_debug("schedule() returning, some job is still completing");
 		goto out;
 	}
@@ -3340,8 +3328,6 @@ fail_this_part:
 			   slurmctld_config.server_thread_count);
 	}		
 	slurm_rwlock_unlock(&slurmctld_config.thread_count_rwlock);
-	if(!para_sched)
-		unlock_slurmctld(job_write_lock);
 	END_TIMER2("schedule");
 
 	if(para_sched){
