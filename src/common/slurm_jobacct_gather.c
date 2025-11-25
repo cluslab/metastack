@@ -817,10 +817,9 @@ static void *step_watch_dog(void *args)
 			run_script_msg.max_wait = -1;
 			run_script_msg.script_path = watch_dog_tran->watch_dog_script;
 			run_script_msg.script_argv = cmd_argv;
-			debug3("[job %u] attempting to run  [%s]",
-					watch_dog_tran->step_id.job_id, run_script_msg.script_path);
+			debug3("attempting to run  [%s]", run_script_msg.script_path);
 			if(run_watch_dog_wait(&cpid, false))
-				run_watch_dog_command(&run_script_msg, &cpid, watch_dog_tran->gid, watch_dog_tran->gid, 0);
+				run_watch_dog_command(&run_script_msg, &cpid, watch_dog_tran->gid, watch_dog_tran->uid, 0);
 			if(my_env) {
 				for (int i = 0; my_env[i]; i++)
 					xfree(my_env[i]);

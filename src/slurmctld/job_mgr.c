@@ -14762,6 +14762,9 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_specs,
 	slurmctld_resv_t *new_resv_ptr = NULL;
 	List new_resv_list = NULL;
 	uint32_t user_site_factor;
+#ifdef __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
+	uint64_t mem_req;
+#endif
 
 	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
 
@@ -15281,6 +15284,27 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_specs,
 				   __func__, job_ptr);
 			goto fini;
 		}
+#ifdef __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
+		/*
+			If a gres resource is no longer requested, it is removed from the gres_list to 
+			skip the validation of the tres plugin for that resource.
+		*/
+		if (list_count(gres_list)) {
+			ListIterator iter = list_iterator_create(gres_list);
+			gres_state_t *gres_state = NULL;
+			while ((gres_state = list_next(iter))) {
+				gres_job_state_t *gres_js = (gres_job_state_t *)gres_state->gres_data;
+				if (gres_js && (gres_js->total_gres == 0 || gres_js->total_gres == NO_VAL64))
+					list_delete_item(iter);
+			}
+			list_iterator_destroy(iter);
+
+			if (list_count(gres_list) == 0) {
+				FREE_NULL_LIST(gres_list);
+				gres_list = NULL;
+			}
+		}
+#endif
 		if (job_specs->num_tasks == detail_ptr->num_tasks)
 			job_specs->num_tasks = NO_VAL;	/* Unchanged */
 		if (job_specs->min_nodes == detail_ptr->min_nodes)
@@ -15295,8 +15319,17 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_specs,
 			job_specs->cpus_per_task = NO_VAL16;	/* Unchanged */
 	}
 	if (gres_update) {
+#ifdef __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
+		if (gres_list)
+				gres_ctld_set_job_tres_cnt(gres_list, detail_ptr->min_nodes,
+						job_specs->tres_req_cnt, false);
+			else 
+				gres_clear_tres_cnt(job_specs->tres_req_cnt, true);
+#else
 		gres_ctld_set_job_tres_cnt(gres_list, detail_ptr->min_nodes,
-					   job_specs->tres_req_cnt, false);
+				job_specs->tres_req_cnt, false);
+#endif
+		
 	}
 
 	if ((job_specs->min_nodes != NO_VAL) &&
@@ -15361,6 +15394,23 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_specs,
 		job_specs->min_cpus = job_specs->tres_req_cnt[TRES_ARRAY_CPU];
 	}
 
+#ifdef __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
+	mem_req = job_get_tres_mem(NULL,
+				 job_specs->pn_min_memory,
+				 job_specs->tres_req_cnt[TRES_ARRAY_CPU] ?
+				 job_specs->tres_req_cnt[TRES_ARRAY_CPU] :
+				 job_ptr->tres_req_cnt[TRES_ARRAY_CPU],
+				 job_specs->min_nodes != NO_VAL ?
+				 job_specs->min_nodes :
+				 detail_ptr ? detail_ptr->min_nodes : 1,
+				 use_part_ptr,
+				 gres_list ? gres_list : job_ptr->gres_list_req,
+				 (job_specs->pn_min_memory != NO_VAL64),
+				 job_specs->sockets_per_node,
+				 job_specs->num_tasks);
+	if (mem_req) 
+		job_specs->tres_req_cnt[TRES_ARRAY_MEM] = mem_req;
+#else
 	job_specs->tres_req_cnt[TRES_ARRAY_MEM] =
 		job_get_tres_mem(NULL,
 				 job_specs->pn_min_memory,
@@ -15375,6 +15425,7 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_specs,
 				 (job_specs->pn_min_memory != NO_VAL64),
 				 job_specs->sockets_per_node,
 				 job_specs->num_tasks);
+#endif
 
 	if (job_specs->licenses && !xstrcmp(job_specs->licenses,
 					    job_ptr->licenses)) {
@@ -16374,8 +16425,11 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_specs,
 	    (error_code = fed_mgr_update_job_clusters(job_ptr,
 						      job_specs->clusters)))
 		goto fini;
-
+#ifdef __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
+	if (gres_list || gres_update) {
+#else
 	if (gres_list) {
+#endif
 		char *tmp = NULL;
 		if (job_specs->cpus_per_tres) {
 			xstrfmtcat(tmp, "cpus_per_tres:%s ",
@@ -16425,7 +16479,7 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_specs,
 		job_ptr->gres_list_req = gres_list;
 
 		gres_list = NULL;
-	}
+	} 
 
 	if (job_specs->name) {
 		if (IS_JOB_FINISHED(job_ptr)) {
@@ -17107,9 +17161,14 @@ fini:
 
 	if ((error_code == SLURM_SUCCESS) && tres_req_cnt_set) {
 		for (tres_pos = 0; tres_pos < slurmctld_tres_cnt; tres_pos++) {
+#ifdef __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
+			if (tres_req_cnt[tres_pos] ==
+			     job_ptr->tres_req_cnt[tres_pos])
+#else
 			if (!tres_req_cnt[tres_pos] ||
 			    (tres_req_cnt[tres_pos] ==
 			     job_ptr->tres_req_cnt[tres_pos]))
+#endif
 				continue;
 
 			job_ptr->tres_req_cnt[tres_pos] =
