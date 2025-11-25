@@ -49,6 +49,13 @@
 /* close all FDs >= a specified value */
 extern void closeall(int fd);
 
+#ifdef __METASTACK_BUG_FORKSTEPD_FD_LEAK
+void set_open_fd_close_on_exec(int fd);
+/*
+ *  Sets all open file descriptors starting from fd to be closed on exec().
+ */
+#endif
+
 void fd_set_close_on_exec(int fd);
 /*
  *  Sets the file descriptor (fd) to be closed on exec().
