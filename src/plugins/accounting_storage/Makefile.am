@@ -1,3 +1,3 @@
 # Makefile for storage plugins
 
-SUBDIRS = common mysql none slurmdbd kingbase
+SUBDIRS = common mysql slurmdbd ctld_relay kingbase

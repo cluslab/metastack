@@ -47,17 +47,6 @@
 #include "slurm/slurm_errno.h"
 
 /*
- * These symbols are required to be defined in any plugin managed by
- * this code.  Use these macros instead of string literals in order to
- * avoid typographical errors.
- *
- * Their meanings are described in the sample plugin.
- */
-#define PLUGIN_NAME		"plugin_name"
-#define PLUGIN_TYPE		"plugin_type"
-#define PLUGIN_VERSION		"plugin_version"
-
-/*
  * Opaque type for plugin handle.  Most plugin operations will want
  * of these.
  *
@@ -78,16 +67,10 @@ typedef struct {
 #define PLUGIN_INVALID_HANDLE ((void*)0)
 
 typedef enum {
-	EPLUGIN_SUCCESS = 0,     /* Success                             */
-	EPLUGIN_NOTFOUND,        /* Plugin file does not exist          */
-	EPLUGIN_ACCESS_ERROR,    /* Access denied                       */
-	EPLUGIN_DLOPEN_FAILED,   /* Dlopen not successful               */
-	EPLUGIN_INIT_FAILED,     /* Plugin's init() callback failed     */
-	EPLUGIN_MISSING_NAME,    /* plugin_name/type/version missing    */
-	EPLUGIN_BAD_VERSION,     /* incompatible plugin version         */
-} plugin_err_t;
-
-const char *plugin_strerror(plugin_err_t err);
+	PLUGIN_NOT_INITED = 0,
+	PLUGIN_NOOP,
+	PLUGIN_INITED,
+} plugin_init_t;
 
 /*
  * "Peek" into a plugin to discover its type and version.  This does
@@ -101,17 +84,11 @@ const char *plugin_strerror(plugin_err_t err);
  *	plugin type.
  * type_len - the number of bytes available in plugin_type.  The type
  *	will be zero-terminated if space permits.
- * plugin_version - pointer to place to store the plugin version.  May
- *	be NULL to indicate that the caller is not interested in the
- *	plugin version.
  *
- * Returns a plugin_err_t.
+ * RET SLURM_SUCCESS or error
  */
-extern plugin_err_t plugin_peek(const char *fq_path,
-				char *plugin_type,
-				const size_t type_len,
-				uint32_t *plugin_version);
-
+extern int plugin_peek(const char *fq_path, char *plugin_type,
+		       const size_t type_len);
 
 /*
  * Simplest way to get a plugin -- load it from a file.
@@ -120,13 +97,12 @@ extern plugin_err_t plugin_peek(const char *fq_path,
  * fq_path - the fully-qualified pathname (i.e., from root) to
  * the plugin to load.
  *
- * Returns EPLUGIN_SUCCESS on success, and an plugin_err_t error
- * code on failure.
- *
  * The plugin's initialization code will be executed prior
  * to this function's return.
+ *
+ * RET SLURM_SUCCESS or error
  */
-plugin_err_t plugin_load_from_file(plugin_handle_t *pph, const char *fq_path);
+extern int plugin_load_from_file(plugin_handle_t *pph, const char *fq_path);
 
 /*
  * load plugin and link hooks.
@@ -160,12 +136,9 @@ void plugin_unload( plugin_handle_t plug );
 void *plugin_get_sym( plugin_handle_t plug, const char *name );
 
 /*
- * Access functions to get the name, type, and version of a plugin
- * from the plugin itself.
+ * Access function to get the name from the plugin itself.
  */
 const char *plugin_get_name( plugin_handle_t plug );
-const char *plugin_get_type( plugin_handle_t plug );
-uint32_t plugin_get_version( plugin_handle_t plug );
 
 /*
  * Get the addresses of several symbols from the plugin at once.

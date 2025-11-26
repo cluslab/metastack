@@ -44,13 +44,21 @@ int print_fields_parsable_print = 0;
 int print_fields_have_header = 1;
 char *fields_delimiter = NULL;
 
+typedef enum {
+    STATE_INIT,
+    STATE_EXPAND,
+    STATE_DONE,
+    STATE_ESCAPE,
+    STATE_ERROR
+} parser_state;
+
 #ifdef __METASTACK_OPT_PRINT_COMMAND
 /* Used to parse the field length and print format
  * carried in the environment variable*/
 extern void
 _parse_env_token_extend( char *token, int *field_size, bool *right_format)
 {
-	char *end_ptr = NULL, *ptr;
+	char *ptr = NULL;
 
 	xassert(token);
 	ptr = strchr(token, ':');
@@ -62,7 +70,7 @@ _parse_env_token_extend( char *token, int *field_size, bool *right_format)
 		} else {
 			*right_format = false;
 		}
-		*field_size = strtol(ptr + 1, &end_ptr, 10);
+		*field_size = strtol(ptr + 1, NULL, 10);
 	} else {
 		*right_format = false;
 		*field_size = 0;
@@ -75,11 +83,9 @@ extern int _parse_env_format_extend (char* format_long, print_field_t *field)
 {
 	bool right_format = false;
 	int field_size = 0;
-  
+	
 	char *tmp_format = NULL, *token = NULL, *str_tmp = NULL;
-
-    int command_len = 0;
-	//bool flag = false;
+	int command_len = 0;
 
 	if (format_long == NULL) {
 		error("Format option lacks specification");
@@ -87,7 +93,7 @@ extern int _parse_env_format_extend (char* format_long, print_field_t *field)
 	}
 	tmp_format = xstrdup(format_long);
 	token = strtok_r(tmp_format, ",",&str_tmp);
-    while (token) {
+	while (token) {
 
 		_parse_env_token_extend(token, &field_size, &right_format);
 		command_len = strlen(token);
@@ -100,13 +106,12 @@ extern int _parse_env_format_extend (char* format_long, print_field_t *field)
 		if (!xstrncasecmp(token, field->name, command_len)) {
 			if (field_size)
 				field->len = field_size;
-		    field->right_format = right_format;
+			field->right_format = right_format;
 		}
 
 		token = strtok_r(NULL, ",", &str_tmp);	
 	}
-	if(tmp_format)
-		xfree(tmp_format);
+	xfree(tmp_format);
 	return SLURM_SUCCESS;
 
 }
@@ -124,7 +129,7 @@ extern void destroy_print_field(void *object)
 
 extern void print_fields_header(List print_fields_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	print_field_t *field = NULL;
 	int curr_inx = 1;
 	int field_count = 0;
@@ -169,28 +174,16 @@ extern void print_fields_header(List print_fields_list)
 	printf("\n");
 }
 
-extern void print_fields_date(print_field_t *field, time_t value, int last)
+extern void print_fields_date(print_field_t *field, void *input, int last)
 {
-	int abs_len = abs(field->len);
+	int abs_len = print_fields_parsable_print ? 256 : abs(field->len);
 	char temp_char[abs_len+1];
-/*
-#ifdef __METASTACK_OPT_PRINT_COMMAND
-	if(field->right_format ) {
-		char temp_char1[32];
-		slurm_make_time_str(&value, (char *)temp_char1, sizeof(temp_char1));
-        int str_legth=strlen(temp_char1);
-		if(abs_len < str_legth) {
-			strncpy(temp_char,temp_char1 + (str_legth - abs_len),abs_len);
-			temp_char1[abs_len] = '\0';
-		} else
-			slurm_make_time_str(&value, (char *)temp_char, sizeof(temp_char));
-	}
-	else
-		slurm_make_time_str(&value, (char *)temp_char, sizeof(temp_char));
-#else
-*/
+	time_t value = 0;
+
+	if (input)
+		value = *(time_t *) input;
+
 	slurm_make_time_str(&value, (char *)temp_char, sizeof(temp_char));
-//#endif
 	if (print_fields_parsable_print == PRINT_FIELDS_PARSABLE_NO_ENDING
 	   && last)
 		printf("%s", temp_char);
@@ -204,11 +197,16 @@ extern void print_fields_date(print_field_t *field, time_t value, int last)
 		printf("%-*.*s ", abs_len, abs_len, temp_char);
 }
 
-extern void print_fields_str(print_field_t *field, char *value, int last)
+extern void print_fields_str(print_field_t *field, void *input, int last)
 {
 	int abs_len = abs(field->len);
 	char temp_char[abs_len+1];
 	char *print_this = NULL;
+	char *value = NULL;
+
+	if (input)
+		value = input;
+
 	if (!value) {
 		if (print_fields_parsable_print)
 			print_this = "";
@@ -228,7 +226,7 @@ extern void print_fields_str(print_field_t *field, char *value, int last)
 		if (value) {
 			int len = strlen(value);
 #ifdef __METASTACK_OPT_PRINT_COMMAND
-            if(field->right_format) {
+			if(field->right_format) {
 				int tmp_len = MIN(len, abs_len);
 				if(tmp_len == len) {
 					memcpy(&temp_char, value, MIN(len, abs_len) + 1);
@@ -242,11 +240,6 @@ extern void print_fields_str(print_field_t *field, char *value, int last)
 				if (len > abs_len)
 					temp_char[abs_len-1] = '+';
 			}
-#else
-			memcpy(&temp_char, value, MIN(len, abs_len) + 1);
-
-			if (len > abs_len)
-				temp_char[abs_len-1] = '+';
 #endif
 			print_this = temp_char;
 		}
@@ -258,12 +251,14 @@ extern void print_fields_str(print_field_t *field, char *value, int last)
 	}
 }
 
-/* print_fields_t->print_routine does not like uint16_t being passed
- * in so pass in a uint32_t and typecast.
- */
-extern void print_fields_uint16(print_field_t *field, uint32_t value, int last)
+extern void print_fields_uint16(print_field_t *field, void *input, int last)
 {
 	int abs_len = abs(field->len);
+	uint16_t value = NO_VAL16;
+
+	if (input)
+		value = *(uint16_t *) input;
+
 	/* (value == unset)  || (value == cleared) */
 	if (((uint16_t)value == NO_VAL16)
 	    || ((uint16_t)value == INFINITE16)) {
@@ -293,9 +288,14 @@ extern void print_fields_uint16(print_field_t *field, uint32_t value, int last)
 	}
 }
 
-extern void print_fields_uint32(print_field_t *field, uint32_t value, int last)
+extern void print_fields_uint32(print_field_t *field, void *input, int last)
 {
 	int abs_len = abs(field->len);
+	uint32_t value = NO_VAL;
+
+	if (input)
+		value = *(uint32_t *) input;
+
 	/* (value == unset)  || (value == cleared) */
 	if ((value == NO_VAL) || (value == INFINITE)) {
 		if (print_fields_parsable_print
@@ -324,9 +324,13 @@ extern void print_fields_uint32(print_field_t *field, uint32_t value, int last)
 	}
 }
 
-extern void print_fields_uint64(print_field_t *field, uint64_t value, int last)
+extern void print_fields_uint64(print_field_t *field, void *input, int last)
 {
 	int abs_len = abs(field->len);
+	uint64_t value = NO_VAL64;
+
+	if (input)
+		value = *(uint64_t *) input;
 
 	/* (value == unset)  || (value == cleared) */
 	if ((value == NO_VAL64) || (value == INFINITE64)) {
@@ -357,9 +361,14 @@ extern void print_fields_uint64(print_field_t *field, uint64_t value, int last)
 	}
 }
 
-extern void print_fields_double(print_field_t *field, double value, int last)
+extern void print_fields_double(print_field_t *field, void *input, int last)
 {
 	int abs_len = abs(field->len);
+	double value = (double) NO_VAL64;
+
+	if (input)
+		value = *(double *) input;
+
 	/* (value == unset)  || (value == cleared) */
 	if ((value == (double) NO_VAL64) || (value == (double) INFINITE64) ||
 	    (value == (double) NO_VAL) || (value == (double) INFINITE)) {
@@ -408,9 +417,14 @@ extern void print_fields_double(print_field_t *field, double value, int last)
 	}
 }
 
-extern void print_fields_time(print_field_t *field, uint32_t value, int last)
+extern void print_fields_time(print_field_t *field, void *input, int last)
 {
 	int abs_len = abs(field->len);
+	uint32_t value = NO_VAL;
+
+	if (input)
+		value = *(uint32_t *) input;
+
 	/* (value == unset)  || (value == cleared) */
 	if ((value == NO_VAL) || (value == INFINITE)) {
 		if (print_fields_parsable_print
@@ -442,9 +456,14 @@ extern void print_fields_time(print_field_t *field, uint32_t value, int last)
 }
 
 extern void print_fields_time_from_secs(print_field_t *field,
-					uint64_t value, int last)
+					void *input, int last)
 {
 	int abs_len = abs(field->len);
+	uint64_t value = NO_VAL64;
+
+	if (input)
+		value = *(uint64_t *) input;
+
 	/* (value == unset)  || (value == cleared) */
 	if ((value == NO_VAL64) || (value == INFINITE64)) {
 		if (print_fields_parsable_print
@@ -475,10 +494,14 @@ extern void print_fields_time_from_secs(print_field_t *field,
 	}
 }
 
-extern void print_fields_char_list(print_field_t *field, List value, int last)
+extern void print_fields_char_list(print_field_t *field, void *input, int last)
 {
 	int abs_len = abs(field->len);
 	char *print_this = NULL;
+	List value = NULL;
+
+	if (input)
+		value = *(List *) input;
 
 	if (!value || !list_count(value)) {
 		if (print_fields_parsable_print)
@@ -521,14 +544,154 @@ extern void print_fields_char_list(print_field_t *field, List value, int last)
 			else
 				printf("%-*.*s ", abs_len, abs_len, print_this);
 		}
-#else
-			print_this[abs_len-1] = '+';
-
-		if (field->len == abs_len)
-			printf("%*.*s ", abs_len, abs_len, print_this);
-		else
-			printf("%-*.*s ", abs_len, abs_len, print_this);
 #endif
 	}
 	xfree(print_this);
+}
+
+static bool _is_wildcard(char *ptr)
+{
+	switch (*ptr) {
+	case 'A': /* Array job ID */
+	case 'a': /* Array task ID */
+	case 'J': /* Jobid.stepid */
+	case 'j': /* Job ID */
+	case 'N': /* Short hostname */
+	case 'n': /* Node id relative to current job */
+	case 's': /* Stepid of the running job */
+	case 't': /* Task id (rank) relative to current job */
+	case 'u': /* User name */
+	case 'x':
+		return true;
+		break;
+	default:
+		break;
+	}
+	return false;
+}
+
+static void _expand_wildcard(char **expanded, char **pos, char *ptr,
+			     uint32_t padding, job_std_pattern_t *job)
+{
+	switch (*ptr) {
+	case 'A': /* Array job ID */
+	case 'J': /* Jobid.stepid */
+	case 'j': /* Job ID */
+		xstrfmtcatat(*expanded, pos, "%0*u", padding, job->jobid);
+		break;
+	case 'a': /* Array task ID */
+		xstrfmtcatat(*expanded, pos, "%0*u", padding,
+			     job->array_task_id);
+		break;
+	case 'N': /* Short hostname */
+		xstrfmtcatat(*expanded, pos, "%s", job->first_step_node);
+		break;
+	case 's': /* Stepid of the running job */
+		xstrfmtcatat(*expanded, pos, "%s", job->first_step_name);
+		break;
+	case 'n': /* Node id relative to current job */
+	case 't': /* Task id (rank) relative to current job */
+		xstrfmtcatat(*expanded, pos, "0");
+		break;
+	case 'u': /* User name */
+		xstrfmtcatat(*expanded, pos, "%s", job->user);
+		break;
+	case 'x':
+		xstrfmtcatat(*expanded, pos, "%s", job->jobname);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Special expansion function for stdin/stdout/stderr filename patterns.
+ * Fields that can potientially map to a range of values will use the first in
+ * that range (e.g %t is replaced by 0).
+ *
+ * The parser do not support steps and is only for batch jobs.
+ *
+ * \      If we found this symbol, don't replace anything.
+ * %%     The character "%".
+ * %A     Job array's master job allocation number.
+ * %a     Job array ID (index) number.
+ * %J     jobid.stepid of the running job. (e.g. "128.0" or "batch")
+ * %j     jobid of the running job.
+ * %N     short hostname. This will create a separate IO file per node.
+ * %n     Node identifier relative to current job.
+ * %s     stepid of the running job.
+ * %t     task identifier (rank) relative to current job.
+ * %u     User name.
+ * %x     Job name.
+ *
+ * A number placed between the percent character and format specifier may be
+ * used to zero-pad the result. Ignored if the format specifier corresponds to
+ * non-numeric data (%N for example). The maximum padding is 10.
+ * job%J.out      job128.0.out
+ * job%4j.out     job0128.out
+ * job%2j-%2t.out job128-00.out, job128-01.out, ...
+ *
+ * OUT - Expanded path as xstring. Must xfree.
+ * IN stdio_path - stdin/stdout/stderr job filepath
+ * IN job - job record in the database
+ */
+extern char *expand_stdio_fields(char *stdio_path, job_std_pattern_t *job)
+{
+	parser_state curr_state = STATE_INIT;
+	char *ptr, *end, *expanded = NULL, *pos = NULL;
+	uint32_t padding = 0;
+
+	if (!stdio_path || !*stdio_path || !job)
+		return NULL;
+
+	if (stdio_path[0] != '/')
+		xstrcatat(expanded, &pos, job->work_dir);
+
+	/*
+	 * Special case, if we find a \ it means the file has not been
+	 * expanded in any case, so skip any replacement from now on.
+	 */
+	if (xstrstr(stdio_path, "\\"))
+		curr_state = STATE_ESCAPE;
+
+	ptr = stdio_path;
+	while (*ptr) {
+		switch (curr_state) {
+		case STATE_ESCAPE:
+			if (*ptr != '\\')
+				xstrfmtcatat(expanded, &pos, "%c", *ptr);
+			break;
+		case STATE_INIT:
+			if (*ptr == '%')
+				curr_state = STATE_EXPAND;
+			else
+				xstrfmtcatat(expanded, &pos, "%c", *ptr);
+			break;
+		case STATE_EXPAND:
+			if (isdigit(*ptr)) {
+				if ((padding = strtoul(ptr, &end, 10)) > 9) {
+					/* Remove % and double digit 10 */
+					ptr = end;
+					padding = 10;
+				} else
+					ptr++;
+			}
+			if (!_is_wildcard(ptr)) {
+				padding = 0;
+				xstrfmtcatat(expanded, &pos, "%c", *ptr);
+			} else {
+				_expand_wildcard(&expanded, &pos, ptr, padding,
+						 job);
+			}
+			/* If we find another %, don't leave this state yet. */
+			if (*ptr != '%')
+				curr_state = STATE_INIT;
+			break;
+		default:
+			break;
+		}
+		ptr++;
+	}
+
+	return expanded;
 }

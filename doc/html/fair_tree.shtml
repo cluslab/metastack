@@ -9,7 +9,7 @@ Authors: Ryan Cox and Levi Morrison
 
 <h1>Fair Tree Fairshare Algorithm</h1>
 
-<h2>Contents</h2>
+<h2 id="contents">Contents<a class="slurm_link" href="#contents"></a></h2>
 <ul>
 <li><a href="#intro">Introduction</a></li>
 <li><a href="#enduser">Overview for End Users</a></li>
@@ -171,15 +171,13 @@ calculation at each level.</p>
 
 <h2 id="config">Configuration<a class="slurm_link" href="#config"></a></h2>
 
-<p> The following slurm.conf (SLURM_CONFIG_FILE) parameters are used to
+<p>The following slurm.conf parameters are used to
 configure the Fair Tree algorithm.  See slurm.conf(5) man page for more
 details.</p>
 
 <dl>
 <dt>PriorityType</dt>
-<dd>Set this value to "priority/multifactor".
-The default value for this variable is "priority/basic"
-which enables simple FIFO scheduling.</dd>
+<dd>Set this value to "priority/multifactor".</dd>
 <dt>PriorityCalcPeriod</dt>
 <dd>PriorityCalcPeriod is the frequency in minutes that job half-life decay
 and Fair Tree calculations are performed.</dd>
@@ -204,6 +202,6 @@ wait until the next iteration as defined by <i>PriorityCalcPeriod</i>.
 
 
 <!-- -------------------------------------------------------------------- -->
-<p style="text-align:center;">Last modified 16 Jan 2019</p>
+<p style="text-align:center;">Last modified 26 June 2023</p>
 
 <!--#include virtual="footer.txt"-->

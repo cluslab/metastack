@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  fed_mgr.h - functions for federations
  *****************************************************************************
- *  Copyright (C) 2016 SchedMD LLC.
- *  Written by Brian Christiansen <brian@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -44,8 +43,8 @@ extern slurmdb_federation_rec_t *fed_mgr_fed_rec;
 extern slurmdb_cluster_rec_t    *fed_mgr_cluster_rec;
 
 extern void      add_fed_job_info(job_record_t *job_ptr);
-extern int       fed_mgr_add_sibling_conn(slurm_persist_conn_t *persist_conn,
-					  char **out_buffer);
+extern int fed_mgr_add_sibling_conn(persist_conn_t *persist_conn,
+				    char **out_buffer);
 extern char     *fed_mgr_cluster_ids_to_names(uint64_t cluster_ids);
 extern int       fed_mgr_fini(void);
 extern uint32_t  fed_mgr_get_cluster_id(uint32_t id);
@@ -93,14 +92,14 @@ extern int       fed_mgr_q_update_origin_dep_msg(slurm_msg_t *msg);
 extern int       fed_mgr_remove_active_sibling(uint32_t job_id, char *sib_name);
 extern void      fed_mgr_remove_fed_job_info(uint32_t job_id);
 extern void      fed_mgr_remove_remote_dependencies(job_record_t *job_ptr);
-extern bool      fed_mgr_sibs_synced();
+extern bool      fed_mgr_sibs_synced(void);
 extern int       fed_mgr_state_save(char *state_save_location);
 extern void      fed_mgr_test_remote_dependencies(void);
 extern int       fed_mgr_state_save(char *state_save_location);
 extern int       fed_mgr_submit_remote_dependencies(job_record_t *job_ptr,
 						    bool send_all_sibs,
 						    bool clear_dependencies);
-extern int       fed_mgr_update_job(uint32_t job_id, job_desc_msg_t *job_specs,
+extern int       fed_mgr_update_job(uint32_t job_id, job_desc_msg_t *job_desc,
 				    uint64_t update_sibs, uid_t uid);
 extern int       fed_mgr_update_job_clusters(job_record_t *job_ptr,
 					     char *spec_clusters);

@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  cgroup_v1.c - Cgroup v1 plugin
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC
- *  Written by Felip Moll <felip.moll@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -86,7 +85,7 @@ const char *g_cg_name[CG_CTL_CNT] = {
 };
 
 /* Cgroup v1 control items for the oom monitor */
-#define STOP_OOM 0x987987987
+#define STOP_OOM 1
 
 typedef enum {
 	OOM_KILL_NONE,		/* Don't account for oom_kill events. */
@@ -105,10 +104,6 @@ static uint64_t oom_kill_count = 0;
 static int oom_pipe[2] = { -1, -1 };
 static pthread_t oom_thread;
 static pthread_mutex_t oom_mutex = PTHREAD_MUTEX_INITIALIZER;
-#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
-static pthread_cond_t oom_destroy_cond = PTHREAD_COND_INITIALIZER;
-static int ready_to_destroy = 1;
-#endif
 
 /* Task tracking artifacts */
 List g_task_list[CG_CTL_CNT];
@@ -156,7 +151,7 @@ static int _cgroup_init(cgroup_ctl_type_t sub)
 	return SLURM_SUCCESS;
 }
 
-static int _cpuset_create(stepd_step_rec_t *job)
+static int _cpuset_create(stepd_step_rec_t *step)
 {
 	int rc;
 	char *sys_cgpath = NULL;
@@ -170,6 +165,7 @@ static int _cpuset_create(stepd_step_rec_t *job)
 		/* initialize the cpusets as it was non-existent */
 		if (xcgroup_cpuset_init(&int_cg[CG_CPUS][CG_LEVEL_SLURM]) !=
 		    SLURM_SUCCESS) {
+			xfree(value);
 			return SLURM_ERROR;
 		}
 	}
@@ -178,7 +174,7 @@ static int _cpuset_create(stepd_step_rec_t *job)
 	common_cgroup_set_param(&int_cg[CG_CPUS][CG_LEVEL_SLURM],
 				"cgroup.clone_children", "0");
 
-	if (job == NULL) {
+	if (step == NULL) {
 		/* This is a request to create a cpuset for slurmd daemon */
 		xstrfmtcat(sys_cgpath, "%s/system",
 			   int_cg[CG_CPUS][CG_LEVEL_SLURM].name);
@@ -224,7 +220,7 @@ static int _cpuset_create(stepd_step_rec_t *job)
 		 * locked from the caller.
 		 */
 		rc = xcgroup_create_hierarchy(__func__,
-					      job,
+					      step,
 					      &g_cg_ns[CG_CPUS],
 					      int_cg[CG_CPUS],
 					      g_job_cgpath[CG_CPUS],
@@ -250,6 +246,15 @@ static int _remove_cg_subsystem(xcgroup_t int_cg[], const char *log_str,
 	int rc = SLURM_SUCCESS;
 
 	/*
+	 * Lock the root cgroup so we don't race with other steps that are being
+	 * started.
+	 */
+	if (!root_locked && (common_cgroup_lock(root_cg) != SLURM_SUCCESS)) {
+		error("common_cgroup_lock error (%s)", log_str);
+		return SLURM_ERROR;
+	}
+
+	/*
 	 * Always try to move slurmstepd process to the root cgroup, otherwise
 	 * the rmdir(2) triggered by the calls below will always fail if the pid
 	 * of stepd is in the cgroup. We don't know what other plugins will do
@@ -260,16 +265,7 @@ static int _remove_cg_subsystem(xcgroup_t int_cg[], const char *log_str,
 		error("Unable to move pid %d to root cgroup", getpid());
 		goto end;
 	}
-	xcgroup_wait_pid_moved(step_cg, log_str);
-
-	/*
-	 * Lock the root cgroup so we don't race with other steps that are being
-	 * started.
-	 */
-	if (!root_locked && (common_cgroup_lock(root_cg) != SLURM_SUCCESS)) {
-		error("common_cgroup_lock error (%s)", log_str);
-		return SLURM_ERROR;
-	}
+	common_cgroup_wait_pid_moved(step_cg, getpid(), log_str);
 
 	/* Delete step cgroup. */
 	if ((rc = common_cgroup_delete(step_cg)) != SLURM_SUCCESS)
@@ -351,14 +347,14 @@ static void _free_task_cg_info(void *object)
 	}
 }
 
-static int _handle_task_cgroup(cgroup_ctl_type_t sub, stepd_step_rec_t *job,
+static int _handle_task_cgroup(cgroup_ctl_type_t sub, stepd_step_rec_t *step,
 			       pid_t pid, uint32_t taskid)
 {
 	int rc = SLURM_SUCCESS;
 	bool need_to_add = false;
 	task_cg_info_t *task_cg_info;
-	uid_t uid = job->uid;
-	gid_t gid = job->gid;
+	uid_t uid = step->uid;
+	gid_t gid = step->gid;
 	char *task_cgroup_path = NULL;
 
 	/* build task cgroup relative path */
@@ -603,7 +599,8 @@ extern int cgroup_p_system_destroy(cgroup_ctl_type_t sub)
 		error("Unable to move pid %d to root cgroup", getpid());
 		goto end;
 	}
-	xcgroup_wait_pid_moved(&int_cg[sub][CG_LEVEL_SYSTEM], g_cg_name[sub]);
+	common_cgroup_wait_pid_moved(&int_cg[sub][CG_LEVEL_SYSTEM], getpid(),
+				     g_cg_name[sub]);
 
 	if ((rc = common_cgroup_delete(&int_cg[sub][CG_LEVEL_SYSTEM]))
 	    != SLURM_SUCCESS) {
@@ -626,12 +623,9 @@ end:
  * so the number of calls to this function must mach the number of calls of
  * cgroup_p_step_destroy in each plugin.
  */
-extern int cgroup_p_step_create(cgroup_ctl_type_t sub, stepd_step_rec_t *job)
+extern int cgroup_p_step_create(cgroup_ctl_type_t sub, stepd_step_rec_t *step)
 {
 	int rc = SLURM_SUCCESS;
-
-	/* Don't let other plugins destroy our structs. */
-	g_step_active_cnt[sub]++;
 
 	/*
 	 * Lock the root cgroup so we don't race with other steps that are being
@@ -643,11 +637,14 @@ extern int cgroup_p_step_create(cgroup_ctl_type_t sub, stepd_step_rec_t *job)
 		return SLURM_ERROR;
 	}
 
+	/* Don't let other plugins destroy our structs. */
+	g_step_active_cnt[sub]++;
+
 	switch (sub) {
 	case CG_TRACK:
 		/* create a new cgroup for that container */
 		if ((rc = xcgroup_create_hierarchy(__func__,
-						   job,
+						   step,
 						   &g_cg_ns[sub],
 						   int_cg[sub],
 						   g_job_cgpath[sub],
@@ -657,12 +654,12 @@ extern int cgroup_p_step_create(cgroup_ctl_type_t sub, stepd_step_rec_t *job)
 			goto step_c_err;
 		break;
 	case CG_CPUS:
-		if ((rc = _cpuset_create(job))!= SLURM_SUCCESS)
+		if ((rc = _cpuset_create(step))!= SLURM_SUCCESS)
 			goto step_c_err;
 		break;
 	case CG_MEMORY:
 		if ((rc = xcgroup_create_hierarchy(__func__,
-						   job,
+						   step,
 						   &g_cg_ns[sub],
 						   int_cg[sub],
 						   g_job_cgpath[sub],
@@ -699,7 +696,7 @@ extern int cgroup_p_step_create(cgroup_ctl_type_t sub, stepd_step_rec_t *job)
 	case CG_DEVICES:
 		/* create a new cgroup for that container */
 		if ((rc = xcgroup_create_hierarchy(__func__,
-						   job,
+						   step,
 						   &g_cg_ns[sub],
 						   int_cg[sub],
 						   g_job_cgpath[sub],
@@ -710,7 +707,7 @@ extern int cgroup_p_step_create(cgroup_ctl_type_t sub, stepd_step_rec_t *job)
 		break;
 	case CG_CPUACCT:
 		if ((rc = xcgroup_create_hierarchy(__func__,
-						   job,
+						   step,
 						   &g_cg_ns[sub],
 						   int_cg[sub],
 						   g_job_cgpath[sub],
@@ -858,10 +855,11 @@ extern int cgroup_p_step_destroy(cgroup_ctl_type_t sub)
 extern bool cgroup_p_has_pid(pid_t pid)
 {
 	bool rc;
+	int rc2;
 	xcgroup_t cg;
 
-	rc = xcgroup_ns_find_by_pid(&g_cg_ns[CG_TRACK], &cg, pid);
-	if (rc != SLURM_SUCCESS)
+	rc2 = xcgroup_ns_find_by_pid(&g_cg_ns[CG_TRACK], &cg, pid);
+	if (rc2 != SLURM_SUCCESS)
 		return false;
 
 	rc = true;
@@ -926,10 +924,6 @@ extern int cgroup_p_constrain_set(cgroup_ctl_type_t sub, cgroup_level_t level,
 	int rc = SLURM_SUCCESS;
 	task_cg_info_t *task_cg_info;
 	char *dev_str = NULL;
-#ifdef HAVE_NATIVE_CRAY
-	char expected_usage[32];
-	uint64_t exp;
-#endif
 
 	if (!limits)
 		return SLURM_ERROR;
@@ -958,23 +952,6 @@ extern int cgroup_p_constrain_set(cgroup_ctl_type_t sub, cgroup_level_t level,
 			    != SLURM_SUCCESS)
 				rc = SLURM_ERROR;
 		}
-#ifdef HAVE_NATIVE_CRAY
-		/*
-		 * on Cray systems, set the expected usage in bytes.
-		 * This is used by the Cray OOM killer
-		 */
-		if (level == CG_LEVEL_STEP) {
-			exp = (uint64_t) (limits->step)->step_mem * 1024 * 1024;
-			snprintf(expected_usage, sizeof(expected_usage),
-				 "%"PRIu64, exp);
-
-			if (common_cgroup_set_param(
-				    &int_cg[sub][level],
-				    "cpuset.expected_usage_in_bytes",
-				    expected_usage) != SLURM_SUCCESS)
-				rc = SLURM_ERROR;
-		}
-#endif
 		break;
 	case CG_MEMORY:
 		if ((level == CG_LEVEL_JOB) &&
@@ -1003,14 +980,6 @@ extern int cgroup_p_constrain_set(cgroup_ctl_type_t sub, cgroup_level_t level,
 				    limits->soft_limit_in_bytes)
 			    != SLURM_SUCCESS)
 				rc = SLURM_ERROR;
-
-			if (limits->kmem_limit_in_bytes != NO_VAL64)
-				if (common_cgroup_set_uint64_param(
-					    &int_cg[sub][level],
-					    "memory.kmem.limit_in_bytes",
-					    limits->kmem_limit_in_bytes)
-				    != SLURM_SUCCESS)
-					rc = SLURM_ERROR;
 
 			if (limits->memsw_limit_in_bytes != NO_VAL64)
 				if (common_cgroup_set_uint64_param(
@@ -1086,19 +1055,6 @@ extern int cgroup_p_constrain_apply(cgroup_ctl_type_t sub, cgroup_level_t level,
  * Code based on linux tools/cgroup/cgroup_event_listener.c with adapted
  * modifications for Slurm logic and needs.
  */
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__)
-extern int cgroup_p_step_start_oom_mgr(void)
-{
-	log_flag(CGROUP, "OOM not available on FreeBSD, NetBSD, or macOS");
-	return SLURM_SUCCESS;
-}
-
-extern cgroup_oom_t *cgroup_p_step_stop_oom_mgr(stepd_step_rec_t *job)
-{
-	log_flag(CGROUP, "OOM not available on FreeBSD, NetBSD, or macOS");
-	return NULL;
-}
-#else
 static int _read_fd(int fd, uint64_t *buf)
 {
 	int rc = SLURM_ERROR;
@@ -1129,9 +1085,6 @@ static void *_oom_event_monitor(void *x)
 	int ret = -1;
 	uint64_t res;
 	struct pollfd fds[2];
-#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
-	ready_to_destroy = 0;
-#endif
 
 	debug("started.");
 
@@ -1212,26 +1165,15 @@ static void *_oom_event_monitor(void *x)
 		debug("No oom events detected.");
 	slurm_mutex_unlock(&oom_mutex);
 
-	if ((args->event_fd != -1) && (close(args->event_fd) == -1))
-		error("close(event_fd): %m");
-	if ((args->efd != -1) && (close(args->efd) == -1))
-		error("close(efd): %m");
-	if ((args->cfd != -1) && (close(args->cfd) == -1))
-		error("close(cfd): %m");
-	if ((oom_pipe[0] >= 0) && (close(oom_pipe[0]) == -1))
-		error("close(oom_pipe[0]): %m");
+	close(args->event_fd);
+	close(args->efd);
+	close(args->cfd);
+	close(oom_pipe[0]);
 	xfree(args);
-
-#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
-    slurm_mutex_lock(&oom_mutex);
-	ready_to_destroy = 1;
-	slurm_cond_signal(&oom_destroy_cond);
-	slurm_mutex_unlock(&oom_mutex);
-#endif
 
 	debug("stopping.");
 
-	pthread_exit((void *) 0);
+	return NULL;
 }
 
 extern int cgroup_p_step_start_oom_mgr(void)
@@ -1296,11 +1238,7 @@ extern int cgroup_p_step_start_oom_mgr(void)
 
 	oom_kill_count = 0;
 
-	if (write(efd, line, strlen(line) + 1) == -1) {
-		error("Cannot write to %s", event_file);
-		rc = SLURM_ERROR;
-		goto fini;
-	}
+	safe_write(efd, line, strlen(line) + 1);
 
 	if (pipe2(oom_pipe, O_CLOEXEC) == -1) {
 		error("pipe(): %m");
@@ -1324,16 +1262,11 @@ extern int cgroup_p_step_start_oom_mgr(void)
 fini:
 	xfree(line);
 	if (oom_kill_type != OOM_KILL_MON) {
-		if ((event_fd != -1) && (close(event_fd) == -1))
-			error("close: %m");
-		if ((efd != -1) && (close(efd) == -1))
-			error("close: %m");
-		if ((cfd != -1) && (close(cfd) == -1))
-			error("close: %m");
-		if ((oom_pipe[0] != -1) && (close(oom_pipe[0]) == -1))
-			error("close oom_pipe[0]: %m");
-		if ((oom_pipe[1] != -1) && (close(oom_pipe[1]) == -1))
-			error("close oom_pipe[1]: %m");
+		close(event_fd);
+		close(efd);
+		close(cfd);
+		close(oom_pipe[0]);
+		close(oom_pipe[1]);
 	}
 	xfree(event_file);
 	xfree(control_file);
@@ -1342,6 +1275,11 @@ fini:
 		error("Unable to register OOM notifications for %s",
 		      int_cg[CG_MEMORY][CG_LEVEL_STEP].path);
 	return rc;
+
+rwfail:
+	error("Cannot write to %s", event_file);
+	rc = SLURM_ERROR;
+	goto fini;
 }
 
 static uint64_t _failcnt(xcgroup_t *cg, char *param)
@@ -1383,18 +1321,14 @@ static int _get_oom_kill_from_file(xcgroup_t *cg)
 	return SLURM_SUCCESS;
 }
 
-extern cgroup_oom_t *cgroup_p_step_stop_oom_mgr(stepd_step_rec_t *job)
+extern cgroup_oom_t *cgroup_p_step_stop_oom_mgr(stepd_step_rec_t *step)
 {
 	cgroup_oom_t *results = NULL;
 	uint64_t stop_msg;
-	ssize_t ret;
-#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
-	struct timespec ts = {0, 0};
-	time_t now;
-#endif
 
 	if (oom_kill_type == OOM_KILL_NONE) {
-		error("OOM events were not monitored: couldn't read memory.oom_control or subscribe to its events.");
+		error("OOM events were not monitored for %ps: couldn't read memory.oom_control or subscribe to its events.",
+		      &step->step_id);
 		return results;
 	}
 
@@ -1433,7 +1367,7 @@ extern cgroup_oom_t *cgroup_p_step_stop_oom_mgr(stepd_step_rec_t *job)
 		    SLURM_SUCCESS) {
 			log_flag(CGROUP,
 				 "OOM events were not monitored for %ps",
-				 &job->step_id);
+				 &step->step_id);
 		}
 		results->oom_kill_cnt = oom_kill_count;
 		common_cgroup_unlock(&int_cg[CG_MEMORY][CG_LEVEL_STEP]);
@@ -1447,64 +1381,36 @@ extern cgroup_oom_t *cgroup_p_step_stop_oom_mgr(stepd_step_rec_t *job)
 	 * closed the read endpoint of oom_pipe.
 	 */
 	stop_msg = STOP_OOM;
-	while (1) {
-		ret = write(oom_pipe[1], &stop_msg, sizeof(stop_msg));
-		if (ret == -1) {
-			if (errno == EINTR)
-				continue;
-			log_flag(CGROUP, "oom stop msg write() failed: %m");
-		} else if (ret == 0)
-			log_flag(CGROUP, "oom stop msg nothing written: %m");
-		else if (ret == sizeof(stop_msg))
-			log_flag(CGROUP, "oom stop msg write success.");
-		else
-			log_flag(CGROUP, "oom stop msg not fully written.");
-		break;
-	}
+	safe_write(oom_pipe[1], &stop_msg, sizeof(stop_msg));
 
+rwfail: /* Ignore safe_write issues. */
 	log_flag(CGROUP, "attempt to join oom_thread.");
-	if (oom_thread && pthread_join(oom_thread, NULL) != 0)
-		error("pthread_join(): %m");
+	slurm_thread_join(oom_thread);
 
 	slurm_mutex_lock(&oom_mutex);
 	results->oom_kill_cnt = oom_kill_count;
 	slurm_mutex_unlock(&oom_mutex);
 
 fail_oom_results:
-	if ((oom_pipe[1] != -1) && (close(oom_pipe[1]) == -1)) {
-		error("close() failed on oom_pipe[1] fd, %ps: %m",
-		      &job->step_id);
-	}
-#ifdef __METASTACK_BUG_CGROUP_MUTEX_DESTROY
-    slurm_mutex_lock(&oom_mutex);
-	while (!ready_to_destroy) {
-		now = time(NULL);
-	    ts.tv_sec = now + 2;
-		debug3("waiting for oom_destroy_cond.");
-		slurm_cond_timedwait(&oom_destroy_cond, &oom_mutex, &ts);
-	}
-	slurm_mutex_unlock(&oom_mutex);
+	close(oom_pipe[1]);
 	slurm_mutex_destroy(&oom_mutex);
-	slurm_cond_destroy(&oom_destroy_cond);
-#endif
 
 	return results;
 }
-#endif
 
 /***************************************
  ***** CGROUP TASK FUNCTIONS *****
  **************************************/
-extern int cgroup_p_task_addto(cgroup_ctl_type_t sub, stepd_step_rec_t *job,
+extern int cgroup_p_task_addto(cgroup_ctl_type_t sub, stepd_step_rec_t *step,
 			       pid_t pid, uint32_t task_id)
 {
 	if (task_id > g_max_task_id)
 		g_max_task_id = task_id;
 
-	log_flag(CGROUP, "%ps taskid %u max_task_id %u", &job->step_id, task_id,
-		 g_max_task_id);
+	log_flag(CGROUP, "%ps taskid %u max_task_id %u",
+		 &step->step_id, task_id, g_max_task_id);
 
-	return _handle_task_cgroup(sub, job, pid, task_id);
+	return _handle_task_cgroup(sub, step, pid, task_id);
 }
 
 extern cgroup_acct_t *cgroup_p_task_get_acct_data(uint32_t taskid)
@@ -1537,11 +1443,6 @@ extern cgroup_acct_t *cgroup_p_task_get_acct_data(uint32_t taskid)
 		return NULL;
 	}
 
-	common_cgroup_get_param(task_cpuacct_cg, "cpuacct.stat", &cpu_time,
-				&cpu_time_sz);
-	common_cgroup_get_param(task_memory_cg, "memory.stat", &memory_stat,
-				&memory_stat_sz);
-
 	/*
 	 * Initialize values, a NO_VAL64 will indicate to the caller that
 	 * something happened here.
@@ -1553,13 +1454,20 @@ extern cgroup_acct_t *cgroup_p_task_get_acct_data(uint32_t taskid)
 	stats->total_pgmajfault = NO_VAL64;
 	stats->total_vmem = NO_VAL64;
 
-	if (cpu_time != NULL)
-		sscanf(cpu_time, "%*s %"PRIu64" %*s %"PRIu64, &stats->usec, &stats->ssec);
+	if (common_cgroup_get_param(task_cpuacct_cg, "cpuacct.stat", &cpu_time,
+				    &cpu_time_sz) == SLURM_SUCCESS) {
+		sscanf(cpu_time, "%*s %"PRIu64" %*s %"PRIu64,
+		       &stats->usec, &stats->ssec);
+	}
 
-	if ((ptr = xstrstr(memory_stat, "total_rss")))
-		sscanf(ptr, "total_rss %"PRIu64, &stats->total_rss);
-	if ((ptr = xstrstr(memory_stat, "total_pgmajfault")))
-		sscanf(ptr, "total_pgmajfault %"PRIu64, &stats->total_pgmajfault);
+	if (common_cgroup_get_param(task_memory_cg, "memory.stat", &memory_stat,
+				    &memory_stat_sz) == SLURM_SUCCESS) {
+		if ((ptr = xstrstr(memory_stat, "total_rss")))
+			sscanf(ptr, "total_rss %"PRIu64, &stats->total_rss);
+		if ((ptr = xstrstr(memory_stat, "total_pgmajfault")))
+			sscanf(ptr, "total_pgmajfault %"PRIu64,
+			       &stats->total_pgmajfault);
+	}
 
 	if (stats->total_rss != NO_VAL64) {
 		uint64_t total_cache = NO_VAL64, total_swap = NO_VAL64;
@@ -1583,7 +1491,7 @@ extern cgroup_acct_t *cgroup_p_task_get_acct_data(uint32_t taskid)
 }
 
 /* cgroup/v1 usec and ssec are provided in USER_HZ. */
-extern long int cgroup_p_get_acct_units()
+extern long int cgroup_p_get_acct_units(void)
 {
 	return jobacct_gather_get_clk_tck();
 }

@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2010-2017 SchedMD <https://www.schedmd.com>.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Joey Ekstrom <ekstrom1@llnl.gov> and
  *  Morris Jette <jette1@llnl.gov>
@@ -50,6 +50,7 @@
 #include "src/common/list.h"
 #include "src/common/parse_time.h"
 #include "src/common/read_config.h"
+#include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 
@@ -83,7 +84,7 @@ static char *_str_tolower(char *upper_str);
  *****************************************************************************/
 int print_sinfo_list(List sinfo_list)
 {
-	ListIterator i = list_iterator_create(sinfo_list);
+	list_itr_t *i = list_iterator_create(sinfo_list);
 	sinfo_data_t *current;
 
 	if (params.node_field_flag)
@@ -103,7 +104,7 @@ int print_sinfo_list(List sinfo_list)
 
 int print_sinfo_entry(sinfo_data_t *sinfo_data)
 {
-	ListIterator i = list_iterator_create(params.format_list);
+	list_itr_t *i = list_iterator_create(params.format_list);
 	sinfo_format_t *current;
 
 	while ((current = list_next(i))) {
@@ -150,7 +151,7 @@ static int _resv_name_width(reserve_info_t *resv_ptr)
 
 static void _print_reservation(reserve_info_t *resv_ptr, int width)
 {
-	char format[64], tmp1[32], tmp2[32], tmp3[32];
+	char format[64], tmp1[256], tmp2[256], tmp3[32];
 	char *state = "INACTIVE";
 	uint32_t duration;
 	time_t now = time(NULL);
@@ -416,7 +417,7 @@ format_prepend_function(List list, int width, bool right, char *suffix,
 static void _set_node_field_size(List sinfo_list)
 {
 	char *tmp = NULL;
-	ListIterator i = list_iterator_create(sinfo_list);
+	list_itr_t *i = list_iterator_create(sinfo_list);
 	sinfo_data_t *current;
 	int max_width = MIN_NODE_FIELD_SIZE, this_width = 0;
 
@@ -432,7 +433,7 @@ static void _set_node_field_size(List sinfo_list)
 
 static void _set_part_field_size(List sinfo_list)
 {
-	ListIterator i = list_iterator_create(sinfo_list);
+	list_itr_t *i = list_iterator_create(sinfo_list);
 	sinfo_data_t *current;
 	int max_width = MIN_PART_FIELD_SIZE, this_width = 0;
 
@@ -1023,6 +1024,21 @@ int _print_reason(sinfo_data_t * sinfo_data, int width,
 	return SLURM_SUCCESS;
 }
 
+int _print_resv_name(sinfo_data_t *sinfo_data, int width,
+		     bool right_justify, char *suffix)
+{
+	if (sinfo_data) {
+		char *resv_name = sinfo_data->resv_name ?
+			sinfo_data->resv_name : "";
+		_print_str(resv_name, width, right_justify, true);
+	} else
+		_print_str("RESERVATION", width, right_justify, true);
+
+	if (suffix)
+		printf("%s", suffix);
+	return SLURM_SUCCESS;
+}
+
 int _print_root(sinfo_data_t * sinfo_data, int width,
 			bool right_justify, char *suffix)
 {
@@ -1102,12 +1118,10 @@ int _print_state_compact(sinfo_data_t * sinfo_data, int width,
 		upper_state = node_state_string_compact(my_state);
 		lower_state = _str_tolower(upper_state);
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
-        char *pos = NULL;
-		if (sinfo_data->main_planned_flag && (pos = xstrstr(lower_state, "idle")) != NULL) {
+		if (sinfo_data->main_planned_flag && xstrstr(lower_state, "idle") != NULL) {
 			xfree(lower_state);
     		lower_state = xstrdup("plnd");
 		}
-		pos = NULL;
 #endif
 		_print_str(lower_state, width, right_justify, true);
 		xfree(lower_state);
@@ -1122,22 +1136,23 @@ int _print_state_compact(sinfo_data_t * sinfo_data, int width,
 }
 
 int _print_state_complete(sinfo_data_t * sinfo_data, int width,
-			  bool right_justify, char *suffix)
+			bool right_justify, char *suffix)
 {
 	if (sinfo_data && sinfo_data->nodes_total) {
 		char *state;
 		uint32_t my_state;
 
 		my_state = sinfo_data->node_state;
-		state = xstrtolower(node_state_string_complete(my_state));
+		state = node_state_string_complete(my_state);
+		xstrtolower(state);
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		if (sinfo_data->main_planned_flag) {
-    		char *buffer = NULL, *pos = NULL;
+			char *buffer = NULL, *pos = NULL;
 			if ((pos = xstrstr(state, "idle")) != NULL && xstrstr(state, "planned") == NULL) {
 				xstrncat(buffer, state, pos - state + strlen("idle"));
-    			xstrcat(buffer, "+planned");
-    			xstrcat(buffer, pos + strlen("idle"));
-    			xfree(state);
+				xstrcat(buffer, "+planned");
+				xstrcat(buffer, pos + strlen("idle"));
+				xfree(state);
 				state = xstrdup(buffer);
 				xfree(buffer);
 			}
@@ -1167,12 +1182,10 @@ int _print_state_long(sinfo_data_t * sinfo_data, int width,
 		upper_state = node_state_string(my_state);
 		lower_state = _str_tolower(upper_state);
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
-		char *pos = NULL;
-		if (sinfo_data->main_planned_flag && (pos = xstrstr(lower_state, "idle")) != NULL) {
+		if (sinfo_data->main_planned_flag && xstrstr(lower_state, "idle") != NULL) {
 			xfree(lower_state);
 			lower_state = xstrdup("planned");
 		}
-		pos = NULL;
 #endif
 		_print_str(lower_state, width, right_justify, true);
 		xfree(lower_state);
@@ -1185,8 +1198,9 @@ int _print_state_long(sinfo_data_t * sinfo_data, int width,
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
 }
+
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
-int _print_suspend_idle(sinfo_data_t * sinfo_data, int width,
+int  _print_suspend_idle(sinfo_data_t * sinfo_data, int width,
 			 bool right_justify, char *suffix)
 {
 	char id[FORMAT_STRING_SIZE];
@@ -1209,6 +1223,7 @@ int _print_suspend_idle(sinfo_data_t * sinfo_data, int width,
 	return SLURM_SUCCESS;
 }
 #endif
+
 
 int _print_time(sinfo_data_t * sinfo_data, int width,
 			bool right_justify, char *suffix)
@@ -1233,7 +1248,7 @@ int _print_timestamp(sinfo_data_t * sinfo_data, int width,
 			bool right_justify, char *suffix)
 {
 	if (sinfo_data && sinfo_data->reason_time) {
-		char time_str[32];
+		char time_str[256];
 		slurm_make_time_str(&sinfo_data->reason_time,
 				    time_str, sizeof(time_str));
 		_print_str(time_str, width, right_justify, true);
@@ -1251,15 +1266,13 @@ int _print_user(sinfo_data_t * sinfo_data, int width,
 			bool right_justify, char *suffix)
 {
 	if (sinfo_data && (sinfo_data->reason_uid != NO_VAL)) {
-		char user[FORMAT_STRING_SIZE];
-		struct passwd *pw = NULL;
+		char *user = uid_to_string_or_null(sinfo_data->reason_uid);
 
-		if ((pw=getpwuid(sinfo_data->reason_uid)))
-			snprintf(user, sizeof(user), "%s", pw->pw_name);
-		else
-			snprintf(user, sizeof(user), "Unk(%u)",
-				 sinfo_data->reason_uid);
+		if (!user)
+			xstrfmtcat(user, "Unk(%u)", sinfo_data->reason_uid);
 		_print_str(user, width, right_justify, true);
+
+		xfree(user);
 	} else if (sinfo_data)
 		_print_str("Unknown", width, right_justify, true);
 	else
@@ -1274,16 +1287,14 @@ int _print_user_long(sinfo_data_t * sinfo_data, int width,
 			bool right_justify, char *suffix)
 {
 	if (sinfo_data && (sinfo_data->reason_uid != NO_VAL)) {
-		char user[FORMAT_STRING_SIZE];
-		struct passwd *pw = NULL;
+		char *user = uid_to_string_or_null(sinfo_data->reason_uid);
 
-		if ((pw=getpwuid(sinfo_data->reason_uid)))
-			snprintf(user, sizeof(user), "%s(%u)", pw->pw_name,
-				 sinfo_data->reason_uid);
-		else
-			snprintf(user, sizeof(user), "Unk(%u)",
-				 sinfo_data->reason_uid);
+		if (!user)
+			user = xstrdup("Unk");
+		xstrfmtcat(user, "(%u)", sinfo_data->reason_uid);
 		_print_str(user, width, right_justify, true);
+
+		xfree(user);
 	} else if (sinfo_data)
 		_print_str("Unknown", width, right_justify, true);
 	else

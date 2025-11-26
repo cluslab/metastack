@@ -37,10 +37,7 @@ if {![is_super_user]} {
 }
 
 proc cleanup {} {
-	global scontrol part_name part_old_state
-
-	# Return partition's state to its old value
-	run_command -fail "$scontrol update PartitionName=$part_name State=$part_old_state"
+	reconfigure
 }
 
 # Execute a srun job in the specified partition name
@@ -98,4 +95,11 @@ subtest {$read_state eq "DOWN"} "scontrol should be able to change the partition
 # Confirm that a DOWN partition does not run any jobs
 #
 subtest {[check_part_down $part_name]} "Job should not run. srun should timeout with the partition DOWN messages"
+
+#
+# Confirm that we can set MaxCpusPerSocket
+#
+run_command -fail "$scontrol update PartitionName=$part_name MaxCPUsPerSocket=1"
+set read_max_cpus_per_socket [get_partition_param $part_name "MaxCPUsPerSocket"]
+subtest {$read_max_cpus_per_socket eq "1"} "scontrol should be able to set MaxCPUsPerSocket"
 

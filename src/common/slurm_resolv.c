@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  slurm_resolv.c - functions for DNS SRV resolution
  *****************************************************************************
- *  Copyright (C) 2020 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -54,7 +53,7 @@ static int _sort_controllers(void *x, void *y)
 	ctl_entry_t *ctl1 = *(ctl_entry_t **) x;
 	ctl_entry_t *ctl2 = *(ctl_entry_t **) y;
 
-	return ctl1->priority > ctl2->priority;
+	return slurm_sort_uint16_list_asc(&ctl1->priority, &ctl2->priority);
 }
 
 extern List resolve_ctls_from_dns_srv(void)

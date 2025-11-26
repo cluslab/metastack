@@ -1,4 +1,4 @@
-.TH slurmctld "8" "Slurm Daemon" "August 2022" "Slurm Daemon"
+.TH slurmctld "8" "Slurm Daemon" "February 2024" "Slurm Daemon"
 
 .SH "NAME"
 slurmctld \- The central management daemon of Slurm.
@@ -17,21 +17,18 @@ the primary server fails.
 \fB\-c\fR
 Clear all previous \fBslurmctld\fR state from its last checkpoint.
 With this option, all jobs, including both running and queued, and all
-node states, will be deleted.  Without this option, previously running
+node states, will be deleted. Without this option, previously running
 jobs will be preserved along with node \fIState\fR of DOWN, DRAINED
 and DRAINING nodes and the associated \fIReason\fR field for those nodes.
-NOTE: It is rare you would ever want to use this in production as all
+\fBNOTE\fR: It is rare you would ever want to use this in production as all
 jobs will be killed.
-.IP
-
-.TP
-\fB\-d\fR
-Run \fBslurmctld\fR in the background.
 .IP
 
 .TP
 \fB\-D\fR
 Run \fBslurmctld\fR in the foreground with logging copied to stdout.
+This limits the resilience of 'scontrol reconfigure' and should be
+avoided in production.
 .IP
 
 .TP
@@ -64,13 +61,14 @@ Set the daemon's nice value to the specified value, typically a negative number.
 .TP
 \fB\-r\fR
 Recover partial state from last checkpoint: jobs and node DOWN/DRAIN
-state and reason information state.  No partition state is recovered.
+state and reason information state. No partition state is recovered.
 This is the default action.
 .IP
 
 .TP
 \fB\-R\fR
-Recover full state from last checkpoint: jobs, node, and partition state.
+Recover full state from last checkpoint: jobs, node, partition state, and power
+save settings.
 Without this option, previously running jobs will be preserved along
 with node \fIState\fR of DOWN, DRAINED and DRAINING nodes and the associated
 \fIReason\fR field for those nodes. No other node or partition state will
@@ -80,13 +78,20 @@ be preserved.
 .TP
 \fB\-s\fR
 Change working directory of slurmctld to SlurmctldLogFile path if possible, or
-to SlurmStateSaveLocation otherwise. If both of them fail it will fallback to
+to Slurm's StateSaveLocation otherwise. If both of them fail it will fallback to
 /var/tmp.
 .IP
 
 .TP
+\fB\-\-systemd\fR
+Use when starting the daemon with systemd. This will allow slurmctld to notify
+systemd of the new PID when using 'scontrol reconfigure'.
+.IP
+
+.TP
 \fB\-v\fR
-Verbose operation. Multiple \fB\-v\fR's increase verbosity.
+Verbose operation. Multiple \fBv\fR's can be specified, with each '\fBv\fR'
+beyond the first increasing verbosity, up to 6 times (i.e. \-vvvvvv).
 .IP
 
 .TP
@@ -120,8 +125,6 @@ log file, provided SlurmUser has write permission on the directory.
 Otherwise the core file will be written to the \fBStateSaveLocation\fR,
 or "/var/tmp/" as a last resort. If none of the above directories have
 write permission for SlurmUser, no core file will be produced.
-The command "scontrol abort" can be used to abort the slurmctld daemon and
-generate a core file.
 
 .SH "SIGNALS"
 
@@ -144,7 +147,7 @@ Reloads the slurm configuration files, similar to 'scontrol reconfigure'.
 
 .TP
 \fBSIGUSR2\fR
-Reread the log level from the configs, and then reopen the log file.  This
+Reread the log level from the configs, and then reopen the log file. This
 should be used when setting up \fBlogrotate\fR(8).
 .IP
 
@@ -156,7 +159,7 @@ These signals are explicitly ignored.
 .SH "NOTES"
 It may be useful to experiment with different \fBslurmctld\fR specific
 configuration parameters using a distinct configuration file
-(e.g. timeouts).  However, this special configuration file will not be
+(e.g. timeouts). However, this special configuration file will not be
 used by the \fBslurmd\fR daemon or the Slurm programs, unless you
 specifically tell each of them to use it. If you desire changing
 communication ports, the location of the temporary file system, or
@@ -180,7 +183,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "SEE ALSO"

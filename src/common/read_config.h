@@ -5,9 +5,9 @@
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
  *  Portions Copyright (C) 2008 Vijay Ramasubramanian.
- *  Portions Copyright (C) 2010-2016 SchedMD <https://www.schedmd.com>.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- *  Written by Morris Mette <jette1@llnl.gov>.
+ *  Written by Morris Jette <jette1@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
  *  This file is part of Slurm, a resource management program.
@@ -51,6 +51,7 @@
 #include "src/common/run_in_daemon.h"
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 #include "src/common/xhash.h"
+#include "src/common/uthash.h"
 #endif
 extern slurm_conf_t slurm_conf;
 extern char *default_slurm_config_file;
@@ -89,7 +90,6 @@ typedef struct node_record node_record_t;
 #define DEFAULT_ACCOUNTING_TRES  "cpu,mem,energy,node,billing,fs/disk,vmem,pages"
 #define DEFAULT_ACCOUNTING_DB      "slurm_acct_db"
 #define DEFAULT_ACCOUNTING_ENFORCE  0
-#define DEFAULT_ACCOUNTING_STORAGE_TYPE "accounting_storage/none"
 #define DEFAULT_AUTH_TYPE          "auth/munge"
 #define DEFAULT_AUTH_TOKEN_LIFESPAN 1800
 #define DEFAULT_BATCH_START_TIMEOUT 10
@@ -97,9 +97,9 @@ typedef struct node_record node_record_t;
 #define DEFAULT_COMPLETE_WAIT       0
 #define DEFAULT_CRED_TYPE           "cred/munge"
 #define DEFAULT_EPILOG_MSG_TIME     2000
-#define DEFAULT_EXT_SENSORS_TYPE    "ext_sensors/none"
 #define DEFAULT_FIRST_JOB_ID        1
 #define DEFAULT_GET_ENV_TIMEOUT     2
+#define DEFAULT_GETNAMEINFO_CACHE_TIMEOUT 60
 #define DEFAULT_GROUP_TIME          600
 #define DEFAULT_GROUP_FORCE         1	/* if set, update group membership
 					 * info even if no updates to
@@ -107,34 +107,20 @@ typedef struct node_record node_record_t;
 /* NOTE: DEFAULT_INACTIVE_LIMIT must be 0 for Blue Gene/L systems */
 #define DEFAULT_INACTIVE_LIMIT      0
 #define DEFAULT_INTERACTIVE_STEP_OPTS "--interactive --preserve-env --pty $SHELL"
-#define DEFAULT_JOB_ACCT_GATHER_TYPE  "jobacct_gather/none"
-#define JOB_ACCT_GATHER_TYPE_NONE "jobacct_gather/none"
 #define DEFAULT_JOB_ACCT_GATHER_FREQ  "30"
-#define DEFAULT_ACCT_GATHER_ENERGY_TYPE "acct_gather_energy/none"
-#define DEFAULT_ACCT_GATHER_PROFILE_TYPE "acct_gather_profile/none"
-#define DEFAULT_ACCT_GATHER_INTERCONNECT_TYPE "acct_gather_interconnect/none"
-#define DEFAULT_ACCT_GATHER_FILESYSTEM_TYPE "acct_gather_filesystem/none"
-#define ACCOUNTING_STORAGE_TYPE_NONE "accounting_storage/none"
-#define DEFAULT_CORE_SPEC_PLUGIN    "core_spec/none"
 #define DEFAULT_ENFORCE_PART_LIMITS 0
-#define DEFAULT_JOB_COMP_TYPE       "jobcomp/none"
-#define DEFAULT_JOB_COMP_LOC        "/var/log/slurm_jobcomp.log"
-#define DEFAULT_JOB_COMP_DB         "slurm_jobcomp_db"
-#if defined HAVE_NATIVE_CRAY
-#  define DEFAULT_ALLOW_SPEC_RESOURCE_USAGE 1
-#  define DEFAULT_JOB_CONTAINER_PLUGIN  "job_container/cncu"
-#else
-#  define DEFAULT_ALLOW_SPEC_RESOURCE_USAGE 0
-#  define DEFAULT_JOB_CONTAINER_PLUGIN "job_container/none"
-#endif
+#define DEFAULT_ALLOW_SPEC_RESOURCE_USAGE 0
+#define DEFAULT_HASH_PLUGIN "hash/k12"
 #define DEFAULT_KEEPALIVE_TIME (NO_VAL)
+#define DEFAULT_KEEPALIVE_INTERVAL (NO_VAL)
+#define DEFAULT_KEEPALIVE_PROBES (NO_VAL)
 #define DEFAULT_KILL_ON_BAD_EXIT    0
 #define DEFAULT_KILL_TREE           0
 #define DEFAULT_KILL_WAIT           30
-#define DEFAULT_LAUNCH_TYPE         "launch/slurm"
 #define DEFAULT_MAIL_PROG           "/bin/mail"
 #define DEFAULT_MAIL_PROG_ALT       "/usr/bin/mail"
 #define DEFAULT_MAX_ARRAY_SIZE      1001
+#define DEFAULT_MAX_BATCH_REQUEUE   5
 #define DEFAULT_MAX_DBD_MSGS        10000
 #define DEFAULT_MAX_JOB_COUNT       10000
 #ifdef __METASTACK_MAX_JOB_ID
@@ -143,25 +129,21 @@ typedef struct node_record node_record_t;
 #define DEFAULT_MAX_JOB_ID          0x03ff0000
 #endif
 #define DEFAULT_MAX_STEP_COUNT      40000
-#define DEFAULT_MCS_PLUGIN          "mcs/none"
 #define DEFAULT_MEM_PER_CPU         0
 #define DEFAULT_MAX_MEM_PER_CPU     0
 #define DEFAULT_MIN_JOB_AGE         300
-#define DEFAULT_MPI_DEFAULT         "none"
 #define DEFAULT_MSG_AGGR_WINDOW_MSGS 1
 #define DEFAULT_MSG_AGGR_WINDOW_TIME 100
 #define DEFAULT_MSG_TIMEOUT         10
-#define DEFAULT_POWER_PLUGIN        ""
 #if defined WITH_CGROUP
 #  define DEFAULT_PROCTRACK_TYPE      "proctrack/cgroup"
 #else
 #  define DEFAULT_PROCTRACK_TYPE      "proctrack/pgid"
 #endif
-#define DEFAULT_PREEMPT_TYPE        "preempt/none"
 #define DEFAULT_PREP_PLUGINS        "prep/script"
 #define DEFAULT_PRIORITY_DECAY      604800 /* 7 days */
 #define DEFAULT_PRIORITY_CALC_PERIOD 300 /* in seconds */
-#define DEFAULT_PRIORITY_TYPE       "priority/basic"
+#define DEFAULT_PRIORITY_TYPE       "priority/multifactor"
 #define DEFAULT_RECONF_KEEP_PART_STATE 0
 #define DEFAULT_RETURN_TO_SERVICE   0
 #define DEFAULT_RESUME_RATE         300
@@ -171,12 +153,7 @@ typedef struct node_record node_record_t;
 #define DEFAULT_SCHED_LOG_LEVEL     0
 #define DEFAULT_SCHED_TIME_SLICE    30
 #define DEFAULT_SCHEDTYPE           "sched/backfill"
-#if defined HAVE_NATIVE_CRAY
-#  define DEFAULT_SELECT_TYPE       "select/cray_aries"
-#else
-#  define DEFAULT_SELECT_TYPE       "select/linear"
-#endif
-#define DEFAULT_SITE_FACTOR_PLUGIN  "site_factor/none"
+#define DEFAULT_SELECT_TYPE         "select/cons_tres"
 #define DEFAULT_SLURMCTLD_PIDFILE   "/var/run/slurmctld.pid"
 #define DEFAULT_SLURMCTLD_TIMEOUT   120
 #define DEFAULT_SLURMD_PIDFILE      "/var/run/slurmd.pid"
@@ -194,17 +171,12 @@ typedef struct node_record node_record_t;
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 #define DEFAULT_CACHEDUP_INTERVAL   30
 #endif
-#ifdef __METASTACK_TIME_SYNC_CHECK
+#ifdef __METASTACK_NEW_TIME_SYNC_CHECK
 #define TIME_DIFF_DEFAULT           120
 #define TIME_SYNC_CHECK_RETRY_COUNT 1
 #endif
-#if defined HAVE_NATIVE_CRAY
-#  define DEFAULT_SWITCH_TYPE         "switch/cray_aries"
-#else
-#  define DEFAULT_SWITCH_TYPE         "switch/none"
-#endif
-#define DEFAULT_TASK_PLUGIN         "task/none"
 #define DEFAULT_TCP_TIMEOUT         2
+#define DEFAULT_TLS_TYPE "tls/none"
 #define DEFAULT_TMP_FS              "/tmp"
 #if defined HAVE_3D
 #  define DEFAULT_TOPOLOGY_PLUGIN     "topology/3d_torus"
@@ -212,8 +184,12 @@ typedef struct node_record node_record_t;
 #  define DEFAULT_TOPOLOGY_PLUGIN     "topology/none"
 #endif
 #define DEFAULT_WAIT_TIME           0
-#  define DEFAULT_TREE_WIDTH        50
+#define DEFAULT_TREE_WIDTH	    16
 #define DEFAULT_UNKILLABLE_TIMEOUT  60 /* seconds */
+#define DEFAULT_BATCH_SCRIPT_LIMIT (4 * 1024 * 1024) /* 4MB */
+#define MAX_BATCH_SCRIPT_SIZE (512 * 1024 * 1024) /* 512MB */
+#define DEFAULT_MAX_SUBMIT_LINE_SIZE (1024 * 1024) /* 1MB */
+#define MAX_MAX_SUBMIT_LINE_SIZE (2 * 1024 * 1024) /* 2MB */
 
 /* MAX_TASKS_PER_NODE is defined in slurm.h
  */
@@ -223,37 +199,37 @@ typedef struct node_record node_record_t;
 typedef struct {
 	char *name;		  /* name of rate limit parameters */  
 	char *parameters; /* name of rate limit parameters */       
-} rl_config_t;
+} rl_cust_config_t;
 
 typedef struct {
-    char *name;		 	/* name of rate limit parameters */    
-    int limit_type;  	/* 1: all requests no limit */
-                    	/* 2: only limit query requests */
-                     	/* 3: limit all requests */
-    int bucket_size; 	/* size of the token bucket */
-    int refill_rate; 	/* how many tokens to add to the bucket on each period. */	     
+	char *name;		 	/* name of rate limit parameters */    
+	int limit_type;  	/* 1: all requests no limit */
+						/* 2: only limit query requests */
+					 	/* 3: limit all requests */
+	int bucket_size; 	/* size of the token bucket */
+	int refill_rate; 	/* how many tokens to add to the bucket on each period. */	     
 } rl_config_record_t;
          
 
 typedef struct {
-    char *usernames;	/* uid of this rate limit parameters */
-    char *rl_config;	/* name of rate limit parameters */   
+	char *usernames;	/* uid of this rate limit parameters */
+	char *rl_config;	/* name of rate limit parameters */   
 } rl_users_t;
 
 typedef struct {
-    uid_t uid;	
+	uid_t uid;	
 	char *username; 		
-    int limit_type;  	/* 1: all requests no limit */
-                    	/* 2: only limit query requests */
-                     	/* 3: limit all requests */
-    int bucket_size; 	/* size of the token bucket */
-    int refill_rate; 	/* how many tokens to add to the bucket on each period. */	     
+	int limit_type;  	/* 1: all requests no limit */
+						/* 2: only limit query requests */
+					 	/* 3: limit all requests */
+	int bucket_size; 	/* size of the token bucket */
+	int refill_rate; 	/* how many tokens to add to the bucket on each period. */	     
 } rl_user_record_t;
 
 typedef struct {
-    uint32_t uid;
+	uint32_t uid;
 	rl_user_record_t *rl_user;
-    UT_hash_handle hh;
+	UT_hash_handle hh;
 } rl_user_hash_t;
 
 extern rl_user_hash_t *rl_user_hash;
@@ -301,6 +277,8 @@ typedef struct slurm_conf_node {
 	uint64_t real_memory;	/* MB real memory on the node */
 	uint64_t mem_spec_limit; /* MB real memory for memory specialization */
 	char *reason;
+	uint16_t res_cores_per_gpu; /* number of cores per GPU to allow
+				     * to only GPU jobs */
 	char *state;
 	uint32_t tmp_disk;	/* MB total storage in TMP_FS file system */
 	char *tres_weights_str;	/* per TRES billing weight string */
@@ -332,21 +310,20 @@ typedef struct slurm_conf_partition {
 				 * NULL indicates all */
 	uint8_t disable_root_jobs; /* if set then user root can't run jobs
 				    * if NO_VAL8, use global default */
-	uint16_t exclusive_user; /* 1 if node allocations by user */
+	bool exclusive_user; /* true if node allocations by user */
+	bool exclusive_topo; /* true if exclusive topology*/
 	uint32_t grace_time;	/* default grace time for partition */
-#ifdef __METASTACK_NEW_HETPART_SUPPORT
-	bool     hetpart_flag;	/* 1 if heterogeneous partition */
-#endif
 #ifdef __METASTACK_NEW_PART_RBN
-	bool     rbn_flag;	/* 1 if nodes are selected in RBN order */
+	bool rbn_flag;	/* 1 if nodes are selected in RBN order */
 #endif
 	bool     hidden_flag;	/* 1 if hidden by default */
 	List job_defaults_list;	/* List of job_defaults_t elements */
 	bool     lln_flag;	/* 1 if nodes are selected in LLN order */
 #ifdef __METASTACK_NEW_PART_LLS
 	bool     lls_flag;	/* 1 if sockets are selected in LLS order */
-#endif	
+#endif
 	uint32_t max_cpus_per_node; /* maximum allocated CPUs per node */
+	uint32_t max_cpus_per_socket; /* maximum allocated CPUs per socket */
 	uint16_t max_share;	/* number of jobs to gang schedule */
 	uint32_t max_time;	/* minutes or INFINITE */
 	uint64_t max_mem_per_cpu; /* maximum MB memory per allocated CPU */
@@ -356,6 +333,8 @@ typedef struct slurm_conf_partition {
 	char 	*nodes;		/* comma delimited list names of nodes */
 	uint16_t over_time_limit; /* job's time limit can be exceeded by this
 				   * number of minutes before cancellation */
+	bool power_down_on_idle; /* true if nodes POWER_DOWN upon returning to
+				  * IDLE */
 	uint16_t preempt_mode;	/* See PREEMPT_MODE_* in slurm/slurm.h */
 	uint16_t priority_job_factor;	/* job priority weight factor */
 	uint16_t priority_tier;	/* tier for scheduling and preemption */
@@ -379,7 +358,7 @@ typedef struct slurm_conf_partition {
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	char    *standby_nodes;
 	char    *standby_node_parameters;
-#endif					   
+#endif	
 	uint16_t state_up;	/* for states see PARTITION_* in slurm.h */
 	uint32_t suspend_time;  /* node idle for this long before power save
 				 * mode */
@@ -390,6 +369,9 @@ typedef struct slurm_conf_partition {
 #endif
 	uint32_t total_nodes;	/* total number of nodes in the partition */
 	uint32_t total_cpus;	/* total number of cpus in the partition */
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+	bool     hetpart_flag;	/* 1 if heterogeneous partition */
+#endif
 } slurm_conf_partition_t;
 
 typedef struct slurm_conf_downnodes {
@@ -414,16 +396,13 @@ typedef struct {
 	List key_pairs;
 } config_plugin_params_t;
 
-/*
- * Get result of configuration file test.
- * RET SLURM_SUCCESS or error code
- */
-extern int config_test_result(void);
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern void _init_part_record_standby_nodes(part_record_t *part_ptr);
+#endif
 
-/*
- * Start configuration file test mode. Disables fatal errors.
- */
-extern void config_test_start(void);
+#ifdef __METASTACK_PART_PRIORITY_WEIGHT
+extern void _init_part_record_priority_params(part_record_t *part_ptr);
+#endif
 
 /* Destroy a front_end record built by slurm_conf_frontend_array() */
 extern void destroy_frontend(void *ptr);
@@ -466,6 +445,45 @@ extern int job_defaults_unpack(void **out, uint16_t protocol_version,
  * RET return SLURM_SUCCESS on success, SLURM_ERROR otherwise.
  */
 extern int set_nodes_alias(const char *alias_list);
+
+/* Send conf_hashtbl to the stepd */
+extern int read_conf_send_stepd(int fd);
+
+/* Receive conf_hashtbl from the slurmd */
+extern void read_conf_recv_stepd(int fd);
+
+/*
+ * Allocate memory for a config_key_pair_t pointer and initialize it by
+ * duplicating the key-value arguments. Append the resulting pair to the
+ * argument list if it's not NULL.
+ *
+ * IN: list_t *key_pair_list
+ * IN: char *key
+ * IN: char *fmt - printf style format of "value" args that follow
+ */
+extern void add_key_pair(list_t *key_pair_list, const char *key,
+			 const char *fmt, ...)
+	__attribute__((format(printf, 3, 4)));
+
+/*
+ * Allocate a config_key_pair_t, duplicate the key, and set the value
+ * to "yes" or "no".
+ */
+extern void add_key_pair_bool(list_t *key_pair_list, const char *key,
+			      bool value);
+
+/*
+ * Allocate a config_key_pair_t, duplicate the key, and take ownership of the
+ * value string.
+ */
+extern void add_key_pair_own(list_t *key_pair_list, const char *key,
+			     char *value);
+
+/*
+ * slurm_conf_init_stepd - Since the stepd does not read in the file and
+ * receives it from the slurm we need to call a different function to do this.
+ */
+extern void slurm_conf_init_stepd(void);
 
 /*
  * slurm_conf_init - load the slurm configuration from the a file.
@@ -515,6 +533,7 @@ extern slurm_conf_t *slurm_conf_lock(void);
 extern void slurm_conf_unlock(void);
 
 
+extern int slurm_conf_check_addr(const char *node_name, bool *dynamic);
 /*
  * Set "ptr_array" with the pointer to an array of pointers to
  * slurm_conf_frontend_t structures.
@@ -539,7 +558,6 @@ extern int slurm_conf_nodename_array(slurm_conf_node_t **ptr_array[]);
  */
 extern int slurm_conf_partition_array(slurm_conf_partition_t **ptr_array[]);
 
-
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 /*
  * Set "watr_array" with the pointer to an array of pointers to
@@ -549,6 +567,7 @@ extern int slurm_conf_partition_array(slurm_conf_partition_t **ptr_array[]);
  */
 int slurm_conf_watch_dog_array(watch_dog_record_t **watr_array[]);
 #endif
+
 /*
  * Set "ptr_array" with the pointer to an array of pointers to
  * slurm_conf_downnodes_t structures.
@@ -639,13 +658,6 @@ extern char *slurm_conf_get_aliased_nodename(void);
 extern char *slurm_conf_get_bcast_address(const char *node_name);
 
 /*
- * slurm_conf_get_port - Return the port for a given NodeName
- *
- * NOTE: Caller must NOT be holding slurm_conf_lock().
- */
-extern uint16_t slurm_conf_get_port(const char *node_name);
-
-/*
  * slurm_conf_get_addr - Return the slurm_addr_t for a given NodeName in
  *	the parameter "address".  The return code is SLURM_SUCCESS on success,
  *	and SLURM_ERROR if the address lookup failed.
@@ -654,31 +666,6 @@ extern uint16_t slurm_conf_get_port(const char *node_name);
  */
 extern int slurm_conf_get_addr(const char *node_name, slurm_addr_t *address,
 			       uint16_t flags);
-
-/*
- * slurm_conf_get_cpus_bsct -
- * Return the cpus, boards, sockets, cores, and threads configured for a
- * given NodeName
- * Returns SLURM_SUCCESS on success, SLURM_ERROR on failure.
- *
- * NOTE: Caller must NOT be holding slurm_conf_lock().
- */
-extern int slurm_conf_get_cpus_bsct(const char *node_name,
-				    uint16_t *cpus, uint16_t *boards,
-				    uint16_t *sockets, uint16_t *cores,
-				    uint16_t *threads);
-
-/*
- * slurm_conf_get_res_spec_info - Return resource specialization info
- * for a given NodeName
- * Returns SLURM_SUCCESS on success, SLURM_ERROR on failure.
- *
- * NOTE: Caller must NOT be holding slurm_conf_lock().
- */
-extern int slurm_conf_get_res_spec_info(const char *node_name,
-					char **cpu_spec_list,
-					uint16_t *core_spec_cnt,
-					uint64_t *mem_spec_limit);
 
 /*
  * Parse slurm.conf NodeName line and return single slurm_conf_node_t*.
@@ -751,7 +738,7 @@ extern char *debug_flags2str(uint64_t debug_flags);
  * debug_str2flags - Convert a DebugFlags string to the equivalent uint64_t
  * Returns SLURM_ERROR if invalid
  */
-extern int debug_str2flags(char *debug_flags, uint64_t *flags_out);
+extern int debug_str2flags(const char *debug_flags, uint64_t *flags_out);
 
 /*
  * reconfig_flags2str - convert a ReconfigFlags uint16_t to the equivalent string
@@ -819,9 +806,26 @@ extern void slurm_conf_add_node(node_record_t *node_ptr);
  */
 extern void slurm_conf_remove_node(char *node_name);
 
+#ifdef HAVE_FRONT_END
+/*
+ * Return the frontend port for the given hostname.
+ */
+extern uint16_t slurm_conf_get_frontend_port(char *node_hostname);
+#endif
+
+/*
+ * Get substring from a csv-style string.
+ *
+ * IN opts - csv-style string to be parsed
+ * IN arg - the search string + delimiter between option and its value
+ * 	(EG: "planet=")
+ *
+ * RET xmalloc()'d string after the delimiter, and before next ","
+ */
+extern char *conf_get_opt_str(const char *opts, const char *arg);
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 extern bool update_client_port(bool cache_query, bool nocache_query);
 #endif
-
 
 #endif /* !_READ_CONFIG_H */

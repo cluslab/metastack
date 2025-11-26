@@ -63,7 +63,6 @@ static pthread_rwlock_t cache_query_locks[5] = {
 	PTHREAD_RWLOCK_INITIALIZER,
 	PTHREAD_RWLOCK_INITIALIZER,
 };
-
 #endif
 
 #ifndef NDEBUG
@@ -123,9 +122,9 @@ extern bool verify_lock(lock_datatype_t datatype, lock_level_t level)
 static __thread bool cache_locked = false;
 
 /*
- * Used to detect any location where the acquired locks differ from the
- * release locks.
- */
+* Used to detect any location where the acquired locks differ from the
+* release locks.
+*/
 
 static __thread slurmctld_lock_t query_thread_locks;
 
@@ -136,7 +135,7 @@ static bool _cache_store_locks(slurmctld_lock_t lock_levels)
 	cache_locked = true;
 
 	memcpy((void *) &query_thread_locks, (void *) &lock_levels,
-	       sizeof(slurmctld_lock_t));
+		sizeof(slurmctld_lock_t));
 
 	return true;
 }
@@ -148,7 +147,7 @@ static bool _cache_clear_locks(slurmctld_lock_t lock_levels)
 	cache_locked = false;
 
 	if (memcmp((void *) &query_thread_locks, (void *) &lock_levels,
-		       sizeof(slurmctld_lock_t)))
+			sizeof(slurmctld_lock_t)))
 		return false;
 
 	memset((void *) &query_thread_locks, 0, sizeof(slurmctld_lock_t));
@@ -160,9 +159,7 @@ extern bool cache_verify_lock(lock_datatype_t datatype, lock_level_t level)
 {
 	return (((lock_level_t *) &query_thread_locks)[datatype] >= level);
 }
-
 #endif
-
 
 #endif
 
@@ -252,7 +249,7 @@ extern void lock_cache_query(slurmctld_lock_t lock_levels)
 }
 
 /* unlock_slurmctld - Issue the required unlock requests in a well
- *	defined order */
+*	defined order */
 extern void unlock_cache_query(slurmctld_lock_t lock_levels)
 {
 	xassert(_cache_clear_locks(lock_levels));

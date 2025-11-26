@@ -63,21 +63,22 @@ static void _init_event_cond(slurmdb_event_cond_t *pack)
 	list_append(pack->state_list, "state2");
 }
 
-static void _test_list_str_eq(List a, List b)
+static void _test_list_str_eq(list_t *a, list_t *b)
 {
 	char *str;
 
 	if (!a && !b)
 		return;
 
-	ck_assert(a);
-	ck_assert(b);
+	ck_assert(a != NULL);
+	ck_assert(b != NULL);
 
 	ck_assert(list_count(a) == list_count(b));
 
-	ListIterator itr_a = list_iterator_create(a);
+	list_itr_t *itr_a = list_iterator_create(a);
 	while ((str = list_next(itr_a)))
-		ck_assert(list_find_first(b, slurm_find_char_in_list, str));
+		ck_assert(list_find_first(b, slurm_find_char_in_list, str)
+			  != NULL);
 }
 
 static void _test_cond_eq(uint16_t protocol_version,

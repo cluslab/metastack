@@ -72,7 +72,7 @@ static int _set_cond(int *start, int argc, char **argv,
 					     MAX(command_len, 1)))
 			   || (!xstrncasecmp(argv[i], "Txn",
 					     MAX(command_len, 1)))) {
-			ListIterator itr = NULL;
+			list_itr_t *itr = NULL;
 			char *temp = NULL;
 			uint32_t id = 0;
 
@@ -161,9 +161,10 @@ extern int sacctmgr_list_txn(int argc, char **argv)
 	List txn_list = NULL;
 	slurmdb_txn_rec_t *txn = NULL;
 	int i=0;
-	ListIterator itr = NULL;
-	ListIterator itr2 = NULL;
+	list_itr_t *itr = NULL;
+	list_itr_t *itr2 = NULL;
 	int field_count = 0;
+	char *tmp_char = NULL;
 
 	print_field_t *field = NULL;
 
@@ -227,15 +228,17 @@ extern int sacctmgr_list_txn(int argc, char **argv)
 			case PRINT_ACTIONRAW:
 				field->print_routine(
 					field,
-					txn->action,
+					&txn->action,
 					(curr_inx == field_count));
 				break;
 			case PRINT_ACTION:
+				tmp_char = slurmdbd_msg_type_2_str(
+					txn->action, 0);
 				field->print_routine(
 					field,
-					slurmdbd_msg_type_2_str(txn->action,
-								0),
+					tmp_char,
 					(curr_inx == field_count));
+				tmp_char = NULL;
 				break;
 			case PRINT_ACTOR:
 				field->print_routine(field,
@@ -248,7 +251,7 @@ extern int sacctmgr_list_txn(int argc, char **argv)
 				break;
 			case PRINT_ID:
 				field->print_routine(field,
-						     txn->id,
+						     &txn->id,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_INFO:
@@ -258,7 +261,7 @@ extern int sacctmgr_list_txn(int argc, char **argv)
 				break;
 			case PRINT_TS:
 				field->print_routine(field,
-						     txn->timestamp,
+						     &txn->timestamp,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_USER:

@@ -288,7 +288,7 @@ static int enroot_new_log(void)
 static int slurm_clear_env(void)
 {
 	int rv = -1;
-	const char *p;
+	const char *p = NULL;
 	char *saved_path = NULL;
 
 	/* It's unclear if the pointer returned by getenv(3) will always persist after clearenv(3), so make a copy. */
@@ -448,8 +448,8 @@ static void enroot_print_log_ctx(bool error)
 static int enroot_container_get(const char *name, pid_t *pid)
 {
 	FILE *fp;
-	char *line;
-	char *ctr_name, *ctr_pid, *saveptr;
+	char *line = NULL;
+	char *ctr_name = NULL, *ctr_pid = NULL, *saveptr = NULL;
 	unsigned long n;
 	int rv = -1;
 
@@ -500,7 +500,8 @@ static int enroot_container_get(const char *name, pid_t *pid)
 
 fail:
 	free(line);
-	if (fp) fclose(fp);
+	if (fp)
+		fclose(fp);
 	return (rv);
 }
 
@@ -599,7 +600,7 @@ static int spank_import_container_env(spank_t sp, pid_t pid)
 	}
 
 	for (size_t i = 0; i < size;) {
-		char *key, *value;
+		char *key = NULL, *value = NULL;
 
 		value = proc_environ + i;
 		key = strsep(&value, "=");
@@ -834,7 +835,7 @@ fail:
 
 static pid_t enroot_container_start(void)
 {
-	int ret;
+	int ret = 0, ret2 = 0;
 	char conf_file[PATH_MAX] = { 0 };
 	pid_t pid = -1;
 	int status;
@@ -872,8 +873,8 @@ static pid_t enroot_container_start(void)
 		goto fail;
 	}
 
-	if (WIFEXITED(status) && (ret = WEXITSTATUS(status)) != 0) {
-		slurm_error("pyxis: container start failed with error code: %d", ret);
+	if (WIFEXITED(status) && (ret2 = WEXITSTATUS(status)) != 0) {
+		slurm_error("pyxis: container start failed with error code: %d", ret2);
 		goto fail;
 	}
 
@@ -1053,14 +1054,14 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		} else if (context.args->image == NULL) {
 #ifdef METASTACK_NEW_PYXIS_PARASTORAGE_SUPPORT
 			if (context.config.sharefs_support) {
-                slurm_error("pyxis: error: a container with name \"%s\" does not exist", container_name);
-            } else {
-                slurm_error("pyxis: error: a container with name \"%s\" does not exist, and --container-image is not set",
-                        container_name);
-            }
+				slurm_error("pyxis: error: a container with name \"%s\" does not exist", container_name);
+			} else {
+				slurm_error("pyxis: error: a container with name \"%s\" does not exist, and --container-image is not set",
+							container_name);
+			}
 #else
 			slurm_error("pyxis: error: a container with name \"%s\" does not exist, and --container-image is not set",
-				    container_name);
+						container_name);
 #endif
 			goto fail;
 		}

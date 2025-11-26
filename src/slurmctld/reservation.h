@@ -48,20 +48,22 @@
 #include "src/slurmctld/slurmctld.h"
 
 /* Create a resource reservation */
-extern int create_resv(resv_desc_msg_t *resv_desc_ptr);
+extern int create_resv(resv_desc_msg_t *resv_desc_ptr, char **err_msg);
 
 /* Update an existing resource reservation */
-extern int update_resv(resv_desc_msg_t *resv_desc_ptr);
+extern int update_resv(resv_desc_msg_t *resv_desc_ptr, char **err_msg);
 
 /* Delete an existing resource reservation */
 extern int delete_resv(reservation_name_msg_t *resv_desc_ptr);
+
+extern void reservation_delete_resv_exc_parts(resv_exc_t *resv_exc);
+extern void reservation_delete_resv_exc(resv_exc_t *resv_exc);
 
 /* Return pointer to the named reservation or NULL if not found */
 extern slurmctld_resv_t *find_resv_name(char *resv_name);
 
 /* Dump the reservation records to a buffer */
-extern void show_resv(char **buffer_ptr, int *buffer_size, uid_t uid,
-		      uint16_t protocol_version);
+extern buf_t *show_resv(uid_t uid, uint16_t protocol_version);
 
 /* Save the state of all reservations to file */
 extern int dump_all_resv_state(void);
@@ -149,18 +151,6 @@ extern int job_test_lic_resv(job_record_t *job_ptr, char *lic_name,
 			     time_t when, bool reboot);
 
 /*
- * Determine how many watts the specified job is prevented from using
- * due to reservations
- *
- * IN job_ptr   - job to test
- * IN when      - when the job is expected to start
- * IN reboot    - true if node reboot required to start job
- * RET amount of watts the job is prevented from using
- */
-extern uint32_t job_test_watts_resv(job_record_t *job_ptr, time_t when,
-				    bool reboot);
-
-/*
  * Determine which nodes a job can use based upon reservations
  *
  * IN job_ptr      - job to test
@@ -169,7 +159,8 @@ extern uint32_t job_test_watts_resv(job_record_t *job_ptr, time_t when,
  * IN move_time    - if true, then permit the start time to advance from
  *                   "when" as needed IF job has no reservervation
  * OUT node_bitmap - nodes which the job can use, caller must free
- * OUT exc_core_bitmap - cores which the job can NOT use, caller must free
+ * OUT resv_exc_ptr - Various TRES (cores) which the job can NOT use, caller
+ *                    must free (reservation_delete_resv_exc[parts])
  * OUT resv_overlap - set to true if the job's run time and available nodes
  *		      overlap with an advanced reservation, indicates that
  *		      resources were removed from availability to the job
@@ -183,7 +174,7 @@ extern uint32_t job_test_watts_resv(job_record_t *job_ptr, time_t when,
  */
 extern int job_test_resv(job_record_t *job_ptr, time_t *when,
 			 bool move_time, bitstr_t **node_bitmap,
-			 bitstr_t **exc_core_bitmap, bool *resv_overlap,
+			 resv_exc_t *resv_exc_ptr, bool *resv_overlap,
 			 bool reboot);
 
 /*

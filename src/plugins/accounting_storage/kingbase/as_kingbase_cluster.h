@@ -56,7 +56,14 @@ extern List as_kingbase_get_clusters(kingbase_conn_t *kingbase_conn, uid_t uid,
 extern List as_kingbase_get_cluster_events(kingbase_conn_t *kingbase_conn, uint32_t uid,
 					slurmdb_event_cond_t *event_cond);
 
+extern List as_kingbase_get_instances(kingbase_conn_t *kingbase_conn,
+				   uint32_t uid,
+				   slurmdb_instance_cond_t *instance_cond);
+
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+extern int as_kingbase_fix_borrowaway_nodes(kingbase_conn_t *kingbase_conn, uint32_t uid,
+					  List nodes);
+					
 extern int as_kingbase_node_borrow(kingbase_conn_t *kingbase_conn,
 			      node_record_t *node_ptr,
 			      time_t event_time, char *reason,
@@ -76,6 +83,9 @@ extern int as_kingbase_node_down(kingbase_conn_t *kingbase_conn,
 
 extern int as_kingbase_node_up(kingbase_conn_t *kingbase_conn, node_record_t *node_ptr,
 			    time_t event_time);
+
+extern int as_kingbase_node_update(kingbase_conn_t *kingbase_conn,
+				node_record_t *node_ptr);
 
 extern int as_kingbase_register_ctld(kingbase_conn_t *kingbase_conn,
 				  char *cluster, uint16_t port);

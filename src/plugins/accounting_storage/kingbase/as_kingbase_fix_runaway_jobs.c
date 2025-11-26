@@ -41,7 +41,7 @@
 static int _first_job_roll_up(kingbase_conn_t *kingbase_conn, time_t first_start)
 {
 	int rc = SLURM_SUCCESS;
-	char *query;
+	char *query = NULL;
 	struct tm start_tm;
 	time_t month_start;
 
@@ -115,7 +115,7 @@ extern int as_kingbase_fix_runaway_jobs(kingbase_conn_t *kingbase_conn, uint32_t
 {
 	char *query = NULL, *job_ids = NULL;
 	slurmdb_job_rec_t *job = NULL;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 	int rc = SLURM_SUCCESS;
 	slurmdb_job_rec_t *first_job;
 	char *temp_cluster_name = kingbase_conn->cluster_name;

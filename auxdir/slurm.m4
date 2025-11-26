@@ -108,23 +108,30 @@ AC_DEFUN([X_AC_LIBSLURM], [
 
   if test "$x_ac_shared_libslurm" = no; then
     LIB_SLURM_BUILD='$(top_builddir)/src/api/libslurm.o'
-    LIB_SLURM=$LIB_SLURM_BUILD
+    SLURMCTLD_INTERFACES='$(top_builddir)/src/interfaces/libslurmctld_interfaces.o'
+    SLURMD_INTERFACES='$(top_builddir)/src/interfaces/libslurmd_interfaces.o'
+    LIB_SLURM="$LIB_SLURM_BUILD"
     AC_MSG_RESULT([static]);
   else
     # The *_BUILD variables are here to make sure these are made before
     # compiling the bin
     LIB_SLURM_BUILD='$(top_builddir)/src/api/full_version.map $(top_builddir)/src/api/libslurmfull.la'
+    SLURMCTLD_INTERFACES='$(top_builddir)/src/interfaces/libslurmctld_interfaces.la'
+    SLURMD_INTERFACES='$(top_builddir)/src/interfaces/libslurmd_interfaces.la'
     # You will notice " or ' each does something different when resolving
     # variables.  Some need to be resolved now ($libdir) and others
     # ($(top_builddir)) need to be resolved when dealing with the Makefile.am's
     LIB_SLURM="-Wl,-rpath=$libdir/slurm"
     LIB_SLURM=$LIB_SLURM' -L$(top_builddir)/src/api/.libs -lslurmfull'
-
     AC_MSG_RESULT([shared]);
   fi
 
+  LIB_SLURM="$LIB_SLURM -export-dynamic"
+
   AC_SUBST(LIB_SLURM)
   AC_SUBST(LIB_SLURM_BUILD)
+  AC_SUBST(SLURMCTLD_INTERFACES)
+  AC_SUBST(SLURMD_INTERFACES)
 ])
 
 dnl
@@ -251,7 +258,7 @@ AC_SUBST(SLURM_VERSION_STRING)
 dnl
 dnl Test if we want to include rpath in the executables (default=yes)
 dnl Doing so is generally discouraged due to problems this causes in upgrading
-dnl software and general incompatability issues
+dnl software and general incompatibility issues
 dnl
 AC_DEFUN([X_AC_RPATH], [
   ac_with_rpath=yes

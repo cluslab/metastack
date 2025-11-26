@@ -99,11 +99,11 @@ print_field_t fields[] = {
 	{19, "TRESUsageOutMinTask", print_fields_str, PRINT_TRESUOMIT, 0},
 	{15, "TRESUsageOutTot", print_fields_str, PRINT_TRESUOT, 0},
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-	{7, "CPUUtil", print_fields_str, PRINT_CPUREALUTIL},
-	{10, "AveCPUUtil", print_fields_str, PRINT_CPUUTILAVE},
-	{10, "MaxCPUUtil", print_fields_str, PRINT_MAXCPUUTIL},
-	{10, "MinCPUUtil", print_fields_str, PRINT_MINCPUUTIL},
-	{8, "TotalRSS", print_fields_str, PRINT_TOTALRSS},
+	{7, "CPUUtil", print_fields_str, PRINT_CPUREALUTIL, 0},
+	{10, "AveCPUUtil", print_fields_str, PRINT_CPUUTILAVE, 0},
+	{10, "MaxCPUUtil", print_fields_str, PRINT_MAXCPUUTIL, 0},
+	{10, "MinCPUUtil", print_fields_str, PRINT_MINCPUUTIL, 0},
+	{8, "TotalRSS", print_fields_str, PRINT_TOTALRSS, 0},
 #endif
 	{0, NULL, NULL, 0, 0}};
 #else
@@ -166,92 +166,193 @@ print_field_t fields[] = {
 	{10, "MaxCPUUtil", print_fields_str, PRINT_MAXCPUUTIL},
 	{10, "MinCPUUtil", print_fields_str, PRINT_MINCPUUTIL},
 	{8, "TotalRSS", print_fields_str, PRINT_TOTALRSS},
-#endif	
+#endif
 	{0, NULL, NULL, 0}};
 #endif
 List jobs = NULL;
 slurmdb_job_rec_t job;
 slurmdb_step_rec_t step;
 List print_fields_list = NULL;
-ListIterator print_fields_itr = NULL;
+list_itr_t *print_fields_itr = NULL;
 int field_count = 0;
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 #define LOAD_LOW 0x0000000000000001
 #define PROC_AB  0x0000000000000010
 #define NODE_ABL 0x0000000000000100
-
+/*
+ * Globals
+ */
+sstat_print_t print_resource;
 typedef enum {
-	LOW_CPU_UTIL,
+	LOW_CPU_UTIL = 0,
 	PROC_ABNORMAL,
 	NODE_ABNORMAL,
 } abnormal_event_type_t;
 const char* event_str[] = {
-	"Cpu utilization exception ",
-	"Job process anomaly ",
-	"Job node anomaly "
+	"Cpu utilization exception",
+	"Job process anomaly",
+	"Job node anomaly"
 };
 void _event_print(uint64_t count, uint64_t  *start, uint64_t  *end, abnormal_event_type_t flag) {
-	char *nodenames = NULL;
-	char *event_desc = NULL;
+	const char *event_desc = NULL;
 	printf("\n*********************************************************************************\n");
 	switch (flag) {
 	case LOW_CPU_UTIL:
 		printf("Display of CPU exception events\n");
-		event_desc = xstrdup(event_str[LOW_CPU_UTIL]);
+		event_desc = event_str[LOW_CPU_UTIL];
 		break;
 	case PROC_ABNORMAL:
 		printf("Display of PROCESS exception events\n");
-		event_desc = xstrdup(event_str[PROC_ABNORMAL]);
+		event_desc = event_str[PROC_ABNORMAL];
 		break;
 	case NODE_ABNORMAL:
 		printf("Display of Node exception events\n");
-		event_desc = xstrdup(event_str[NODE_ABNORMAL]);
+		event_desc = event_str[NODE_ABNORMAL];
 		break;
 	}
-	if(count <= JOBACCTINFO_START_END_ARRAY_SIZE) {
-		for(int i = 0 ; i < count ; ++i){
-			time_t tmptimeValueStart = (time_t)start[i];
-			time_t tmptimeValueEnd = (time_t)end[i];
+	for (int i = 0; i < MIN(count, JOBACCTINFO_START_END_ARRAY_SIZE); i++) {
+		/* Handling access to the circular buffer */
+		int idx = (count > JOBACCTINFO_START_END_ARRAY_SIZE) ?
+		          (count + i) % JOBACCTINFO_START_END_ARRAY_SIZE : i;
+		
+		time_t start_time = (time_t)start[idx];
+		time_t end_time = (time_t)end[idx];
+		struct tm tm_start, tm_end;
+		char start_str[100] = {0}, end_str[100] = {0};
 
-			char timeStringStart[100];
-			char timeStringEnd[100];
-			struct tm timeInfoStart;
-			struct tm timeInfoEnd;
-			localtime_r(&tmptimeValueStart, &timeInfoStart);
-			localtime_r(&tmptimeValueEnd, &timeInfoEnd);
-			strftime(timeStringStart, sizeof(timeStringStart), "%Y-%m-%d-%H:%M:%S", &timeInfoStart);
-			strftime(timeStringEnd, sizeof(timeStringEnd), "%Y-%m-%d-%H:%M:%S", &timeInfoEnd);
-			nodenames = xstrdup(event_desc);
-			xstrfmtcat(nodenames, "between %s and %s ", timeStringStart, timeStringEnd);
-			printf("\n%s\n",nodenames);
-			if(nodenames) 
-				xfree(nodenames);
-		}
-	} else{
-		for(int i = 0 ; i < JOBACCTINFO_START_END_ARRAY_SIZE; ++i) {
-			time_t tmptimeValueStart = (time_t)start[(count + i) % JOBACCTINFO_START_END_ARRAY_SIZE];
-			time_t tmptimeValueEnd = (time_t)end[(count + i) % JOBACCTINFO_START_END_ARRAY_SIZE];
+		localtime_r(&start_time, &tm_start);
+		localtime_r(&end_time, &tm_end);
+		strftime(start_str, sizeof(start_str), "%Y-%m-%d-%H:%M:%S", &tm_start);
+		strftime(end_str, sizeof(end_str), "%Y-%m-%d-%H:%M:%S", &tm_end);
 
-			char timeStringStart[100];
-			char timeStringEnd[100];
-			struct tm timeInfoStart;
-			struct tm timeInfoEnd;
-			localtime_r(&tmptimeValueStart, &timeInfoStart);
-			localtime_r(&tmptimeValueEnd, &timeInfoEnd);
-			strftime(timeStringStart, sizeof(timeStringStart), "%Y-%m-%d-%H:%M:%S", &timeInfoStart);
-			strftime(timeStringEnd, sizeof(timeStringEnd), "%Y-%m-%d-%H:%M:%S", &timeInfoEnd);
-			nodenames = xstrdup(event_desc);
-			xstrfmtcat(nodenames, "between %s and %s ", timeStringStart, timeStringEnd);
-			printf("\n%s\n",nodenames);
-			if(nodenames) 
-				xfree(nodenames);
-		}
-	}
-	if(event_desc)
-		xfree(event_desc);		
+		printf("\n%s between %s and %s\n", event_desc, start_str, end_str);
+	}	
 }
 
+void print_for_briebf(jobacctinfo_t *total_jobacct,uint32_t job_id, uint32_t step_id)
+{
+
+	char arrTest1[] = "batch";
+	/* If the linux acquisition plug-in is not enabled, skip the judgment branch */
+	if((params.opt_event == 1) && total_jobacct) {
+		if(step_id == -5) {
+			printf("\n*********************************************************************************\n");
+			printf("Resource Consumption Information of %d.%s\n", job_id, arrTest1);
+			if(total_jobacct->node_alloc_cpu == 0)
+				printf("The data may need to wait for updates\n");
+			else
+				printf("(the update interval is %ld minutes , the threshold value is %d (%ldcpus * %ld%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold  , total_jobacct->node_alloc_cpu , (uint64_t)total_jobacct->cpu_threshold / total_jobacct->node_alloc_cpu);
+		} else if (step_id != -4){
+			printf("\n*********************************************************************************\n");
+			printf("Resource Consumption Information of %d.%d\n", job_id,step_id);
+			if(total_jobacct->node_alloc_cpu == 0)
+				printf("The data may need to wait for updates\n");
+			else
+				printf("(the update interval is %ld minutes , the threshold value is %d (%ldcpus * %ld%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold  , total_jobacct->node_alloc_cpu ,  (uint64_t)total_jobacct->cpu_threshold / total_jobacct->node_alloc_cpu);
+	   }
+	   if(step_id != -4) {
+			printf("*********************************************************************************\n");
+			if(total_jobacct) {
+				if((total_jobacct->flag & LOAD_LOW ) != 0) {
+					_event_print(total_jobacct->cpu_count, total_jobacct->cpu_start, total_jobacct->cpu_end, LOW_CPU_UTIL);
+				}
+				if((total_jobacct->flag & PROC_AB ) != 0) {
+					_event_print(total_jobacct->pid_count, total_jobacct->pid_start, total_jobacct->pid_end, PROC_ABNORMAL);
+				}
+				if((total_jobacct->flag & NODE_ABL ) != 0) {
+					_event_print(total_jobacct->node_count, total_jobacct->node_start, total_jobacct->node_end, NODE_ABNORMAL);
+				}
+				if((total_jobacct->cpu_step_ave < 0) && (total_jobacct->cpu_step_max <0) && (total_jobacct->cpu_step_min<0)) {
+					printf("\nAverage CPU utilization of job steps please waitting\n");
+					printf("Maximum CPU utilization of job steps please waitting\n");
+					printf("Minimum CPU utilization of job steps please waitting\n");
+					printf("Current CPU utilization of job steps please waitting\n");
+				} else {
+					printf("\nAverage CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_ave);
+					printf("Maximum CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_max);
+					printf("Minimum CPU utilization of job steps     %.2f%%  \n",(total_jobacct->cpu_step_min == INFINITE64 ? 0.0 : total_jobacct->cpu_step_min));
+					printf("Current CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_real);
+				}
+				printf("---------------------------------------------------------------------------------\n");
+				if(total_jobacct->step_pages<=0) {
+					total_jobacct->step_pages = 0;
+				}
+				printf("Current page faults of job steps         %ld \n",total_jobacct->step_pages);			
+
+				print_resource.all_task_mem_tmp_max = total_jobacct->mem_step_max;
+				print_resource.all_task_mem_tmp_min = total_jobacct->mem_step_min;
+
+				print_resource.all_task_vmem_tmp_max = total_jobacct->vmem_step_max;
+				print_resource.all_task_vmem_tmp_min = total_jobacct->vmem_step_min;
+				/* mem real */		
+				print_resource.all_task_mem_tmp = total_jobacct->mem_step;
+				/* vmem real */	
+				print_resource.all_task_vmem_tmp = total_jobacct->vmem_step;
+		   }
+	   }
+   }
+
+}
+void print_max_min_detail(uint32_t step_id)
+{
+
+	char outbuf_tmp[34] = {'0'};
+	char outbuf_tmp_max[34] = {'0'};
+	char outbuf_tmp_min[34] = {'0'};
+
+	char vmem_outbuf_tmp[34] = {'0'};
+	char vmem_outbuf_tmp_max[34] = {'0'};
+	char vmem_outbuf_tmp_min[34] = {'0'};
+
+	if(step_id != -4) {
+		if(print_resource.all_task_vmem_tmp_max >=0) {
+			/* mem usage conversion */
+			convert_num_unit(print_resource.all_task_mem_tmp, outbuf_tmp,
+					sizeof(outbuf_tmp), UNIT_NONE, UNIT_MEGA,
+					params.convert_flags);
+			/* vmem usage conversion */
+			convert_num_unit(print_resource.all_task_vmem_tmp, vmem_outbuf_tmp,
+					sizeof(vmem_outbuf_tmp), UNIT_NONE, UNIT_MEGA,
+					params.convert_flags);
+
+			convert_num_unit(print_resource.all_task_mem_tmp_max, outbuf_tmp_max,
+					sizeof(outbuf_tmp_max), UNIT_NONE, UNIT_MEGA,
+					params.convert_flags);
+			convert_num_unit(print_resource.all_task_mem_tmp_min, outbuf_tmp_min,
+					sizeof(outbuf_tmp_min), UNIT_NONE, UNIT_MEGA,
+					params.convert_flags);
+
+			convert_num_unit(print_resource.all_task_vmem_tmp_max, vmem_outbuf_tmp_max,
+					sizeof(vmem_outbuf_tmp_max), UNIT_NONE, UNIT_MEGA,
+					params.convert_flags);
+			convert_num_unit(print_resource.all_task_vmem_tmp_min, vmem_outbuf_tmp_min,
+					sizeof(vmem_outbuf_tmp_min), UNIT_NONE, UNIT_MEGA,
+					params.convert_flags);
+		}
+
+		if(print_resource.all_task_vmem_tmp_max >= 0 ) {
+			printf("Maximum mem utilization of job steps     %s  \n", outbuf_tmp_max);
+			printf("Minimum mem utilization of job steps     %s  \n", outbuf_tmp_min);
+			printf("Current mem utilization of job steps     %s  \n", outbuf_tmp);
+		} else {
+			printf("Maximum mem utilization of job steps please waitting\n");
+			printf("Minimum mem utilization of job steps please waitting\n");	
+			printf("Current mem utilization of job steps please waitting\n");		
+		}
+		if(print_resource.all_task_vmem_tmp_max >= 0 ) {
+			printf("Maximum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp);
+			printf("Minimum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_max);
+			printf("Current vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_min);
+		} else {
+			printf("Maximum vmem utilization of job steps please waitting \n");
+			printf("Minimum vmem utilization of job steps please waitting\n");
+			printf("Vmem utilization of job steps please waitting\n");
+		}
+		printf("\n");
+	}
+
+}
 #endif
 
 int _do_stat(slurm_step_id_t *step_id, char *nodelist,
@@ -260,34 +361,23 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 {
 	job_step_stat_response_msg_t *step_stat_response = NULL;
 	int rc = SLURM_SUCCESS;
-	ListIterator itr;
+	list_itr_t *itr;
 	jobacctinfo_t *total_jobacct = NULL;
 	job_step_stat_t *step_stat = NULL;
 	int ntasks = 0;
 	int tot_tasks = 0;
-	hostlist_t hl = NULL;
+	hostlist_t *hl = NULL;
 	char *ave_usage_tmp = NULL;
-#ifdef __METASTACK_LOAD_ABNORMAL
-	double all_task_mem_tmp = 0;
-	double all_task_vmem_tmp = 0;
-
-  	double all_task_mem_tmp_max = 0;
-	double all_task_mem_tmp_min = 0;
-	
-  	double all_task_vmem_tmp_max = 0;
-	double all_task_vmem_tmp_min = 0;
-
-#endif
 
 	debug("requesting info for %ps", step_id);
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	/*
 	 *After using -d to specify the display of anomalous acquisition data, each job step will summarize 
 	 *the data to the head node, so there is no need to send an RPC get message to all nodes, and you 
 	 *only need to communicate with the head node.
 	 */
 	if(params.opt_event == 1) {
-		hostlist_t hl = hostlist_create(nodelist);
+		hostlist_t *hl = hostlist_create(nodelist);
 		hostlist_sort(hl);
 		/*
 		 *Use subscript 0 to get the head node
@@ -327,7 +417,6 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 		return rc;
 	}
 #endif
-
 	memset(&job, 0, sizeof(slurmdb_job_rec_t));
 	job.jobid = step_id->job_id;
 
@@ -391,74 +480,16 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 
 				jobacctinfo_aggregate(total_jobacct,
 						      step_stat->jobacct);
-#ifdef __METASTACK_LOAD_ABNORMAL							
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL							
 				jobacctinfo_aggregate_2(total_jobacct,
-						      step_stat->jobacct);
+							step_stat->jobacct);
 #endif
 			}
 		}
 	}
 	list_iterator_destroy(itr);
-#ifdef __METASTACK_LOAD_ABNORMAL
- 	char arrTest1[] = "batch";
-	/* If the linux acquisition plug-in is not enabled, skip the judgment branch */
-	if((params.opt_event == 1) && total_jobacct) {
-		if(step.step_id.step_id == -5) {
-			printf("\n*********************************************************************************\n");
-			printf("Resource Consumption Information of %d.%s\n", step.step_id.job_id, arrTest1);
-			if(total_jobacct->node_alloc_cpu == 0)
-				printf("The data may need to wait for updates\n");
-			else
-				printf("(the update interval is %ld minutes , the threshold value is %d (%ldcpus * %ld%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold  , total_jobacct->node_alloc_cpu , (uint64_t)total_jobacct->cpu_threshold / total_jobacct->node_alloc_cpu);
-		} else if (step.step_id.step_id != -4){
-			printf("\n*********************************************************************************\n");
-			printf("Resource Consumption Information of %d.%d\n", step.step_id.job_id,step.step_id.step_id);
-			if(total_jobacct->node_alloc_cpu == 0)
-				printf("The data may need to wait for updates\n");
-			else
-				printf("(the update interval is %ld minutes , the threshold value is %d (%ldcpus * %ld%%)))\n", total_jobacct->timer / 60 , total_jobacct->cpu_threshold  , total_jobacct->node_alloc_cpu ,  (uint64_t)total_jobacct->cpu_threshold / total_jobacct->node_alloc_cpu);
-		}
-		if(step.step_id.step_id != -4) {
-			printf("*********************************************************************************\n");
-			if(total_jobacct) {
-				if((total_jobacct->flag & LOAD_LOW ) != 0) {
-					_event_print(total_jobacct->cpu_count, total_jobacct->cpu_start, total_jobacct->cpu_end, LOW_CPU_UTIL);
-				}
-				if((total_jobacct->flag & PROC_AB ) != 0) {
-					_event_print(total_jobacct->pid_count, total_jobacct->pid_start, total_jobacct->pid_end, PROC_ABNORMAL);
-				}
-				if((total_jobacct->flag & NODE_ABL ) != 0) {
-					_event_print(total_jobacct->node_count, total_jobacct->node_start, total_jobacct->node_end, NODE_ABNORMAL);
-				}
-				if((total_jobacct->cpu_step_ave < 0) && (total_jobacct->cpu_step_max <0) && (total_jobacct->cpu_step_min<0)) {
-					printf("\nAverage CPU utilization of job steps please waitting\n");
-					printf("Maximum CPU utilization of job steps please waitting\n");
-					printf("Minimum CPU utilization of job steps please waitting\n");
-					printf("Current CPU utilization of job steps please waitting\n");
-				} else {
-					printf("\nAverage CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_ave);
-					printf("Maximum CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_max);
-					printf("Minimum CPU utilization of job steps     %.2f%%  \n",(total_jobacct->cpu_step_min == INFINITE64 ? 0.0 : total_jobacct->cpu_step_min));
-					printf("Current CPU utilization of job steps     %.2f%%  \n",total_jobacct->cpu_step_real);
-				}
-				printf("---------------------------------------------------------------------------------\n");
-				if(total_jobacct->step_pages<=0) {
-					total_jobacct->step_pages = 0;
-				}
-				printf("Current page faults of job steps         %ld \n",total_jobacct->step_pages);			
-
-				all_task_mem_tmp_max = total_jobacct->mem_step_max;
-				all_task_mem_tmp_min = total_jobacct->mem_step_min;
-
-				all_task_vmem_tmp_max = total_jobacct->vmem_step_max;
-				all_task_vmem_tmp_min = total_jobacct->vmem_step_min;
-				/* mem real */		
-				all_task_mem_tmp = total_jobacct->mem_step;
-				/* vmem real */	
-				all_task_vmem_tmp = total_jobacct->vmem_step;
-			}
-		}
-	}
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
+ 	print_for_briebf(total_jobacct, step.step_id.job_id, step.step_id.step_id);
 #endif
 	if (total_jobacct) {
 		jobacctinfo_2_stats(&step.stats, total_jobacct);
@@ -489,68 +520,12 @@ int _do_stat(slurm_step_id_t *step_id, char *nodelist,
 
 		step.ntasks = tot_tasks;
 	}
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	if((params.opt_event == 1) && tot_tasks ) {
-
-		char outbuf_tmp[34] = {'0'};
-		char outbuf_tmp_max[34] = {'0'};
-		char outbuf_tmp_min[34] = {'0'};
-
-		char vmem_outbuf_tmp[34] = {'0'};
-		char vmem_outbuf_tmp_max[34] = {'0'};
-		char vmem_outbuf_tmp_min[34] = {'0'};
-
-		if(step.step_id.step_id != -4) {
-
-			if(all_task_vmem_tmp_max >=0) {
-				/* mem usage conversion */
-				convert_num_unit((double)all_task_mem_tmp, outbuf_tmp,
-						sizeof(outbuf_tmp), UNIT_NONE, UNIT_MEGA,
-						params.convert_flags);
-				/* vmem usage conversion */
-				convert_num_unit((double)all_task_vmem_tmp, vmem_outbuf_tmp,
-						sizeof(vmem_outbuf_tmp), UNIT_NONE, UNIT_MEGA,
-						params.convert_flags);
-
-				convert_num_unit((double)all_task_mem_tmp_max, outbuf_tmp_max,
-						sizeof(outbuf_tmp_max), UNIT_NONE, UNIT_MEGA,
-						params.convert_flags);
-				convert_num_unit((double)all_task_mem_tmp_min, outbuf_tmp_min,
-						sizeof(outbuf_tmp_min), UNIT_NONE, UNIT_MEGA,
-						params.convert_flags);
-
-				convert_num_unit((double)all_task_vmem_tmp_max, vmem_outbuf_tmp_max,
-						sizeof(vmem_outbuf_tmp_max), UNIT_NONE, UNIT_MEGA,
-						params.convert_flags);
-				convert_num_unit((double)all_task_vmem_tmp_min, vmem_outbuf_tmp_min,
-						sizeof(vmem_outbuf_tmp_min), UNIT_NONE, UNIT_MEGA,
-						params.convert_flags);
-			}
-
-			if(all_task_vmem_tmp_max >= 0 ) {
-				printf("Maximum mem utilization of job steps     %s  \n", outbuf_tmp_max);
-				printf("Minimum mem utilization of job steps     %s  \n", outbuf_tmp_min);
-				printf("Current mem utilization of job steps     %s  \n", outbuf_tmp);
-			} else {
-				printf("Maximum mem utilization of job steps please waitting\n");
-				printf("Minimum mem utilization of job steps please waitting\n");	
-				printf("Current mem utilization of job steps please waitting\n");		
-			}
-			if(all_task_vmem_tmp_max >= 0 ) {
-				printf("Maximum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp);
-				printf("Minimum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_max);
-				printf("Current vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_min);
-			} else {
-				printf("Maximum vmem utilization of job steps please waitting \n");
-				printf("Minimum vmem utilization of job steps please waitting\n");
-				printf("Vmem utilization of job steps please waitting\n");
-			}
-			printf("\n");
-		}
+		print_max_min_detail(step.step_id.step_id);
 	}
 #endif
-
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	if(params.opt_event != 1)
 		print_fields(&step);
 #endif
@@ -571,7 +546,7 @@ getout:
 
 int main(int argc, char **argv)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	slurm_step_id_t step_id = {
 		.job_id = 0,
 		.step_id = NO_VAL,
@@ -579,7 +554,8 @@ int main(int argc, char **argv)
 	};
 	slurm_selected_step_t *selected_step = NULL;
 
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
+
 	print_fields_list = list_create(NULL);
 	print_fields_itr = list_iterator_create(print_fields_list);
 
@@ -589,13 +565,12 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	if(params.opt_event != 1) 
 		print_fields_header(print_fields_list);
 #endif
 	itr = list_iterator_create(params.opt_job_list);
 	while ((selected_step = list_next(itr))) {
-		resource_allocation_response_msg_t *resp;
 		job_step_info_response_msg_t *step_info = NULL;
 
 		memcpy(&step_id, &selected_step->step_id, sizeof(step_id));
@@ -615,15 +590,6 @@ int main(int argc, char **argv)
 
 			continue;
 		}
-
-		if (slurm_allocation_lookup(step_id.job_id, &resp)) {
-			error("No steps running for job %u",
-			      selected_step->step_id.job_id);
-			continue;
-		} else if (resp->alias_list) {
-			set_nodes_alias(resp->alias_list);
-		}
-		slurm_free_resource_allocation_response_msg(resp);
 
 		for (int i = 0; i < step_info->job_step_count; i++) {
 			/* If no stepid was requested set it to the first one */

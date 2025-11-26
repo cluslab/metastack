@@ -6,8 +6,7 @@
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Jay Windley <jwindley@lnxi.com>.
  *  CODE-OCEC-09-009. All rights reserved.
- *  Portions Copyright (C) 2012 SchedMD LLC.
- *  Written by Danny Auble <da@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -50,83 +49,49 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "src/common/xmalloc.h"
 #include "src/common/log.h"
 #include "src/common/plugrack.h"
 #include "src/common/read_config.h"
-#include "src/common/strlcpy.h"
-#include "src/common/xstring.h"
 #include "src/common/slurm_protocol_api.h"
+#include "src/common/strlcpy.h"
+#include "src/common/xmalloc.h"
+#include "src/common/xstring.h"
+
 #include "slurm/slurm_errno.h"
 
 strong_alias(plugin_get_syms,         slurm_plugin_get_syms);
 strong_alias(plugin_load_and_link,    slurm_plugin_load_and_link);
-strong_alias(plugin_strerror,         slurm_plugin_strerror);
 strong_alias(plugin_unload,           slurm_plugin_unload);
 
-/* dlerror() on AIX sometimes fails, revert to strerror() as needed */
-static char *_dlerror(void)
-{
-	int error_code = errno;
-	char *rc = dlerror();
-
-	if ((rc == NULL) || (rc[0] == '\0'))
-		rc = strerror(error_code);
-
-	return rc;
-}
-
-const char * plugin_strerror(plugin_err_t e)
-{
-	switch (e) {
-		case EPLUGIN_SUCCESS:
-			return ("Success");
-		case EPLUGIN_NOTFOUND:
-			return ("Plugin file not found");
-		case EPLUGIN_ACCESS_ERROR:
-			return ("Plugin access denied");
-		case EPLUGIN_DLOPEN_FAILED:
-			return ("Dlopen of plugin file failed");
-		case EPLUGIN_INIT_FAILED:
-			return ("Plugin init() callback failed");
-		case EPLUGIN_MISSING_NAME:
-			return ("Plugin name/type/version symbol missing");
-		case EPLUGIN_BAD_VERSION:
-			return ("Incompatible plugin version");
-	}
-	error("%s: Unknown plugin error: %d", __func__, e);
-	return ("Unknown error");
-}
-
-static plugin_err_t _verify_syms(plugin_handle_t plug, char *plugin_type,
-				 const size_t type_len, const char *caller,
-				 const char *fq_path)
+static int _verify_syms(plugin_handle_t plug, char *plugin_type,
+			const size_t type_len, const char *caller,
+			const char *fq_path)
 {
 	char *type, *name;
 	uint32_t *version;
 	uint32_t mask = 0xffffff;
 
-	if (!(name = dlsym(plug, PLUGIN_NAME))) {
+	if (!(name = dlsym(plug, "plugin_name"))) {
 		verbose("%s: %s is not a Slurm plugin: %s",
-			caller, fq_path, _dlerror());
-		return EPLUGIN_MISSING_NAME;
+			caller, fq_path, dlerror());
+		return ESLURM_PLUGIN_MISSING_NAME;
 	}
 
-	if (!(type = dlsym(plug, PLUGIN_TYPE))) {
+	if (!(type = dlsym(plug, "plugin_type"))) {
 		verbose("%s: %s is not a Slurm plugin: %s",
-			caller, fq_path, _dlerror());
-		return EPLUGIN_MISSING_NAME;
+			caller, fq_path, dlerror());
+		return ESLURM_PLUGIN_MISSING_NAME;
 	}
 
 	if (plugin_type) {
 		strlcpy(plugin_type, type, type_len);
 	}
 
-	version = dlsym(plug, PLUGIN_VERSION);
+	version = dlsym(plug, "plugin_version");
 	if (!version) {
-		verbose("%s: %s symbol not found in %s: %s",
-			caller, PLUGIN_VERSION, fq_path, _dlerror());
-		return EPLUGIN_MISSING_NAME;
+		verbose("%s: plugin_version symbol not found in %s: %s",
+			caller, fq_path, dlerror());
+		return ESLURM_PLUGIN_MISSING_NAME;
 	}
 
 	debug3("%s->%s: found Slurm plugin name:%s type:%s version:0x%x",
@@ -144,21 +109,22 @@ static plugin_err_t _verify_syms(plugin_handle_t plug, char *plugin_type,
 
 		info("%s: Incompatible Slurm plugin %s version (%d.%02d.%d)",
 		     caller, fq_path, plugin_major, plugin_minor, plugin_micro);
-		return EPLUGIN_BAD_VERSION;
+		return ESLURM_PLUGIN_BAD_VERSION;
 	}
 
-	return EPLUGIN_SUCCESS;
+	return SLURM_SUCCESS;
 }
 
-extern plugin_err_t plugin_peek(const char *fq_path, char *plugin_type,
-				const size_t type_len, uint32_t *plugin_version)
+extern int plugin_peek(const char *fq_path, char *plugin_type,
+		       const size_t type_len)
 {
-	plugin_err_t rc;
+	int rc;
 	plugin_handle_t plug;
 
+	(void) dlerror();
 	if (!(plug = dlopen(fq_path, RTLD_LAZY))) {
-		debug3("%s: dlopen(%s): %s", __func__, fq_path, _dlerror());
-		return EPLUGIN_DLOPEN_FAILED;
+		debug3("%s: dlopen(%s): %s", __func__, fq_path, dlerror());
+		return ESLURM_PLUGIN_DLOPEN_FAILED;
 	}
 
 	rc = _verify_syms(plug, plugin_type, type_len, __func__, fq_path);
@@ -166,10 +132,9 @@ extern plugin_err_t plugin_peek(const char *fq_path, char *plugin_type,
 	return rc;
 }
 
-plugin_err_t
-plugin_load_from_file(plugin_handle_t *p, const char *fq_path)
+extern int plugin_load_from_file(plugin_handle_t *p, const char *fq_path)
 {
-	plugin_err_t rc;
+	int rc;
 	plugin_handle_t plug;
 	int (*init)(void);
 
@@ -185,16 +150,16 @@ plugin_load_from_file(plugin_handle_t *p, const char *fq_path)
 	 * used in the context of srun, not slurmd.)
 	 *
 	 */
+	(void) dlerror();
 	plug = dlopen(fq_path, RTLD_LAZY);
 	if (plug == NULL) {
 		error("plugin_load_from_file: dlopen(%s): %s",
-		      fq_path,
-		      _dlerror());
-		return EPLUGIN_DLOPEN_FAILED;
+		      fq_path, dlerror());
+		return ESLURM_PLUGIN_DLOPEN_FAILED;
 	}
 
 	rc = _verify_syms(plug, NULL, 0, __func__, fq_path);
-	if (rc != EPLUGIN_SUCCESS) {
+	if (rc != SLURM_SUCCESS) {
 		dlclose(plug);
 		return rc;
 	}
@@ -204,14 +169,14 @@ plugin_load_from_file(plugin_handle_t *p, const char *fq_path)
 	 * returns nonzero, unload the plugin and signal an error.
 	 */
 	if ((init = dlsym(plug, "init")) != NULL) {
-		if ((*init)() != 0) {
+		if ((*init)() != SLURM_SUCCESS) {
 			dlclose(plug);
-			return EPLUGIN_INIT_FAILED;
+			return ESLURM_PLUGIN_INIT_FAILED;
 		}
 	}
 
 	*p = plug;
-	return EPLUGIN_SUCCESS;
+	return SLURM_SUCCESS;
 }
 
 /*
@@ -231,7 +196,7 @@ plugin_load_and_link(const char *type_name, int n_syms,
 	char *head = NULL, *dir_array = NULL, *so_name = NULL;
 	char *file_name = NULL;
 	int i = 0;
-	plugin_err_t err = EPLUGIN_NOTFOUND;
+	int err = ESLURM_PLUGIN_NOTFOUND;
 
 	if (!type_name)
 		return plug;
@@ -262,10 +227,10 @@ plugin_load_and_link(const char *type_name, int n_syms,
 			debug4("%s: Does not exist or not a regular file.",
 			       file_name);
 			xfree(file_name);
-			err = EPLUGIN_NOTFOUND;
+			err = ESLURM_PLUGIN_NOTFOUND;
 		} else {
 			if ((err = plugin_load_from_file(&plug, file_name))
-			   == EPLUGIN_SUCCESS) {
+			   == SLURM_SUCCESS) {
 				if (plugin_get_syms(plug, n_syms,
 						    names, ptrs) >= n_syms) {
 					debug3("Success.");
@@ -305,13 +270,12 @@ plugin_load_and_link(const char *type_name, int n_syms,
  * crash if the library handle is not valid.
  */
 
-void
-plugin_unload( plugin_handle_t plug )
+void plugin_unload(plugin_handle_t plug)
 {
 	void (*fini)(void);
 
-	if ( plug != PLUGIN_INVALID_HANDLE ) {
-		if ( ( fini = dlsym( plug, "fini" ) ) != NULL ) {
+	if (plug != PLUGIN_INVALID_HANDLE) {
+		if ((fini = dlsym(plug, "fini")) != NULL) {
 			(*fini)();
 		}
 #ifndef MEMORY_LEAK_DEBUG
@@ -324,66 +288,40 @@ plugin_unload( plugin_handle_t plug )
  * to display the stack where the eventual leaks may be.
  * It is always best to test with and without --enable-memory-leak-debug.
 \**************************************************************************/
-		(void) dlclose( plug );
+		(void) dlclose(plug);
 #endif
 	}
 }
 
-
-void *
-plugin_get_sym( plugin_handle_t plug, const char *name )
+void *plugin_get_sym(plugin_handle_t plug, const char *name)
 {
-	if ( plug != PLUGIN_INVALID_HANDLE )
-		return dlsym( plug, name );
+	if (plug != PLUGIN_INVALID_HANDLE)
+		return dlsym(plug, name);
 	else
 		return NULL;
 }
 
-const char *
-plugin_get_name( plugin_handle_t plug )
+const char *plugin_get_name(plugin_handle_t plug)
 {
-	if ( plug != PLUGIN_INVALID_HANDLE )
-		return (const char *) dlsym( plug, PLUGIN_NAME );
+	if (plug != PLUGIN_INVALID_HANDLE)
+		return (const char *) dlsym(plug, "plugin_name");
 	else
 		return NULL;
 }
 
-const char *
-plugin_get_type( plugin_handle_t plug )
-{
-	if ( plug != PLUGIN_INVALID_HANDLE )
-		return (const char *) dlsym( plug, PLUGIN_TYPE );
-	else
-		return NULL;
-}
-
-uint32_t
-plugin_get_version( plugin_handle_t plug )
-{
-	uint32_t *ptr;
-
-	if (plug == PLUGIN_INVALID_HANDLE)
-		return 0;
-	ptr = (uint32_t *) dlsym(plug, PLUGIN_VERSION);
-	return ptr ? *ptr : 0;
-}
-
-int
-plugin_get_syms( plugin_handle_t plug,
-		 int n_syms,
-		 const char *names[],
-		 void *ptrs[] )
+int plugin_get_syms(plugin_handle_t plug, int n_syms, const char *names[],
+		    void *ptrs[] )
 {
 	int i, count;
 
 	count = 0;
-	for ( i = 0; i < n_syms; ++i ) {
-		ptrs[ i ] = dlsym( plug, names[ i ] );
-		if ( ptrs[ i ] )
+	for (i = 0; i < n_syms; ++i) {
+		ptrs[i] = dlsym(plug, names[i]);
+		if (ptrs[i])
 			++count;
 		else
 			debug3("Couldn't find sym '%s' in the plugin",
-			       names[ i ]);
+			       names[i]);
 	}
 
 	return count;
@@ -426,9 +364,9 @@ extern plugin_context_t *plugin_context_create(
 	if (c->cur_plugin != PLUGIN_INVALID_HANDLE)
 		return c;
 
-	if (errno != EPLUGIN_NOTFOUND) {
+	if (errno != ESLURM_PLUGIN_NOTFOUND) {
 		error("Couldn't load specified plugin name for %s: %s",
-		      c->type, plugin_strerror(errno));
+		      c->type, slurm_strerror(errno));
 		goto fail;
 	}
 

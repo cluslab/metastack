@@ -82,14 +82,13 @@ typedef void (*pmixp_server_sent_cb_t)(int rc, pmixp_p2p_ctx_t ctx,
  */
 void pmixp_server_sent_buf_cb(int rc, pmixp_p2p_ctx_t ctx, void *data);
 
-int pmixp_stepd_init(const stepd_step_rec_t *job, char ***env);
+int pmixp_stepd_init(const stepd_step_rec_t *step, char ***env);
 int pmixp_stepd_finalize(void);
 void pmixp_server_cleanup(void);
-int pmix_srun_init(const mpi_plugin_client_info_t *job, char ***env);
+int pmix_srun_init(const mpi_step_info_t *mpi_step, char ***env);
 void pmixp_server_slurm_conn(int fd);
 void pmixp_server_direct_conn(int fd);
-int pmixp_server_wireup_early(void);
-void pmixp_server_wireup_early_fini(void);
+int pmixp_server_direct_conn_early(void);
 int pmixp_server_send_nb(pmixp_ep_t *ep, pmixp_srv_cmd_t type,
 			 uint32_t seq, buf_t *buf,
 			 pmixp_server_sent_cb_t complete_cb,
@@ -128,13 +127,5 @@ void pmixp_server_run_cperf(void);
 #define pmixp_server_want_cperf() (0)
 #define pmixp_server_run_cperf();
 #endif
-
-static inline void pmixp_server_buf_reserve(buf_t *buf, uint32_t size)
-{
-	if (remaining_buf(buf) < size) {
-		uint32_t to_reserve = size - remaining_buf(buf);
-		grow_buf(buf, to_reserve);
-	}
-}
 
 #endif /* PMIXP_SERVER_H */

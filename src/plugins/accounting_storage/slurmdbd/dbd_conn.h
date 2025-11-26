@@ -1,11 +1,9 @@
 /****************************************************************************\
  *  dbd_conn.h - functions to manage the connection to the SlurmDBD
  *****************************************************************************
- *  Copyright (C) 2011-2020 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- *  Written by Danny Auble <da@schedmd.com>
- *  Written by Morris Jette <jette@schedmd.com>
  *  CODE-OCEC-09-009. All rights reserved.
  *
  *  This file is part of Slurm, a resource management program.
@@ -38,7 +36,7 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
-#include "src/common/slurm_persist_conn.h"
+#include "src/common/persist_conn.h"
 
 /*
  * dbd_conn_open - Get a connection to the dbd.
@@ -49,18 +47,18 @@
  * IN - rem_port - Port on host of DBD listening for connections.
  * RET - Nonnection to the dbd on SUCCESS, NULL otherwise.
  */
-extern slurm_persist_conn_t *dbd_conn_open(uint16_t *persist_conn_flags,
-					   char *cluster_name,
-					   char *rem_host,
-					   uint16_t rem_port);
+extern persist_conn_t *dbd_conn_open(uint16_t *persist_conn_flags,
+				     char *cluster_name,
+				     char *rem_host,
+				     uint16_t rem_port);
 
 /* reopen connection if needed */
-extern int dbd_conn_check_and_reopen(slurm_persist_conn_t *pc);
+extern int dbd_conn_check_and_reopen(persist_conn_t *pc);
 
 /*
  * dbd_conn_close - Close and free memory of connection made from dbd_conn_open.
  */
-extern void dbd_conn_close(slurm_persist_conn_t **pc);
+extern void dbd_conn_close(persist_conn_t **pc);
 
 /*
  * Send an RPC to the SlurmDBD and wait for an arbitrary reply message.
@@ -75,6 +73,19 @@ extern int dbd_conn_send_recv_direct(uint16_t rpc_version,
 				     persist_msg_t *req,
 				     persist_msg_t *resp);
 
+/*
+ * Send an RPC to the SlurmDBD and wait for the return code reply (fill in
+ * comment as well if comment != NULL.
+ *
+ * This handles agent as well as normal connections
+ *
+ * The RPC will not be queued if an error occurs.
+ * Returns SLURM_SUCCESS or an error code
+ */
+extern int dbd_conn_send_recv_rc_comment_msg(uint16_t rpc_version,
+					     persist_msg_t *req,
+					     int *resp_code,
+					     char **comment);
 
 /*
  * Send an RPC to the SlurmDBD and wait for the return code reply.

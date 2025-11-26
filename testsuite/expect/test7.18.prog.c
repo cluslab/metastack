@@ -2,8 +2,7 @@
  *  test7.18.prog.c Report failures in slurm_hostlist_find().
  *  See bugs 5711 and 5746.
  *****************************************************************************
- *  Copyright (C) 2018 SchedMD LLC
- *  Written by Marshall Garey
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -29,7 +28,7 @@
 #include "slurm/slurm.h"
 #include "slurm/slurm_errno.h"
 
-hostlist_t hl = NULL;
+hostlist_t *hl = NULL;
 int testid = 0;
 
 static void _find_host(const char *hostname)

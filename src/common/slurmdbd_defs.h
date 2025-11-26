@@ -44,12 +44,13 @@
 #include "slurm/slurm.h"
 
 #include "src/common/list.h"
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 
 /* Slurm DBD message types */
 /* ANY TIME YOU ADD TO THIS LIST UPDATE THE CONVERSION FUNCTIONS! */
 typedef enum {
-	DEFUNCT_DBD_INIT = 1400,/* Connection initialization		*/
+	SLURM_DBD_MESSAGES_START = 1400, /* So that we don't overlap with any
+					  * slurm_msg_type_t numbers. */
 	DBD_FINI,       	/* Connection finalization		*/
 	DBD_ADD_ACCOUNTS,       /* Add new account to the mix           */
 	DBD_ADD_ACCOUNT_COORDS, /* Add new coordinatior to an account   */
@@ -85,7 +86,7 @@ typedef enum {
 	DBD_MODIFY_CLUSTERS,    /* #1430, Modify existing cluster       */
 	DBD_MODIFY_USERS,       /* Modify existing user                 */
 	DBD_NODE_STATE,		/* Record node state transition		*/
-	DBD_DEFUNCT_RPC_1433,	/* Free for reuse			*/
+	SLURM_PERSIST_RC,	/* To mirror the DBD_RC this is replacing */
 	DBD_REGISTER_CTLD,	/* Register a slurmctld's comm port	*/
 	DBD_REMOVE_ACCOUNTS,    /* Remove existing account              */
 	DBD_REMOVE_ACCOUNT_COORDS,/* Remove existing coordinator from
@@ -153,15 +154,28 @@ typedef enum {
 	DBD_MODIFY_FEDERATIONS, /* Modify existing federation 		*/
 	DBD_REMOVE_FEDERATIONS, /* Removing existing federation 	*/
 	DBD_JOB_HEAVY,         /* Send job script/env  		*/
+	DBD_GOT_JOB_ENV,	/* Loading env hash table*/
+	DBD_GOT_JOB_SCRIPT,	/* #1450, Loading bash script hash table */
+	DBD_ADD_ACCOUNTS_COND,  /* Add new account to the mix with acct_rec and
+				 * add_assoc_cond */
+	DBD_ADD_USERS_COND,     /* Add new user to the mix with user_rec and
+				 * add_assoc_cond */
+	DBD_GET_INSTANCES,	/* Get instance information */
+	DBD_GOT_INSTANCES,	/* Response to DBD_GET_INSTANCES */
+	SLURM_DBD_MESSAGES_END = 2000, /* So that we don't overlap with any
+					* slurm_msg_type_t numbers. */
+
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
-	DBD_GET_BORROW = 2000, 	/* Get node borrow information		*/
+	DBD_GET_BORROW = 3000, 	/* Get node borrow information		*/
 	DBD_GOT_BORROW, 	/* Response to DBD_GET_BORROW		*/	
 	DBD_NODE_STATE_BORROW,		/* Record node borrow and return state transition		*/
+	DBD_FIX_BORROWAWAY_NODE,    /* Fix any borrowaway nodes */	
 #endif
 
 	SLURM_PERSIST_INIT = 6500, /* So we don't use the
 				    * REQUEST_PERSIST_INIT also used here.
 				    */
+	SLURM_PERSIST_INIT_TLS = 6501,
 } slurmdbd_msg_type_t;
 
 /*****************************************************************************\
@@ -235,7 +249,11 @@ typedef struct dbd_job_comp_msg {
 	uint64_t db_index;	/* index into the db for this job */
 	uint32_t derived_ec;	/* derived job exit code or signal */
 	time_t   end_time;	/* job termintation time */
+	char *failed_node;	/* Name of node that failed which caused
+				 * this job to be killed.
+				 * NULL in all other situations */
 	uint32_t exit_code;	/* job exit code or signal */
+	char *extra;		/* job extra field */
 	uint32_t job_id;	/* job ID */
 	uint32_t job_state;	/* job state */
 	char *   nodes;		/* hosts allocated to the job */
@@ -279,6 +297,7 @@ typedef struct dbd_job_start_msg {
 	uint32_t het_job_offset; /* Hetjob component ID, zero-origin */
 	uint32_t job_id;	/* job ID */
 	uint32_t job_state;	/* job state */
+	char *licenses; 	/* job licenses */
 	char *   mcs_label;	/* job mcs_label */
 	char *   name;		/* job name */
 	char *   nodes;		/* hosts allocated to the job */
@@ -294,6 +313,9 @@ typedef struct dbd_job_start_msg {
 	time_t   start_time;	/* job start time */
 	uint32_t state_reason_prev; /* Last reason of blocking before job
 				     * started */
+	char *std_err;          /* The stderr file path of the job */
+	char *std_in;           /* The stdin file path of the job */
+	char *std_out;          /* The stdout file path of the job */
 	char *submit_line;      /* The command issued with all it's options in a
 				 * string */
 	time_t   submit_time;	/* job submit time */
@@ -350,14 +372,19 @@ typedef struct {
 
 #define DBD_NODE_STATE_DOWN  1
 #define DBD_NODE_STATE_UP    2
+#define DBD_NODE_STATE_UPDATE 3
+
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
-#define DBD_NODE_BORROW      3
-#define DBD_NODE_RETURN      4
+#define DBD_NODE_BORROW      4
+#define DBD_NODE_RETURN      5
 #endif
 
 typedef struct dbd_node_state_msg {
 	time_t event_time;	/* time of transition */
+	char *extra;		/* arbitrary sting */
 	char *hostlist;		/* name of hosts */
+	char *instance_id;	/* cloud instance id */
+	char *instance_type;	/* cloud instance type */
 	uint16_t new_state;	/* new state of host, see DBD_NODE_STATE_* */
 	char *reason;		/* explanation for the node's state */
 	uint32_t reason_uid;   	/* User that set the reason, ignore if
@@ -370,7 +397,6 @@ typedef struct dbd_node_state_msg {
 typedef struct dbd_register_ctld_msg {
 	uint16_t dimensions;    /* dimensions of system */
 	uint32_t flags;         /* flags for cluster */
-	uint32_t plugin_id_select; /* the select plugin_id */
 	uint16_t port;		/* slurmctld's comm port */
 } dbd_register_ctld_msg_t;
 
@@ -416,6 +442,11 @@ typedef struct dbd_step_start_msg {
 	uint32_t total_tasks;	/* count of tasks for step */
 	char *tres_alloc_str;   /* Simple comma separated list of TRES */
 } dbd_step_start_msg_t;
+
+typedef struct {
+	void *data;
+	uint16_t msg_type;
+} dbd_relay_msg_t;
 
 /*****************************************************************************\
  * Slurm DBD message processing functions

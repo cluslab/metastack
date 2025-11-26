@@ -49,8 +49,8 @@
 #include "src/common/list.h"
 #include "src/common/xstring.h"
 
-// #include <mysql.h>
-// #include <mysql_error.h>
+// #include <kingbase.h>
+// #include <kingbase_error.h>
 
 // libkci header files
 #include "src/database/libkci/include/libkci_fe.h"
@@ -67,14 +67,15 @@ typedef enum
 
 typedef struct
 {
-	bool cluster_deleted;
 	char *cluster_name;
 	KCIConnection *db_conn;
+	uint32_t flags;
 	pthread_mutex_t lock;
 	char *pre_commit_query;
-	bool rollback;
 	List update_list;
 	int conn;
+	uint64_t wsrep_trx_fragment_size_orig;
+	char *wsrep_trx_fragment_unit_orig;
 } kingbase_conn_t;
 
 typedef struct
@@ -129,7 +130,7 @@ extern int destroy_kingbase_db_info(kingbase_db_info_t *db_info);
 extern int kingbase_db_get_db_connection(kingbase_conn_t *kingbase_conn, char *db_name,
 										 kingbase_db_info_t *db_info);
 extern int kingbase_db_close_db_connection(kingbase_conn_t *kingbase_conn);
-extern int kingbase_db_cleanup();
+extern int kingbase_db_cleanup(void);
 extern int kingbase_db_query(kingbase_conn_t *kingbase_conn, char *query);
 extern int kingbase_db_delete_affected_rows(kingbase_conn_t *kingbase_conn, char *query);
 extern int kingbase_db_ping(kingbase_conn_t *kingbase_conn);
@@ -145,4 +146,12 @@ extern int kingbase_db_query_check_after(kingbase_conn_t *kingbase_conn, char *q
 extern int kingbase_db_create_table(kingbase_conn_t *kingbase_conn, char *table_name,
 									storage_field_t *fields, char *ending);
 
+extern int kingbase_db_get_var_str(kingbase_conn_t *kingbase_conn,
+				const char *variable_name,
+				char **value);
+extern int kingbase_db_get_var_u64(kingbase_conn_t *kingbase_conn,
+	    			 const char *variable_name,
+			    	 uint64_t *value);
+// extern void mysql_db_enable_streaming_replication(mysql_conn_t *mysql_conn);
+// extern void mysql_db_restore_streaming_replication(mysql_conn_t *mysql_conn);
 #endif

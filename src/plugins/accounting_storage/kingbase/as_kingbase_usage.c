@@ -102,7 +102,7 @@ static void *_cluster_rollup_usage(void *arg)
 	xassert(rollup_stats);
 
 	memset(&kingbase_conn, 0, sizeof(kingbase_conn_t));
-	kingbase_conn.rollback = 1;
+	kingbase_conn.flags |= DB_CONN_FLAG_ROLLBACK;
 	kingbase_conn.conn = local_rollup->kingbase_conn->conn;
 	slurm_mutex_init(&kingbase_conn.lock);
 
@@ -468,15 +468,15 @@ static int _get_object_usage(kingbase_conn_t *kingbase_conn,
 	switch (type) {
 	case DBD_GET_ASSOC_USAGE:
 		query = xstrdup_printf(
-			"select %s from `%s_%s` as t1, "
-			"`%s_%s` as t2, `%s_%s` as t3 "
-			"where (t1.time_start < %ld and t1.time_start >= %ld) "
-			"and t1.id=t2.id_assoc and (%s) and "
-			"t2.lft between t3.lft and t3.rgt "
-			"order by t3.id_assoc, time_start;",
-			tmp, cluster_name, my_usage_table,
-			cluster_name, assoc_table, cluster_name, assoc_table,
-			end, start, id_str);
+		        "select %s from `%s_%s` as t1, "
+		        "`%s_%s` as t2, `%s_%s` as t3 "
+		        "where (t1.time_start < %ld and t1.time_start >= %ld) "
+		        "and t1.id=t2.id_assoc and (%s) and "
+		        "t2.lineage like concat(t3.lineage, '%%') "
+		        "order by t3.id_assoc, time_start;",
+		        tmp, cluster_name, my_usage_table,
+		        cluster_name, assoc_table, cluster_name, assoc_table,
+		        end, start, id_str);
 		break;
 	case DBD_GET_WCKEY_USAGE:
 		query = xstrdup_printf(
@@ -657,7 +657,7 @@ extern int get_usage_for_list(kingbase_conn_t *kingbase_conn,
 	char *my_usage_table = NULL;
 	List usage_list = NULL;
 	char *id_str = NULL, *name_char = NULL;
-	ListIterator itr = NULL, u_itr = NULL;
+	list_itr_t *itr = NULL, *u_itr = NULL;
 	void *object = NULL;
 	slurmdb_assoc_rec_t *assoc = NULL;
 	slurmdb_wckey_rec_t *wckey = NULL;
@@ -852,7 +852,7 @@ extern int as_kingbase_get_usage(kingbase_conn_t *kingbase_conn, uid_t uid,
 	if (slurm_conf.private_data & PRIVATE_DATA_USAGE) {
 		if (!(is_admin = is_user_min_admin_level(
 			      kingbase_conn, uid, SLURMDB_ADMIN_OPERATOR))) {
-			ListIterator itr = NULL;
+			list_itr_t *itr = NULL;
 			slurmdb_coord_rec_t *coord = NULL;
 			slurmdb_user_rec_t user;
 			bool is_coord;
@@ -878,7 +878,13 @@ extern int as_kingbase_get_usage(kingbase_conn_t *kingbase_conn, uid_t uid,
 				goto bad_user;
 			}
 
-			/* Existance of user.coord_accts is checked in
+			if (slurmdbd_conf->flags &
+			    DBD_CONF_FLAG_DISABLE_COORD_DBD) {
+				debug4("Coordinator privilege revoked with DisableCoordDBD.");
+				goto bad_user;
+			}
+
+			/* Existence of user.coord_accts is checked in
 			   is_user_any_coord.
 			*/
 			itr = list_iterator_create(user.coord_accts);
@@ -920,7 +926,7 @@ extern int as_kingbase_roll_usage(kingbase_conn_t *kingbase_conn, time_t sent_st
 	int rolledup = 0;
 	int roll_started = 0;
 	char *cluster_name = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 	pthread_mutex_t rolledup_lock = PTHREAD_MUTEX_INITIALIZER;
 	pthread_cond_t rolledup_cond;
 	//DEF_TIMERS;
@@ -972,7 +978,7 @@ extern int as_kingbase_roll_usage(kingbase_conn_t *kingbase_conn, time_t sent_st
 		 * fashion buys a bunch on systems with lots
 		 * (millions) of jobs.
 		 */
-		slurm_thread_create_detached(NULL, _cluster_rollup_usage,
+		slurm_thread_create_detached(_cluster_rollup_usage,
 					     local_rollup);
 		roll_started++;
 	}
@@ -1000,7 +1006,7 @@ extern bool trigger_reroll(kingbase_conn_t *kingbase_conn, time_t event_time)
 {
 	slurm_mutex_lock(&rollup_lock);
 	if (event_time < global_last_rollup) {
-		char *query;
+		char *query = NULL;
 		global_last_rollup = event_time;
 		slurm_mutex_unlock(&rollup_lock);
 

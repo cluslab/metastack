@@ -140,6 +140,7 @@ strong_alias(bit_unfmt_hexmask,	slurm_bit_unfmt_hexmask);
 strong_alias(bit_fmt_binmask,	slurm_bit_fmt_binmask);
 strong_alias(bit_unfmt_binmask,	slurm_bit_unfmt_binmask);
 strong_alias(bit_fls,		slurm_bit_fls);
+strong_alias(bit_fls_from_bit,	slurm_bit_fls_from_bit);
 strong_alias(bit_fill_gaps,	slurm_bit_fill_gaps);
 strong_alias(bit_super_set,	slurm_bit_super_set);
 strong_alias(bit_overlap,	slurm_bit_overlap);
@@ -152,7 +153,6 @@ strong_alias(bit_noc,		slurm_bit_noc);
 strong_alias(bit_nffs,		slurm_bit_nffs);
 strong_alias(bit_copybits,	slurm_bit_copybits);
 strong_alias(bit_get_bit_num,	slurm_bit_get_bit_num);
-strong_alias(bit_get_pos_num,	slurm_bit_get_pos_num);
 
 #ifdef SLURM_BIGENDIAN
 static const char* hexmask_lookup[256] = {
@@ -409,7 +409,7 @@ bit_ffc(bitstr_t *b)
 		int32_t word = _bit_word(bit);
 
 		if (b[word] == BITSTR_MAXVAL) {
-			bit += sizeof(bitstr_t)*8;
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 		while (bit < _bitstr_bits(b) && _bit_word(bit) == word) {
@@ -533,29 +533,61 @@ bit_nffs(bitstr_t *b, int32_t n)
 }
 
 /*
- * Find first bit set in b.
+ * Find first bit set in b from an offset.
  *   b (IN)		bitstring to search
- *   RETURN 		resulting bit position (-1 if none found)
+ *   bit (IN)		bit to start the search at
+ *   RETURN		resulting bit position (-1 if none found)
  */
-bitoff_t
-bit_ffs(bitstr_t *b)
+bitoff_t bit_ffs_from_bit(bitstr_t *b, bitoff_t bit)
 {
-	bitoff_t bit = 0, value = -1;
+	bitoff_t value = -1;
+	int32_t word;
+#if (HAVE___BUILTIN_CLZLL && (defined SLURM_BIGENDIAN)) || \
+    (HAVE___BUILTIN_CTZLL && (!defined SLURM_BIGENDIAN))
+	bitstr_t bitstr_word;
 
 	_assert_bitstr_valid(b);
+	if ((bit % BITSTR_WORD_SIZE) && (bit < _bitstr_bits(b))) {
+		bitstr_t mask = ~_bit_nmask(bit);
+		bit -= (bit % BITSTR_WORD_SIZE);
+		word = _bit_word(bit);
+		bitstr_word = b[word] & mask;
+		goto test_word;
+	}
 
-	while (bit < _bitstr_bits(b) && value == -1) {
-		int32_t word = _bit_word(bit);
+	while ((bit < _bitstr_bits(b)) && (value == -1)) {
 
-		if (b[word] == 0) {
-			bit += sizeof(bitstr_t)*8;
+		word = _bit_word(bit);
+		bitstr_word = b[word];
+test_word:
+		if (bitstr_word == 0) {
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 #if HAVE___BUILTIN_CLZLL && (defined SLURM_BIGENDIAN)
-		value = bit + __builtin_clzll(b[word]);
+		value = bit + __builtin_clzll(bitstr_word);
 #elif HAVE___BUILTIN_CTZLL && (!defined SLURM_BIGENDIAN)
-		value = bit + __builtin_ctzll(b[word]);
+		value = bit + __builtin_ctzll(bitstr_word);
+#endif
+	}
+
+	if (value < _bitstr_bits(b))
+		return value;
+	else
+		return -1;
 #else
+	_assert_bitstr_valid(b);
+	if ((bit % BITSTR_WORD_SIZE) && (bit < _bitstr_bits(b)) &&
+	    (b[_bit_word(bit)] == 0)) {
+		bit += BITSTR_WORD_SIZE;
+		bit -= (bit % BITSTR_WORD_SIZE);
+	}
+	while ((bit < _bitstr_bits(b)) && (value == -1)) {
+		word = _bit_word(bit);
+		if (b[word] == 0) {
+			bit += BITSTR_WORD_SIZE;
+			continue;
+		}
 		while (bit < _bitstr_bits(b) && _bit_word(bit) == word) {
 			if (bit_test(b, bit)) {
 				value = bit;
@@ -563,12 +595,19 @@ bit_ffs(bitstr_t *b)
 			}
 			bit++;
 		}
-#endif
 	}
-	if (value < _bitstr_bits(b))
-		return value;
-	else
-		return -1;
+	return value;
+#endif
+}
+
+/*
+ * Find first bit set in b.
+ *   b (IN)		bitstring to search
+ *   RETURN 		resulting bit position (-1 if none found)
+ */
+bitoff_t bit_ffs(bitstr_t *b)
+{
+	return bit_ffs_from_bit(b, 0);
 }
 
 /*
@@ -576,18 +615,30 @@ bit_ffs(bitstr_t *b)
  *   b (IN)		bitstring to search
  *   RETURN 		resulting bit position (-1 if none found)
  */
-bitoff_t
-bit_fls(bitstr_t *b)
+bitoff_t bit_fls(bitstr_t *b)
 {
-	bitoff_t bit, value = -1;
+	/* zero origin */
+	bitoff_t bit = _bitstr_bits(b) - 1;
+
+	return bit_fls_from_bit(b, bit);
+}
+
+/*
+ * Find last bit set in b from an offset.
+ *   b (IN)		bitstring to search
+ *   bit (IN)		bit to start the search at
+ *   RETURN		resulting bit position (-1 if none found)
+ */
+bitoff_t bit_fls_from_bit(bitstr_t *b, bitoff_t bit)
+{
+	bitoff_t value = -1;
 	int32_t word;
 
 	_assert_bitstr_valid(b);
+	_assert_bit_valid(b, bit);
 
 	if (_bitstr_bits(b) == 0)	/* empty bitstring */
 		return -1;
-
-	bit = _bitstr_bits(b) - 1;	/* zero origin */
 
 	while (bit >= 0 && 		/* test partial words */
 		(_bit_word(bit) == _bit_word(bit + 1))) {
@@ -600,7 +651,7 @@ bit_fls(bitstr_t *b)
 	while (bit >= 0 && value == -1) {	/* test whole words */
 		word = _bit_word(bit);
 		if (b[word] == 0) {
-			bit -= sizeof(bitstr_t) * 8;
+			bit -= BITSTR_WORD_SIZE;
 			continue;
 		}
 #if HAVE___BUILTIN_CTZLL && (defined SLURM_BIGENDIAN)
@@ -642,7 +693,7 @@ bit_fill_gaps(bitstr_t *b)
 }
 
 /*
- * return 1 if all bits set in b1 are also set in b2, 0 0therwise
+ * return 1 if all bits set in b1 are also set in b2, 0 otherwise
  */
 int
 bit_super_set(bitstr_t *b1, bitstr_t *b2)
@@ -653,11 +704,11 @@ bit_super_set(bitstr_t *b1, bitstr_t *b2)
 	_assert_bitstr_valid(b2);
 	xassert(_bitstr_bits(b1) == _bitstr_bits(b2));
 
-	for (bit = 0; bit < _bitstr_bits(b1); bit += sizeof(bitstr_t) * 8) {
+	for (bit = 0; bit < _bitstr_bits(b1); bit += BITSTR_WORD_SIZE) {
 		if (b1[_bit_word(bit)] != (b1[_bit_word(bit)] &
 		                           b2[_bit_word(bit)])) {
 			bitstr_t mask;
-			if ((bit + sizeof(bitstr_t) * 8) <= _bitstr_bits(b1))
+			if ((bit + BITSTR_WORD_SIZE) <= _bitstr_bits(b1))
 				return 0;
 			mask = _bit_nmask(_bitstr_bits(b1));
 			if ((b1[_bit_word(bit)] & mask) != (b1[_bit_word(bit)] &
@@ -677,7 +728,7 @@ bit_super_set(bitstr_t *b1, bitstr_t *b2)
 extern int
 bit_equal(bitstr_t *b1, bitstr_t *b2)
 {
-	bitoff_t bit;
+	bitoff_t bit, bit_cnt;
 
 	_assert_bitstr_valid(b1);
 	_assert_bitstr_valid(b2);
@@ -685,8 +736,16 @@ bit_equal(bitstr_t *b1, bitstr_t *b2)
 	if (_bitstr_bits(b1) != _bitstr_bits(b2))
 		return 0;
 
-	for (bit = 0; bit < _bitstr_bits(b1); bit += sizeof(bitstr_t)*8) {
+	bit_cnt = _bitstr_bits(b1);
+
+	for (bit = 0; (bit + BITSTR_WORD_SIZE) <= bit_cnt;
+	     bit += BITSTR_WORD_SIZE) {
 		if (b1[_bit_word(bit)] != b2[_bit_word(bit)])
+			return 0;
+	}
+	if (bit < bit_cnt) {
+		uint64_t mask = _bit_nmask(bit_cnt);
+		if ((b1[_bit_word(bit)] ^ b2[_bit_word(bit)]) & mask)
 			return 0;
 	}
 
@@ -709,8 +768,14 @@ bit_and(bitstr_t *b1, bitstr_t *b2)
 	_assert_bitstr_valid(b2);
 
 	bit_cnt = MIN(_bitstr_bits(b1), _bitstr_bits(b2));
-	for (bit = 0; bit < bit_cnt; bit += sizeof(bitstr_t)*8)
+	for (bit = 0; (bit + BITSTR_WORD_SIZE) <= bit_cnt;
+	     bit += BITSTR_WORD_SIZE)
 		b1[_bit_word(bit)] &= b2[_bit_word(bit)];
+
+	if (bit < bit_cnt) {
+		uint64_t mask = ~(_bit_nmask(bit_cnt));
+		b1[_bit_word(bit)] &= (b2[_bit_word(bit)] | mask);
+	}
 }
 
 /*
@@ -726,8 +791,14 @@ void bit_and_not(bitstr_t *b1, bitstr_t *b2)
 	_assert_bitstr_valid(b2);
 
 	bit_cnt = MIN(_bitstr_bits(b1), _bitstr_bits(b2));
-	for (bit = 0; bit < bit_cnt; bit += sizeof(bitstr_t)*8)
+	for (bit = 0; (bit + BITSTR_WORD_SIZE) <= bit_cnt;
+	     bit += BITSTR_WORD_SIZE)
 		b1[_bit_word(bit)] &= ~b2[_bit_word(bit)];
+
+	if (bit < bit_cnt) {
+		uint64_t mask = _bit_nmask(bit_cnt);
+		b1[_bit_word(bit)] &= ~(b2[_bit_word(bit)] & mask);
+	}
 }
 
 /*
@@ -741,7 +812,7 @@ bit_not(bitstr_t *b)
 
 	_assert_bitstr_valid(b);
 
-	for (bit = 0; bit < _bitstr_bits(b); bit += sizeof(bitstr_t)*8)
+	for (bit = 0; bit < _bitstr_bits(b); bit += BITSTR_WORD_SIZE)
 		b[_bit_word(bit)] = ~b[_bit_word(bit)];
 }
 
@@ -759,8 +830,14 @@ bit_or(bitstr_t *b1, bitstr_t *b2)
 	_assert_bitstr_valid(b2);
 
 	bit_cnt = MIN(_bitstr_bits(b1), _bitstr_bits(b2));
-	for (bit = 0; bit < bit_cnt; bit += sizeof(bitstr_t)*8)
+	for (bit = 0; (bit + BITSTR_WORD_SIZE) <= bit_cnt;
+	     bit += BITSTR_WORD_SIZE)
 		b1[_bit_word(bit)] |= b2[_bit_word(bit)];
+
+	if (bit < bit_cnt) {
+		uint64_t mask = _bit_nmask(bit_cnt);
+		b1[_bit_word(bit)] |= (b2[_bit_word(bit)] & mask);
+	}
 }
 
 /*
@@ -776,8 +853,14 @@ void bit_or_not(bitstr_t *b1, bitstr_t *b2)
 	_assert_bitstr_valid(b2);
 
 	bit_cnt = MIN(_bitstr_bits(b1), _bitstr_bits(b2));
-	for (bit = 0; bit < bit_cnt; bit += sizeof(bitstr_t)*8)
+	for (bit = 0; (bit + BITSTR_WORD_SIZE) <= bit_cnt;
+	     bit += BITSTR_WORD_SIZE)
 		b1[_bit_word(bit)] |= ~b2[_bit_word(bit)];
+
+	if (bit < bit_cnt) {
+		uint64_t mask = ~(_bit_nmask(bit_cnt));
+		b1[_bit_word(bit)] |= ~(b2[_bit_word(bit)] | mask);
+	}
 }
 
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
@@ -786,7 +869,8 @@ void bit_or_not(bitstr_t *b1, bitstr_t *b2)
  * b1 (IN/OUT)
  * b2 (IN)
 */
-void bit_xor(bitstr_t *b1, bitstr_t *b2)
+void 
+bit_xor(bitstr_t *b1, bitstr_t *b2)
 {
 	bitoff_t bit, bit_cnt;
 
@@ -861,12 +945,12 @@ bit_set_count(bitstr_t *b)
 {
 	int32_t count = 0;
 	bitoff_t bit, bit_cnt;
-	int32_t word_size = sizeof(bitstr_t) * 8;
 
 	_assert_bitstr_valid(b);
 
 	bit_cnt = _bitstr_bits(b);
-	for (bit = 0; (bit + word_size) <= bit_cnt; bit += word_size) {
+	for (bit = 0; (bit + BITSTR_WORD_SIZE) <= bit_cnt;
+	     bit += BITSTR_WORD_SIZE) {
 		count += hweight(b[_bit_word(bit)]);
 	}
 	if (bit < bit_cnt) {
@@ -888,7 +972,6 @@ bit_set_count_range(bitstr_t *b, int32_t start, int32_t end)
 {
 	int32_t count = 0, eow;
 	bitoff_t bit;
-	const int32_t word_size = sizeof(bitstr_t) * 8;
 
 	_assert_bitstr_valid(b);
 	_assert_bit_valid(b,start);
@@ -908,7 +991,7 @@ bit_set_count_range(bitstr_t *b, int32_t start, int32_t end)
 		count += hweight(b[_bit_word(bit)] & mask);
 		bit = eow;
 	}
-	for (; (bit + word_size) <= end ; bit += word_size) {
+	for (; (bit + BITSTR_WORD_SIZE) <= end ; bit += BITSTR_WORD_SIZE) {
 		count += hweight(b[_bit_word(bit)]);
 	}
 	if (bit < end) {
@@ -924,15 +1007,14 @@ static int32_t _bit_overlap_internal(bitstr_t *b1, bitstr_t *b2, bool count_it)
 	int32_t count = 0;
 	int64_t anded;
 	bitoff_t bit, bit_cnt;
-	int32_t word_size = sizeof(bitstr_t) * 8;
 
 	_assert_bitstr_valid(b1);
 	_assert_bitstr_valid(b2);
 	xassert(_bitstr_bits(b1) == _bitstr_bits(b2));
 
 	bit_cnt = _bitstr_bits(b1);
-	for (bit = 0; bit < bit_cnt; bit += word_size) {
-		if ((bit + word_size - 1) >= bit_cnt)
+	for (bit = 0; bit < bit_cnt; bit += BITSTR_WORD_SIZE) {
+		if ((bit + BITSTR_WORD_SIZE - 1) >= bit_cnt)
 			break;
 		anded = b1[_bit_word(bit)] & b2[_bit_word(bit)];
 		if (count_it)
@@ -1100,7 +1182,94 @@ bit_rotate(bitstr_t *b1, int32_t n)
 
 	new = bit_rotate_copy(b1, n, bitsize);
 	bit_copybits(b1, new);
-	bit_free(new);
+	FREE_NULL_BITMAP(new);
+}
+
+/*
+ * find first set n
+ * return position of nth set bit in bitstr word
+ * minimal validity checking: if n > set_count, return 63
+ * if n == 0, return 0
+ */
+static bitoff_t _ffsn(bitstr_t b, bitoff_t n)
+{
+	uint64_t mask = 0xFFFFFFFFu;
+	uint32_t size = 32u;
+	bitstr_t base = 0u;
+
+	while (size > 0) {
+		if (n > hweight(b & mask)) {
+			base += size;
+			size >>= 1;
+			mask |= mask << size;
+		} else {
+			size >>= 1;
+			mask >>= size;
+		}
+	}
+	return base;
+}
+
+/*
+ * return the bit position of the nth set bit
+ * if n > bit_set_count(b), return the position of the last set bit
+ * return -1 if b is empty or n == 0
+ */
+bitoff_t bit_nth_set(bitstr_t *b, bitoff_t n)
+{
+	bitoff_t bit, bit_cnt, last_bit;
+	bitstr_t mask = -1;
+	bitstr_t last_mask = -1;
+	uint32_t count, last_count, last_word;
+
+	_assert_bitstr_valid(b);
+	if (n <= 0)
+		return -1;
+	bit_cnt = _bitstr_bits(b);
+	last_word = _bit_word(bit_cnt);
+
+	last_bit = -1;
+	for (bit = 0; bit < bit_cnt; bit += BITSTR_WORD_SIZE){
+		if (_bit_word(bit) == last_word)
+			mask = _bit_nmask(bit_cnt);
+		count = hweight(b[_bit_word(bit)] & mask);
+		if (count > 0){
+			last_bit = bit;
+			last_count = count;
+		}
+		if (n <= count)
+			break;
+		n -= count;
+	}
+
+	/* b has no set bits */
+	if (last_bit < 0)
+		return -1;
+	if (_bit_word(last_bit) == last_word)
+		last_mask = _bit_nmask(bit_cnt);
+
+	/*
+	 * if last_bit != bit, n > set_count.
+	 * find position of last bit in last non-empty word
+	 */
+	return last_bit + _ffsn(b[_bit_word(last_bit)] & last_mask,
+	                        (last_bit == bit) ? n : last_count);
+}
+
+/*
+ * Clear all bits after the first n set bits
+ */
+void bit_pick_firstn(bitstr_t *b, bitoff_t n)
+{
+	_assert_bitstr_valid(b);
+	bitoff_t nth_bit = bit_nth_set(b, n);
+	/*
+	 * b is empty or nth bit is at the last position.
+	 * Nothing to do in either case
+	 */
+	if (((nth_bit + 1) == _bitstr_bits(b)) || (nth_bit < 0))
+		return;
+	bit_nclear(b, nth_bit + 1, _bitstr_bits(b) - 1);
 }
 
 /*
@@ -1111,7 +1280,6 @@ bit_pick_cnt(bitstr_t *b, bitoff_t nbits)
 {
 	bitoff_t bit = 0, new_bits, count = 0;
 	bitstr_t *new;
-	int32_t word_size = sizeof(bitstr_t) * 8;
 
 	_assert_bitstr_valid(b);
 
@@ -1126,16 +1294,16 @@ bit_pick_cnt(bitstr_t *b, bitoff_t nbits)
 		int32_t word = _bit_word(bit);
 
 		if (b[word] == 0) {
-			bit += word_size;
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 
 		new_bits = hweight(b[word]);
 		if (((count + new_bits) <= nbits) &&
-		    ((bit + word_size - 1) < _bitstr_bits(b))) {
+		    ((bit + BITSTR_WORD_SIZE - 1) < _bitstr_bits(b))) {
 			new[word] = b[word];
 			count += new_bits;
-			bit += word_size;
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 		while ((bit < _bitstr_bits(b)) && (count < nbits)) {
@@ -1147,8 +1315,7 @@ bit_pick_cnt(bitstr_t *b, bitoff_t nbits)
 		}
 	}
 	if (count < nbits) {
-		bit_free (new);
-		new = NULL;
+		FREE_NULL_BITMAP(new);
 	}
 
 	return new;
@@ -1169,7 +1336,7 @@ char *bit_fmt(char *str, int32_t len, bitstr_t *b)
 	for (bit = 0; bit < _bitstr_bits(b); ) {
 		word = _bit_word(bit);
 		if (b[word] == 0) {
-			bit += sizeof(bitstr_t)*8;
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 
@@ -1214,7 +1381,7 @@ char *bit_fmt_full(bitstr_t *b)
 	for (bit = 0; bit < _bitstr_bits(b); ) {
 		word = _bit_word(bit);
 		if (b[word] == 0) {
-			bit += sizeof(bitstr_t)*8;
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 
@@ -1254,7 +1421,7 @@ char *bit_fmt_range(bitstr_t *b, int offset, int len)
 	for (bit = offset; bit < fini_bit; ) {
 		word = _bit_word(bit);
 		if (b[word] == 0) {
-			bit += sizeof(bitstr_t) * 8;
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 
@@ -1443,7 +1610,7 @@ int32_t *bitstr2inx(bitstr_t *b)
 	for (bit = 0; bit < _bitstr_bits(b); ) {
 		/* skip past empty words */
 		if (!b[_bit_word(bit)]) {
-			bit += sizeof(bitstr_t) * 8;
+			bit += BITSTR_WORD_SIZE;
 			continue;
 		}
 
@@ -1468,7 +1635,6 @@ static char *_bit_fmt_hexmask(bitstr_t *bitmap, bool trim_output)
 {
 	char *retstr, *ptr;
 	char current;
-	const int32_t word_size = sizeof(bitstr_t) * 8;
 	bitoff_t i, j, word;
 	bitoff_t bitsize;
 
@@ -1491,7 +1657,7 @@ static char *_bit_fmt_hexmask(bitstr_t *bitmap, bool trim_output)
 	ptr = &retstr[charsize + 1];
 
 	for (i = 0; i < bitsize;) {
-		if (i + word_size <= bitsize) {
+		if (i + BITSTR_WORD_SIZE <= bitsize) {
 			word = _bit_word(i);
 			for (j = 0; j < sizeof(bitstr_t); j++) {
 				uint8_t idx = ((uint8_t *)(&(bitmap[word])))[j];
@@ -1500,7 +1666,7 @@ static char *_bit_fmt_hexmask(bitstr_t *bitmap, bool trim_output)
 				*ptr = hexmask_lookup[idx][0];
 				ptr--;
 			}
-			i += word_size;
+			i += BITSTR_WORD_SIZE;
 		} else {
 			current = 0;
 			if (                 bit_test(bitmap,i++))
@@ -1739,40 +1905,6 @@ bit_get_bit_num(bitstr_t *b, int32_t pos)
 		bit = -1;
 
 	return bit;
-}
-
-/* Find want nth the bit pos is set in bitstr b.
- *   b (IN)             bitstring to search
- *   pos (IN)           bit to search to
- *   RETURN             number bit is set in bitstring (-1 on error)
- */
-
-int32_t
-bit_get_pos_num(bitstr_t *b, bitoff_t pos)
-{
-	bitoff_t bit;
-	int32_t cnt = -1;
-#ifndef NDEBUG
-	bitoff_t bit_cnt;
-#endif
-
-	_assert_bitstr_valid(b);
-#ifndef NDEBUG
-	bit_cnt = _bitstr_bits(b);
-	xassert(pos <= bit_cnt);
-#endif
-
-	if (!bit_test(b, pos)) {
-		error("bit %"BITSTR_FMT" not set", pos);
-		return cnt;
-	}
-	for (bit = 0; bit <= pos; bit++) {
-		if (bit_test(b, bit)) {	/* we got one */
-			cnt++;
-		}
-	}
-
-	return cnt;
 }
 
 void bit_consolidate(bitstr_t *b)

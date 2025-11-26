@@ -8,7 +8,7 @@ bin_PROGRAMS = sbcast
 
 depend_libs = $(top_builddir)/src/bcast/libfile_bcast.la
 
-sbcast_LDADD = 	$(depend_libs) $(LIB_SLURM) $(DL_LIBS)
+sbcast_LDADD = 	$(depend_libs) $(LIB_SLURM)
 sbcast_DEPENDENCIES = $(depend_libs) $(LIB_SLURM_BUILD)
 
 noinst_HEADERS = sbcast.h
@@ -18,5 +18,5 @@ force:
 $(sbcast_DEPENDENCIES) : force
 	@cd `dirname $@` && $(MAKE) `basename $@`
 
-sbcast_LDFLAGS = -export-dynamic $(CMD_LDFLAGS)
+sbcast_LDFLAGS = $(CMD_LDFLAGS)
 

@@ -62,9 +62,6 @@
 
 #define XFGETS_CHUNKSIZE 64
 
-/* Static functions. */
-static size_t _xstrdup_vprintf(char **str, const char *_fmt, va_list _ap);
-
 /*
  * Define slurm-specific aliases for use by plugins, see slurm_xlator.h
  * for details.
@@ -81,6 +78,7 @@ strong_alias(_xstrfmtcatat,	slurm_xstrfmtcatat);
 strong_alias(_xmemcat,		slurm_xmemcat);
 strong_alias(xstrdup,		slurm_xstrdup);
 strong_alias(xstrdup_printf,	slurm_xstrdup_printf);
+strong_alias(_xstrdup_vprintf,	slurm_xstrdup_vprintf);
 strong_alias(xstrndup,		slurm_xstrndup);
 strong_alias(xbasename,		slurm_xbasename);
 strong_alias(xdirname,		slurm_xdirname);
@@ -96,6 +94,7 @@ strong_alias(xstrcasecmp,       slurm_xstrcasecmp);
 strong_alias(xstrncasecmp,      slurm_xstrncasecmp);
 strong_alias(xstrstr,           slurm_xstrstr);
 strong_alias(xstrcasestr,       slurm_xstrcasestr);
+strong_alias(xbase64_from_base64url, slurm_xbase64_from_base64url);
 
 /*
  * Ensure that a string has enough space to add 'needed' characters.
@@ -299,6 +298,35 @@ void _xrfc5424timecat(char **buf, bool msec)
 		_xstrfmtcat(buf, "%s.%3.3d%s", p, (int)(tv.tv_usec / 1000), z);
 	else
 		_xstrfmtcat(buf, "%s%s", p, z);
+}
+
+extern void _xrfc3339timecat(char **buf)
+{
+	char p[64] = "";
+	char z[12] = "";
+	struct timeval tv;
+	struct tm tm;
+
+	if (gettimeofday(&tv, NULL) == -1)
+		fprintf(stderr, "gettimeofday() failed\n");
+
+	if (!localtime_r(&tv.tv_sec, &tm))
+		fprintf(stderr, "localtime_r() failed\n");
+
+	if (strftime(p, sizeof(p), "%FT%T", &tm) == 0)
+		fprintf(stderr, "strftime() returned 0\n");
+
+	/* The strftime %z format creates timezone offsets of the form
+	 * (+/-)hhmm, whereas the RFC 3339 format is (+/-)hh:mm. So
+	 * shift the minutes one step back and insert the semicolon.
+	 */
+	if (strftime(z, sizeof(z), "%z", &tm) == 0)
+		fprintf(stderr, "strftime() returned 0\n");
+	z[5] = z[4];
+	z[4] = z[3];
+	z[3] = ':';
+
+	_xstrfmtcat(buf, "%s%s", p, z);
 }
 
 /*
@@ -631,19 +659,21 @@ bool xstring_is_whitespace(const char *str)
 	return true;
 }
 
-/*
- * If str make everything lowercase.  Should not be called on static char *'s
- */
-char *xstrtolower(char *str)
+extern bool xstrtolower(char *str)
 {
-	if (str) {
-		int j = 0;
-		while (str[j]) {
-			str[j] = tolower((int)str[j]);
-			j++;
-		}
+	bool modified = false;
+
+	if (!str)
+		return modified;
+
+	for (int j = 0; str[j]; j++) {
+		int c = tolower((int) str[j]);
+
+		if (c != str[j])
+			modified = true;
+		str[j] = c;
 	}
-	return str;
+	return modified;
 }
 
 /* safe strchr */
@@ -755,7 +785,7 @@ char *xstrcasestr(const char *haystack, const char *needle)
  *   fmt (IN)		format of string and args if any
  *   RETURN		copy of formated string
  */
-static size_t _xstrdup_vprintf(char **str, const char *fmt, va_list ap)
+size_t _xstrdup_vprintf(char **str, const char *fmt, va_list ap)
 {
 	/* Start out with a size of 100 bytes. */
 	int n, size = 100;
@@ -868,4 +898,35 @@ extern char *xstring_bytes2printable(const unsigned char *string, int len,
 	}
 
 	return str;
+}
+
+extern char *xbase64_from_base64url(const char *in)
+{
+	char *out;
+	int i;
+
+	/* extra padding in case the padding was stripped off */
+	out = xmalloc(strlen(in) + 3);
+
+	for (i = 0; i < strlen(in); i++) {
+		switch (in[i]) {
+		case '-':
+			out[i] = '+';
+			break;
+		case '_':
+			out[i] = '/';
+			break;
+		default:
+			out[i] = in[i];
+		}
+	}
+
+	/*
+	 * Fix padding in case it was trimmed.
+	 * String length must be a multiple of 4.
+	 */
+	for (int padding = 4 - (i % 4); padding < 4 && padding; padding--)
+		out[i++] = '=';
+
+	return out;
 }

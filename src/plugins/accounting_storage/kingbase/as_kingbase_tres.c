@@ -41,7 +41,7 @@
 extern int as_kingbase_add_tres(kingbase_conn_t *kingbase_conn,
 			     uint32_t uid, List tres_list_in)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int rc = SLURM_SUCCESS;
 	slurmdb_tres_rec_t *object = NULL;
 	char *cols = NULL, *extra = NULL, *vals = NULL, *query = NULL,
@@ -58,9 +58,9 @@ extern int as_kingbase_add_tres(kingbase_conn_t *kingbase_conn,
 	if (!is_user_min_admin_level(kingbase_conn, uid, SLURMDB_ADMIN_OPERATOR))
 		return ESLURM_ACCESS_DENIED;
 
-	if (!tres_list_in) {
-		error("as_kingbase_add_tres: Trying to add a blank list");
-		return SLURM_ERROR;
+	if (!tres_list_in || !list_count(tres_list_in)) {
+		error("%s: Trying to add empty tres list", __func__);
+		return ESLURM_EMPTY_LIST;
 	}
 
 	user_name = uid_to_string((uid_t) uid);
@@ -190,7 +190,7 @@ extern List as_kingbase_get_tres(kingbase_conn_t *kingbase_conn, uid_t uid,
 	char *extra = NULL;
 	char *tmp = NULL;
 	List my_tres_list = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 	int set = 0;
 	int i=0;
@@ -243,7 +243,7 @@ extern List as_kingbase_get_tres(kingbase_conn_t *kingbase_conn, uid_t uid,
 		xstrcat(extra, " and (");
 		itr = list_iterator_create(tres_cond->type_list);
 		while ((object = list_next(itr))) {
-			char *slash;
+			char *slash = NULL;
 			if (set)
 				xstrcat(extra, " or ");
 			if (!(slash = strchr(object, '/')))

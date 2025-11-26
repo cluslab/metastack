@@ -2,9 +2,7 @@
 ############################################################################
 # Purpose: Test --ntasks-per-gpu
 ############################################################################
-# Copyright (C) 2020 SchedMD LLC
-# Written by Michael Hinton <hinton@schedmd.com>
-# Written by Albert Gil <albert.gil@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -50,12 +48,6 @@ set sockets_per_node [list [get_node_param [lindex $nodes 0] "Sockets"] \
 
 log_debug "`[lindex $nodes 0]` Sockets per node: [lindex $sockets_per_node 0]"
 log_debug "`[lindex $nodes 1]` Sockets per node: [lindex $sockets_per_node 1]"
-
-# TODO: Currently --ntasks-per-gpu does not work great when GPU nodes have
-#	multiple sockets. See Bug 12661 and remove skip when fixed.
-if {[lindex $sockets_per_node 0] != 1 || [lindex $sockets_per_node 1] != 1} {
-	skip "--ntasks-per-node does not yet work well on multi-socket GPU nodes"
-}
 
 if {[lindex $sockets_per_node 0] != [lindex $sockets_per_node 1]} {
 	skip "Nodes `[lindex $nodes 0]` and `[lindex $nodes 1]` must have the same # of sockets"
@@ -114,9 +106,9 @@ proc test_srun {expected_tot expected_gpu srun_args {srun_env ""}} {
 	global srun constrain_dev
 
 	if {$srun_env != ""} {
-		set output [run_command_output "env $srun_env $srun $srun_args -t1 printenv CUDA_VISIBLE_DEVICES"]
+		set output [run_command_output "env $srun_env $srun $srun_args --quiet -t1 printenv CUDA_VISIBLE_DEVICES"]
 	} else {
-		set output [run_command_output "$srun $srun_args -t1 printenv CUDA_VISIBLE_DEVICES"]
+		set output [run_command_output "$srun $srun_args --quiet -t1 printenv CUDA_VISIBLE_DEVICES"]
 	}
 
 	set result [get_count_two_gpus $output]

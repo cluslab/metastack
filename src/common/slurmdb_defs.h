@@ -35,10 +35,13 @@
  *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
+
 #ifndef _SLURMDB_DEFS_H
 #define _SLURMDB_DEFS_H
 
 #include "slurm/slurmdb.h"
+
+#include "src/common/persist_conn.h"
 
 /* Defined purge macros */
 #define SLURMDB_PURGE_GET_UNITS(_X) \
@@ -110,9 +113,7 @@ typedef enum {
 #define TRES_STR_FLAG_BYTES       0x00000800 /* Convertable Usage in Bytes */
 
 #ifdef __METASTACK_QOS_HASH
-
 #include "uthash.h"
-
 typedef struct struct_qos_hash {
 	uint32_t key;	/* id of qos */
 	slurmdb_qos_rec_t *value_qos_rec;
@@ -123,7 +124,6 @@ extern void insert_qos_hash(qos_hash_t **qos_hash, slurmdb_qos_rec_t *qos, uint3
 extern slurmdb_qos_rec_t *find_qos_hash(qos_hash_t **qos_hash, uint32_t key);
 extern void remove_qos_hash(qos_hash_t **qos_hash, uint32_t key);
 extern void destroy_qos_hash(qos_hash_t **qos_hash);
-
 #endif
 
 typedef struct {
@@ -132,11 +132,15 @@ typedef struct {
 	time_t start_time;
 } local_cluster_rec_t;
 
-extern slurmdb_job_rec_t *slurmdb_create_job_rec();
-extern slurmdb_step_rec_t *slurmdb_create_step_rec();
+extern slurmdb_job_rec_t *slurmdb_create_job_rec(void);
+extern slurmdb_step_rec_t *slurmdb_create_step_rec(void);
 extern slurmdb_assoc_usage_t *slurmdb_create_assoc_usage(int tres_cnt);
 extern slurmdb_qos_usage_t *slurmdb_create_qos_usage(int tres_cnt);
 
+extern char *slurmdb_acct_flags_2_str(slurmdb_acct_flags_t flags);
+extern slurmdb_acct_flags_t str_2_slurmdb_acct_flags(char *flag_str);
+extern char *slurmdb_assoc_flags_2_str(slurmdb_assoc_flags_t flags);
+extern slurmdb_assoc_flags_t str_2_slurmdb_assoc_flags(char *flag_str);
 extern char *slurmdb_cluster_fed_states_str(uint32_t states);
 extern uint32_t str_2_cluster_fed_states(char *states);
 extern char *slurmdb_federation_flags_str(uint32_t flags);
@@ -157,15 +161,13 @@ extern slurmdb_admin_level_t str_2_slurmdb_admin_level(char *level);
 /* The next three functions have pointers to assoc_list so do not
  * destroy assoc_list before using the list returned from this function.
  */
-extern List slurmdb_get_hierarchical_sorted_assoc_list(List assoc_list,
-						       bool use_lft);
+extern List slurmdb_get_hierarchical_sorted_assoc_list(List assoc_list);
 extern List slurmdb_get_acct_hierarchical_rec_list(List assoc_list);
-extern List slurmdb_get_acct_hierarchical_rec_list_no_lft(List assoc_list);
 
 /* This reorders the list into a alphabetical hierarchy.
    IN/OUT: assoc_list
  */
-extern void slurmdb_sort_hierarchical_assoc_list(List assoc_list, bool use_lft);
+extern void slurmdb_sort_hierarchical_assoc_list(List assoc_list);
 
 /* IN/OUT: tree_list a list of slurmdb_print_tree_t's */
 extern char *slurmdb_tree_name_get(char *name, char *parent, List tree_list);
@@ -177,8 +179,8 @@ extern List get_qos_name_list(List qos_list, List num_qos_list);
 extern char *get_qos_complete_str(List qos_list, List num_qos_list);
 
 #ifdef __METASTACK_QOS_HASH
-extern List get_qos_name_list1(qos_hash_t *qos_hash, List num_qos_list);
-extern char *get_qos_complete_str1(qos_hash_t *qos_hash, List num_qos_list);
+extern List get_qos_name_list_hash(List qos_list, qos_hash_t *qos_hash, List num_qos_list);
+extern char *get_qos_complete_str_hash(List qos_list, qos_hash_t *qos_hash, List num_qos_list);
 #endif
 
 extern char *get_classification_str(uint16_t classification);
@@ -198,6 +200,15 @@ extern char *slurmdb_purge_string(uint32_t purge, char *string, int len,
 				  bool with_archive);
 extern int slurmdb_addto_qos_char_list(List char_list, List qos_list,
 				       char *names, int option);
+/*
+ * send_accounting_update_persist
+ * - Send accounting update to a slurmctld over a persistent connection
+ * IN update_list: updates to send
+ * IN persist_conn: connection to send things on
+ * RET: error code
+ */
+extern int slurmdb_send_accounting_update_persist(list_t *update_list,
+						  persist_conn_t *persist_conn);
 extern int slurmdb_send_accounting_update(List update_list, char *cluster,
 					  char *host, uint16_t port,
 					  uint16_t rpc_version);
@@ -218,6 +229,7 @@ extern void slurmdb_copy_qos_rec_limits(slurmdb_qos_rec_t *out,
 extern slurmdb_tres_rec_t *slurmdb_copy_tres_rec(slurmdb_tres_rec_t *tres);
 extern List slurmdb_copy_tres_list(List tres);
 extern List slurmdb_diff_tres_list(List tres_list_old, List tres_list_new);
+extern list_t *slurmdb_list_copy_coord(list_t *coord_accts);
 extern char *slurmdb_tres_string_combine_lists(
 	List tres_list_old, List tres_list_new);
 /* make a tres_string from a given list
@@ -239,8 +251,7 @@ extern char *slurmdb_format_tres_str(
 extern int slurmdb_sort_tres_by_id_asc(void *v1, void *v2);
 
 /* Used to turn a tres string into a list containing
- * slurmdb_tres_rec_t's with only id's and counts filled in, no
- * formatted types or names.
+ * slurmdb_tres_rec_t's with id's or name/types and counts filled in.
  *
  * IN/OUT: tres_list - list created from the simple tres string
  * IN    : tres - simple string you want convert

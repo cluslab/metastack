@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  acct_gather_energy_gpu.c - slurm energy accounting plugin for GPUs.
  *****************************************************************************
- *  Copyright (C) 2019-2021 SchedMD LLC
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (c) 2019, Advanced Micro Devices, Inc. All rights reserved.
  *  Written by Advanced Micro Devices,
  *  who borrowed from the ipmi plugin of the same type
@@ -40,14 +40,25 @@
 #include <dlfcn.h>
 
 #include "src/common/slurm_xlator.h"
-#include "src/common/cgroup.h"
-#include "src/common/slurm_acct_gather_energy.h"
-#include "src/common/slurm_acct_gather_profile.h"
-#include "src/common/gpu.h"
-#include "src/common/gres.h"
+#include "src/interfaces/cgroup.h"
+#include "src/interfaces/acct_gather_energy.h"
+#include "src/interfaces/acct_gather_profile.h"
+#include "src/interfaces/gpu.h"
+#include "src/interfaces/gres.h"
 
 #define DEFAULT_GPU_TIMEOUT 10
 #define DEFAULT_GPU_FREQ 30
+
+/*
+ * These are defined here so when we link with something other than
+ * the slurmctld we will have these symbols defined.  They will get
+ * overwritten when linking with the slurmctld.
+ */
+#if defined (__APPLE__)
+extern slurmd_conf_t *conf __attribute__((weak_import));
+#else
+slurmd_conf_t *conf = NULL;
+#endif
 
 /*
  * These variables are required by the generic plugin interface.  If they
@@ -98,7 +109,7 @@ static pthread_cond_t gpu_cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t launch_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t launch_cond = PTHREAD_COND_INITIALIZER;
 
-static stepd_step_rec_t *job = NULL;
+static stepd_step_rec_t *step = NULL;
 
 pthread_t thread_gpu_id_launcher = 0;
 pthread_t thread_gpu_id_run = 0;
@@ -305,17 +316,15 @@ static void *_thread_gpu_run(void *no_data)
 	abs.tv_nsec = tvnow.tv_usec * 1000;
 
 	//loop until slurm stop
+	slurm_mutex_lock(&gpu_mutex);
 	while (!flag_energy_accounting_shutdown) {
-		slurm_mutex_lock(&gpu_mutex);
-
 		_thread_update_node_energy();
 
 		/* Sleep until the next time. */
 		abs.tv_sec += DEFAULT_GPU_FREQ;
 		slurm_cond_timedwait(&gpu_cond, &gpu_mutex, &abs);
-
-		slurm_mutex_unlock(&gpu_mutex);
 	}
+	slurm_mutex_unlock(&gpu_mutex);
 
 	log_flag(ENERGY, "gpu-thread: ended");
 
@@ -471,11 +480,23 @@ static int _get_joules_task(uint16_t delta)
 
 	xassert(context_id != -1);
 
+	/* If there are no gres then there is no energy to get, just return. */
+	if (!gres_get_gres_cnt())
+		return SLURM_SUCCESS;
+
 	if (slurm_get_node_energy(conf->node_name, context_id, delta, &gpu_cnt,
 				  &energies)) {
-		error("%s: can't get info from slurmd", __func__);
+		if (errno == ESLURMD_TOO_MANY_RPCS)
+			log_flag(ENERGY, "energy RPC limit reached on slurmd, request dropped");
+		else
+			error("%s: can't get info from slurmd", __func__);
 		return SLURM_ERROR;
 	}
+
+	/* If there are no gpus then there is no energy to get, just return. */
+	if (!gpu_cnt)
+		return SLURM_SUCCESS;
+
 	if (stepd_first) {
 		gpus_len = gpu_cnt;
 		gpus = xcalloc(sizeof(gpu_status_t), gpus_len);
@@ -500,9 +521,18 @@ static int _get_joules_task(uint16_t delta)
 			new->current_watts);
 
 		if (!stepd_first) {
-			new->consumed_energy -= start_current_energies[i];
-			new->base_consumed_energy = adjustment +
-				(new->consumed_energy - old->consumed_energy);
+			/* if slurmd is reloaded while the step is alive */
+			if (old->consumed_energy > new->consumed_energy)
+				new->base_consumed_energy =
+					new->consumed_energy + adjustment;
+			else {
+				new->consumed_energy -=
+					start_current_energies[i];
+				new->base_consumed_energy =
+					adjustment +
+					(new->consumed_energy -
+					 old->consumed_energy);
+			}
 		} else {
 			/*
 			 * This is just for the step, so take all the pervious
@@ -557,20 +587,24 @@ extern int fini(void)
 	slurm_cond_signal(&launch_cond);
 	slurm_mutex_unlock(&launch_mutex);
 
-	if (thread_gpu_id_launcher)
-		pthread_join(thread_gpu_id_launcher, NULL);
+	slurm_thread_join(thread_gpu_id_launcher);
 
 	slurm_mutex_lock(&gpu_mutex);
 	/* clean up the run thread */
 	slurm_cond_signal(&gpu_cond);
 	slurm_mutex_unlock(&gpu_mutex);
 
-	if (thread_gpu_id_run)
-		pthread_join(thread_gpu_id_run, NULL);
+	slurm_thread_join(thread_gpu_id_run);
 
-	xfree(gpus);
-	xfree(start_current_energies);
-	saved_usable_gpus = NULL;
+	/*
+	 * We don't really want to destroy the the state, so those values
+	 * persist a reconfig. And if the process dies, this will be lost
+	 * anyway. So not freeing these variables is not really a leak.
+	 *
+	 * xfree(gpus);
+	 * xfree(start_current_energies);
+	 * saved_usable_gpus = NULL;
+	 */
 
 	return SLURM_SUCCESS;
 }
@@ -595,13 +629,13 @@ extern int acct_gather_energy_p_get_data(enum acct_energy_type data_type,
 	xassert(running_in_slurmd_stepd());
 	switch (data_type) {
 	case ENERGY_DATA_NODE_ENERGY_UP:
-		slurm_mutex_lock(&gpu_mutex);
 		if (running_in_slurmd()) {
-			if (_thread_init() == SLURM_SUCCESS) {
-				_thread_update_node_energy();
-				_get_node_energy(energy);
-			}
+			/* Signal the thread to update node energy */
+			slurm_cond_signal(&gpu_cond);
+			slurm_mutex_lock(&gpu_mutex);
+			_get_node_energy(energy);
 		} else {
+			slurm_mutex_lock(&gpu_mutex);
 			_get_joules_task(10);
 			_get_node_energy_up(energy);
 		}
@@ -633,11 +667,12 @@ extern int acct_gather_energy_p_get_data(enum acct_energy_type data_type,
 		slurm_mutex_unlock(&gpu_mutex);
 		break;
 	case ENERGY_DATA_JOULES_TASK:
-		slurm_mutex_lock(&gpu_mutex);
 		if (running_in_slurmd()) {
-			if (_thread_init() == SLURM_SUCCESS)
-				_thread_update_node_energy();
+			/* Signal the thread to update node energy */
+			slurm_cond_signal(&gpu_cond);
+			slurm_mutex_lock(&gpu_mutex);
 		} else {
+			slurm_mutex_lock(&gpu_mutex);
 			_get_joules_task(10);
 		}
 		for (i = 0; i < gpus_len; ++i)
@@ -674,13 +709,13 @@ extern int acct_gather_energy_p_set_data(enum acct_energy_type data_type,
 	case ENERGY_DATA_STEP_PTR:
 	{
 		/* set global job if needed later */
-		job = (stepd_step_rec_t *)data;
+		step = (stepd_step_rec_t *)data;
 
 		/*
 		 * Get the GPUs used in the step so we only poll those when
 		 * looking at them
 		 */
-		rc = gres_get_step_info(job->step_gres_list, "gpu", 0,
+		rc = gres_get_step_info(step->step_gres_list, "gpu", 0,
 					GRES_STEP_DATA_BITMAP,
 					&saved_usable_gpus);
 		/*
@@ -726,7 +761,9 @@ extern void acct_gather_energy_p_conf_set(int context_id_in,
 	if (!flag_init) {
 		flag_init = true;
 		if (running_in_slurmd()) {
-			gpu_g_get_device_count((unsigned int *)&gpus_len);
+			if (gres_get_gres_cnt())
+				gpu_g_get_device_count(
+					(unsigned int *) &gpus_len);
 			if (gpus_len) {
 				gpus = xcalloc(sizeof(gpu_status_t), gpus_len);
 				slurm_thread_create(&thread_gpu_id_launcher,

@@ -49,7 +49,7 @@
 #include "src/common/log.h"
 #include "src/common/macros.h"
 #include "src/common/slurm_protocol_api.h"
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 #include "src/common/slurmdbd_defs.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xsignal.h"
@@ -85,7 +85,11 @@ extern void *rpc_mgr(void *no_data)
 	 * Process incoming RPCs until told to shutdown
 	 */
 	while (!shutdown_time &&
+#ifdef __METASTACK_BUG_USERADD_RECONFIG_CTLD_CRASH
+	       (i = slurm_persist_conn_wait_for_thread_loc(false)) >= 0) {
+#else
 	       (i = slurm_persist_conn_wait_for_thread_loc()) >= 0) {
+#endif
 		/*
 		 * accept needed for stream implementation is a no-op in
 		 * message implementation that just passes sockfd to newsockfd
@@ -101,7 +105,7 @@ extern void *rpc_mgr(void *no_data)
 		fd_set_nonblocking(newsockfd);
 
 		conn_arg = xmalloc(sizeof(slurmdbd_conn_t));
-		conn_arg->conn = xmalloc(sizeof(slurm_persist_conn_t));
+		conn_arg->conn = xmalloc(sizeof(persist_conn_t));
 		conn_arg->conn->fd = newsockfd;
 		conn_arg->conn->flags = PERSIST_FLAG_DBD;
 		conn_arg->conn->callback_proc = proc_req;
@@ -120,7 +124,6 @@ extern void *rpc_mgr(void *no_data)
 
 	debug("rpc_mgr shutting down");
 	close(sockfd);
-	pthread_exit((void *) 0);
 	return NULL;
 }
 
@@ -139,6 +142,13 @@ static void _connection_fini_callback(void *arg)
 
 #ifdef __METASTACK_BUG_CONN_FIX
 	slurm_mutex_lock(&registered_lock);
+#endif
+
+	slurm_mutex_lock(&conn->conn_send_lock);
+	slurm_persist_conn_destroy(conn->conn_send);
+	conn->conn_send = NULL;
+	slurm_mutex_unlock(&conn->conn_send_lock);
+
 	if (conn->conn->rem_port) {
 		if (!shutdown_time) {
 			slurmdb_cluster_rec_t cluster_rec;
@@ -164,49 +174,25 @@ static void _connection_fini_callback(void *arg)
 		 * every CommitDelay interval, but the final commit is handled
 		 * below.
 		 */
+		
+#ifdef __METASTACK_BUG_CONN_FIX
+		/*__METASTACK_BUG_CONN_FIX - no need to lock and unlonk*/
 		//slurm_mutex_lock(&registered_lock);
 		list_delete_ptr(registered_clusters, conn);
 		//if (!stay_locked)
-			//slurm_mutex_unlock(&registered_lock);
+		//	slurm_mutex_unlock(&registered_lock);
+#endif
 
 		/* needs to be the last thing done */
-		acct_storage_g_commit(conn->db_conn, 1);
+#ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
+		//acct_storage_g_commit(conn->db_conn, 1);
+		/* The count of conn->db_conn->update_list is 0, so no retries are made. */
+		acct_storage_g_commit(conn->db_conn, 1, true);
+#endif
 	}
-	if (!stay_locked)
+#ifdef __METASTACK_BUG_CONN_FIX
+	if (!stay_locked) {
 		slurm_mutex_unlock(&registered_lock);
-#else
-	if (conn->conn->rem_port) {
-		if (!shutdown_time) {
-			slurmdb_cluster_rec_t cluster_rec;
-			memset(&cluster_rec, 0, sizeof(slurmdb_cluster_rec_t));
-			cluster_rec.name = conn->conn->cluster_name;
-			cluster_rec.control_host = conn->conn->rem_host;
-			cluster_rec.control_port = conn->conn->rem_port;
-			cluster_rec.rpc_version = conn->conn->version;
-			cluster_rec.tres_str = conn->tres_str;
-			if (conn->conn->flags & PERSIST_FLAG_EXT_DBD)
-				cluster_rec.flags = CLUSTER_FLAG_EXT;
-			debug("cluster %s has disconnected",
-			      conn->conn->cluster_name);
-
-			clusteracct_storage_g_fini_ctld(
-				conn->db_conn, &cluster_rec);
-		} else if (slurmdbd_conf->commit_delay)
-			stay_locked = true;
-
-		/*
-		 * On connection close, remove from the list of registered
-		 * clusters. The List ensures acct_storage_g_commit() is run
-		 * every CommitDelay interval, but the final commit is handled
-		 * below.
-		 */
-		slurm_mutex_lock(&registered_lock);
-		list_delete_ptr(registered_clusters, conn);
-		if (!stay_locked)
-			slurm_mutex_unlock(&registered_lock);
-
-		/* needs to be the last thing done */
-		acct_storage_g_commit(conn->db_conn, 1);
 	}
 #endif
 
@@ -216,6 +202,7 @@ static void _connection_fini_callback(void *arg)
 		slurm_mutex_unlock(&registered_lock);
 	/* handled directly in the internal persist_conn code */
 	//slurm_persist_conn_members_destroy(&conn->conn);
+	slurm_mutex_destroy(&conn->conn_send_lock);
 	xfree(conn->tres_str);
 	xfree(conn);
 }

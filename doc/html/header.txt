@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <html lang="en-US">
 <head>
-    <meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width" />
+    <meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width">
 
 	<!--#pagetitle-->
 	<!--#canonical-->
 
-	<link rel="shortcut icon" href="favicon.ico" />
+	<link rel="shortcut icon" href="favicon.ico">
 
-	<link rel="stylesheet" type="text/css" href="fonts.css" />
-	<link rel="stylesheet" type="text/css" href="reset.css" />
-	<link rel="stylesheet" type="text/css" href="style.css" />
-	<link rel="stylesheet" type="text/css" href="slurm.css" />
+	<link rel="stylesheet" type="text/css" href="fonts.css">
+	<link rel="stylesheet" type="text/css" href="reset.css">
+	<link rel="stylesheet" type="text/css" href="style.css">
+	<link rel="stylesheet" type="text/css" href="slurm.css">
 
 	<script src="jquery.min.js"></script>
 	<script type="text/javascript">
@@ -24,17 +24,8 @@
 			return false;
 		});
 	});
-
-	(function() {
-	  var cx = '011890816164765777536:jvrtxrd3f0w';
-	  var gcse = document.createElement('script');
-	  gcse.type = 'text/javascript';
-	  gcse.async = true;
-	  gcse.src = 'https://cse.google.com/cse.js?cx=' + cx;
-	  var s = document.getElementsByTagName('script')[0];
-	  s.parentNode.insertBefore(gcse, s);
-	})();
 	</script>
+	<script async src="https://cse.google.com/cse.js?cx=011890816164765777536:jvrtxrd3f0w"></script>
 </head>
 
 <body>
@@ -59,7 +50,7 @@
 		</div>
 
 
-		<nav class="site-nav">
+		<nav class="site-nav" role="navigation">
 			<h2 class="site-nav__title">Navigation</h2>
 
 			<div class="slurm-title">
@@ -67,22 +58,17 @@
 				<div class="slurm-title__version">Version @SLURM_VERSION@</div>
 			</div>
 
-			<ul class="site-nav__menu site-menu menu" role="navigation">
+			<ul class="site-nav__menu site-menu menu">
 				<li class="site-menu__item">
 				        <div>About</div>
 					<ul>
 						<li><a href="overview.shtml">Overview</a></li>
-						<li><a href="news.shtml">Release Notes</a></li>
-						<li><a href="team.shtml">Slurm Team</a></li>
-						<li><a href="meetings.shtml">Meetings</a></li>
-						<li><a href="testimonials.shtml">Testimonials</a></li>
-						<li><a href="disclaimer.shtml">Legal Notices</a></li>
+						<li><a href="release_notes.shtml">Release Notes</a></li>
 					</ul>
 				</li>
 				<li class="site-menu__item">
 					<div>Using</div>
 					<ul>
-						<li><a href="tutorials.shtml">Tutorials</a></li>
 						<li><a href="documentation.shtml">Documentation</a></li>
 						<li><a href="faq.shtml">FAQ</a></li>
 						<li><a href="publications.shtml">Publications</a></li>
@@ -91,16 +77,16 @@
 				<li class="site-menu__item">
 					<div>Installing</div>
 					<ul>
-						<li><a href="download.shtml">Download</a></li>
+						<li><a href="https://www.schedmd.com/download-slurm/">Download</a></li>
+						<li><a href="related_software.shtml">Related Software</a></li>
 						<li><a href="quickstart_admin.shtml">Installation Guide</a></li>
 					</ul>
 				</li>
 				<li class="site-menu__item">
 					<div>Getting Help</div>
 					<ul>
-						<li><a href="https://www.schedmd.com/services.php">Support</a></li>
 						<li><a href="mail.shtml">Mailing Lists</a></li>
-						<li><a href="https://www.schedmd.com/services.php">Training</a></li>
+						<li><a href="https://www.schedmd.com/slurm-support/our-services/">Support and Training</a></li>
 						<li><a href="troubleshoot.shtml">Troubleshooting</a></li>
 					</ul>
 				</li>

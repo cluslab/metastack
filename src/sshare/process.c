@@ -36,35 +36,35 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
-#include "src/common/slurm_priority.h"
-#include "src/sshare/sshare.h"
 #include <math.h>
 
-static void _print_tres(print_field_t *field, uint64_t *tres_cnts,
-			int last);
+#include "src/interfaces/priority.h"
+#include "src/sshare/sshare.h"
 
 int long_flag;		/* exceeds 80 character limit with more info */
 char **tres_names = NULL;
 uint32_t tres_cnt = 0;
 char *opt_field_list = NULL;
+char *mimetype;
+char *data_parser;
 #ifdef __METASTACK_OPT_PRINT_COMMAND
 print_field_t fields[] = {
-	{-20, "Account", print_fields_str, PRINT_ACCOUNT,0},
-	{10, "Cluster", print_fields_str, PRINT_CLUSTER,0},
-	{13, "EffectvUsage", print_fields_double, PRINT_EUSED,0},
-	{10, "FairShare", print_fields_double, PRINT_FSFACTOR,0},
-	{30, "GrpTRESMins", _print_tres, PRINT_TRESMINS,0},
-	{30, "GrpTRESRaw", _print_tres, PRINT_GRPTRESRAW,0},
-	{6,  "ID", print_fields_uint, PRINT_ID,0},
-	{10, "LevelFS", print_fields_double, PRINT_LEVELFS,0},
-	{11, "NormShares", print_fields_double, PRINT_NORMS,0},
-	{11, "NormUsage", print_fields_double, PRINT_NORMU,0},
-	{12, "Partition", print_fields_str, PRINT_PART,0},
-	{10, "RawShares", print_fields_uint32, PRINT_RAWS,0},
-	{11, "RawUsage", print_fields_uint64, PRINT_RAWU,0},
-	{30, "TRESRunMins", _print_tres, PRINT_RUNMINS,0},
-	{10, "User", print_fields_str, PRINT_USER,0},
-	{0,  NULL, NULL, 0,0}
+	{-20, "Account", print_fields_str, PRINT_ACCOUNT, 0},
+	{10, "Cluster", print_fields_str, PRINT_CLUSTER, 0},
+	{13, "EffectvUsage", print_fields_double, PRINT_EUSED, 0},
+	{10, "FairShare", print_fields_double, PRINT_FSFACTOR, 0},
+	{30, "GrpTRESMins", print_fields_str, PRINT_TRESMINS, 0},
+	{30, "GrpTRESRaw", print_fields_str, PRINT_GRPTRESRAW, 0},
+	{6,  "ID", print_fields_uint, PRINT_ID, 0},
+	{10, "LevelFS", print_fields_double, PRINT_LEVELFS, 0},
+	{11, "NormShares", print_fields_double, PRINT_NORMS, 0},
+	{11, "NormUsage", print_fields_double, PRINT_NORMU, 0},
+	{12, "Partition", print_fields_str, PRINT_PART, 0},
+	{10, "RawShares", print_fields_uint32, PRINT_RAWS, 0},
+	{11, "RawUsage", print_fields_uint64, PRINT_RAWU, 0},
+	{30, "TRESRunMins", print_fields_str, PRINT_RUNMINS, 0},
+	{10, "User", print_fields_str, PRINT_USER, 0},
+	{0,  NULL, NULL, 0}
 };
 #else
 print_field_t fields[] = {
@@ -72,8 +72,8 @@ print_field_t fields[] = {
 	{10, "Cluster", print_fields_str, PRINT_CLUSTER},
 	{13, "EffectvUsage", print_fields_double, PRINT_EUSED},
 	{10, "FairShare", print_fields_double, PRINT_FSFACTOR},
-	{30, "GrpTRESMins", _print_tres, PRINT_TRESMINS},
-	{30, "GrpTRESRaw", _print_tres, PRINT_GRPTRESRAW},
+	{30, "GrpTRESMins", print_fields_str, PRINT_TRESMINS},
+	{30, "GrpTRESRaw", print_fields_str, PRINT_GRPTRESRAW},
 	{6,  "ID", print_fields_uint, PRINT_ID},
 	{10, "LevelFS", print_fields_double, PRINT_LEVELFS},
 	{11, "NormShares", print_fields_double, PRINT_NORMS},
@@ -81,64 +81,23 @@ print_field_t fields[] = {
 	{12, "Partition", print_fields_str, PRINT_PART},
 	{10, "RawShares", print_fields_uint32, PRINT_RAWS},
 	{11, "RawUsage", print_fields_uint64, PRINT_RAWU},
-	{30, "TRESRunMins", _print_tres, PRINT_RUNMINS},
+	{30, "TRESRunMins", print_fields_str, PRINT_RUNMINS},
 	{10, "User", print_fields_str, PRINT_USER},
 	{0,  NULL, NULL, 0}
 };
 #endif
 
-static void _print_tres(print_field_t *field, uint64_t *tres_cnts,
-			int last)
+static void _print_tres_array(print_field_t *field, uint64_t *tres_cnts,
+				    int last)
 {
-	int abs_len = abs(field->len);
-	char *print_this;
+	char *tmp_char;
 
-	print_this = slurmdb_make_tres_string_from_arrays(
+	tmp_char = slurmdb_make_tres_string_from_arrays(
 		tres_names, tres_cnts, tres_cnt, TRES_STR_FLAG_REMOVE);
 
-	if (!print_this)
-		print_this = xstrdup("");
+	field->print_routine(field, tmp_char, last);
 
-	if (print_fields_parsable_print == PRINT_FIELDS_PARSABLE_NO_ENDING
-	    && last)
-		printf("%s", print_this);
-	else if (print_fields_parsable_print)
-		printf("%s|", print_this);
-	else {
-		if (strlen(print_this) > abs_len)
-#ifdef __METASTACK_OPT_PRINT_COMMAND
-		{
-			if(field->right_format) {
-				print_this[strlen(print_this)-abs_len] = '+';
-				if (field->len == abs_len) {
-					printf("%*.*s ", abs_len, abs_len,&print_this[strlen(print_this)-abs_len]);
-				}
-				else
-					printf("%-*.*s ", abs_len, abs_len,&print_this[strlen(print_this)-abs_len]);
-			} else {
-				print_this[abs_len-1] = '+';
-				if (field->len == abs_len)
-					printf("%*.*s ", abs_len, abs_len, print_this);
-				else
-					printf("%-*.*s ", abs_len, abs_len, print_this);
-			}
-
-		} else {
-			if (field->len == abs_len)
-				printf("%*.*s ", abs_len, abs_len, print_this);
-			else
-				printf("%-*.*s ", abs_len, abs_len, print_this);
-		}
-#else
-			print_this[abs_len-1] = '+';
-
-		if (field->len == abs_len)
-			printf("%*.*s ", abs_len, abs_len, print_this);
-		else
-			printf("%-*.*s ", abs_len, abs_len, print_this);
-#endif
-	}
-	xfree(print_this);
+	xfree(tmp_char);
 }
 
 extern int process(shares_response_msg_t *resp, uint16_t options)
@@ -146,17 +105,17 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 	uint32_t flags = slurm_conf.priority_flags;
 	int rc = SLURM_SUCCESS, i;
 	assoc_shares_object_t *share = NULL;
-	ListIterator itr = NULL;
-	ListIterator itr2 = NULL;
+	list_itr_t *itr = NULL, *itr2 = NULL;
 	char *object = NULL;
 	char *print_acct = NULL;
-	List tree_list = NULL;
+	list_t *tree_list = NULL;
 	char *tmp_char = NULL;
+	uint64_t *tres_raw;
 
 	int field_count = 0;
 
-	List format_list;
-	List print_fields_list; /* types are of print_field_t */
+	list_t *format_list;
+	list_t *print_fields_list; /* types are of print_field_t */
 
 	if (!resp)
 		return SLURM_ERROR;
@@ -223,12 +182,11 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 					"RawUsage,Eff,Fairshare");
 		}
 	}
-
 #ifdef __METASTACK_OPT_PRINT_COMMAND
-    char *env_share = NULL;
+	char *env_share = NULL;
 	char *format_tmp =NULL;
 	if ((env_share = getenv("SSHARE_EXTEND"))) {
-   		format_tmp = xstrdup(env_share);
+		format_tmp = xstrdup(env_share);
 		
 		for (i = 0; fields[i].name; i++) {
 			_parse_env_format_extend(format_tmp, &fields[i]);
@@ -251,6 +209,7 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 					  strlen(object))) {
 				if (newlen)
 					fields[i].len = newlen;
+
 				list_append(print_fields_list, &fields[i]);
 				break;
 			}
@@ -277,14 +236,16 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 	if (!resp->assoc_shares_list || !list_count(resp->assoc_shares_list))
 		return SLURM_SUCCESS;
 
+	tres_raw = xcalloc(tres_cnt, sizeof(uint64_t));
 	tree_list = list_create(slurmdb_destroy_print_tree);
 	itr = list_iterator_create(resp->assoc_shares_list);
+
 	while ((share = list_next(itr))) {
 		int curr_inx = 1;
 		char *tmp_char = NULL;
 		char *local_acct = NULL;
 		print_field_t *field = NULL;
-		uint64_t tres_raw[tres_cnt];
+		double tmp_double;
 
 		if ((options & PRINT_USERS_ONLY) && share->user == 0)
 			continue;
@@ -315,57 +276,58 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 				break;
 			case PRINT_EUSED:
 				field->print_routine(field,
-						     share->usage_efctv,
+						     &share->usage_efctv,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_FSFACTOR:
 				if (flags & PRIORITY_FLAGS_FAIR_TREE) {
+					tmp_double = (double)NO_VAL64;
 					if(share->user)
 						field->print_routine(
 						field,
-						share->fs_factor,
+						&share->fs_factor,
 						(curr_inx == field_count));
 					else
-						print_fields_str(
+						field->print_routine(
 							field,
-							NULL,
+							&tmp_double,
 							(curr_inx ==
 							 field_count)
 						);
-				}
-				else
-					field->print_routine(field,
-						     priority_g_calc_fs_factor(
-							     (long double)
+				} else {
+					tmp_double = priority_g_calc_fs_factor(
 							     share->usage_efctv,
-							     (long double)
 							     share->
 							     shares_norm),
-						     (curr_inx == field_count));
+					field->print_routine(field,
+						&tmp_double,
+						(curr_inx == field_count));
+				}
 				break;
 			case PRINT_LEVELFS:
+				tmp_double = (double)NO_VAL64;
 				if (share->shares_raw == SLURMDB_FS_USE_PARENT)
-					print_fields_str(field, NULL,
-							 (curr_inx ==
-							  field_count));
+					field->print_routine(field, &tmp_double,
+							     (curr_inx ==
+							      field_count));
 				else
 					field->print_routine(field,
-						     (double) share->level_fs,
+						     &share->level_fs,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_ID:
 				field->print_routine(field,
-						     share->assoc_id,
+						     &share->assoc_id,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_NORMS:
 				field->print_routine(field,
-						     share->shares_norm,
+						     &share->shares_norm,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_NORMU:
 				field->print_routine(field,
-						     share->usage_norm,
+						     &share->usage_norm,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_RAWS:
@@ -375,13 +337,13 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 							  field_count));
 				else
 					field->print_routine(field,
-							     share->shares_raw,
+							     &share->shares_raw,
 							     (curr_inx ==
 							      field_count));
 				break;
 			case PRINT_RAWU:
 				field->print_routine(field,
-						     share->usage_raw,
+						     &share->usage_raw,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_USER:
@@ -397,26 +359,27 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 						     (curr_inx == field_count));
 				break;
 			case PRINT_TRESMINS:
-				field->print_routine(field,
-						     share->tres_grp_mins,
-						     (curr_inx == field_count));
+				_print_tres_array(field,
+						  share->tres_grp_mins,
+						  (curr_inx == field_count));
 				break;
 			case PRINT_GRPTRESRAW:
 				/* convert to ints and minutes */
 				for (i=0; i<tres_cnt; i++)
 					tres_raw[i] = (uint64_t)
 						(share->usage_tres_raw[i] / 60);
-				field->print_routine(field,
-						     tres_raw,
-						     (curr_inx == field_count));
+				_print_tres_array(field,
+						  tres_raw,
+						  (curr_inx == field_count));
 				break;
 			case PRINT_RUNMINS:
 				/* convert to minutes */
 				for (i=0; i<tres_cnt; i++)
 					share->tres_run_secs[i] /= 60;
-				field->print_routine(field,
-						     share->tres_run_secs,
-						     (curr_inx == field_count));
+
+				_print_tres_array(field,
+						  share->tres_run_secs,
+						  (curr_inx == field_count));
 				break;
 			default:
 				field->print_routine(
@@ -434,5 +397,6 @@ extern int process(shares_response_msg_t *resp, uint16_t options)
 	list_iterator_destroy(itr2);
 	list_iterator_destroy(itr);
 	FREE_NULL_LIST(print_fields_list);
+	xfree(tres_raw);
 	return rc;
 }

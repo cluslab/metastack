@@ -59,9 +59,9 @@
 
 #include "slurm/slurm.h"
 
-#include "src/common/slurm_jobacct_gather.h"
+#include "src/interfaces/jobacct_gather.h"
 #include "src/common/parse_time.h"
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 #include "src/common/xstring.h"
 #include "src/common/print_fields.h"
 
@@ -131,10 +131,11 @@ typedef enum {
 	/* ASSOCIATION */
 	PRINT_DQOS = 2000,
 	PRINT_ID,
-	PRINT_LFT,
+	PRINT_LINEAGE,
 	PRINT_PID,
 	PRINT_PNAME,
 	PRINT_RGT,
+	PRINT_COMMENT,
 
 	/* CLUSTER */
 	PRINT_CHOST = 3000,
@@ -148,7 +149,6 @@ typedef enum {
 	PRINT_NODEINX,
 	PRINT_CLUSTER_NODES,
 	PRINT_RPC_VERSION,
-	PRINT_SELECT,
 
 	/* ACCT */
 	PRINT_ORG = 4000,
@@ -192,6 +192,11 @@ typedef enum {
 	PRINT_TIMESUBMIT,
 	PRINT_TIMEELIGIBLE,
 
+	/* INSTANCE */
+	PRINT_INSTANCE_ID,
+	PRINT_INSTANCE_TYPE,
+	PRINT_EXTRA,
+
 	/* RESOURCE */
 	PRINT_COUNT = 9000,
 	PRINT_TYPE,
@@ -201,6 +206,7 @@ typedef enum {
 	PRINT_ALLOWED,
 	PRINT_ALLOCATED,
 	PRINT_USED,
+	PRINT_LAST_CONSUMED,
 
 	/* RESERVATION */
 	PRINT_ASSOC_NAME = 10000,
@@ -223,13 +229,12 @@ extern uint32_t my_uid;
 extern List g_qos_list;
 extern List g_res_list;
 extern List g_tres_list;
+extern const char *mime_type; /* user requested JSON or YAML */
+extern const char *data_parser; /* data_parser args */
 
 extern bool user_case_norm;
 extern bool tree_display;
 extern bool have_db_conn;
-
-extern bool sacctmgr_check_default_qos(uint32_t qos_id,
-				       slurmdb_assoc_cond_t *assoc_cond);
 
 extern int sacctmgr_set_assoc_cond(slurmdb_assoc_cond_t *assoc_cond,
 					 char *type, char *value,
@@ -255,11 +260,13 @@ extern int sacctmgr_list_user(int argc, char **argv);
 extern int sacctmgr_list_account(int argc, char **argv);
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 extern int sacctmgr_list_borrow(int argc, char **argv);
+extern int sacctmgr_list_borrowaway_nodes(int argc, char **argv);
 #endif
 extern int sacctmgr_list_cluster(int argc, char **argv);
 extern int sacctmgr_list_config(void);
 extern int sacctmgr_list_event(int argc, char **argv);
 extern int sacctmgr_list_federation(int argc, char **argv);
+extern int sacctmgr_list_instance(int argc, char **argv);
 extern int sacctmgr_list_problem(int argc, char **argv);
 extern int sacctmgr_list_qos(int argc, char **argv);
 extern int sacctmgr_list_res(int argc, char **argv);
@@ -292,8 +299,8 @@ extern int sacctmgr_archive_load(int argc, char **argv);
 /* common.c */
 extern int parse_option_end(char *option);
 extern char *strip_quotes(char *option, int *increased, bool make_lower);
-extern void notice_thread_init();
-extern void notice_thread_fini();
+extern void notice_thread_init(void);
+extern void notice_thread_fini(void);
 extern int commit_check(char *warning);
 extern int get_uint(char *in_value, uint32_t *out_value, char *type);
 extern int get_uint16(char *in_value, uint16_t *out_value, char *type);
@@ -303,20 +310,16 @@ extern int addto_qos_char_list(List char_list, List qos_list, char *names,
 			       int option);
 extern int addto_action_char_list(List char_list, char *names);
 extern void sacctmgr_print_coord_list(
-	print_field_t *field, List value, int last);
-extern void sacctmgr_print_qos_list(print_field_t *field, List qos_list,
-				    List value, int last);
-extern void sacctmgr_print_qos_bitstr(print_field_t *field, List qos_list,
-				      bitstr_t *value, int last);
+	print_field_t *field, void *input, int last);
 
-extern void sacctmgr_print_tres(print_field_t *field, char *tres_simple_str,
-				int last);
+extern void sacctmgr_print_tres(print_field_t *field, void *input, int last);
 extern void sacctmgr_print_assoc_limits(slurmdb_assoc_rec_t *assoc);
 extern void sacctmgr_print_cluster(slurmdb_cluster_rec_t *cluster);
 extern void sacctmgr_print_federation(slurmdb_federation_rec_t *fed);
 extern void sacctmgr_print_qos_limits(slurmdb_qos_rec_t *qos);
 extern int sacctmgr_remove_assoc_usage(slurmdb_assoc_cond_t *assoc_cond);
-extern int sacctmgr_remove_qos_usage(slurmdb_qos_cond_t *qos_cond);
+extern int sacctmgr_update_qos_usage(slurmdb_qos_cond_t *qos_cond,
+				     long double new_raw_usage);
 extern int sort_coord_list(void *, void *);
 extern List sacctmgr_process_format_list(List format_list);
 extern int sacctmgr_validate_cluster_list(List cluster_list);
@@ -374,16 +377,15 @@ extern int sacctmgr_list_runaway_jobs(int argc, char **argv);
 extern int verify_federations_exist(List name_list);
 extern int verify_fed_clusters(List cluster_list, const char *fed_name,
 			       bool *existing_fed);
-#endif
 
 #ifdef __METASTACK_OPT_LIST_USER
 extern int no_get_parent_limits;
 extern int no_sort_assoc;
 #endif
 
+#endif
+
 #ifdef __METASTACK_QOS_HASH
 #include "src/common/slurmdb_defs.h"
 extern qos_hash_t *g_qos_hash;
-extern void sacctmgr_print_qos_list1(print_field_t *field, qos_hash_t *qos_hash,
-				    List value, int last);
 #endif

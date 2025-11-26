@@ -1,6 +1,5 @@
 /*****************************************************************************\
- *  Copyright (C) 2019 SchedMD LLC
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -70,7 +69,7 @@ static data_for_each_cmd_t
 	if (data_get_bool(data))
 		(*found)++;
 
-	ck_assert_ptr_ne(key, NULL);
+	ck_assert(key != NULL);
 	return DATA_FOR_EACH_CONT;
 }
 
@@ -78,7 +77,7 @@ static data_for_each_cmd_t
 	_invert_dict_bool(const char *key, data_t *data, void *arg)
 {
 	ck_assert_msg(data_get_type(data) == DATA_TYPE_BOOL, "entry bool type");
-	ck_assert_ptr_ne(key, NULL);
+	ck_assert(key != NULL);
 	data_set_bool(data, !data_get_bool(data));
 	return DATA_FOR_EACH_CONT;
 }
@@ -88,7 +87,7 @@ static data_for_each_cmd_t
 {
 	int *max = arg;
 
-	ck_assert_ptr_ne(key, NULL);
+	ck_assert(key != NULL);
 	ck_assert_msg(data_get_type(data) == DATA_TYPE_BOOL, "entry bool type");
 
 	if (*max <= 0)
@@ -307,6 +306,19 @@ START_TEST(test_dict_typeset)
 	ck_assert_msg(data_get_float(d) == 3.14,
 		      "check string conversion from 3.14");
 
+	data_set_float(d, -3.14);
+	ck_assert_msg(data_get_type(d) == DATA_TYPE_FLOAT, "float type");
+
+	str = NULL;
+	ck_assert_msg(data_get_string_converted(d, &str) == 0,
+		      "convert -3.14 to string");
+	ck_assert_msg(xstrcmp(str, "-3.140000") == 0,
+		      "check -3.14 got converted");
+	xfree(str);
+	ck_assert_msg(data_get_type(d) == DATA_TYPE_FLOAT, "float type");
+	ck_assert_msg(data_get_float(d) == -3.14,
+		      "check string conversion from -3.14");
+
 	data_set_null(d);
 	ck_assert_msg(data_get_type(d) == DATA_TYPE_NULL, "default type");
 
@@ -355,17 +367,11 @@ int main(void)
 	log_opts.stderr_level = LOG_LEVEL_DEBUG5;
 	log_init("data-test", log_opts, 0, NULL);
 
-	if (data_init("", NULL)) {
-		error("data_init() failed");
-		return EXIT_FAILURE;
-	}
-
 	SRunner *sr = srunner_create(suite_data());
 
 	srunner_run_all(sr, CK_ENV);
 	number_failed = srunner_ntests_failed(sr);
 	srunner_free(sr);
 
-	data_fini();
 	return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

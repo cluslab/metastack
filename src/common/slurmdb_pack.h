@@ -112,6 +112,12 @@ extern void slurmdb_pack_borrow_cond(void *in, uint16_t protocol_version,
 extern int slurmdb_unpack_borrow_cond(void **object, uint16_t protocol_version,
 				     buf_t *buffer);					
 #endif
+extern void slurmdb_pack_instance_rec(void *in,
+				      uint16_t protocol_version,
+				      buf_t *buffer);
+extern int slurmdb_unpack_instance_rec(void **object,
+				       uint16_t protocol_version,
+				       buf_t *buffer);
 extern void slurmdb_pack_qos_rec(void *in, uint16_t protocol_version,
 				 buf_t *buffer);
 extern int slurmdb_unpack_qos_rec(void **object, uint16_t protocol_version,
@@ -120,6 +126,11 @@ extern void slurmdb_pack_qos_usage(void *in, uint16_t protocol_version,
 				   buf_t *buffer);
 extern int slurmdb_unpack_qos_usage(void **object, uint16_t protocol_version,
 				    buf_t *buffer);
+extern void slurmdb_pack_qos_usage_update(void *in, uint16_t protocol_version,
+					  buf_t *buffer);
+extern int slurmdb_unpack_qos_usage_update(void **object,
+					   uint16_t protocol_version,
+					   buf_t *buffer);
 extern void slurmdb_pack_qos_rec_with_usage(void *in, uint16_t protocol_version,
 					    buf_t *buffer);
 extern int slurmdb_unpack_qos_rec_with_usage(void **object,
@@ -176,6 +187,11 @@ extern void slurmdb_pack_federation_cond(void *in, uint16_t protocol_version,
 extern int slurmdb_unpack_federation_cond(void **object,
 					  uint16_t protocol_version,
 					  buf_t *buffer);
+extern void slurmdb_pack_add_assoc_cond(void *in, uint16_t protocol_version,
+					buf_t *buffer);
+extern int slurmdb_unpack_add_assoc_cond(void **object,
+					 uint16_t protocol_version,
+					 buf_t *buffer);
 extern void slurmdb_pack_assoc_cond(void *in, uint16_t protocol_version,
 				    buf_t *buffer);
 extern int slurmdb_unpack_assoc_cond(void **object, uint16_t protocol_version,
@@ -184,6 +200,12 @@ extern void slurmdb_pack_event_cond(void *in, uint16_t protocol_version,
 				    buf_t *buffer);
 extern int slurmdb_unpack_event_cond(void **object, uint16_t protocol_version,
 				     buf_t *buffer);
+extern void slurmdb_pack_instance_cond(void *in,
+				       uint16_t protocol_version,
+				       buf_t *buffer);
+extern int slurmdb_unpack_instance_cond(void **object,
+					uint16_t protocol_version,
+					buf_t *buffer);
 extern void slurmdb_pack_job_cond(void *in, uint16_t protocol_version,
 				  buf_t *buffer);
 extern int slurmdb_unpack_job_cond(void **object, uint16_t protocol_version,

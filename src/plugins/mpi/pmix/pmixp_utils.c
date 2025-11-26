@@ -35,6 +35,8 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
  \*****************************************************************************/
 
+#include "config.h"
+
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
@@ -344,7 +346,7 @@ bool pmixp_fd_write_ready(int fd, int *shutdown)
 int pmixp_stepd_send(const char *nodelist, const char *address,
 		     const char *data, uint32_t len,
 		     unsigned int start_delay,
-		     unsigned int retry_cnt, const char *debugid)
+		     unsigned int retry_cnt, int silent)
 {
 
 	int retry = 0, rc = SLURM_SUCCESS;
@@ -352,9 +354,8 @@ int pmixp_stepd_send(const char *nodelist, const char *address,
 	char *copy_of_nodelist = xstrdup(nodelist);
 
 	while (1) {
-		if (retry >= 1) {
-			PMIXP_DEBUG("retransmit from \"%s\". attempt #%d; rc=%d; targets=%s",
-				    debugid, retry, rc, copy_of_nodelist);
+		if (!silent && retry >= 1) {
+			PMIXP_DEBUG("send failed, rc=%d, try #%d", rc, retry);
 		}
 
 		rc = slurm_forward_data(&copy_of_nodelist, (char *)address,
@@ -446,7 +447,7 @@ static int _pmix_p2p_send_core(const char *nodename, const char *address,
 
 int pmixp_p2p_send(const char *nodename, const char *address, const char *data,
 		   uint32_t len, unsigned int start_delay,
-		   unsigned int retry_cnt, const char *debugid)
+		   unsigned int retry_cnt, int silent)
 {
 	int retry = 0, rc = SLURM_SUCCESS;
 	unsigned int delay = start_delay; /* in milliseconds */
@@ -454,9 +455,8 @@ int pmixp_p2p_send(const char *nodename, const char *address, const char *data,
 	pmixp_debug_hang(0);
 
 	while (1) {
-		if (retry >= 1) {
-			PMIXP_DEBUG("retransmit from \"%s\". attempt #%d; rc=%d; targets=%s",
-				    debugid, retry, rc, nodename);
+		if (!silent && retry >= 1) {
+			PMIXP_DEBUG("send failed, rc=%d, try #%d", rc, retry);
 		}
 
 		rc = _pmix_p2p_send_core(nodename, address, data, len);
@@ -481,128 +481,12 @@ int pmixp_p2p_send(const char *nodename, const char *address, const char *data,
 	return rc;
 }
 
-static int _is_dir(char *path)
+int pmixp_mkdir(char *path)
 {
-	struct stat stat_buf;
-	int rc;
-	if (0 > (rc = stat(path, &stat_buf))) {
-		PMIXP_ERROR_STD("Cannot stat() path=\"%s\"", path);
-		return rc;
-	} else if (!S_ISDIR(stat_buf.st_mode)) {
-		return 0;
-	}
-	return 1;
-}
+	char *base = NULL, *newdir = NULL, *slash;
+	int dirfd;
+	mode_t rights = (S_IRUSR | S_IWUSR | S_IXUSR);
 
-int pmixp_rmdir_recursively(char *path)
-{
-	char nested_path[PATH_MAX];
-	DIR *dp;
-	struct dirent *ent;
-
-	int rc;
-
-	/*
-	 * Make sure that "directory" exists and is a directory.
-	 */
-	if (1 != (rc = _is_dir(path))) {
-		PMIXP_ERROR("path=\"%s\" is not a directory", path);
-		return (rc == 0) ? -1 : rc;
-	}
-
-	if ((dp = opendir(path)) == NULL) {
-		PMIXP_ERROR_STD("cannot open path=\"%s\"", path);
-		return -1;
-	}
-
-	while ((ent = readdir(dp)) != NULL) {
-		if (0 == xstrcmp(ent->d_name, ".")
-		    || 0 == xstrcmp(ent->d_name, "..")) {
-			/* skip special dir's */
-			continue;
-		}
-		snprintf(nested_path, sizeof(nested_path), "%s/%s", path,
-			 ent->d_name);
-		if (_is_dir(nested_path)) {
-			pmixp_rmdir_recursively(nested_path);
-		} else {
-			unlink(nested_path);
-		}
-	}
-	closedir(dp);
-	if ((rc = rmdir(path))) {
-		PMIXP_ERROR_STD("Cannot remove path=\"%s\"", path);
-	}
-	return rc;
-}
-
-static inline int _file_fix_rights(char *path, uid_t uid, mode_t mode)
-{
-	if (chmod(path, mode) < 0) {
-		PMIXP_ERROR("chown(%s): %m", path);
-		return errno;
-	}
-
-	if (chown(path, uid, (gid_t) -1) < 0) {
-		PMIXP_ERROR("chown(%s): %m", path);
-		return errno;
-	}
-	return 0;
-}
-
-int pmixp_fixrights(char *path, uid_t uid, mode_t mode)
-{
-	char nested_path[PATH_MAX];
-	DIR *dp;
-	struct dirent *ent;
-	int rc = 0;
-
-	/*
-	 * Make sure that "directory" exists and is a directory.
-	 */
-	if (1 != (rc = _is_dir(path))) {
-		PMIXP_ERROR("path=\"%s\" is not a directory", path);
-		return (rc == 0) ? -1 : rc;
-	}
-
-	if ((dp = opendir(path)) == NULL) {
-		PMIXP_ERROR_STD("cannot open path=\"%s\"", path);
-		return -1;
-	}
-
-	while ((ent = readdir(dp)) != NULL) {
-		if (0 == xstrcmp(ent->d_name, ".")
-		    || 0 == xstrcmp(ent->d_name, "..")) {
-			/* skip special dir's */
-			continue;
-		}
-		snprintf(nested_path, sizeof(nested_path), "%s/%s", path,
-			 ent->d_name);
-		if (_is_dir(nested_path)) {
-			if ((rc = _file_fix_rights(nested_path, uid, mode))) {
-				PMIXP_ERROR_STD("cannot fix permissions for "
-						"\"%s\"",
-						nested_path);
-				goto exit;
-			}
-			pmixp_rmdir_recursively(nested_path);
-		} else {
-			if ((rc = _file_fix_rights(nested_path, uid, mode))) {
-				PMIXP_ERROR_STD("cannot fix permissions for "
-						"\"%s\"",
-						nested_path);
-				goto exit;
-			}
-		}
-	}
-
-exit:
-	closedir(dp);
-	return rc;
-}
-
-int pmixp_mkdir(char *path, mode_t rights)
-{
 	/* NOTE: we need user who owns the job to access PMIx usock
 	 * file. According to 'man 7 unix':
 	 * "... In the Linux implementation, sockets which are visible in the
@@ -612,26 +496,65 @@ int pmixp_mkdir(char *path, mode_t rights)
 	 * access to the unix socket we do the following:
 	 * 1. Owner ID is set to the job owner.
 	 * 2. Group ID corresponds to slurmstepd.
-	 * 3. Set 0770 access mode
+	 * 3. Set 0700 access mode
 	 */
 
-	if (0 != mkdir(path, rights) ) {
+	base = xstrdup(path);
+	/* split into base and new directory name */
+	while ((slash = strrchr(base, '/'))) {
+		/* fix a path with one or more trailing slashes */
+		if (slash[1] == '\0')
+			slash[0] = '\0';
+		else
+			break;
+	}
+
+	if (!slash) {
+		PMIXP_ERROR_STD("Invalid directory \"%s\"", path);
+		xfree(base);
+		return EINVAL;
+	}
+
+	slash[0] = '\0';
+	newdir = slash + 1;
+
+	if ((dirfd = open(base, O_DIRECTORY | O_NOFOLLOW)) < 0) {
+		PMIXP_ERROR_STD("Could not open parent directory \"%s\"", base);
+		xfree(base);
+		return errno;
+	}
+
+#ifdef MULTIPLE_SLURMD
+	struct stat statbuf;
+	if (!fstatat(dirfd, newdir, &statbuf, AT_SYMLINK_NOFOLLOW)) {
+		if ((statbuf.st_mode & S_IFDIR) &&
+		    (statbuf.st_uid == pmixp_info_jobuid())) {
+			PMIXP_ERROR_STD("Directory \"%s\" already exists, but has correct uid",
+					path);
+			close(dirfd);
+			xfree(base);
+			return 0;
+		}
+	}
+#endif
+
+	if (mkdirat(dirfd, newdir, rights) < 0) {
 		PMIXP_ERROR_STD("Cannot create directory \"%s\"",
 				path);
+		close(dirfd);
+		xfree(base);
 		return errno;
 	}
 
-	/* There might be umask that will drop essential rights.
-	 * Fix it explicitly.
-	 * TODO: is there more elegant solution? */
-	if (chmod(path, rights) < 0) {
-		error("%s: chown(%s): %m", __func__, path);
+	if (fchownat(dirfd, newdir, (uid_t) pmixp_info_jobuid(), (gid_t) -1,
+		     AT_SYMLINK_NOFOLLOW) < 0) {
+		error("%s: fchownath(%s): %m", __func__, path);
+		close(dirfd);
+		xfree(base);
 		return errno;
 	}
 
-	if (chown(path, (uid_t) pmixp_info_jobuid(), (gid_t) -1) < 0) {
-		error("%s: chown(%s): %m", __func__, path);
-		return errno;
-	}
+	close(dirfd);
+	xfree(base);
 	return 0;
 }

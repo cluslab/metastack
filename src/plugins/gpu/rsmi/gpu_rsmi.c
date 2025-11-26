@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  gpu_rsmi.c - Support rsmi interface to an AMD GPU.
  *****************************************************************************
- *  Copyright (C) 2019 SchedMD LLC
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (c) 2019, Advanced Micro Devices, Inc. All rights reserved.
  *  Written by Advanced Micro Devices,
  *  who borrowed heavily from SLURM gpu and nvml plugin.
@@ -58,6 +58,9 @@ static bitstr_t	*saved_gpus;
  */
 #define RSMI_STRING_BUFFER_SIZE			80
 
+/* ROCM release version >= 6.0.0 required for gathering usage */
+#define RSMI_REQ_VERSION_USAGE 6
+
 /*
  * PCI information about a GPU device.
  */
@@ -111,12 +114,29 @@ const char plugin_name[] = "GPU RSMI plugin";
 const char	plugin_type[]		= "gpu/rsmi";
 const uint32_t	plugin_version		= SLURM_VERSION_NUMBER;
 
+static int gpumem_pos = -1;
+static int gpuutil_pos = -1;
+
+static bool get_usage = true;
+
+static void _rsmi_get_version(char *version, unsigned int len);
+
 extern int init(void)
 {
-	if (!dlopen("librocm_smi64.so", RTLD_NOW | RTLD_GLOBAL))
-		fatal("RSMI configured, but wasn't found.");
-
 	rsmi_init(0);
+
+	if (running_in_slurmstepd()) {
+		char version[RSMI_STRING_BUFFER_SIZE];
+
+		_rsmi_get_version(version, RSMI_STRING_BUFFER_SIZE);
+		/*
+		 * If version < RSMI_REQ_VERSION_USAGE get_usage will be set to
+		 * false, so we won't set gpumem_pos and gpuutil_pos which
+		 * effectively disables gpu accounting.
+		 */
+		if (get_usage)
+			gpu_get_tres_pos(&gpumem_pos, &gpuutil_pos);
+	}
 
 	debug("%s: %s loaded", __func__, plugin_name);
 
@@ -229,7 +249,7 @@ static void _rsmi_print_freqs(uint32_t dv_ind, log_level_t l)
 		return;
 
 	qsort(mem_freqs, size, sizeof(unsigned int),
-	      gpu_common_sort_freq_descending);
+	      slurm_sort_uint_list_desc);
 	if ((size > 1) && (mem_freqs[0] <= mem_freqs[(size)-1])) {
 		error("%s: memory frequencies are not stored in descending order!",
 		      __func__);
@@ -243,7 +263,7 @@ static void _rsmi_print_freqs(uint32_t dv_ind, log_level_t l)
 		return;
 
 	qsort(gfx_freqs, size, sizeof(unsigned int),
-	      gpu_common_sort_freq_descending);
+	      slurm_sort_uint_list_desc);
 	if ((size > 1) && (gfx_freqs[0] <= gfx_freqs[(size)-1])) {
 		error("%s: Graphics frequencies are not stored in descending order!",
 		      __func__);
@@ -283,7 +303,7 @@ static void _rsmi_get_nearest_freqs(uint32_t dv_ind,
 
 	memcpy(mem_freqs_sort, mem_freqs, mem_freqs_size*sizeof(unsigned int));
 	qsort(mem_freqs_sort, mem_freqs_size, sizeof(unsigned int),
-	      gpu_common_sort_freq_descending);
+	      slurm_sort_uint_list_desc);
 	if ((mem_freqs_size > 1) &&
 	    (mem_freqs_sort[0] <= mem_freqs_sort[(mem_freqs_size)-1])) {
 		error("%s: memory frequencies are not stored in descending order!",
@@ -295,7 +315,7 @@ static void _rsmi_get_nearest_freqs(uint32_t dv_ind,
 	gpu_common_get_nearest_freq(mem_freq, mem_freqs_size, mem_freqs_sort);
 
 	// convert the frequency to bit mask
-	for (int i = 0; i < mem_freqs_size; i++)
+	for (uint64_t i = 0; i < mem_freqs_size; i++)
 		if (*mem_freq == mem_freqs[i]) {
 			*mem_bitmask = (1 << i);
 			break;
@@ -307,7 +327,7 @@ static void _rsmi_get_nearest_freqs(uint32_t dv_ind,
 
 	memcpy(gfx_freqs_sort, gfx_freqs, gfx_freqs_size*sizeof(unsigned int));
 	qsort(gfx_freqs_sort, gfx_freqs_size, sizeof(unsigned int),
-	      gpu_common_sort_freq_descending);
+	      slurm_sort_uint_list_desc);
 	if ((gfx_freqs_size > 1) &&
 	    (gfx_freqs_sort[0] <= gfx_freqs_sort[(gfx_freqs_size)-1])) {
 		error("%s: graphics frequencies are not stored in descending order!",
@@ -319,7 +339,7 @@ static void _rsmi_get_nearest_freqs(uint32_t dv_ind,
 	gpu_common_get_nearest_freq(gfx_freq, gfx_freqs_size, gfx_freqs_sort);
 
 	// convert the frequency to bit mask
-	for (int i = 0; i < gfx_freqs_size; i++)
+	for (uint64_t i = 0; i < gfx_freqs_size; i++)
 		if (*gfx_freq == gfx_freqs[i]) {
 			*gfx_bitmask = (1 << i);
 			break;
@@ -535,7 +555,7 @@ static void _set_freq(bitstr_t *gpus, char *gpu_freq)
 	debug2("Requested GPU graphics frequency: %s", tmp);
 	xfree(tmp);
 
-	if (!mem_freq_num || !gpu_freq_num) {
+	if (!mem_freq_num && !gpu_freq_num) {
 		debug2("%s: No frequencies to set", __func__);
 		return;
 	}
@@ -646,8 +666,14 @@ static void _rsmi_get_version(char *version, unsigned int len)
 		error("RSMI: Failed to get the version error: %s",
 		      status_string);
 		version[0] = '\0';
-	} else
-		sprintf(version, "%s", rsmi_version.build);
+	} else {
+		snprintf(version, len, "%s", rsmi_version.build);
+		if (rsmi_version.major < RSMI_REQ_VERSION_USAGE) {
+			get_usage = false;
+			error("%s: GPU usage accounting disabled. RSMI version >= 6.0.0 required.",
+			      __func__);
+		}
+	}
 }
 
 /*
@@ -836,8 +862,6 @@ static List _get_system_gpu_list_rsmi(node_config_load_t *node_config)
 #ifdef __METASTACK_NEW_GRES_DCU
 	char sugonbrand[RSMI_STRING_BUFFER_SIZE] = "Hygon";
 	debug("Graphics Driver Version: %s", driver);
-#else
-	debug("AMD Graphics Driver Version: %s", driver);
 #endif
 	debug("RSMI Library Version: %s", version);
 
@@ -847,26 +871,32 @@ static List _get_system_gpu_list_rsmi(node_config_load_t *node_config)
 	// Loop through all the GPUs on the system and add to gres_list_system
 	for (i = 0; i < device_count; ++i) {
 		unsigned int minor_number = 0;
-		char *device_file = NULL, *links = NULL;
 		char device_name[RSMI_STRING_BUFFER_SIZE] = {0};
 		char device_brand[RSMI_STRING_BUFFER_SIZE] = {0};
 		rsmiPciInfo_t pci_info;
 		uint64_t uuid = 0;
-		bitstr_t *cpu_aff_mac_bitstr = _rsmi_get_device_cpu_mask(i);
 		char *cpu_aff_mac_range = NULL;
-		char *cpu_aff_abs_range = NULL;
+		gres_slurmd_conf_t gres_slurmd_conf = {
+			.config_flags = GRES_CONF_ENV_RSMI,
+			.count = 1,
+			.cpu_cnt = node_config->cpu_cnt,
+			.cpus_bitmap = _rsmi_get_device_cpu_mask(i),
+			.name = "gpu",
+		};
 
-		if (cpu_aff_mac_bitstr) {
-			cpu_aff_mac_range = bit_fmt_full(cpu_aff_mac_bitstr);
+		if (gres_slurmd_conf.cpus_bitmap) {
+			cpu_aff_mac_range = bit_fmt_full(
+				gres_slurmd_conf.cpus_bitmap);
 
 			/*
 			 * Convert cpu range str from machine to abstract(slurm)
 			 * format
 			 */
 			if (node_config->xcpuinfo_mac_to_abs(
-				    cpu_aff_mac_range, &cpu_aff_abs_range)) {
+				    cpu_aff_mac_range,
+				    &gres_slurmd_conf.cpus)) {
 				error("Conversion from machine to abstract failed");
-				FREE_NULL_BITMAP(cpu_aff_mac_bitstr);
+				FREE_NULL_BITMAP(gres_slurmd_conf.cpus_bitmap);
 				xfree(cpu_aff_mac_range);
 				continue;
 			}
@@ -878,10 +908,14 @@ static List _get_system_gpu_list_rsmi(node_config_load_t *node_config)
 #ifdef __METASTACK_NEW_GRES_DCU
 		int dcu = 0;
 		if (!*device_brand) {
-			strncpy(device_brand, sugonbrand, sizeof(sugonbrand));
+			strncpy(device_brand, sugonbrand, sizeof(device_brand));
+			device_brand[sizeof(device_brand) - 1] = '\0';
 			dcu += 1;
-		} else
+		} else if (xstrcasecmp(device_brand, "KONGMING") == 0) {
+			dcu += 1;
+		} else {
 			_rsmi_get_device_unique_id(i, &uuid);
+		}
 #endif
 		_rsmi_get_device_minor_number(i, &minor_number);
 		pci_info.bdfid = 0;
@@ -891,9 +925,11 @@ static List _get_system_gpu_list_rsmi(node_config_load_t *node_config)
 #endif
 
 		/* Use links to record PCI bus ID order */
-		links = gres_links_create_empty(i, device_count);
+		gres_slurmd_conf.links =
+			gres_links_create_empty(i, device_count);
 
-		xstrfmtcat(device_file, "/dev/dri/renderD%u", minor_number);
+		xstrfmtcat(gres_slurmd_conf.file,
+			   "/dev/dri/renderD%u", minor_number);
 
 		debug2("GPU index %u:", i);
 		debug2("    Name: %s", device_name);
@@ -902,58 +938,38 @@ static List _get_system_gpu_list_rsmi(node_config_load_t *node_config)
 		debug2("    PCI Domain/Bus/Device/Function: %u:%u:%u.%u",
 		       pci_info.domain,
 		       pci_info.bus, pci_info.device, pci_info.function);
-		debug2("    Links: %s", links);
-		debug2("    Device File (minor number): %s", device_file);
+		debug2("    Links: %s", gres_slurmd_conf.links);
+		debug2("    Device File (minor number): %s",
+			gres_slurmd_conf.file);
 		if (minor_number != i+128)
 			debug("Note: GPU index %u is different from minor # %u",
 			      i, minor_number);
 		debug2("    CPU Affinity Range - Machine: %s",
 		       cpu_aff_mac_range);
 		debug2("    Core Affinity Range - Abstract: %s",
-		       cpu_aff_abs_range);
+		       gres_slurmd_conf.cpus);
 
 		// Print out possible memory frequencies for this device
 		_rsmi_print_freqs(i, LOG_LEVEL_DEBUG2);
 
+		gres_slurmd_conf.type_name = device_brand;
 
 #ifdef __METASTACK_NEW_GRES_DCU
-		if (dcu != 0)
-			add_gres_to_list(gres_list_system, "dcu", 1,
-				 node_config->cpu_cnt,
-				 cpu_aff_abs_range,
-				 cpu_aff_mac_bitstr,
-				 device_file, device_brand, links, NULL,
-				 GRES_CONF_ENV_RSMI);
-		else
-			add_gres_to_list(gres_list_system, "gpu", 1,
-				 node_config->cpu_cnt,
-				 cpu_aff_abs_range,
-				 cpu_aff_mac_bitstr,
-				 device_file, device_brand, links, NULL,
-				 GRES_CONF_ENV_RSMI);
-#else
-		add_gres_to_list(gres_list_system, "gpu", 1,
-				 node_config->cpu_cnt,
-				 cpu_aff_abs_range,
-				 cpu_aff_mac_bitstr,
-				 device_file, device_brand, links, NULL,
-				 GRES_CONF_ENV_RSMI);
+		if (dcu != 0) {
+			gres_slurmd_conf.name = "dcu";
+		}
 #endif
+		add_gres_to_list(gres_list_system, &gres_slurmd_conf);
 
-		FREE_NULL_BITMAP(cpu_aff_mac_bitstr);
+		FREE_NULL_BITMAP(gres_slurmd_conf.cpus_bitmap);
 		xfree(cpu_aff_mac_range);
-		xfree(cpu_aff_abs_range);
-		xfree(device_file);
-		xfree(links);
+		xfree(gres_slurmd_conf.cpus);
+		xfree(gres_slurmd_conf.file);
+		xfree(gres_slurmd_conf.links);
 	}
 
 	info("%u GPU system device(s) detected", device_count);
 	return gres_list_system;
-}
-
-extern int gpu_p_reconfig(void)
-{
-	return SLURM_SUCCESS;
 }
 
 extern List gpu_p_get_system_gpu_list(node_config_load_t *node_config)
@@ -980,10 +996,11 @@ extern void gpu_p_step_hardware_init(bitstr_t *usable_gpus, char *tres_freq)
 		return;		/* No TRES frequency spec */
 
 #ifdef __METASTACK_NEW_GRES_DCU
-log_flag(GRES, "__METASTACK_NEW_GRES_DCU, tres_freq: %s", tres_freq);
-	if (strstr(tres_freq, "dcu:"))
+	log_flag(GRES, "__METASTACK_NEW_GRES_DCU, tres_freq: %s", tres_freq);
+	if (!strstr(tres_freq, "dcu:"))
 		return;
 #endif
+
 	tmp = strstr(tres_freq, "gpu:");
 	if (!tmp)
 		return;		/* No GPU frequency spec */
@@ -1042,6 +1059,47 @@ extern int gpu_p_energy_read(uint32_t dv_ind, gpu_status_t *gpu)
 	gpu->last_update_watt = curr_milli_watts/1000000;
 	gpu->previous_update_time = gpu->last_update_time;
 	gpu->last_update_time = time(NULL);
+
+	return SLURM_SUCCESS;
+}
+
+extern int gpu_p_usage_read(pid_t pid, acct_gather_data_t *data)
+{
+	const char *status_string;
+	rsmi_process_info_t proc = {0};
+	rsmi_status_t rc;
+	bool track_gpumem, track_gpuutil;
+
+	track_gpumem = (gpumem_pos != -1);
+	track_gpuutil = (gpuutil_pos != -1);
+
+	if (!track_gpuutil && !track_gpumem) {
+		debug2("%s: We are not tracking TRES gpuutil/gpumem", __func__);
+		return SLURM_SUCCESS;
+	}
+
+	rc = rsmi_compute_process_info_by_pid_get(pid, &proc);
+
+	if (rc == RSMI_STATUS_NOT_FOUND) {
+		debug2("Couldn't find pid %d, probably hasn't started yet or has already finished",
+		       pid);
+		return SLURM_SUCCESS;
+	} else if (rc != RSMI_STATUS_SUCCESS) {
+		(void) rsmi_status_string(rc, &status_string);
+		error("RSMI: Failed to get usage(%d): %s", rc, status_string);
+		return SLURM_ERROR;
+	}
+
+	if (track_gpuutil)
+		data[gpuutil_pos].size_read = proc.cu_occupancy;
+
+	if (track_gpumem)
+		data[gpumem_pos].size_read = proc.vram_usage;
+
+	log_flag(JAG, "pid %d has GPUUtil=%lu and MemMB=%lu",
+		 pid,
+		 data[gpuutil_pos].size_read,
+		 data[gpumem_pos].size_read / 1048576);
 
 	return SLURM_SUCCESS;
 }

@@ -17,3 +17,5 @@ endif
 if BUILD_ONEAPI
 SUBDIRS += oneapi
 endif
+
+SUBDIRS += nrt

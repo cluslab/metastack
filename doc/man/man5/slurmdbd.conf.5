@@ -1,4 +1,4 @@
-.TH "slurmdbd.conf" "5" "Slurm Configuration File" "October 2022" "Slurm Configuration File"
+.TH "slurmdbd.conf" "5" "Slurm Configuration File" "October 2024" "Slurm Configuration File"
 
 .SH "NAME"
 slurmdbd.conf \- Slurm Database Daemon (SlurmDBD) configuration file
@@ -25,21 +25,28 @@ The overall configuration parameters available include:
 
 .TP
 \fBAllowNoDefAcct\fR
-Remove requirement for users to have a default account.  Boolean, yes to turn
+Remove requirement for users to have a default account. Boolean, yes to turn
 on, no (default) to enforce default accounts.
+.IP
+
+.TP
+\fBAllResourcesAbsolute\fR
+When adding a resource (license) treat allocated/allowed counts as absolute
+numbers instead of percentage numbers. Boolean, yes to turn on, no (default)
+to use the numbers as percentages instead.
 .IP
 
 .TP
 \fBArchiveDir\fR
 If ArchiveScript is not set the slurmdbd will generate a file that can be
-read in anytime with sacctmgr load filename.  This directory is where the
+read in anytime with sacctmgr load filename. This directory is where the
 file will be placed after a purge event has happened and archive for that
-element is set to true.  Default is /tmp.  The format for this files name is
+element is set to true. Default is /tmp. The format for this files name is
 .na
 $ArchiveDir/$ClusterName_$ArchiveObject_archive_$BeginTimeStamp_$endTimeStamp
 .ad
 We limit archive files to 50000 records per file. If more than 50000 records
-exist during that time period, they will be written to a new file.  Subsequent
+exist during that time period, they will be written to a new file. Subsequent
 archive files during the same time period will have ".<number>" appended
 to the file, for example .2, with the number increasing by one for each file in
 the same time period.
@@ -47,27 +54,27 @@ the same time period.
 
 .TP
 \fBArchiveEvents\fR
-When purging events also archive them.  Boolean, yes to archive event data,
-no otherwise.  Default is no.
+When purging events also archive them. Boolean, yes to archive event data,
+no otherwise. Default is no.
 .IP
 
 .TP
 \fBArchiveJobs\fR
-When purging jobs also archive them.  Boolean, yes to archive job data,
-no otherwise.  Default is no.
+When purging jobs also archive them. Boolean, yes to archive job data,
+no otherwise. Default is no.
 .IP
 
 .TP
 \fBArchiveResvs\fR
-When purging reservations also archive them.  Boolean, yes to archive
-reservation data, no otherwise.  Default is no.
+When purging reservations also archive them. Boolean, yes to archive
+reservation data, no otherwise. Default is no.
 .IP
 
 .TP
 \fBArchiveScript\fR
 This script can be executed every time a rollup happens (every hour,
-day and month), depending on the Purge*After options.  This script is used
-to transfer accounting records out of the database into an archive.  It is
+day and month), depending on the Purge*After options. This script is used
+to transfer accounting records out of the database into an archive. It is
 used in place of the internal process used to archive objects.
 The script is executed with no arguments, and the following environment
 variables are set.
@@ -126,39 +133,34 @@ Time of last suspend start to archive.
 
 .TP
 \fBArchiveSteps\fR
-When purging steps also archive them.  Boolean, yes to archive step data,
-no otherwise.  Default is no.
+When purging steps also archive them. Boolean, yes to archive step data,
+no otherwise. Default is no.
 .IP
 
 .TP
 \fBArchiveSuspend\fR
-When purging suspend data also archive it.  Boolean, yes to archive
-suspend data, no otherwise.  Default is no.
+When purging suspend data also archive it. Boolean, yes to archive
+suspend data, no otherwise. Default is no.
 .IP
 
 .TP
 \fBArchiveTXN\fR
-When purging transaction data also archive it.  Boolean, yes to archive
-transaction data, no otherwise.  Default is no.
+When purging transaction data also archive it. Boolean, yes to archive
+transaction data, no otherwise. Default is no.
 .IP
 
 .TP
 \fBArchiveUsage\fR
 When purging usage data (Cluster, Association and WCKey) also archive it.
-Boolean, yes to archive transaction data, no otherwise.  Default is no.
+Boolean, yes to archive transaction data, no otherwise. Default is no.
 .IP
 
 .TP
-\fBAuthInfo\fR
-Additional information to be used for authentication of communications
-with the Slurm control daemon (slurmctld) on each cluster.
-The interpretation of this option is specific to the configured \fBAuthType\fR.
-In the case of \fIauth/munge\fR, this can be configured to use a Munge daemon
-specifically configured to provide authentication between clusters while the
-default Munge daemon provides authentication within a cluster.
-In that case, this will specify the pathname of the socket to use. Per default
-this value is left unspecified, which results in the default authentication
-mechanism being used.
+\fBAssocServerSort\fR
+This option is used to control whether the assoc_list is sorted. If set to "YES",
+assoc_list will be sorted using the \fBslurmdb_sort_hierarchical_assoc_list\fR 
+function; Otherwise, sorting will be skipped.The default value for this option 
+is "YES".
 .IP
 
 .TP
@@ -175,42 +177,94 @@ be comma separated.
 .RS
 .TP
 \fBjwks=\fR
-Absolute path to JWKS file. Only RS256 keys are supported, although other
-key types may be listed in the file. If set, no HS256 key will be loaded by
-default (and token generation is disabled), although the jwt_key setting may
-be used to explicitly re\-enable HS256 key use (and token generation).
+Absolute path to JWKS file. Key should be owned by SlurmUser or root, must be
+readable by SlurmUser, with suggested permissions of 0400. It must not be
+writable by 'other'.
+Only RS256 keys are supported, although other key types may be listed in the
+file. If set, no HS256 key will be loaded by default (and token generation is
+disabled), although the jwt_key setting may be used to explicitly re\-enable
+HS256 key use (and token generation).
 .IP
 
 .TP
 \fBjwt_key=\fR
-Absolute path to JWT key file. Key must be HS256, and should only be accessible
-by SlurmUser.
+Absolute path to JWT key file. Key must be HS256. Key should be owned by
+SlurmUser or root, must be readable by SlurmUser, with suggested permissions of
+0400. It must not be accessible by 'other'.
+.RE
+.IP
+
+.TP
+\fBAuthInfo\fR
+Additional information to be used for authentication of communications
+with the Slurm control daemon (slurmctld) on each cluster.
+The interpretation of this option is specific to the configured \fBAuthType\fR.
+Multiple options may be specified in a comma\-delimited list.
+If not specified, the default authentication information will be used.
+.IP
+.RS
+.TP 14
+\fBcred_expire\fR
+Default job step credential lifetime, in seconds (e.g. "cred_expire=1200").
+It must be sufficiently long enough to load user environment, run prolog,
+deal with the slurmd getting paged out of memory, etc.
+This also controls how long a requeued job must wait before starting again.
+The default value is 120 seconds.
+.IP
+
+.TP
+\fBsocket\fR
+Path name to a MUNGE daemon socket to use
+(e.g. "socket=/var/run/munge/munge.socket.2").
+The default value is "/var/run/munge/munge.socket.2".
+Used by \fIauth/munge\fR and \fIcred/munge\fR.
+.IP
+
+.TP
+\fBttl\fR
+Credential lifetime, in seconds (e.g. "ttl=300").
+The default value is dependent upon the MUNGE installation, but is typically
+300 seconds.
+.IP
+
+.TP
+\fBuse_client_ids\fR
+Allow the \fIauth/slurm\fR plugin to authenticate users without relying on
+the user information from LDAP or the operating system.
 .RE
 .IP
 
 .TP
 \fBAuthType\fR
 Define the authentication method for communications between Slurm
-components.
-Acceptable values at present include "auth/munge", which is the default.
-"auth/munge" indicates that LLNL's MUNGE system is to be used
-(this is the supported authentication mechanism for Slurm;
-see "https://dun.github.io/munge/" for more information).
-SlurmDBD must be terminated prior to changing the value of \fBAuthType\fR
-and later restarted.
+components. SlurmDBD must be terminated prior to changing the value of
+\fBAuthType\fR and later restarted. This should match the \fBAuthType\fR used
+in slurm.conf.
+Acceptable values at present:
+.RS
+.TP
+\fBauth/munge\fR
+Indicates that MUNGE is to be used (default).
+(See "https://dun.github.io/munge/" for more information).
+.IP
+
+.TP
+\fBauth/slurm\fR
+Use Slurm's internal authentication plugin.
+.RE
 .IP
 
 .TP
 \fBCommitDelay\fR
-How many seconds between commits on a connection from a Slurmctld.  This
-speeds up inserts into the database dramatically.  If you are running a very
-high throughput of jobs you should consider setting this.  In testing, 1 second
-improves the slurmdbd performance dramatically and reduces overhead.  There is
+How many seconds between commits on a connection from a Slurmctld. This
+speeds up inserts into the database dramatically. If you are running a very
+high throughput of jobs you should consider setting this. In testing, 1 second
+improves the slurmdbd performance dramatically and reduces overhead. There is
 a small probability of data loss though since this creates a window in which
-if the slurmdbd seg faults or exits abnormally for any reason the data not
-committed could be lost.  While this situation should be very rare,
+if the slurmdbd exits abnormally for any reason the data not
+committed could be lost. While this situation should be very rare,
 it does present an extremely small risk, but may be the only way to run in
-extremely heavy environments.  In all honesty, the risk is quite low, but still
+extremely heavy environments. In all honesty, the risk is quite low, but still
 present.
 .IP
 
@@ -234,24 +288,40 @@ should also be set in your \fBslurm.conf\fR file.
 
 .TP
 \fBkeepaliveinterval=#\fR
-Specifies the interval between keepalive probes on the socket communications
-between the backup and primary slurmdbd.
+Specifies the interval, in seconds, between keepalive probes on idle
+connections.
+This affects most outgoing connections from the slurmdbd (e.g. between the
+primary and backup, or from the slurmdbd to the slurmctld).
 The default value is 30 seconds.
 .IP
 
 .TP
 \fBkeepaliveprobes=#\fR
-Specifies the number of keepalive probes sent on the socket communications
-between the backup and primary slurmdbd.
+Specifies the number of unacknowledged keepalive probes sent before considering
+a connection broken.
+This affects most outgoing connections from the slurmdbd (e.g. between the
+primary and backup, or from the slurmdbd to the slurmctld).
 The default value is 3.
 .IP
 
 .TP
 \fBkeepalivetime=#\fR
-Specifies how long to wait before sending keepalive probes between the primary
-and backup slurmdbd processes.
+Specifies how long, in seconds, a connection must be idle before starting to
+send keepalive probes as well as how long to delay closing a connection to
+process messages still in the queue.
+This affects most outgoing connections from the slurmdbd (e.g. between the
+primary and backup, or from the slurmdbd to the slurmctld).
 The default value is 30 seconds.
 .RE
+.IP
+
+.TP
+\fBDbdAddr\fR
+Name that \fBDbdHost\fR should be referred to in establishing a communications
+path. This name will be used as an argument to the getaddrinfo() function for
+identification. For example, "elx0000" might be used to designate the Ethernet
+address for node "lx0000". By default the \fBDbdAddr\fR will be identical in
+value to \fBDbdHost\fR.
 .IP
 
 .TP
@@ -260,15 +330,6 @@ The short, or long, name of the machine where the backup Slurm Database Daemon
 is executed (i.e. the name returned by the command "hostname \-s").
 This host must have access to the same underlying database specified by
 the 'Storage' options mentioned below.
-.IP
-
-.TP
-\fBDbdAddr\fR
-Name that \fBDbdHost\fR should be referred to in establishing a communications
-path. This name will be used as an argument to the getaddrinfo() function for
-identification. For example, "elx0000" might be used to designate the Ethernet
-address for node "lx0000".  By default the \fBDbdAddr\fR will be identical in
-value to \fBDbdHost\fR.
 .IP
 
 .TP
@@ -291,11 +352,18 @@ slurm.conf file.
 \fBDebugFlags\fR
 Defines specific subsystems which should provide more detailed event logging.
 Multiple subsystems can be specified with comma separators.
-Most DebugFlags will result in verbose logging for the identified subsystems
-and could impact performance.
+Most DebugFlags will result in additional logging messages for the identified
+subsystems if \fBDebugLevel\fR is at 'verbose' or higher.
+More logging may impact performance.
 Valid subsystems available today (with more to come) include:
 .IP
 .RS
+.TP
+\fBAuditRPCs\fR
+For all inbound RPCs to slurmdbd, print the originating address, authenticated
+user, and RPC type before the connection is processed.
+.IP
+
 .TP
 \fBDB_ARCHIVE\fR
 SQL statements/queries when dealing with archiving and purging the database.
@@ -361,6 +429,28 @@ SQL statements/queries when dealing with wckeys in the database.
 .TP
 \fBFEDERATION\fR
 SQL statements/queries when dealing with federations in the database.
+.IP
+
+.TP
+\fBNetwork\fR
+Network details.
+.IP
+
+.TP
+\fBNetworkRaw\fR
+Dump raw hex values of key Network communications.
+.IP
+
+.TP
+\fBTLS\fR
+TLS plugin
+.IP
+
+.TP
+\fBAssoc\fR
+Association details. \fBWarning\fR: activating this flag will
+log the association's direct parent, the user's default account or 
+other association information.
 .RE
 .IP
 
@@ -496,6 +586,47 @@ unless something is explicitly set by the admin with the create.
 .IP
 
 .TP
+\fBDisableCoordDBD\fR
+Disable the coordinator status in all slurmdbd interactions.
+
+When this is set, a coordinator may not do the following
+in slurmdbd as they relate to the account(s) they coordinate:
+
+Add accounts
+.br
+Add/Modify/Remove associations
+.br
+Add/Remove coordinators
+.br
+Add/Modify/Remove users
+
+Boolean, yes to turn on, no (default) to recognize coordinator status in all
+slurmdbd interactions.
+.IP
+
+.TP
+\fBHashPlugin\fR
+Identifies the type of hash plugin to use for network communication.
+Acceptable values include:
+
+.IP
+.RS
+.TP 15
+\fBhash/k12\fR
+Hashes are generated by the KangorooTwelve cryptographic hash function.
+This is the default.
+.IP
+
+.TP
+\fBhash/sha3\fR
+Hashes are generated by the SHA-3 cryptographic hash function.
+.RE
+.IP
+
+\fBNOTE\fR: Make sure that HashPlugin has the same value both in slurm.conf
+and in slurmdbd.conf.
+
+.TP
 \fBLogFile\fR
 Fully qualified pathname of a file into which the Slurm Database Daemon's
 logs are written.
@@ -507,17 +638,22 @@ if a pathname is specified.
 
 .TP
 \fBLogTimeFormat\fR
-Format of the timestamp in slurmdbd log files. Accepted values are
-"iso8601", "iso8601_ms", "rfc5424", "rfc5424_ms", "clock", and
-"short". The values ending in "_ms" differ from the ones without in
-that fractional seconds with millisecond precision are printed. The
-default value is "iso8601_ms". The "rfc5424" formats are the same as
-the "iso8601" formats except that the timezone value is also
-shown. The "clock" format shows a timestamp in microseconds retrieved
+Format of the timestamp in slurmdbd log files. Accepted format values include
+"iso8601", "iso8601_ms", "rfc5424", "rfc5424_ms", "rfc3339", "clock", "short"
+and "thread_id". The values ending in "_ms" differ from the ones without in that
+fractional seconds with millisecond precision are printed.
+The default value is "iso8601_ms". The "rfc5424" formats are the same
+as the "iso8601" formats except that the timezone value is also shown.
+The "clock" format shows a timestamp in microseconds retrieved
 with the C standard clock() function. The "short" format is a short
 date and time format. The "thread_id" format shows the timestamp
 in the C standard ctime() function form without the year but
-including the microseconds, the daemon's process ID and the current thread ID.
+including the microseconds, the daemon's process ID and the current thread name
+and ID.
+A special option "format_stderr" can be added to the format as a comma separated
+value (e.g. "LogTimeFormat=iso8601_ms,format_stderr"). It will change the
+default format of the logs on stderr stream by prepending the timestamp as
+specified by \fBLogTimeFormat\fR.
 .IP
 
 .TP
@@ -617,9 +753,10 @@ coordinator of, but can only see themselves when listing users.
 
 .TP
 \fBPurgeEventAfter\fR
-Events happening on the cluster over this age are purged from the database.
+Events are purged from the database after this amount of time has passed since
+they ended.
 This includes node down times and such.
-The time is a numeric value and is a number of months.  If you want to purge
+The time is a numeric value and is a number of months. If you want to purge
 more often you can include "hours", or "days" behind the numeric value to get
 those more frequent purges (i.e. a value of "12hours" would purge
 everything older than 12 hours).
@@ -631,9 +768,10 @@ If not set (default), then event records are never purged.
 
 .TP
 \fBPurgeJobAfter\fR
-Individual job records over this age are purged from the database.
+Individual job records are purged from the database after this amount of time
+has passed since they ended.
 Aggregated information will be preserved to "PurgeUsageAfter".
-The time is a numeric value and is a number of months.  If you want to purge
+The time is a numeric value and is a number of months. If you want to purge
 more often you can include "hours", or "days" behind the numeric value to get
 those more frequent purges (i.e. a value of "12hours" would purge
 everything older than 12 hours).
@@ -645,9 +783,10 @@ If not set (default), then job records are never purged.
 
 .TP
 \fBPurgeResvAfter\fR
-Individual reservation records over this age are purged from the database.
+Individual reservation records are purged from the database after this amount
+of time has passed since they ended.
 Aggregated information will be preserved to "PurgeUsageAfter".
-The time is a numeric value and is a number of months.  If you want to purge
+The time is a numeric value and is a number of months. If you want to purge
 more often you can include "hours", or "days" behind the numeric value to get
 those more frequent purges (i.e. a value of "12hours" would purge
 everything older than 12 hours).
@@ -659,9 +798,10 @@ If not set (default), then reservation records are never purged.
 
 .TP
 \fBPurgeStepAfter\fR
-Individual job step records over this age are purged from the database.
+Individual job step records are purged from the database after this amount of
+time has passed since they ended.
 Aggregated information will be preserved to "PurgeUsageAfter".
-The time is a numeric value and is a number of months.  If you want to purge
+The time is a numeric value and is a number of months. If you want to purge
 more often you can include "hours", or "days" behind the numeric value to get
 those more frequent purges (i.e. a value of "12hours" would purge
 everything older than 12 hours).
@@ -673,10 +813,10 @@ If not set (default), then job step records are never purged.
 
 .TP
 \fBPurgeSuspendAfter\fR
-Records of individual suspend times for jobs over this age are purged from the
-database.
+Individual job suspend records are purged from the database after this amount
+of time has passed since they ended.
 Aggregated information will be preserved to "PurgeUsageAfter".
-The time is a numeric value and is a number of months.  If you want to purge
+The time is a numeric value and is a number of months. If you want to purge
 more often you can include "hours", or "days" behind the numeric value to get
 those more frequent purges (i.e. a value of "12hours" would purge
 everything older than 12 hours).
@@ -688,8 +828,9 @@ If not set (default), then suspend records are never purged.
 
 .TP
 \fBPurgeTXNAfter\fR
-Records of individual transaction times for transactions over this age are purged from the database.
-The time is a numeric value and is a number of months.  If you want to purge
+Individual transaction records are purged from the database after this amount
+of time has passed since they occurred.
+The time is a numeric value and is a number of months. If you want to purge
 more often you can include "hours", or "days" behind the numeric value to get
 those more frequent purges (i.e. a value of "12hours" would purge
 everything older than 12 hours).
@@ -701,9 +842,9 @@ If not set (default), then transaction records are never purged.
 
 .TP
 \fBPurgeUsageAfter\fR
-Usage Records (Cluster, Association and WCKey) over this age are purged from the
-database.
-The time is a numeric value and is a number of months.  If you want to purge
+Usage records (Cluster, Association and WCKey) are purged from the database
+after this amount of time has passed since they were created or last modified.
+The time is a numeric value and is a number of months. If you want to purge
 more often you can include "hours", or "days" behind the numeric value to get
 those more frequent purges (i.e. a value of "12hours" would purge
 everything older than 12 hours).
@@ -756,20 +897,21 @@ The default value is 300 seconds.
 .IP
 
 .TP
-\fBStorageHost\fR
-Define the name of the host the database is running where we are going
-to store the data.
-Ideally this should be the host on which slurmdbd executes.
-.IP
-
-.TP
 \fBStorageBackupHost\fR
 Define the name of the backup host the database is running where we are going
-to store the data.  This can be viewed as a backup solution when the
-StorageHost is not responding.  It is up to the backup solution to enforce the
+to store the data. This can be viewed as a backup solution when the
+StorageHost is not responding. It is up to the backup solution to enforce the
 coherency of the accounting information between the two hosts. With clustered
 database solutions (active/passive HA), you would not need to use this feature.
 Default is none.
+.IP
+
+.TP
+\fBStorageHost\fR
+Define the name of the host the database is running where we are going
+to store the data.
+This can be the host on which slurmdbd executes, but for larger systems, we
+recommend keeping the database on a separate machine.
 .IP
 
 .TP
@@ -820,16 +962,18 @@ the job accounting data. The '#' character is not permitted in a password.
 .TP
 \fBStoragePort\fR
 The port number that the Slurm Database Daemon (slurmdbd) communicates
-with the database. Default is 3306.
+with the database. If StorageType=accounting_storage/mysql, the default StoragePort is 3306.
+If StorageType=accounting_storage/kingbase, the default Storage Port is 54321.
 .IP
 
 .TP
 \fBStorageType\fR
 Define the accounting storage mechanism type.
-Acceptable values at present include "accounting_storage/mysql".
+Acceptable values at present include "accounting_storage/mysql" and "accounting_storage/kingbase".
 The value "accounting_storage/mysql" indicates that accounting records
 should be written to a MySQL or MariaDB database specified by the
-\fBStorageLoc\fR parameter.
+\fBStorageLoc\fR parameter.The value "accounting_storage/kingbase" indicates that accounting records
+ should be written to a KingbaseES database specified by the \fBStorageLoc\fR parameter.
 This value must be specified.
 .IP
 
@@ -846,18 +990,18 @@ Time permitted for TCP connection to be established. Default value is 2 seconds.
 
 .TP
 \fBTrackSlurmctldDown\fR
-Boolean yes or no.  If set the slurmdbd will mark all idle resources on the
-cluster as down when a slurmctld disconnects or is no longer reachable.  The
+Boolean yes or no. If set the slurmdbd will mark all idle resources on the
+cluster as down when a slurmctld disconnects or is no longer reachable. The
 default is no.
 .IP
 
 .TP
 \fBTrackWCKey\fR
-Boolean yes or no.  Used to set display and track of the Workload
-Characterization Key. Must be set to track wckey usage.  This must be set to
+Boolean yes or no. Used to set display and track of the Workload
+Characterization Key. Must be set to track wckey usage. This must be set to
 generate rolled up usage tables from WCKeys.
-NOTE: If TrackWCKey is set here and not in your various slurm.conf files all
-jobs will be attributed to their default WCKey.
+\fBNOTE\fR: If TrackWCKey is set here and not in your various slurm.conf files
+all jobs will be attributed to their default WCKey.
 .IP
 
 .SH "EXAMPLE"
@@ -890,9 +1034,6 @@ SlurmUser=slurm_mgr
 StoragePass=password_to_database
 StorageType=accounting_storage/mysql
 StorageUser=database_mgr
-SaveUid=yes
-UidSaveLocation=/var/spool
-UidSaveInterval=300
 .fi
 
 .SH "COPYING"
@@ -911,7 +1052,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "FILES"

@@ -42,7 +42,7 @@
 #include "slurm/slurm_errno.h"
 #include "slurm/slurmdb.h"
 
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 #include "src/common/xstring.h"
 
 static int _sort_group_asc(void *v1, void *v2)
@@ -60,12 +60,11 @@ static int _sort_group_asc(void *v1, void *v2)
 }
 
 static void _check_create_grouping(
-	List cluster_list,  ListIterator group_itr,
+	List cluster_list, list_itr_t *group_itr,
 	char *cluster, char *name, void *object,
 	bool individual, bool wckey_type)
 {
-	ListIterator itr;
-	slurmdb_wckey_rec_t *wckey = (slurmdb_wckey_rec_t *)object;
+	list_itr_t *itr;
 	slurmdb_assoc_rec_t *assoc = (slurmdb_assoc_rec_t *)object;
 	slurmdb_report_cluster_grouping_t *cluster_group = NULL;
 	slurmdb_report_acct_grouping_t *acct_group = NULL;
@@ -100,12 +99,9 @@ static void _check_create_grouping(
 		acct_group = xmalloc(sizeof(slurmdb_report_acct_grouping_t));
 
 		acct_group->acct = xstrdup(name);
-		if (wckey_type)
-			acct_group->lft = wckey->id;
-		else {
-			acct_group->lft = assoc->lft;
-			acct_group->rgt = assoc->rgt;
-		}
+		if (!wckey_type)
+			acct_group->lineage = xstrdup(assoc->lineage);
+
 		acct_group->groups = list_create(
 			slurmdb_destroy_report_job_grouping);
 		list_append(cluster_group->acct_list, acct_group);
@@ -143,11 +139,11 @@ static List _process_grouped_report(
 	int exit_code = 0;
 	void *object = NULL, *object2 = NULL;
 
-	ListIterator itr = NULL, itr2 = NULL;
-	ListIterator cluster_itr = NULL;
-	ListIterator local_itr = NULL;
-	ListIterator acct_itr = NULL;
-	ListIterator group_itr = NULL;
+	list_itr_t *itr = NULL, *itr2 = NULL;
+	list_itr_t *cluster_itr = NULL;
+	list_itr_t *local_itr = NULL;
+	list_itr_t *acct_itr = NULL;
+	list_itr_t *group_itr = NULL;
 
 	slurmdb_job_rec_t *job = NULL;
 	slurmdb_report_cluster_grouping_t *cluster_group = NULL;
@@ -410,30 +406,26 @@ no_objects:
 				continue;
 			}
 
-			if (!flat_view
-			   && (acct_group->lft != NO_VAL)
-			   && (job->lft != NO_VAL)) {
-				/* keep separate since we don't want
-				 * to so a xstrcmp if we don't have to
-				 */
-				if (job->lft > acct_group->lft
-				    && job->lft < acct_group->rgt) {
-					char *mywckey = NULL;
-					if (!both)
-						break;
-					if (acct_group->acct) {
-						if ((mywckey = strstr(
-							     acct_group->acct,
-							     ":")))
-							mywckey++;
-					}
-					if (!job->wckey && !mywckey)
-						break;
-					else if (!mywckey || !job->wckey)
-						continue;
-					else if (!xstrcmp(mywckey, job->wckey))
-						break;
+			/*
+			 * This is only used for non wckey_type checks, the
+			 * wckey_type acct_group does not have lineage set.
+			 */
+			if (!flat_view &&
+			    xstrstr(job->lineage, acct_group->lineage)) {
+				char *mywckey = NULL;
+				if (!both)
+					break;
+				if (acct_group->acct) {
+					if ((mywckey = strstr(
+						     acct_group->acct, ":")))
+						mywckey++;
 				}
+				if (!job->wckey && !mywckey)
+					break;
+				else if (!mywckey || !job->wckey)
+					continue;
+				else if (!xstrcmp(mywckey, job->wckey))
+					break;
 			} else if (!xstrcmp(acct_group->acct, tmp_acct))
 				break;
 		}
@@ -516,7 +508,7 @@ no_objects:
 	list_iterator_destroy(group_itr);
 	list_iterator_reset(cluster_itr);
 	while ((cluster_group = list_next(cluster_itr))) {
-		ListIterator acct_itr;
+		list_itr_t *acct_itr;
 		if (!cluster_group->count) {
 			list_delete_item(cluster_itr);
 			continue;

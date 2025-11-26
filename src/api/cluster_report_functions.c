@@ -41,7 +41,7 @@
 #include "slurm/slurm_errno.h"
 
 #include "src/common/slurmdb_defs.h"
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 #include "src/common/xstring.h"
 
 typedef enum {
@@ -53,7 +53,7 @@ typedef enum {
 
 static void _process_ua(List user_list, slurmdb_assoc_rec_t *assoc)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	slurmdb_report_user_rec_t *slurmdb_report_user = NULL;
 
 	/* make sure we add all associations to this
@@ -145,7 +145,7 @@ static void _process_wu(List assoc_list, slurmdb_wckey_rec_t *wckey)
 {
 	slurmdb_report_assoc_rec_t *slurmdb_report_assoc = NULL,
 		*parent_assoc = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 
 	/* find the parent */
 	itr = list_iterator_create(assoc_list);
@@ -179,7 +179,7 @@ static void _process_wu(List assoc_list, slurmdb_wckey_rec_t *wckey)
 }
 
 static void _process_assoc_type(
-	ListIterator itr,
+	list_itr_t *itr,
 	slurmdb_report_cluster_rec_t *slurmdb_report_cluster,
 	char *cluster_name,
 	cluster_report_t type)
@@ -210,7 +210,7 @@ static void _process_assoc_type(
 }
 
 static void _process_wckey_type(
-	ListIterator itr,
+	list_itr_t *itr,
 	slurmdb_report_cluster_rec_t *slurmdb_report_cluster,
 	char *cluster_name,
 	cluster_report_t type)
@@ -242,8 +242,9 @@ static void _process_wckey_type(
 
 static List _process_util_by_report(void *db_conn, char *calling_name,
 				    void *cond, cluster_report_t type)
-{	ListIterator itr = NULL;
-	ListIterator type_itr = NULL;
+{
+	list_itr_t *itr = NULL;
+	list_itr_t *type_itr = NULL;
 	slurmdb_cluster_cond_t cluster_cond;
 	List type_list = NULL;
 	List cluster_list = NULL;
@@ -318,7 +319,7 @@ static List _process_util_by_report(void *db_conn, char *calling_name,
 	if ((type == CLUSTER_REPORT_UA) || (type == CLUSTER_REPORT_AU)) {
 		first_list = type_list;
 		type_list = slurmdb_get_hierarchical_sorted_assoc_list(
-			first_list, true);
+			first_list);
 	}
 
 	/* set up the structures for easy retrieval later */

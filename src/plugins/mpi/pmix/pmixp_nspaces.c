@@ -54,7 +54,7 @@ int pmixp_nspaces_init(void)
 	char *mynspace, *task_map;
 	uint32_t nnodes, ntasks, *task_cnts;
 	int nodeid, rc;
-	hostlist_t hl;
+	hostlist_t *hl;
 
 #ifndef NDEBUG
 	_pmixp_nspaces.magic = PMIXP_NSPACE_DB_MAGIC;
@@ -76,13 +76,13 @@ int pmixp_nspaces_init(void)
 
 int pmixp_nspaces_finalize(void)
 {
-	list_destroy(_pmixp_nspaces.nspaces);
+	FREE_NULL_LIST(_pmixp_nspaces.nspaces);
 	return 0;
 }
 
 int pmixp_nspaces_add(char *name, uint32_t nnodes, int node_id,
 		      uint32_t ntasks, uint32_t *task_cnts,
-		      char *task_map_packed, hostlist_t hl)
+		      char *task_map_packed, hostlist_t *hl)
 {
 	pmixp_namespace_t *nsptr = xmalloc(sizeof(pmixp_namespace_t));
 	int i;
@@ -125,7 +125,7 @@ pmixp_namespace_t *pmixp_nspaces_find(const char *name)
 {
 	xassert(_pmixp_nspaces.magic == PMIXP_NSPACE_DB_MAGIC);
 
-	ListIterator it = list_iterator_create(_pmixp_nspaces.nspaces);
+	list_itr_t *it = list_iterator_create(_pmixp_nspaces.nspaces);
 	pmixp_namespace_t *nsptr = NULL;
 	while ((nsptr = list_next(it))) {
 		xassert(nsptr->magic == PMIXP_NSPACE_MAGIC);
@@ -139,10 +139,10 @@ exit:
 	return nsptr;
 }
 
-hostlist_t pmixp_nspace_rankhosts(pmixp_namespace_t *nsptr, const uint32_t *ranks,
-				  size_t nranks)
+hostlist_t *pmixp_nspace_rankhosts(pmixp_namespace_t *nsptr,
+				   const uint32_t *ranks, size_t nranks)
 {
-	hostlist_t hl = hostlist_create("");
+	hostlist_t *hl = hostlist_create("");
 	int i;
 	for (i = 0; i < nranks; i++) {
 		int rank = ranks[i];
@@ -161,7 +161,7 @@ int pmixp_nspace_resolve(const char *name, int rank)
 
 	xassert(_pmixp_nspaces.magic == PMIXP_NSPACE_DB_MAGIC);
 
-	ListIterator it = list_iterator_create(_pmixp_nspaces.nspaces);
+	list_itr_t *it = list_iterator_create(_pmixp_nspaces.nspaces);
 	while ((nsptr = list_next(it))) {
 		xassert(nsptr->magic == PMIXP_NSPACE_MAGIC);
 		if (0 == xstrcmp(nsptr->name, name)) {

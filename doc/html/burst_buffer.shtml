@@ -15,7 +15,7 @@
 administrators)</a>
 <ul>
 	<li><a href="#burst_buffer_lua">How does burst_buffer.lua run?</a></li>
-	<li><a href="#lua_limitations">Limitations</a></li>
+	<li><a href="#lua_warnings">Warnings</a></li>
 </ul>
 </li>
 <li><a href="#resources">Burst Buffer Resources</a>
@@ -31,6 +31,7 @@ administrators)</a>
 </ul>
 </li>
 <li><a href="#persist">Persistent Burst Buffer Creation and Deletion Directives</a></li>
+<li><a href="#het-job-support">Heterogeneous Job Support</a></li>
 <li><a href="#command-line">Command-line Job Options</a>
 <ul>
 	<li><a href="#command-line-dw">Datawarp</a></li>
@@ -55,13 +56,13 @@ lifetime of a job:</p>
 <ol>
 <li>At job submission</li>
 <li>While the job is pending after an estimated start time is
-established. This is called “stage-in.”</li>
+established. This is called "stage-in."</li>
 <li>Once the job has been scheduled but has not started running yet.
-This is called “pre-run.”</li>
+This is called "pre-run."</li>
 <li>Once the job has completed or been cancelled, but Slurm has not
-released resources for the job yet. This is called “stage-out.”</li>
+released resources for the job yet. This is called "stage-out."</li>
 <li>Once the job has completed, and Slurm has released resources for
-the job. This is called “teardown.”</li>
+the job. This is called "teardown."</li>
 </ol>
 
 <p>This script runs on the slurmctld node. These are the supported plugins:</p>
@@ -74,7 +75,7 @@ the job. This is called “teardown.”</li>
 <a class="slurm_link" href="#overview-dw"></a>
 </h3>
 
-<p>This plugin provides hooks to Cray’s Datawarp APIs. Datawarp implements burst
+<p>This plugin provides hooks to Cray's Datawarp APIs. Datawarp implements burst
 buffers, which are a shared high-speed storage resource. Slurm provides support
 for allocating these resources, staging files in, scheduling compute nodes for
 jobs using these resources, and staging files out. Burst buffers can also be
@@ -88,7 +89,7 @@ specific job.</p>
 
 <p>This plugin provides hooks to an API that is defined by a Lua script. This
 plugin was developed to provide system administrators with a way to do any task
-(not only file staging) at different points in a job’s life cycle. These tasks
+(not only file staging) at different points in a job's life cycle. These tasks
 might include file staging, node maintenance, or any other task that is desired
 to run during one or more of the five job states listed above.</p>
 
@@ -129,10 +130,11 @@ Configuration settings include things like which users may use burst buffers,
 timeouts, paths to burst buffer scripts, etc. See the
 <a href="burst_buffer.conf.html">burst_buffer.conf</a> manual
 for more information.</li>
-<li>The JSON-C library must be installed in order to build Slurm’s
+<li>The JSON-C library must be installed in order to build Slurm's
 <code>burst_buffer/datawarp</code> and <code>burst_buffer/lua</code> plugins,
 which must parse JSON format data. See Slurm's
-<a href="download.html#json">JSON installation information</a> for details.</li>
+<a href="related_software.html#json">JSON installation information</a> for
+details.</li>
 </ul>
 
 <h3 id="datawarp_config">Datawarp
@@ -175,11 +177,13 @@ success:</p>
 <li><code>slurm_bb_job_teardown</code></li>
 <li><code>slurm_bb_setup</code></li>
 <li><code>slurm_bb_data_in</code></li>
+<li><code>slurm_bb_test_data_in</code></li>
 <li><code>slurm_bb_real_size</code></li>
 <li><code>slurm_bb_paths</code></li>
 <li><code>slurm_bb_pre_run</code></li>
 <li><code>slurm_bb_post_run</code></li>
 <li><code>slurm_bb_data_out</code></li>
+<li><code>slurm_bb_test_data_out</code></li>
 <li><code>slurm_bb_get_status</code></li>
 </ul>
 
@@ -254,22 +258,11 @@ in burst_buffer.conf</i>.</li>
 <p>The way in which each function is called is also documented in the
 burst_buffer.lua.example file.</p>
 
-<h3 id="lua_limitations">Limitations
-<a class="slurm_link" href="#lua_limitations"></a>
+<h3 id="lua_warnings">Warnings
+<a class="slurm_link" href="#lua_warnings"></a>
 </h3>
 
-<p>Each copy of the script that runs via slurmscriptd runs in a new process and
-a pipe (which is a file) is opened to read responses from the script. To avoid
-exceeding the open process or open file limits, running out of memory, or
-exceeding other system limitations, a maximum of 128 copies of the script are
-allowed to run concurrently per "stage", where the stages are stage-in,
-pre-run, stage-out, and teardown (see the <a href="#states">Burst Buffer
-States</a> section for more information on the burst buffer stages). This means
-that a maximum of 512 copies of burst_buffer.lua may run at one time.
-Without this limit, job throughput was lower and testing confirmed that the
-process open file limit could be exceeded.</p>
-
-<p><b>WARNING</b>: Do not install a signal handler in burst_buffer.lua because
+<p>Do not install a signal handler in burst_buffer.lua because
 it is called directly from slurmctld. If slurmctld receives a signal, it
 could attempt to run the signal handler from burst_buffer.lua, even after a call
 to burst_buffer.lua is completed, which results in a crash.</p>
@@ -279,13 +272,13 @@ to burst_buffer.lua is completed, which results in a crash.</p>
 <a class="slurm_link" href="#resources"></a>
 </h2>
 
-<p>The burst buffer API may define burst buffer resource “pools” from which a
+<p>The burst buffer API may define burst buffer resource "pools" from which a
 job may request a certain amount of pool space. If a pool does not have
-sufficient space to fulfill a job’s request, that job will remain pending until
+sufficient space to fulfill a job's request, that job will remain pending until
 the pool does have enough space. Once the pool has enough space, Slurm may begin
-stage-in for the job. When stage-in begins, Slurm subtracts the job’s requested
-space from the pool’s available space. When teardown completes, Slurm adds the
-job’s requested space back into the pool’s available space. The
+stage-in for the job. When stage-in begins, Slurm subtracts the job's requested
+space from the pool's available space. When teardown completes, Slurm adds the
+job's requested space back into the pool's available space. The
 <a href="#submit">Job Submission Commands</a> section explains how a job may
 request space from a pool. Pool space is a scalar quantity.</p>
 
@@ -366,8 +359,8 @@ pool. For example: <code>pool=pool1</code></li>
 <li>A <b>capacity</b> specification is a number indicating the amount of space
 required from the pool. A <b>capacity</b> specification can include a suffix of
 "N" (nodes), "K|KiB", "M|MiB", "G|GiB", "T|TiB", "P|PiB" (for powers of 1024)
-and "KB", "MB", "GB", "TB", "PB" (for powers of 1000). <b>NOTE:</b> Usually
-Slurm interprets KB, MB, GB, TB, PB, TB units as powers of 1024, but for Burst
+and "KB", "MB", "GB", "TB", "PB" (for powers of 1000). <b>NOTE</b>: Usually
+Slurm interprets KB, MB, GB, TB, PB, units as powers of 1024, but for Burst
 Buffers size specifications Slurm supports both IEC/SI formats. This is because
 the CRAY API supports both formats.</li>
 </ul>
@@ -551,7 +544,7 @@ job-specific burst buffer directives will generate an error. Note that zero
 size jobs are not supported for job arrays or heterogeneous job
 allocations.</p>
 
-<p><b>NOTE:</b> The ability to create and destroy persistent burst buffers may
+<p><b>NOTE</b>: The ability to create and destroy persistent burst buffers may
 be limited by the <code>Flags</code> option in the burst_buffer.conf file.
 See the <a href="burst_buffer.conf.html">burst_buffer.conf</a> man page for
 more information.
@@ -559,6 +552,18 @@ By default only <a href="user_permissions.html">privileged users</a>
 (i.e. Slurm operators and administrators)
 can create or destroy persistent burst buffers.</p>
 
+<h2 id="het-job-support">Heterogeneous Job Support
+<a class="slurm_link" href="#het-job-support"></a>
+</h2>
+
+<p>Heterogeneous jobs may request burst buffers. Burst buffer hooks will run
+once for each component that has burst buffer directives. For example, if a
+heterogeneous job has three components and two of them have burst buffer
+directives, the burst buffer hooks will run once for each of the two components
+with burst buffer directives, but not for the third component without burst
+buffer directives. Further information and examples can be found in the
+<a href=heterogeneous_jobs.html#burst_buffer>heterogeneous jobs</a> page.
+</p>
 
 <h2 id="command-line">Command-line Job Options
 <a class="slurm_link" href="#command-line"></a>
@@ -626,7 +631,7 @@ Commands</a>.</p>
 # Sample execute line:
 srun --bb="#BB_LUA pool=pool1 capacity=1K"
 
-# Equivalent script as generated by Slurm's burst_buffer/datawarp plugin
+# Equivalent script as generated by Slurm's burst_buffer/lua plugin
 #BB_LUA pool=pool1 capacity=1K
 </pre>
 
@@ -702,7 +707,7 @@ scontrol execute line are passed directly to the bbstat or dwstat commands, as
 shown below. In the datawarp plugin, this command calls Cray's dwstat script.
 See Cray Datawarp documentation for details about dwstat options and output. In
 the lua plugin, this command calls the <code>slurm_bb_get_status</code>
-function in burst_buffer.lua. Examples follow.</p>
+function in burst_buffer.lua.</p>
 
 <p>Datawarp plugin example:</p>
 
@@ -726,36 +731,9 @@ $ scontrol show dwstat configurations
   760 CA---  808 scratch      stripe      1
 </pre>
 
-<p>Lua plugin example:</p>
-<p>This example doesn't do anything useful; it just shows how this call is
-used.</p>
-
-<pre>
--- Implement this function in burst_buffer.lua
-function slurm_bb_get_status(...)
-    local i, v, args, outstr, arr
-
-    arr = { }
-    -- Create a table from variable arg list
-    args = {...}
-    args.n = select("#", ...)
-
-    for i,v in ipairs(args) do
-        arr[#arr+1] = tostring(v)
-    end
-    outstr = table.concat(arr, "\n")
-
-    return slurm.SUCCESS, "Status return message.\nArgs:\n" .. outstr .. "\n"
-end
-</pre>
-
-<pre>
-$ scontrol show bbstat arg1 arg2
-Status return message.
-Args:
-arg1
-arg2
-</pre>
+<p>A Lua plugin example can be found in the <code>slurm_bb_get_status</code>
+function in the <code>etc/burst_buffer.lua.example</code> file provided
+with Slurm.</p>
 
 
 <h2 id="reservation">Advanced Reservations
@@ -907,6 +885,6 @@ for each job it reads the burst buffer state and does one of the following:</li>
 state. This document focuses on burst buffers and does not attempt to address
 all possible job state transitions.</p>
 
-<p style="text-align:center;">Last modified 13 August 2021</p>
+<p style="text-align:center;">Last modified 21 August 2023</p>
 
 <!--#include virtual="footer.txt"-->

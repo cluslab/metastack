@@ -81,7 +81,7 @@
 #define list_free(_l) xfree(l)
 #define list_node_alloc() xmalloc(sizeof(struct listNode))
 #define list_iterator_alloc() xmalloc(sizeof(struct listIterator))
-#define LINE_WIDTH 103
+#define LINE_WIDTH 128
 
 #define NOT_FIND -1
 //struct tm *localtime_r(const time_t *timep, struct tm *result);
@@ -2139,7 +2139,7 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                 /* Analyze the data of Apptype measurement */
                 size_t i = 0, j = 0, num_rows = json_array_size(values);
                 uint64_t max_cputime = 0; /* Keep the maximum value of cputime */
-                char* max_username = NULL, *max_apptype = NULL;  /* The process name and user name corresponding to the maximum value of cputime */
+                char* max_username = NULL, *max_apptype = NULL, *apptype_cli = NULL;  /* The process name and user name corresponding to the maximum value of cputime */
 
                 interface_sjinfo_t *iinfo_job = xmalloc(sizeof(*iinfo_job));
                 iinfo_job->username = xmalloc(strlen(username) + 1);
@@ -2167,6 +2167,8 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                         const char * tmp_name = json_string_value(json_array_get(columns, j));
                         if ((xstrcmp(tmp_name, "apptype_cli")) == 0) {
                             iinfo->apptype_cli = xstrdup(json_string_value(value));
+                            if (apptype_cli) xfree(apptype_cli);
+                            apptype_cli = xstrdup(iinfo->apptype_cli);
                         } else if (xstrcmp(tmp_name, "apptype_step") == 0) {
                             iinfo->apptype_step = xstrdup(json_string_value(value));
                         } else if (xstrcmp(tmp_name, "cputime") == 0) {
@@ -2193,8 +2195,11 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                     (params.desc_set ? --i : ++i);
                 }
                 if (!params.show_jobstep_apptype && params.level & INFLUXDB_APPTYPE) {
-                    xfree(iinfo_job->apptype);
-                    iinfo_job->apptype = xstrdup(max_apptype);
+                    xfree(iinfo_job->apptype); 
+                    if (max_apptype == NULL || xstrcmp(max_apptype, "(null)") == 0) {
+                        iinfo_job->apptype = xstrdup(apptype_cli);
+                    } else
+                        iinfo_job->apptype = xstrdup(max_apptype);
                     xfree(iinfo_job->username);
                     iinfo_job->username = xstrdup(max_username);
                     list_append(print_apptype_job_value_list, iinfo_job);
@@ -2203,6 +2208,7 @@ void parse_json(const char *response,  char *username, int flag, time_t current_
                 }
                 xfree(max_apptype);
                 xfree(max_username);
+                xfree(apptype_cli);
             } else if (flag == UNIT_EVENT) {
                 /* Analyze the data of Event measurement */
                 size_t i = 0, j = 0, num_rows = json_array_size(values);
@@ -3810,7 +3816,7 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
 
     if(params.only_run_job) {
         char tmp[64];
-        char start_tmp[64];
+        char start_tmp[72];
         sprintf(buffer_str,"%s from %s where time <= %s ",sql_runjob_head, sheet_step, end);
         c_string_append_str(sql_runjob, buffer_str);
         memset(buffer_str, 0, 2048);
@@ -3822,7 +3828,7 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
             time_t rawtime = time(NULL) - 3600;
             struct tm *timeinfo = gmtime(&rawtime);
             strftime(tmp, sizeof(tmp), "%Y-%m-%dT%H:%M:%SZ", timeinfo);
-            sprintf(start_tmp,"'%s'",tmp);
+            snprintf(start_tmp, sizeof(start_tmp), "'%s'", tmp);
         }else{
             strncpy(start_tmp, start, sizeof(start_tmp) - 1);
             start_tmp[sizeof(start_tmp) - 1] = '\0';
@@ -3891,21 +3897,28 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
     }
 
     if(step_out) {
-        if(params.level & INFLUXDB_STEPD) {
+        if (params.level & INFLUXDB_STEPD) {
             rc = strcat_field(sql_step, steps, STEP);
             if(rc == -1) goto fail;
         }
-        if((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
+        if ((params.level & INFLUXDB_EVENT) || (params.level & INFLUXDB_OVERALL)) {
             rc = strcat_field(sql_event, steps, STEP);
             if(rc == -1) goto fail;
         }
-        if(params.level & INFLUXDB_DISPLAY) {
+        if (params.level & INFLUXDB_DISPLAY) {
             rc = strcat_field(sql_brief_step, steps, STEP);
             if(rc == -1) goto fail;
         }
+        if (params.level & INFLUXDB_APPTYPE) {
+            if (params.show_jobstep_apptype)
+                rc = strcat_field(sql_apptype, steps, STEP);
+            else {
+                printf("If you want to query the application name recognition results of the job step, use \"sjinfo -t step -s <stepid>\" !\n");
+                exit(1);
+            }
+        }
 
     }
-
 
     if(params.level & INFLUXDB_EVENT_FLAG) {
         bool splicing = false;
@@ -4356,7 +4369,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
         interface_sjinfo_t * sjinfo_print = NULL;
         int curr_inx = 1;
         uint64_t tmp_uint64 = NO_VAL64;
-        char tmp_char[200] = {'0'};
+        char tmp_char[2048] = {'0'};
         char tmp_batch[] = "batch";
         char tmp_extern[] = "extern";
         //int tmp_int = NO_VAL;
@@ -4371,27 +4384,27 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                     memset(tmp_char,'\0',sizeof(tmp_char));
                     switch (field->type) {
                     case PRINT_JOBID:
-                        sprintf(tmp_char, "%lu", sjinfo_print->jobid);
+                        snprintf(tmp_char, sizeof(tmp_char), "%lu", sjinfo_print->jobid);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
                     break;
                     case PRINT_APPTYPE_CLI:
-                        sprintf(tmp_char, "%s", sjinfo_print->apptype_cli);
+                        snprintf(tmp_char, sizeof(tmp_char), "%s", sjinfo_print->apptype_cli);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
                         xfree(sjinfo_print->apptype_cli);
                     break;
                     case PRINT_APPTYPE_STEP:
-                        sprintf(tmp_char, "%s", sjinfo_print->apptype_step);
+                        snprintf(tmp_char, sizeof(tmp_char), "%s", sjinfo_print->apptype_step);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
                         xfree(sjinfo_print->apptype_step);
                     break;
                     case PRINT_APPTYPE:
-                        sprintf(tmp_char, "%s", sjinfo_print->apptype);
+                        snprintf(tmp_char, sizeof(tmp_char), "%s", sjinfo_print->apptype);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
@@ -4399,41 +4412,41 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                     break;
                     case PRINT_CPUTIME:
                         if(sjinfo_print->cputime == UINT64_MAX)
-                            sprintf(tmp_char, "%s", "SUCCESS MAPPING");
+                            snprintf(tmp_char, sizeof(tmp_char), "%s", "SUCCESS MAPPING");
                         else
-                            sprintf(tmp_char, "%"PRIu64"", sjinfo_print->cputime);
+                            snprintf(tmp_char, sizeof(tmp_char), "%"PRIu64"", sjinfo_print->cputime);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));    
                     break; 
                     case PRINT_USERNAME:
                         if(sjinfo_print->username != NULL)
-                            sprintf(tmp_char, "%s", sjinfo_print->username);
+                            snprintf(tmp_char, sizeof(tmp_char), "%s", sjinfo_print->username);
                         else
-                            sprintf(tmp_char, "no username");
+                            snprintf(tmp_char, sizeof(tmp_char), "no username");
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
                     break;
                     case PRINT_STEPID:
                         if((sjinfo_print->stepid == -5))
-                            sprintf(tmp_char, "%s", tmp_batch);
+                            snprintf(tmp_char, sizeof(tmp_char), "%s", tmp_batch);
                         else if((sjinfo_print->stepid == -4))
-                            sprintf(tmp_char, "%s", tmp_extern);
+                            snprintf(tmp_char, sizeof(tmp_char), "%s", tmp_extern);
                         else
-                            sprintf(tmp_char, "%d", sjinfo_print->stepid);
+                            snprintf(tmp_char, sizeof(tmp_char), "%d", sjinfo_print->stepid);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
                         break;
                     case PRINT_STEPAVECPU:
-                        sprintf(tmp_char, "%.2f", sjinfo_print->stepcpuave);
+                        snprintf(tmp_char, sizeof(tmp_char), "%.2f", sjinfo_print->stepcpuave);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));                            
                         break;
                     case PRINT_STEPCPU:
-                        sprintf(tmp_char, "%.2f", sjinfo_print->stepcpu);
+                        snprintf(tmp_char, sizeof(tmp_char), "%.2f", sjinfo_print->stepcpu);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
@@ -4461,19 +4474,19 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                                     (curr_inx == field_count));    
                         break; 
                     case PRINT_STEPPAGES:
-                        sprintf(tmp_char, "%lu", sjinfo_print->steppages);
+                        snprintf(tmp_char, sizeof(tmp_char), "%lu", sjinfo_print->steppages);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
                         break; 
                     case PRINT_MAXSTEPCPU:
-                        sprintf(tmp_char, "%.2f", sjinfo_print->stepcpumax);
+                        snprintf(tmp_char, sizeof(tmp_char), "%.2f", sjinfo_print->stepcpumax);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
                         break;
                     case PRINT_MINSTEPCPU:
-                        sprintf(tmp_char, "%.2f", sjinfo_print->stepcpumin);
+                        snprintf(tmp_char, sizeof(tmp_char), "%.2f", sjinfo_print->stepcpumin);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
@@ -4525,7 +4538,7 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         break;   
 
                     case PRINT_CPUTHRESHOLD:
-                        sprintf(tmp_char, "%lu%%", sjinfo_print->cputhreshold);
+                        snprintf(tmp_char, sizeof(tmp_char), "%lu%%", sjinfo_print->cputhreshold);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));     
@@ -4578,21 +4591,21 @@ void print_options(List print_list, List value_list, ListIterator print_itr)
                         break;   
 
                     case PRINT_SUMCPU:
-                        sprintf(tmp_char, "%lu", sjinfo_print->sum_cpu);
+                        snprintf(tmp_char, sizeof(tmp_char), "%lu", sjinfo_print->sum_cpu);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
                         break;
 
                     case PRINT_SUMPID:
-                        sprintf(tmp_char, "%lu", sjinfo_print->sum_pid);
+                        snprintf(tmp_char, sizeof(tmp_char), "%lu", sjinfo_print->sum_pid);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
                         break;
 
                     case PRINT_SUMNODE:
-                        sprintf(tmp_char, "%lu", sjinfo_print->sum_node);
+                        snprintf(tmp_char, sizeof(tmp_char), "%lu", sjinfo_print->sum_node);
                         field->print_routine(field,
                         tmp_char,
                         (curr_inx == field_count));
@@ -4795,8 +4808,8 @@ void print_star_line(const char *content) {
 
     char line[LINE_WIDTH + 1];
     memset(line, ' ', LINE_WIDTH);
-    line[0] = '*';
-    line[LINE_WIDTH - 1] = '*';
+    line[0] = ' ';
+    line[LINE_WIDTH - 1] = ' ';
     line[LINE_WIDTH] = '\0';
 
     memcpy(line + 1, content, content_len); // 左对齐内容
@@ -4817,25 +4830,18 @@ void print_efficiency(interface_sjinfo_t *sjinfo_print, const char *time_str) {\
     char stepid_mem[64] = {'\0'};
     char stepid_cpu[64] = {'\0'};
     char jobstep_buf[32] = {'\0'};
-     
-    /*test*/
-    // sjinfo_print->alloc_cpu =10000;
-    // sjinfo_print->stepmem =123113LL*1024;
-    // sjinfo_print->req_mem = 14313213;
-    //sjinfo_print->jobid = 1;
+    char stepid_mem_aligned[27] = {'\0'};
+    char stepid_cpu_aligned[27] = {'\0'};
     if (sjinfo_print->stepid == -5) {
         snprintf(stepid_buf, sizeof(stepid_buf), "batch");
     } else {
         snprintf(stepid_buf, sizeof(stepid_buf), "%d", sjinfo_print->stepid);
     }
    
-    snprintf(jobstep_buf, sizeof(jobstep_buf), "%ld.%-8s", sjinfo_print->jobid, stepid_buf);
+    //snprintf(jobstep_buf, sizeof(jobstep_buf), "%ld.%-8s", sjinfo_print->jobid, stepid_buf);
+    snprintf(jobstep_buf, sizeof(jobstep_buf), "%ld.%.*s", sjinfo_print->jobid, 8, stepid_buf);
+
     /* mem字符串转化 */
-
-    // int count = num_digits(sjinfo_print->req_mem);
-
-    // if(count == -1)
-    //     return;
     double result = (double)(sjinfo_print->stepmem * 100.0/1024/sjinfo_print->req_mem); 
     if (sjinfo_print->req_mem > 1024*1024 && sjinfo_print->req_mem <= 1024*1024*1024) {
         snprintf(stepid_mem, sizeof(stepid_mem), "%6.2f of %10lld %6s", result, sjinfo_print->req_mem/1024, g);
@@ -4847,18 +4853,23 @@ void print_efficiency(interface_sjinfo_t *sjinfo_print, const char *time_str) {\
         snprintf(stepid_mem, sizeof(stepid_mem), "%6.2f of %10lld %6s", result, sjinfo_print->req_mem, m);
     }
 
+    /* 对 stepid_mem 对齐以避免 warning */
+    snprintf(stepid_mem_aligned, sizeof(stepid_mem_aligned), "%26.26s", stepid_mem);
+
     /* cpu字段字符串转化 */
-    snprintf(stepid_cpu, sizeof(stepid_cpu), "%6.2f of %10lld %6s", (double)(sjinfo_print->stepcpu),sjinfo_print->alloc_cpu,cpu_unit_buf);
+    snprintf(stepid_cpu, sizeof(stepid_cpu), "%6.2f of %10lld %6s", (double)(sjinfo_print->stepcpu), sjinfo_print->alloc_cpu, cpu_unit_buf);
+    snprintf(stepid_cpu_aligned, sizeof(stepid_cpu_aligned), "%26.26s", stepid_cpu);
+
     /* CPU Efficiency 行 */
     snprintf(info_buf, sizeof(info_buf),
-             "    %-20s %-18s %26s %3s %-20s",
-             jobstep_buf, "CPU Efficiency(%)", stepid_cpu,at,time_str);
+             "    %-20s %-18s %s %3s %-20s",
+             jobstep_buf, "CPU Efficiency(%)", stepid_cpu_aligned, at, time_str);
     print_star_line(info_buf);
 
     /* MEM Efficiency 行 */
     snprintf(info_buf, sizeof(info_buf),
-             "    %-20s %-18s %26s %3s %-20s",
-             jobstep_buf, "MEM Efficiency(%)", stepid_mem,at,time_str);
+             "    %-20s %-18s %s %3s %-20s",
+             jobstep_buf, "MEM Efficiency(%)", stepid_mem_aligned, at, time_str);
     print_star_line(info_buf);
 }
 

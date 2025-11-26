@@ -3,7 +3,7 @@
  *  jobs based upon their partition's priority.
  *****************************************************************************
  *  Copyright (C) 2009-2010 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2010 SchedMD <https://www.schedmd.com>.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
@@ -47,7 +47,9 @@
 #include "src/common/log.h"
 #include "src/common/plugin.h"
 #include "src/common/xstring.h"
-#include "src/slurmctld/preempt.h"
+
+#include "src/interfaces/preempt.h"
+
 #include "src/slurmctld/slurmctld.h"
 #include "src/slurmctld/job_scheduler.h"
 

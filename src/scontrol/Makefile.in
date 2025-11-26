@@ -16,6 +16,25 @@
 
 # Makefile for scontrol
 
+# This is common code for a Makefile.am and creates $(LIB_REF) to be used
+# afterwards in noinst_LTLIBRARIES and EXTRA_slurmrestd_DEPENDENCIES
+#
+# usage
+#
+# REF = usage.txt
+# include $(top_srcdir)/make_ref.include
+# noinst_LTLIBRARIES [+]= $(LIB_REF)
+# EXTRA_$PROGRAMNAME_DEPENDENCIES [+]= $(LIB_REF)
+# $PROGRAMNAME_LDADD += $(LIB_REF)
+#
+# What the above lines do is include this file in a Makefile.am
+# It will insert usage.txt as a variable that the calling program can access
+# with the calls in src/common/ref.h.
+#
+# If I where doing this for the slurmrestd I would put 'slurmrestd' in for
+# $PROGRAMNAME i.e. EXTRA_slurmrestd_DEPENDENCIES, slurmrestd_LDADD.
+
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -99,6 +118,7 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/ax_gcc_builtin.m4 \
 	$(top_srcdir)/auxdir/ax_lib_hdf5.m4 \
 	$(top_srcdir)/auxdir/ax_pthread.m4 \
+	$(top_srcdir)/auxdir/gtk-2.0.m4 \
 	$(top_srcdir)/auxdir/libtool.m4 \
 	$(top_srcdir)/auxdir/ltoptions.m4 \
 	$(top_srcdir)/auxdir/ltsugar.m4 \
@@ -109,13 +129,10 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/x_ac_affinity.m4 \
 	$(top_srcdir)/auxdir/x_ac_c99.m4 \
 	$(top_srcdir)/auxdir/x_ac_cgroup.m4 \
-	$(top_srcdir)/auxdir/x_ac_cray.m4 \
 	$(top_srcdir)/auxdir/x_ac_curl.m4 \
 	$(top_srcdir)/auxdir/x_ac_databases.m4 \
 	$(top_srcdir)/auxdir/x_ac_debug.m4 \
 	$(top_srcdir)/auxdir/x_ac_deprecated.m4 \
-	$(top_srcdir)/auxdir/x_ac_dlfcn.m4 \
-	$(top_srcdir)/auxdir/x_ac_dsmi.m4 \
 	$(top_srcdir)/auxdir/x_ac_env.m4 \
 	$(top_srcdir)/auxdir/x_ac_freeipmi.m4 \
 	$(top_srcdir)/auxdir/x_ac_hpe_slingshot.m4 \
@@ -127,19 +144,21 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/x_ac_lz4.m4 \
 	$(top_srcdir)/auxdir/x_ac_man2html.m4 \
 	$(top_srcdir)/auxdir/x_ac_munge.m4 \
-	$(top_srcdir)/auxdir/x_ac_netloc.m4 \
 	$(top_srcdir)/auxdir/x_ac_nvml.m4 \
 	$(top_srcdir)/auxdir/x_ac_ofed.m4 \
 	$(top_srcdir)/auxdir/x_ac_oneapi.m4 \
 	$(top_srcdir)/auxdir/x_ac_pam.m4 \
+	$(top_srcdir)/auxdir/x_ac_pkgconfig.m4 \
 	$(top_srcdir)/auxdir/x_ac_pmix.m4 \
 	$(top_srcdir)/auxdir/x_ac_printf_null.m4 \
 	$(top_srcdir)/auxdir/x_ac_ptrace.m4 \
+	$(top_srcdir)/auxdir/x_ac_rdkafka.m4 \
 	$(top_srcdir)/auxdir/x_ac_readline.m4 \
-	$(top_srcdir)/auxdir/x_ac_rrdtool.m4 \
 	$(top_srcdir)/auxdir/x_ac_rsmi.m4 \
+	$(top_srcdir)/auxdir/x_ac_s2n.m4 \
 	$(top_srcdir)/auxdir/x_ac_selinux.m4 \
 	$(top_srcdir)/auxdir/x_ac_setproctitle.m4 \
+	$(top_srcdir)/auxdir/x_ac_sview.m4 \
 	$(top_srcdir)/auxdir/x_ac_systemd.m4 \
 	$(top_srcdir)/auxdir/x_ac_ucx.m4 \
 	$(top_srcdir)/auxdir/x_ac_uid_gid_size.m4 \
@@ -155,18 +174,23 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_scontrol_OBJECTS = create_res.$(OBJEXT) info_burst_buffer.$(OBJEXT) \
-	info_assoc_mgr.$(OBJEXT) info_fed.$(OBJEXT) info_job.$(OBJEXT) \
-	info_lics.$(OBJEXT) info_node.$(OBJEXT) info_part.$(OBJEXT) \
-	info_res.$(OBJEXT) reboot_node.$(OBJEXT) scontrol.$(OBJEXT) \
-	update_job.$(OBJEXT) update_node.$(OBJEXT) \
-	update_part.$(OBJEXT) update_step.$(OBJEXT)
-scontrol_OBJECTS = $(am_scontrol_OBJECTS)
-am__DEPENDENCIES_1 =
+LTLIBRARIES = $(noinst_LTLIBRARIES)
+lib_ref_la_DEPENDENCIES = lib_ref.lo
+am_lib_ref_la_OBJECTS =
+lib_ref_la_OBJECTS = $(am_lib_ref_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+am_scontrol_OBJECTS = common.$(OBJEXT) create_res.$(OBJEXT) \
+	info_burst_buffer.$(OBJEXT) info_assoc_mgr.$(OBJEXT) \
+	info_fed.$(OBJEXT) info_job.$(OBJEXT) info_lics.$(OBJEXT) \
+	info_node.$(OBJEXT) info_part.$(OBJEXT) info_res.$(OBJEXT) \
+	power_node.$(OBJEXT) reboot_node.$(OBJEXT) scontrol.$(OBJEXT) \
+	update_job.$(OBJEXT) update_node.$(OBJEXT) \
+	update_part.$(OBJEXT) update_step.$(OBJEXT)
+scontrol_OBJECTS = $(am_scontrol_OBJECTS)
+am__DEPENDENCIES_1 =
 scontrol_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(scontrol_LDFLAGS) $(LDFLAGS) -o $@
@@ -185,14 +209,15 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir) -I$(top_builddir)/slurm
 depcomp = $(SHELL) $(top_srcdir)/auxdir/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/create_res.Po \
+am__depfiles_remade = ./$(DEPDIR)/common.Po ./$(DEPDIR)/create_res.Po \
 	./$(DEPDIR)/info_assoc_mgr.Po ./$(DEPDIR)/info_burst_buffer.Po \
 	./$(DEPDIR)/info_fed.Po ./$(DEPDIR)/info_job.Po \
 	./$(DEPDIR)/info_lics.Po ./$(DEPDIR)/info_node.Po \
 	./$(DEPDIR)/info_part.Po ./$(DEPDIR)/info_res.Po \
-	./$(DEPDIR)/reboot_node.Po ./$(DEPDIR)/scontrol.Po \
-	./$(DEPDIR)/update_job.Po ./$(DEPDIR)/update_node.Po \
-	./$(DEPDIR)/update_part.Po ./$(DEPDIR)/update_step.Po
+	./$(DEPDIR)/power_node.Po ./$(DEPDIR)/reboot_node.Po \
+	./$(DEPDIR)/scontrol.Po ./$(DEPDIR)/update_job.Po \
+	./$(DEPDIR)/update_node.Po ./$(DEPDIR)/update_part.Po \
+	./$(DEPDIR)/update_step.Po
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -212,7 +237,7 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(scontrol_SOURCES)
+SOURCES = $(lib_ref_la_SOURCES) $(scontrol_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -252,14 +277,6 @@ CHECK_CFLAGS = @CHECK_CFLAGS@
 CHECK_LIBS = @CHECK_LIBS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
-CRAY_JOB_CPPFLAGS = @CRAY_JOB_CPPFLAGS@
-CRAY_JOB_LDFLAGS = @CRAY_JOB_LDFLAGS@
-CRAY_SELECT_CPPFLAGS = @CRAY_SELECT_CPPFLAGS@
-CRAY_SELECT_LDFLAGS = @CRAY_SELECT_LDFLAGS@
-CRAY_SWITCH_CPPFLAGS = @CRAY_SWITCH_CPPFLAGS@
-CRAY_SWITCH_LDFLAGS = @CRAY_SWITCH_LDFLAGS@
-CRAY_TASK_CPPFLAGS = @CRAY_TASK_CPPFLAGS@
-CRAY_TASK_LDFLAGS = @CRAY_TASK_LDFLAGS@
 CSCOPE = @CSCOPE@
 CTAGS = @CTAGS@
 CXX = @CXX@
@@ -267,15 +284,9 @@ CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
-DATAWARP_CPPFLAGS = @DATAWARP_CPPFLAGS@
-DATAWARP_LDFLAGS = @DATAWARP_LDFLAGS@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
-DL_LIBS = @DL_LIBS@
-DSMI_CPPFLAGS = @DSMI_CPPFLAGS@
-DSMI_LDFLAGS = @DSMI_LDFLAGS@
-DSMI_LIBS = @DSMI_LIBS@
 DSYMUTIL = @DSYMUTIL@
 DUMPBIN = @DUMPBIN@
 ECHO_C = @ECHO_C@
@@ -313,7 +324,6 @@ HDF5_LIBS = @HDF5_LIBS@
 HDF5_TYPE = @HDF5_TYPE@
 HDF5_VERSION = @HDF5_VERSION@
 HPE_SLINGSHOT_CFLAGS = @HPE_SLINGSHOT_CFLAGS@
-HPE_SLINGSHOT_LIBS = @HPE_SLINGSHOT_LIBS@
 HTTP_PARSER_CPPFLAGS = @HTTP_PARSER_CPPFLAGS@
 HTTP_PARSER_LDFLAGS = @HTTP_PARSER_LDFLAGS@
 HWLOC_CPPFLAGS = @HWLOC_CPPFLAGS@
@@ -356,14 +366,10 @@ MUNGE_LDFLAGS = @MUNGE_LDFLAGS@
 MUNGE_LIBS = @MUNGE_LIBS@
 MYSQL_CFLAGS = @MYSQL_CFLAGS@
 MYSQL_LIBS = @MYSQL_LIBS@
-NETLOC_CPPFLAGS = @NETLOC_CPPFLAGS@
-NETLOC_LDFLAGS = @NETLOC_LDFLAGS@
-NETLOC_LIBS = @NETLOC_LIBS@
 NM = @NM@
 NMEDIT = @NMEDIT@
 NUMA_LIBS = @NUMA_LIBS@
 NVML_CPPFLAGS = @NVML_CPPFLAGS@
-NVML_LIBS = @NVML_LIBS@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
@@ -371,7 +377,6 @@ OFED_CPPFLAGS = @OFED_CPPFLAGS@
 OFED_LDFLAGS = @OFED_LDFLAGS@
 OFED_LIBS = @OFED_LIBS@
 ONEAPI_CPPFLAGS = @ONEAPI_CPPFLAGS@
-ONEAPI_LIBS = @ONEAPI_LIBS@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -401,21 +406,25 @@ PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
 PTHREAD_CXX = @PTHREAD_CXX@
 PTHREAD_LIBS = @PTHREAD_LIBS@
 RANLIB = @RANLIB@
+RDKAFKA_CPPFLAGS = @RDKAFKA_CPPFLAGS@
+RDKAFKA_LDFLAGS = @RDKAFKA_LDFLAGS@
+RDKAFKA_LIBS = @RDKAFKA_LIBS@
 READLINE_LIBS = @READLINE_LIBS@
 RELEASE = @RELEASE@
-RRDTOOL_CPPFLAGS = @RRDTOOL_CPPFLAGS@
-RRDTOOL_LDFLAGS = @RRDTOOL_LDFLAGS@
-RRDTOOL_LIBS = @RRDTOOL_LIBS@
 RSMI_CPPFLAGS = @RSMI_CPPFLAGS@
-RSMI_LDFLAGS = @RSMI_LDFLAGS@
-RSMI_LIBS = @RSMI_LIBS@
+S2N_CPPFLAGS = @S2N_CPPFLAGS@
+S2N_DIR = @S2N_DIR@
+S2N_LDFLAGS = @S2N_LDFLAGS@
+S2N_LIBS = @S2N_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SLEEP_CMD = @SLEEP_CMD@
+SLURMCTLD_INTERFACES = @SLURMCTLD_INTERFACES@
 SLURMCTLD_PORT = @SLURMCTLD_PORT@
 SLURMCTLD_PORT_COUNT = @SLURMCTLD_PORT_COUNT@
 SLURMDBD_PORT = @SLURMDBD_PORT@
+SLURMD_INTERFACES = @SLURMD_INTERFACES@
 SLURMD_PORT = @SLURMD_PORT@
 SLURMRESTD_PORT = @SLURMRESTD_PORT@
 SLURM_API_AGE = @SLURM_API_AGE@
@@ -490,6 +499,7 @@ mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
 pdfdir = @pdfdir@
+pkgconfigdir = @pkgconfigdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
@@ -508,8 +518,10 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
+CLEANFILES = core.* *.bino
 AM_CPPFLAGS = -I$(top_srcdir)
 scontrol_SOURCES = \
+	common.c	\
 	create_res.c	\
 	info_burst_buffer.c \
 	info_assoc_mgr.c \
@@ -519,6 +531,7 @@ scontrol_SOURCES = \
 	info_node.c	\
 	info_part.c	\
 	info_res.c	\
+	power_node.c	\
 	reboot_node.c	\
 	scontrol.c	\
 	scontrol.h	\
@@ -527,14 +540,23 @@ scontrol_SOURCES = \
 	update_part.c	\
 	update_step.c
 
-scontrol_LDADD = $(LIB_SLURM) $(DL_LIBS) $(READLINE_LIBS)
+scontrol_LDADD = $(LIB_SLURM) $(READLINE_LIBS) $(LIB_REF)
 scontrol_DEPENDENCIES = $(LIB_SLURM_BUILD)
 scontrol_LDFLAGS = -export-dynamic $(CMD_LDFLAGS)
+REF = usage.txt
+BIN_REF = $(REF:.txt=.bino)
+LIB_REF = lib_ref.la
+
+# a blank lib_ref_la_SOURCES is needed for 'make cscope' to work correctly.
+lib_ref_la_SOURCES = 
+lib_ref_la_LIBADD = lib_ref.lo
+noinst_LTLIBRARIES = $(LIB_REF)
+EXTRA_scontrol_DEPENDENCIES = $(LIB_REF)
 all: all-am
 
 .SUFFIXES:
 .SUFFIXES: .c .lo .o .obj
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am $(top_srcdir)/make_ref.include $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -554,6 +576,7 @@ Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	    echo ' cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@ $(am__maybe_remake_depfiles)'; \
 	    cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@ $(am__maybe_remake_depfiles);; \
 	esac;
+$(top_srcdir)/make_ref.include $(am__empty):
 
 $(top_builddir)/config.status: $(top_srcdir)/configure $(CONFIG_STATUS_DEPENDENCIES)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
@@ -613,6 +636,20 @@ clean-binPROGRAMS:
 	echo " rm -f" $$list; \
 	rm -f $$list
 
+clean-noinstLTLIBRARIES:
+	-test -z "$(noinst_LTLIBRARIES)" || rm -f $(noinst_LTLIBRARIES)
+	@list='$(noinst_LTLIBRARIES)'; \
+	locs=`for p in $$list; do echo $$p; done | \
+	      sed 's|^[^/]*$$|.|; s|/[^/]*$$||; s|$$|/so_locations|' | \
+	      sort -u`; \
+	test -z "$$locs" || { \
+	  echo rm -f $${locs}; \
+	  rm -f $${locs}; \
+	}
+
+lib_ref.la: $(lib_ref_la_OBJECTS) $(lib_ref_la_DEPENDENCIES) $(EXTRA_lib_ref_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK)  $(lib_ref_la_OBJECTS) $(lib_ref_la_LIBADD) $(LIBS)
+
 scontrol$(EXEEXT): $(scontrol_OBJECTS) $(scontrol_DEPENDENCIES) $(EXTRA_scontrol_DEPENDENCIES) 
 	@rm -f scontrol$(EXEEXT)
 	$(AM_V_CCLD)$(scontrol_LINK) $(scontrol_OBJECTS) $(scontrol_LDADD) $(LIBS)
@@ -623,6 +660,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/common.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/create_res.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/info_assoc_mgr.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/info_burst_buffer.Po@am__quote@ # am--include-marker
@@ -632,6 +670,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/info_node.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/info_part.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/info_res.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/power_node.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/reboot_node.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/scontrol.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/update_job.Po@am__quote@ # am--include-marker
@@ -725,7 +764,7 @@ distclean-tags:
 	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
 check-am: all-am
 check: check-am
-all-am: Makefile $(PROGRAMS)
+all-am: Makefile $(PROGRAMS) $(LTLIBRARIES)
 installdirs:
 	for dir in "$(DESTDIR)$(bindir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
@@ -752,6 +791,7 @@ install-strip:
 mostlyclean-generic:
 
 clean-generic:
+	-test -z "$(CLEANFILES)" || rm -f $(CLEANFILES)
 
 distclean-generic:
 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
@@ -762,10 +802,12 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-generic clean-libtool mostlyclean-am
+clean-am: clean-binPROGRAMS clean-generic clean-libtool \
+	clean-noinstLTLIBRARIES mostlyclean-am
 
 distclean: distclean-am
-		-rm -f ./$(DEPDIR)/create_res.Po
+		-rm -f ./$(DEPDIR)/common.Po
+	-rm -f ./$(DEPDIR)/create_res.Po
 	-rm -f ./$(DEPDIR)/info_assoc_mgr.Po
 	-rm -f ./$(DEPDIR)/info_burst_buffer.Po
 	-rm -f ./$(DEPDIR)/info_fed.Po
@@ -774,6 +816,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/info_node.Po
 	-rm -f ./$(DEPDIR)/info_part.Po
 	-rm -f ./$(DEPDIR)/info_res.Po
+	-rm -f ./$(DEPDIR)/power_node.Po
 	-rm -f ./$(DEPDIR)/reboot_node.Po
 	-rm -f ./$(DEPDIR)/scontrol.Po
 	-rm -f ./$(DEPDIR)/update_job.Po
@@ -825,7 +868,8 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-am
-		-rm -f ./$(DEPDIR)/create_res.Po
+		-rm -f ./$(DEPDIR)/common.Po
+	-rm -f ./$(DEPDIR)/create_res.Po
 	-rm -f ./$(DEPDIR)/info_assoc_mgr.Po
 	-rm -f ./$(DEPDIR)/info_burst_buffer.Po
 	-rm -f ./$(DEPDIR)/info_fed.Po
@@ -834,6 +878,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/info_node.Po
 	-rm -f ./$(DEPDIR)/info_part.Po
 	-rm -f ./$(DEPDIR)/info_res.Po
+	-rm -f ./$(DEPDIR)/power_node.Po
 	-rm -f ./$(DEPDIR)/reboot_node.Po
 	-rm -f ./$(DEPDIR)/scontrol.Po
 	-rm -f ./$(DEPDIR)/update_job.Po
@@ -861,21 +906,41 @@ uninstall-am: uninstall-binPROGRAMS
 .MAKE: install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am am--depfiles check check-am clean \
-	clean-binPROGRAMS clean-generic clean-libtool cscopelist-am \
-	ctags ctags-am distclean distclean-compile distclean-generic \
-	distclean-libtool distclean-tags dvi dvi-am html html-am info \
-	info-am install install-am install-binPROGRAMS install-data \
-	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-info \
-	install-info-am install-man install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-compile \
-	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS
+	clean-binPROGRAMS clean-generic clean-libtool \
+	clean-noinstLTLIBRARIES cscopelist-am ctags ctags-am distclean \
+	distclean-compile distclean-generic distclean-libtool \
+	distclean-tags dvi dvi-am html html-am info info-am install \
+	install-am install-binPROGRAMS install-data install-data-am \
+	install-dvi install-dvi-am install-exec install-exec-am \
+	install-html install-html-am install-info install-info-am \
+	install-man install-pdf install-pdf-am install-ps \
+	install-ps-am install-strip installcheck installcheck-am \
+	installdirs maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-compile mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
+	uninstall-am uninstall-binPROGRAMS
 
 .PRECIOUS: Makefile
 
+
+%.bino: %.txt
+	$(AM_V_GEN)curr_dir=$(shell pwd); cd $(abs_srcdir); $(LD) -r -o "$(abs_builddir)/$*.bino" -z noexecstack --format=binary "$(notdir $<)"; cd $$curr_dir
+	$(AM_V_at)@OBJCOPY@ --rename-section .data=.rodata,alloc,load,readonly,data,contents "$*.bino"
+
+lib_ref.lo: $(BIN_REF)
+	$(AM_V_at)echo "# $@ - a libtool object file" >"$@"
+	$(AM_V_at)echo "# Generated by libtool" >>"$@"
+	$(AM_V_at)echo "# (Not really... but we need libtool to believe it was.)" >>"$@"
+	$(AM_V_at)echo "#" >>"$@"
+	$(AM_V_at)echo "# Please DO NOT delete this file!" >>"$@"
+	$(AM_V_at)echo "# It is necessary for linking the library." >>"$@"
+	$(AM_V_at)echo >>"$@"
+	$(AM_V_at)echo "# Name of the PIC object." >>"$@"
+	$(AM_V_at)echo "pic_object='$(BIN_REF)'" >>"$@"
+	$(AM_V_at)echo >>"$@"
+	$(AM_V_at)echo "# Name of the non-PIC object" >>"$@"
+	$(AM_V_at)echo "non_pic_object=''" >>"$@"
+	$(AM_V_at)echo >>"$@"
 
 force:
 $(scontrol_DEPENDENCIES) : force

@@ -39,43 +39,12 @@
 
 #include "pmixp_common.h"
 #include "pmixp_info.h"
-#include <time.h>
 
-#define PMIXP_DEBUG_GET_TS(ts) {                                \
-	struct timeval tv;                                      \
-	gettimeofday(&tv, NULL);                                \
-	ts = tv.tv_sec + 1E-6 * tv.tv_usec;                     \
+#define PMIXP_DEBUG(format, args...) {				\
+	debug("%s [%d]: %s:%d: " format "",			\
+	      pmixp_info_hostname(), pmixp_info_nodeid(),	\
+	      THIS_FILE, __LINE__, ## args);			\
 }
-
-#define PMIXP_DEBUG_TS(ts, format, args...) {                   \
-	debug("%s [%d]: [%.6lf] %s:%d: " format "",             \
-	      pmixp_info_hostname(), pmixp_info_nodeid(),       \
-	      ts, THIS_FILE, __LINE__, ## args);                \
-}
-
-#define PMIXP_DEBUG(format, args...) {                          \
-	double ts;                                              \
-	PMIXP_DEBUG_GET_TS(ts);                                 \
-	PMIXP_DEBUG_TS(ts, format, ## args);                    \
-}
-
-#define PMIXP_DEBUG_BASE(format, args...) {                     \
-	char file[] = __FILE__;                                 \
-	struct timeval tv;                                      \
-	double ts;                                              \
-	gettimeofday(&tv, NULL);                                \
-	ts = tv.tv_sec + 1E-6 * tv.tv_usec;                     \
-	char *file_base = strrchr(file, '/');                   \
-	if (file_base == NULL) {                                \
-		file_base = file;                               \
-	} else {                                                \
-		file_base++;                                    \
-	}                                                       \
-	debug("[%s:%d] [%.6lf] [%s:%d:%s] mpi/pmix:  " format,  \
-	      pmixp_info_hostname(), pmixp_info_nodeid(), ts,   \
-	      file_base, __LINE__, __func__, ## args);          \
-}
-
 
 #define PMIXP_ERROR_STD(format, args...) {			\
 	error(" %s: %s: %s [%d]: %s:%d: " format ": %s (%d)",	\
@@ -94,7 +63,7 @@
 #define PMIXP_ABORT(format, args...) {				\
 	PMIXP_ERROR(format, ##args);				\
 	slurm_kill_job_step(pmixp_info_jobid(),			\
-			    pmixp_info_stepid(), SIGKILL);	\
+			    pmixp_info_stepid(), SIGKILL, 0);	\
 }
 
 #define PMIXP_ERROR_NO(err, format, args...) {			\
@@ -104,61 +73,9 @@
 	      ## args, strerror(err), err);			\
 }
 
-#define PMIXP_PROF_SERIALIZE(bptr, bsize, offset, val){         \
-	xassert( (offset + sizeof(val)) <= bsize);              \
-	memcpy(bptr + offset, &val, sizeof(val));               \
-	offset += sizeof(val);                                  \
-}
-
-#define PMIXP_PROF_DESERIALIZE(bptr, bsize, offset, val) {      \
-	xassert( (offset + sizeof(val)) <= bsize);              \
-	memcpy(&val, bptr + offset, sizeof(val));               \
-	offset += sizeof(val);                                  \
-}
-
-
 #ifdef NDEBUG
 #define pmixp_debug_hang(x)
-#define PMIXP_DELAYED_PROF_MAX 0
-#define PMIXP_PROF_INIT(max_threads)
-#define PMIXP_PROF_FINI()
 #else
-
-/* Lightweight profiling interface */
-
-typedef struct {
-	void *priv;
-	void (*output)(void *priv, double ts, size_t size, char data[]);
-} pmixp_profile_t;
-
-void pmixp_profile_in(pmixp_profile_t *prof, char *buf, size_t size);
-void pmixp_profile_init(int max_threads, size_t thread_buf_size);
-void pmixp_profile_fini();
-
-/* Use the limit of 100M for the buffer */
-#define PMIXP_DELAYED_PROF_MAX (100*1024*1024)
-#define PMIXP_PROFILE_DELAY() (pmixp_info_prof_delayed())
-
-#define PMIXP_PROFILE_DEFINE(prefix, var, ctx, outfunc)         \
-prefix pmixp_profile_t var = { .priv = ctx, .output = outfunc };
-
-#define PMIXP_PROF_INIT(max_threads) {                          \
-	if( pmixp_info_prof_delayed()) {                        \
-		pmixp_profile_init(max_threads,                 \
-				   pmixp_info_prof_bufsize());  \
-	}                                                       \
-}
-
-#define PMIXP_PROF_FINI() {                                     \
-	if( pmixp_info_prof_delayed()) {                        \
-		pmixp_profile_fini();                           \
-	}                                                       \
-}
-
-#define PMIXP_PROFILE(prof, buf, buf_size) {                    \
-	pmixp_profile_in(prof, buf, buf_size);                  \
-}
-
 static inline void _pmixp_debug_hang(int delay)
 {
 	while (delay) {

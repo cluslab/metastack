@@ -32,19 +32,19 @@ create_install_dir() {
 
 	echo "创建预测工具目录 $predictor_dir..."
 	mkdir -p "$predictor_dir"
-    
+
 	echo "创建python环境目录 $ai_environment_dir..."
 	mkdir -p "$ai_environment_dir"
-    
+
 	echo "创建AI环境目录 $sklearn_dir..."
 	mkdir -p "$sklearn_dir"
-    
+
 	echo "安装目录创建完成。"
 }
 
 # 检查并备份文件
 backup_if_exists() {
-    
+
 	local target_file=$1
 
 	# 检查文件是否已存在，若已存在则备份
@@ -66,9 +66,9 @@ install_files() {
 	# 安装新文件
 	install -m 755 "cli_filter.lua" "$cli_target"
 	echo "安装文件 cli_filter.lua 到 $clinte_dir 已完成"
-    
+
 	echo "开始安装文件到 $predictor_dir..."
-    
+
 	for file in "${FILES[@]}"; do
 
 		# 备份原文件
@@ -78,9 +78,9 @@ install_files() {
 		# 安装新文件
 		install -m 755 "$file" "$predictor_target"
 		echo "安装文件 $file 到 $predictor_dir 已完成"
-    
+
 	done
-    
+
 	echo "安装 predictor 目录的文件已完成。"
 
 	echo "开始安装 sklearn 相关文件到 $sklearn_dir..."
@@ -94,7 +94,7 @@ install_files() {
 		# 安装新文件
 		install -m 755 "$file" "$sklearn_target"
 		echo "安装文件 $file 到 $sklearn_dir 已完成"
-        
+
 	done
 
 	echo "安装 sklearn 目录的文件完成。"

@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2010 SchedMD <https://www.schedmd.com>.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov> and Kevin Tew <tew1@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
@@ -50,12 +50,13 @@
 #include "src/common/list.h"
 #include "src/common/parse_time.h"
 #include "src/common/read_config.h"
-#include "src/common/slurm_auth.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_resource_info.h"
-#include "src/common/slurm_selecttype_info.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+
+#include "src/interfaces/auth.h"
+#include "src/interfaces/select.h"
 
 /* Local functions */
 static void _write_group_header(FILE* out, char * header);
@@ -107,10 +108,14 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 			    node_info_msg_t * node_info_ptr,
 			    partition_info_msg_t * part_info_ptr,
 				slurm_ctl_conf_info_msg_watch_dog_t  *slurm_watch_dog_ptr)
+#else
+void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
+			    node_info_msg_t * node_info_ptr,
+			    partition_info_msg_t * part_info_ptr)
 #endif
 {
 	int i = 0;
-	char time_str[32];
+	char time_str[256];
 	char *tmp_str = NULL;
 	char *base_path = NULL;
 	char *path = NULL;
@@ -120,7 +125,7 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 	partition_info_t *p = NULL;
 	struct records {
 	  char *rec;
-	  hostlist_t hostlist;
+	  hostlist_t *hostlist;
 	  struct records *next;
 	} *rp = NULL;
 	struct records *crp;
@@ -324,6 +329,9 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 		if (p[i].flags & PART_FLAG_EXCLUSIVE_USER)
 			fprintf(fp, " ExclusiveUser=YES");
 
+		if (p[i].flags & PART_FLAG_EXCLUSIVE_TOPO)
+			fprintf(fp, " ExclusiveTopo=YES");
+
 		if (p[i].grace_time)
 			fprintf(fp, " GraceTime=%u", p[i].grace_time);
 
@@ -334,13 +342,17 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 	                fprintf(fp, " LLN=YES");
 
 #ifdef __METASTACK_NEW_PART_LLS
-		if (p[i].flags & PART_FLAG_LLS)
-	            	fprintf(fp, " LLS=YES");
-#endif	
-
+		if (p[i].meta_flags & PART_METAFLAG_LLS)
+	                fprintf(fp, " LLS=YES");
+#endif
+					
 		if (p[i].max_cpus_per_node != INFINITE)
 			fprintf(fp, " MaxCPUsPerNode=%u",
 				p[i].max_cpus_per_node);
+
+		if (p[i].max_cpus_per_socket != INFINITE)
+			fprintf(fp, " MaxCPUsPerSocket=%u",
+				p[i].max_cpus_per_socket);
 
 		if (p[i].max_mem_per_cpu & MEM_PER_CPU) {
 		        if (p[i].max_mem_per_cpu != MEM_PER_CPU)
@@ -370,7 +382,7 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 				int j = 0;
 				char *nodes = NULL;
 				node_info_t *node_ptr = NULL;
-				hostlist_t host_list = hostlist_create(p[i].nodes);
+				hostlist_t *host_list = hostlist_create(p[i].nodes);
 				while (p[i].node_inx[j] >= 0) {
 					int k = 0;
 					for (k = p[i].node_inx[j]; k <= p[i].node_inx[j+1]; k++) {
@@ -410,9 +422,25 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 			fprintf(fp, " PriorityJobFactor=%u",
 				p[i].priority_job_factor);
 
+#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
+		if (p[i].suspend_idle != NO_VAL)
+			fprintf(fp, " SuspendKeepIdle=%"PRIu32"", p[i].suspend_idle);
+#endif
+
 		if (p[i].priority_tier != 1)
 			fprintf(fp, " PriorityTier=%u",
 				p[i].priority_tier);
+
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES			
+		if (p[i].standby_node_parameters != NULL) {
+		    fprintf(fp, " StandbyNodeParameters=%s", p[i].standby_node_parameters);
+		}
+
+		if (p[i].standby_nodes != NULL) {
+			fprintf(fp, " StandbyNodes=%s", p[i].standby_nodes);
+		}
+#endif
+
 #ifdef __METASTACK_PART_PRIORITY_WEIGHT
 		if (p[i].priority_favor_small == 1) {
 			fprintf(fp, " PriorityFavorSmall=Yes");
@@ -442,17 +470,7 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 			fprintf(fp, " PriorityWeightTRES=%s",
 				p[i].priority_weight_tres);				
 #endif
-#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES			
-		if (p[i].standby_node_parameters != NULL)
-		        fprintf(fp, " StandbyNodeParameters=%s", p[i].standby_node_parameters);
-
-		if (p[i].standby_nodes != NULL)
-			fprintf(fp, " StandbyNodes=%s", p[i].standby_nodes);
-#endif				
-#ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
-		if (p[i].suspend_idle != NO_VAL)
-			fprintf(fp, " SuspendKeepIdle=%"PRIu32"", p[i].suspend_idle);
-#endif
+				
 		if (p[i].qos_char != NULL)
 			fprintf(fp, " QOS=%s", p[i].qos_char);
 
@@ -463,16 +481,21 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 	                fprintf(fp, " RootOnly=YES");
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 		if (p[i].meta_flags & PART_METAFLAG_HETPART)
-					fprintf(fp, " HetPart=YES");
+	                fprintf(fp, " HetPart=YES");
 #endif
+
 #ifdef __METASTACK_NEW_PART_RBN
 		if (p[i].meta_flags & PART_METAFLAG_RBN)
-					fprintf(fp, " RBN=YES");
+	                fprintf(fp, " RBN=YES");
 #endif
+
 		if (p[i].cr_type & CR_CORE)
 			fprintf(fp, " SelectTypeParameters=CR_CORE");
 		else if (p[i].cr_type & CR_SOCKET)
 			fprintf(fp, " SelectTypeParameters=CR_SOCKET");
+
+		if (p[i].flags & PART_FLAG_PDOI)
+			fprintf(fp, " PowerDownOnIdle=YES");
 
 		force = p[i].max_share & SHARED_FORCE;
 		val = p[i].max_share & (~SHARED_FORCE);
@@ -543,7 +566,7 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 						write_watchdog_config[i].describe);		
 				if (write_watchdog_config[i].account &&
 					(xstrcasecmp(write_watchdog_config[i].account, "Accounts") != 0))
-					fprintf(fp, " Accounts=%s",
+					fprintf(fp, " Accounts=%s ",
 						write_watchdog_config[i].account);
 				if ((write_watchdog_config[i].init_time >= 0) && (write_watchdog_config[i].init_time != NO_VAL))
 					fprintf(fp, " Init_time=%u",write_watchdog_config[i].init_time);
@@ -569,7 +592,7 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 
 static void _print_config_plugin_params_list(FILE* out, List l, char *title)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	config_plugin_params_t *p;
 
 	if (!l || !list_count(l))
@@ -583,6 +606,52 @@ static void _print_config_plugin_params_list(FILE* out, List l, char *title)
 	}
 	list_iterator_destroy(itr);
 }
+
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+static void slurm_print_rl_pairs(FILE* out, void *rl_config, void *rl_users, char *title)
+{
+	bool print_rl_config = false;
+	bool print_rl_users = false;
+	list_itr_t *iter = NULL;
+	config_key_pair_t *key_pair = NULL;
+
+	List rl_config_list = (List)rl_config;
+	List rl_user_list = (List)rl_users;
+	
+	if (rl_config_list && list_count(rl_config_list)) {
+		print_rl_config = true;
+	}	
+
+	if (rl_user_list && list_count(rl_user_list)) {
+		print_rl_users = true;
+	}
+
+	if (!(print_rl_config || print_rl_users)) {
+		return;
+	}
+	/* show title */
+	fprintf(out, "%s", title);
+	
+	/* show RlConfig */
+	if (print_rl_config) {
+		iter = list_iterator_create(rl_config_list);
+		while ((key_pair = list_next(iter))) {
+			fprintf(out, "%-23s %s\n", key_pair->name, key_pair->value);
+		}
+		list_iterator_destroy(iter);
+	}
+
+	/* show RlUsers */
+	if (print_rl_users) {
+		iter = list_iterator_create(rl_user_list);
+		while ((key_pair = list_next(iter))) {
+			fprintf(out, "%-23s %s\n", key_pair->name, key_pair->value);
+		}
+		list_iterator_destroy(iter);
+	}
+}
+#endif
+
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 /*
@@ -644,55 +713,10 @@ void slurm_print_watch_dog_conf(FILE *out, watch_dog_record_t *watch_dog_ptr, in
 	if(watch_dog_ptr == NULL)
 		return;
 	char *print_this = slurm_print_watch_dog_info(watch_dog_ptr, one_liner);
-    if(print_this == NULL)
+	if(print_this == NULL)
 		return;
 	fprintf (out, "%s", print_this);
 	xfree(print_this);
-}
-#endif
-
-#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
-static void slurm_print_rl_pairs(FILE* out, void *rl_config, void *rl_users, char *title)
-{
-	bool print_rl_config = false;
-	bool print_rl_users = false;
-	ListIterator iter = NULL;
-	config_key_pair_t *key_pair = NULL;
-
-	List rl_config_list = (List)rl_config;
-	List rl_user_list = (List)rl_users;
-	
-	if (rl_config_list && list_count(rl_config_list)) {
-		print_rl_config = true;
-	}	
-
-	if (rl_user_list && list_count(rl_user_list)) {
-		print_rl_users = true;
-	}
-
-	if (!(print_rl_config || print_rl_users)) {
-		return;
-	}
-	/* show title */
-	fprintf(out, "%s", title);
-	
-	/* show RlConfig */
-	if (print_rl_config) {
-		iter = list_iterator_create(rl_config_list);
-		while ((key_pair = list_next(iter))) {
-			fprintf(out, "%-23s %s\n", key_pair->name, key_pair->value);
-		}
-		list_iterator_destroy(iter);
-	}
-
-	/* show RlUsers */
-	if (print_rl_users) {
-		iter = list_iterator_create(rl_user_list);
-		while ((key_pair = list_next(iter))) {
-			fprintf(out, "%-23s %s\n", key_pair->name, key_pair->value);
-		}
-		list_iterator_destroy(iter);
-	}
 }
 #endif
 
@@ -705,14 +729,10 @@ static void slurm_print_rl_pairs(FILE* out, void *rl_config, void *rl_users, cha
 void slurm_print_ctl_conf ( FILE* out,
 			    slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr )
 {
-	char time_str[32], tmp_str[128];
+	char time_str[32], tmp_str[256];
 	void *ret_list = NULL;
 	char *select_title = "Select Plugin Configuration";
-	uint32_t cluster_flags = slurmdb_setup_cluster_flags();
 	char *tmp2_str = NULL;
-
-	if (cluster_flags & CLUSTER_FLAG_CRAY)
-		select_title = "\nCray configuration\n";
 
 	if (slurm_ctl_conf_ptr == NULL)
 		return;
@@ -739,19 +759,12 @@ void slurm_print_ctl_conf ( FILE* out,
 	slurm_print_key_pairs(out, slurm_ctl_conf_ptr->cgroup_conf,
 			      "\nCgroup Support Configuration:\n");
 
-	slurm_print_key_pairs(out, slurm_ctl_conf_ptr->ext_sensors_conf,
-			      "\nExternal Sensors Configuration:\n");
 	slurm_print_key_pairs(out, slurm_ctl_conf_ptr->mpi_conf,
 			      "\nMPI Plugins Configuration:\n");
 
 	xstrcat(tmp2_str, "\nNode Features Configuration:");
 	_print_config_plugin_params_list(out,
 		 (List) slurm_ctl_conf_ptr->node_features_conf, tmp2_str);
-	xfree(tmp2_str);
-
-	xstrcat(tmp2_str, "\nSlurmctld Plugstack Plugins Configuration:");
-	_print_config_plugin_params_list(out,
-		 (List) slurm_ctl_conf_ptr->slurmctld_plugstack_conf, tmp2_str);
 	xfree(tmp2_str);
 
 	slurm_print_key_pairs(out, slurm_ctl_conf_ptr->select_conf_key_pairs,
@@ -762,9 +775,10 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 {
 	List ret_list = NULL;
 	config_key_pair_t *key_pair;
-	char tmp_str[128];
+	char tmp_str[256];
 	uint32_t cluster_flags = slurmdb_setup_cluster_flags();
 	int i;
+	bool format_stderr = false;
 
 	if ( slurm_ctl_conf_ptr == NULL )
 		return NULL;
@@ -825,14 +839,20 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("AccountingStoreFlags");
-	if (slurm_ctl_conf_ptr->conf_flags & CTL_CONF_SJC)
+	if (slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_SJC)
 		xstrfmtcat(key_pair->value, "%sjob_comment",
 			   key_pair->value ? "," : "");
-	if (slurm_ctl_conf_ptr->conf_flags & CTL_CONF_SJE)
+	if (slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_SJE)
 		xstrfmtcat(key_pair->value, "%sjob_env",
 			   key_pair->value ? "," : "");
-	if (slurm_ctl_conf_ptr->conf_flags & CTL_CONF_SJS)
+	if (slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_SJX)
+		xstrfmtcat(key_pair->value, "%sjob_extra",
+			   key_pair->value ? "," : "");
+	if (slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_SJS)
 		xstrfmtcat(key_pair->value, "%sjob_script",
+			   key_pair->value ? "," : "");
+	if (slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_NO_STDIO)
+		xstrfmtcat(key_pair->value, "%sno_stdio",
 			   key_pair->value ? "," : "");
 	list_append(ret_list, key_pair);
 
@@ -868,9 +888,17 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("AllowSpecResourcesUsage");
 	key_pair->value = xstrdup(
-		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_ASRU) ?
+		(slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_ASRU) ?
 		"Yes" : "No");
 	list_append(ret_list, key_pair);
+
+#ifdef __METASTACK_OPT_RPC_USER_FIX
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("AssocServerSort");
+	key_pair->value = xstrdup(
+		(slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_ASS) ? "Yes" : "No");
+	list_append(ret_list, key_pair);
+#endif
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("AuthAltTypes");
@@ -932,7 +960,7 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 	snprintf(tmp_str, sizeof(tmp_str), "%u sec",
-		 slurm_ctl_conf_ptr->cachedup_interval);
+		slurm_ctl_conf_ptr->cachedup_interval);
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("CacheDupInterval");
 	key_pair->value = xstrdup(tmp_str);
@@ -953,16 +981,15 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 		uint32_t high_port = slurm_ctl_conf_ptr->query_port;
 		high_port += (slurm_ctl_conf_ptr->query_port_count - 1);
 		snprintf(tmp_str, sizeof(tmp_str), "%u-%u",
-			 slurm_ctl_conf_ptr->query_port, high_port);
+			slurm_ctl_conf_ptr->query_port, high_port);
 	} else {
 		snprintf(tmp_str, sizeof(tmp_str), "%u",
-			 slurm_ctl_conf_ptr->query_port);
+			slurm_ctl_conf_ptr->query_port);
 	}
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("CacheQueryPort");
 	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
-
 #endif
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -985,11 +1012,6 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("CompleteWait");
 	key_pair->value = xstrdup(tmp_str);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("CoreSpecPlugin");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->core_spec_plugin);
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -1046,33 +1068,35 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 	key_pair->name = xstrdup("DisableRootJobs");
 	key_pair->value = xstrdup(
-		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_DRJ) ? "Yes" : "No");
-#ifdef __METASTACK_OPT_RPC_USER_FIX
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	list_append(ret_list, key_pair);
-	key_pair->name = xstrdup("AssocServerSort");
-	key_pair->value = xstrdup(
-		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_ASS) ? "Yes" : "No");
-#endif
+		(slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_DRJ) ? "Yes" : "No");
+
 #ifdef __METASTACK_OPT_REGISTRATION_FIX
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	list_append(ret_list, key_pair);
 	key_pair->name = xstrdup("DownNodeToReg");
 	key_pair->value = xstrdup(
-		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_DNR) ? "Yes" : "No");
+		(slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_DNR) ? "Yes" : "No");
 #endif
 #ifdef __METASTACK_NEW_STATE_TO_NHC
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	list_append(ret_list, key_pair);
 	key_pair->name = xstrdup("HealthCheckCarryNode");
 	key_pair->value = xstrdup(
-		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_HCN) ? "Yes" : "No");
+		(slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_HCN) ? "Yes" : "No");
 #endif
+
 #ifdef __METASTACK_OPT_GRES_CONFIG
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("SlurmctldLoadGres");
 	key_pair->value = xstrdup(
 		slurm_ctl_conf_ptr->slurmctld_load_gres ? "Yes" : "No");
+	list_append(ret_list, key_pair);
+#endif
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("SkipSaveSacctAgain");
+	key_pair->value = xstrdup(
+		slurm_ctl_conf_ptr->skip_save_sacct_again ? "No" : "Yes");
 	list_append(ret_list, key_pair);
 #endif
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -1089,10 +1113,12 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 		parse_part_enforce_type_2str(
 			slurm_ctl_conf_ptr->enforce_part_limits));
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("Epilog");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->epilog);
-	list_append(ret_list, key_pair);
+	for (int i = 0; i < slurm_ctl_conf_ptr->epilog_cnt; i++) {
+		char *key = xstrdup_printf("Epilog[%d]", i);
+		add_key_pair(ret_list, key, "%s",
+			     slurm_ctl_conf_ptr->epilog[i]);
+		xfree(key);
+	}
 
 	snprintf(tmp_str, sizeof(tmp_str), "%u usec",
 		 slurm_ctl_conf_ptr->epilog_msg_time);
@@ -1101,28 +1127,18 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("EpilogSlurmctld");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->epilog_slurmctld);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ExtSensorsType");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->ext_sensors_type);
-	list_append(ret_list, key_pair);
-
-	snprintf(tmp_str, sizeof(tmp_str), "%u sec",
-		 slurm_ctl_conf_ptr->ext_sensors_freq);
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ExtSensorsFreq");
-	key_pair->value = xstrdup(tmp_str);
-	list_append(ret_list, key_pair);
+	for (int i = 0; i < slurm_ctl_conf_ptr->epilog_slurmctld_cnt; i++) {
+		char *key = xstrdup_printf("EpilogSlurmctld[%d]", i);
+		add_key_pair(ret_list, key, "%s",
+			     slurm_ctl_conf_ptr->epilog_slurmctld[i]);
+		xfree(key);
+	}
 
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-    key_pair = xmalloc(sizeof(config_key_pair_t));
-    key_pair->name = xstrdup("ExtraMsgFile");
-    key_pair->value = xstrdup(slurm_ctl_conf_ptr->extra_msg_file);
-    list_append(ret_list, key_pair);
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("ExtraMsgFile");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->extra_msg_file);
+	list_append(ret_list, key_pair);
 #endif
 
 	if (xstrcmp(slurm_ctl_conf_ptr->priority_type, "priority/basic")) {
@@ -1192,6 +1208,9 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 		list_append(ret_list, key_pair);
 	}
 
+	add_key_pair(ret_list, "HashPlugin", "%s",
+		     slurm_ctl_conf_ptr->hash_plugin);
+
 	snprintf(tmp_str, sizeof(tmp_str), "%u sec",
 		 slurm_ctl_conf_ptr->health_check_interval);
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -1247,6 +1266,11 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->job_comp_loc);
 	list_append(ret_list, key_pair);
 
+	key_pair = xmalloc(sizeof(*key_pair));
+	key_pair->name = xstrdup("JobCompParams");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->job_comp_params);
+	list_append(ret_list, key_pair);
+
 	snprintf(tmp_str, sizeof(tmp_str), "%u",
 		 slurm_ctl_conf_ptr->job_comp_port);
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -1267,18 +1291,6 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("JobContainerType");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->job_container_plugin);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("JobCredentialPrivateKey");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->
-				  job_credential_private_key);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("JobCredentialPublicCertificate");
-	key_pair->value = xstrdup(
-		slurm_ctl_conf_ptr->job_credential_public_certificate);
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -1326,17 +1338,17 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("LaunchType");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->launch_type);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("Licenses");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->licenses);
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("LogTimeFormat");
+	if (slurm_ctl_conf_ptr->log_fmt & LOG_FMT_FORMAT_STDERR) {
+		format_stderr = true;
+		slurm_ctl_conf_ptr->log_fmt &= (~LOG_FMT_FORMAT_STDERR);
+	}
+
 	if (slurm_ctl_conf_ptr->log_fmt == LOG_FMT_ISO8601_MS)
 		key_pair->value = xstrdup("iso8601_ms");
 	else if (slurm_ctl_conf_ptr->log_fmt == LOG_FMT_ISO8601)
@@ -1345,12 +1357,19 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 		key_pair->value = xstrdup("rfc5424_ms");
 	else if (slurm_ctl_conf_ptr->log_fmt == LOG_FMT_RFC5424)
 		key_pair->value = xstrdup("rfc5424");
+	else if (slurm_ctl_conf_ptr->log_fmt == LOG_FMT_RFC3339)
+		key_pair->value = xstrdup("rfc3339");
 	else if (slurm_ctl_conf_ptr->log_fmt == LOG_FMT_CLOCK)
 		key_pair->value = xstrdup("clock");
 	else if (slurm_ctl_conf_ptr->log_fmt == LOG_FMT_SHORT)
 		key_pair->value = xstrdup("short");
 	else if (slurm_ctl_conf_ptr->log_fmt == LOG_FMT_THREAD_ID)
 		key_pair->value = xstrdup("thread_id");
+
+	if (format_stderr) {
+		xstrcat(key_pair->value, ",format_stderr");
+		slurm_ctl_conf_ptr->log_fmt |= LOG_FMT_FORMAT_STDERR;
+	}
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -1367,6 +1386,13 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 		 slurm_ctl_conf_ptr->max_array_sz);
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("MaxArraySize");
+	key_pair->value = xstrdup(tmp_str);
+	list_append(ret_list, key_pair);
+
+	snprintf(tmp_str, sizeof(tmp_str), "%u",
+		 slurm_ctl_conf_ptr->max_batch_requeue);
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("MaxBatchRequeue");
 	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
 
@@ -1507,19 +1533,14 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("PowerParameters");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->power_parameters);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("PowerPlugin");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->power_plugin);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("PreemptMode");
 	key_pair->value = xstrdup(preempt_mode_string(slurm_ctl_conf_ptr->
 						      preempt_mode));
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("PreemptParameters");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->preempt_params);
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -1663,13 +1684,13 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 			xstrdup(slurm_ctl_conf_ptr->priority_weight_tres);
 		list_append(ret_list, key_pair);
 
-#ifdef __METASTACK_PRIORITY_JOBSIZE
+#ifdef __METASTACK_OPT_PRIORITY_JOBSIZE
 		key_pair = xmalloc(sizeof(config_key_pair_t));
 		key_pair->name = xstrdup("PriorityJobSizeMaxValue");
 		key_pair->value =
 			xstrdup(slurm_ctl_conf_ptr->priority_jobsize_maxvalue);
 		list_append(ret_list, key_pair);
-#endif
+#endif	
 	}
 
 
@@ -1685,10 +1706,12 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->proctrack_type);
 	list_append(ret_list, key_pair);
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("Prolog");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->prolog);
-	list_append(ret_list, key_pair);
+	for (int i = 0; i < slurm_ctl_conf_ptr->prolog_cnt; i++) {
+		char *key = xstrdup_printf("Prolog[%d]", i);
+		add_key_pair(ret_list, key, "%s",
+			     slurm_ctl_conf_ptr->prolog[i]);
+		xfree(key);
+	}
 
 	snprintf(tmp_str, sizeof(tmp_str), "%u",
 		 slurm_ctl_conf_ptr->prolog_epilog_timeout);
@@ -1697,10 +1720,12 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("PrologSlurmctld");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->prolog_slurmctld);
-	list_append(ret_list, key_pair);
+	for (int i = 0; i < slurm_ctl_conf_ptr->prolog_slurmctld_cnt; i++) {
+		char *key = xstrdup_printf("PrologSlurmctld[%d]", i);
+		add_key_pair(ret_list, key, "%s",
+			     slurm_ctl_conf_ptr->prolog_slurmctld[i]);
+		xfree(key);
+	}
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("PrologFlags");
@@ -1795,11 +1820,6 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("ReturnToService");
 	key_pair->value = xstrdup(tmp_str);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("RoutePlugin");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->route_plugin);
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -2002,11 +2022,6 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("SlurmctldPlugstack");
-	key_pair->value = xstrdup(slurm_ctl_conf_ptr->slurmctld_plugstack);
-	list_append(ret_list, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("SLURM_CONF");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->slurm_conf);
 	list_append(ret_list, key_pair);
@@ -2051,6 +2066,7 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->name = xstrdup("SuspendExcParts");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->suspend_exc_parts);
 	list_append(ret_list, key_pair);
+
 #ifdef  __METASTACK_NEW_SUSPEND_KEEP_IDLE
 	if (slurm_ctl_conf_ptr->suspend_idle_def != NO_VAL) {
 		if (slurm_ctl_conf_ptr->suspend_idle_def != 0)
@@ -2065,6 +2081,12 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
 #endif
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("SuspendExcStates");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->suspend_exc_states);
+	list_append(ret_list, key_pair);
+
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("SuspendProgram");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->suspend_program);
@@ -2137,7 +2159,7 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 					 slurm_ctl_conf_ptr->tcp_timeout);
 	list_append(ret_list, key_pair);
 
-#ifdef __METASTACK_TIME_SYNC_CHECK
+#ifdef __METASTACK_NEW_TIME_SYNC_CHECK
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("TimeSyncCheck");
 	if (slurm_ctl_conf_ptr->time_sync_check == 1) {
@@ -2160,6 +2182,10 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 #endif
 
+	add_key_pair(ret_list, "TLSParameters", "%s",
+		     slurm_ctl_conf_ptr->tls_params);
+	add_key_pair(ret_list, "TLSType", "%s", slurm_ctl_conf_ptr->tls_type);
+
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("TmpFS");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->tmp_fs);
@@ -2178,7 +2204,7 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("TrackWCKey");
 	key_pair->value = xstrdup(
-		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_WCKEY) ?
+		(slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_WCKEY) ?
 		"Yes" : "No");
 	list_append(ret_list, key_pair);
 
@@ -2192,7 +2218,7 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("UsePam");
 	key_pair->value = xstrdup(
-		(slurm_ctl_conf_ptr->conf_flags & CTL_CONF_PAM) ? "Yes" : "No");
+		(slurm_ctl_conf_ptr->conf_flags & CONF_FLAG_PAM) ? "Yes" : "No");
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -2227,35 +2253,35 @@ extern void *slurm_ctl_conf_2_key_pairs(slurm_conf_t *slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
-     List rl_users_list = (List)slurm_ctl_conf_ptr->rl_users;
-     List rl_config_list = (List)slurm_ctl_conf_ptr->rl_config;
-     ListIterator iter = NULL;
-     config_key_pair_t *config_key_pair = NULL;
+	List rl_users_list = (List)slurm_ctl_conf_ptr->rl_users;
+	List rl_config_list = (List)slurm_ctl_conf_ptr->rl_config;
+	list_itr_t *iter = NULL;
+	config_key_pair_t *config_key_pair = NULL;
 
-     if (rl_config_list && list_count(rl_config_list)) {
-		iter = list_iterator_create(rl_config_list);
-		while ((config_key_pair = list_next(iter))) {
-			key_pair = xmalloc(sizeof(config_key_pair_t));
-			key_pair->name = xstrdup(config_key_pair->name);
-			key_pair->value = xstrdup(config_key_pair->value);
-			list_append(ret_list, key_pair);                        
-		}
-		list_iterator_destroy(iter);
-     }
+	if (rl_config_list && list_count(rl_config_list)) {
+	   iter = list_iterator_create(rl_config_list);
+	   while ((config_key_pair = list_next(iter))) {
+		   key_pair = xmalloc(sizeof(config_key_pair_t));
+		   key_pair->name = xstrdup(config_key_pair->name);
+		   key_pair->value = xstrdup(config_key_pair->value);
+		   list_append(ret_list, key_pair);                        
+	   }
+	   list_iterator_destroy(iter);
+	}
 
-     if (rl_users_list && list_count(rl_users_list)) {
-		iter = list_iterator_create(rl_users_list);
-		while ((config_key_pair = list_next(iter))) {
-			key_pair = xmalloc(sizeof(config_key_pair_t));
-			key_pair->name = xstrdup(config_key_pair->name);
-			key_pair->value = xstrdup(config_key_pair->value);
-			list_append(ret_list, key_pair);                        
-		}
-		list_iterator_destroy(iter);
-     }
+	if (rl_users_list && list_count(rl_users_list)) {
+	   iter = list_iterator_create(rl_users_list);
+	   while ((config_key_pair = list_next(iter))) {
+		   key_pair = xmalloc(sizeof(config_key_pair_t));
+		   key_pair->name = xstrdup(config_key_pair->name);
+		   key_pair->value = xstrdup(config_key_pair->value);
+		   list_append(ret_list, key_pair);                        
+	   }
+	   list_iterator_destroy(iter);
+	}
 #endif
 
-	return (void *)ret_list;
+	return ret_list;
 }
 
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
@@ -2374,8 +2400,23 @@ slurm_load_slurmd_status(slurmd_status_t **slurmd_status_ptr)
 
 	if (cluster_flags & CLUSTER_FLAG_MULTSD) {
 		if ((this_addr = getenv("SLURMD_NODENAME"))) {
-			slurm_conf_get_addr(this_addr, &req_msg.address,
-					    req_msg.flags);
+			if (slurm_conf_get_addr(this_addr, &req_msg.address,
+						req_msg.flags)) {
+				/*
+				 * The node isn't in the conf, see if the
+				 * controller has an address for it.
+				 */
+				slurm_node_alias_addrs_t *alias_addrs;
+				if (!slurm_get_node_alias_addrs(this_addr,
+								&alias_addrs)) {
+					add_remote_nodes_to_conf_tbls(
+						alias_addrs->node_list,
+						alias_addrs->node_addrs);
+				}
+				slurm_free_node_alias_addrs(alias_addrs);
+				slurm_conf_get_addr(this_addr, &req_msg.address,
+						    req_msg.flags);
+			}
 		} else {
 			this_addr = "localhost";
 			slurm_set_addr(&req_msg.address, slurm_conf.slurmd_port,
@@ -2401,7 +2442,7 @@ slurm_load_slurmd_status(slurmd_status_t **slurmd_status_ptr)
 
 	rc = slurm_send_recv_node_msg(&req_msg, &resp_msg, 0);
 
-	if ((rc != 0) || !resp_msg.auth_cred) {
+	if (rc != SLURM_SUCCESS) {
 		error("slurm_slurmd_info: %m");
 		if (resp_msg.auth_cred)
 			auth_g_destroy(resp_msg.auth_cred);
@@ -2437,7 +2478,7 @@ slurm_load_slurmd_status(slurmd_status_t **slurmd_status_ptr)
 void slurm_print_slurmd_status (FILE* out,
 				slurmd_status_t * slurmd_status_ptr)
 {
-	char time_str[32];
+	char time_str[256];
 
 	if (slurmd_status_ptr == NULL )
 		return ;
@@ -2497,7 +2538,7 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 	config_key_pair_t *key_pair;
 	char *temp = NULL;
 	List config_list = (List)key_pairs;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 	/* define lists of specific configuration sections */
 	List other_list;
 	List control_list;
@@ -2664,15 +2705,14 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 		    !xstrcasecmp(key_pair->name, "AcctGatherNodeFreq") ||
 		    !xstrcasecmp(key_pair->name, "AcctGatherProfileType") ||
 		    !xstrcasecmp(key_pair->name, "JobAcctGatherFrequency") ||
-		    !xstrcasecmp(key_pair->name, "JobAcctGatherType") ||
-		    !xstrcasecmp(key_pair->name, "ExtSensorsType") ||
-		    !xstrcasecmp(key_pair->name, "ExtSensorsFreq")) {
+		    !xstrcasecmp(key_pair->name, "JobAcctGatherType")) {
 			list_append(accounting_list, temp);
 			continue;
 		}
 
 		if (!xstrcasecmp(key_pair->name, "SuspendExcNodes") ||
 		    !xstrcasecmp(key_pair->name, "SuspendExcParts") ||
+		    !xstrcasecmp(key_pair->name, "SuspendExcStates") ||
 		    !xstrcasecmp(key_pair->name, "SuspendProgram") ||
 		    !xstrcasecmp(key_pair->name, "SuspendRate") ||
 		    !xstrcasecmp(key_pair->name, "SuspendTime") ||
@@ -2691,6 +2731,7 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 		    !xstrcasecmp(key_pair->name, "SchedulerType") ||
 		    !xstrcasecmp(key_pair->name, "SlurmSchedLogLevel") ||
 		    !xstrcasecmp(key_pair->name, "PreemptMode") ||
+		    !xstrcasecmp(key_pair->name, "PreemptParameters") ||
 		    !xstrcasecmp(key_pair->name, "PreemptType") ||
 		    !xstrcasecmp(key_pair->name, "PreemptExemptTime") ||
 		    !xstrcasecmp(key_pair->name, "PriorityType") ||
@@ -2855,7 +2896,7 @@ static void _write_key_pairs(FILE* out, void *key_pairs)
 extern void slurm_print_key_pairs(FILE* out, void *key_pairs, char *title)
 {
 	List config_list = (List)key_pairs;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 	config_key_pair_t *key_pair;
 
 	if (!config_list || !list_count(config_list))

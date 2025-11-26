@@ -44,6 +44,9 @@
 extern int as_kingbase_get_modified_lfts(kingbase_conn_t *kingbase_conn,
 				      char *cluster_name, uint32_t start_lft);
 
+extern char *as_kingbase_add_assocs_cond(kingbase_conn_t *kingbase_conn, uint32_t uid,
+				      slurmdb_add_assoc_cond_t *add_assoc);
+					  
 extern int as_kingbase_add_assocs(kingbase_conn_t *kingbase_conn,
 			       uint32_t uid,
 			       List assoc_list);

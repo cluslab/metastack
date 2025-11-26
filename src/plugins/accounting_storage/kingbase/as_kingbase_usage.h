@@ -46,6 +46,10 @@ extern time_t global_last_rollup;
 extern pthread_mutex_t rollup_lock;
 extern pthread_mutex_t usage_rollup_lock;
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+extern pthread_mutex_t assoc_lock;
+#endif
+
 extern int get_usage_for_list(kingbase_conn_t *kingbase_conn,
 			      slurmdbd_msg_type_t type, List object_list,
 			      char *cluster_name, time_t start, time_t end);
@@ -64,6 +68,3 @@ extern bool trigger_reroll(kingbase_conn_t *kingbase_conn, time_t event_time);
 
 #endif
 
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-extern pthread_mutex_t assoc_lock;
-#endif

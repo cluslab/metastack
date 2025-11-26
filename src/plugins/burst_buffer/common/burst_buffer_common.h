@@ -5,8 +5,7 @@
  *  buffer plugins at the same time, so the state information is largely in the
  *  individual plugin and passed as a pointer argument to these functions.
  *****************************************************************************
- *  Copyright (C) 2014-2015 SchedMD LLC.
- *  Written by Morris Jette <jette@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -53,6 +52,8 @@
 /* Hash tables are used for both job burst buffer and user limit records */
 #define BB_HASH_SIZE	100
 
+#define DEFAULT_BB_POLL_INTERVAL 15 /* 15 seconds */
+
 /* Default operation timeouts */
 #define DEFAULT_OTHER_TIMEOUT		300	/* 5 minutes */
 #define DEFAULT_STATE_IN_TIMEOUT	86400	/* 1 day */
@@ -76,6 +77,7 @@ typedef struct bb_config {
 					 * units are GB */
 	uint32_t pool_cnt;		/* Count of records in pool_ptr */
 	burst_buffer_pool_t *pool_ptr;	/* Type is defined in slurm.h */
+	uint32_t poll_interval;
 	uint32_t other_timeout;
 	uint32_t stage_in_timeout;
 	uint32_t stage_out_timeout;
@@ -98,6 +100,7 @@ typedef struct bb_alloc {
 	bool cancelled;
 	time_t create_time;	/* Time of creation */
 	time_t end_time;	/* Expected time when use will end */
+	uint32_t group_id;
 	uint32_t id;		/* ID for reservation/accounting */
 	uint32_t job_id;
 	uint32_t magic;
@@ -252,6 +255,16 @@ extern bb_alloc_t *bb_alloc_name_rec(bb_state_t *state_ptr, char *name,
  * Return SLURM_SUCCESS if it succeeded or SLURM_ERROR if it failed.
  */
 extern int bb_build_bb_script(job_record_t *job_ptr, char *script_file);
+
+/*
+ * Create job script based on het job offsets
+ *
+ * Offset 0 - prepend burst buffer directives w/#EXCLUDED for offsets > 0
+ * Offset > 0 - remove all directives that are not current component
+ */
+extern char *bb_common_build_het_job_script(char *script,
+					    uint32_t het_job_offset,
+					    bool (*is_directive) (char *tok));
 
 /* Clear all cached burst buffer records, freeing all memory. */
 extern void bb_clear_cache(bb_state_t *state_ptr);

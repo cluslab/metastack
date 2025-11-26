@@ -54,15 +54,13 @@ extern List mysql_jobcomp_process_get_jobs(slurmdb_job_cond_t *job_cond)
 	char *tmp = NULL;
 	char *selected_part = NULL;
 	slurm_selected_step_t *selected_step = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int set = 0;
 	MYSQL_RES *result = NULL;
 	MYSQL_ROW row;
 	int i;
-	int lc = 0;
 	jobcomp_job_rec_t *job = NULL;
-	char time_str[32];
-	time_t temp_time;
+	char time_str[256];
 	List job_list = list_create(jobcomp_destroy_job);
 
 	if (job_cond->step_list && list_count(job_cond->step_list)) {
@@ -129,27 +127,28 @@ extern List mysql_jobcomp_process_get_jobs(slurmdb_job_cond_t *job_cond)
 	xfree(query);
 
 	while ((row = mysql_fetch_row(result))) {
-		lc++;
+		time_t start_time = atoi(row[JOBCOMP_REQ_STARTTIME]);
+		time_t end_time = atoi(row[JOBCOMP_REQ_ENDTIME]);
 
 		job = xmalloc(sizeof(jobcomp_job_rec_t));
 		if (row[JOBCOMP_REQ_JOBID])
 			job->jobid = slurm_atoul(row[JOBCOMP_REQ_JOBID]);
 		job->partition = xstrdup(row[JOBCOMP_REQ_PARTITION]);
-		temp_time = atoi(row[JOBCOMP_REQ_STARTTIME]);
-		slurm_make_time_str(&temp_time,
+		slurm_make_time_str(&start_time,
 				    time_str,
 				    sizeof(time_str));
 
 		job->start_time = xstrdup(time_str);
-		temp_time = atoi(row[JOBCOMP_REQ_ENDTIME]);
-		slurm_make_time_str(&temp_time,
+		slurm_make_time_str(&end_time,
 				    time_str,
 				    sizeof(time_str));
-
-		job->elapsed_time = atoi(row[JOBCOMP_REQ_ENDTIME])
-			- atoi(row[JOBCOMP_REQ_STARTTIME]);
-
 		job->end_time = xstrdup(time_str);
+
+		if (end_time && start_time && start_time < end_time)
+			job->elapsed_time = end_time - start_time;
+		else
+			job->elapsed_time = 0;
+
 		if (row[JOBCOMP_REQ_UID])
 			job->uid = slurm_atoul(row[JOBCOMP_REQ_UID]);
 		job->uid_name = xstrdup(row[JOBCOMP_REQ_USER_NAME]);

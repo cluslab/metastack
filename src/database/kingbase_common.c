@@ -57,6 +57,7 @@ typedef struct
 {
 	char *name;
 	char *columns;
+	bool non_unique;
 } db_key_t;
 
 static void _destroy_db_key(void *arg)
@@ -69,6 +70,16 @@ static void _destroy_db_key(void *arg)
 		xfree(db_key);
 	}
 }
+
+static int _find_db_key(void *x, void *key)
+{
+	db_key_t * db_key = (db_key_t *) x;
+
+	if (xstrcmp(db_key->name, (char *) key))
+		return 0;
+	return 1;
+}
+
 static int _kingbase_query_internal(KCIConnection *db_conn, char *query);
 extern int kingbase_for_fetch(kingbase_conn_t *kingbase_conn, char *query, fetch_flag_t* flag, fetch_result_t* data_rt)
 {
@@ -246,7 +257,7 @@ extern void free_res_data(fetch_result_t* data_rt, fetch_flag_t *fetch_flag)
 
 extern char *slurm_add_slash_to_quotes2(char *str)
 {
-	char *dup, *copy = NULL;
+	char *dup = NULL, *copy = NULL;
 	int len = 0;
 	bool reserve = false, discard = false;
 	if (!str || !(len = strlen(str)))
@@ -431,14 +442,13 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 	KCIResult *result = NULL;
 	int i = 0;
 	List columns = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *col = NULL;
 	int adding = 0;
 	int run_update = 0;
 	char *primary_key = NULL;
 	char *unique_index = NULL;
 	int old_primary = 0;
-	char *old_index = NULL;
 	char *temp = NULL, *temp2 = NULL;
 	List keys_list = NULL;
 	db_key_t *db_key = NULL;
@@ -477,12 +487,25 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 		return SLURM_ERROR;
 	}
 
+	keys_list = list_create(_destroy_db_key);
 	/* KCIResultGetColumnValue(result, c, 1) is the key name*/
 	for (int c = 0; c < KCIResultGetRowCount(result); c++) {   
-		if (!xstrncmp(KCIResultGetColumnValue(result, c, 7), "PRIMARY",7))
+		if (!xstrncmp(KCIResultGetColumnValue(result, c, 7), "PRIMARY",7)){
 			old_primary = 1;
-		else if (!old_index)
-			old_index = xstrdup(KCIResultGetColumnValue(result, c, 1));
+			continue;
+		}
+
+		db_key = list_find_first(keys_list, _find_db_key, KCIResultGetColumnValue(result, c, 1));
+
+		if (db_key) {
+			xstrfmtcat(db_key->columns, ", %s", KCIResultGetColumnValue(result, c, 4));
+		} else {
+			db_key = xmalloc(sizeof(db_key_t));
+			db_key->name = xstrdup(KCIResultGetColumnValue(result, c, 1));
+			db_key->columns = xstrdup(KCIResultGetColumnValue(result, c, 4));
+			db_key->non_unique = false;
+			list_append(keys_list, db_key);
+		}
 	}
 
 	KCIResultDealloc(result);
@@ -504,22 +527,11 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 	xfree(query);
 	if (KCIResultGetStatusCode(result) != EXECUTE_TUPLES_OK) {
 		KCIResultDealloc(result);
-		xfree(old_index);
 		return SLURM_ERROR;
 	}
 	
-	itr = NULL;
-	keys_list = list_create(_destroy_db_key);
 	for (int  c = 0; c < KCIResultGetRowCount(result); c++) {
-		if (!itr)
-			itr = list_iterator_create(keys_list);
-		else
-			list_iterator_reset(itr);
-		while ((db_key = list_next(itr))) {
-			if (!xstrcmp(db_key->name, KCIResultGetColumnValue(result, c, 1))){
-				break;
-			}
-		}
+		db_key = list_find_first(keys_list, _find_db_key, KCIResultGetColumnValue(result, c, 1));
 
 		if (db_key) {
 			xstrfmtcat(db_key->columns, ", %s", KCIResultGetColumnValue(result, c, 0));
@@ -528,15 +540,11 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 			db_key = xmalloc(sizeof(db_key_t));
 			db_key->name = xstrdup(KCIResultGetColumnValue(result, c, 1));	   // name
 			db_key->columns = xstrdup(KCIResultGetColumnValue(result, c, 0)); // column name
+			db_key->non_unique = true;
 			list_append(keys_list, db_key);								   // don't use list_push
 		}
 	}
 	KCIResultDealloc(result);
-
-	if (itr) {
-		list_iterator_destroy(itr);
-		itr = NULL;
-	}
 
 	/* figure out the existing columns in the table */
 	/*
@@ -550,7 +558,6 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 	xfree(query);
 	if (KCIResultGetStatusCode(result) != EXECUTE_TUPLES_OK) {
 		KCIResultDealloc(result);
-		xfree(old_index);
 		FREE_NULL_LIST(keys_list);
 		return SLURM_ERROR;
 	}
@@ -712,12 +719,12 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 			primary_key = xstrndup(temp, end);
 			if (old_primary){
 				query[strlen(query) - 1] = ';';
-				xstrfmtcat(query, " alter table %s drop CONSTRAINT %s_pkey,", table_name, table_name);
+//				xstrfmtcat(query, " alter table %s drop CONSTRAINT %s_pkey,", table_name, table_name);
 			}
 			correct_query[strlen(correct_query) - 1] = ';';
-			xstrfmtcat(correct_query, " alter table %s drop CONSTRAINT %s_pkey,", table_name, table_name);
-			xstrfmtcat(query, " add %s,", primary_key);
-			xstrfmtcat(correct_query, " add %s,", primary_key);
+//			xstrfmtcat(correct_query, " alter table %s drop CONSTRAINT %s_pkey,", table_name, table_name);
+//			xstrfmtcat(query, " add %s,", primary_key);
+//			xstrfmtcat(correct_query, " add %s,", primary_key);
 
 			xfree(primary_key);
 		}
@@ -764,9 +771,17 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 		if (temp[end]) {
 			end++;
 			unique_index = xstrndup(temp, end);
-			if (old_index) {
+
+			db_key = list_remove_first(keys_list, _find_db_key,
+						   udex_name);
+			if (db_key) {
 				query[strlen(query) - 1] = ';';
-				xstrfmtcat(query, " drop index %s,", old_index);
+				xstrfmtcat(query,
+					   " drop index %s,", db_key->name);
+				_destroy_db_key(db_key);
+			} else {
+				info("adding %s to table %s",
+				     unique_index, table_name);
 			}
 			correct_query[strlen(correct_query) - 1] = ';';
 			xstrfmtcat(correct_query, " drop index %s,", udex_name);
@@ -778,10 +793,8 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 		}
 		xfree(udex_name);
 	}
-	xfree(old_index);
 
 	temp2 = ending;
-	itr = list_iterator_create(keys_list);
 	while ((temp = strstr(temp2, "create index"))) {
 		int open = 0, close = 0, name_end = 0;
 		int end = 13;
@@ -807,13 +820,8 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 			end++;
 			new_key_name = xstrndup(temp + 13, name_end - 13);
 			new_key = xstrndup(temp + 13, end - 13); // skip ', '
-			while ((db_key = list_next(itr))) {
-				if (!xstrcmp(db_key->name, new_key_name)) {
-					list_remove(itr);
-					break;
-				}
-			}
-			list_iterator_reset(itr);
+			db_key = list_remove_first(keys_list, _find_db_key,
+						   new_key_name);
 			if (db_key) {
 				query[strlen(query) - 1] = ';';
 				xstrfmtcat(query,
@@ -839,10 +847,19 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 	}
 
 	/* flush extra (old) keys */
+	itr = list_iterator_create(keys_list);
 	while ((db_key = list_next(itr))) {
-		info("dropping index %s from table %s", db_key->name, table_name);
-		query[strlen(query) - 1] = ';';
-		xstrfmtcat(query, " drop index %s,", db_key->name);
+		if (!db_key->non_unique) {
+			info("dropping unique index %s from table %s",
+			     db_key->name, table_name);
+			query[strlen(query) - 1] = ';';
+			xstrfmtcat(query, " drop index %s,", db_key->name);
+		} else {
+			info("dropping key %s from table %s",
+			     db_key->name, table_name);
+			query[strlen(query) - 1] = ';';
+			xstrfmtcat(query, " drop index %s,", db_key->name);
+		}
 	}
 	list_iterator_destroy(itr);
 
@@ -943,7 +960,7 @@ static int _kingbase_make_table_current(kingbase_conn_t *kingbase_conn, char *ta
 
 void _set_kingbase_ssl_opts(KCIConnection *db_conn, const char *options, SSL_Options *ssl_options)
 {
-	char *tmp_opts, *token, *save_ptr = NULL;
+	char *tmp_opts = NULL, *token = NULL, *save_ptr = NULL;
 	ssl_options->key = NULL;
 	ssl_options->cert = NULL;
 	ssl_options->ca = NULL;
@@ -956,7 +973,7 @@ void _set_kingbase_ssl_opts(KCIConnection *db_conn, const char *options, SSL_Opt
 	tmp_opts = xstrdup(options);
 	token = strtok_r(tmp_opts, ",", &save_ptr);
 	while (token) {
-		char *opt_str, *val_str = NULL;
+		char *opt_str = NULL, *val_str = NULL;
 
 		opt_str = strtok_r(token, "=", &val_str);
 
@@ -1065,9 +1082,11 @@ extern kingbase_conn_t *create_kingbase_conn(int conn_num, bool rollback,
 {
 	kingbase_conn_t *kingbase_conn = xmalloc(sizeof(kingbase_conn_t));
 
-	kingbase_conn->rollback = rollback;
+	if (rollback)
+		kingbase_conn->flags |= DB_CONN_FLAG_ROLLBACK;
 	kingbase_conn->conn = conn_num;
 	kingbase_conn->cluster_name = xstrdup(cluster_name);
+	// mysql_conn->wsrep_trx_fragment_size_orig = NO_VAL64;
 	slurm_mutex_init(&kingbase_conn->lock);
 	kingbase_conn->update_list = list_create(slurmdb_destroy_update_object);
 
@@ -1082,6 +1101,7 @@ extern int destroy_kingbase_conn(kingbase_conn_t *kingbase_conn)
 		xfree(kingbase_conn->cluster_name);
 		slurm_mutex_destroy(&kingbase_conn->lock);
 		FREE_NULL_LIST(kingbase_conn->update_list);
+		// xfree(mysql_conn->wsrep_trx_fragment_unit_orig);
 		xfree(kingbase_conn);
 	}
 
@@ -1138,15 +1158,13 @@ extern int kingbase_db_get_db_connection(kingbase_conn_t *kingbase_conn, char *d
 	bool storage_init = false;
 	char *db_host = db_info->host;
 	unsigned int my_timeout = 30;
-	// bool reconnect = 0;
+
 	char *options = NULL;
 	char kingbase_port[32] = {0};
 
 	xassert(kingbase_conn);
 
 	slurm_mutex_lock(&kingbase_conn->lock);
-
-	// mysql_options(mysql_conn->db_conn, MYSQL_OPT_RECONNECT, &reconnect);
 
 	/*
 	 * If this ever changes you will need to alter
@@ -1216,7 +1234,7 @@ extern int kingbase_db_close_db_connection(kingbase_conn_t *kingbase_conn)
 	return SLURM_SUCCESS;
 }
 
-extern int kingbase_db_cleanup()
+extern int kingbase_db_cleanup(void)
 {
 	return SLURM_SUCCESS;
 }
@@ -1416,7 +1434,7 @@ extern int kingbase_db_create_table(kingbase_conn_t *kingbase_conn, char *table_
 									storage_field_t *fields, char *ending)
 {
 	char *query = NULL;
-	int i = 0, rc;
+	int rc;
 	storage_field_t *first_field = fields;
 
 	if (!fields || !fields->name) {
@@ -1452,13 +1470,11 @@ extern int kingbase_db_create_table(kingbase_conn_t *kingbase_conn, char *table_
     /*拼接sql语句*/
 	query = xstrdup_printf("create table if not exists %s (%s %s",
 						   table_name, fields->name, fields->options);
-	i = 1;
 	fields++;
 
 	while (fields && fields->name) {
 		xstrfmtcat(query, ", %s %s", fields->name, fields->options);
 		fields++;
-		i++;
 	}
 	xstrcat(query, ending);
 
@@ -1478,3 +1494,203 @@ extern int kingbase_db_create_table(kingbase_conn_t *kingbase_conn, char *table_
 		kingbase_conn, table_name, first_field, ending);
 	return rc;
 }
+
+// extern int mysql_db_get_var_str(mysql_conn_t *mysql_conn,
+// 				const char *variable_name,
+// 				char **value)
+// {
+// 	MYSQL_ROW row = NULL;
+// 	MYSQL_RES *result = NULL;
+// 	char *query;
+
+// 	query = xstrdup_printf("select @@%s;", variable_name);
+// 	result = mysql_db_query_ret(mysql_conn, query, 0);
+// 	if (!result) {
+// 		error("%s: null result from query `%s`", __func__, query);
+// 		xfree(query);
+// 		return SLURM_ERROR;
+// 	}
+
+// 	if (mysql_num_rows(result) != 1) {
+// 		error("%s: invalid results from query `%s`", __func__, query);
+// 		xfree(query);
+// 		mysql_free_result(result);
+// 		return SLURM_ERROR;
+// 	}
+
+// 	xfree(query);
+
+// 	row = mysql_fetch_row(result);
+// 	*value = xstrdup(row[0]);
+
+// 	mysql_free_result(result);
+
+// 	return SLURM_SUCCESS;
+// }
+
+// extern int mysql_db_get_var_u64(mysql_conn_t *mysql_conn,
+// 				const char *variable_name,
+// 				uint64_t *value)
+// {
+// 	char *err_check = NULL, *var_str = NULL;
+
+// 	if (mysql_db_get_var_str(mysql_conn, variable_name, &var_str)) {
+// 		return SLURM_ERROR;
+// 	}
+
+// 	*value = strtoull(var_str, &err_check, 10);
+
+// 	if (*err_check) {
+// 		error("%s: error parsing string to int `%s`",
+// 		      __func__, var_str);
+// 		xfree(var_str);
+// 		return SLURM_ERROR;
+// 	}
+// 	xfree(var_str);
+
+// 	return SLURM_SUCCESS;
+// }
+
+/*
+ * Galera is a synchronous multi master cluster software for MySQL (also supports MariaDB, Percona). 
+ * Kingbase does not support Galera scheme.
+ */
+// extern void mysql_db_enable_streaming_replication(mysql_conn_t *mysql_conn)
+// {
+// 	int rc = SLURM_SUCCESS;
+// 	char *query;
+// 	uint64_t wsrep_on, wsrep_max_ws_size, fragment_size;
+
+// 	/* if this errors, assume wsrep_on doesn't exist, so must be disabled */
+// 	if (mysql_db_get_var_u64(mysql_conn, "wsrep_on", &wsrep_on)) {
+// 		wsrep_on = 0;
+// 		if (errno == ER_UNKNOWN_SYSTEM_VARIABLE)
+// 			error("The prior error message regarding an undefined 'wsrep_on' variable is innocuous.  MySQL and MariaDB < 10.1 do not have this variable and Slurm will operate normally without it.");
+// 	}
+
+// 	debug2("wsrep_on=%"PRIu64, wsrep_on);
+
+// 	if (!wsrep_on)
+// 		return;
+
+// 	/*
+// 	 * wsrep_max_ws_size represents the maximum write set size in bytes.
+// 	 * The fragment cannot exceed this value.
+// 	 */
+// 	rc = mysql_db_get_var_u64(mysql_conn, "wsrep_max_ws_size",
+// 			          &wsrep_max_ws_size);
+// 	if (rc) {
+// 		error("Failed to get wsrep_max_ws_size");
+// 		return;
+// 	}
+
+// 	/*
+// 	 * Save the initial wsrep settings so they can be restored later.
+// 	 * If these were set previously, don't set them again.
+// 	 *
+// 	 * If these variables don't exist, streaming replication isn't supported
+// 	 * so don't turn it on.
+// 	 */
+// 	if (!mysql_conn->wsrep_trx_fragment_unit_orig) {
+// 		rc = mysql_db_get_var_str(
+// 			mysql_conn,
+// 			"wsrep_trx_fragment_unit",
+// 			&mysql_conn->wsrep_trx_fragment_unit_orig);
+// 		if (rc) {
+// 			if (errno == ER_UNKNOWN_SYSTEM_VARIABLE)
+// 				error("This version of galera does not support streaming replication.");
+// 			error("Unable to fetch wsrep_trx_fragment_unit.");
+// 			return;
+// 		}
+// 	}
+// 	if (mysql_conn->wsrep_trx_fragment_size_orig == NO_VAL64) {
+// 		rc = mysql_db_get_var_u64(
+// 			mysql_conn,
+// 			"wsrep_trx_fragment_size",
+// 			&mysql_conn->wsrep_trx_fragment_size_orig);
+// 		if (rc) {
+// 			if (errno == ER_UNKNOWN_SYSTEM_VARIABLE)
+// 				error("This version of galera does not support streaming replication.");
+// 			error("Unable to fetch wsrep_trx_fragment_size.");
+// 			return;
+// 		}
+// 	}
+
+// 	/*
+// 	 * Force the wsrep_trx_fragment_unit to bytes. The default may change
+// 	 * in the future, or may have been set by the site, so don't rely on it
+// 	 * being a specific value.
+// 	 */
+// 	query = xstrdup("SET @@SESSION.wsrep_trx_fragment_unit=\'bytes\';");
+// 	rc = _mysql_query_internal(mysql_conn->db_conn, query);
+// 	xfree(query);
+// 	if (rc) {
+// 		error("Unable to set wsrep_trx_fragment_unit.");
+// 		return;
+// 	}
+
+// 	/*
+// 	 * Set the fragment size to 128MiB, or wsrep_max_ws_size if it has been
+// 	 * set below that. Simply setting it to the max size does not strictly
+// 	 * result in the best performance.
+// 	 */
+// 	fragment_size = MIN(wsrep_max_ws_size, 134217700);
+// 	query = xstrdup_printf("SET @@SESSION.wsrep_trx_fragment_size=%"PRIu64";",
+// 			       fragment_size);
+// 	rc = _mysql_query_internal(mysql_conn->db_conn, query);
+// 	xfree(query);
+// 	if (rc)
+// 		error("Failed to set wsrep_trx_fragment_size");
+// 	else
+// 		debug2("set wsrep_trx_fragment_size=%"PRIu64" bytes",
+// 		       fragment_size);
+
+// 	return;
+// }
+
+// extern void mysql_db_restore_streaming_replication(mysql_conn_t *mysql_conn)
+// {
+// 	int rc;
+// 	char *query;
+
+// 	/*
+// 	 * Check if the conection has saved streaming replication settings.  If
+// 	 * not there is nothing to restore.
+// 	 */
+// 	if (!mysql_conn->wsrep_trx_fragment_unit_orig &&
+// 	    (mysql_conn->wsrep_trx_fragment_size_orig == NO_VAL64)) {
+// 		debug2("no streaming replication settings to restore");
+// 		return;
+// 	}
+
+// 	if (mysql_conn->wsrep_trx_fragment_unit_orig) {
+// 		query = xstrdup_printf(
+// 				"SET @@SESSION.wsrep_trx_fragment_unit=\'%s\';",
+// 				mysql_conn->wsrep_trx_fragment_unit_orig);
+// 		rc = _mysql_query_internal(mysql_conn->db_conn, query);
+// 		xfree(query);
+// 		if (rc) {
+// 			error("Unable to restore wsrep_trx_fragment_unit.");
+// 		} else {
+// 			debug2("Restored wsrep_trx_fragment_unit=%s",
+// 			       mysql_conn->wsrep_trx_fragment_unit_orig);
+// 			xfree(mysql_conn->wsrep_trx_fragment_unit_orig);
+// 		}
+// 	}
+// 	if (mysql_conn->wsrep_trx_fragment_size_orig != NO_VAL64) {
+// 		query = xstrdup_printf(
+// 				"SET @@SESSION.wsrep_trx_fragment_size=%"PRIu64";",
+// 				mysql_conn->wsrep_trx_fragment_size_orig);
+// 		rc = _mysql_query_internal(mysql_conn->db_conn, query);
+// 		xfree(query);
+// 		if (rc) {
+// 			error("Unable to restore wsrep_trx_fragment_size.");
+// 		} else {
+// 			debug2("Restored wsrep_trx_fragment_size=%"PRIu64,
+// 			       mysql_conn->wsrep_trx_fragment_size_orig);
+// 			mysql_conn->wsrep_trx_fragment_size_orig = NO_VAL64;
+// 		}
+// 	}
+
+// 	return;
+// }

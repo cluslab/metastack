@@ -40,6 +40,8 @@
 
 #include "src/slurmd/slurmd/slurmd.h"
 
+#define SLURM_TMPFS_DEF_DIRS "/tmp,/dev/shm"
+
 /*
  * Slurm namespace job container plugin initialization
  * parameters
@@ -47,13 +49,30 @@
 typedef struct slurm_jc_conf {
 	bool auto_basepath;
 	char *basepath;
+	char *dirs;
 	char *initscript;
+	bool shared;
 } slurm_jc_conf_t;
 
 extern char *tmpfs_conf_file;
 
+/*
+ * Init the job_container/tmpfs config if required.
+ *
+ * Return a pointer to the config structure if succesful or NULL on error.
+ */
+extern slurm_jc_conf_t *init_slurm_jc_conf(void);
+
+/* Set slurm_jc_conf based on the provided buffer. */
+extern slurm_jc_conf_t *set_slurm_jc_conf(buf_t *buf);
+
+/* Return pointer to the slurm_jc_conf */
 extern slurm_jc_conf_t *get_slurm_jc_conf(void);
 
+/* Return pointer to the the slurm_jc_conf_buf */
+extern buf_t *get_slurm_jc_conf_buf(void);
+
+/* Free the job_container config structures */
 extern void free_jc_conf(void);
 
 #endif

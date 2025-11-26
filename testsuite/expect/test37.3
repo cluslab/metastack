@@ -17,8 +17,7 @@
 #          federation/fed3/...
 #          3. controllers are up and running.
 ############################################################################
-# Copyright (C) 2016 SchedMD LLC.
-# Written by Brian Christiansen <brian@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -91,8 +90,8 @@ proc test_fed_status {cname fed_flags cluster_list} {
 				if {$expected_matches &&
 				    [dict get $clusters($name) host]     eq $host &&
 				    [dict get $clusters($name) state]    eq $state &&
-				    [dict get $clusters($name) features] eq $features] &&
-				    [dict get $clusters($name) conn]     eq Self &&
+				    [dict get $clusters($name) features] eq $features &&
+				    [dict get $clusters($name) conn]     eq "Self" &&
 				    [dict get $clusters($name) port]     == $port &&
 				    [dict get $clusters($name) id]       == $id} {
 					log_debug "Matched self: $name"

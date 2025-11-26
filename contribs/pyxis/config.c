@@ -22,7 +22,7 @@ static int parse_bool(const char *s)
 int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 {
 	int ret;
-	const char *optarg;
+	const char *optarg = NULL;
 
 	memset(config, 0, sizeof(*config));
 

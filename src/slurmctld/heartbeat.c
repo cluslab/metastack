@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  heartbeat.c
  *****************************************************************************
- *  Copyright (C) 2017 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -155,7 +154,7 @@ void heartbeat_start(void)
 	}
 
 	slurm_mutex_lock(&heartbeat_mutex);
-	slurm_thread_create_detached(NULL, _heartbeat_thread, NULL);
+	slurm_thread_create_detached(_heartbeat_thread, NULL);
 	heart_beating = true;
 	slurm_mutex_unlock(&heartbeat_mutex);
 }

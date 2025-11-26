@@ -46,10 +46,10 @@
 #include "slurm/slurm.h"
 #include "slurm/slurm_errno.h"
 
-#include "src/common/xstring.h"
-#include "src/common/gres.h"
 #include "src/common/list.h"
-#include "src/common/cgroup.h"
+#include "src/common/xstring.h"
+#include "src/interfaces/cgroup.h"
+#include "src/interfaces/gres.h"
 #include "src/slurmd/common/xcpuinfo.h"
 #include "src/slurmd/slurmd/slurmd.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
@@ -59,7 +59,7 @@
 typedef struct handle_dev_args {
 	cgroup_level_t cgroup_type;
 	uint32_t taskid;
-	stepd_step_rec_t *job;
+	stepd_step_rec_t *step;
 } handle_dev_args_t;
 
 static bool is_first_task = true;
@@ -147,30 +147,30 @@ extern int task_cgroup_devices_fini(void)
 	return rc;
 }
 
-extern int task_cgroup_devices_create(stepd_step_rec_t *job)
+extern int task_cgroup_devices_create(stepd_step_rec_t *step)
 {
 	int rc = SLURM_SUCCESS;
 	pid_t pid;
-	List job_gres_list = job->job_gres_list;
-	List step_gres_list = job->step_gres_list;
+	List job_gres_list = step->job_gres_list;
+	List step_gres_list = step->step_gres_list;
 	List device_list = NULL;
 	handle_dev_args_t handle_args;
 
 	if (is_first_task) {
 		/* Only do once in this plugin. */
-		if (cgroup_g_step_create(CG_DEVICES, job) != SLURM_SUCCESS)
+		if (cgroup_g_step_create(CG_DEVICES, step) != SLURM_SUCCESS)
 			return SLURM_ERROR;
 		is_first_task = false;
 	}
 
 	/* Allow or deny access to devices according to job GRES permissions. */
-	device_list = gres_g_get_devices(job_gres_list, true, 0, NULL, 0, 0);
+	device_list = gres_g_get_devices(job_gres_list, true, 0, NULL, 0, step);
 
 	if (device_list) {
 		int tmp;
 
 		handle_args.cgroup_type = CG_LEVEL_JOB;
-		handle_args.job = job;
+		handle_args.step = step;
 		tmp = list_for_each(device_list, _handle_device_access,
 				    &handle_args);
 		FREE_NULL_LIST(device_list);
@@ -181,21 +181,22 @@ extern int task_cgroup_devices_create(stepd_step_rec_t *job)
 		cgroup_g_constrain_apply(CG_DEVICES, CG_LEVEL_JOB, NO_VAL);
 	}
 
-	if ((job->step_id.step_id != SLURM_BATCH_SCRIPT) &&
-	    (job->step_id.step_id != SLURM_EXTERN_CONT) &&
-	    (job->step_id.step_id != SLURM_INTERACTIVE_STEP)) {
+	if ((step->step_id.step_id != SLURM_BATCH_SCRIPT) &&
+	    (step->step_id.step_id != SLURM_EXTERN_CONT) &&
+	    (step->step_id.step_id != SLURM_INTERACTIVE_STEP) &&
+	    (!(step->flags & LAUNCH_EXT_LAUNCHER))) {
 		/*
 		 * Allow or deny access to devices according to GRES permissions
 		 * for the step.
 		 */
 		device_list = gres_g_get_devices(step_gres_list, false, 0, NULL,
-						 0, 0);
+						 0, step);
 
 		if (device_list) {
 			int tmp;
 
 			handle_args.cgroup_type = CG_LEVEL_STEP;
-			handle_args.job = job;
+			handle_args.step = step;
 			tmp = list_for_each(device_list, _handle_device_access,
 					    &handle_args);
 			FREE_NULL_LIST(device_list);
@@ -216,15 +217,16 @@ fini:
 	return rc;
 }
 
-extern int task_cgroup_devices_add_pid(stepd_step_rec_t *job, pid_t pid,
+extern int task_cgroup_devices_add_pid(stepd_step_rec_t *step, pid_t pid,
 				       uint32_t taskid)
 {
 	/* This plugin constrain devices to task level. */
-	return cgroup_g_task_addto(CG_DEVICES, job, pid, taskid);
+	return cgroup_g_task_addto(CG_DEVICES, step, pid, taskid);
 }
 
-extern int task_cgroup_devices_constrain(stepd_step_rec_t *job, pid_t pid,
-					 uint32_t taskid)
+extern int task_cgroup_devices_constrain(stepd_step_rec_t *step,
+					 uint32_t node_tid,
+					 uint32_t global_tid)
 {
 	List device_list = NULL;
 	handle_dev_args_t handle_args;
@@ -235,31 +237,32 @@ extern int task_cgroup_devices_constrain(stepd_step_rec_t *job, pid_t pid,
 	 * salloc --gres=gpu must have access to the allocated GPUs. If we do
 	 * add the pid (e.g. bash) we'd get constrained.
 	 */
-	if ((job->step_id.step_id == SLURM_BATCH_SCRIPT) ||
-	    (job->step_id.step_id == SLURM_EXTERN_CONT) ||
-	    (job->step_id.step_id == SLURM_INTERACTIVE_STEP))
+	if ((step->step_id.step_id == SLURM_BATCH_SCRIPT) ||
+	    (step->step_id.step_id == SLURM_EXTERN_CONT) ||
+	    (step->step_id.step_id == SLURM_INTERACTIVE_STEP) ||
+	    (step->flags & LAUNCH_EXT_LAUNCHER))
 		return SLURM_SUCCESS;
 
 	/*
 	 * Apply gres constrains by getting the allowed devices for this task
 	 * from gres plugin.
 	 */
-	device_list = gres_g_get_devices(job->step_gres_list, false,
-					 job->accel_bind_type, job->tres_bind,
-					 taskid, pid);
+	device_list = gres_g_get_devices(step->step_gres_list, false,
+					 step->accel_bind_type, step->tres_bind,
+					 node_tid, step);
 	if (device_list) {
 		int tmp;
 
 		handle_args.cgroup_type = CG_LEVEL_TASK;
-		handle_args.job = job;
-		handle_args.taskid = taskid;
+		handle_args.step = step;
+		handle_args.taskid = global_tid;
 		tmp = list_for_each(device_list, _handle_device_access,
 				    &handle_args);
 		FREE_NULL_LIST(device_list);
 		if (tmp < 0)
 			return SLURM_ERROR;
 
-                cgroup_g_constrain_apply(CG_DEVICES, CG_LEVEL_TASK, taskid);
+		cgroup_g_constrain_apply(CG_DEVICES, CG_LEVEL_TASK, global_tid);
 	}
 
 	return SLURM_SUCCESS;

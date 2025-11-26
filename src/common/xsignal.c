@@ -43,8 +43,10 @@
 
 #include "src/common/log.h"
 #include "src/common/macros.h"
-#include "src/common/xsignal.h"
+#include "src/common/proc_args.h"
 #include "src/common/xassert.h"
+#include "src/common/xmalloc.h"
+#include "src/common/xsignal.h"
 
 /*
  * Define slurm-specific aliases for use by plugins, see slurm_xlator.h
@@ -66,11 +68,35 @@ xsignal(int signo, SigFunc *f)
 	sigemptyset(&sa.sa_mask);
 	sigaddset(&sa.sa_mask, signo);
 	sa.sa_flags = 0;
+
 	if (sigaction(signo, &sa, &old_sa) < 0)
 		error("xsignal(%d) failed: %m", signo);
+
+	if (get_log_level() >= LOG_LEVEL_DEBUG4) {
+		char *name = sig_num2name(signo);
+		debug4("%s: Swap signal %s[%d] to 0x%"PRIxPTR" from 0x%"PRIxPTR,
+		       __func__, name, signo, (uintptr_t) f,
+		       (uintptr_t) old_sa.sa_handler);
+		xfree(name);
+	}
+
 	return (old_sa.sa_handler);
 }
 
+extern SigFunc *xsignal_default(int sig)
+{
+	struct sigaction act;
+	if (sigaction(sig, NULL, &act)) {
+		error("sigaction(%d): %m", sig);
+		return NULL;
+	}
+	if (act.sa_handler != SIG_IGN)
+		return act.sa_handler;
+
+	xsignal(sig, SIG_DFL);
+
+	return act.sa_handler;
+}
 
 /*
  *  Wrapper for pthread_sigmask.

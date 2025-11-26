@@ -43,6 +43,7 @@
 
 /* getopt_long options, integers but not characters */
 #define OPT_LONG_NOCONVERT 0x100
+#define OPT_LONG_AUTOCOMP  0x101
 
 void _help_fields_msg(void);
 void _help_msg(void);
@@ -72,20 +73,20 @@ sstat [<OPTION>] -j <job(.stepid)>                                          \n\
       -a, --allsteps:                                                       \n\
                    Print all steps for the given job(s) when no step is     \n\
                    specified.                                               \n\
-      -d,          The resource consumption information and abnormal events \n\
+      -e, --helpformat:                                                     \n\
+	           	Print a list of fields that can be specified with the    \n\
+	           '--format' option                                        \n\
+	  -d,          The resource consumption information and abnormal events \n\
                    of each job step are displayed in units of job steps.	\n\
                    If no anomaly detection parameter is specified when the  \n\
                    job is submitted, or slurm.conf is not configured        \n\
                    (see --job-monitor for details), the data displayed      \n\
                    will be empty                                            \n\
-      -e, --helpformat:                                                     \n\
-	           Print a list of fields that can be specified with the    \n\
-	           '--format' option                                        \n\
-      -h, --help:   Print this description of use.                           \n\
-      -i, --pidformat:                                                       \n\
+     -h, --help:   Print this description of use.                           \n\
+     -i, --pidformat:                                                       \n\
                    Predefined format to list the pids running for each      \n\
                    job step.  (JobId,Nodes,Pids)                            \n\
-      -j, --jobs:                                                            \n\
+     -j, --jobs:                                                            \n\
 	           Format is <job(.step)>. Stat this job step               \n\
                    or comma-separated list of job steps. This option is     \n\
                    required.  The step portion will default to the lowest   \n\
@@ -96,21 +97,21 @@ sstat [<OPTION>] -j <job(.stepid)>                                          \n\
                    information about the batch step. A step id of 'extern'  \n\
                    will display the information about the extern step       \n\
                    when using PrologFlags=contain.                          \n\
-      -n, --noheader:                                                        \n\
+     -n, --noheader:                                                        \n\
 	           No header will be added to the beginning of output.      \n\
                    The default is to print a header.                        \n\
-      --noconvert:  Don't convert units from their original type             \n\
+     --noconvert:  Don't convert units from their original type             \n\
 		   (e.g. 2048M won't be converted to 2G).                   \n\
-      -o, --format:                                                          \n\
+     -o, --format:                                                          \n\
 	           Comma separated list of fields. (use \"--helpformat\"    \n\
                    for a list of available fields).                         \n\
-      -p, --parsable: output will be '|' delimited with a '|' at the end     \n\
-      -P, --parsable2: output will be '|' delimited without a '|' at the end \n\
-      --usage:      Display brief usage message.                             \n\
-      -v, --verbose:                                                         \n\
+     -p, --parsable: output will be '|' delimited with a '|' at the end     \n\
+     -P, --parsable2: output will be '|' delimited without a '|' at the end \n\
+     --usage:      Display brief usage message.                             \n\
+     -v, --verbose:                                                         \n\
 	           Primarily for debugging purposes, report the state of    \n\
                    various variables during processing.                     \n\
-      -V, --version: Print version.                                          \n\
+     -V, --version: Print version.                                          \n\
 \n");
 
 	return;
@@ -156,6 +157,7 @@ static void _addto_job_list(char *names)
 
 	(void)slurm_addto_step_list(params.opt_job_list, names);
 }
+
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
 int cpu_util_readable = 1;
 #endif
@@ -191,13 +193,14 @@ int decode_state_char(char *state)
 void parse_command_line(int argc, char **argv)
 {
 	extern int optind;
-	int c, i, optionIndex = 0;
+	int c, i, option_index = 0;
 	char *end = NULL, *start = NULL;
 	slurm_selected_step_t *selected_step = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	log_options_t logopt = LOG_OPTS_STDERR_ONLY;
 
 	static struct option long_options[] = {
+		{"autocomplete", required_argument, 0, OPT_LONG_AUTOCOMP},
 		{"allsteps", 0, 0, 'a'},
 		{"helpformat", 0, 0, 'e'},
 		{"help", 0, 0, 'h'},
@@ -221,22 +224,20 @@ void parse_command_line(int argc, char **argv)
 	opterr = 1;		/* Let getopt report problems to the user */
 
 	while (1) {		/* now cycle through the command line */
-#ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-#ifdef __METASTACK_LOAD_ABNORMAL
+#if defined(__METASTACK_OPT_SSTAT_CPUUTIL) && defined(__METASTACK_NEW_LOAD_ABNORMAL)
 		c = getopt_long(argc, argv, "aehij:dno:pPvVmgr",
-				long_options, &optionIndex);
-#endif
+				long_options, &option_index);
 #else
 		c = getopt_long(argc, argv, "aehij:no:pPvV",
-				long_options, &optionIndex);
-#endif
+			long_options, &option_index);
+#endif	
 		if (c == -1)
 			break;
 		switch (c) {
 		case 'a':
 			params.opt_all_steps = 1;
 			break;
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 		case 'd':
 			params.opt_event = 1;
 			break;
@@ -286,8 +287,12 @@ void parse_command_line(int argc, char **argv)
 			print_slurm_version();
 			exit(0);
 			break;
+		case OPT_LONG_AUTOCOMP:
+			suggest_completion(long_options, optarg);
+			exit(0);
+			break;
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-	 	case 'm':
+		case 'm':
 			params.units = UNIT_MEGA;
 			break;
 		case 'g':
@@ -337,10 +342,10 @@ void parse_command_line(int argc, char **argv)
 		list_iterator_destroy(itr);
 	}
 #ifdef __METASTACK_OPT_PRINT_COMMAND
-    char *env_sstat = NULL;
+	char *env_sstat = NULL;
 	char *format_tmp =NULL;
 	if ((env_sstat = getenv("SSTAT_EXTEND"))) {
-   		format_tmp = xstrdup(env_sstat);
+		format_tmp = xstrdup(env_sstat);
 		
 		for (i = 0; fields[i].name; i++) {
 			_parse_env_format_extend(format_tmp, &fields[i]);

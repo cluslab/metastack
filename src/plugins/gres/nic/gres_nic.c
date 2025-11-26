@@ -50,7 +50,7 @@
 #include "src/common/slurm_xlator.h"
 #include "src/common/bitstring.h"
 #include "src/common/env.h"
-#include "src/common/gres.h"
+#include "src/interfaces/gres.h"
 #include "src/common/list.h"
 #include "src/common/xstring.h"
 
@@ -85,37 +85,26 @@ const char	plugin_name[]		= "Gres NIC plugin";
 const char	plugin_type[]		= "gres/nic";
 const uint32_t	plugin_version		= SLURM_VERSION_NUMBER;
 
-static char	gres_name[]		= "nic";
-
 static List gres_devices = NULL;
 
-static void _set_env(char ***env_ptr, bitstr_t *gres_bit_alloc,
-		     bitstr_t *usable_gres,
-		     bool *already_seen, int *local_inx,
-		     bool is_task, bool is_job, gres_internal_flags_t flags)
+static void _set_env(common_gres_env_t *gres_env)
 {
-	char *global_list = NULL, *local_list = NULL, *slurm_env_var = NULL;
+	char *slurm_env_var = NULL;
 
-	if (is_job)
+	if (gres_env->is_job)
 			slurm_env_var = "SLURM_JOB_NICS";
 	else
 			slurm_env_var = "SLURM_STEP_NICS";
 
-	if (*already_seen) {
-		global_list = xstrdup(getenvp(*env_ptr, slurm_env_var));
-		local_list = xstrdup(getenvp(*env_ptr,
-					     "OMPI_MCA_btl_openib_if_include"));
-	}
+	gres_env->prefix = "mlx4_";
+	gres_env->use_dev_num = true;
 
 	/*
 	 * Set use_dev_num=true so number at end of device file is used as the
 	 * global index, rather than an index relative to the total number of
 	 * NICs
 	 */
-	common_gres_set_env(gres_devices, env_ptr,
-			    usable_gres, "mlx4_", local_inx, gres_bit_alloc,
-			    &local_list, &global_list, is_task, is_job, NULL,
-			    flags, true);
+	common_gres_set_env(gres_env);
 
 	/*
 	 * Set environment variables if GRES is found. Otherwise, unset
@@ -123,20 +112,21 @@ static void _set_env(char ***env_ptr, bitstr_t *gres_bit_alloc,
 	 * This is useful for jobs and steps that request --gres=none within an
 	 * existing job allocation with GRES.
 	 */
-	if (global_list) {
-		env_array_overwrite(env_ptr, slurm_env_var, global_list);
-		xfree(global_list);
+	if (gres_env->global_list) {
+		env_array_overwrite(gres_env->env_ptr, slurm_env_var,
+				    gres_env->global_list);
+		xfree(gres_env->global_list);
 	} else {
-		unsetenvp(*env_ptr, slurm_env_var);
+		unsetenvp(*gres_env->env_ptr, slurm_env_var);
 	}
 
-	if (local_list) {
+	if (gres_env->local_list) {
 		env_array_overwrite(
-			env_ptr, "OMPI_MCA_btl_openib_if_include", local_list);
-		xfree(local_list);
-		*already_seen = true;
+			gres_env->env_ptr, "OMPI_MCA_btl_openib_if_include",
+			gres_env->local_list);
+		xfree(gres_env->local_list);
 	} else {
-		unsetenvp(*env_ptr, "OMPI_MCA_btl_openib_if_include");
+		unsetenvp(*gres_env->env_ptr, "OMPI_MCA_btl_openib_if_include");
 	}
 }
 
@@ -167,8 +157,7 @@ extern int gres_p_node_config_load(List gres_conf_list,
 	if (gres_devices)
 		return rc;
 
-	rc = common_node_config_load(gres_conf_list, gres_name, config,
-				     &gres_devices);
+	rc = gres_node_config_load(gres_conf_list, config, &gres_devices);
 
 	if (rc != SLURM_SUCCESS)
 		fatal("%s failed to load configuration", plugin_name);
@@ -185,19 +174,16 @@ extern void gres_p_job_set_env(char ***job_env_ptr,
 			       uint64_t gres_cnt,
 			       gres_internal_flags_t flags)
 {
-	/*
-	 * Variables are not static like in step_*_env since we could be calling
-	 * this from the slurmd where we are dealing with a different job each
-	 * time we hit this function, so we don't want to keep track of other
-	 * unrelated job's status.  This can also get called multiple times
-	 * (different prologs and such) which would also result in bad info each
-	 * call after the first.
-	 */
-	int local_inx = 0;
-	bool already_seen = false;
+	common_gres_env_t gres_env = {
+		.bit_alloc = gres_bit_alloc,
+		.env_ptr = job_env_ptr,
+		.flags = flags,
+		.gres_cnt = gres_cnt,
+		.gres_devices = gres_devices,
+		.is_job = true,
+	};
 
-	_set_env(job_env_ptr, gres_bit_alloc, NULL,
-		 &already_seen, &local_inx, false, true, flags);
+	_set_env(&gres_env);
 }
 
 /*
@@ -209,40 +195,50 @@ extern void gres_p_step_set_env(char ***step_env_ptr,
 				uint64_t gres_cnt,
 				gres_internal_flags_t flags)
 {
-	static int local_inx = 0;
-	static bool already_seen = false;
+	common_gres_env_t gres_env = {
+		.bit_alloc = gres_bit_alloc,
+		.env_ptr = step_env_ptr,
+		.flags = flags,
+		.gres_cnt = gres_cnt,
+		.gres_devices = gres_devices,
+	};
 
-	_set_env(step_env_ptr, gres_bit_alloc, NULL,
-		 &already_seen, &local_inx, false, false, flags);
+	_set_env(&gres_env);
 }
 
 /*
  * Reset environment variables as appropriate for a job (i.e. this one task)
  * based upon the job step's GRES state and assigned CPUs.
  */
-extern void gres_p_task_set_env(char ***step_env_ptr,
+extern void gres_p_task_set_env(char ***task_env_ptr,
 				bitstr_t *gres_bit_alloc,
 				uint64_t gres_cnt,
 				bitstr_t *usable_gres,
 				gres_internal_flags_t flags)
 {
-	static int local_inx = 0;
-	static bool already_seen = false;
+	common_gres_env_t gres_env = {
+		.bit_alloc = gres_bit_alloc,
+		.env_ptr = task_env_ptr,
+		.flags = flags,
+		.gres_cnt = gres_cnt,
+		.gres_devices = gres_devices,
+		.is_task = true,
+		.usable_gres = usable_gres,
+	};
 
-	_set_env(step_env_ptr, gres_bit_alloc, usable_gres,
-		 &already_seen, &local_inx, true, false, flags);
+	_set_env(&gres_env);
 }
 
 /* Send GRES information to slurmstepd on the specified file descriptor*/
 extern void gres_p_send_stepd(buf_t *buffer)
 {
-	common_send_stepd(buffer, gres_devices);
+	gres_send_stepd(buffer, gres_devices);
 }
 
 /* Receive GRES information from slurmd on the specified file descriptor */
 extern void gres_p_recv_stepd(buf_t *buffer)
 {
-	common_recv_stepd(buffer, &gres_devices);
+	gres_recv_stepd(buffer, &gres_devices);
 }
 
 /*
@@ -303,7 +299,7 @@ extern void gres_p_step_hardware_fini(void)
  * Build record used to set environment variables as appropriate for a job's
  * prolog or epilog based GRES allocated to the job.
  */
-extern gres_epilog_info_t *gres_p_epilog_build_env(
+extern gres_prep_t *gres_p_prep_build_env(
 	gres_job_state_t *gres_js)
 {
 	return NULL;
@@ -313,8 +309,8 @@ extern gres_epilog_info_t *gres_p_epilog_build_env(
  * Set environment variables as appropriate for a job's prolog or epilog based
  * GRES allocated to the job.
  */
-extern void gres_p_epilog_set_env(char ***epilog_env_ptr,
-				  gres_epilog_info_t *gres_ei, int node_inx)
+extern void gres_p_prep_set_env(char ***prep_env_ptr,
+				gres_prep_t *gres_prep, int node_inx)
 {
 	return;
 }

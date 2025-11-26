@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  cred_none.c - null job credential signature plugin
  *****************************************************************************
- *  Copyright (C) 2019 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -39,7 +38,9 @@
 #include <stdlib.h>
 
 #include "src/common/slurm_protocol_api.h"
+#include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+#include "src/plugins/cred/common/cred_common.h"
 
 /*
  * These variables are required by the generic plugin interface.  If they
@@ -94,45 +95,62 @@ extern int fini(void)
 	return SLURM_SUCCESS;
 }
 
-extern void cred_p_destroy_key(void *key)
+extern slurm_cred_t *cred_p_create(slurm_cred_arg_t *cred_arg, bool sign_it,
+				   uint16_t protocol_version)
 {
-	return;
+	slurm_cred_t *cred = cred_create(cred_arg, protocol_version);
+	cred->signature = xstrdup("fake signature");
+	if (sign_it)
+		packstr(cred->signature, cred->buffer);
+	else
+		packnull(cred->buffer);
+	return cred;
 }
 
-extern void *cred_p_read_private_key(const char *path)
+extern slurm_cred_t *cred_p_unpack(buf_t *buf, uint16_t protocol_version)
 {
-	static char *ctx = "null crypto context";
-	return (void *) ctx;
+	slurm_cred_t *credential = NULL;
+
+	if (!(credential = cred_unpack_with_signature(buf, protocol_version)))
+		return NULL;
+
+	/* why bother checking? */
+	credential->verified = true;
+	return credential;
 }
 
-extern void *cred_p_read_public_key(const char *path)
+extern char *cred_p_create_net_cred(void *addrs, uint16_t protocol_version)
 {
-	static char *ctx = "null crypto context";
-	return (void *) ctx;
-}
-
-extern const char *cred_p_str_error(int errnum)
-{
-	if (errnum == ESIG_INVALID)
-		return "Invalid signature";
 	return NULL;
 }
 
-/* NOTE: Caller must xfree the signature returned by sig_pp */
-extern int cred_p_sign(void *key, char *buffer, int buf_size,
-		       char **sig_pp, uint32_t *sig_size_p)
+extern void *cred_p_extract_net_cred(char *net_cred, uint16_t protocol_version)
 {
-	*sig_pp = xstrdup("fake signature");
-	*sig_size_p = strlen(*sig_pp);
-
-	return SLURM_SUCCESS;
+	return NULL;
 }
 
-extern int cred_p_verify_sign(void *key, char *buffer, uint32_t buf_size,
-			      char *signature, uint32_t sig_size)
+extern sbcast_cred_t *sbcast_p_create(sbcast_cred_arg_t *cred_arg,
+				      uint16_t protocol_version)
 {
-	char *correct_signature = "fake signature";
-	if (xstrncmp(signature, correct_signature, sig_size))
-		return ESIG_INVALID;
-	return SLURM_SUCCESS;
+	sbcast_cred_t *cred = xmalloc(sizeof(*cred));
+	cred->buffer = sbcast_cred_pack(cred_arg, protocol_version);
+	packstr("fake signature", cred->buffer);
+	return cred;
+}
+
+extern sbcast_cred_t *sbcast_p_unpack(buf_t *buf, bool verify,
+				      uint16_t protocol_version)
+{
+	uint32_t siglen;
+	sbcast_cred_t *cred;
+
+	if (!(cred = sbcast_cred_unpack(buf, &siglen, protocol_version))) {
+		error("%s: sbcast_cred_unpack() failed", __func__);
+		return NULL;
+	}
+
+	/* why bother checking? */
+	cred->verified = true;
+
+	return cred;
 }

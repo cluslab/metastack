@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  cgroup_dbus.h - dbus utility functions for cgroup/v2.
  *****************************************************************************
- *  Copyright (C) 2022 SchedMD LLC
- *  Written by Felip Moll <felip.moll@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -45,5 +44,4 @@
 #include "src/slurmctld/slurmctld.h"
 
 extern int cgroup_dbus_attach_to_scope(pid_t stepd_pid, char *full_path);
-extern int cgroup_dbus_abandon_scope(char *full_path);
 #endif /*!_CG_DBUS_H */

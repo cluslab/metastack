@@ -57,8 +57,6 @@
   __CPU_OP_S (sizeof (cpu_set_t), destset, srcset1, srcset2, |)
 #endif
 
-static int is_power = -1;
-
 /* If HAVE_NUMA, create mask for given ldom.
  * Otherwise create mask for given socket
  */
@@ -79,6 +77,8 @@ static int _bind_ldom(uint32_t ldom, cpu_set_t *mask)
 #else
 	uint16_t s, sid  = ldom % conf->sockets;
 	uint16_t i, cpus = conf->cores * conf->threads;
+	warning("%s: Attempting to bind to NUMA locality domains while Slurm was build without NUMA support",
+		__func__);
 	if (!conf->block_map)
 		return false;
 	for (s = sid * cpus; s < (sid+1) * cpus; s++) {
@@ -89,44 +89,44 @@ static int _bind_ldom(uint32_t ldom, cpu_set_t *mask)
 #endif
 }
 
-int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *job, uint32_t node_tid)
+int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *step, uint32_t node_tid)
 {
 	int nummasks, maskid, i, threads;
 	char *curstr, *selstr;
-	char mstr[1 + CPU_SETSIZE / 4];
+	char mstr[CPU_SET_HEX_STR_SIZE];
 	uint32_t local_id = node_tid;
 	char buftype[1024];
 
-	slurm_sprint_cpu_bind_type(buftype, job->cpu_bind_type);
-	debug3("get_cpuset (%s[%d]) %s", buftype, job->cpu_bind_type,
-		job->cpu_bind);
+	slurm_sprint_cpu_bind_type(buftype, step->cpu_bind_type);
+	debug3("get_cpuset (%s[%d]) %s", buftype, step->cpu_bind_type,
+		step->cpu_bind);
 	CPU_ZERO(mask);
 
-	if (job->cpu_bind_type & CPU_BIND_NONE) {
-		return true;
+	if (step->cpu_bind_type & CPU_BIND_NONE) {
+		return false;
 	}
 
-	if (job->cpu_bind_type & CPU_BIND_RANK) {
+	if (step->cpu_bind_type & CPU_BIND_RANK) {
 		threads = MAX(conf->threads, 1);
-		CPU_SET(node_tid % (job->cpus*threads), mask);
+		CPU_SET(node_tid % (step->cpus*threads), mask);
 		return true;
 	}
 
-	if (job->cpu_bind_type & CPU_BIND_LDRANK) {
+	if (step->cpu_bind_type & CPU_BIND_LDRANK) {
 		/* if HAVE_NUMA then bind this task ID to it's corresponding
 		 * locality domain ID. Otherwise, bind this task ID to it's
 		 * corresponding socket ID */
 		return _bind_ldom(local_id, mask);
 	}
 
-	if (!job->cpu_bind)
+	if (!step->cpu_bind)
 		return false;
 
 	nummasks = 1;
 	selstr = NULL;
 
 	/* get number of strings present in cpu_bind */
-	curstr = job->cpu_bind;
+	curstr = step->cpu_bind;
 	while (*curstr) {
 		if (nummasks == local_id+1) {
 			selstr = curstr;
@@ -142,7 +142,7 @@ int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *job, uint32_t node_tid)
 		/* ...select mask string by wrapping task ID into list */
 		maskid = local_id % nummasks;
 		i = maskid;
-		curstr = job->cpu_bind;
+		curstr = step->cpu_bind;
 		while (*curstr && i) {
 			if (*curstr == ',')
 			    	i--;
@@ -157,11 +157,11 @@ int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *job, uint32_t node_tid)
 	/* extract the selected mask from the list */
 	i = 0;
 	curstr = mstr;
-	while (*selstr && *selstr != ',' && i++ < (CPU_SETSIZE/4))
+	while (*selstr && (*selstr != ',') && (++i < CPU_SET_HEX_STR_SIZE))
 		*curstr++ = *selstr++;
 	*curstr = '\0';
 
-	if (job->cpu_bind_type & CPU_BIND_MASK) {
+	if (step->cpu_bind_type & CPU_BIND_MASK) {
 		/* convert mask string into cpu_set_t mask */
 		if (task_str_to_cpuset(mask, mstr) < 0) {
 			error("task_str_to_cpuset %s", mstr);
@@ -170,7 +170,7 @@ int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *job, uint32_t node_tid)
 		return true;
 	}
 
-	if (job->cpu_bind_type & CPU_BIND_MAP) {
+	if (step->cpu_bind_type & CPU_BIND_MAP) {
 		unsigned int mycpu = 0;
 		if (xstrncmp(mstr, "0x", 2) == 0) {
 			mycpu = strtoul (&(mstr[2]), NULL, 16);
@@ -181,7 +181,7 @@ int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *job, uint32_t node_tid)
 		return true;
 	}
 
-	if (job->cpu_bind_type & CPU_BIND_LDMASK) {
+	if (step->cpu_bind_type & CPU_BIND_LDMASK) {
 		/* if HAVE_NUMA bind this task to the locality domains
 		 * identified in mstr. Otherwise bind this task to the
 		 * sockets identified in mstr */
@@ -197,22 +197,21 @@ int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *job, uint32_t node_tid)
 			char val = slurm_char_to_hex(*ptr);
 			if (val == (char) -1)
 				return false;
-			if (val & 1)
-				_bind_ldom(base, mask);
-			if (val & 2)
-				_bind_ldom(base + 1, mask);
-			if (val & 4)
-				_bind_ldom(base + 2, mask);
-			if (val & 8)
-				_bind_ldom(base + 3, mask);
-			len--;
+			if ((val & 1) && !_bind_ldom(base, mask))
+				return false;
+			if ((val & 2) && !_bind_ldom(base + 1, mask))
+				return false;
+			if ((val & 4) && !_bind_ldom(base + 2, mask))
+				return false;
+			if ((val & 8) && !_bind_ldom(base + 3, mask))
+				return false;
 			ptr--;
 			base += 4;
 		}
 		return true;
 	}
 
-	if (job->cpu_bind_type & CPU_BIND_LDMAP) {
+	if (step->cpu_bind_type & CPU_BIND_LDMAP) {
 		/* if HAVE_NUMA bind this task to the given locality
 		 * domain. Otherwise bind this task to the given
 		 * socket */
@@ -228,103 +227,10 @@ int get_cpuset(cpu_set_t *mask, stepd_step_rec_t *job, uint32_t node_tid)
 	return false;
 }
 
-#define	BUFFLEN	127
-
-/* Return true if Power7 processor */
-static bool _is_power_cpu(void)
-{
-	if (is_power == -1) {
-#ifdef HAVE_SYSCTLBYNAME
-
-		char    buffer[BUFFLEN+1];
-		size_t  len = BUFFLEN;
-
-		if ( sysctlbyname("hw.model", buffer, &len, NULL, 0) == 0 )
-		    is_power = ( strstr(buffer, "POWER7") != NULL );
-		else {
-		    error("_get_is_power: sysctl could not retrieve hw.model");
-		    return false;
-		}
-
-#elif defined(__linux__)
-
-		FILE *cpu_info_file;
-		char buffer[BUFFLEN+1];
-		char* _cpuinfo_path = "/proc/cpuinfo";
-		cpu_info_file = fopen(_cpuinfo_path, "r");
-		if (cpu_info_file == NULL) {
-			error("_get_is_power: error %d opening %s", errno,
-			      _cpuinfo_path);
-			return false;	/* assume not power processor */
-		}
-
-		is_power = 0;
-		while (fgets(buffer, sizeof(buffer), cpu_info_file) != NULL) {
-			if (strstr(buffer, "POWER7")) {
-				is_power = 1;
-				break;
-			}
-		}
-		fclose(cpu_info_file);
-
-#else
-
-/* Assuming other platforms don't support sysctlbyname() or /proc/cpuinfo */
-#warning	"Power7 check not implemented for this platform."
-	is_power = 0;
-
-#endif
-	}
-
-	if (is_power == 1)
-		return true;
-	return false;
-}
-
-/* Translate global CPU index to local CPU index. This is needed for
- * Power7 processors with multi-threading disabled. On those processors,
- * the CPU mask has gaps for the unused threads (different from Intel
- * processors) which need to be skipped over in the mask used in the
- * set system call. */
-void reset_cpuset(cpu_set_t *new_mask, cpu_set_t *cur_mask)
-{
-	cpu_set_t full_mask, newer_mask;
-	int cur_offset, new_offset = 0, last_set = -1;
-
-	if (!_is_power_cpu())
-		return;
-
-	if (slurm_getaffinity(1, sizeof(full_mask), &full_mask)) {
-		/* Try to get full CPU mask from process init */
-		CPU_ZERO(&full_mask);
-#ifdef __FreeBSD__
-		CPU_OR(&full_mask, cur_mask);
-#else
-		CPU_OR(&full_mask, &full_mask, cur_mask);
-#endif
-	}
-	CPU_ZERO(&newer_mask);
-	for (cur_offset = 0; cur_offset < CPU_SETSIZE; cur_offset++) {
-		if (!CPU_ISSET(cur_offset, &full_mask))
-			continue;
-		if (CPU_ISSET(new_offset, new_mask)) {
-			CPU_SET(cur_offset, &newer_mask);
-			last_set = cur_offset;
-		}
-		new_offset++;
-	}
-
-	CPU_ZERO(new_mask);
-	for (cur_offset = 0; cur_offset <= last_set; cur_offset++) {
-		if (CPU_ISSET(cur_offset, &newer_mask))
-			CPU_SET(cur_offset, new_mask);
-	}
-}
-
 int slurm_setaffinity(pid_t pid, size_t size, const cpu_set_t *mask)
 {
 	int rval;
-	char mstr[1 + CPU_SETSIZE / 4];
+	char mstr[CPU_SET_HEX_STR_SIZE];
 
 #ifdef __FreeBSD__
         rval = cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID,
@@ -342,7 +248,7 @@ int slurm_setaffinity(pid_t pid, size_t size, const cpu_set_t *mask)
 int slurm_getaffinity(pid_t pid, size_t size, cpu_set_t *mask)
 {
 	int rval;
-	char mstr[1 + CPU_SETSIZE / 4];
+	char mstr[CPU_SET_HEX_STR_SIZE];
 
 	CPU_ZERO(mask);
 

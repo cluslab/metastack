@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  rate_limit.c
  *****************************************************************************
- *  Copyright (C) 2023 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -41,50 +40,40 @@
 #include "src/common/xstring.h"
 
 #include "src/slurmctld/slurmctld.h"
-#include "src/slurmctld/locks.h"
-
 #ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+#include "src/slurmctld/locks.h"	  
+#endif
+
 /*
  * last_update is scaled by refill_period, and is not the direct unix time
  */
 typedef struct {
 	time_t last_update;
+	time_t last_logged;
 	uint32_t tokens;
 	uid_t uid;
 } user_bucket_t;
 
+static int table_size = 8192;
 static user_bucket_t *user_buckets = NULL;
+
 static bool rate_limit_enabled = false;
 static pthread_mutex_t rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/*
- * 30 tokens max, bucket refills 2 tokens per 1 second
- * retry_max_period - The maximum period for the client to send a RPC request to the server when rate limit.
- */
-#define TABLE_SIZE       8192
-#define BUCKET_SIZE      30
-#define LIMIT_TYPE       3   /* limit all request */
-#define REFILL_RATE      2
-#define REFILL_PERIOD    1
-#define RETRY_MAX_PERIOD 3600
-
-static int table_size;
-static int bucket_size;
-static int limit_type;
-static int refill_rate;
-static int refill_period;
-static int retry_max_period;
-
-extern void rate_limit_shutdown(void)
-{
-	xfree(user_buckets);
-	xhash_free(rl_config_hash_table);
-	destroy_rl_user_hash(&rl_user_hash);
-}
+/* 30 tokens max, bucket refills 2 tokens per 1 second */
+static int bucket_size = 30;
+static int log_freq = 0;
+static int refill_rate = 2;
+static int refill_period = 1;
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+static int limit_type = LIMIT_ALL;   /* limit all request */  
+static int retry_max_period = 3600;  /*The maximum period for the client to send a RPC request to the server when rate limit.*/ 
+#endif
 
 extern void rate_limit_init(void)
 {
-	char *tmp_ptr = NULL;
+	char *tmp_ptr;
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	char *limit_type_str = NULL;
 
 	if (!xstrcasestr(slurm_conf.slurmctld_params, "rl_enable")) {
@@ -92,15 +81,8 @@ extern void rate_limit_init(void)
 		info("RPC rate limiting disable");
 		return;
 	}
+
 	info("RPC rate limiting enabled");
-
-	//limit_type = LIMIT_TYPE; /* do this in func parse_limit_type */	
-	table_size = TABLE_SIZE;
-	bucket_size = BUCKET_SIZE;
-	refill_rate = REFILL_RATE;
-	refill_period = REFILL_PERIOD;
-	retry_max_period = RETRY_MAX_PERIOD;
-
 
 	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
 				   "rl_table_size="))) {
@@ -111,6 +93,7 @@ extern void rate_limit_init(void)
 			table_size = tmp;
 		}
 	}
+
 	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
 				   "rl_bucket_size="))) {
 		int tmp = atoi(tmp_ptr + 15);
@@ -120,6 +103,17 @@ extern void rate_limit_init(void)
 			bucket_size = tmp;
 		}
 	}
+
+	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
+				   "rl_log_freq="))) {
+		int tmp = atoi(tmp_ptr + 12);
+		if(tmp <= 0 ) {
+			error("rl_log_freqd invalid value, use default value");
+		} else {
+			log_freq = tmp;
+		}
+	}
+
 	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
 				   "rl_refill_rate="))) {
 		int tmp = atoi(tmp_ptr + 15);
@@ -129,6 +123,7 @@ extern void rate_limit_init(void)
 			refill_rate = tmp;
 		}
 	}
+
 	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
 				   "rl_refill_period="))) {
 		int tmp = atoi(tmp_ptr + 17);
@@ -138,6 +133,7 @@ extern void rate_limit_init(void)
 			refill_period = tmp;
 		}
 	}
+
 	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
 				   "rl_retry_max_period="))) {
 		int tmp = atoi(tmp_ptr + 20);
@@ -148,24 +144,38 @@ extern void rate_limit_init(void)
 		}
 	}
 
-	parse_limit_type(slurm_conf.slurmctld_params, LIMIT_TYPE, &limit_type);
+
+	parse_limit_type(slurm_conf.slurmctld_params, LIMIT_ALL, &limit_type);
 	limit_type_str = get_limit_type_str(limit_type);
 
-	user_buckets = xcalloc(table_size, sizeof(user_bucket_t));
-	
 	rate_limit_enabled = true;
-	if (limit_type != 1) {
-		debug("%s: rl_table_size=%d,rl_bucket_size=%d,rl_refill_rate=%d,rl_refill_period=%d,rl_retry_max_period=%d,limit_type=%s",
+	user_buckets = xcalloc(table_size, sizeof(user_bucket_t));
+
+	if (limit_type != LIMIT_NONE) {
+		info("%s: rl_table_size=%d,rl_bucket_size=%d,rl_refill_rate=%d,rl_refill_period=%d,rl_retry_max_period=%d,limit_type=%s",
 			__func__, table_size, bucket_size, refill_rate, refill_period, retry_max_period, limit_type_str);
 	} else {
-		debug("%s: all requests no rate limit", __func__);
+		info("%s: all requests no rate limit", __func__);
 	}
-
+	
 	/* parse rlconfig */
 	add_rl_config_to_hash(limit_type, bucket_size, refill_rate);
 	add_rl_user_to_hash();
+
+#endif
 }
 
+extern void rate_limit_shutdown(void)
+{
+	slurm_mutex_lock(&rate_limit_mutex);
+	rate_limit_enabled = false;
+	xfree(user_buckets);
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	xhash_free(rl_config_hash_table);
+	destroy_rl_user_hash(&rl_user_hash);
+#endif
+	slurm_mutex_unlock(&rate_limit_mutex);
+}
 
 /*
  * Return true if the limit's been exceeded.
@@ -173,13 +183,18 @@ extern void rate_limit_init(void)
  */
 extern bool rate_limit_exceeded(slurm_msg_t *msg)
 {
-	bool exceeded = false, user_rl_config = false;
+	bool exceeded = false;
+	int start_position = 0, position = 0;
+	time_t now;
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
+	bool user_rl_config = false;
 	rl_user_record_t *rl_user_record = NULL;
-	int start_position = 0, position = 0, user_limit_type = 0, user_bucket_size = 0, user_refill_rate = 0;
+	int user_limit_type = 0, user_bucket_size = 0, user_refill_rate = 0;
+#endif
 
 	if (!rate_limit_enabled) {
 		return false;
-	}	
+	}
 
 	/*
 	 * Exempt SlurmUser / root. Subjecting internal cluster traffic to
@@ -188,8 +203,9 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 	 */
 	if (validate_slurm_user(msg->auth_uid)) {
 		return false;
-	}	
+	}
 
+#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 	if ((rl_user_record = find_rl_user_hash(&rl_user_hash, msg->auth_uid))) {
 		user_limit_type = rl_user_record->limit_type;
 		user_bucket_size = rl_user_record->bucket_size;
@@ -199,12 +215,12 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 
 	if (user_rl_config) {
 		/* all requests no limit configured */
-		if (user_limit_type == 1) {
+		if (user_limit_type == LIMIT_NONE) {
 			return false;		
-		}		
-
+		}
+		
 		/* If only limit query requests configured, check if the msg type is query type */
-		if (user_limit_type == 2) {
+		if (user_limit_type == LIMIT_QUERY) {
 			bool rate_limit = false;
 			switch (msg->msg_type)
 			{
@@ -236,6 +252,12 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 		}
 
 		slurm_mutex_lock(&rate_limit_mutex);
+		/* This can happen if we already executed rate_limit_shutdown */
+		if (!user_buckets) {
+			slurm_mutex_unlock(&rate_limit_mutex);
+			return true;
+		}
+		now = time(NULL);
 
 		/*
 		* Scan for position. Note that uid 0 indicates an unused slot,
@@ -248,9 +270,8 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 		while ((user_buckets[position].uid) &&
 			(user_buckets[position].uid != msg->auth_uid)) {
 			position++;
-			if (position == table_size) {
+			if (position == table_size)
 				position = 0;
-			}
 			if (position == start_position) {
 				position = table_size;
 				break;
@@ -259,49 +280,58 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 
 		if (position == table_size) {
 			/*
-			* Avoid the temptation to resize the table... you'd need to
-			* rehash all the contents which would be annoying and slow.
-			*/
+			 * Avoid the temptation to resize the table... you'd need to
+			 * rehash all the contents which would be annoying and slow.
+			 */
 			error("RPC Rate Limiting: ran out of user table space. User will not be limited.");
 		} else if (!user_buckets[position].uid) {
 			user_buckets[position].uid = msg->auth_uid;
-			user_buckets[position].last_update = time(NULL) / refill_period;
-			user_buckets[position].last_update /= refill_period;
+			user_buckets[position].last_update = now / refill_period;
 			user_buckets[position].tokens = user_bucket_size - 1;
 			debug3("%s: new entry for uid %u", __func__, msg->auth_uid);
 		} else {
-			time_t now = time(NULL) / refill_period;
-			time_t delta = now - user_buckets[position].last_update;
-			user_buckets[position].last_update = now;
-
+			time_t now_periods = now / refill_period;
+			time_t delta = now_periods - user_buckets[position].last_update;
+			user_buckets[position].last_update = now_periods;
+	
 			/* add tokens */
 			if (delta) {
 				user_buckets[position].tokens += (delta * user_refill_rate);
 				user_buckets[position].tokens =
 					MIN(user_buckets[position].tokens, user_bucket_size);
 			}
-
+	
 			if (user_buckets[position].tokens)
 				user_buckets[position].tokens--;
 			else
 				exceeded = true;
-
+	
 			debug3("%s: found uid %u at position %d remaining tokens %d%s",
-				__func__, msg->auth_uid, position,
-				user_buckets[position].tokens,
-				(exceeded ? " rate limit exceeded" : ""));
+				   __func__, msg->auth_uid, position,
+				   user_buckets[position].tokens,
+				   (exceeded ? " rate limit exceeded" : ""));
 		}
 		slurm_mutex_unlock(&rate_limit_mutex);
+
+		if (exceeded && (log_freq != -1) &&
+			((user_buckets[position].last_logged + log_freq) <= now)) {
+			slurm_addr_t cli_addr;
+			(void) slurm_get_peer_addr(msg->conn_fd, &cli_addr);
+
+			info("RPC rate limit exceeded by uid %u with %s from %pA, telling to back off",
+				msg->auth_uid, rpc_num2string(msg->msg_type), &cli_addr);
+			user_buckets[position].last_logged = now;
+		}
 
 		return exceeded;
 	} else {
 		/* all requests no limit configured */
-		if (limit_type == 1) {
+		if (limit_type == LIMIT_NONE) {
 			return false;		
 		}		
 
 		/* If only limit query requests configured, check if the msg type is query type */
-		if (limit_type == 2) {
+		if (limit_type == LIMIT_QUERY) {
 			bool rate_limit = false;
 			switch (msg->msg_type)
 			{
@@ -333,6 +363,12 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 		}
 
 		slurm_mutex_lock(&rate_limit_mutex);
+		/* This can happen if we already executed rate_limit_shutdown */
+		if (!user_buckets) {
+			slurm_mutex_unlock(&rate_limit_mutex);
+			return true;
+		}
+		now = time(NULL);
 
 		/*
 		* Scan for position. Note that uid 0 indicates an unused slot,
@@ -345,9 +381,8 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 		while ((user_buckets[position].uid) &&
 			(user_buckets[position].uid != msg->auth_uid)) {
 			position++;
-			if (position == table_size) {
+			if (position == table_size)
 				position = 0;
-			}
 			if (position == start_position) {
 				position = table_size;
 				break;
@@ -356,41 +391,51 @@ extern bool rate_limit_exceeded(slurm_msg_t *msg)
 
 		if (position == table_size) {
 			/*
-			* Avoid the temptation to resize the table... you'd need to
-			* rehash all the contents which would be annoying and slow.
-			*/
+			 * Avoid the temptation to resize the table... you'd need to
+			 * rehash all the contents which would be annoying and slow.
+			 */
 			error("RPC Rate Limiting: ran out of user table space. User will not be limited.");
 		} else if (!user_buckets[position].uid) {
 			user_buckets[position].uid = msg->auth_uid;
-			user_buckets[position].last_update = time(NULL) / refill_period;
-			user_buckets[position].last_update /= refill_period;
+			user_buckets[position].last_update = now / refill_period;
 			user_buckets[position].tokens = bucket_size - 1;
 			debug3("%s: new entry for uid %u", __func__, msg->auth_uid);
 		} else {
-			time_t now = time(NULL) / refill_period;
-			time_t delta = now - user_buckets[position].last_update;
-			user_buckets[position].last_update = now;
-
+			time_t now_periods = now / refill_period;
+			time_t delta = now_periods - user_buckets[position].last_update;
+			user_buckets[position].last_update = now_periods;
+	
 			/* add tokens */
 			if (delta) {
 				user_buckets[position].tokens += (delta * refill_rate);
 				user_buckets[position].tokens =
 					MIN(user_buckets[position].tokens, bucket_size);
 			}
-
+	
 			if (user_buckets[position].tokens)
 				user_buckets[position].tokens--;
 			else
 				exceeded = true;
-
+	
 			debug3("%s: found uid %u at position %d remaining tokens %d%s",
-				__func__, msg->auth_uid, position,
-				user_buckets[position].tokens,
-				(exceeded ? " rate limit exceeded" : ""));
+				   __func__, msg->auth_uid, position,
+				   user_buckets[position].tokens,
+				   (exceeded ? " rate limit exceeded" : ""));
 		}
 		slurm_mutex_unlock(&rate_limit_mutex);
-
+	
+		if (exceeded && (log_freq != -1) &&
+			((user_buckets[position].last_logged + log_freq) <= now)) {
+			slurm_addr_t cli_addr;
+			(void) slurm_get_peer_addr(msg->conn_fd, &cli_addr);
+	
+			info("RPC rate limit exceeded by uid %u with %s from %pA, telling to back off",
+				  msg->auth_uid, rpc_num2string(msg->msg_type), &cli_addr);
+			user_buckets[position].last_logged = now;
+		}
+	
 		return exceeded;
 	}
-}
+
 #endif
+}

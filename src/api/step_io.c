@@ -39,25 +39,27 @@
 #include <string.h>
 #include <time.h>
 
+#include "src/api/step_io.h"
+#include "src/api/step_launch.h"
+
+#include "src/common/eio.h"
 #include "src/common/fd.h"
 #include "src/common/hostlist.h"
+#include "src/common/io_hdr.h"
 #include "src/common/log.h"
 #include "src/common/macros.h"
+#include "src/common/net.h"
 #include "src/common/pack.h"
 #include "src/common/read_config.h"
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/slurm_protocol_pack.h"
-#include "src/common/slurm_cred.h"
+#include "src/common/write_labelled_message.h"
 #include "src/common/xassert.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xsignal.h"
-#include "src/common/eio.h"
-#include "src/common/io_hdr.h"
-#include "src/common/net.h"
-#include "src/common/write_labelled_message.h"
+#include "src/common/xstring.h"
 
-#include "src/api/step_io.h"
-#include "src/api/step_launch.h"
+#include "src/interfaces/cred.h"
 
 #define STDIO_MAX_FREE_BUF 1024
 
@@ -114,7 +116,7 @@ struct server_io_info {
 	bool testing_connection;
 
 	/* incoming variables */
-	struct slurm_io_header header;
+	io_hdr_t header;
 	struct io_buf *in_msg;
 	int32_t in_remaining;
 	bool in_eof;
@@ -168,7 +170,7 @@ struct file_read_info {
 	client_io_t *cio;
 
 	/* header contains destination of file input */
-	struct slurm_io_header header;
+	io_hdr_t header;
 	uint32_t nodeid;
 
 	bool eof;
@@ -744,7 +746,7 @@ again:
 	msg->ref_count = 0; /* make certain it is initialized */
 	/* free the packbuf structure, but not the memory to which it points */
 	packbuf->head = NULL;
-	free_buf(packbuf);
+	FREE_NULL_BUFFER(packbuf);
 	debug3("  msg->length = %d", msg->length);
 
 	/*
@@ -813,6 +815,11 @@ _io_thr_internal(void *cio_arg)
 	/* start the eio engine */
 	eio_handle_mainloop(cio->eio);
 
+	slurm_mutex_lock(&cio->io_mutex);
+	cio->io_running = false;
+	slurm_cond_broadcast(&cio->io_cond);
+	slurm_mutex_unlock(&cio->io_mutex);
+
 	debug("IO thread exiting");
 
 	return NULL;
@@ -832,11 +839,10 @@ static int _read_io_init_msg(int fd, client_io_t *cio, slurm_addr_t *host)
 {
 	io_init_msg_t msg = { 0 };
 
-	if (io_init_msg_read_from_fd(fd, &msg) != SLURM_SUCCESS) {
-		error("failed reading io init message");
+	if (io_init_msg_read_from_fd(fd, &msg) != SLURM_SUCCESS)
 		goto fail;
-	}
-	if (io_init_msg_validate(&msg, cio->io_key, cio->io_key_len) < 0) {
+
+	if (io_init_msg_validate(&msg, cio->io_key) < 0) {
 		goto fail;
 	}
 	if (msg.nodeid >= cio->num_nodes) {
@@ -1006,7 +1012,7 @@ _init_stdio_eio_objs(slurm_step_io_fds_t fds, client_io_t *cio)
 	}
 
 	/*
-	 * build a seperate stderr eio_obj_t only if stderr is not sharing
+	 * build a separate stderr eio_obj_t only if stderr is not sharing
 	 * the stdout file descriptor and task filtering option.
 	 */
 	if (fds.err.fd == fds.out.fd
@@ -1034,11 +1040,9 @@ _incoming_buf_free(client_io_t *cio)
 		return true;
 	} else if (cio->incoming_count < STDIO_MAX_FREE_BUF) {
 		buf = _alloc_io_buf();
-		if (buf != NULL) {
-			list_enqueue(cio->free_incoming, buf);
-			cio->incoming_count++;
-			return true;
-		}
+		list_enqueue(cio->free_incoming, buf);
+		cio->incoming_count++;
+		return true;
 	}
 	return false;
 }
@@ -1052,11 +1056,9 @@ _outgoing_buf_free(client_io_t *cio)
 		return true;
 	} else if (cio->outgoing_count < STDIO_MAX_FREE_BUF) {
 		buf = _alloc_io_buf();
-		if (buf != NULL) {
-			list_enqueue(cio->free_outgoing, buf);
-			cio->outgoing_count++;
-			return true;
-		}
+		list_enqueue(cio->free_outgoing, buf);
+		cio->outgoing_count++;
+		return true;
 	}
 
 	return false;
@@ -1071,13 +1073,11 @@ _estimate_nports(int nclients, int cli_per_port)
 }
 
 client_io_t *client_io_handler_create(slurm_step_io_fds_t fds, int num_tasks,
-				      int num_nodes, slurm_cred_t *cred,
+				      int num_nodes, char *io_key,
 				      bool label, uint32_t het_job_offset,
 				      uint32_t het_job_task_offset)
 {
 	int i;
-	uint32_t siglen;
-	char *sig;
 	uint16_t *ports;
 	client_io_t *cio = xmalloc(sizeof(*cio));
 
@@ -1092,14 +1092,7 @@ client_io_t *client_io_handler_create(slurm_step_io_fds_t fds, int num_tasks,
 	else
 		cio->taskid_width = 0;
 
-	if (slurm_cred_get_signature(cred, &sig, &siglen) < 0) {
-		error("%s: invalid credential", __func__);
-		return NULL;
-	}
-	cio->io_key = xmalloc(siglen);
-	cio->io_key_len = siglen;
-	memcpy(cio->io_key, sig, siglen);
-	/* no need to free "sig", it is just a pointer into the credential */
+	cio->io_key = xstrdup(io_key);
 
 	cio->eio = eio_handle_create(slurm_conf.eio_timeout);
 
@@ -1154,56 +1147,39 @@ client_io_t *client_io_handler_create(slurm_step_io_fds_t fds, int num_tasks,
 	return cio;
 }
 
-int
-client_io_handler_start(client_io_t *cio)
+extern void client_io_handler_start(client_io_t *cio)
 {
 	xsignal(SIGTTIN, SIG_IGN);
 
-	slurm_thread_create(&cio->ioid, _io_thr_internal, cio);
+	slurm_mutex_lock(&cio->io_mutex);
+	slurm_thread_create_detached(_io_thr_internal, cio);
+	cio->io_running = true;
+	slurm_mutex_unlock(&cio->io_mutex);
 
-	debug("Started IO server thread (%lu)", (unsigned long) cio->ioid);
-
-	return SLURM_SUCCESS;
+	debug("Started IO server thread");
 }
 
-static void *_kill_thr(void *args)
-{
-	kill_thread_t *kt = ( kill_thread_t *) args;
-	unsigned int pause = kt->secs;
-	do {
-		pause = sleep(pause);
-	} while (pause > 0);
-	pthread_cancel(kt->thread_id);
-	xfree(kt);
-	return NULL;
-}
-
-static void _delay_kill_thread(pthread_t thread_id, int secs)
-{
-	kill_thread_t *kt = xmalloc(sizeof(kill_thread_t));
-
-	kt->thread_id = thread_id;
-	kt->secs = secs;
-	slurm_thread_create_detached(NULL, _kill_thr, kt);
-}
-
-int
-client_io_handler_finish(client_io_t *cio)
+extern void client_io_handler_finish(client_io_t *cio)
 {
 	if (cio == NULL)
-		return SLURM_SUCCESS;
+		return;
 
 	eio_signal_shutdown(cio->eio);
-	/* Make the thread timeout consistent with
-	 * EIO_SHUTDOWN_WAIT
-	 */
-	_delay_kill_thread(cio->ioid, 180);
-	if (pthread_join(cio->ioid, NULL) < 0) {
-		error("Waiting for client io pthread: %m");
-		return SLURM_ERROR;
-	}
 
-	return SLURM_SUCCESS;
+	slurm_mutex_lock(&cio->io_mutex);
+	if (cio->io_running) {
+		struct timespec ts = { 0, 0 };
+
+		/*
+		 * FIXME: a comment here stated "Make the thread timeout
+		 * consistent with EIO_SHUTDOWN_WAIT", but this 180 second
+		 * value is not DEFAULT_EIO_SHUTDOWN_WAIT.
+		 */
+		ts.tv_sec = time(NULL) + 180;
+
+		slurm_cond_timedwait(&cio->io_cond, &cio->io_mutex, &ts);
+	}
+	slurm_mutex_unlock(&cio->io_mutex);
 }
 
 void
@@ -1341,7 +1317,7 @@ int client_io_handler_send_test_message(client_io_t *cio, int node_id,
 		io_hdr_pack(&header, packbuf);
 		/* free the packbuf, but not the memory to which it points */
 		packbuf->head = NULL;
-		free_buf(packbuf);
+		FREE_NULL_BUFFER(packbuf);
 
 		list_enqueue( server->msg_queue, msg );
 

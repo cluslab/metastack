@@ -20,16 +20,30 @@ end
 
 function slurm_cli_setup_defaults(options, early_pass)
 
-        return slurm.SUCCESS
+		return slurm.SUCCESS
 end
 
 function slurm_cli_post_submit(offset, job_id, step_id)
 
-        return slurm.SUCCESS
+		return slurm.SUCCESS
 end
 
 -- 加载预测工具
 function load_prediction_tool(options, pack_offset)
+
+	local array_inx = options["array"]
+
+	if array_inx ~= nil and array_inx ~= "invalid-context" then
+		options["predict-job"] = -1
+		return
+	end
+
+	local sig = options["signal"]
+
+	if sig ~= '0@0' then
+		options["predict-job"] = -1
+		return
+	end
 
 	-- 默认关闭预测功能
 	predictionFunction = "0"  
@@ -134,11 +148,11 @@ function load_prediction_tool(options, pack_offset)
 		-- 将异构作业offset不等于0的作业在此重置一次time_min的标识
 		if (pack_offset ~= 0) then
 
-			time_min = -1
+			time_min = -2
 		end
 
 		-- 判断作业是否已指定TimeMin，若未指定走预测流程
-		if (time_min == -1) then
+		if (time_min == -2) then
 			
 			-- 预测功能校验用户，若为预测功能用户，执行时间预测模块
 			if (checkValueInFile(predictUsers_file, user_name) == 1) then
@@ -151,15 +165,16 @@ function load_prediction_tool(options, pack_offset)
 	
 			-- 若不为预测功能用户，直接跳过预测模块
 			else
-				
+			
 				options["predict-job"] = -1
-				-- slurm.log_info("The user %s is not in the prediction userlist.", user_name)
+
 			end
 	
 		-- 若已指定TimeMin，直接跳过预测模块
 		else
+
 			options["predict-job"] = -1
-			-- slurm.log_info("User %s job has TimeMin, skipping the predictive function.", user_name)
+
 		end
 
 	-- 为所有用户开启预测功能
@@ -174,11 +189,11 @@ function load_prediction_tool(options, pack_offset)
 		-- 将异构作业offset不等于0的作业在此重置一次time_min的标识
 		if (pack_offset ~= 0) then
 
-			time_min = -1
+			time_min = -2
 		end
 
 		-- 判断作业是否已指定TimeMin，若未指定走预测流程
-		if (time_min == -1) then
+		if (time_min == -2) then
 
 			-- 加载预测工具
 			dofile(predictionTool_file)
@@ -188,15 +203,15 @@ function load_prediction_tool(options, pack_offset)
 
 		-- 若已指定TimeMin，直接跳过预测模块
 		else
+
 			options["predict-job"] = -1
-			-- slurm.log_info("User %s job has TimeMin, skipping the predictive function.", user_name)
+
 		end
 
 	-- 未开启预测功能
 	else
 
 		options["predict-job"] = -1
-		-- slurm.log_info("The prediction function is not enabled and the prediction flag is reset to 0.")
 
 	end
 
@@ -206,10 +221,6 @@ end
 function get_config_value(key)
 
 	local file = io.open(configuration_path, "r")
-
-	if not file then
-		-- slurm.log_info("Could not open config file: %s", configuration_path)
-	end
 
 	for line in file:lines() do
 
@@ -239,16 +250,20 @@ function checkValueInFile(filename,value)
 
 	-- 若文件不存在，直接返回0
 	if(file==nil) then
-		-- slurm.log_info("%s not exist!", filename)
+
 		return 0
 	end
 
 	-- 文件存在，进行解析
 	for line in file:lines() do
+
 		if(line == tostring(value)) then
+
 			result = 1
+
 			break
 		end
+
 	end
 
 	file:close()
@@ -448,7 +463,7 @@ function get_apptype(options)
 	-- 2. Get the properties file path and construct the hash table
 	local hash_table = read_properties(properties_path)
 	if not hash_table then return nil end
-    
+
 	-- 3. Determine the job submission type
 	if not submit_line then return nil end
 	local submit_type = check_command_type(submit_line)

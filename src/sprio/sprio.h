@@ -69,7 +69,8 @@ struct sprio_parameters {
 
 	int  verbose;
 
-	List clusters;
+	list_t *clusters;
+	char *cluster_names;
 
 	char* format;
 	char* jobs;
@@ -77,15 +78,22 @@ struct sprio_parameters {
 	char* users;
 	char* sort;
 
-	List  format_list;
-	List  job_list;
-	List  user_list;
+	list_t *format_list;
+	list_t *job_list;
+	list_t *part_list;
+	list_t *user_list;
 #ifdef __METASTACK_OPT_PRINT_COMMAND
-   bool format_flag;
-   bool format_field_flag;	
-   //bool right_flag;
-#endif
+	bool format_flag;
+	bool format_field_flag;	
+ #endif
 };
+
+typedef struct fmt_data {
+	char *name;	/* long format name */
+	char c;		/* short format character, prefixed by '%' */
+	int (*fn)(priority_factors_object_t *job, int width, bool right,
+		  char *suffix);
+} fmt_data_t;
 
 /********************
  * Global Variables *
@@ -102,6 +110,15 @@ extern char    *weight_tres; /* weight str TRES factors */
 
 extern void parse_command_line( int argc, char* *argv );
 extern int  parse_format( char* format );
-extern void sort_job_list(List job_list);
+
+/*
+ * filter_job_list - filter a list of jobs according to options specified by the
+ *                   user that are containted in the 'params' global variable.
+ *
+ * IN/OUT job_list - list of priority_factors_object_t
+ */
+extern void filter_job_list(list_t *job_list);
+
+extern void sort_job_list(list_t *job_list);
 
 #endif

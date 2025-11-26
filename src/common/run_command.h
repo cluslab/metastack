@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  run_command.h - run a command asynchronously and return output
  *****************************************************************************
- *  Copyright (C) 2014-2017 SchedMD LLC.
- *  Written by Morris Jette <jette@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -40,17 +39,16 @@
 #include "src/common/track_script.h"
 
 typedef struct {
-	int (*container_join)(uint32_t job_id, uid_t uid);
 	char **env;
 	uint32_t job_id;
 	int max_wait;
+	bool orphan_on_shutdown;
 	char **script_argv;
 	const char *script_path;
 	const char *script_type;
 	int *status;
 	pthread_t tid;
 	bool *timed_out;
-	bool turnoff_output;
 } run_command_args_t;
 
 /*
@@ -90,6 +88,8 @@ extern int run_command_count(void);
  * env IN - environment for the command, if NULL execv is used
  * max_wait IN - Maximum time to wait in milliseconds,
  *		 -1 for no limit (asynchronous)
+ * orphan_on_shutdown IN - If true, then instead of killing the script on
+ *                         shutdown, orphan the script instead.
  * script_argv IN - Arguments to the script
  * script_path IN - Fully qualified pathname of the program to execute
  * script_type IN - Type of program being run (e.g. "StartStageIn")
@@ -105,6 +105,45 @@ extern char *run_command(run_command_args_t *run_command_args);
 extern pid_t run_watch_dog_command(run_command_args_t *args, pid_t* cpid, gid_t gid, uid_t uid, bool send_terminate);
 extern bool run_watch_dog_wait(pid_t* cpid, bool send_terminate);
 #endif
+/*
+ * Wrapper for execv/execve. This should never return.
+ */
+extern void run_command_child_exec(const char *script_path, char **argv,
+				   char **env);
+
+/*
+ * Called in the child before exec. Do setup like closing unneeded files and
+ * setting uid/gid.
+ */
+extern void run_command_child_pre_exec(void);
+
+/*
+ * Read stdout of a child process and wait for the child process to terminate.
+ * Kills the child's process group once the timeout is reached.
+ *
+ * IN cpid - child process id
+ * IN max_wait - timeout in milliseconds
+ * IN orphan_on_shutdown - if true, orphan instead of kill the child process
+ *                         group when the daemon is shutting down
+ * IN read_fd - file descriptor for reading stdout from the child process
+ * IN script_path - path to script
+ * IN script_type - description of script
+ * IN tid - thread id of the calling thread; zero if not using track_script.
+ * OUT status - exit status of the child process
+ * OUT timed_out - true if the child process' run time hit the timeout max_wait
+ *
+ * Return the output of the child process.
+ * Caller must xfree() returned value (even if no output was read).
+ */
+extern char *run_command_poll_child(int cpid,
+				    int max_wait,
+				    bool orphan_on_shutdown,
+				    int read_fd,
+				    const char *script_path,
+				    const char *script_type,
+				    pthread_t tid,
+				    int *status,
+				    bool *timed_out);
 
 /*
  * run_command_waitpid_timeout()

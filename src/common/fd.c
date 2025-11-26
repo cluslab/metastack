@@ -39,8 +39,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <poll.h>
+#include <stdint.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -58,15 +62,35 @@
 #include "src/common/xstring.h"
 
 /*
+ * Helper macro to log_flag(NET, ...) against a given connection
+ * IN fd - file descriptor relavent for logging
+ * IN con_name - human friendly name for fd or NULL (to auto resolve)
+ * IN fmt - log message format
+ */
+#define log_net(fd, con_name, fmt, ...) \
+do { \
+	if (slurm_conf.debug_flags & DEBUG_FLAG_NET) { \
+		char *log_name = NULL; \
+		if (!con_name) \
+			con_name = log_name = fd_resolve_path(fd); \
+		log_flag(NET, "%s: [%s] " fmt, \
+			 __func__, con_name, ##__VA_ARGS__); \
+		xfree(log_name); \
+	} \
+} while (false)
+
+/*
  * Define slurm-specific aliases for use by plugins, see slurm_xlator.h
  * for details.
  */
 strong_alias(closeall, slurm_closeall);
+strong_alias(fd_close, slurm_fd_close);
 strong_alias(fd_set_blocking,	slurm_fd_set_blocking);
 strong_alias(fd_set_nonblocking,slurm_fd_set_nonblocking);
 strong_alias(fd_get_socket_error, slurm_fd_get_socket_error);
 strong_alias(send_fd_over_pipe, slurm_send_fd_over_pipe);
 strong_alias(receive_fd_over_pipe, slurm_receive_fd_over_pipe);
+strong_alias(rmdir_recursive, slurm_rmdir_recursive);
 
 static int fd_get_lock(int fd, int cmd, int type);
 static pid_t fd_test_lock(int fd, int type);
@@ -114,40 +138,13 @@ extern void closeall(int fd)
 	closedir(d);
 }
 
-#ifdef __METASTACK_BUG_FORKSTEPD_FD_LEAK
-void set_open_fd_close_on_exec(int fd)
+extern void fd_close(int *fd)
 {
-        char *name = "/proc/self/fd";
-        DIR *d;
-        int i;
-        struct dirent *dir;
-
-        /*
-         * Blindly closing all file descriptors is slow.
-         *
-         * The number 512 is an arbitrary value obtained from testing on a 128-core machine.
-         */
-        if (!(d = opendir(name))) {
-                error("Could not read open files from %s: %m, set the close flag for all file descriptors from 3 to 512.",
-                      name);
-                for (i=3; i<512; i++) {
-                        (void) fcntl(i, F_SETFD, FD_CLOEXEC);
-                }
-                return;
-        }
-
-        while ((dir = readdir(d))) {
-                /* Ignore "." and ".." entries */
-                if (dir->d_type != DT_DIR) {
-                        int open_fd = atoi(dir->d_name);
-
-                        if ((open_fd >= fd))
-                                (void) fcntl(open_fd, F_SETFD, FD_CLOEXEC);
-                }
-        }
-        closedir(d);
+	if (fd && *fd >= 0) {
+		close(*fd);
+		*fd = -1;
+	}
 }
-#endif
 
 void fd_set_close_on_exec(int fd)
 {
@@ -271,6 +268,7 @@ static pid_t fd_test_lock(int fd, int type)
 	return(lock.l_pid);
 }
 
+
 /* Wait for a file descriptor to be readable (up to time_limit seconds).
  * Return 0 when readable or -1 on error */
 extern int wait_fd_readable(int fd, int time_limit)
@@ -292,7 +290,7 @@ extern int wait_fd_readable(int fd, int time_limit)
 			else	/* Exception */
 				return -1;
 		} else if (rc == 0) {
-			error("Timeout waiting for slurmstepd");
+			error("Timeout waiting for socket");
 			return -1;
 		} else if (errno != EINTR) {
 			error("poll(): %m");
@@ -301,6 +299,44 @@ extern int wait_fd_readable(int fd, int time_limit)
 			time_left = time_limit - (time(NULL) - start);
 		}
 	}
+}
+
+/*
+ * Check if a file descriptor is writable now.
+ *
+ * This function assumes that O_NONBLOCK is set already, if it is not this
+ * function will block!
+ *
+ * Return 1 when writeable or 0 on error
+ */
+extern bool fd_is_writable(int fd)
+{
+	bool rc = true;
+	char temp[2];
+	struct pollfd ufd;
+
+	/* setup call to poll */
+	ufd.fd = fd;
+	ufd.events = POLLOUT;
+
+	while (true) {
+		if (poll(&ufd, 1, 0) == -1) {
+			if ((errno == EINTR) || (errno == EAGAIN))
+				continue;
+			debug2("%s: poll error: %m", __func__);
+			rc = false;
+			break;
+		}
+		if ((ufd.revents & POLLHUP) ||
+		    (recv(fd, &temp, 1, MSG_PEEK) == 0)) {
+			debug2("%s: socket is not writable", __func__);
+			rc = false;
+			break;
+		}
+		break;
+	}
+
+	return rc;
 }
 
 /*
@@ -358,17 +394,16 @@ extern char *fd_resolve_path(int fd)
 	char *path = NULL;
 
 #if defined(__linux__)
-	char *ret = NULL;
-	path = xstrdup_printf("/proc/self/fd/%u", fd);
-	ret = realpath(path, NULL);
-	if (!ret) {
-		debug("%s: realpath(%s) failed: %m", __func__,  path);
-	} else {
-		resolved = xstrdup(ret);
-		free(ret);
-	}
-#endif
+	char ret[PATH_MAX + 1];
 
+	path = xstrdup_printf("/proc/self/fd/%u", fd);
+	memset(ret, 0, (PATH_MAX + 1));
+
+	if (readlink(path, ret, PATH_MAX) < 0)
+		debug("%s: readlink(%s) failed: %m", __func__,  path);
+	else
+		resolved = xstrdup(ret);
+#endif
 	// TODO: use fcntl(fd, F_GETPATH, filePath) on macOS
 
 	xfree(path);
@@ -434,7 +469,7 @@ extern void send_fd_over_pipe(int socket, int fd)
 	struct msghdr msg = { 0 };
 	struct cmsghdr *cmsg;
 	char buf[CMSG_SPACE(sizeof(fd))];
-	char c;
+	char c = '\0';
 	struct iovec iov[1];
 
 	memset(buf, '\0', sizeof(buf));
@@ -488,4 +523,193 @@ extern int receive_fd_over_pipe(int socket)
 	memmove(&fd, CMSG_DATA(cmsg), sizeof(fd));
 
 	return fd;
+}
+
+static int _mkdir(const char *pathname, mode_t mode)
+{
+	int rc;
+
+	if ((rc = mkdir(pathname, mode)))
+		rc = errno;
+	else
+		return SLURM_SUCCESS;
+
+	if (rc == EEXIST)
+		return SLURM_SUCCESS;
+
+	debug("%s: unable to mkdir(%s): %s",
+	      __func__, pathname, slurm_strerror(rc));
+
+	return rc;
+}
+
+extern int mkdirpath(const char *pathname, mode_t mode, bool is_dir)
+{
+	int rc;
+	char *p, *dst;
+
+	p = dst = xstrdup(pathname);
+
+	while ((p = xstrchr(p + 1, '/'))) {
+		*p = '\0';
+
+		if ((rc = _mkdir(dst, mode)))
+			goto cleanup;
+
+		*p = '/';
+	}
+
+	/* final directory */
+	if (is_dir)
+		rc = _mkdir(dst, mode);
+
+cleanup:
+	xfree(dst);
+	return rc;
+}
+
+static int _rmdir_recursive(int dirfd)
+{
+	int rc = 0;
+	DIR *dp;
+	struct dirent *ent;
+
+	if (!(dp = fdopendir(dirfd))) {
+		error("%s: can't open directory: %m", __func__);
+		(void) close(dirfd);
+		return 1;
+	}
+
+	while ((ent = readdir(dp))) {
+		int childfd = -1;
+
+		/* skip special directories */
+		if (!strcmp(ent->d_name, ".") ||
+		    !strcmp(ent->d_name, "..")) {
+			continue;
+		}
+
+		/* try to remove entry, first as a file, then as a directory */
+		if (unlinkat(dirfd, ent->d_name, 0) != -1) {
+			debug("%s: removed file `%s`", __func__, ent->d_name);
+			continue;
+		} else if (unlinkat(dirfd, ent->d_name, AT_REMOVEDIR) != -1) {
+			debug("%s: removed empty directory `%s`",
+			      __func__, ent->d_name);
+			continue;
+		}
+
+		/* removal didn't work. assume it's a non-empty directory */
+		if ((childfd = openat(dirfd, ent->d_name,
+				      (O_DIRECTORY | O_NOFOLLOW))) < 0) {
+			debug("%s: openat() failed for `%s`: %m",
+			      __func__, ent->d_name);
+			rc++;
+			continue;
+		}
+
+		debug("%s: descending into directory `%s`",
+		      __func__, ent->d_name);
+		rc += _rmdir_recursive(childfd);
+
+		if (unlinkat(dirfd, ent->d_name, AT_REMOVEDIR) != -1) {
+			debug("%s: removed now-empty directory `%s`",
+			      __func__, ent->d_name);
+		} else {
+			debug("%s: unlinkat() failed for `%s`: %m",
+			      __func__, ent->d_name);
+			rc++;
+		}
+	}
+	closedir(dp);
+
+	return rc;
+}
+
+extern int rmdir_recursive(const char *path, bool remove_top)
+{
+	int rc = 0;
+	int dirfd;
+
+	if ((dirfd = open(path, O_DIRECTORY | O_NOFOLLOW)) < 0) {
+		error("%s: could not open %s", __func__, path);
+		return 1;
+	}
+
+	rc = _rmdir_recursive(dirfd);
+
+	if (remove_top) {
+		if (rmdir(path) < 0) {
+			debug("%s: rmdir() failed for `%s`: %m",
+			      __func__, path);
+			rc++;
+		} else {
+			debug("%s: removed now-empty top directory `%s`",
+			      __func__, path);
+		}
+	}
+
+	if (rc)
+		error("%s: could not completely remove `%s`, %d files left",
+		      __func__, path, rc);
+
+	return rc;
+}
+
+
+extern int fd_get_readable_bytes(int fd, int *readable_ptr,
+				 const char *con_name)
+{
+#ifdef FIONREAD
+	/* default readable to max positive 32 bit signed integer */
+	int readable = INT32_MAX;
+
+	/* assert readable_ptr is set but gracefully allow for it not to be */
+	xassert(readable_ptr);
+
+	if (fd < 0) {
+		log_net(fd, con_name,
+			"Refusing request for ioctl(%d, FIONREAD) with invalid file descriptor: %d",
+			fd, fd);
+		return EINVAL;
+	}
+
+	/* request kernel tell us the size of the incoming buffer */
+	if (ioctl(fd, FIONREAD, &readable)) {
+		int rc = errno;
+		log_net(fd, con_name,
+			"ioctl(%d, FIONREAD, 0x%"PRIxPTR") failed: %s",
+			fd, (uintptr_t) &readable, slurm_strerror(rc));
+		return rc;
+	}
+
+	/* validate response from kernel is sane (or likely sane) */
+	if (readable < 0) {
+		/* invalid FIONREAD response -> bad driver response */
+		log_net(fd, con_name,
+			"Invalid response: ioctl(%d, FIONREAD, 0x%"PRIxPTR")=%d",
+			 fd, (uintptr_t) &readable, readable);
+		return ENOSYS;
+	}
+	/* verify if readable was even set */
+	if (readable == INT32_MAX) {
+		/* ioctl() did not error but did not change readable?? */
+		log_net(fd, con_name,
+			"Invalid unchanged readable value: ioctl(%d, FIONREAD, 0x%"PRIxPTR")=%d",
+			fd, (uintptr_t) &readable, readable);
+		return ENOSYS;
+	}
+
+	if (readable_ptr) {
+		*readable_ptr = readable;
+
+		log_net(fd, con_name,
+			"Successful query: ioctl(%d, FIONREAD, 0x%"PRIxPTR")=%d",
+			 fd, (uintptr_t) readable_ptr, readable);
+	}
+
+	return SLURM_SUCCESS;
+#else /* FIONREAD */
+	return ESLURM_NOT_SUPPORTED;
+#endif /* !FIONREAD */
 }

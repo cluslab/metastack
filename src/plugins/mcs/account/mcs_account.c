@@ -36,7 +36,7 @@
 
 #include "slurm/slurm_errno.h"
 #include "src/common/assoc_mgr.h"
-#include "src/common/slurm_mcs.h"
+#include "src/interfaces/mcs.h"
 #include "src/common/uid.h"
 #include "src/common/xstring.h"
 #include "src/slurmctld/slurmctld.h"
@@ -107,7 +107,7 @@ extern int mcs_p_set_mcs_label(job_record_t *job_ptr, char *label)
 			rc = SLURM_ERROR;
 	} else {
 		if ((slurm_mcs_get_enforced() == 0) && job_ptr->details &&
-		    (job_ptr->details->whole_node != WHOLE_NODE_MCS))
+		    !(job_ptr->details->whole_node & WHOLE_NODE_MCS))
 			;
 		else
 			job_ptr->mcs_label = xstrdup(job_ptr->account);
@@ -151,7 +151,7 @@ extern int mcs_p_check_mcs_label_user(slurmdb_user_rec_t *user, char *mcs_label)
 	if (!user->assoc_list || !mcs_label)
 		return rc;
 
-	ListIterator itr = list_iterator_create(user->assoc_list);
+	list_itr_t * itr = list_iterator_create(user->assoc_list);
 	while ((assoc_rec = list_next(itr))) {
 		if (!xstrcasecmp(assoc_rec->acct, mcs_label)) {
 			rc = SLURM_SUCCESS;

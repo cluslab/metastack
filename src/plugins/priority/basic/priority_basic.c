@@ -42,16 +42,20 @@
 
 #include "slurm/slurm_errno.h"
 
-#include "src/common/slurm_priority.h"
+#include "src/interfaces/priority.h"
 #include "src/common/assoc_mgr.h"
+
+#include "src/slurmctld/acct_policy.h"
 
 /* These are defined here so when we link with something other than
  * the slurmctld we will have these symbols defined.  They will get
  * overwritten when linking with the slurmctld.
  */
 #if defined (__APPLE__)
+extern list_t *job_list  __attribute__((weak_import));
 extern int slurmctld_tres_cnt __attribute__((weak_import));
 #else
+list_t *job_list = NULL;
 int slurmctld_tres_cnt = 0;
 #endif
 
@@ -99,6 +103,11 @@ int fini ( void )
 	return SLURM_SUCCESS;
 }
 
+void priority_p_thread_start(void)
+{
+	return;
+}
+
 /*
  * The remainder of this file implements the standard Slurm priority API.
  */
@@ -125,6 +134,27 @@ extern uint32_t priority_p_set(uint32_t last_prio, job_record_t *job_ptr)
 		new_prio = 1;
 
 	return new_prio;
+}
+
+static int _foreach_job_boost_prio(void *x, void *arg)
+{
+	job_record_t *job_ptr = x;
+	uint32_t prio_boost = *(uint32_t *) arg;
+
+	if ((job_ptr->priority) && (job_ptr->direct_set_prio == 0))
+		job_ptr->priority += prio_boost;
+
+	return 0;
+}
+
+extern uint32_t priority_p_recover(uint32_t prio_boost)
+{
+	if (prio_boost < 1000000)
+		return 0;
+
+	list_for_each(job_list, _foreach_job_boost_prio, &prio_boost);
+
+	return prio_boost;
 }
 
 extern void priority_p_reconfig(bool assoc_clear)
@@ -156,8 +186,7 @@ extern double priority_p_calc_fs_factor(long double usage_efctv,
 	return priority_fs;
 }
 
-extern List priority_p_get_priority_factors_list(
-	priority_factors_request_msg_t *req_msg, uid_t uid)
+extern List priority_p_get_priority_factors_list(uid_t uid)
 {
 	return(list_create(NULL));
 }
@@ -183,6 +212,16 @@ extern void priority_p_job_end(job_record_t *job_ptr)
 	assoc_mgr_lock(&locks);
 	if (job_ptr->qos_ptr) {
 		slurmdb_qos_rec_t *qos_ptr = job_ptr->qos_ptr;
+		slurmdb_used_limits_t *used_limits_a = NULL;
+		slurmdb_used_limits_t *used_limits_u = NULL;
+
+		used_limits_a = acct_policy_get_acct_used_limits(
+			&qos_ptr->usage->acct_limit_list,
+			job_ptr->assoc_ptr->acct);
+		used_limits_u = acct_policy_get_user_used_limits(
+			&qos_ptr->usage->user_limit_list,
+			job_ptr->user_id);
+
 		for (i=0; i<slurmctld_tres_cnt; i++) {
 			if (unused_tres_run_secs[i] >
 			    qos_ptr->usage->grp_used_tres_run_secs[i]) {
@@ -194,6 +233,26 @@ extern void priority_p_job_end(job_record_t *job_ptr)
 				       assoc_mgr_tres_name_array[i]);
 			} else
 				qos_ptr->usage->grp_used_tres_run_secs[i] -=
+					unused_tres_run_secs[i];
+
+			if (unused_tres_run_secs[i] >
+			    used_limits_a->tres_run_secs[i]) {
+				used_limits_a->tres_run_secs[i] = 0;
+				debug2("acct_policy_job_fini: account used limits tres_run_secs underflow for qos %s tres %s",
+				       qos_ptr->name,
+				       assoc_mgr_tres_name_array[i]);
+			} else
+				used_limits_a->tres_run_secs[i] -=
+					unused_tres_run_secs[i];
+
+			if (unused_tres_run_secs[i] >
+			    used_limits_u->tres_run_secs[i]) {
+				used_limits_u->tres_run_secs[i] = 0;
+				debug2("acct_policy_job_fini: user used limits tres_run_secs underflow for qos %s tres %s",
+				       qos_ptr->name,
+				       assoc_mgr_tres_name_array[i]);
+			} else
+				used_limits_u->tres_run_secs[i] -=
 					unused_tres_run_secs[i];
 		}
 	}

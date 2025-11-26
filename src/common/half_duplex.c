@@ -2,8 +2,7 @@
  *  half_duplex.c - a half duplex connection handling io_operations struct
  *                  suitable for use with eio
  *****************************************************************************
- *  Copyright (C) 2019 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -98,6 +97,8 @@ static int _half_duplex(eio_obj_t *obj, List objs)
 shutdown:
 	obj->shutdown = true;
 	shutdown(obj->fd, SHUT_RD);
+	close(obj->fd);
+	obj->fd = -1;
 	if (fd_out) {
 		shutdown(*fd_out, SHUT_WR);
 		xfree(fd_out);

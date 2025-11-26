@@ -68,7 +68,7 @@ void pmixp_state_finalize(void)
 #ifndef NDEBUG
 	_pmixp_state.magic = 0;
 #endif
-	list_destroy(_pmixp_state.coll);
+	FREE_NULL_LIST(_pmixp_state.coll);
 }
 
 static bool _compare_ranges(const pmix_proc_t *r1, const pmix_proc_t *r2,
@@ -91,7 +91,7 @@ static pmixp_coll_t *_find_collective(pmixp_coll_type_t type,
 				      size_t nprocs)
 {
 	pmixp_coll_t *coll = NULL, *ret = NULL;
-	ListIterator it;
+	list_itr_t *it;
 
 	/* Walk through the list looking for the collective descriptor */
 	it = list_iterator_create(_pmixp_state.coll);
@@ -103,7 +103,7 @@ static pmixp_coll_t *_find_collective(pmixp_coll_type_t type,
 			continue;
 		}
 		if (!coll->pset.nprocs) {
-			ret = coll;
+            ret = coll;
 			goto exit;
 		}
 		if (_compare_ranges(coll->pset.procs, procs, nprocs)) {
@@ -133,9 +133,9 @@ pmixp_coll_t *pmixp_state_coll_get(pmixp_coll_type_t type,
 	}
 
 	/* if we failed to find the collective we most probably need
-	 * to create a new structure. To do so we need to lock the
+     * to create a new structure. To do so we need to lock the
 	 * whole state and try to search again to exclude situation where
-	 * concurent thread has already created it while we were doing the
+     * concurent thread has already created it while we were doing the
 	 * first search */
 
 	if (pmixp_coll_belong_chk(procs, nprocs)) {
@@ -168,7 +168,7 @@ pmixp_coll_t *pmixp_state_coll_get(pmixp_coll_type_t type,
 void pmixp_state_coll_cleanup(void)
 {
 	pmixp_coll_t *coll = NULL;
-	ListIterator it;
+	list_itr_t *it;
 	time_t ts = time(NULL);
 
 	/* Walk through the list looking for the collective descriptor */

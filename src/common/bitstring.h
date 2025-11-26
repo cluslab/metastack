@@ -87,8 +87,10 @@ typedef bitstr_t bitoff_t;
 /* bitstr_t signature in first word */
 #define BITSTR_MAGIC 		0x42434445
 
+/* word size */
+#define BITSTR_WORD_SIZE	(sizeof(bitstr_t) * 8)
 /* max bit position in word */
-#define BITSTR_MAXPOS		(sizeof(bitstr_t)*8 - 1)
+#define BITSTR_MAXPOS		(BITSTR_WORD_SIZE - 1)
 
 /* compat with Vixie macros */
 bitstr_t *bit_alloc(bitoff_t nbits);
@@ -149,7 +151,9 @@ char    *bit_fmt_hexmask_trim(bitstr_t *b);
 int 	bit_unfmt_hexmask(bitstr_t *b, const char *str);
 char	*bit_fmt_binmask(bitstr_t *b);
 void 	bit_unfmt_binmask(bitstr_t *b, const char *str);
+bitoff_t bit_ffs_from_bit(bitstr_t *b, bitoff_t bit);
 bitoff_t bit_fls(bitstr_t *b);
+bitoff_t bit_fls_from_bit(bitstr_t *b, bitoff_t bit);
 void	bit_fill_gaps(bitstr_t *b);
 int	bit_super_set(bitstr_t *b1, bitstr_t *b2);
 int     bit_overlap(bitstr_t *b1, bitstr_t *b2);
@@ -157,9 +161,10 @@ int     bit_overlap_any(bitstr_t *b1, bitstr_t *b2);
 int     bit_equal(bitstr_t *b1, bitstr_t *b2);
 void    bit_copybits(bitstr_t *dest, bitstr_t *src);
 bitstr_t *bit_copy(bitstr_t *b);
+bitoff_t bit_nth_set(bitstr_t *b, bitoff_t n);
+void bit_pick_firstn(bitstr_t *b, bitoff_t n);
 bitstr_t *bit_pick_cnt(bitstr_t *b, bitoff_t nbits);
 bitoff_t bit_get_bit_num(bitstr_t *b, int32_t pos);
-int32_t	bit_get_pos_num(bitstr_t *b, bitoff_t pos);
 
 /*
  * Move all set bits to the beginning of the bitstring

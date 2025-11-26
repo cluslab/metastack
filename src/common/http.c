@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  http.c - handling HTTP
  *****************************************************************************
- *  Copyright (C) 2019-2020 SchedMD LLC.
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -95,6 +94,10 @@ static const http_status_code_txt_t http_status_codes[] = {
 	  "REQUEST RANGE UNJUSTIFIABLE" },
 	{ HTTP_STATUS_CODE_ERROR_EXPECTATION_FAILED, "EXPECTATION FAILED" },
 	{ HTTP_STATUS_CODE_ERROR_IM_A_TEAPOT, "I'm a Teapot" }, /* rfc7168 */
+	{ HTTP_STATUS_CODE_ERROR_MISDIRECT_REQUESTED,
+	  "MISDIRECTED REQUEST" }, /* rfc9110 15.5.20 */
+	{ HTTP_STATUS_CODE_ERROR_UNPROCESSABLE_CONTENT,
+	  "UNPROCESSABLE CONTENT" }, /* rfc9110 15.5.21 */
 	{ HTTP_STATUS_CODE_ERROR_UPGRADE_REQUIRED,
 	  "UPGRADE REQUIRED" }, /* rfc7231 6.5.15 */
 	{ HTTP_STATUS_CODE_SRVERR_INTERNAL, "INTERNAL ERROR" },
@@ -104,6 +107,22 @@ static const http_status_code_txt_t http_status_codes[] = {
 	{ HTTP_STATUS_CODE_SRVERR_GATEWAY_TIMEOUT, "GATEWAY TIMEOUT" },
 	{ HTTP_STATUS_CODE_SRVERR_HTTP_VERSION_NOT_SUPPORTED,
 	  "HTTP VERSION NOT SUPPORTED" },
+	{ HTTP_STATUS_CODE_DEFAULT, "default" },
+};
+
+static const struct {
+	http_request_method_t method;
+	const char *uc_text;
+	const char *lc_text;
+} method_strings[] = {
+	{ HTTP_REQUEST_GET, "GET", "get" },
+	{ HTTP_REQUEST_POST, "POST", "post" },
+	{ HTTP_REQUEST_PUT, "PUT", "put" },
+	{ HTTP_REQUEST_DELETE, "DELETE", "delete" },
+	{ HTTP_REQUEST_OPTIONS, "OPTIONS", "options" },
+	{ HTTP_REQUEST_HEAD, "HEAD", "head" },
+	{ HTTP_REQUEST_PATCH, "PATCH", "patch" },
+	{ HTTP_REQUEST_TRACE, "TRACE", "trace" },
 };
 
 /*
@@ -247,6 +266,24 @@ extern data_t *parse_url_path(const char *path, bool convert_types,
 	return d;
 }
 
+extern http_status_code_t get_http_status_code(const char *str)
+{
+	if (isdigit(str[0])) {
+		uint64_t n = slurm_atoul(str);
+
+		if (!n || (n > HTTP_STATUS_CODE_DEFAULT))
+			return HTTP_STATUS_NONE;
+
+		return n;
+	}
+
+	for (int i = 0; i < ARRAY_SIZE(http_status_codes); i++)
+		if (!xstrcasecmp(http_status_codes[i].text, str))
+			return http_status_codes[i].code;
+
+	return HTTP_STATUS_NONE;
+}
+
 extern const char *get_http_status_code_string(http_status_code_t code)
 {
 	for (int i = 0; i < ARRAY_SIZE(http_status_codes); i++)
@@ -258,26 +295,20 @@ extern const char *get_http_status_code_string(http_status_code_t code)
 
 extern const char *get_http_method_string(http_request_method_t method)
 {
-	switch (method) {
-	case HTTP_REQUEST_GET:
-		return "GET";
-	case HTTP_REQUEST_POST:
-		return "POST";
-	case HTTP_REQUEST_PUT:
-		return "PUT";
-	case HTTP_REQUEST_DELETE:
-		return "DELETE";
-	case HTTP_REQUEST_OPTIONS:
-		return "OPTIONS";
-	case HTTP_REQUEST_HEAD:
-		return "HEAD";
-	case HTTP_REQUEST_PATCH:
-		return "PATCH";
-	case HTTP_REQUEST_TRACE:
-		return "TRACE";
-	default:
-		return "INVALID";
-	}
+	for (int i = 0; i < ARRAY_SIZE(method_strings); i++)
+		if (method_strings[i].method == method)
+			return method_strings[i].uc_text;
+
+	return "INVALID";
+}
+
+extern const char *get_http_method_string_lc(http_request_method_t method)
+{
+	for (int i = 0; i < ARRAY_SIZE(method_strings); i++)
+		if (method_strings[i].method == method)
+			return method_strings[i].lc_text;
+
+	return "INVALID";
 }
 
 extern http_request_method_t get_http_method(const char *str)

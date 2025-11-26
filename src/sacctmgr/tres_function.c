@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  tres_functions.c - functions dealing with TRES in the accounting system.
  *****************************************************************************
- *  Copyright (C) 2015 SchedMD LLC.
- *  Written by David Bigagli <david@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -36,6 +35,7 @@
 
 #include "src/sacctmgr/sacctmgr.h"
 #include "src/common/assoc_mgr.h"
+#include "src/interfaces/data_parser.h"
 
 static int _set_cond(int *start, int argc, char **argv,
 		     slurmdb_tres_cond_t *tres_cond,
@@ -123,8 +123,8 @@ static int _set_cond(int *start, int argc, char **argv,
 int sacctmgr_list_tres(int argc, char **argv)
 {
 	List tres_list;
-	ListIterator itr;
-	ListIterator itr2;
+	list_itr_t *itr;
+	list_itr_t *itr2;
 	List format_list = list_create(xfree_ptr);
 	List print_fields_list;
 	slurmdb_tres_cond_t *tres_cond = xmalloc(sizeof(slurmdb_tres_cond_t));
@@ -153,17 +153,31 @@ int sacctmgr_list_tres(int argc, char **argv)
 		 */
 #ifdef __METASTACK_OPT_PRINT_COMMAND
 		if(getenv("SACCTMGR_EXTEND"))
-        	slurm_addto_char_list(format_list, "Type,Name,ID");
+			slurm_addto_char_list(format_list, "Type,Name,ID");
 		else
 			slurm_addto_char_list(format_list, "Type,Name%15,ID");
 #else
 		slurm_addto_char_list(format_list, "Type,Name%15,ID");
 #endif
-
 	}
 
 	tres_list = slurmdb_tres_get(db_conn, tres_cond);
 	slurmdb_destroy_tres_cond(tres_cond);
+
+	if (mime_type) {
+		int rc;
+		if (is_data_parser_deprecated(data_parser))
+			DATA_DUMP_CLI_DEPRECATED(TRES_LIST, tres_list, "tres",
+						 argc, argv, db_conn, mime_type,
+						 rc);
+		else
+			DATA_DUMP_CLI_SINGLE(OPENAPI_TRES_RESP, tres_list, argc,
+					     argv, db_conn, mime_type,
+					     data_parser, rc);
+		FREE_NULL_LIST(format_list);
+		FREE_NULL_LIST(tres_list);
+		return rc;
+	}
 
 	if (!tres_list) {
 		exit_code=1;
@@ -198,7 +212,7 @@ int sacctmgr_list_tres(int argc, char **argv)
 					break;
 				case PRINT_ID:
 					field->print_routine(field,
-							     tres->id,
+							     &tres->id,
 							     (curr_inx ==
 							      field_count));
 					break;

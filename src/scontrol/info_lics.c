@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Copyright (C) 2013 SchedMD
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by David Bigagli david@schemd.com
  *  CODE-OCEC-09-009. All rights reserved.
@@ -39,6 +39,8 @@
 \*****************************************************************************/
 
 #include "scontrol.h"
+#include "src/common/data.h"
+#include "src/interfaces/data_parser.h"
 
 static void _print_license_info(const char *, license_info_msg_t *);
 static slurm_license_info_t ** _license_sort(license_info_msg_t
@@ -83,8 +85,7 @@ static slurm_license_info_t ** _license_sort(license_info_msg_t
  * from the controller
  *
  */
-void
-scontrol_print_licenses(const char *name)
+extern void scontrol_print_licenses(const char *name, int argc, char **argv)
 {
 	int cc;
 	license_info_msg_t *msg;
@@ -105,9 +106,29 @@ scontrol_print_licenses(const char *name)
 	}
 
 	last_update = time(NULL);
-	/* print the info
+	/*
+	 * Print the info
 	 */
-	_print_license_info(name, msg);
+	if (mime_type) {
+		int rc;
+		openapi_resp_license_info_msg_t resp = {
+			.licenses = msg,
+			.last_update = msg->last_update,
+		};
+
+		if (is_data_parser_deprecated(data_parser))
+			DATA_DUMP_CLI_DEPRECATED(LICENSES, *msg, "licenses",
+						 argc, argv, NULL, mime_type,
+						 rc);
+		else
+			DATA_DUMP_CLI(OPENAPI_LICENSES_RESP, resp, argc, argv,
+				      NULL, mime_type, data_parser, rc);
+
+		if (rc)
+			exit_code = 1;
+	} else {
+		_print_license_info(name, msg);
+	}
 
 	/* free at last
 	 */
@@ -135,71 +156,30 @@ static void _print_license_info(const char *name, license_info_msg_t *msg)
 	for (cc = 0; cc < msg->num_lic; cc++) {
 		if (name && xstrcmp((sorted_lic[cc])->name, name))
 			continue;
-#ifndef __METASTACK_NEW_LICENSE_OCCUPIED
-		printf("LicenseName=%s%sTotal=%d Used=%u Free=%u Reserved=%u Remote=%s\n",
-#else
-		printf("LicenseName=%s%sTotal=%d Used=%u Free=%u Occupied=%u Reserved=%u Remote=%s\n",
-#endif
+		printf("LicenseName=%s%sTotal=%d Used=%u Free=%u Reserved=%u Remote=%s",
 		       (sorted_lic[cc])->name,
 		       one_liner ? " " : "\n    ",
 		       (sorted_lic[cc])->total,
 		       (sorted_lic[cc])->in_use,
 		       (sorted_lic[cc])->available,
-#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
-		       (sorted_lic[cc])->occupied,
-#endif
 		       (sorted_lic[cc])->reserved,
 		       (sorted_lic[cc])->remote ? "yes" : "no");
+
+		if (sorted_lic[cc]->remote) {
+			char time_str[256];
+			slurm_make_time_str(&sorted_lic[cc]->last_update,
+					    time_str, sizeof(time_str));
+			printf("%sLastConsumed=%u LastDeficit=%u LastUpdate=%s\n",
+			       one_liner ? " " : "\n    ",
+			       sorted_lic[cc]->last_consumed,
+			       sorted_lic[cc]->last_deficit, time_str);
+		} else {
+			printf("\n");
+		}
+
 		if (name)
 			break;
 	}
 
 	xfree(sorted_lic);
 }
-
-
-#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
-int
-scontrol_update_license (int argc, char **argv)
-{
-	int i, tag_len;
-	char *tag, *val;
-	slurm_license_info_t lics_msg;
-	memset(&lics_msg, 0, sizeof(slurm_license_info_t));
-
-	for (i = 0; i < argc; i++) {
-		tag = argv[i];
-		val = strchr(argv[i], '=');
-		if (val) {
-			tag_len = val - argv[i];
-			val++;
-		} else {
-			exit_code = 1;
-			error("Invalid input: %s  Request aborted", argv[i]);
-			return -1;
-		}
-		if (xstrncasecmp(tag, "LicenseName", MAX(tag_len, 5)) == 0) {
-			lics_msg.name = val; 
-		} else if (xstrncasecmp(tag, "Server", MAX(tag_len, 5)) == 0) {
-			lics_msg.server = val; 
-		} else if (xstrncasecmp(tag, "Occupied", MAX(tag_len, 3)) == 0) {
-			lics_msg.occupied = atoi(val);
-		}
-	}
-	if (lics_msg.name == 0) {
-		exit_code = 1;
-		error("Invalid LicenseName value.");	
-		return -1;
-	} else if (lics_msg.server == 0) {
-		exit_code = 1;
-		error("Invalid Server value.");	
-		return -1;
-	}
-	
-	if (slurm_update_lics(&lics_msg)) {
-		exit_code = 1;
-		return slurm_get_errno();
-	} else	
-		return 0;
-}
-#endif

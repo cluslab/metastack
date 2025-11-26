@@ -41,12 +41,12 @@
 #include "slurm/slurm_errno.h"
 #include "slurm/slurmdb.h"
 
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 
 /*
  * get a new connection to the slurmdb
  * OUT: persist_conn_flags - Flags returned from connection if any see
- *                           slurm_persist_conn.h.
+ *                           persist_conn.h.
  * RET: pointer used to access db
  */
 extern void *slurmdb_connection_get(uint16_t *persist_conn_flags)
@@ -74,5 +74,8 @@ extern int slurmdb_connection_close(void **db_conn)
  */
 extern int slurmdb_connection_commit(void *db_conn, bool commit)
 {
-	return acct_storage_g_commit(db_conn, commit);
+#ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
+	//return acct_storage_g_commit(db_conn, commit);
+	return acct_storage_g_commit(db_conn, commit, false);
+#endif
 }

@@ -41,8 +41,7 @@
 /* Cgroup v1 internal functions */
 
 /*
- * Create a cgroup namespace and try to mount it if when it is not available and
- * CgroupAutomount option is set.
+ * Create a cgroup namespace.
  *
  * RET SLURM_SUCCESS if cgroup namespace is created and available, SLURM_ERROR
  *     otherwise.
@@ -95,16 +94,6 @@ extern int xcgroup_ns_find_by_pid(xcgroup_ns_t *cgns, xcgroup_t *cg, pid_t pid);
  *        SLURM_ERROR otherwise.
  */
 extern int xcgroup_load(xcgroup_ns_t *cgns, xcgroup_t *cg, char *uri);
-
-/*
- * Given a cgroup, wait for our pid to disappear from this cgroup. This is
- * typically called from slurmstepd, so it will efectively wait for the pid of
- * slurmstepd to be removed from the cgroup.
- *
- * IN cg - cgroup where we will look into until our pid disappears.
- * IN cg_name - cgroup name for custom logging purposes.
- */
-extern void xcgroup_wait_pid_moved(xcgroup_t *cg, const char *cg_name);
 
 /*
  * Get a uint32 from a cgroup  for the specified parameter.
@@ -171,7 +160,7 @@ extern int xcgroup_create_slurm_cg(xcgroup_ns_t *ns, xcgroup_t *slurm_cg);
  *     initialized. SLURM_ERROR otherwise, and changes to filesystem undone.
  */
 extern int xcgroup_create_hierarchy(const char *calling_func,
-				    stepd_step_rec_t *job,
+				    stepd_step_rec_t *step,
 				    xcgroup_ns_t *ns,
 				    xcgroup_t int_cg[],
 				    char job_cgroup_path[],

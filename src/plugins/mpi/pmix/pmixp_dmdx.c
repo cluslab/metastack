@@ -95,7 +95,7 @@ int pmixp_dmdx_init(void)
 
 int pmixp_dmdx_finalize(void)
 {
-	list_destroy(_dmdx_requests);
+	FREE_NULL_LIST(_dmdx_requests);
 	return 0;
 }
 
@@ -106,14 +106,12 @@ static void _setup_header(buf_t *buf, dmdx_type_t t,
 	char *str;
 	/* 1. pack message type */
 	unsigned char type = (char)t;
-	grow_buf(buf, sizeof(char));
 	pack8(type, buf);
 
 	/* 2. pack namespace _with_ '\0' (strlen(nspace) + 1)! */
 	packmem((char *)nspace, strlen(nspace) + 1, buf);
 
 	/* 3. pack rank */
-	grow_buf(buf, sizeof(int));
 	pack32((uint32_t)rank, buf);
 
 	/* 4. pack my rendezvous point - local namespace
@@ -376,7 +374,7 @@ static void _dmdx_resp(buf_t *buf, int nodeid, uint32_t seq_num)
 	uint32_t size = 0;
 
 	/* find the request tracker */
-	ListIterator it = list_iterator_create(_dmdx_requests);
+	list_itr_t *it = list_iterator_create(_dmdx_requests);
 	req = (dmdx_req_info_t *)list_find(it, _dmdx_req_cmp, &seq_num);
 	if (NULL == req) {
 		char *nodename = pmixp_info_job_host(nodeid);
@@ -447,7 +445,7 @@ void pmixp_dmdx_process(buf_t *buf, int nodeid, uint32_t seq)
 
 void pmixp_dmdx_timeout_cleanup(void)
 {
-	ListIterator it = list_iterator_create(_dmdx_requests);
+	list_itr_t *it = list_iterator_create(_dmdx_requests);
 	dmdx_req_info_t *req = NULL;
 	time_t ts = time(NULL);
 

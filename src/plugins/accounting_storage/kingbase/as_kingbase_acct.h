@@ -43,6 +43,10 @@
 extern int as_kingbase_add_accts(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			   List acct_list);
 
+extern char *as_kingbase_add_accts_cond(kingbase_conn_t *kingbase_conn, uint32_t uid,
+				     slurmdb_add_assoc_cond_t *assoc_cond,
+				     slurmdb_account_rec_t *acct);
+
 extern List as_kingbase_modify_accts(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			       slurmdb_account_cond_t *acct_cond,
 			       slurmdb_account_rec_t *acct);

@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  data.h - generic data_t structures
  *****************************************************************************
- *  Copyright (C) 2019 SchedMD LLC.
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -47,13 +46,6 @@
  * pointer which is a child of the existing tree and will be cleaned up by the
  * root.
  *
- * To use data_t, data_init() must be called before anything else. It is safe to
- * call this multiple times but not advised before every usage as it may be
- * slow. data_init() is designed to allow calls for a specific plugin
- * requirement which will not prevent loading of other plugins by the other
- * calls to data_init(). data_fini() needs to be called after all data
- * operations are complete is only for testing for memory leaks.
- *
  * data_t has very *strict* typing that is based on JSON. All of the possible
  * types are in data_type_t. The caller is required to verify the type of the
  * data_t pointer is correct before calling the helper function to retrieve the
@@ -70,15 +62,10 @@
  * proceed. There are purposefully no iterators for data_t pointers to avoid any
  * form of dangling pointers.
  *
- * data_t uses a plugin interface for serialization of the data to common
- * formats. These plugins require 3rd party libraries and may not have been
- * compiled. Any code should expect this possiblity as data_init() will fail if
- * the plugin is not found.
- *
  * Example usage:
  *
  * //Global init requiring JSON serializer
- * if (data_init(MIME_TYPE_JSON_PLUGIN, NULL)) fatal("failed");
+ * if (serializer_g_init(MIME_TYPE_JSON_PLUGIN, NULL)) fatal("failed");
  * //Create root data entry:
  * data_t *ex = data_new();
  * //Set data entry to be a dictionary type
@@ -89,13 +76,13 @@
  * data_set_int(data_key_set(ex, "test2"), 12345);
  * // serialize into JSON string
  * char *json = NULL;
- * data_g_serialize(&json, ex, MIME_TYPE_JSON, DATA_SER_FLAGS_PRETTY);
+ * serialize_g_data_to_string(&json, &length, ex, MIME_TYPE_JSON, SER_FLAGS_PRETTY);
  * // cleanup the example
  * FREE_NULL_DATA(ex);
  * // log the json
  * debug("example json: %s", json);
  * // deserialise the JSON back into data_t
- * data_g_deserialize(&ex, json, strlen(json), MIME_TYPE_JSON);
+ * serialize_g_string_to_data(&ex, json, strlen(json), MIME_TYPE_JSON);
  * xfree(json);
  * // verify contents
  * xassert(data_get_type(ex) == DATA_TYPE_DICT);
@@ -103,8 +90,6 @@
  * xassert(data_get_int(data_key_get(ex, "test2") == 12345);
  * // cleanup tree
  * FREE_NULL_DATA(ex);
- * // release all global memory and plugins
- * data_fini();
  */
 
 #ifndef _DATA_H
@@ -141,29 +126,8 @@ typedef enum {
 /* convert type to readable string */
 extern char *data_type_to_string(data_type_t type);
 
-/* opaque type for list_u and dict_u */
-typedef struct data_list_s data_list_t;
-
-/*
- * Opaque data struct to hold generic data.
- * data is based on the JSON data type and has the same types.
- * data forms a tree structure.
- * please avoid direct access of this struct and only use access functions.
- * the nature of this struct may change at any time, only pass around pointers
- * created from data_new().
- */
-typedef struct {
-	int magic;
-	data_type_t type;
-	union { /* append "_u" to every type to avoid reserved words */
-		data_list_t *list_u;
-		data_list_t *dict_u;
-		int64_t int_u;
-		char *string_u;
-		double float_u;
-		bool bool_u;
-	} data;
-} data_t;
+/* Opaque data struct to hold generic data. */
+typedef struct data_s data_t;
 
 /*
  * Enum to control how the foreach will
@@ -182,45 +146,26 @@ typedef enum {
  *  Function prototype for operating on each item in a list typed data_t.
  *  Returns command requested for processing
  */
-typedef data_for_each_cmd_t (*DataListForF) (data_t *data, void *arg);
+typedef data_for_each_cmd_t (*DataListForF)(data_t *data, void *arg);
 /*
  *  Function prototype for operating on each item in a list typed data_t.
  *  Returns command requested for processing
  */
-typedef data_for_each_cmd_t (*DataListForFConst) (const data_t *data, void *arg);
+typedef data_for_each_cmd_t (*DataListForFConst)(const data_t *data, void *arg);
 
 /*
  *  Function prototype for operating on each item in a dictionary typed data_t.
  *  Returns command requested for processing
  */
-typedef data_for_each_cmd_t (*DataDictForF) (const char *key, data_t *data, void *arg);
+typedef data_for_each_cmd_t (*DataDictForF)(const char *key, data_t *data,
+					    void *arg);
 
 /*
  *  Function prototype for operating on each item in a dictionary typed data_t.
  *  Returns command requested for processing
  */
-typedef data_for_each_cmd_t (*DataDictForFConst) (const char *key, const data_t *data, void *arg);
-
-/*
- * Initialize static structs needed by data functions and
- * 	load serializer plugins
- *
- * It is safe to call this function multiple times with different plugins as
- * they will be loaded only once.
- *
- * IN plugins - comma delimited list of plugins or "list"
- * 	pass NULL to load all found or "" to load none of them
- *
- * IN listf - function to call if plugins="list" (may be NULL)
- * RET SLURM_SUCCESS or error
- */
-extern int data_init(const char *plugins, plugrack_foreach_t listf);
-/*
- * Cleanup global memory used by data_t helpers and unload all plugins
- *
- * WARNING: must be called only once after all data commands complete
- */
-extern void data_fini(void);
+typedef data_for_each_cmd_t (*DataDictForFConst)(const char *key,
+						 const data_t *data, void *arg);
 
 /*
  * Create new data struct.
@@ -250,6 +195,13 @@ extern void data_free(data_t *data);
  * 	returns DATA_TYPE_NONE if data is NULL.
  */
 extern data_type_t data_get_type(const data_t *data);
+
+/*
+ * Get human friendly type string
+ * IN data struct to get type
+ * RET human friendly string of type for data
+ */
+extern const char *data_get_type_string(const data_t *data);
 
 /*
  * Set data to float type with given value.
@@ -293,10 +245,19 @@ extern data_t *data_set_string(data_t *data, const char *value);
 /*
  * Set data to string type with given value.
  * IN data structure to modify
- * IN value value to set (takes ownership of value and will xfree())
+ * IN value ptr to value to set (takes ownership of value and will xfree())
  * RET data ptr or NULL on error
  */
-extern data_t *data_set_string_own(data_t *data, char *value);
+extern data_t *_data_set_string_own(data_t *data, char **value_ptr);
+
+/*
+ * Set data to string type with given value.
+ * IN data structure to modify
+ * IN value ptr to value to set
+ * 	Takes ownership of value and will xfree(). Sets value to NULL.
+ * RET data ptr or NULL on error
+ */
+#define data_set_string_own(data, value) _data_set_string_own(data, &value)
 
 /*
  * Set data to string type with given formatted value.
@@ -436,7 +397,23 @@ extern int data_list_for_each(data_t *d, DataListForF f, void *arg);
  *
  *  Will process per return of [f]
  */
-extern int data_list_for_each_const(const data_t *d, DataListForFConst f, void *arg);
+extern int data_list_for_each_const(const data_t *d, DataListForFConst f,
+				    void *arg);
+
+/*
+ * Use match() function ptr find a specific matching value in list
+ * IN data - data list to find entity with given needle
+ * IN match - strict weak ordering function that compares two data to arg
+ *   returning true if the first precedes the second.
+ * IN needle - match against needle value
+ * NOTE: the lists are currently unordered but this is being implemented
+ *   as strict weak order to allow log(n) searching in the future.
+ * RET ptr to matching data or NULL if match not found
+ */
+extern data_t *data_list_find_first(
+	data_t *data,
+	bool (*match)(const data_t *data, void *needle),
+	void *needle);
 
 /*
  *  For each item in data dictionary [d], invokes the function [f] with [arg].
@@ -456,7 +433,8 @@ extern int data_dict_for_each(data_t *d, DataDictForF f, void *arg);
  *
  *  Will process per return of [f]
  */
-extern int data_dict_for_each_const(const data_t *d, DataDictForFConst f, void *arg);
+extern int data_dict_for_each_const(const data_t *d, DataDictForFConst f,
+				    void *arg);
 
 /*
  * Get number of entities in dictionary
@@ -480,6 +458,14 @@ extern data_t *data_list_append(data_t *data);
 extern data_t *data_list_prepend(data_t *data);
 
 /*
+ * Extract first data from start of list
+ * IN data data object (list type only)
+ * RET first data start of list or NULL if list is empty
+ * 	Result must be free'd up with FREE_NULL_DATA()
+ */
+extern data_t *data_list_dequeue(data_t *data);
+
+/*
  * Copy and join array of data into a single list.
  * IN data - array of data objects (list type only) to copy/merge into a single
  * data list. Last entry must be NULL.
@@ -497,6 +483,31 @@ extern data_t *data_list_join(const data_t **data, bool flatten_lists);
 extern size_t data_get_list_length(const data_t *data);
 
 /*
+ * Get last entity in data list
+ * IN data data list to get last entry
+ * RET last entity in data list or NULL (empty list)
+ */
+extern data_t *data_get_list_last(data_t *data);
+
+/*
+ * Split up string using token and append values to dst
+ * IN dst - data list to append with values
+ * IN src - string to split by token
+ * IN token - token to split src with
+ * RET SLURM_SUCCESS or error
+ */
+extern int data_list_split_str(data_t *dst, const char *src, const char *token);
+
+/*
+ * Create string by joining strings in list with token
+ * IN dst - ptr to string to populate (caller must xfree())
+ * IN src - data list to join
+ * IN token - token to join src with
+ * RET SLURM_SUCCESS or error
+ */
+extern int data_list_join_str(char **dst, const data_t *src, const char *token);
+
+/*
  * Get data entry with given key (from constant data).
  * IN data constant data object to find entity with given key string
  * IN key string of key to find
@@ -511,6 +522,21 @@ extern const data_t *data_key_get_const(const data_t *data, const char *key);
  * RET ptr to data or NULL if it doesn't exist.
  */
 extern data_t *data_key_get(data_t *data, const char *key);
+
+/*
+ * Use match() function ptr find a specific matching value in dictionary
+ * IN data - data object to find entity with given key string
+ * IN match - strict weak ordering function that compares two data to arg
+ *   returning true if the first precedes the second.
+ * IN needle - match against needle value
+ * NOTE: the dictionaries are currently unordered but this is being implemented
+ *   as strict weak order to allow log(n) searching in the future.
+ * RET ptr to matching data or NULL if match not found
+ */
+extern data_t *data_dict_find_first(
+	data_t *data,
+	bool (*match)(const char *key, data_t *data, void *needle),
+	void *needle);
 
 /*
  * Get data entry with given integer key
@@ -623,55 +649,14 @@ extern int data_retrieve_dict_path_int(const data_t *data, const char *path,
  */
 extern data_t *data_copy(data_t *dest, const data_t *src);
 
-typedef enum {
-	DATA_SER_FLAGS_NONE = 0, /* defaults to compact currently */
-	DATA_SER_FLAGS_COMPACT = 1 << 1,
-	DATA_SER_FLAGS_PRETTY = 1 << 2,
-} data_serializer_flags_t;
-
 /*
- * Define common MIME types to make it easier for serializer callers.
+ * Move entire data tree from src to dest.
+ * src will be changed to being DATA_TYPE_NULL.
  *
- * WARNING: There is no guarantee that plugins for these types
- * will be loaded at any given time.
+ * IN dest destination data to overwrite
+ * IN src source data to move and set as DATA_TYPE_NULL
+ * RET ptr to dest or NULL on error
  */
-#define MIME_TYPE_YAML "application/x-yaml"
-#define MIME_TYPE_YAML_PLUGIN "serializer/yaml"
-#define MIME_TYPE_JSON "application/json"
-#define MIME_TYPE_JSON_PLUGIN "serializer/json"
-#define MIME_TYPE_URL_ENCODED "application/x-www-form-urlencoded"
-#define MIME_TYPE_URL_ENCODED_PLUGIN "serializer/url-encoded"
-
-/*
- * Serialize data in src into string dest
- * IN/OUT dest - ptr to NULL string ptr to set with output data.
- * 	caller must xfree(dest) if set.
- * IN src - populated data ptr to serialize
- * IN mime_type - serialize data into the given mime_type
- * IN flags - optional flags to specify to serilzier to change presentation of
- * 	data
- * RET SLURM_SUCCESS or error
- */
-extern int data_g_serialize(char **dest, const data_t *src,
-			    const char *mime_type,
-			    data_serializer_flags_t flags);
-
-/*
- * Deserialize string in src into data dest
- * IN/OUT dest - ptr to NULL data ptr to set with output data.
- * 	caller must FREE_NULL_DATA(dest) if set.
- * IN src - string to deserialize
- * IN length - number of bytes in src
- * IN mime_type - deserialize data using given mime_type
- * RET SLURM_SUCCESS or error
- */
-extern int data_g_deserialize(data_t **dest, const char *src, size_t length,
-			      const char *mime_type);
-
-/*
- * Check if there is a plugin loaded that can handle the requested mime type
- * RET ptr to best matching mime type or NULL if none can match
- */
-extern const char *data_resolve_mime_type(const char *mime_type);
+extern data_t *data_move(data_t *dest, data_t *src);
 
 #endif /* _DATA_H */

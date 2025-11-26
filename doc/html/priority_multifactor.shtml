@@ -2,7 +2,7 @@
 
 <h1>Multifactor Priority Plugin</h1>
 
-<h2>Contents</h2>
+<h2 id="contents">Contents<a class="slurm_link" href="#contents"></a></h2>
 <UL>
 <LI> <a href=#intro>Introduction</a>
 <LI> <a href=#mfjppintro>Multifactor Job Priority Plugin</a>
@@ -23,18 +23,14 @@
 
 <h2 id="intro">Introduction<a class="slurm_link" href="#intro"></a></h2>
 
-<p>By default, Slurm assigns job priority on a First In, First Out (FIFO) basis.
-FIFO scheduling should be configured when Slurm is controlled by an external
-scheduler.</p>
+<p>By default, Slurm has the priority/multifactor plugin set, which schedules
+jobs based on several <a href="#mfjppintro">factors</a></p>
 
-<p>The <i>PriorityType</i> parameter in the slurm.conf file selects the priority
-plugin. The default value for this variable is "priority/basic" which enables
-simple FIFO scheduling. (See <a href="#config">Configuration</a> below)</p>
-
-<p>In most cases it is preferable to use the Multifactor Priority plugin, which
-is enabled by setting <i>PriorityType=priority/multifactor</i>. This provides
-a very versatile method of ordering the queue of jobs waiting to be scheduled
-based on several <a href="#mfjppintro">factors</a>.</p>
+<p>In most cases it is preferable to use the Multifactor Priority plugin,
+however basic First In, First Out scheduling is available by setting
+<i>PriorityType=priority/basic</i> in the slurm.conf file. FIFO scheduling
+should be configured when Slurm is controlled by an external scheduler. (See
+<a href="#config">Configuration</a> below)</p>
 
 <p>There are several considerations the scheduler makes when making
 scheduling decisions. Jobs are selected to be evaluated by the scheduler
@@ -76,7 +72,7 @@ influence job priority:</P>
 <DD> a factor associated with each node partition
 <DT> QOS
 <DD> a factor associated with each Quality Of Service
-<DT> Site 
+<DT> Site
 <DD> a factor dictated by an administrator or a site-developed job_submit or site_factor plugin
 <DT> TRES
 <DD> each TRES Type has its own factor for a job which represents the number of
@@ -102,7 +98,7 @@ Job_priority =
 	(PriorityWeightAssoc) * (assoc_factor) +
 	(PriorityWeightFairshare) * (fair-share_factor) +
 	(PriorityWeightJobSize) * (job_size_factor) +
-	(PriorityWeightPartition) * (partition_factor) +
+	(PriorityWeightPartition) * (priority_job_factor) +
 	(PriorityWeightQOS) * (QOS_factor) +
 	SUM(TRES_weight_cpu * TRES_factor_cpu,
 	    TRES_weight_&lt;type&gt; * TRES_factor_&lt;type&gt;,
@@ -118,6 +114,36 @@ Job_priority =
   A job's priority, and hence its order in the queue, can vary over
   time.  For example, the longer a job sits in the queue, the higher
   its priority will grow when the age_weight is non-zero.</P>
+
+<p>The default behavior is for slurmctld to "normalize" the priority values
+in relation to the one with the highest value. This makes it so that the
+most priority a job can get from any factor is equal to the
+<i>PriorityWeight*</i> value for that factor. Using Partitions as an example,
+if 'PartitionA' had a <i>PriorityJobFactor</i> of 20 and 'PartitionB' had a
+<i>PriorityJobFactor</i> of 10 and the <i>PriorityWeightPartition</i> was set
+to 5000, then the calculation for the priority that any job would gain for
+the partition would look like this:
+<pre>
+# PartitionA
+5000 * (20 / 20) = 5000
+
+# PartitionB
+5000 * (10 / 20) = 2500
+</pre>
+You can change the default behavior so that it doesn't normalize the
+priority values, but uses the raw <i>PriorityJobFactor</i> values instead,
+with <i>PriorityFlags=NO_NORMAL_PART</i>. In that case the calculation of
+the partition based priority would look like this:
+<pre>
+# PartitionA
+5000 * 20 = 100000
+
+# PartitionB
+5000 * 10 = 50000
+</pre>
+See the other priority factors you can configure to not be normalized in the
+<a href="slurm.conf.html#OPT_PriorityFlags">PriorityFlags</a> section of the
+documentation.</p>
 
 <P> <b>IMPORTANT:</b> The weight values should be high enough to get a
   good set of significant digits since all the factors are floating
@@ -187,7 +213,7 @@ partition factor.</P>
 <P> Each QOS can be assigned an integer priority.  The larger the
 number, the greater the job priority will be for jobs that request
 this QOS.  This priority value is then normalized to the highest
-priority of all the QOS's to become the QOS factor.</P>
+priority of all the QOSs to become the QOS factor.</P>
 
 <h2 id="site">Site Factor<a class="slurm_link" href="#site"></a></h2>
 
@@ -249,8 +275,8 @@ Job3: (16*1.0) + (60*0.25) = (16+ 15) = 31
 
 <P>
 Another method of calculating the billable TRES is by taking the MAX of the
-individual TRES' on a node (e.g. cpus, mem, gres) plus the SUM of the global
-TRES' (e.g. licenses). For example the above job's billable TRES would
+individual TRESs on a node (e.g. cpus, mem, gres) plus the SUM of the global
+TRESs (e.g. licenses). For example the above job's billable TRES would
 be calculated as:
 <pre>
           CPUs      Mem GB
@@ -277,7 +303,7 @@ documentation for further details.
 <p>
 As of the 19.05 release, the "classic" fairshare algorithm is no longer the
 default, and will only be used if <i>PriorityFlags=NO_FAIR_TREE</i> is
-explicitly configured. Docmentation describing that algorithm has been moved
+explicitly configured. Documentation describing that algorithm has been moved
 to a separate <a href="classic_fair_share.html">Classic Fairshare</a>
 documentation page.
 </p>
@@ -296,11 +322,11 @@ factor as it is currently configured.</P>
 
 <h2 id="config">Configuration<a class="slurm_link" href="#config"></a></h2>
 
-<P> The following slurm.conf (SLURM_CONFIG_FILE) parameters are used to configure the Multifactor Job Priority Plugin.  See slurm.conf(5) man page for more details.</P>
+<p>The following slurm.conf parameters are used to configure the Multifactor Job Priority Plugin. See slurm.conf(5) man page for more details.</p>
 
 <DL>
 <DT> PriorityType
-<DD> Set this value to "priority/multifactor" to enable the Multifactor Job Priority Plugin.  The default value for this variable is "priority/basic" which enables simple FIFO scheduling.
+<DD> Set this value to "priority/multifactor" to enable the Multifactor Job Priority Plugin.
 <DT> PriorityDecayHalfLife
 <DD> This determines the contribution of historical usage on the
   composite usage value.  The larger the number, the longer past usage
@@ -374,10 +400,10 @@ PriorityType=priority/multifactor.
 <li>INCR_ONLY: If set, priority values will only increase in value. Job
 	priority will never decrease in value.</li>
 <li>MAX_TRES: If set, the weighted TRES value (e.g. TRESBillingWeights) is
-	calculated as the MAX of individual TRES' on a node (e.g. cpus, mem,
-	gres) plus the sum of all global TRES' (e.g. licenses).</li>
+	calculated as the MAX of individual TRESs on a node (e.g. cpus, mem,
+	gres) plus the sum of all global TRESs (e.g. licenses).</li>
 <li>NO_NORMAL_ALL: If set, all NO_NORMAL_* flags are set.</li>
-<li>NO_NORMAL_ASSOC: If set, the associaton factor is not normalized against
+<li>NO_NORMAL_ASSOC: If set, the association factor is not normalized against
 	the highest association priority.</li>
 <li>NO_NORMAL_PART: If set, the partition factor is not normalized against the
 	highest partition PriorityJobFactor.</li>
@@ -457,6 +483,6 @@ PriorityWeightPartition=1000
 PriorityWeightQOS=0 # don't use the qos factor
 </PRE>
 
-<p style="text-align:center;">Last modified 11 June 2021</p>
+<p style="text-align:center;">Last modified 03 August 2023</p>
 
 <!--#include virtual="footer.txt"-->

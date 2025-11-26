@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  group_cache.h
  *****************************************************************************
- *  Copyright (C) 2017 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.

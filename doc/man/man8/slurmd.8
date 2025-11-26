@@ -1,4 +1,4 @@
-.TH slurmd "8" "Slurm Daemon" "August 2022" "Slurm Daemon"
+.TH slurmd "8" "Slurm Daemon" "November 2023" "Slurm Daemon"
 
 .SH "NAME"
 slurmd \- The compute node daemon for Slurm.
@@ -14,6 +14,13 @@ running tasks upon request.
 .SH "OPTIONS"
 
 .TP
+\fB\--authinfo\fR
+Used with configless to set an alternate AuthInfo parameter to be used to
+establish communication with slurmctld before the configuration file has been
+retrieved. (E.g., to specify an alternate MUNGE socket location.)
+.IP
+
+.TP
 \fB\-b\fR
 Report node rebooted when daemon restarted. Used for testing purposes.
 .IP
@@ -26,7 +33,7 @@ abnormally.
 
 .TP
 \fB\-C\fR
-Print the actual hardware configuration (read the configuration from the
+Print the actual hardware configuration (not the configuration from the
 slurm.conf file) and exit.
 The format of output is the same as used in \fBslurm.conf\fR to describe a node's
 configuration plus its uptime.
@@ -70,10 +77,13 @@ NodeName=node1 CPUs=16 RealMemory=30000 Gres=gpu:2"
 .IP
 
 .TP
-\fB\-\-conf\-server <host>[:<port>]\fR
+\fB\-\-conf\-server <host|ip address>[:<port>]\fR
 Comma\-separated list of controllers, the first being the primary slurmctld. A
 port can (optionally) be specified for each controller. These hosts are where
 the slurmd will fetch the configuration from when running in "configless" mode.
+\fBNOTE\fR: If specifying an IPv6 address, wrap the <ip address> in [] to
+distinguish the address from the port.  This is required even if no port is
+specified.
 .IP
 
 .TP
@@ -85,6 +95,13 @@ for shepherding user job steps. This can be useful for testing purposes.
 .TP
 \fB\-D\fR
 Run slurmd in the foreground. Error and debug messages will be copied to stderr.
+.IP
+
+.TP
+\fB\-\-extra <arbitrary string>\fR
+Set "extra" data on node startup. If this is a json string and
+\fBSchedulerParameters=extra_constraints\fR is set in slurm.conf, then jobs may
+use the \-\-extra option to filter based on this "extra" data.
 .IP
 
 .TP
@@ -108,6 +125,16 @@ with gres.conf contents for this node) and exit.
 .TP
 \fB\-h\fR
 Help; print a brief summary of command options.
+.IP
+
+.TP
+\fB\-\-instance\-id <cloud instance id>\fR
+Set cloud instance ID on node startup.
+.IP
+
+.TP
+\fB\-\-instance\-type <cloud instance type>\fR
+Set cloud instance type on node startup.
 .IP
 
 .TP
@@ -147,6 +174,12 @@ SlurmdSpoolDir otherwise. If both of them fail it will fallback to /var/tmp.
 .IP
 
 .TP
+\fB\-\-systemd\fR
+Use when starting the daemon with systemd. This will allow slurmd to notify
+systemd of the new PID when using 'scontrol reconfigure'.
+.IP
+
+.TP
 \fB\-v\fR
 Verbose operation. Multiple \-v's increase verbosity.
 .IP
@@ -169,7 +202,7 @@ compiled into slurmd.
 
 .TP 20
 \fBSLURM_CONF\fR
-The location of the Slurm configuration file.  This is overridden by
+The location of the Slurm configuration file. This is overridden by
 explicitly naming a configuration file on the command line.
 .IP
 
@@ -194,7 +227,7 @@ Reloads the slurm configuration files, similar to 'scontrol reconfigure'.
 
 .TP
 \fBSIGUSR2\fR
-Reread the log level from the configs, and then reopen the log file.  This
+Reread the log level from the configs, and then reopen the log file. This
 should be used when setting up \fBlogrotate\fR(8).
 .IP
 
@@ -208,15 +241,15 @@ If slurmd is started with the \fB\-D\fR option then the core file will be
 written to the current working directory.
 Otherwise if \fBSlurmdLogFile\fR is a fully qualified path name
 (starting with a slash), the core file will be written to the same
-directory as the log file.  Otherwise the core file will be written to
-the \fBSlurmSpoolDir\fR directory, or "/var/tmp/" as a last resort. If
+directory as the log file. Otherwise the core file will be written to
+the \fBSlurmdSpoolDir\fR directory, or "/var/tmp/" as a last resort. If
 none of the above directories can be written, no core file will be
 produced.
 
 .SH "NOTES"
 It may be useful to experiment with different \fBslurmd\fR specific
 configuration parameters using a distinct configuration file
-(e.g. timeouts).  However, this special configuration file will not be
+(e.g. timeouts). However, this special configuration file will not be
 used by the \fBslurmctld\fR daemon or the Slurm programs, unless you
 specifically tell each of them to use it. If you desire changing
 communication ports, the location of the temporary file system, or
@@ -245,7 +278,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "FILES"

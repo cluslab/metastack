@@ -70,7 +70,7 @@
 #include "src/common/log.h"
 #include "src/common/net.h"
 #include "src/common/read_config.h"
-#include "src/common/slurm_mpi.h"
+#include "src/interfaces/mpi.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/strlcpy.h"
 #include "src/common/xassert.h"
@@ -120,8 +120,6 @@
  * part of libPMIx */
 #define PMIXP_DEBUG_LIB "SLURM_PMIX_SRV_DEBUG"
 #define PMIXP_DIRECT_CONN_EARLY "SLURM_PMIX_DIRECT_CONN_EARLY"
-#define PMIXP_DIRECT_CONN_EARLY_THREAD  "SLURM_PMIX_DIRECT_CONN_EARLY_THREAD"
-#define PMIXP_PROF_DELAYED "SLURM_PMIX_PROF_DELAYED"
 
 /* ----------------------------------------------------------
  * This is libPMIx variable that we need to control it

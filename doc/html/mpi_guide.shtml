@@ -48,6 +48,11 @@ installed. If policies at your site allow you to install from source, this
 will allow you to install these packages to different locations, so you can
 choose which libraries to use.</p>
 
+<p><b>NOTE</b>: If you build any MPI stack component with hwloc, note that
+versions 2.5.0 through 2.7.0 (inclusive) of hwloc have a bug that pushes an
+untouchable value into the environ array, causing a segfault when accessing it.
+It is advisable to build with hwloc version 2.7.1 or later.</p>
+
 <p>Links to instructions for using several varieties of MPI/PMI
 with Slurm are provided below.
 <ul>
@@ -96,11 +101,6 @@ Note also that Intel MPI doesn't officially support PMIx. It may work since PMIx
 offers some compatibility with PMI-2, but there is no guarantee that it will.
 </p>
 
-<p><b>NOTE</b>: If you build PMIx with hwloc, note that versions 2.5.0 through
-2.7.0 (inclusive) of hwloc have a bug that pushes an untouchable value into the
-environ array, causing a segfault when accessing it. It is advisable to avoid
-these versions.</p>
-
 <p>Additional PMIx notes can be found in the SchedMD
 <a href="publications.html">Publications and Presentations</a> page.</p>
 
@@ -108,7 +108,8 @@ these versions.</p>
 <a class="slurm_link" href="#slurm_pmix"></a>
 </h3>
 
-<p>At configure time, Slurm looks by default for a PMIx installation under:</p>
+<p>At configure time, Slurm won't build with PMIx unless <b>--with-pmix</b> is
+set. Then it will look by default for a PMIx installation under:</p>
 
 <pre>
 /usr
@@ -213,6 +214,15 @@ libraries, we recommend you install both pieces of software in
 different locations. Otherwise, these same libraries might end up being
 installed under standard locations like /usr/lib64 and the
 package manager would error out, reporting the conflict.</p>
+
+<p><b>NOTE</b>: Any application compiled against PMIx should use the same PMIx
+or at least a PMIx with the same security domain than the one Slurm is using,
+otherwise there could be authentication issues. E.g. one PMIx compiled
+--with-munge while another compiled --without-munge (the default since PMIx
+4.2.4). A workaround which might work is to specify the desired security method
+adding "--mca psec native" to the cli or exporting PMIX_MCA_psec=native
+environment variable.
+</p>
 
 <p><b>NOTE</b>: If you are setting up a test environment using multiple-slurmd,
 the TmpFS option in your slurm.conf needs to be specified and the number of
@@ -332,6 +342,23 @@ $ export I_MPI_PMI_LIBRARY=/path/to/slurm/lib/libpmi2.so
 $ mpirun -np &lt;num_procs&gt; user_app.bin
 </pre>
 
+<p>Note that by default Slurm will inject two environment variables to ensure
+mpirun or mpiexec will use the Slurm bootstrap mechanism (srun) to launch Hydra.
+With these, Hydra will also pass the argument '--external-launcher' to srun in
+order to not consider these hydra processes as regular steps. This automatic
+variable injection mechanism can be disabled by setting
+"MpiParams=disable_slurm_hydra_bootstrap" in slurm.conf, with the exception
+of the cases where "slurm" is already explicitly set as a bootstrap.</p>
+
+<p>It is possible to run Intel MPI using a different bootstrap mechanism. To do
+so, explicitly set the following environment variable prior to submitting the
+job with sbatch or salloc:</p>
+<pre>
+$ export I_MPI_HYDRA_BOOTSTRAP=ssh
+$ salloc -N10
+$ mpirun -np &lt;num_procs&gt; user_app.bin
+</pre>
+
 <h3 id="intel_srun">The srun Command (Slurm, recommended)
 <a class="slurm_link" href="#intel_srun"></a>
 </h3>
@@ -376,6 +403,23 @@ compatibility in future versions.</p>
 Both modes of operation are described below. The MPICH implementation supports
 PMI-1, PMI-2 and PMIx (starting with MPICH v4).
 </p>
+
+<p>Note that by default Slurm will inject two environment variables to ensure
+mpirun or mpiexec will use the Slurm bootstrap mechanism (srun) to launch Hydra.
+With these, Hydra will also pass the argument '--external-launcher' to srun in
+order to not consider these hydra processes as regular steps. This automatic
+variable injection mechanism can be disabled by setting
+"MpiParams=disable_slurm_hydra_bootstrap" in slurm.conf, with the exception
+of the cases where "slurm" is already explicitly set as a bootstrap.</p>
+
+<p>It is possible to run MPICH using a different bootstrap mechanism. To do
+so, explicitly set the following environment variable prior to submitting the
+job with sbatch or salloc:</p>
+<pre>
+$ export HYDRA_BOOTSTRAP=ssh
+$ salloc -N10
+$ mpirun -np &lt;num_procs&gt; user_app.bin
+</pre>
 
 <h3 id="mpich_pmi_slurm">
 MPICH with srun and linked with Slurm's PMI-1 or PMI-2 libs
@@ -522,6 +566,23 @@ daemons. It does not link to the Slurm API, which means that during an upgrade
 of Slurm there is no need to recompile MVAPICH2. By default it will use the
 internal PMI implementation.</p>
 
+<p>Note that by default Slurm will inject two environment variables to ensure
+mpirun or mpiexec will use the Slurm bootstrap mechanism (srun) to launch Hydra.
+With these, Hydra will also pass the argument '--external-launcher' to srun in
+order to not consider these hydra processes as regular steps. This automatic
+variable injection mechanism can be disabled by setting
+"MpiParams=disable_slurm_hydra_bootstrap" in slurm.conf, with the exception
+of the cases where "slurm" is already explicitly set as a bootstrap.</p>
+
+<p>It is possible to run MVAPICH2 using a different bootstrap mechanism. To do
+so, explicitly set the following environment variable prior to submitting the
+job with sbatch or salloc:</p>
+<pre>
+$ export HYDRA_BOOTSTRAP=ssh
+$ salloc -N10
+$ mpirun -np &lt;num_procs&gt; user_app.bin
+</pre>
+
 <h3 id="mvapich_pmi_slurm">
 MVAPICH2 with srun and linked with Slurm's PMI-1 or PMI-2 libs
 <a class="slurm_link" href="#mvapich_pmi_slurm"></a>
@@ -625,6 +686,6 @@ using the same <b>PMI_CONTROL_PORT</b>.</p>
 <p>This plugin does not support MPMD/heterogeneous jobs and it requires
 <i>libpals >= 0.2.8</i>.</p>
 
-<p style="text-align:center;">Last modified 13 September 2022</p>
+<p style="text-align:center;">Last modified 21 June 2024</p>
 
 <!--#include virtual="footer.txt"-->

@@ -50,6 +50,8 @@
 #include "src/common/log.h"	/* for error() */
 #include "src/common/strlcpy.h"
 
+#define STACK_SIZE (1024 * 1024)
+
 #ifndef MAX
 #  define MAX(a,b) ((a) > (b) ? (a) : (b))
 #endif
@@ -58,15 +60,9 @@
 #  define MIN(a,b) ((a) < (b) ? (a) : (b))
 #endif
 
-/*
- * NOTE: ISO C doesn't guarantee that the following works, but POSIX does,
- * as well as Windows and all reasonable systems. For maximum portability,
- * one should do:
- * SLURM_DIFFTIME(a,b) difftime((a), (b))
- * but this code can show up high in the profile, so use the faster
- * (in principle unportable but in practice fine) code below.
- */
-#define SLURM_DIFFTIME(a,b) ((a) - (b))
+#ifndef ROUNDUP
+#  define ROUNDUP(a,b) ((a + (b - 1)) / b)
+#endif
 
 /* Avoid going over 32 bits for a constant to avoid warnings on some systems */
 #  define UINT64_SWAP_LE_BE(val)      ((uint64_t) (                           \
@@ -274,7 +270,7 @@
 			errno = err;					\
 			error("pthread_attr_setscope: %m");		\
 		}							\
-		err = pthread_attr_setstacksize(attr, 1024*1024);	\
+		err = pthread_attr_setstacksize(attr, STACK_SIZE);	\
 		if (err) {						\
 			errno = err;					\
 			error("pthread_attr_setstacksize: %m");		\
@@ -288,7 +284,7 @@
 			errno = err;					\
 			fatal("pthread_attr_init: %m");			\
 		}							\
-		err = pthread_attr_setstacksize(attr, 1024*1024);	\
+		err = pthread_attr_setstacksize(attr, STACK_SIZE);	\
 		if (err) {						\
 			errno = err;					\
 			error("pthread_attr_setstacksize: %m");		\
@@ -324,24 +320,15 @@
 	} while (0)
 
 /*
- * If the id is NULL then the thread_id will be discarded without needing
- * to create a local pthread_t object first.
- *
- * This is only made available for detached threads - if you're creating
- * an attached thread that you don't need to keep the id of, then you
- * should really be making it detached.
- *
- * The ternary operator that makes that work is intentionally overwrought
- * to avoid compiler warnings about it always resolving to true, since
- * this is a macro and the optimization pass will realize that a variable
- * in the local scope will always have a non-zero memory address.
+ * Both the thread and attr arguments are intentionally omitted. There
+ * is basically nothing safe you can do with a detached thread's id,
+ * so this macro intentionally prevents you from capturing it.
  */
-#define slurm_thread_create_detached(id, func, arg)			\
+#define slurm_thread_create_detached(func, arg)				\
 	do {								\
-		pthread_t *id_ptr, id_local;				\
+		pthread_t id_local;					\
 		pthread_attr_t attr;					\
 		int err;						\
-		id_ptr = (id != (pthread_t *) NULL) ? id : &id_local;	\
 		slurm_attr_init(&attr);					\
 		err = pthread_attr_setdetachstate(&attr,		\
 						  PTHREAD_CREATE_DETACHED); \
@@ -350,7 +337,7 @@
 			fatal("%s: pthread_attr_setdetachstate %m",	\
 			      __func__);				\
 		}							\
-		err = pthread_create(id_ptr, &attr, func, arg);		\
+		err = pthread_create(&id_local, &attr, func, arg);	\
 		if (err) {						\
 			errno = err;					\
 			fatal("%s: pthread_create error %m", __func__);	\
@@ -358,6 +345,21 @@
 		slurm_attr_destroy(&attr);				\
 	} while (0)
 
+/*
+ * The retval argument is intentionally omitted. We never use it.
+ */
+#define slurm_thread_join(id)						\
+	do {								\
+		int err = 0;						\
+		if (id) {						\
+			err = pthread_join(id, NULL);			\
+			id = (pthread_t) 0;				\
+		}							\
+		if (err) {						\
+			errno = err;					\
+			error("%s: pthread_join(): %m", __func__);	\
+		}							\
+	} while (0)
 
 #define slurm_atoul(str) strtoul(str, NULL, 10)
 #define slurm_atoull(str) strtoull(str, NULL, 10)
@@ -374,26 +376,27 @@
 #  endif
 #endif
 
-/* Results strftime() are undefined if buffer too small
- * This variant returns a string of "####"... instead */
-#define slurm_strftime(s, max, format, tm)				\
-do {									\
-	if (max > 0) {							\
-		char tmp_string[(max<256?256:max+1)];			\
-		if (strftime(tmp_string, sizeof(tmp_string), format, tm) == 0) \
-			memset(tmp_string, '#', max);			\
-		tmp_string[max-1] = 0;					\
-		strlcpy(s, tmp_string, max);				\
-	}								\
-} while (0)
-
 /* There are places where we put NO_VAL or INFINITE into a float or double
  * Use fuzzy_equal below to test for those values rather than an comparison
  * which could fail due to rounding errors. */
 #define FUZZY_EPSILON 0.00001
 #define fuzzy_equal(v1, v2) ((((v1)-(v2)) > -FUZZY_EPSILON) && (((v1)-(v2)) < FUZZY_EPSILON))
 
-/* Number of elements in an array */
+/* Number of elements in a static array */
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+/* Number of elements in an allocated array */
+#define PTR_ARRAY_SIZE(x) (xsize(x) / sizeof((x)[0]))
+
+#define SWAP(x, y)		\
+do {				\
+	__typeof__(x) b = x;	\
+	x = y;			\
+	y = b;			\
+} while (0)
+
+/* macro to force stringification */
+#define XSTRINGIFY(s) XSTRINGIFY2(s)
+#define XSTRINGIFY2(s) #s
 
 #endif /* !_MACROS_H */

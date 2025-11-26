@@ -191,6 +191,28 @@ create_pidfile(const char *pidfile, uid_t uid)
 	return -1;
 }
 
+extern int update_pidfile(int fd)
+{
+	FILE *fp;
+
+	if (!(fp = fdopen(fd, "w"))) {
+		error("Unable to access pidfd=%d: %m", fd);
+		return -1;
+	}
+
+	rewind(fp);
+
+	if (fprintf(fp, "%lu\n", (unsigned long) getpid()) == EOF) {
+		error("Unable to write to pidfd=%d: %m", fd);
+		return -1;
+	}
+
+	fflush(fp);
+
+	/* WARNING: Do not close fp, it would close fd as well. */
+	return fd;
+}
+
 void
 test_core_limit(void)
 {
@@ -201,7 +223,7 @@ test_core_limit(void)
 	else if (rlim->rlim_cur != RLIM_INFINITY) {
 		rlim->rlim_cur /= 1024;	/* bytes to KB */
 		if (rlim->rlim_cur < 2048) {
-			verbose("Warning: Core limit is only %ld KB",
+			warning("Core limit is only %ld KB",
 				(long int) rlim->rlim_cur);
 		}
 	}

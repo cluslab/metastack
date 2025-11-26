@@ -37,45 +37,11 @@
 \*****************************************************************************/
 
 #include "src/common/proc_args.h"
-#include "src/common/state_control.h"
 #include "src/scontrol/scontrol.h"
 #include "src/slurmctld/reservation.h"
 
 #define PLUS_MINUS(sign) (((sign == '+')) ? RESERVE_FLAG_DUR_PLUS : \
 			  ((sign == '-') ? RESERVE_FLAG_DUR_MINUS : 0))
-
-/*
- *  _process_plus_minus is used to convert a string like
- *       Users+=a,b,c
- *  to   Users=+a,+b,+c
- */
-
-static char * _process_plus_minus(char plus_or_minus, char *src)
-{
-	int num_commas = 0;
-	int ii;
-	int srclen = strlen(src);
-	char *dst, *ret;
-
-	for (ii=0; ii<srclen; ii++) {
-		if (src[ii] == ',')
-			num_commas++;
-	}
-	ret = dst = xmalloc(srclen + 2 + num_commas);
-
-	*dst++ = plus_or_minus;
-	for (ii=0; ii<srclen; ii++) {
-		if (*src == ',') {
-			*dst++ = *src++;
-			*dst++ = plus_or_minus;
-		} else {
-			*dst++ = *src++;
-		}
-	}
-	*dst = '\0';
-
-	return ret;
-}
 
 /*
  * _parse_res_options   parse options for creating or updating a reservation
@@ -94,7 +60,6 @@ static int _parse_res_options(int argc, char **argv, const char *msg,
 {
 	int i;
 	int duration = -3;   /* -1 == INFINITE, -2 == error, -3 == not set */
-	char *err_msg = NULL;
 
 	*res_free_flags = 0;
 
@@ -137,18 +102,27 @@ static int _parse_res_options(int argc, char **argv, const char *msg,
 			}
 			if (plus_minus) {
 				resv_msg_ptr->accounts =
-					_process_plus_minus(plus_minus, val);
+					scontrol_process_plus_minus(plus_minus,
+								    val, false);
 				*res_free_flags |= RESV_FREE_STR_ACCT;
 				plus_minus = '\0';
 			} else {
 				resv_msg_ptr->accounts = val;
 			}
-
+		} else if (xstrncasecmp(tag, "Comment", MAX(taglen, 3)) == 0) {
+			if (resv_msg_ptr->comment) {
+				exit_code = 1;
+				error("Parameter %s specified more than once",
+				      argv[i]);
+				return SLURM_ERROR;
+			}
+			resv_msg_ptr->comment = val;
 		} else if (!xstrncasecmp(tag, "Flags", MAX(taglen, 2))) {
 			uint64_t f;
 			if (plus_minus) {
 				char *tmp =
-					_process_plus_minus(plus_minus, val);
+					scontrol_process_plus_minus(plus_minus,
+								    val, false);
 				f = parse_resv_flags(tmp, msg, resv_msg_ptr);
 				xfree(tmp);
 				plus_minus = '\0';
@@ -168,7 +142,8 @@ static int _parse_res_options(int argc, char **argv, const char *msg,
 			}
 			if (plus_minus) {
 				resv_msg_ptr->groups =
-					_process_plus_minus(plus_minus, val);
+					scontrol_process_plus_minus(plus_minus,
+								    val, false);
 				*res_free_flags |= RESV_FREE_STR_GROUP;
 				plus_minus = '\0';
 			} else {
@@ -184,7 +159,8 @@ static int _parse_res_options(int argc, char **argv, const char *msg,
 			}
 			if (plus_minus) {
 				resv_msg_ptr->users =
-					_process_plus_minus(plus_minus, val);
+					scontrol_process_plus_minus(plus_minus,
+								    val, false);
 				*res_free_flags |= RESV_FREE_STR_USER;
 				plus_minus = '\0';
 			} else {
@@ -248,42 +224,40 @@ static int _parse_res_options(int argc, char **argv, const char *msg,
 			resv_msg_ptr->max_start_delay = (uint32_t)duration;
 		} else if (xstrncasecmp(tag, "NodeCnt", MAX(taglen,5)) == 0 ||
 			   xstrncasecmp(tag, "NodeCount", MAX(taglen,5)) == 0) {
-
-			if (parse_resv_nodecnt(resv_msg_ptr, val,
-					       res_free_flags, false,
-					       &err_msg) == SLURM_ERROR) {
-				error("%s", err_msg);
-				xfree(err_msg);
+			char *leftover = NULL;
+			if (xstrchr(val, ',')) {
 				exit_code = 1;
+				error("Using a comma separated array for NodeCnt is no longer valid.");
 				return SLURM_ERROR;
 			}
 
+			resv_msg_ptr->node_cnt = str_to_nodes(val, &leftover);
+			if (!xstring_is_whitespace(leftover)) {
+				exit_code = 1;
+				error("\"%s\" is not a valid node count", val);
+				return SLURM_ERROR;
+			}
 		} else if (xstrncasecmp(tag, "CoreCnt",   MAX(taglen,5)) == 0 ||
 			   xstrncasecmp(tag, "CoreCount", MAX(taglen,5)) == 0 ||
 			   xstrncasecmp(tag, "CPUCnt",    MAX(taglen,5)) == 0 ||
 			   xstrncasecmp(tag, "CPUCount",  MAX(taglen,5)) == 0) {
-
-			/* only have this on a cons_res machine */
-			if (state_control_corecnt_supported()
-			    != SLURM_SUCCESS) {
-				error("CoreCnt or CPUCnt is only supported when SelectType includes select/cons_res or SelectTypeParameters includes OTHER_CONS_RES on a Cray.");
+			if (xstrchr(val, ',')) {
 				exit_code = 1;
+				error("Using a comma separated array for CoreCnt is no longer valid.");
 				return SLURM_ERROR;
 			}
 
-			if (state_control_parse_resv_corecnt(resv_msg_ptr, val,
-							     res_free_flags,
-							     false, &err_msg)
-			    == SLURM_ERROR) {
-				error("%s", err_msg);
-				xfree(err_msg);
-				exit_code = 1;
-				return SLURM_ERROR;
-			}
-
+			resv_msg_ptr->core_cnt = slurm_atoul(val);
 		} else if (xstrncasecmp(tag, "Nodes", MAX(taglen, 5)) == 0) {
-			resv_msg_ptr->node_list = val;
-
+			if (plus_minus) {
+				resv_msg_ptr->node_list =
+					scontrol_process_plus_minus(plus_minus,
+								    val, true);
+				*res_free_flags |= RESV_FREE_STR_NODES;
+				plus_minus = '\0';
+			} else {
+				resv_msg_ptr->node_list = val;
+			}
 		} else if (xstrncasecmp(tag, "Features", MAX(taglen, 2)) == 0) {
 			resv_msg_ptr->features = val;
 
@@ -295,25 +269,37 @@ static int _parse_res_options(int argc, char **argv, const char *msg,
 			resv_msg_ptr->partition = val;
 
 		} else if (xstrncasecmp(tag, "TRES", MAX(taglen, 1)) == 0) {
-			if (state_control_parse_resv_tres(val, resv_msg_ptr,
-							  res_free_flags,
-							  &err_msg)
-			    == SLURM_ERROR) {
-				error("%s", err_msg);
-				xfree(err_msg);
+			if (resv_msg_ptr->tres_str) {
 				exit_code = 1;
+				error("Parameter %s specified more than once",
+				      argv[i]);
+				return SLURM_ERROR;
+			} else if (plus_minus) {
+				exit_code = 1;
+				error("Parameter %s specified a plus or minus.  This is not allowed.",
+				      argv[i]);
 				return SLURM_ERROR;
 			}
 
-		} else if (xstrncasecmp(tag, "Watts", MAX(taglen, 1)) == 0) {
-			if (state_control_parse_resv_watts(val, resv_msg_ptr,
-							   &err_msg)
-			    == SLURM_ERROR) {
-				error("%s", err_msg);
-				xfree(err_msg);
+			resv_msg_ptr->tres_str = val;
+		} else if (xstrncasecmp(tag, "TRESPerNode",
+					MAX(taglen, 5)) == 0) {
+			if (resv_msg_ptr->tres_str) {
 				exit_code = 1;
+				error("Parameter %s specified more than once",
+				      argv[i]);
+				return SLURM_ERROR;
+			} else if (plus_minus) {
+				exit_code = 1;
+				error("Parameter %s specified a plus or minus.  This is not allowed.",
+				      argv[i]);
 				return SLURM_ERROR;
 			}
+			resv_msg_ptr->tres_str = val;
+			if (resv_msg_ptr->flags == NO_VAL64)
+				resv_msg_ptr->flags = RESERVE_TRES_PER_NODE;
+			else
+				resv_msg_ptr->flags |= RESERVE_TRES_PER_NODE;
 		} else if (xstrncasecmp(tag, "res", 3) == 0) {
 			continue;
 		} else {
@@ -364,7 +350,6 @@ scontrol_update_res(int argc, char **argv)
 	ret = slurm_update_reservation(&resv_msg);
 	if (ret) {
 		exit_code = 1;
-		slurm_perror("Error updating the reservation");
 		ret = slurm_get_errno();
 	} else {
 		printf("Reservation updated.\n");
@@ -454,16 +439,16 @@ scontrol_create_res(int argc, char **argv)
 	 * If the following parameters are null, but a partition is named, then
 	 * make the reservation for the whole partition.
 	 */
-	if ((resv_msg.core_cnt == 0) &&
+	if ((!resv_msg.core_cnt || (resv_msg.core_cnt == NO_VAL)) &&
 	    (resv_msg.burst_buffer == NULL ||
 	     resv_msg.burst_buffer[0] == '\0') &&
-	    (resv_msg.node_cnt  == NULL || resv_msg.node_cnt[0]  == 0)    &&
+	    (!resv_msg.node_cnt || (resv_msg.node_cnt == NO_VAL)) &&
 	    (resv_msg.node_list == NULL || resv_msg.node_list[0] == '\0') &&
 	    (resv_msg.licenses  == NULL || resv_msg.licenses[0]  == '\0') &&
-	    (resv_msg.resv_watts == NO_VAL)) {
+	    (resv_msg.tres_str  == NULL || resv_msg.tres_str[0]  == '\0')) {
 		if (resv_msg.partition == NULL) {
 			exit_code = 1;
-			error("CoreCnt, Nodes, NodeCnt, BurstBuffer, Licenses or Watts must be specified.  No reservation created.");
+			error("CoreCnt, Nodes, NodeCnt, TRES or Watts must be specified.  No reservation created.");
 			goto SCONTROL_CREATE_RES_CLEANUP;
 		}
 		if (resv_msg.flags == NO_VAL64)
@@ -485,22 +470,12 @@ scontrol_create_res(int argc, char **argv)
 		goto SCONTROL_CREATE_RES_CLEANUP;
 	}
 
-	if (resv_msg.resv_watts != NO_VAL &&
-	    (!(resv_msg.flags & RESERVE_FLAG_ANY_NODES) ||
-	     (resv_msg.core_cnt != 0) ||
-	     (resv_msg.node_cnt  != NULL && resv_msg.node_cnt[0]  != 0) ||
-	     (resv_msg.node_list != NULL && resv_msg.node_list[0] != '\0') ||
-	     (resv_msg.licenses  != NULL && resv_msg.licenses[0]  != '\0'))) {
-		exit_code = 1;
-		error("A power reservation must be empty and set the LICENSE_ONLY flag.  No reservation created.");
-		goto SCONTROL_CREATE_RES_CLEANUP;
-	}
 	new_res_name = slurm_create_reservation(&resv_msg);
 	if (!new_res_name) {
 		exit_code = 1;
 		slurm_perror("Error creating the reservation");
-		if ((errno == ESLURM_REQUESTED_NODE_CONFIG_UNAVAILABLE) ||
-		    (errno == ESLURM_NODES_BUSY))
+		if (((errno == ESLURM_REQUESTED_NODE_CONFIG_UNAVAILABLE) ||
+		     (errno == ESLURM_NODES_BUSY)) && !resv_msg.node_list)
 			printf("Note, unless nodes are directly requested a reservation must exist in a single partition.\n"
 			       "If no partition is requested the default partition is assumed.\n");
 		ret = slurm_get_errno();

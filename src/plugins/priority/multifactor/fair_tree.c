@@ -215,7 +215,7 @@ static slurmdb_assoc_rec_t** _append_list_to_array(
 	List list, slurmdb_assoc_rec_t** merged,
 	size_t *merged_size)
 {
-	ListIterator itr;
+	list_itr_t *itr;
 	slurmdb_assoc_rec_t *next;
 	size_t bytes;
 	size_t i = *merged_size;
@@ -407,6 +407,9 @@ static void _apply_priority_fs(void)
 	size_t child_count = 0;
 
 	log_flag(PRIO, "Fair Tree fairshare algorithm, starting at root:");
+
+	if (!assoc_mgr_root_assoc)
+		return;
 
 	assoc_mgr_root_assoc->usage->level_fs = (long double) NO_VAL;
 

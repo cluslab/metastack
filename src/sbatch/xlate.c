@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2010-2018 SchedMD LLC <https://www.schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Mark Grondona <grondona1@llnl.gov>, et. al.
  *  CODE-OCEC-09-009. All rights reserved.
@@ -272,7 +272,7 @@ static void _set_bsub_options(int argc, char **argv) {
 static void _set_pbs_options(int argc, char **argv)
 {
 	int opt_char, option_index = 0;
-	char *pbs_opt_string = "+a:A:c:C:e:hIj:J:k:l:m:M:N:o:p:q:r:S:t:u:v:VW:z";
+	char *pbs_opt_string = "+a:A:c:C:d:e:hIj:J:k:l:m:M:N:o:p:q:r:S:t:u:v:VW:w:z";
 
 	struct option pbs_long_options[] = {
 		{"start_time", required_argument, 0, 'a'},
@@ -325,6 +325,11 @@ static void _set_pbs_options(int argc, char **argv)
 		case 'c':
 			break;
 		case 'C':
+			break;
+		case 'w':
+		case 'd':
+			xlate_val = 'D';
+			xlate_arg = xstrdup(optarg);
 			break;
 		case 'h':
 			xlate_val = 'H';
@@ -449,7 +454,7 @@ static void _parse_pbs_nodes_opts(char *node_opts)
 	char *temp = NULL;
 	int ppn = 0;
 	int node_cnt = 0;
-	hostlist_t hl = hostlist_create(NULL);
+	hostlist_t *hl = hostlist_create(NULL);
 
 	while (node_opts[i]) {
 		if (!xstrncmp(node_opts+i, "gpus=", 5)) {
@@ -602,48 +607,6 @@ static void _parse_pbs_resource_list(char *rl)
 					false, false);
 				xfree(temp);
 			}
-#ifdef HAVE_NATIVE_CRAY
-			/*
-			 * NB: no "mppmem" here since it specifies per-PE memory units,
-			 *     whereas Slurm uses per-node and per-CPU memory units.
-			 */
-		} else if (!xstrncmp(rl + i, "mppdepth=", 9)) {
-			/* Cray: number of CPUs (threads) per processing element */
-			i += 9;
-			temp = _get_pbs_option_value(rl, &i, ',');
-			if (temp) {
-				slurm_process_option_or_exit(&opt, 'c', temp,
-							     false, false);
-			}
-			xfree(temp);
-		} else if (!xstrncmp(rl + i, "mppnodes=", 9)) {
-			/* Cray `nodes' variant: hostlist without prefix */
-			i += 9;
-			temp = _get_pbs_option_value(rl, &i, ',');
-			if (!temp) {
-				error("No value given for mppnodes");
-				exit(error_exit);
-			}
-			slurm_process_option_or_exit(&opt, 'w', temp, false,
-						     false);
-		} else if (!xstrncmp(rl + i, "mppnppn=", 8)) {
-			/* Cray: number of processing elements per node */
-			i += 8;
-			temp = _get_pbs_option_value(rl, &i, ',');
-			if (temp)
-				slurm_process_option_or_exit(
-					&opt, LONG_OPT_NTASKSPERNODE, temp,
-					false, false);
-			xfree(temp);
-		} else if (!xstrncmp(rl + i, "mppwidth=", 9)) {
-			/* Cray: task width (number of processing elements) */
-			i += 9;
-			temp = _get_pbs_option_value(rl, &i, ',');
-			if (temp)
-				slurm_process_option_or_exit(&opt, 'n', temp,
-							     false, false);
-			xfree(temp);
-#endif /* HAVE_NATIVE_CRAY */
 		} else if (!xstrncasecmp(rl+i, "naccelerators=", 14)) {
 			i += 14;
 			temp = _get_pbs_option_value(rl, &i, ',');

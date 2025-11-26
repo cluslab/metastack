@@ -37,19 +37,28 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
-#include "src/sshare/sshare.h"
-#include "src/common/proc_args.h"
 #include <grp.h>
 
+#include "src/common/data.h"
+#include "src/common/proc_args.h"
+#include "src/common/slurm_protocol_api.h"
+#include "src/common/slurm_protocol_defs.h"
+#include "src/common/uid.h"
+#include "src/interfaces/data_parser.h"
+#include "src/interfaces/priority.h"
+#include "src/interfaces/serializer.h"
+#include "src/sshare/sshare.h"
 
 #define OPT_LONG_HELP  0x100
 #define OPT_LONG_USAGE 0x101
+#define OPT_LONG_AUTOCOMP 0x102
+#define OPT_LONG_JSON 0x103
+#define OPT_LONG_YAML 0x104
 
-static int      _get_info(shares_request_msg_t *shares_req,
-			  shares_response_msg_t **shares_resp);
-static int      _addto_name_char_list(List char_list, char *names, bool gid);
-static int 	_single_cluster(shares_request_msg_t *req_msg);
-static int 	_multi_cluster(shares_request_msg_t *req_msg);
+static int _addto_name_char_list(list_t *char_list, char *names, bool gid);
+static int _single_cluster(int argc, char **argv,
+			   shares_request_msg_t *req_msg);
+static int _multi_cluster(int argc, char **argv, shares_request_msg_t *req_msg);
 static char *   _convert_to_name(uint32_t id, bool is_gid);
 static void     _print_version( void );
 static void	_usage(void);
@@ -59,7 +68,7 @@ int exit_code;		/* sshare's exit code, =1 on any error at any time */
 int quiet_flag;		/* quiet=1, verbose=-1, normal=0 */
 int verbosity;		/* count of -v options */
 uint32_t my_uid = 0;
-List clusters = NULL;
+list_t *clusters = NULL;
 uint16_t options = 0;
 
 int main (int argc, char **argv)
@@ -72,6 +81,7 @@ int main (int argc, char **argv)
 	bool all_users = 0;
 
 	static struct option long_options[] = {
+		{"autocomplete", required_argument, 0, OPT_LONG_AUTOCOMP},
 		{"accounts", 1, 0, 'A'},
 		{"all",      0, 0, 'a'},
                 {"helpformat",0,0, 'e'},
@@ -89,6 +99,8 @@ int main (int argc, char **argv)
 		{"version",  0, 0, 'V'},
 		{"help",     0, 0, OPT_LONG_HELP},
 		{"usage",    0, 0, OPT_LONG_USAGE},
+		{"json",    optional_argument, 0, OPT_LONG_JSON},
+		{"yaml",    optional_argument, 0, OPT_LONG_YAML},
 		{NULL,       0, 0, 0}
 	};
 
@@ -97,7 +109,9 @@ int main (int argc, char **argv)
 	quiet_flag        = 0;
 	verbosity         = 0;
 	memset(&req_msg, 0, sizeof(shares_request_msg_t));
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
+	if (priority_g_init() != SLURM_SUCCESS)
+		fatal("failed to initialize priority plugin");
 	log_init("sshare", opts, SYSLOG_FACILITY_DAEMON, NULL);
 
 	while ((opt_char = getopt_long(argc, argv, "aA:ehlM:no:pPqUu:t:vVm",
@@ -128,10 +142,9 @@ int main (int argc, char **argv)
 			break;
 		case 'M':
 			FREE_NULL_LIST(clusters);
-			if (!(clusters =
-			     slurmdb_get_info_cluster(optarg))) {
+			if (slurm_get_cluster_info(&(clusters), optarg, 0)) {
 				print_db_notok(optarg, 0);
-				exit(1);
+				fatal("Could not get cluster information");
 			}
 			working_cluster_rec = list_peek(clusters);
 			break;
@@ -177,6 +190,22 @@ int main (int argc, char **argv)
 		case OPT_LONG_USAGE:
 			_usage();
 			exit(0);
+		case OPT_LONG_AUTOCOMP:
+			suggest_completion(long_options, optarg);
+			exit(0);
+			break;
+		case OPT_LONG_JSON:
+			mimetype = MIME_TYPE_JSON;
+			data_parser = optarg;
+			if (serializer_g_init(MIME_TYPE_JSON_PLUGIN, NULL))
+				fatal("JSON plugin load failure");
+			break;
+		case OPT_LONG_YAML:
+			mimetype = MIME_TYPE_YAML;
+			data_parser = optarg;
+			if (serializer_g_init(MIME_TYPE_YAML_PLUGIN, NULL))
+				fatal("YAML plugin load failure");
+			break;
 		default:
 			exit_code = 1;
 			fprintf(stderr, "getopt error, returned %c\n",
@@ -201,27 +230,26 @@ int main (int argc, char **argv)
 	} else if (verbosity && req_msg.user_list
 	    && list_count(req_msg.user_list)) {
 		fprintf(stderr, "Users requested:\n");
-		ListIterator itr = list_iterator_create(req_msg.user_list);
+		list_itr_t *itr = list_iterator_create(req_msg.user_list);
 		while ((temp = list_next(itr)))
 			fprintf(stderr, "\t: %s\n", temp);
 		list_iterator_destroy(itr);
 	} else if (!req_msg.user_list || !list_count(req_msg.user_list)) {
-		struct passwd *pwd;
-		if ((pwd = getpwuid(getuid()))) {
+		char *user = uid_to_string_or_null(getuid());
+		if (user) {
 			if (!req_msg.user_list) {
 				req_msg.user_list = list_create(xfree_ptr);
 			}
-			temp = xstrdup(pwd->pw_name);
-			list_append(req_msg.user_list, temp);
+			list_append(req_msg.user_list, user);
 			if (verbosity) {
 				fprintf(stderr, "Users requested:\n");
-				fprintf(stderr, "\t: %s\n", temp);
+				fprintf(stderr, "\t: %s\n", user);
 			}
 		}
 	}
 
 	if (verbosity && req_msg.acct_list && list_count(req_msg.acct_list)) {
-		ListIterator itr = list_iterator_create(req_msg.acct_list);
+		list_itr_t *itr = list_iterator_create(req_msg.acct_list);
 		fprintf(stderr, "Accounts requested:\n");
 		while ((temp = list_next(itr)))
 			fprintf(stderr, "\t: %s\n", temp);
@@ -231,9 +259,9 @@ int main (int argc, char **argv)
 	}
 
 	if (clusters)
-		exit_code = _multi_cluster(&req_msg);
+		exit_code = _multi_cluster(argc, argv, &req_msg);
 	else
-		exit_code = _single_cluster(&req_msg);
+		exit_code = _single_cluster(argc, argv, &req_msg);
 
 	FREE_NULL_LIST(req_msg.acct_list);
 	FREE_NULL_LIST(req_msg.user_list);
@@ -241,26 +269,37 @@ int main (int argc, char **argv)
 }
 
 
-static int _single_cluster(shares_request_msg_t *req_msg)
+static int _single_cluster(int argc, char **argv, shares_request_msg_t *req_msg)
 {
 	int rc = SLURM_SUCCESS;
 	shares_response_msg_t *resp_msg = NULL;
 
-	rc = _get_info(req_msg, &resp_msg);
+	rc = slurm_associations_get_shares(req_msg, &resp_msg);
 	if (rc) {
 		slurm_perror("Couldn't get shares from controller");
 		return rc;
 	}
 
-	process(resp_msg, options);
+	if (mimetype) {
+		if (is_data_parser_deprecated(data_parser))
+			rc = error("%s does not support dumping for shares",
+				   data_parser);
+		else
+			DATA_DUMP_CLI_SINGLE(OPENAPI_SHARES_RESP, resp_msg,
+					     argc, argv, NULL, mimetype,
+					     data_parser, rc);
+	} else {
+		process(resp_msg, options);
+	}
+
 	slurm_free_shares_response_msg(resp_msg);
 
 	return rc;
 }
 
-static int _multi_cluster(shares_request_msg_t *req_msg)
+static int _multi_cluster(int argc, char **argv, shares_request_msg_t *req_msg)
 {
-	ListIterator itr;
+	list_itr_t *itr;
 	bool first = true;
 	int rc = 0, rc2;
 
@@ -271,7 +310,7 @@ static int _multi_cluster(shares_request_msg_t *req_msg)
 		else
 			printf("\n");
 		printf("CLUSTER: %s\n", working_cluster_rec->name);
-		rc2 = _single_cluster(req_msg);
+		rc2 = _single_cluster(argc, argv, req_msg);
 		if (rc2)
 			rc = 1;
 	}
@@ -280,44 +319,9 @@ static int _multi_cluster(shares_request_msg_t *req_msg)
 	return rc;
 }
 
-static int _get_info(shares_request_msg_t *shares_req,
-		     shares_response_msg_t **shares_resp)
-{
-	int rc;
-        slurm_msg_t req_msg;
-        slurm_msg_t resp_msg;
-
-	slurm_msg_t_init(&req_msg);
-	slurm_msg_t_init(&resp_msg);
-
-        req_msg.msg_type = REQUEST_SHARE_INFO;
-        req_msg.data     = shares_req;
-
-	if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
-					   working_cluster_rec) < 0)
-		return SLURM_ERROR;
-
-	switch (resp_msg.msg_type) {
-	case RESPONSE_SHARE_INFO:
-		*shares_resp = (shares_response_msg_t *) resp_msg.data;
-		break;
-	case RESPONSE_SLURM_RC:
-		rc = ((return_code_msg_t *) resp_msg.data)->return_code;
-		slurm_free_return_code_msg(resp_msg.data);
-		if (rc)
-			slurm_seterrno_ret(rc);
-		*shares_resp = NULL;
-		break;
-	default:
-		slurm_seterrno_ret(SLURM_UNEXPECTED_MSG_ERROR);
-		break;
-	}
-
-	return SLURM_SUCCESS;
-}
-
 /* returns number of objects added to list */
-static int _addto_name_char_list_internal(List char_list, char *name, void *x)
+static int _addto_name_char_list_internal(list_t *char_list, char *name,
+					  void *x)
 {
 	char *tmp_name = NULL;
 	bool gid = *(bool *)x;
@@ -338,7 +342,7 @@ static int _addto_name_char_list_internal(List char_list, char *name, void *x)
 }
 
 /* returns number of objects added to list */
-static int _addto_name_char_list(List char_list, char *names, bool gid)
+static int _addto_name_char_list(list_t *char_list, char *names, bool gid)
 {
 	if (!char_list) {
 		error("No list was given to fill in");
@@ -354,19 +358,15 @@ static char *_convert_to_name(uint32_t id, bool is_gid)
 	char *name = NULL;
 
 	if (is_gid) {
-		struct group *grp;
-		if (!(grp = getgrgid((gid_t) id))) {
+		if (!(name = gid_to_string_or_null(id))) {
 			fprintf(stderr, "Invalid group id: %u\n", id);
 			exit(1);
 		}
-		name = xstrdup(grp->gr_name);
 	} else {
-		struct passwd *pwd;
-		if (!(pwd = getpwuid((uid_t) id))) {
+		if (!(name = uid_to_string_or_null(id))) {
 			fprintf(stderr, "Invalid user id: %u\n", id);
 			exit(1);
 		}
-		name = xstrdup(pwd->pw_name);
 	}
 	return name;
 }
@@ -392,6 +392,7 @@ Usage:  sshare [OPTION]                                                    \n\
     -A or --accounts=      display specific accounts (comma separated list)\n\
     -e or --helpformat     Print a list of fields that can be specified    \n\
                            with the '--format' option                      \n\
+    --json[=data_parser]   Produce JSON output                             \n\
     -l or --long           include normalized usage in output              \n\
     -m or --partition      print the partition part of the association     \n\
     -M or --cluster=names  clusters to issue commands to.                  \n\
@@ -405,6 +406,7 @@ Usage:  sshare [OPTION]                                                    \n\
     -U or --Users          display only user information                   \n\
     -v or --verbose        display more information                        \n\
     -V or --version        display tool version number                     \n\
+    --yaml[=data_parser]   Produce YAML output                             \n\
           --help           display this usage description                  \n\
           --usage          display this usage description                  \n\
                                                                            \n\n");

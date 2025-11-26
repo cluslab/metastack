@@ -35,6 +35,7 @@
 #include "src/common/macros.h"
 #include "src/common/slurm_opt.h"
 #include "src/common/slurm_protocol_api.h"
+#include "src/common/xregex.h"
 
 typedef struct env_options {
 	int ntasks;		/* --ntasks=n,      -n n	*/
@@ -55,14 +56,12 @@ typedef struct env_options {
 	bool overcommit;	/* --overcommit,   -O		*/
 	int  slurmd_debug;	/* --slurmd-debug, -D           */
 	bool labelio;		/* --label-output, -l		*/
-	dynamic_plugin_data_t *select_jobinfo;
 	int nhosts;
 	char *nodelist;		/* nodelist in string form */
 	char *partition;	/* partition name */
 	char **env;             /* job environment */
 	uint16_t comm_port;	/* srun's communication port */
 	slurm_addr_t *cli;	/* launch node address */
-	slurm_addr_t *self;
 	char *job_name;		/* assigned job name */
 	int jobid;		/* assigned job id */
 	int stepid;	        /* assigned step id */
@@ -92,9 +91,14 @@ typedef struct env_options {
 	uint16_t batch_flag;	/* 1 if batch: queued job with script */
 	uint32_t uid;		/* user ID */
 	char *user_name;	/* user name */
+	uint32_t gid;		/* group ID */
+	char *group_name;	/* group name */
 	char *account;          /* job's account */
 	char *qos;              /* job's qos */
 	char *resv_name;        /* job's reservation */
+	time_t job_end_time;    /* job's end time */
+	char *job_licenses;	/* job's licenses */
+	time_t job_start_time;  /* job's start time */
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	char *watch_dog;        /*submit job's watch dog */
 #endif
@@ -132,7 +136,6 @@ int	setup_env(env_t *env, bool preserve_env);
  *	SLURM_JOB_NUM_NODES
  *	SLURM_JOB_NODELIST
  *	SLURM_JOB_CPUS_PER_NODE
- *	LOADLBATCH (AIX only)
  *
  * Sets OBSOLETE variables:
  *	? probably only needed for users...
@@ -155,7 +158,6 @@ extern int env_array_for_job(char ***dest,
  *	SLURM_JOB_CPUS_PER_NODE
  *	ENVIRONMENT=BATCH
  *	HOSTNAME
- *	LOADLBATCH (AIX only)
  *
  * Sets OBSOLETE variables:
  *	SLURM_JOBID
@@ -223,11 +225,21 @@ void env_unset_environment(void);
 void env_array_merge(char ***dest_array, const char **src_array);
 
 /*
- * Merge the environment variables in src_array beginning with "SLURM" into the
- * array dest_array.  Any variables already found in dest_array will be
- * overwritten with the value from src_array.
+ * Merge the environment variables in src_array beginning with "SLURM" or
+ * SPANK_OPTION_ENV_PREFIX into the array dest_array.  Any variables already
+ * found in dest_array will be overwritten with the value from src_array.
  */
-void env_array_merge_slurm(char ***dest_array, const char **src_array);
+void env_array_merge_slurm_spank(char ***dest_array, const char **src_array);
+
+/*
+ * Remove environment variables in env_ptr matching regex.
+ *
+ * IN env_ptr - source env array to remove matching variables
+ * IN regex - regex to select variables to remove
+ * RET new array with regex matching items removed.
+ * 	Caller must env_array_free();
+ */
+extern char **env_array_exclude(const char **env_ptr, const regex_t *regex);
 
 /*
  * Copy env_array must be freed by env_array_free
@@ -316,8 +328,11 @@ char **env_array_from_file(const char *filename);
 
 /*
  * Write environment to specified file name.
+ * IN newline - if true, write 1 env variable terminated with \n
+ * 	if false, write 1 env variable terminated with \0
  */
-int env_array_to_file(const char *filename, const char **env_array);
+int env_array_to_file(const char *filename, const char **env_array,
+		      bool newline);
 
 /*
  * Return an array of strings representing the specified user's default
@@ -396,5 +411,12 @@ extern char *find_quote_token(char *tmp, char *sep, char **last);
  * environment as well.
  */
 extern void env_merge_filter(slurm_opt_t *opt, job_desc_msg_t *desc);
+
+/*
+ * Set the internal SLURM_PRIO_PROCESS environment variable to support
+ * the propagation of the users nice value and the "PropagatePrioProcess"
+ * config keyword.
+ */
+extern void set_prio_process_env(void);
 
 #endif

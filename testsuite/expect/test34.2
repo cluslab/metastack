@@ -3,8 +3,7 @@
 # Purpose: Test of Slurm functionality
 #          Validate that preemption by qos is enforced
 ############################################################################
-# Copyright (C) 2011-2014 SchedMD LLC
-# Written by Nathan Yee <nyee32@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -262,4 +261,12 @@ foreach preempt_mode $preempt_mode_list {
 
 		wait_for_account_done $acct_1,$acct_2
 	}
+}
+
+set max_test 3
+set test 0
+while {($test < $max_test) &&
+	![wait_for_node -timeout 1 planned 1]} {
+	incr test
+	$bin_sleep 10
 }

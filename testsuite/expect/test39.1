@@ -3,8 +3,7 @@
 # Purpose: Test of Slurm functionality
 #          Test full set of sbatch --gpu options and scontrol show job.
 ############################################################################
-# Copyright (C) 2018 SchedMD LLC
-# Written by Morris Jette
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -96,15 +95,15 @@ set job_id [submit_job -fail "--output=/dev/null --cpus-per-gpu=$cpus_per_gpu --
 set match 0
 spawn $scontrol show job $job_id
 expect {
-	-re "CpusPerTres=gres:gpu:$cpus_per_gpu" {
+	-re "CpusPerTres=gres/gpu:$cpus_per_gpu" {
 		incr match
 		exp_continue
 	}
-	-re "MemPerTres=gres:gpu:$mem_per_gpu" {
+	-re "MemPerTres=gres/gpu:$mem_per_gpu" {
 		incr match
 		exp_continue
 	}
-	-re "TresBind=gpu:$gpu_bind" {
+	-re "TresBind=gres/gpu:$gpu_bind" {
 		incr match
 		exp_continue
 	}
@@ -112,15 +111,15 @@ expect {
 		incr match
 		exp_continue
 	}
-	-re "TresPerJob=gres:gpu:$tot_gpus" {
+	-re "TresPerJob=gres/gpu:$tot_gpus" {
 		incr match
 		exp_continue
 	}
-	-re "TresPerNode=gres:gpu:$gpus_per_node" {
+	-re "TresPerNode=gres/gpu:$gpus_per_node" {
 		incr match
 		exp_continue
 	}
-	-re "TresPerTask=gres:gpu:$gpus_per_task" {
+	-re "TresPerTask=gres/gpu=$gpus_per_task" {
 		incr match
 		exp_continue
 	}
@@ -146,7 +145,7 @@ set job_id [submit_job -fail "--output=/dev/null --cpus-per-gpu=$cpus_per_gpu --
 set match 0
 spawn $scontrol show job $job_id
 expect {
-	-re "TresPerSocket=gres:gpu:$gpus_per_socket" {
+	-re "TresPerSocket=gres/gpu:$gpus_per_socket" {
 		incr match
 		exp_continue
 	}

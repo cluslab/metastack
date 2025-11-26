@@ -43,12 +43,28 @@
 #include "slurm/slurm_errno.h"
 
 #include "src/common/list.h"
+#include "src/common/job_features.h"
 #include "src/common/node_conf.h"
 #include "src/common/read_config.h"
 #include "src/common/run_command.h"
 #include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+
+#include "src/slurmd/slurmd/slurmd.h"
+
+#define FEATURE_FLAG_NO_REBOOT SLURM_BIT(0)
+
+/*
+ * These are defined here so when we link with something other than
+ * the slurmctld we will have these symbols defined.  They will get
+ * overwritten when linking with the slurmctld.
+ */
+#if defined (__APPLE__)
+extern slurmd_conf_t *conf __attribute__((weak_import));
+#else
+slurmd_conf_t *conf = NULL;
+#endif
 
 const char plugin_name[] = "node_features helpers plugin";
 const char plugin_type[] = "node_features/helpers";
@@ -60,12 +76,29 @@ static List helper_features = NULL;
 static List helper_exclusives = NULL;
 static uint32_t boot_time = (5 * 60);
 static uint32_t exec_time = 10;
-static uint32_t node_reboot_weight = (INFINITE - 1);
+
+typedef struct {
+	list_t *final_list;
+	bitstr_t *job_node_bitmap;
+} build_valid_feature_set_args_t;
+
+typedef struct {
+	char *final_feature_str;
+	bitstr_t *job_node_bitmap;
+} valid_feature_args_t;
 
 typedef struct {
 	const char *name;
 	const char *helper;
+	uint64_t flags;
 } plugin_feature_t;
+
+static s_p_options_t feature_options[] = {
+	 {"Feature", S_P_STRING},
+	 {"Helper", S_P_STRING},
+	 {"Flags", S_P_STRING},
+	 {NULL},
+};
 
 static int _cmp_str(void *x, void *key)
 {
@@ -115,7 +148,7 @@ static void _make_uid_array(char *uid_str)
 	tok = strtok_r(tmp_str, ",", &save_ptr);
 	while (tok) {
 		if (uid_from_string(tok, &allowed_uid[allowed_uid_cnt++]) < 0)
-			error("helpers.conf: Invalid AllowUserBoot: %s", tok);
+			fatal("helpers.conf: Invalid AllowUserBoot: %s", tok);
 		tok = strtok_r(NULL, ",", &save_ptr);
 	}
 	xfree(tmp_str);
@@ -131,12 +164,14 @@ static int _list_make_str(void *x, void *y)
 	return 0;
 }
 
-static plugin_feature_t *_feature_create(const char *name, const char *helper)
+static plugin_feature_t *_feature_create(const char *name, const char *helper,
+					 uint64_t flags)
 {
 	plugin_feature_t *feature = xmalloc(sizeof(*feature));
 
 	feature->name = xstrdup(name);
 	feature->helper = xstrdup(helper);
+	feature->flags = flags;
 
 	return feature;
 }
@@ -207,22 +242,42 @@ cleanup:
 	return result;
 }
 
-static int _feature_register(const char *name, const char *helper)
+static char * _feature_flag2str(uint64_t flags) {
+	if (flags & FEATURE_FLAG_NO_REBOOT)
+		return "rebootless";
+	else if (!flags)
+		return "(none)";
+	else
+		return "unknown";
+}
+
+static int _feature_register(const char *name, const char *helper,
+			     uint64_t flags)
 {
 	const plugin_feature_t *existing;
 	plugin_feature_t *feature = NULL;
 
 	existing = list_find_first(helper_features, _cmp_features,
 				   (char *) name);
-	if (existing != NULL) {
-		error("feature \"%s\" previously registered with helper \"%s\"",
-		      name, existing->helper);
-		return SLURM_ERROR;
+	if (existing) {
+		if (running_in_slurmctld()) {
+			/* The controller just needs the feature names */
+			return SLURM_SUCCESS;
+		} else if (xstrcmp(existing->helper, helper)) {
+			error("feature \"%s\" previously registered with different helper \"%s\"",
+			      name, existing->helper);
+			return SLURM_ERROR;
+		} else {
+			debug("feature \"%s\" previously registered same helper \"%s\"",
+			      name, existing->helper);
+			return SLURM_SUCCESS;
+		}
 	}
 
-	feature = _feature_create(name, helper);
+	feature = _feature_create(name, helper, flags);
 
-	info("Adding new feature \"%s\"", feature->name);
+	info("Adding new feature \"%s\" Flags=%s",
+	     feature->name, _feature_flag2str(feature->flags));
 	list_append(helper_features, feature);
 
 	return SLURM_SUCCESS;
@@ -252,38 +307,81 @@ static int _exclusive_register(const char *listp)
 	return SLURM_SUCCESS;
 }
 
-static int parse_feature(void **data, slurm_parser_enum_t type,
-			 const char *key, const char *name,
-			 const char *line, char **leftover)
+static int _parse_feature(void **data, slurm_parser_enum_t type,
+			  const char *key, const char *name,
+			  const char *line, char **leftover)
 {
-	static s_p_options_t feature_options[] = {
-		 {"Helper", S_P_STRING},
-		 {NULL},
-	};
 	s_p_hashtbl_t *tbl = NULL;
+	char *tmp_flags = NULL;
 	char *path = NULL;
 	int rc = -1;
-
-	if (!_is_feature_valid(name)) {
-		slurm_seterrno(ESLURM_INVALID_FEATURE);
-		goto fail;
-	}
+	char *tmp_name;
+	char *tmp_str = NULL;
+	char *last = NULL;
+	char *tok = NULL;
+	uint64_t flags = 0;
 
 	tbl = s_p_hashtbl_create(feature_options);
 	if (!s_p_parse_line(tbl, *leftover, leftover))
 		goto fail;
 
+	if (name) {
+		tmp_name = xstrdup(name);
+	} else if (!s_p_get_string(&tmp_name, "Feature", tbl)) {
+			error("Invalid FEATURE data, no type Feature (%s)", line);
+			goto fail;
+	}
+
 	s_p_get_string(&path, "Helper", tbl);
+	if (s_p_get_string(&tmp_flags, "Flags", tbl)) {
+		tmp_str = xstrdup(tmp_flags);
+		tok = strtok_r(tmp_str, ",", &last);
+		while (tok) {
+			if (!xstrcasecmp(tok, "rebootless"))
+				flags |= FEATURE_FLAG_NO_REBOOT;
+			else
+				error("helpers.conf: Ignoring invalid Flags=%s",
+				      tok);
+			tok = strtok_r(NULL, ",", &last);
+		}
+	}
 
 	/* In slurmctld context, we can have path == NULL */
-	*data = _feature_create(name, path);
+	*data = _feature_create(tmp_name, path, flags);
 	xfree(path);
+	xfree(tmp_str);
+	xfree(tmp_flags);
 
 	rc = 1;
 
 fail:
+	xfree(tmp_name);
 	s_p_hashtbl_destroy(tbl);
 	return rc;
+}
+
+static int _parse_feature_node(void **data, slurm_parser_enum_t type, const char *key,
+			       const char *name, const char *line, char **leftover)
+{
+	s_p_hashtbl_t *tbl = NULL;
+
+	if (!running_in_slurmctld() && conf->node_name && name) {
+		bool match = false;
+		hostlist_t *hl;
+		hl = hostlist_create(name);
+		if (hl) {
+			match = (hostlist_find(hl, conf->node_name) >= 0);
+			hostlist_destroy(hl);
+		}
+		if (!match) {
+			debug("skipping Feature for NodeName=%s %s", name, line);
+			tbl = s_p_hashtbl_create(feature_options);
+			s_p_parse_line(tbl, *leftover, leftover);
+			s_p_hashtbl_destroy(tbl);
+			return 0;
+		}
+	}
+	return _parse_feature(data, type, key, NULL, line, leftover);
 }
 
 static int _parse_exclusives(void **data, slurm_parser_enum_t type,
@@ -296,14 +394,45 @@ static int _parse_exclusives(void **data, slurm_parser_enum_t type,
 }
 
 static s_p_options_t conf_options[] = {
-	{"Feature", S_P_ARRAY, parse_feature, (ListDelF) _feature_destroy},
+	{"AllowUserBoot", S_P_STRING},
 	{"BootTime", S_P_UINT32},
 	{"ExecTime", S_P_UINT32},
+	{"Feature", S_P_ARRAY, _parse_feature, (ListDelF) _feature_destroy},
 	{"MutuallyExclusive", S_P_ARRAY, _parse_exclusives, xfree_ptr},
-	{"NodeRebootWeight", S_P_UINT32},
-	{"AllowUserBoot", S_P_STRING},
+	{"NodeName", S_P_ARRAY, _parse_feature_node,
+		(ListDelF) _feature_destroy},
 	{NULL},
 };
+
+static int _handle_config_features(plugin_feature_t **features, int count)
+{
+	for (int i = 0; i < count; ++i) {
+		const plugin_feature_t *feature = features[i];
+		char *tmp_name = NULL, *tok = NULL, *saveptr = NULL;
+
+		tmp_name = xstrdup(feature->name);
+		for (tok = strtok_r(tmp_name, ",", &saveptr); tok;
+		     tok = strtok_r(NULL, ",", &saveptr)) {
+
+			if (!_is_feature_valid(tok)) {
+				slurm_seterrno(ESLURM_INVALID_FEATURE);
+				xfree(tmp_name);
+				return SLURM_ERROR;
+			}
+
+			/* In slurmctld context, we can have path == NULL */
+			if (_feature_register(tok, feature->helper,
+					      feature->flags)) {
+				xfree(tmp_name);
+				return SLURM_ERROR;
+			}
+		}
+
+		xfree(tmp_name);
+	}
+
+	return SLURM_SUCCESS;
+}
 
 static int _read_config_file(void)
 {
@@ -327,27 +456,23 @@ static int _read_config_file(void)
 	tbl = s_p_hashtbl_create(conf_options);
 
 	confpath = get_extra_conf_path("helpers.conf");
-	if (s_p_parse_file(tbl, NULL, confpath, false, NULL) == SLURM_ERROR) {
+	if (s_p_parse_file(tbl, NULL, confpath, 0, NULL) == SLURM_ERROR) {
 		error("could not parse configuration file: %s", confpath);
 		goto fail;
 	}
 	xfree(confpath);
 
-	if (!s_p_get_array(&features, &count, "Feature", tbl)) {
-		error("no \"Feature\" entry in configuration file %s",
-		      confpath);
+	if (s_p_get_array(&features, &count, "Feature", tbl) &&
+	    _handle_config_features((plugin_feature_t **)features, count))
 		goto fail;
-	}
+
+	if (s_p_get_array(&features, &count, "NodeName", tbl) &&
+	    _handle_config_features((plugin_feature_t **)features, count))
+		goto fail;
 
 	if (s_p_get_string(&tmp_str, "AllowUserBoot", tbl)) {
 		_make_uid_array(tmp_str);
 		xfree(tmp_str);
-	}
-
-	for (int i = 0; i < count; ++i) {
-		const plugin_feature_t *feature = features[i];
-		if (_feature_register(feature->name, feature->helper))
-			goto fail;
 	}
 
 	if (s_p_get_array(&exclusives, &count, "MutuallyExclusive", tbl) != 0) {
@@ -365,16 +490,124 @@ static int _read_config_file(void)
 		info("ExecTime not specified, using default value: %u",
 		     exec_time);
 
-	if (!s_p_get_uint32(&node_reboot_weight, "NodeRebootWeight", tbl))
-		info("NodeRebootWeight not specified, using default value: %u",
-		     node_reboot_weight);
-
 	rc = SLURM_SUCCESS;
 
 fail:
 	s_p_hashtbl_destroy(tbl);
 
 	return rc;
+}
+
+static int _build_valid_feature_set(void *x, void *arg)
+{
+	job_feature_t *job_feat_ptr = x;
+	build_valid_feature_set_args_t *args = arg;
+
+	if (bit_super_set(args->job_node_bitmap,
+			  job_feat_ptr->node_bitmap_avail)) {
+		/* Valid - only include changeable features */
+		if (!job_feat_ptr->changeable)
+			return 0;
+
+		/* The list should be unique already */
+		list_append(args->final_list, xstrdup(job_feat_ptr->name));
+	} else {
+		/* Invalid */
+		log_flag(NODE_FEATURES, "Feature %s is invalid",
+			 job_feat_ptr->name);
+		return -1; /* Exit list_for_each */
+	}
+
+	return 0;
+}
+
+static int _reconcile_job_features(void *x, void *arg)
+{
+	int rc = 0;
+	list_t *final_list = NULL;
+	list_t *features_list = x;
+	valid_feature_args_t *valid_arg = arg;
+	build_valid_feature_set_args_t build_arg = {
+		.job_node_bitmap = valid_arg->job_node_bitmap,
+	};
+
+	final_list = list_create(xfree_ptr);
+	build_arg.final_list = final_list;
+
+	if (slurm_conf.debug_flags & DEBUG_FLAG_NODE_FEATURES) {
+		char *list_str = NULL;
+		char *nodes_str = bitmap2node_name(valid_arg->job_node_bitmap);
+
+		job_features_set2str(features_list, &list_str);
+		log_flag(NODE_FEATURES, "Check if the features %s are valid on nodes %s",
+			 list_str, nodes_str);
+		xfree(list_str);
+		xfree(nodes_str);
+	}
+	if (list_for_each(features_list, _build_valid_feature_set,
+			  &build_arg) < 0) {
+		rc = 0; /* Continue to next list */
+	} else {
+		list_for_each(final_list, _list_make_str,
+			      &valid_arg->final_feature_str);
+		rc = -1; /* Got a valid feature list; stop iterating */
+	}
+
+	FREE_NULL_LIST(final_list);
+	return rc;
+}
+
+static char *_xlate_job_features(char *job_features,
+				 list_t *job_feature_list,
+				 bitstr_t *job_node_bitmap)
+{
+	list_t *feature_sets;
+	valid_feature_args_t valid_arg = {
+		.final_feature_str = NULL,
+		.job_node_bitmap = job_node_bitmap
+	};
+
+	if (slurm_conf.debug_flags & DEBUG_FLAG_NODE_FEATURES) {
+		char *tmp_str = bitmap2node_name(job_node_bitmap);
+		log_flag(NODE_FEATURES, "Find a valid feature combination for %s on nodes %s",
+			 job_features, tmp_str);
+		xfree(tmp_str);
+	}
+
+	feature_sets = job_features_list2feature_sets(job_features,
+						      job_feature_list,
+						      true);
+
+	/*
+	 * Find the first feature set that works for this job and turn it into a
+	 * comma-separated list of char* of only the changeable features.
+	 */
+	if (list_for_each(feature_sets, _reconcile_job_features,
+			  &valid_arg) < 0) {
+		/*
+		 * Found a valid feature set. It is possible for this string to
+		 * be NULL if the chosen feature set contained only static
+		 * features.
+		 */
+		log_flag(NODE_FEATURES, "final_feature_str=%s",
+			 valid_arg.final_feature_str);
+	} else {
+		char *job_nodes = bitmap2node_name(job_node_bitmap);
+
+		/*
+		 * Here the list_for_each iterated through all features sets and
+		 * did not find a valid feature set. This should not happen
+		 * and means there is a mismatch in handling features in this
+		 * plugin and in the scheduler.
+		 */
+		error("Failed to translate feature request '%s' into features that match with the job's nodes '%s'",
+		      job_features, job_nodes);
+		xfree(job_nodes);
+	}
+
+	FREE_NULL_LIST(feature_sets);
+
+	return valid_arg.final_feature_str;
 }
 
 extern int init(void)
@@ -466,26 +699,55 @@ static int _foreach_feature(void *x, void *y)
 	return 0;
 }
 
-extern int node_features_p_job_valid(char *job_features)
+static int _has_exclusive_features(void *x, void *arg)
 {
+	List feature_list = x;
+	char *str = NULL;
+	int rc = 0;
+
+	job_features_set2str(feature_list, &str);
+	log_flag(NODE_FEATURES, "Testing if feature list %s has exclusive features",
+		 str);
+
+	if (list_count(feature_list) > 1)
+		rc = list_for_each(helper_exclusives, _count_exclusivity, str);
+	xfree(str);
+
+	return rc;
+}
+
+extern int node_features_p_job_valid(char *job_features, list_t *feature_list)
+{
+	List feature_sets;
+	int rc;
+
 	if (!job_features)
 		return SLURM_SUCCESS;
 
+	if (list_for_each(helper_features, _foreach_feature,
+			  job_features) >= 0) {
+		/* No helpers features requested */
+		return SLURM_SUCCESS;
+	}
+
 	/* Check the mutually exclusive lists */
-	if (list_for_each(helper_exclusives, _count_exclusivity,
-			  job_features) < 0) {
+	feature_sets = job_features_list2feature_sets(job_features,
+						      feature_list, true);
+	rc = list_for_each(feature_sets, _has_exclusive_features, NULL);
+	FREE_NULL_LIST(feature_sets);
+	if (rc < 0) {
 		error("job requests mutually exclusive features");
 		return ESLURM_INVALID_FEATURE;
 	}
 
 	/* Check for unsupported constraint operators in constraint expression */
-	if (!strpbrk(job_features, "[]()|*"))
+	if (!strpbrk(job_features, "[]*"))
 		return SLURM_SUCCESS;
 
 	/* If an unsupported operator was used, the constraint is valid only if
 	 * the expression doesn't contain a feature handled by this plugin. */
 	if (list_for_each(helper_features, _foreach_feature, job_features) < 0) {
-		error("operator(s) \"[]()|*\" not allowed in constraint \"%s\" when using changeable features",
+		error("operator(s) \"[]*\" not allowed in constraint \"%s\" when using changeable features",
 		      job_features);
 		return ESLURM_INVALID_FEATURE;
 	}
@@ -493,11 +755,12 @@ extern int node_features_p_job_valid(char *job_features)
 	return SLURM_SUCCESS;
 }
 
-extern int node_features_p_node_set(char *active_features)
+extern int node_features_p_node_set(char *active_features, bool *need_reboot)
 {
 	char *tmp = NULL, *saveptr = NULL;
 	char *input = NULL;
 	const plugin_feature_t *feature = NULL;
+	bool reboot = false;
 	int rc = SLURM_ERROR;
 
 	input = xstrdup(active_features);
@@ -509,15 +772,21 @@ extern int node_features_p_node_set(char *active_features)
 			continue;
 		}
 
-		if (_feature_set_state(feature) != SLURM_SUCCESS)
-			goto fail;
+		if (!(feature->flags & FEATURE_FLAG_NO_REBOOT))
+			reboot = true;
+
+		if (_feature_set_state(feature) != SLURM_SUCCESS) {
+			active_features[0] = '\0';
+			goto fini;
+		}
 	}
+
+	*need_reboot = reboot;
 
 	rc = SLURM_SUCCESS;
 
-fail:
+fini:
 	xfree(input);
-	active_features[0] = '\0';
 	return rc;
 }
 
@@ -567,7 +836,7 @@ static int _foreach_helper_get_modes(void *x, void *y)
 	/* filter out duplicates */
 	list_for_each(current, _foreach_check_duplicates, all_current);
 
-	list_destroy(current);
+	FREE_NULL_LIST(current);
 
 	return 0;
 }
@@ -601,8 +870,8 @@ extern void node_features_p_node_state(char **avail_modes, char **current_mode)
 
 	list_for_each(filtered_modes, _list_make_str, current_mode);
 
-	list_destroy(all_current);
-	list_destroy(filtered_modes);
+	FREE_NULL_LIST(all_current);
+	FREE_NULL_LIST(filtered_modes);
 
 	log_flag(NODE_FEATURES, "new: avail=%s current=%s",
 		 *avail_modes, *current_mode);
@@ -653,35 +922,26 @@ extern char *node_features_p_node_xlate(char *new_features, char *orig_features,
 
 	list_for_each(features, _list_make_str, &merged);
 
-	list_destroy(features);
+	FREE_NULL_LIST(features);
 	log_flag(NODE_FEATURES, "merged features: %s", merged);
 
 	return merged;
 }
 
-extern char *node_features_p_job_xlate(char *job_features)
+extern char *node_features_p_job_xlate(char *job_features,
+				       list_t *feature_list,
+				       bitstr_t *job_node_bitmap)
 {
-	char *node_features = NULL;
-
 	if (!job_features)
 		return NULL;
 
-	if (strpbrk(job_features, "[]()|*") != NULL) {
+	if (strpbrk(job_features, "[]*")) {
 		info("an unsupported constraint operator was used in \"%s\", clearing job constraint",
 		     job_features);
 		return NULL;
 	}
 
-	/*
-	 * The only special character allowed in this plugin is the
-	 * ampersand '&' character. Substitute all '&' for commas.
-	 * If we allow other special characters then more parsing may be
-	 * needed, similar to the knl_cray or knl_generic node_features plugins.
-	 */
-	node_features = xstrdup(job_features);
-	xstrsubstituteall(node_features, "&", ",");
-
-	return node_features;
+	return _xlate_job_features(job_features, feature_list, job_node_bitmap);
 }
 
 /* Return true if the plugin requires PowerSave mode for booting nodes */
@@ -733,12 +993,8 @@ static int _make_features_config(void *x, void *y)
 {
 	plugin_feature_t *feature = (plugin_feature_t *)x;
 	List data = (List)y;
-	config_key_pair_t *key_pair;
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("Feature");
-	key_pair->value = _make_helper_str(feature);
-	list_append(data, key_pair);
+	add_key_pair_own(data, "Feature", _make_helper_str(feature));
 
 	return 0;
 }
@@ -747,12 +1003,9 @@ static int _make_exclusive_config(void *x, void *y)
 {
 	List exclusive = (List) x;
 	List data = (List) y;
-	config_key_pair_t *key_pair;
 
-	key_pair = xmalloc(sizeof(*key_pair));
-	key_pair->name = xstrdup("MutuallyExclusive");
-	key_pair->value = _make_exclusive_str(exclusive);
-	list_append(data, key_pair);
+	add_key_pair_own(data, "MutuallyExclusive",
+			 _make_exclusive_str(exclusive));
 
 	return 0;
 }
@@ -760,7 +1013,6 @@ static int _make_exclusive_config(void *x, void *y)
 /* Get node features plugin configuration */
 extern void node_features_p_get_config(config_plugin_params_t *p)
 {
-	config_key_pair_t *key_pair;
 	List data;
 
 	xassert(p);
@@ -771,25 +1023,12 @@ extern void node_features_p_get_config(config_plugin_params_t *p)
 
 	list_for_each(helper_exclusives, _make_exclusive_config, data);
 
-	key_pair = xmalloc(sizeof(*key_pair));
-	key_pair->name = xstrdup("AllowUserBoot");
-	key_pair->value = _make_uid_str(allowed_uid, allowed_uid_cnt);
-	list_append(data, key_pair);
+	add_key_pair_own(data, "AllowUserBoot",
+			 _make_uid_str(allowed_uid, allowed_uid_cnt));
 
-	key_pair = xmalloc(sizeof(*key_pair));
-	key_pair->name = xstrdup("NodeRebootWeight");
-	key_pair->value = xstrdup_printf("%u", node_reboot_weight);
-	list_append(data, key_pair);
+	add_key_pair(data, "BootTime", "%u", boot_time);
 
-	key_pair = xmalloc(sizeof(*key_pair));
-	key_pair->name = xstrdup("BootTime");
-	key_pair->value = xstrdup_printf("%u", boot_time);
-	list_append(data, key_pair);
-
-	key_pair = xmalloc(sizeof(*key_pair));
-	key_pair->name = xstrdup("ExecTime");
-	key_pair->value = xstrdup_printf("%u", exec_time);
-	list_append(data, key_pair);
+	add_key_pair(data, "ExecTime", "%u", exec_time);
 }
 
 extern bitstr_t *node_features_p_get_node_bitmap(void)
@@ -807,16 +1046,6 @@ extern uint32_t node_features_p_boot_time(void)
 	return boot_time;
 }
 
-extern uint32_t node_features_p_reboot_weight(void)
-{
-	return node_reboot_weight;
-}
-
-extern int node_features_p_reconfig(void)
-{
-	return _read_config_file();
-}
-
 extern bool node_features_p_user_update(uid_t uid)
 {
 	/* Default is ALL users allowed to update */
@@ -827,6 +1056,8 @@ extern bool node_features_p_user_update(uid_t uid)
 		if (allowed_uid[i] == uid)
 			return true;
 	}
+	log_flag(NODE_FEATURES, "UID %u is not allowed to update node features",
+		 uid);
 
 	return false;
 }

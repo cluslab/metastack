@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  sort.c - sprio sorting functions
  *****************************************************************************
- *  Copyright (C) 2018 SchedMD LLC
- *  Written by Broderick Gardner <broderick@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -55,6 +54,8 @@ static bool sort_descend;
 static int _sort_by_cluster_name(void *v1, void *v2);
 static int _sort_by_job_id(void *v1, void *v2);
 static int _sort_by_nice_level(void *v1, void *v2);
+static int _sort_by_qos_name(void *v1, void *v2);
+static int _sort_by_account(void *v1, void *v2);
 static int _sort_by_partition(void *v1, void *v2);
 static int _sort_by_username(void *v1, void *v2);
 static int _sort_by_age_prio(void *v1, void *v2);
@@ -66,7 +67,7 @@ static int _sort_by_job_prio(void *v1, void *v2);
 static int _sort_by_tres_prio(void *v1, void *v2);
 
 
-extern void sort_job_list(List job_list)
+extern void sort_job_list(list_t *job_list)
 {
 	int i;
 	char c;
@@ -99,6 +100,12 @@ extern void sort_job_list(List job_list)
 			break;
 		case 'N': /* sort by nice level ??? */
 			list_sort(job_list, _sort_by_nice_level);
+			break;
+		case 'n': /* sort by QOS name */
+			list_sort(job_list, _sort_by_qos_name);
+			break;
+		case 'o': /* sort by account name */
+			list_sort(job_list, _sort_by_account);
 			break;
 		case 'r': /* sort by partition name */
 			list_sort(job_list, _sort_by_partition);
@@ -186,14 +193,39 @@ static int _sort_by_job_id(void *v1, void *v2)
 	return COND_NEGATE(sort_descend, cmp);
 }
 
-static int _sort_by_nice_level(void *v1, void *v2)
+static int _sort_by_qos_name(void *v1, void *v2)
 {
 	int cmp;
 	priority_factors_object_t *job1, *job2;
 
 	_get_job_prio_from_void(&job1, &job2, v1, v2);
 
-	cmp = CMP_INT(job1->nice, job2->nice);
+	cmp = xstrcmp(job1->qos, job2->qos);
+	return COND_NEGATE(sort_descend, cmp);
+}
+
+static int _sort_by_nice_level(void *v1, void *v2)
+{
+	int cmp;
+	priority_factors_object_t *job1, *job2;
+	int val1, val2;
+	_get_job_prio_from_void(&job1, &job2, v1, v2);
+
+	val1 = job1->prio_factors ? job1->prio_factors->nice : 0;
+	val2 = job1->prio_factors ? job2->prio_factors->nice : 0;
+
+	cmp = CMP_INT(val1, val2);
+	return COND_NEGATE(sort_descend, cmp);
+}
+
+static int _sort_by_account(void *v1, void *v2)
+{
+	int cmp;
+	priority_factors_object_t *job1, *job2;
+
+	_get_job_prio_from_void(&job1, &job2, v1, v2);
+
+	cmp = xstrcmp(job1->account, job2->account);
 	return COND_NEGATE(sort_descend, cmp);
 }
 
@@ -226,10 +258,14 @@ static int _sort_by_age_prio(void *v1, void *v2)
 {
 	int cmp;
 	priority_factors_object_t *job1, *job2;
+	double val1, val2;
 
 	_get_job_prio_from_void(&job1, &job2, v1, v2);
 
-	cmp = _compare_double(job1->priority_age, job2->priority_age);
+	val1 = job1->prio_factors ? job1->prio_factors->priority_age : 0;
+	val2 = job1->prio_factors ? job2->prio_factors->priority_age : 0;
+
+	cmp = _compare_double(val1, val2);
 	return COND_NEGATE(sort_descend, cmp);
 }
 
@@ -237,10 +273,14 @@ static int _sort_by_fairshare_prio(void *v1, void *v2)
 {
 	int cmp;
 	priority_factors_object_t *job1, *job2;
+	double val1, val2;
 
 	_get_job_prio_from_void(&job1, &job2, v1, v2);
 
-	cmp = _compare_double(job1->priority_fs, job2->priority_fs);
+	val1 = job1->prio_factors ? job1->prio_factors->priority_fs : 0;
+	val2 = job1->prio_factors ? job2->prio_factors->priority_fs : 0;
+
+	cmp = _compare_double(val1, val2);
 	return COND_NEGATE(sort_descend, cmp);
 }
 
@@ -249,10 +289,14 @@ static int _sort_by_jobsize_prio(void *v1, void *v2)
 {
 	int cmp;
 	priority_factors_object_t *job1, *job2;
+	double val1, val2;
 
 	_get_job_prio_from_void(&job1, &job2, v1, v2);
 
-	cmp = _compare_double(job1->priority_js, job2->priority_js);
+	val1 = job1->prio_factors ? job1->prio_factors->priority_js : 0;
+	val2 = job1->prio_factors ? job2->prio_factors->priority_js : 0;
+
+	cmp = _compare_double(val1, val2);
 	return COND_NEGATE(sort_descend, cmp);
 }
 
@@ -260,10 +304,14 @@ static int _sort_by_partition_prio(void *v1, void *v2)
 {
 	int cmp;
 	priority_factors_object_t *job1, *job2;
+	double val1, val2;
 
 	_get_job_prio_from_void(&job1, &job2, v1, v2);
 
-	cmp = _compare_double(job1->priority_part, job2->priority_part);
+	val1 = job1->prio_factors ? job1->prio_factors->priority_part : 0;
+	val2 = job1->prio_factors ? job2->prio_factors->priority_part : 0;
+
+	cmp = _compare_double(val1, val2);
 	return COND_NEGATE(sort_descend, cmp);
 }
 
@@ -271,10 +319,14 @@ static int _sort_by_qos_prio(void *v1, void *v2)
 {
 	int cmp;
 	priority_factors_object_t *job1, *job2;
+	double val1, val2;
 
 	_get_job_prio_from_void(&job1, &job2, v1, v2);
 
-	cmp = _compare_double(job1->priority_qos, job2->priority_qos);
+	val1 = job1->prio_factors ? job1->prio_factors->priority_qos : 0;
+	val2 = job1->prio_factors ? job2->prio_factors->priority_qos : 0;
+
+	cmp = _compare_double(val1, val2);
 	return COND_NEGATE(sort_descend, cmp);
 }
 
@@ -283,16 +335,17 @@ static int _sort_by_tres_prio(void *v1, void *v2)
 	int cmp, i;
 	priority_factors_object_t *job1, *job2;
 	double job1_sum, job2_sum;
+	int val1, val2;
 
 	_get_job_prio_from_void(&job1, &job2, v1, v2);
 
-	/* is this ever not true? */
-	xassert(job1->tres_cnt == job2->tres_cnt);
+	val1 = job1->prio_factors ? job1->prio_factors->tres_cnt : 0;
+	val2 = job1->prio_factors ? job2->prio_factors->tres_cnt : 0;
 
-	for (i = 0, job1_sum = 0; i < job1->tres_cnt; i++)
-		job1_sum += job1->priority_tres[i];
-	for (i = 0, job2_sum = 0; i < job2->tres_cnt; i++)
-		job2_sum += job2->priority_tres[i];
+	for (i = 0, job1_sum = 0; i < val1; i++)
+		job1_sum += job1->prio_factors->priority_tres[i];
+	for (i = 0, job2_sum = 0; i < val2; i++)
+		job2_sum += job2->prio_factors->priority_tres[i];
 
 	cmp = _compare_double(job1_sum, job2_sum);
 	return COND_NEGATE(sort_descend, cmp);

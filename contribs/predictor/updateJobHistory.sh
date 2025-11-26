@@ -120,7 +120,7 @@ if [ -f "$predictor_path/jobHistory_$current_date" ]; then
 	# 删除旧的jobHistory
 	find $predictor_path/ -maxdepth 1 -type f -name 'jobHistory_*' ! -name "jobHistory_$current_date" -exec rm -f {} +
 else
-	echo "$(date '+%Y-%m-%d %H:%M:%S') Warning : File jobHistory_$current_date does not exist, symbolic link not created." >> $log
+	echo "$(date '+%Y-%m-%d %H:%M:%S') Warning : File jobHistory_$current_date does not exist, symbolic link not created." 2>&1 | tee -a "$predictor_path/update.log"
 fi
 
 

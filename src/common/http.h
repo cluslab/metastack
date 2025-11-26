@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  http.h - handling HTTP
  *****************************************************************************
- *  Copyright (C) 2019-2021 SchedMD LLC.
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -37,6 +36,7 @@
 #ifndef SLURM_HTTP_H
 #define SLURM_HTTP_H
 
+#include "slurm/slurm.h"
 #include "src/common/data.h"
 
 /*
@@ -83,6 +83,8 @@ typedef enum {
 	HTTP_STATUS_CODE_ERROR_REQUEST_RANGE_UNSATISFIABLE = 416,
 	HTTP_STATUS_CODE_ERROR_EXPECTATION_FAILED = 417,
 	HTTP_STATUS_CODE_ERROR_IM_A_TEAPOT = 418,
+	HTTP_STATUS_CODE_ERROR_MISDIRECT_REQUESTED = 421,
+	HTTP_STATUS_CODE_ERROR_UNPROCESSABLE_CONTENT = 422,
 	HTTP_STATUS_CODE_ERROR_UPGRADE_REQUIRED = 426,
 	/* 5xx (Server Error) */
 	HTTP_STATUS_CODE_SRVERR_INTERNAL = 500,
@@ -91,6 +93,8 @@ typedef enum {
 	HTTP_STATUS_CODE_SRVERR_SERVICE_UNAVAILABLE = 503,
 	HTTP_STATUS_CODE_SRVERR_GATEWAY_TIMEOUT = 504,
 	HTTP_STATUS_CODE_SRVERR_HTTP_VERSION_NOT_SUPPORTED = 505,
+	/* place holder for default status code */
+	HTTP_STATUS_CODE_DEFAULT = INFINITE,
 } http_status_code_t;
 /*
  * Convert status code to string of status code
@@ -98,6 +102,12 @@ typedef enum {
  * RET string of status code or NULL on error
  */
 extern const char *get_http_status_code_string(http_status_code_t code);
+/*
+ * Convert string to status code
+ * IN str - string to parse
+ * RET status code or HTTP_STATUS_NONE on error
+ */
+extern http_status_code_t get_http_status_code(const char *str);
 
 /*
  * Supported HTTP request Methods.
@@ -123,6 +133,9 @@ typedef enum {
  */
 extern http_request_method_t get_http_method(const char *str);
 extern const char *get_http_method_string(const http_request_method_t method);
+/* Get lower case method string */
+extern const char *get_http_method_string_lc(
+	const http_request_method_t method);
 
 /*
  * Parses url path into a data struct.

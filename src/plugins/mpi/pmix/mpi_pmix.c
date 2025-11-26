@@ -96,6 +96,10 @@ const uint32_t plugin_id = MPI_PLUGIN_PMIX5;
 
 const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
+static pthread_mutex_t setup_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t setup_cond  = PTHREAD_COND_INITIALIZER;
+static bool setup_done = false;
+
 void *libpmix_plug = NULL;
 
 char *process_mapping = NULL;
@@ -128,16 +132,14 @@ static void *_libpmix_open(void)
 	void *lib_plug = NULL;
 	char *full_path = NULL;
 
-#ifdef PMIXP_V1_LIBPATH
-	xstrfmtcat(full_path, "%s/", PMIXP_V1_LIBPATH);
-#elif defined PMIXP_V2_LIBPATH
-	xstrfmtcat(full_path, "%s/", PMIXP_V2_LIBPATH);
-#elif defined PMIXP_V3_LIBPATH
-	xstrfmtcat(full_path, "%s/", PMIXP_V3_LIBPATH);
-#elif defined PMIXP_V4_LIBPATH
-	xstrfmtcat(full_path, "%s/", PMIXP_V4_LIBPATH);
+	/*
+	 * x_ac_pmix.m4 determines if we should use full path or relative path
+	 * Note that this implies no fall-through to relative libraries
+	 */
+#ifdef PMIXP_LIBPATH
+	xstrfmtcat(full_path, "%s/", PMIXP_LIBPATH);
 #endif
-	xstrfmtcat(full_path, "libpmix.so");
+	xstrfmtcat(full_path, "libpmix.so.2");
 
 	lib_plug = dlopen(full_path, RTLD_LAZY | RTLD_GLOBAL);
 	xfree(full_path);
@@ -211,16 +213,16 @@ extern int fini(void)
 	return SLURM_SUCCESS;
 }
 
-extern int mpi_p_slurmstepd_prefork(const stepd_step_rec_t *job, char ***env)
+extern int mpi_p_slurmstepd_prefork(const stepd_step_rec_t *step, char ***env)
 {
 	int ret;
 	pmixp_debug_hang(0);
 	PMIXP_DEBUG("start");
 
-	if (job->batch)
+	if (step->batch)
 		return SLURM_SUCCESS;
 
-	if (SLURM_SUCCESS != (ret = pmixp_stepd_init(job, env))) {
+	if (SLURM_SUCCESS != (ret = pmixp_stepd_init(step, env))) {
 		PMIXP_ERROR("pmixp_stepd_init() failed");
 		goto err_ext;
 	}
@@ -235,19 +237,21 @@ err_ext:
 #ifdef __METASTACK_OPT_PMIX_AGENT
 	slurm_send_kill_job_step_message();
 #else
-	slurm_kill_job_step(job->step_id.job_id, job->step_id.step_id, SIGKILL);
-#endif	
+	slurm_kill_job_step(step->step_id.job_id,
+			    step->step_id.step_id, SIGKILL, 0);
+#endif
 	return ret;
 }
 
-extern int mpi_p_slurmstepd_task(const mpi_plugin_task_info_t *job, char ***env)
+extern int mpi_p_slurmstepd_task(const mpi_task_info_t *mpi_task, char ***env)
 {
 	char **tmp_env = NULL;
 	pmixp_debug_hang(0);
 
-	PMIXP_DEBUG("Patch environment for task %d", job->gtaskid);
+	PMIXP_DEBUG("Patch environment for task %d", mpi_task->gtaskid);
 
-	pmixp_lib_setup_fork(job->gtaskid, pmixp_info_namespace(), &tmp_env);
+	pmixp_lib_setup_fork(
+		mpi_task->gtaskid, pmixp_info_namespace(), &tmp_env);
 	if (NULL != tmp_env) {
 		int i;
 		for (i = 0; NULL != tmp_env[i]; i++) {
@@ -268,11 +272,8 @@ extern int mpi_p_slurmstepd_task(const mpi_plugin_task_info_t *job, char ***env)
 }
 
 extern mpi_plugin_client_state_t *
-mpi_p_client_prelaunch(const mpi_plugin_client_info_t *job, char ***env)
+mpi_p_client_prelaunch(const mpi_step_info_t *mpi_step, char ***env)
 {
-	static pthread_mutex_t setup_mutex = PTHREAD_MUTEX_INITIALIZER;
-	static pthread_cond_t setup_cond  = PTHREAD_COND_INITIALIZER;
-	static bool setup_done = false;
 	uint32_t nnodes, ntasks, **tids;
 	uint16_t *task_cnt;
 	int ret;
@@ -283,11 +284,12 @@ mpi_p_client_prelaunch(const mpi_plugin_client_info_t *job, char ***env)
 	}
 
 	PMIXP_DEBUG("setup process mapping in srun");
-	if ((job->het_job_id == NO_VAL) || (job->het_job_task_offset == 0)) {
-		nnodes = job->step_layout->node_cnt;
-		ntasks = job->step_layout->task_cnt;
-		task_cnt = job->step_layout->tasks;
-		tids = job->step_layout->tids;
+	if ((mpi_step->het_job_id == NO_VAL) ||
+	    (mpi_step->het_job_task_offset == 0)) {
+		nnodes = mpi_step->step_layout->node_cnt;
+		ntasks = mpi_step->step_layout->task_cnt;
+		task_cnt = mpi_step->step_layout->tasks;
+		tids = mpi_step->step_layout->tids;
 		process_mapping = pack_process_mapping(nnodes, ntasks,
 						       task_cnt, tids);
 		slurm_mutex_lock(&setup_mutex);
@@ -313,7 +315,10 @@ mpi_p_client_prelaunch(const mpi_plugin_client_info_t *job, char ***env)
 
 extern int mpi_p_client_fini(void)
 {
-	xfree(process_mapping);
+	slurm_mutex_lock(&setup_mutex);
+	if (setup_done)
+		xfree(process_mapping);
+	slurm_mutex_unlock(&setup_mutex);
 	return pmixp_abort_agent_stop();
 }
 

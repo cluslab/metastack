@@ -190,14 +190,14 @@ static void _reset_coll(pmixp_coll_t *coll)
 		/* collective is spoiled, reset state */
 		tree->state = PMIXP_COLL_TREE_SYNC;
 		slurm_kill_job_step(pmixp_info_jobid(),
-				    pmixp_info_stepid(), SIGKILL);
+				    pmixp_info_stepid(), SIGKILL, 0);
 	}
 }
 
 /*
  * Based on ideas provided by Hongjia Cao <hjcao@nudt.edu.cn> in PMI2 plugin
  */
-int pmixp_coll_tree_init(pmixp_coll_t *coll, hostlist_t *hl)
+int pmixp_coll_tree_init(pmixp_coll_t *coll, hostlist_t **hl)
 {
 	int max_depth, width, depth, i;
 	char *p;
@@ -531,7 +531,8 @@ static int _progress_collect(pmixp_coll_t *coll)
 			tree->ufwd_offset;
 		size_t size = get_buf_offset(tree->ufwd_buf) -
 			tree->ufwd_offset;
-		pmixp_server_buf_reserve(tree->dfwd_buf, size);
+		if (try_grow_buf_remaining(tree->dfwd_buf, size))
+			return 0;
 		dst = get_buf_data(tree->dfwd_buf) + tree->dfwd_offset;
 		memcpy(dst, src, size);
 		set_buf_offset(tree->dfwd_buf, tree->dfwd_offset + size);
@@ -610,7 +611,7 @@ static int _progress_ufwd(pmixp_coll_t *coll)
 		/* collective is spoiled, reset state */
 		tree->state = PMIXP_COLL_TREE_SYNC;
 		slurm_kill_job_step(pmixp_info_jobid(),
-				    pmixp_info_stepid(), SIGKILL);
+				    pmixp_info_stepid(), SIGKILL, 0);
 		return false;
 	}
 
@@ -742,7 +743,7 @@ static int _progress_ufwd_sc(pmixp_coll_t *coll)
 		/* collective is spoiled, reset state */
 		tree->state = PMIXP_COLL_TREE_SYNC;
 		slurm_kill_job_step(pmixp_info_jobid(),
-				    pmixp_info_stepid(), SIGKILL);
+				    pmixp_info_stepid(), SIGKILL, 0);
 		return false;
 	}
 
@@ -836,7 +837,7 @@ static int _progress_dfwd(pmixp_coll_t *coll)
 		/* collective is spoiled, reset state */
 		tree->state = PMIXP_COLL_TREE_SYNC;
 		slurm_kill_job_step(pmixp_info_jobid(),
-				    pmixp_info_stepid(), SIGKILL);
+				    pmixp_info_stepid(), SIGKILL, 0);
 		return false;
 	}
 #ifdef PMIXP_COLL_DEBUG
@@ -944,7 +945,7 @@ int pmixp_coll_tree_local(pmixp_coll_t *coll, char *data, size_t size,
 		/* collective is spoiled, reset state */
 		tree->state = PMIXP_COLL_TREE_SYNC;
 		slurm_kill_job_step(pmixp_info_jobid(),
-				    pmixp_info_stepid(), SIGKILL);
+				    pmixp_info_stepid(), SIGKILL, 0);
 		ret = SLURM_ERROR;
 		goto exit;
 	}
@@ -959,7 +960,8 @@ int pmixp_coll_tree_local(pmixp_coll_t *coll, char *data, size_t size,
 
 	/* save & mark local contribution */
 	tree->contrib_local = true;
-	pmixp_server_buf_reserve(tree->ufwd_buf, size);
+	if ((ret = try_grow_buf_remaining(tree->ufwd_buf, size)))
+		goto exit;
 	memcpy(get_buf_data(tree->ufwd_buf) + get_buf_offset(tree->ufwd_buf),
 	       data, size);
 	set_buf_offset(tree->ufwd_buf, get_buf_offset(tree->ufwd_buf) + size);
@@ -1115,7 +1117,8 @@ int pmixp_coll_tree_child(pmixp_coll_t *coll, uint32_t peerid, uint32_t seq,
 
 	data_src = get_buf_data(buf) + get_buf_offset(buf);
 	size = remaining_buf(buf);
-	pmixp_server_buf_reserve(tree->ufwd_buf, size);
+	if (try_grow_buf_remaining(tree->ufwd_buf, size))
+		goto error;
 	data_dst = get_buf_data(tree->ufwd_buf) +
 		get_buf_offset(tree->ufwd_buf);
 	memcpy(data_dst, data_src, size);
@@ -1143,7 +1146,7 @@ error:
 	_reset_coll(coll);
 error2:
 	slurm_kill_job_step(pmixp_info_jobid(),
-			    pmixp_info_stepid(), SIGKILL);
+			    pmixp_info_stepid(), SIGKILL, 0);
 	/* unlock the structure */
 	slurm_mutex_unlock(&coll->lock);
 
@@ -1269,8 +1272,8 @@ int pmixp_coll_tree_parent(pmixp_coll_t *coll, uint32_t peerid, uint32_t seq,
 
 	data_src = get_buf_data(buf) + get_buf_offset(buf);
 	size = remaining_buf(buf);
-	pmixp_server_buf_reserve(tree->dfwd_buf, size);
-
+	if (try_grow_buf_remaining(tree->dfwd_buf, size))
+		goto error;
 	data_dst = get_buf_data(tree->dfwd_buf) +
 		get_buf_offset(tree->dfwd_buf);
 	memcpy(data_dst, data_src, size);
@@ -1292,7 +1295,7 @@ error:
 	_reset_coll(coll);
 error2:
 	slurm_kill_job_step(pmixp_info_jobid(),
-			    pmixp_info_stepid(), SIGKILL);
+			    pmixp_info_stepid(), SIGKILL, 0);
 	slurm_mutex_unlock(&coll->lock);
 
 	return SLURM_ERROR;
@@ -1350,8 +1353,8 @@ void pmixp_coll_tree_log(pmixp_coll_t *coll)
 	}
 	if (tree->chldrn_cnt) {
 		char *done_contrib = NULL, *wait_contrib = NULL;
-		hostlist_t hl_done_contrib = NULL,
-			hl_wait_contrib = NULL, *tmp_list;
+		hostlist_t *hl_done_contrib = NULL,
+			*hl_wait_contrib = NULL, **tmp_list;
 
 		PMIXP_ERROR("child contribs [%d]:", tree->chldrn_cnt);
 		for (i = 0; i < tree->chldrn_cnt; i++) {

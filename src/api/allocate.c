@@ -58,7 +58,7 @@ extern pid_t getsid(pid_t pid);		/* missing from <unistd.h> */
 #include "src/common/hostlist.h"
 #include "src/common/parse_time.h"
 #include "src/common/read_config.h"
-#include "src/common/slurm_auth.h"
+#include "src/interfaces/auth.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/xmalloc.h"
@@ -188,9 +188,7 @@ slurm_allocate_resources_blocking (const job_desc_msg_t *user_req,
 #endif
 	/* make a copy of the user's job description struct so that we
 	 * can make changes before contacting the controller */
-	req = (job_desc_msg_t *)xmalloc(sizeof(job_desc_msg_t));
-	if (req == NULL)
-		return NULL;
+	req = xmalloc(sizeof(job_desc_msg_t));
 	memcpy(req, user_req, sizeof(job_desc_msg_t));
 
 	/*
@@ -300,7 +298,7 @@ static void *_load_willrun_thread(void *args)
 	list_append(load_args->resp_msg_list, resp);
 	xfree(args);
 
-	return (void *) NULL;
+	return NULL;
 }
 
 static int _fed_job_will_run(job_desc_msg_t *req,
@@ -311,7 +309,7 @@ static int _fed_job_will_run(job_desc_msg_t *req,
 	int pthread_count = 0, i;
 	pthread_t *load_thread = 0;
 	load_willrun_req_struct_t *load_args;
-	ListIterator iter;
+	list_itr_t *iter;
 	will_run_response_msg_t *earliest_resp = NULL;
 	load_willrun_resp_struct_t *tmp_resp;
 	slurmdb_cluster_rec_t *cluster;
@@ -333,8 +331,7 @@ static int _fed_job_will_run(job_desc_msg_t *req,
 
 	/* Spawn one pthread per cluster to collect job information */
 	resp_msg_list = list_create(NULL);
-	load_thread = xmalloc(sizeof(pthread_t) *
-			      list_count(fed->cluster_list));
+	load_thread = xcalloc(list_count(fed->cluster_list), sizeof(pthread_t));
 	iter = list_iterator_create(fed->cluster_list);
 	while ((cluster = (slurmdb_cluster_rec_t *)list_next(iter))) {
 		if ((cluster->control_host == NULL) ||
@@ -359,7 +356,7 @@ static int _fed_job_will_run(job_desc_msg_t *req,
 
 	/* Wait for all pthreads to complete */
 	for (i = 0; i < pthread_count; i++)
-		pthread_join(load_thread[i], NULL);
+		slurm_thread_join(load_thread[i]);
 	xfree(load_thread);
 
 	iter = list_iterator_create(resp_msg_list);
@@ -393,7 +390,7 @@ static void _het_job_alloc_test(List resp, uint32_t *node_cnt, uint32_t *job_id)
 {
 	resource_allocation_response_msg_t *alloc;
 	uint32_t inx = 0, het_job_node_cnt = 0, het_job_id = 0;
-	ListIterator iter;
+	list_itr_t *iter;
 
 	xassert(resp);
 	iter = list_iterator_create(resp);
@@ -440,7 +437,7 @@ List slurm_allocate_het_job_blocking(List job_req_list, time_t timeout,
 	job_desc_msg_t *req;
 	listen_t *listen = NULL;
 	int errnum = SLURM_SUCCESS;
-	ListIterator iter;
+	list_itr_t *iter;
 	bool immediate_flag = false;
 	uint32_t node_cnt = 0, job_id = 0;
 	bool already_done = false;
@@ -550,7 +547,7 @@ List slurm_allocate_het_job_blocking(List job_req_list, time_t timeout,
 int slurm_job_will_run(job_desc_msg_t *req)
 {
 	will_run_response_msg_t *will_run_resp = NULL;
-	char buf[64];
+	char buf[256];
 	int rc;
 	char *cluster_name = NULL;
 	void *ptr = NULL;
@@ -579,7 +576,7 @@ int slurm_job_will_run(job_desc_msg_t *req)
 		     will_run_resp->node_list,
 		     will_run_resp->part_name);
 		if (will_run_resp->preemptee_job_id) {
-			ListIterator itr;
+			list_itr_t *itr;
 			uint32_t *job_id_ptr;
 			char *job_list = NULL, *sep = "";
 			itr = list_iterator_create(will_run_resp->
@@ -614,12 +611,12 @@ extern int slurm_het_job_will_run(List job_req_list)
 {
 	job_desc_msg_t *req;
 	will_run_response_msg_t *will_run_resp;
-	char buf[64], *sep = "";
+	char buf[256], *sep = "";
 	int rc = SLURM_SUCCESS, inx = 0;
-	ListIterator iter, itr;
+	list_itr_t *iter, *itr;
 	time_t first_start = (time_t) 0;
 	uint32_t first_job_id = 0, tot_proc_count = 0, *job_id_ptr;
-	hostset_t hs = NULL;
+	hostset_t *hs = NULL;
 	char *job_list = NULL;
 
 	if (!job_req_list || (list_count(job_req_list) == 0)) {
@@ -671,15 +668,17 @@ extern int slurm_het_job_will_run(List job_req_list)
 
 
 	if (rc == SLURM_SUCCESS) {
-		char node_list[1028] = "";
+		char *node_list = NULL;
 
 		if (hs)
-			hostset_ranged_string(hs, sizeof(node_list), node_list);
+			node_list = hostset_ranged_string_xmalloc(hs);
 		slurm_make_time_str(&first_start, buf, sizeof(buf));
 		info("Job %u to start at %s using %u processors on %s",
 		     first_job_id, buf, tot_proc_count, node_list);
 		if (job_list)
 			info("  Preempts: %s", job_list);
+
+		xfree(node_list);
 	}
 
 	if (hs)
@@ -751,6 +750,7 @@ slurm_job_step_create (job_step_create_request_msg_t *req,
 {
 	slurm_msg_t req_msg, resp_msg;
 	int delay = 0, rc, retry = 0;
+	char *stepmgr_nodename = NULL;
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
@@ -761,11 +761,50 @@ slurm_job_step_create (job_step_create_request_msg_t *req,
 	req_msg.data     = req;
 
 re_send:
-	if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
-					   working_cluster_rec) < 0)
+	/* xstrdup() to be consistent with reroute and be able to free. */
+	if ((stepmgr_nodename = xstrdup(getenv("SLURM_STEPMGR")))) {
+trystepmgr:
+		slurm_msg_set_r_uid(&req_msg, slurm_conf.slurmd_user_id);
+
+		if (slurm_conf_get_addr(stepmgr_nodename, &req_msg.address,
+					req_msg.flags)) {
+			/*
+			 * The node isn't in the conf, see if the
+			 * controller has an address for it.
+			 */
+			slurm_node_alias_addrs_t *alias_addrs;
+			if (!slurm_get_node_alias_addrs(stepmgr_nodename,
+							&alias_addrs)) {
+				add_remote_nodes_to_conf_tbls(
+					alias_addrs->node_list,
+					alias_addrs->node_addrs);
+			}
+			slurm_free_node_alias_addrs(alias_addrs);
+			slurm_conf_get_addr(stepmgr_nodename, &req_msg.address,
+					    req_msg.flags);
+		}
+		xfree(stepmgr_nodename);
+
+		if (slurm_send_recv_node_msg(&req_msg, &resp_msg, 0))
+			return SLURM_ERROR;
+	} else if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
+						  working_cluster_rec) < 0) {
 		return SLURM_ERROR;
+	}
 
 	switch (resp_msg.msg_type) {
+	case RESPONSE_SLURM_REROUTE_MSG:
+	{
+		reroute_msg_t *rr_msg = resp_msg.data;
+		xfree(stepmgr_nodename);
+		stepmgr_nodename = rr_msg->stepmgr;
+		rr_msg->stepmgr = NULL;
+		if (stepmgr_nodename)
+			goto trystepmgr;
+		else
+			return SLURM_ERROR;
+		break;
+	}
 	case RESPONSE_SLURM_RC:
 		rc = _handle_rc_msg(&resp_msg);
 		if ((rc < 0) && (errno == EAGAIN)) {
@@ -852,6 +891,7 @@ extern int slurm_het_job_lookup(uint32_t jobid, List *info)
 	job_alloc_info_msg_t req;
 	slurm_msg_t req_msg;
 	slurm_msg_t resp_msg;
+	char *stepmgr_nodename = NULL;
 
 	memset(&req, 0, sizeof(req));
 	req.job_id = jobid;
@@ -861,9 +901,34 @@ extern int slurm_het_job_lookup(uint32_t jobid, List *info)
 	req_msg.msg_type = REQUEST_HET_JOB_ALLOC_INFO;
 	req_msg.data     = &req;
 
-	if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
-					   working_cluster_rec) < 0)
+	if ((stepmgr_nodename = xstrdup(getenv("SLURM_STEPMGR")))) {
+		slurm_msg_set_r_uid(&req_msg, slurm_conf.slurmd_user_id);
+
+		if (slurm_conf_get_addr(stepmgr_nodename, &req_msg.address,
+					req_msg.flags)) {
+			/*
+			 * The node isn't in the conf, see if the
+			 * controller has an address for it.
+			 */
+			slurm_node_alias_addrs_t *alias_addrs;
+			if (!slurm_get_node_alias_addrs(stepmgr_nodename,
+							&alias_addrs)) {
+				add_remote_nodes_to_conf_tbls(
+					alias_addrs->node_list,
+					alias_addrs->node_addrs);
+			}
+			slurm_free_node_alias_addrs(alias_addrs);
+			slurm_conf_get_addr(stepmgr_nodename, &req_msg.address,
+					    req_msg.flags);
+		}
+		xfree(stepmgr_nodename);
+
+		if (slurm_send_recv_node_msg(&req_msg, &resp_msg, 0))
+			return SLURM_ERROR;
+	} else if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
+						  working_cluster_rec) < 0) {
 		return SLURM_ERROR;
+	}
 
 	req.req_cluster = NULL;
 
@@ -898,17 +963,56 @@ extern int slurm_sbcast_lookup(slurm_selected_step_t *selected_step,
 {
 	slurm_msg_t req_msg;
 	slurm_msg_t resp_msg;
+	char *stepmgr_nodename = NULL;
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
 	req_msg.msg_type = REQUEST_JOB_SBCAST_CRED;
 	req_msg.data     = selected_step;
 
-	if (slurm_send_recv_controller_msg(&req_msg,
-					   &resp_msg,working_cluster_rec) < 0)
+trystepmgr:
+	if (stepmgr_nodename) {
+		slurm_msg_set_r_uid(&req_msg, slurm_conf.slurmd_user_id);
+
+		if (slurm_conf_get_addr(stepmgr_nodename, &req_msg.address,
+					req_msg.flags)) {
+			/*
+			 * The node isn't in the conf, see if the
+			 * controller has an address for it.
+			 */
+			slurm_node_alias_addrs_t *alias_addrs;
+			if (!slurm_get_node_alias_addrs(stepmgr_nodename,
+							&alias_addrs)) {
+				add_remote_nodes_to_conf_tbls(
+					alias_addrs->node_list,
+					alias_addrs->node_addrs);
+			}
+			slurm_free_node_alias_addrs(alias_addrs);
+			slurm_conf_get_addr(stepmgr_nodename, &req_msg.address,
+					    req_msg.flags);
+		}
+		xfree(stepmgr_nodename);
+
+		if (slurm_send_recv_node_msg(&req_msg, &resp_msg, 0))
+			return SLURM_ERROR;
+	} else if (slurm_send_recv_controller_msg(
+		    &req_msg,
+		    &resp_msg,working_cluster_rec) < 0)
 		return SLURM_ERROR;
 
 	switch (resp_msg.msg_type) {
+	case RESPONSE_SLURM_REROUTE_MSG:
+	{
+		reroute_msg_t *rr_msg = resp_msg.data;
+		stepmgr_nodename = rr_msg->stepmgr;
+		rr_msg->stepmgr = NULL;
+		if (stepmgr_nodename)
+			goto trystepmgr;
+		else
+			return SLURM_ERROR;
+
+		break;
+	}
 	case RESPONSE_SLURM_RC:
 		if (_handle_rc_msg(&resp_msg) < 0)
 			return SLURM_ERROR;
@@ -945,10 +1049,10 @@ _handle_rc_msg(slurm_msg_t *msg)
 
 /*
  * Read a Slurm hostfile specified by "filename".  "filename" must contain
- * a list of Slurm NodeNames, one per line.  Reads up to "n" number of hostnames
- * from the file. Returns a string representing a hostlist ranged string of
- * the contents of the file.  This is a helper function, it does not
- * contact any Slurm daemons.
+ * a list of Slurm NodeNames, one per line, comma seperated, or * notation.
+ * Reads up to "n" number of hostnames from the file. Returns a string
+ * representing a hostlist ranged string of the contents of the file.
+ * This is a helper function, it does not contact any Slurm daemons.
  *
  * Returns a string representing the hostlist.  Returns NULL if there are fewer
  * than "n" hostnames in the file, or if an error occurs.  If "n" ==
@@ -963,7 +1067,7 @@ char *slurm_read_hostfile(const char *filename, int n)
 	int i, j;
 	int line_size;
 	int line_num = 0;
-	hostlist_t hostlist = NULL;
+	hostlist_t *hostlist = NULL;
 	char *nodelist = NULL, *end_part = NULL;
 	char *asterisk, *tmp_text = NULL, *save_ptr = NULL, *host_name;
 	int total_file_len = 0;
@@ -1062,6 +1166,9 @@ char *slurm_read_hostfile(const char *filename, int n)
 			    (i = atoi(asterisk + 1))) {
 				asterisk[0] = '\0';
 
+				if (n != (int) NO_VAL)
+					i = MIN(i,
+						n - hostlist_count(hostlist));
 				/*
 				 * Don't forget the extra space potentially
 				 * needed
@@ -1074,6 +1181,10 @@ char *slurm_read_hostfile(const char *filename, int n)
 				hostlist_push_host(hostlist, host_name);
 			}
 			host_name = strtok_r(NULL, ",", &save_ptr);
+
+			if ((n != (int) NO_VAL) &&
+			    (hostlist_count(hostlist) == n))
+				break;
 		}
 		xfree(tmp_text);
 
@@ -1172,12 +1283,8 @@ static void _destroy_allocation_response_socket(listen_t *listen)
  * IN msg: message received
  * OUT resp: resource allocation response message or List of them
  * RET 1 if resp is filled in, 0 otherwise */
-static int
-#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
-_handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp, uint32_t job_id)
-#else
-_handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp)
-#endif
+static int _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp,
+		       uint32_t job_id)
 {
 	uid_t req_uid;
 	uid_t uid       = getuid();
@@ -1188,7 +1295,7 @@ _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp)
 	if ((req_uid != slurm_conf.slurm_user_id) && (req_uid != 0) &&
 	    (req_uid != uid)) {
 		error ("Security violation, slurm message from uid %u",
-			(unsigned int) req_uid);
+		       req_uid);
 		return 0;
 	}
 
@@ -1199,23 +1306,18 @@ _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp)
 		msg->data = NULL;
 		rc = 1;
 	} else if (msg->msg_type == SRUN_JOB_COMPLETE) {
-#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
-		srun_job_complete_msg_t *job_msg = NULL;
-		job_msg = (srun_job_complete_msg_t *)msg->data;
-		if (job_msg) {
-			if (job_id && (job_msg->job_id == job_id)) {
-				info("Job has been cancelled");
-			} else {
-				verbose("%s: Ignoring job_complete for job %u because our job ID is %u", __func__, job_msg->job_id, job_id);
-				rc = 2;
-			}
+		srun_job_complete_msg_t *job_comp_msg = msg->data;
+		if (job_comp_msg->job_id == job_id) {
+			info("Job has been cancelled");
+		} else {
+			verbose("Ignoring SRUN_JOB_COMPLETE message for JobId=%u (our JobId=%u)",
+				job_comp_msg->job_id, job_id);
+			rc = 2;
 		}
-#else		
-		info("Job has been cancelled");
-#endif		
 	} else {
-		error("%s: received spurious message type: %u",
-		      __func__, msg->msg_type);
+		error("%s: received spurious message type: %s",
+		      __func__, rpc_num2string(msg->msg_type));
+		rc = 2;
 	}
 	return rc;
 }
@@ -1225,21 +1327,13 @@ _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp)
  * IN msg_type: RESPONSE_RESOURCE_ALLOCATION or RESPONSE_HET_JOB_ALLOCATION
  * OUT resp: resource allocation response message or List
  * RET 1 if resp is filled in, 0 otherwise */
-static int
-#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
-_accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp, uint32_t job_id)
-#else
-_accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp)
-#endif
+static int _accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp,
+				  uint32_t job_id)
 {
 	int	     conn_fd;
 	slurm_msg_t  *msg = NULL;
 	slurm_addr_t cli_addr;
 	int          rc = 0;
-
-#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF	
-retry:
-#endif
 
 	conn_fd = slurm_accept_msg_conn(listen_fd, &cli_addr);
 	if (conn_fd < 0) {
@@ -1266,28 +1360,16 @@ retry:
 		return SLURM_ERROR;
 	}
 
-#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
 	rc = _handle_msg(msg, msg_type, resp, job_id); /* xfer payload */
-#else
-	rc = _handle_msg(msg, msg_type, resp); /* xfer payload */
-#endif	
+
 	slurm_free_msg(msg);
 
 	close(conn_fd);
-
-#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
-	/* recv SRUN_JOB_COM_LETE from other job */
-	if (rc == 2) {
-		rc = 0;
-		goto retry;
-	}	
-#endif
-
 	return rc;
 }
 
 /* Wait up to sleep_time for RPC from slurmctld indicating resource allocation
- * has occured.
+ * has occurred.
  * IN sleep_time: delay in seconds (0 means unbounded wait)
  * RET -1: error, 0: timeout, 1:ready to read */
 static int _wait_for_alloc_rpc(const listen_t *listen, int sleep_time)
@@ -1344,12 +1426,14 @@ static void _wait_for_allocation_response(uint32_t job_id,
 
 	info("job %u queued and waiting for resources", job_id);
 	*resp = NULL;
-	if ((rc = _wait_for_alloc_rpc(listen, timeout)) == 1)
-#ifdef __METASTACK_BUG_SRUN_RECVMSG_VERIF
-		rc = _accept_msg_connection(listen->fd, msg_type, resp, job_id);
-#else	
-		rc = _accept_msg_connection(listen->fd, msg_type, resp);
-#endif		
+	while (true) {
+		if ((rc = _wait_for_alloc_rpc(listen, timeout)) != 1)
+			break;
+
+		if ((rc = _accept_msg_connection(listen->fd, msg_type, resp,
+						 job_id)) != 2)
+			break;
+	}
 	if (rc <= 0) {
 		errnum = errno;
 		/* Maybe the resource allocation response RPC got lost

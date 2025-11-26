@@ -68,6 +68,7 @@
 #include <unistd.h>
 
 #include "slurm/slurm_errno.h"
+#include "src/common/data.h"
 #include "src/common/fd.h"
 #include "src/common/log.h"
 #include "src/common/macros.h"
@@ -75,7 +76,11 @@
 #include "src/common/slurm_time.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+
+#include "src/interfaces/serializer.h"
+
 #include "src/slurmctld/slurmctld.h"
+
 
 #ifndef LINEBUFSIZE
 #  define LINEBUFSIZE 256
@@ -88,7 +93,7 @@
 	    (sched && (level <= highest_sched_log_level))) {	\
 		va_list ap;					\
 		va_start(ap, fmt);				\
-		_log_msg(level, sched, false, fmt, ap);		\
+		_log_msg(level, sched, false, false, fmt, ap);	\
 		va_end(ap);					\
 	}							\
 }
@@ -104,7 +109,7 @@ strong_alias(log_reinit,	slurm_log_reinit);
 strong_alias(log_fini,		slurm_log_fini);
 strong_alias(log_alter,		slurm_log_alter);
 strong_alias(log_alter_with_fp, slurm_log_alter_with_fp);
-strong_alias(log_set_fpfx,	slurm_log_set_fpfx);
+strong_alias(log_set_prefix,	slurm_log_set_prefix);
 strong_alias(log_fp,		slurm_log_fp);
 strong_alias(log_oom,		slurm_log_oom);
 strong_alias(log_has_data,	slurm_log_has_data);
@@ -123,13 +128,13 @@ strong_alias(sched_verbose,	slurm_sched_verbose);
 */
 typedef struct {
 	char *argv0;
-	char *fpfx;              /* optional prefix for logfile entries */
+	char *prefix;            /* optional prefix with log_set_prefix */
 	FILE *logfp;             /* log file pointer                    */
 	cbuf_t *buf;              /* stderr data buffer                  */
 	cbuf_t *fbuf;             /* logfile data buffer                 */
 	log_facility_t facility;
 	log_options_t opt;
-	unsigned initialized:1;
+	bool initialized;
 	uint16_t fmt;            /* Flag for specifying timestamp format */
 }	log_t;
 
@@ -199,6 +204,28 @@ size_t rfc2822_timestamp(char *s, size_t max)
 	return _make_timestamp(s, max, "%a, %d %b %Y %H:%M:%S %z");
 }
 
+static size_t _fix_tz(char *s, size_t max, size_t written)
+{
+	xassert(written == 24);
+	xassert(max >= 26);
+
+	if ((max < 26) || (written != 24))
+		return written;
+
+	/*
+	 * The strftime %z format creates timezone offsets of
+	 * the form (+/-)hhmm, whereas the RFC 5424 format is
+	 * (+/-)hh:mm. So shift the minutes one step back and
+	 * insert the semicolon.
+	 */
+	s[25] = '\0';
+	s[24] = s[23];
+	s[23] = s[22];
+	s[22] = ':';
+
+	return 25;
+}
+
 size_t log_timestamp(char *s, size_t max)
 {
 	if (!log)
@@ -208,18 +235,12 @@ size_t log_timestamp(char *s, size_t max)
 	case LOG_FMT_RFC5424:
 	{
 		size_t written = _make_timestamp(s, max, "%Y-%m-%dT%T%z");
-		if (max >= 26 && written == 24) {
-			/* The strftime %z format creates timezone offsets of
-			 * the form (+/-)hhmm, whereas the RFC 5424 format is
-			 * (+/-)hh:mm. So shift the minutes one step back and
-			 * insert the semicolon. */
-			s[25] = '\0';
-			s[24] = s[23];
-			s[23] = s[22];
-			s[22] = ':';
-			return written + 1;
-		}
-		return written;
+		return _fix_tz(s, max, written);
+	}
+	case LOG_FMT_RFC3339:
+	{
+		size_t written = _make_timestamp(s, max, "%FT%T%z");
+		return _fix_tz(s, max, written);
 	}
 	case LOG_FMT_SHORT:
 		return _make_timestamp(s, max, "%b %d %T");
@@ -238,10 +259,8 @@ size_t log_timestamp(char *s, size_t max)
 static int _fd_writeable(int fd)
 {
 	struct pollfd ufds;
-	struct stat stat_buf;
 	int write_timeout = 5000;
 	int rc;
-	char temp[2];
 
 	ufds.fd     = fd;
 	ufds.events = POLLOUT;
@@ -257,17 +276,7 @@ static int _fd_writeable(int fd)
 	if (rc == 0)
 		return 0;
 
-	/*
-	 * Check here to make sure that if this is a socket that it really
-	 * is still connected. If not then exit out and notify the sender.
-	 * This is here since a write doesn't always tell you the socket is
-	 * gone, but getting 0 back from a nonblocking read means just that.
-	 */
-	if ((ufds.revents & POLLHUP) || fstat(fd, &stat_buf) ||
-	    ((S_ISSOCK(stat_buf.st_mode) &&
-	     (rc = recv(fd, &temp, 1, MSG_DONTWAIT) <= 0) &&
-	     ((rc == 0) ||
-	      (errno && (errno != EAGAIN) && (errno != EWOULDBLOCK))))))
+	if (ufds.revents & POLLHUP)
 		return -1;
 	else if ((ufds.revents & POLLNVAL)
 		 || (ufds.revents & POLLERR)
@@ -296,7 +305,7 @@ _log_init(char *prog, log_options_t opt, log_facility_t fac, char *logfile )
 		log->argv0 = NULL;
 		log->buf   = NULL;
 		log->fbuf  = NULL;
-		log->fpfx  = NULL;
+		log->prefix = NULL;
 		atfork_install_handlers();
 	}
 
@@ -317,8 +326,8 @@ _log_init(char *prog, log_options_t opt, log_facility_t fac, char *logfile )
 	if (!slurm_prog_name && log->argv0 && (strlen(log->argv0) > 0))
 		slurm_prog_name = xstrdup(log->argv0);
 
-	if (!log->fpfx)
-		log->fpfx = xstrdup("");
+	if (!log->prefix)
+		log->prefix = xstrdup("");
 
 	log->opt = opt;
 
@@ -408,8 +417,8 @@ _sched_log_init(char *prog, log_options_t opt, log_facility_t fac,
 		sched_log->argv0 = xstrdup(short_name);
 	}
 
-	if (!sched_log->fpfx)
-		sched_log->fpfx = xstrdup("");
+	if (!sched_log->prefix)
+		sched_log->prefix = xstrdup("");
 
 	sched_log->opt = opt;
 
@@ -511,7 +520,7 @@ void log_fini(void)
 	slurm_mutex_lock(&log_lock);
 	_log_flush(log);
 	xfree(log->argv0);
-	xfree(log->fpfx);
+	xfree(log->prefix);
 	if (log->buf)
 		cbuf_destroy(log->buf);
 	if (log->fbuf)
@@ -531,7 +540,7 @@ void sched_log_fini(void)
 	slurm_mutex_lock(&log_lock);
 	_log_flush(sched_log);
 	xfree(sched_log->argv0);
-	xfree(sched_log->fpfx);
+	xfree(sched_log->prefix);
 	if (sched_log->buf)
 		cbuf_destroy(sched_log->buf);
 	if (sched_log->fbuf)
@@ -547,14 +556,14 @@ void log_reinit(void)
 	slurm_mutex_init(&log_lock);
 }
 
-void log_set_fpfx(char **prefix)
+void log_set_prefix(char **prefix)
 {
 	slurm_mutex_lock(&log_lock);
-	xfree(log->fpfx);
+	xfree(log->prefix);
 	if (!prefix || !*prefix)
-		log->fpfx = xstrdup("");
+		log->prefix = xstrdup("");
 	else {
-		log->fpfx = *prefix;
+		log->prefix = *prefix;
 		*prefix = NULL;
 	}
 	slurm_mutex_unlock(&log_lock);
@@ -779,6 +788,40 @@ static char *_stepid2fmt(step_record_t *step_ptr, char *buf, int buf_size)
 				     STEP_ID_FLAG_SPACE | STEP_ID_FLAG_NO_JOB);
 }
 
+static char *_print_data_t(const data_t *d, char *buffer, int size)
+{
+	/*
+	 * NOTE: You will notice we put a %.0s in front of the string.
+	 * This is to handle the fact that we can't remove the data_t
+	 * argument from the va_list directly. So when we call vsnprintf()
+	 * to handle the va_list this will effectively skip this argument.
+	 */
+	snprintf(buffer, size, "%%.0s%s(0x%"PRIxPTR")",
+		 data_get_type_string(d), ((uintptr_t) d));
+	return buffer;
+}
+
+static char *_print_data_json(const data_t *d, char *buffer, int size)
+{
+	char *nbuf = NULL;
+
+	/*
+	 * NOTE: You will notice we put a %.0s in front of the string.
+	 * This is to handle the fact that we can't remove the data_t
+	 * argument from the va_list directly. So when we call vsnprintf()
+	 * to handle the va_list this will effectively skip this argument.
+	 */
+	if (serialize_g_data_to_string(&nbuf, NULL, d, MIME_TYPE_JSON,
+				       SER_FLAGS_COMPACT))
+		snprintf(buffer, size, "%%.0s(JSON serialization failed)");
+	else
+		snprintf(buffer, size, "%%.0s%s", nbuf);
+
+	xfree(nbuf);
+
+	return buffer;
+}
+
 extern char *vxstrfmt(const char *fmt, va_list ap)
 {
 	char	*intermediate_fmt = NULL;
@@ -815,6 +858,8 @@ extern char *vxstrfmt(const char *fmt, va_list ap)
 			case 'p':
 				switch (*(p + 2)) {
 				case 'A':
+				case 'd':
+				case 'D':
 				case 'J':
 				case 's':
 				case 'S':
@@ -873,6 +918,38 @@ extern char *vxstrfmt(const char *fmt, va_list ap)
 					xstrcat(intermediate_fmt,
 						_addr2fmt(
 							addr_ptr,
+							substitute_on_stack,
+							sizeof(substitute_on_stack)));
+					va_end(ap_copy);
+					break;
+				}
+				case 'd':	/* "%pd" -> compact JSON serialized string */
+				{
+					data_t *d = NULL;
+					va_list	ap_copy;
+
+					va_copy(ap_copy, ap);
+					for (int i = 0; i < cnt; i++ )
+						d = va_arg(ap_copy, void *);
+					xstrcat(intermediate_fmt,
+						_print_data_json(
+							d,
+							substitute_on_stack,
+							sizeof(substitute_on_stack)));
+					va_end(ap_copy);
+					break;
+				}
+				case 'D':	/* "%pD" -> data_type(0xDEADBEEF) */
+				{
+					data_t *d = NULL;
+					va_list	ap_copy;
+
+					va_copy(ap_copy, ap);
+					for (int i = 0; i < cnt; i++ )
+						d = va_arg(ap_copy, void *);
+					xstrcat(intermediate_fmt,
+						_print_data_t(
+							d,
 							substitute_on_stack,
 							sizeof(substitute_on_stack)));
 					va_end(ap_copy);
@@ -975,7 +1052,7 @@ extern char *vxstrfmt(const char *fmt, va_list ap)
 					xiso8601timecat(substitute, true);
 					break;
 				}
-				switch (log->fmt) {
+				switch (log->fmt & (~LOG_FMT_FORMAT_STDERR)) {
 				case LOG_FMT_ISO8601_MS:
 					/* "%M" => "yyyy-mm-ddThh:mm:ss.fff"  */
 					xiso8601timecat(substitute, true);
@@ -991,6 +1068,10 @@ extern char *vxstrfmt(const char *fmt, va_list ap)
 				case LOG_FMT_RFC5424:
 					/* "%M" => "yyyy-mm-ddThh:mm:ss.fff(+/-)hh:mm" */
 					xrfc5424timecat(substitute, false);
+					break;
+				case LOG_FMT_RFC3339:
+					/* "%M" => "yyyy-mm-ddThh:mm:ssZ" */
+					xrfc3339timecat(substitute);
 					break;
 				case LOG_FMT_CLOCK:
 					/* "%M" => "usec" */
@@ -1170,7 +1251,8 @@ static void _log_printf(log_t *log, cbuf_t *cb, FILE *stream,
  * log a message at the specified level to facilities that have been
  * configured to receive messages at that level
  */
-static void _log_msg(log_level_t level, bool sched, bool spank, const char *fmt, va_list args)
+static void _log_msg(log_level_t level, bool sched, bool spank, bool warn,
+		     const char *fmt, va_list args)
 {
 	char *pfx = "";
 	char *buf = NULL;
@@ -1191,9 +1273,9 @@ static void _log_msg(log_level_t level, bool sched, bool spank, const char *fmt,
 	if (SCHED_LOG_INITIALIZED && sched &&
 	    (highest_sched_log_level > LOG_LEVEL_QUIET)) {
 		buf = vxstrfmt(fmt, args);
-		xlogfmtcat(&msgbuf, "[%M] %s%s%s", sched_log->fpfx, pfx, buf);
+		xlogfmtcat(&msgbuf, "[%M] %s%s", sched_log->prefix, pfx);
 		_log_printf(sched_log, sched_log->fbuf, sched_log->logfp,
-			    "sched: %s\n", msgbuf);
+			    "sched: %s%s\n", msgbuf, buf);
 		fflush(sched_log->logfp);
 		xfree(msgbuf);
 	}
@@ -1219,8 +1301,9 @@ static void _log_msg(log_level_t level, bool sched, bool spank, const char *fmt,
 
 		case LOG_LEVEL_INFO:
 		case LOG_LEVEL_VERBOSE:
-			priority = LOG_INFO;
+			priority = warn ? LOG_WARNING : LOG_INFO;
 			pfx = sched ? "sched: " : "";
+			pfx = warn ? "warning: " : pfx;
 			break;
 
 		case LOG_LEVEL_DEBUG:
@@ -1268,10 +1351,21 @@ static void _log_msg(log_level_t level, bool sched, bool spank, const char *fmt,
 		if (spank) {
 			_log_printf(log, log->buf, stderr, "%s%s", buf, eol);
 		} else if (log->fmt == LOG_FMT_THREAD_ID) {
+			/*
+			 * This is for backward compatibility. In versions
+			 * < 23.11 this was the only way to print to stderr.
+			 * Keep this behavior since LogTimeFormat=format_stderr
+			 * results in a little bit different format.
+			 */
 			char tmp[64];
 			_set_idbuf(tmp, sizeof(tmp));
 			_log_printf(log, log->buf, stderr, "%s: %s%s%s",
 			            tmp, pfx, buf, eol);
+		} else if ((log->fmt & LOG_FMT_FORMAT_STDERR)) {
+			xlogfmtcat(&msgbuf, "[%M] %s", pfx);
+			_log_printf(log, log->buf, stderr, "%s%s%s",
+				    msgbuf, buf, eol);
+			xfree(msgbuf);
 		} else {
 			_log_printf(log, log->buf, stderr, "%s: %s%s%s",
 			            log->argv0, pfx, buf, eol);
@@ -1279,10 +1373,43 @@ static void _log_msg(log_level_t level, bool sched, bool spank, const char *fmt,
 		fflush(stderr);
 	}
 
-	if ((level <= log->opt.logfile_level) && (log->logfp != NULL)) {
+	if (!log->logfp || (level > log->opt.logfile_level)) {
+		/* do nothing */
+	} else if (log->opt.logfile_fmt == LOG_FILE_FMT_JSON) {
+		/*
+		 * log format json gets all of the logging to match
+		 * https://docs.docker.com/config/containers/logging/json-file/
+		 */
+		char time[50];
+		char *json = NULL;
+		char *stream;
+		data_t *out = data_set_dict(data_new());
 
-		xlogfmtcat(&msgbuf, "[%M] %s%s%s", log->fpfx, pfx, buf);
-		_log_printf(log, log->fbuf, log->logfp, "%s\n", msgbuf);
+		if (level <= log->opt.stderr_level)
+			stream = "stderr";
+		else
+			stream = "stdout";
+
+		log_timestamp(time, sizeof(time));
+		data_set_string_fmt(data_key_set(out, "log"), "%s%s%s",
+				    log->prefix, pfx, buf);
+		data_set_string(data_key_set(out, "stream"), stream);
+		data_set_string(data_key_set(out, "time"), time);
+
+		serialize_g_data_to_string(&json, NULL, out, MIME_TYPE_JSON,
+					   SER_FLAGS_COMPACT);
+		FREE_NULL_DATA(out);
+
+		if (json)
+			_log_printf(log, log->fbuf, log->logfp, "%s\n", json);
+
+		xfree(json);
+		fflush(log->logfp);
+		xfree(msgbuf);
+	} else {
+		xassert(log->opt.logfile_fmt == LOG_FILE_FMT_TIMESTAMP);
+		xlogfmtcat(&msgbuf, "[%M] %s%s", log->prefix, pfx);
+		_log_printf(log, log->fbuf, log->logfp, "%s%s\n", msgbuf, buf);
 		fflush(log->logfp);
 
 		xfree(msgbuf);
@@ -1292,7 +1419,7 @@ static void _log_msg(log_level_t level, bool sched, bool spank, const char *fmt,
 
 		/* Avoid changing errno if syslog fails */
 		int orig_errno = slurm_get_errno();
-		xlogfmtcat(&msgbuf, "%s%s", pfx, buf);
+		xlogfmtcat(&msgbuf, "%s%s%s", log->prefix, pfx, buf);
 		openlog(log->argv0, LOG_PID, log->facility);
 		syslog(priority, "%.500s", msgbuf);
 		closelog();
@@ -1344,6 +1471,9 @@ void fatal(const char *fmt, ...)
 {
 	LOG_MACRO(LOG_LEVEL_FATAL, false, fmt);
 	log_flush();
+
+	if (getenv("ABORT_ON_FATAL"))
+		abort();
 
 	exit(1);
 }
@@ -1401,7 +1531,15 @@ void spank_log(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	_log_msg(LOG_LEVEL_ERROR, false, true, fmt, ap);
+	_log_msg(LOG_LEVEL_ERROR, false, true, false, fmt, ap);
+	va_end(ap);
+}
+
+void warning(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	_log_msg(LOG_LEVEL_INFO, false, false, true, fmt, ap);
 	va_end(ap);
 }
 
@@ -1444,15 +1582,9 @@ void slurm_debug5(const char *fmt, ...)
 	LOG_MACRO(LOG_LEVEL_DEBUG5, false, fmt);
 }
 
-int sched_error(const char *fmt, ...)
+void sched_error(const char *fmt, ...)
 {
 	LOG_MACRO(LOG_LEVEL_ERROR, true, fmt);
-
-	/*
-	 *  Return SLURM_ERROR so calling functions can
-	 *    do "return error (...);"
-	 */
-	return SLURM_ERROR;
 }
 
 void sched_info(const char *fmt, ...)
@@ -1545,26 +1677,32 @@ extern char *log_build_step_id_str(
 	return buf;
 }
 
-extern void _log_flag_hex(const void *data, size_t len, const char *fmt, ...)
+extern void _log_flag_hex(const void *data, size_t len, ssize_t start,
+			  ssize_t end, const char *fmt, ...)
 {
 	va_list ap;
 	char *prepend;
-	static const int hex_cols = 16, hex_rows = 16;
+	static const int hex_cols = 16;
 
 	if (!data || !len)
 		return;
+
+	if (start < 0)
+		start = 0;
+	if ((end < 0) || (end > len))
+		end = len;
 
 	va_start(ap, fmt);
 	prepend = vxstrfmt(fmt, ap);
 	va_end(ap);
 
-	for (int i = 0; (i < len) && (i < (hex_cols * hex_rows)); ) {
-		int remain = len - i;
+	for (size_t i = start; (i < end); ) {
+		int remain = end - i;
 		int print = (remain < hex_cols) ? remain : hex_cols;
 		char *phex = xstring_bytes2hex((data + i), print, " ");
 		char *pstr = xstring_bytes2printable((data + i), print, '.');
 
-		format_print(LOG_LEVEL_VERBOSE, "%s [%04d/%04zu] 0x%s \"%s\"",
+		format_print(LOG_LEVEL_VERBOSE, "%s [%04zu/%04zu] 0x%s \"%s\"",
 			     prepend, i, len, phex, pstr);
 
 		i += print;

@@ -48,11 +48,11 @@
 
 #include "src/common/slurm_xlator.h"
 #include "src/common/assoc_mgr.h"
-#include "src/common/slurm_acct_gather_interconnect.h"
+#include "src/interfaces/acct_gather_interconnect.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
-#include "src/slurmd/common/proctrack.h"
-#include "src/common/slurm_acct_gather_profile.h"
+#include "src/interfaces/proctrack.h"
+#include "src/interfaces/acct_gather_profile.h"
 
 #include "src/slurmd/slurmd/slurmd.h"
 #include "acct_gather_interconnect_ofed.h"
@@ -403,16 +403,8 @@ extern void acct_gather_interconnect_p_conf_options(
 
 extern void acct_gather_interconnect_p_conf_values(List *data)
 {
-	config_key_pair_t *key_pair;
-
 	xassert(*data);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("InterconnectOFEDPort");
-	key_pair->value = xstrdup_printf("%u", ofed_conf.port);
-	list_append(*data, key_pair);
-
-	return;
+	add_key_pair(*data, "InterconnectOFEDPort", "%u", ofed_conf.port);
 }
 
 extern int acct_gather_interconnect_p_get_data(acct_gather_data_t *data)

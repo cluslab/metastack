@@ -65,8 +65,10 @@
 #include "helper.h"
 #include "slurm/slurm.h"
 #include "src/common/slurm_xlator.h"
+
+#include "src/common/callerid.h"
+#include "src/interfaces/cgroup.h"
 #include "src/common/slurm_protocol_api.h"
-#include "src/common/cgroup.h"
 
 typedef enum {
 	CALLERID_ACTION_NEWEST,
@@ -120,8 +122,8 @@ static int _adopt_process(pam_handle_t *pamh, pid_t pid, step_loc_t *stepd)
 
 	if (!stepd)
 		return -1;
-	debug("_adopt_process: trying to get %ps to adopt %d",
-	      &stepd->step_id, pid);
+	debug("%s: trying to get %ps to adopt %d",
+	      __func__, &stepd->step_id, pid);
 	fd = stepd_connect(stepd->directory, stepd->nodename,
 			   &stepd->step_id, &protocol_version);
 	if (fd < 0) {
@@ -133,14 +135,14 @@ static int _adopt_process(pam_handle_t *pamh, pid_t pid, step_loc_t *stepd)
 
 	rc = stepd_add_extern_pid(fd, stepd->protocol_version, pid);
 
-	if (rc == PAM_SUCCESS) {
+	if (rc == SLURM_SUCCESS) {
 		char *env;
 		env = xstrdup_printf("SLURM_JOB_ID=%u", stepd->step_id.job_id);
 		pam_putenv(pamh, env);
 		xfree(env);
 	}
 
-	if ((rc == PAM_SUCCESS) && !opts.disable_x11) {
+	if ((rc == SLURM_SUCCESS) && !opts.disable_x11) {
 		int display;
 		char *xauthority;
 		display = stepd_get_x11_display(fd, stepd->protocol_version,
@@ -174,9 +176,8 @@ static int _adopt_process(pam_handle_t *pamh, pid_t pid, step_loc_t *stepd)
 			 * No need to specify the type of namespace, rely on
 			 * slurm to give us the right one
 			 */
-			rc = setns(ns_fd, 0);
-			if (rc) {
-				error("setns() failed: %s", strerror(errno));
+			if (setns(ns_fd, 0)) {
+				error("setns() failed: %m");
 				rc = SLURM_ERROR;
 			}
 		}
@@ -184,7 +185,7 @@ static int _adopt_process(pam_handle_t *pamh, pid_t pid, step_loc_t *stepd)
 
 	close(fd);
 
-	if (rc == PAM_SUCCESS)
+	if (rc == SLURM_SUCCESS)
 		info("Process %d adopted into job %u",
 		     pid, stepd->step_id.job_id);
 	else
@@ -271,11 +272,11 @@ static int _check_cg_version()
  * Unlike when using cgroup/v1, we will pick here the job with the highest JobID
  * instead of getting the job which has the earliest cgroup creation time.
  */
-static int _indeterminate_multiple_v2(pam_handle_t *pamh, List steps, uid_t uid,
-				      step_loc_t **out_stepd)
+static int _indeterminate_multiple_v2(pam_handle_t *pamh, list_t *steps,
+				      uid_t uid, step_loc_t **out_stepd)
 {
 	int rc = PAM_PERM_DENIED;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	step_loc_t *stepd = NULL;
 	uint32_t most_recent = 0;
 
@@ -308,10 +309,10 @@ static int _indeterminate_multiple_v2(pam_handle_t *pamh, List steps, uid_t uid,
 	return rc;
 }
 
-static int _indeterminate_multiple(pam_handle_t *pamh, List steps, uid_t uid,
+static int _indeterminate_multiple(pam_handle_t *pamh, list_t *steps, uid_t uid,
 				   step_loc_t **out_stepd)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int rc = PAM_PERM_DENIED;
 	step_loc_t *stepd = NULL;
 	time_t most_recent = 0, cgroup_time = 0;
@@ -413,7 +414,7 @@ static int _indeterminate_multiple(pam_handle_t *pamh, List steps, uid_t uid,
  * without adoption. Otherwise, call _indeterminate_multiple to pick a job. If
  * successful, adopt it into a process and use a return code based on success of
  * the adoption and the action_adopt_failure setting. */
-static int _action_unknown(pam_handle_t *pamh, struct passwd *pwd, List steps)
+static int _action_unknown(pam_handle_t *pamh, struct passwd *pwd, list_t *steps)
 {
 	int rc;
 	step_loc_t *stepd = NULL;
@@ -444,9 +445,9 @@ static int _action_unknown(pam_handle_t *pamh, struct passwd *pwd, List steps)
 
 /* _user_job_count returns the count of jobs owned by the user AND sets job_id
  * to the last job from the user that is found */
-static int _user_job_count(List steps, uid_t uid, step_loc_t **out_stepd)
+static int _user_job_count(list_t *steps, uid_t uid, step_loc_t **out_stepd)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int user_job_cnt = 0;
 	step_loc_t *stepd = NULL;
 	*out_stepd = NULL;
@@ -686,6 +687,9 @@ static void _parse_opts(pam_handle_t *pamh, int argc, const char **argv)
 			opts.pam_service = xstrdup(v);
 		} else if (!xstrncasecmp(*argv, "join_container=false", 19)) {
 			opts.join_container = false;
+		} else {
+			pam_syslog(pamh, LOG_ERR,
+				   "ignoring unrecognized option '%s'", *argv);
 		}
 	}
 
@@ -748,7 +752,7 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 {
 	int retval = PAM_IGNORE, rc = PAM_IGNORE, slurmrc, bufsize, user_jobs;
 	char *user_name;
-	List steps = NULL;
+	list_t *steps = NULL;
 	step_loc_t *stepd = NULL;
 	struct passwd pwd, *pwd_result;
 	char *buf = NULL;
@@ -833,10 +837,12 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 	}
 
 	/*
-	 * Initialize after root has been permitted access, which is critical
-	 * in case the config file won't load on this node for some reason.
+	 * Initialize Slurm after root has been granted access but before but
+	 * before any Slurm API calls are made.  It is critical this happens
+	 * after root is handled to prevent locking an admin out of a node if
+	 * there is a problem initializing Slurm.
 	 */
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 	slurm_cgroup_conf_init();
 
 	/*
@@ -856,6 +862,7 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 	user_jobs = _user_job_count(steps, pwd.pw_uid, &stepd);
 	if (user_jobs == 0) {
 		if (opts.action_no_jobs == CALLERID_ACTION_DENY) {
+			debug("uid %u owns no jobs => deny", pwd.pw_uid);
 			send_user_msg(pamh, "Access denied by " PAM_MODULE_NAME
 				      ": you have no active jobs on this node");
 			rc = PAM_PERM_DENIED;

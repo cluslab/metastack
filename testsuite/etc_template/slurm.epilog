@@ -1,4 +1,0 @@
-#!/bin/sh
-date
-sleep 600
-exit 0

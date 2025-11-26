@@ -24,20 +24,11 @@
 /* Make sure we get the 1.8 HDF5 API */
 #undef H5_USE_18_API
 
-/* Define to 1 if 3-dimensional architecture */
-#undef HAVE_3D
-
 /* Define if you are compiling with bpf. */
 #undef HAVE_BPF
 
 /* Define to 1 if you have the `cfmakeraw' function. */
 #undef HAVE_CFMAKERAW
-
-/* Define to 1 for systems with a Cray Aries network */
-#undef HAVE_CRAY_NETWORK
-
-/* Define to 1 if DataWarp library found */
-#undef HAVE_DATAWARP
 
 /* Define to 1 if you have the declaration of `hstrerror', and to 0 if you
    don't. */
@@ -81,6 +72,9 @@
 
 /* Define to 1 if running slurmd on front-end only */
 #undef HAVE_FRONT_END
+
+/* Define to 1 if you have the `getrandom' function. */
+#undef HAVE_GETRANDOM
 
 /* Define to 1 if you have the `get_current_dir_name' function. */
 #undef HAVE_GET_CURRENT_DIR_NAME
@@ -157,17 +151,8 @@
 /* Define to 1 if using MySQL libaries */
 #undef HAVE_MYSQL
 
-/* Define to 1 for running on a Cray Aries system */
-#undef HAVE_NATIVE_CRAY
-
 /* Define to 1 if you have the <netdb.h> header file. */
 #undef HAVE_NETDB_H
-
-/* Define to 1 if netloc library found */
-#undef HAVE_NETLOC
-
-/* Define to 1 if netloc includes use underscore not subdirectory */
-#undef HAVE_NETLOC_NOSUB
 
 /* define if numa library installed */
 #undef HAVE_NUMA
@@ -214,14 +199,17 @@
 /* Define to 1 if you have the <pty.h> header file. */
 #undef HAVE_PTY_H
 
+/* Define to 1 if librdkafka library found */
+#undef HAVE_RDKAFKA
+
 /* Define if you are compiling with readline. */
 #undef HAVE_READLINE
 
 /* Define to 1 if RSMI library found */
 #undef HAVE_RSMI
 
-/* Define to 1 if DSMI library found */
-#undef HAVE_DSMI
+/* Define to 1 if s2n library found. */
+#undef HAVE_S2N
 
 /* Define to 1 if you have the <security/pam_appl.h> header file. */
 #undef HAVE_SECURITY_PAM_APPL_H
@@ -273,6 +261,9 @@
 
 /* Define to 1 if you have the `strsignal' function. */
 #undef HAVE_STRSIGNAL
+
+/* Define to 1 if the system has the type `struct cxi_rsrc_use'. */
+#undef HAVE_STRUCT_CXI_RSRC_USE
 
 /* Define to 1 if you have the `sysctlbyname' function. */
 #undef HAVE_SYSCTLBYNAME
@@ -361,6 +352,9 @@
 /* Define to 1 if the system has the `__builtin_popcountll' built-in function
    */
 #undef HAVE___BUILTIN_POPCOUNTLL
+
+/* Full path of libcxi.so */
+#undef HPE_SLINGSHOT_LIB
 
 /* Defined if libcurl supports AsynchDNS */
 #undef LIBCURL_FEATURE_ASYNCHDNS
@@ -485,9 +479,6 @@
 /* Define to 1 for salloc to kill child processes at job termination */
 #undef SALLOC_KILL_CMD
 
-/* Define to 1 to require salloc execution in the foreground. */
-#undef SALLOC_RUN_FOREGROUND
-
 /* Define if you need setproctitle padding */
 #undef SETPROCTITLE_PS_PADDING
 
@@ -562,7 +553,7 @@
 /* Define path to su command */
 #undef SUCMD
 
-/* 3-dimensional architecture */
+/* Define system dimension count */
 #undef SYSTEM_DIMENSIONS
 
 /* Define slurm_ prefix function aliases for plugins */

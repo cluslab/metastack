@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  group_cache.c - locally cache results from getgrouplist()
  *****************************************************************************
- *  Copyright (C) 2017 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *  Based on code originally contributed by Takao Hatazaki (HP).
  *
  *  This file is part of Slurm, a resource management program.
@@ -90,9 +89,7 @@ static void _group_cache_list_delete(void *x)
 void group_cache_purge(void)
 {
 	slurm_mutex_lock(&gids_mutex);
-	if (gids_cache_list)
-		list_destroy(gids_cache_list);
-	gids_cache_list = NULL;
+	FREE_NULL_LIST(gids_cache_list);
 	slurm_mutex_unlock(&gids_mutex);
 }
 
@@ -124,7 +121,12 @@ static void _init_or_reinit_entry(gids_cache_t **in,
 
 	rc = slurm_getpwuid_r(needle->uid, &pwd, buffer, PW_BUF_SIZE, &result);
 	if (!result || !result->pw_name) {
-		error("slurm_getpwuid_r() failed: %s", strerror(rc));
+		if (!result && !rc)
+			error("%s: getpwuid_r(%u): no record found",
+			      __func__, needle->uid);
+		else
+			error("%s: getpwuid_r(%u): %s",
+			      __func__, needle->uid, strerror(rc));
 
 		if (*in) {
 			/* discard this now-invalid cache entry */
@@ -229,6 +231,7 @@ static int _group_cache_lookup_internal(gids_cache_needle_t *needle, gid_t **gid
 		 */
 		*gids = xmalloc(sizeof(gid_t));
 		*gids[0] = needle->gid;
+		slurm_mutex_unlock(&gids_mutex);
 		return 1;
 	}
 

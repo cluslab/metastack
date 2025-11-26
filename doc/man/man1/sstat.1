@@ -1,4 +1,4 @@
-.TH sstat "1" "Slurm Commands" "August 2022" "Slurm Commands"
+.TH sstat "1" "Slurm Commands" "January 2024" "Slurm Commands"
 
 .SH "NAME"
 sstat \- Display the status information of a running job/step.
@@ -24,9 +24,11 @@ For the non\-root user, the \fBsstat\fR output is limited to the user's jobs.
 .PP
 \fBNOTE\fR: The \fBsstat\fR command requires that the \fBjobacct_gather\fP
 plugin be installed and operational.
-.PP
-\fBNOTE\fR: The \fBsstat\fR command is not supported on Cray ALPS.
 
+\fBNOTE\fR: Availability of metrics rely on the \fBjobacct_gather\fP plugin
+used. For example the jobacct_gather/cgroup in combination with cgroup/v2 does
+not provide Virtual Memory metrics due to limitations in the kernel cgroups
+interfaces and will show a 0 for the related fields.
 .SH "OPTIONS"
 
 .TP
@@ -46,11 +48,11 @@ If no anomaly detection parameter is specified when the job is submitted, or slu
 Comma separated list of fields.
 (use '\-\-helpformat' for a list of available fields).
 
-NOTE: When using the format option for listing various fields you can put a
-%NUMBER afterwards to specify how many characters should be printed.
+\fBNOTE\fR: When using the format option for listing various fields you can put
+a %NUMBER afterwards to specify how many characters should be printed.
 
 i.e. format=name%30 will print 30 characters of field name right
-justified.  A \-30 will print 30 characters left justified.
+justified. A \-30 will print 30 characters left justified.
 .IP
 
 .TP
@@ -64,25 +66,16 @@ Print a list of fields that can be specified with the '\-\-format' option.
 .IP
 
 .TP
-\fB\-g\fR, 
-Convert units from their original type (e.g. 2048M will be converted to 2G).
-.IP
-
-.TP
 \fB\-j\fR, \fB\-\-jobs\fR
 Format is <job(.step)>. Stat this job step or comma\-separated list of
-job steps. This option is required.  The step portion will default to
+job steps. This option is required. The step portion will default to
 the lowest numbered (not batch, extern, etc) step running if not specified,
 unless the \-\-allsteps flag is set where not specifying a step will result in
 all running steps to be displayed.
-NOTE: A step id of 'batch' will display the information about the batch step.
-NOTE: A step id of 'extern' will display the information about the
-extern step.  This step is only available when using PrologFlags=contain
-.IP
-
-.TP
-\fB\-m\fR,
-Convert units from their original type (e.g. 2048k will be converted to 2M).
+\fBNOTE\fR: A step id of 'batch' will display the information about the batch
+step.
+\fBNOTE\fR: A step id of 'extern' will display the information about the
+extern step. This step is only available when using PrologFlags=contain
 .IP
 
 .TP
@@ -105,11 +98,6 @@ output will be '|' delimited with a '|' at the end
 .TP
 \fB\-P\fR, \fB\-\-parsable2\fR
 output will be '|' delimited without a '|' at the end
-.IP
-
-.TP
-\fB\-r\fR, 
-Convert units from their original type (e.g. CPUUtil 1 will be converted to 100).
 .IP
 
 .TP
@@ -293,15 +281,15 @@ Requested CPU frequency for the step, in kHz.
 .TP
 \f3TresUsageInAve\fP
 Tres average usage in by all tasks in job.
-NOTE: If corresponding TresUsageInMaxTask is \-1 the metric is node centric
-instead of task.
+\fBNOTE\fR: If corresponding TresUsageInMaxTask is \-1 the metric is node
+centric instead of task.
 .IP
 
 .TP
 \f3TresUsageInMax\fP
 Tres maximum usage in by all tasks in job.
-NOTE: If corresponding TresUsageInMaxTask is \-1 the metric is node centric
-instead of task.
+\fBNOTE\fR: If corresponding TresUsageInMaxTask is \-1 the metric is node
+centric instead of task.
 .IP
 
 .TP
@@ -317,15 +305,15 @@ Task for which each maximum TRES usage out occurred.
 .TP
 \f3TresUsageOutAve\fP
 Tres average usage out by all tasks in job.
-NOTE: If corresponding TresUsageOutMaxTask is \-1 the metric is node centric
-instead of task.
+\fBNOTE\fR: If corresponding TresUsageOutMaxTask is \-1 the metric is node
+centric instead of task.
 .IP
 
 .TP
 \f3TresUsageOutMax\fP
 Tres maximum usage out by all tasks in job.
-NOTE: If corresponding TresUsageOutMaxTask is \-1 the metric is node centric
-instead of task.
+\fBNOTE\fR: If corresponding TresUsageOutMaxTask is \-1 the metric is node
+centric instead of task.
 .IP
 
 .TP
@@ -397,26 +385,6 @@ Specify debug flags for sstat to use. See DebugFlags in the
 variable takes precedence over the setting in the slurm.conf.
 .IP
 
-.TP
-\fBSSTAT_EXTEND\fR
-The import format for the SSTAT_EXTEND environment variable is as follows:
-export SSTAT_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
-where '.' indicates left indentation and no '.' indicates right indentation.
-The '-' sign after the colon represents left alignment.
-The number represents the length of the print format. 
-
-The supported fields for left and right indentation are as follows, 
-AveCPU, AveCPUFreq, AveDiskRead, AveDiskWrite, AvePages, AveRSS, 
-AveVMSize, ConsumedEnergy, JobID, MaxDiskRead, MaxDiskReadNode, 
-MaxDiskWrite, MaxDiskWriteNode, MaxPages, MaxPagesNode, MaxRSS, 
-MaxRSSNode, MaxVMSize, MaxVMSizeNode, MinCPU, MinCPUNode, Nodelist, 
-Pids, ReqCPUFreq, ReqCPUFreqMin, ReqCPUFreqMax, ReqCPUFreqGov, TRESUsageInAve, 
-TRESUsageInMax, TRESUsageInMaxNode, TRESUsageInMaxTask, TRESUsageInMin, 
-TRESUsageInMinNode, TRESUsageInMinTask, TRESUsageInTot, TRESUsageOutAve, 
-TRESUsageOutMax, TRESUsageOutMaxNode, TRESUsageOutMaxTask, TRESUsageOutMin, 
-TRESUsageOutMinNode, TRESUsageOutMinTask, TRESUsageOutTot.
-.IP
-
 .SH "EXAMPLES"
 
 .TP
@@ -452,7 +420,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "SEE ALSO"

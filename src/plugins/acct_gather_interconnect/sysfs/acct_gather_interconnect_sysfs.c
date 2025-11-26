@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  acct_gather_interconnect_sysfs.c
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com>.
@@ -38,7 +37,7 @@
 
 #include "src/common/assoc_mgr.h"
 #include "src/common/list.h"
-#include "src/common/slurm_jobacct_gather.h"
+#include "src/interfaces/jobacct_gather.h"
 
 /*
  * These variables are required by the generic plugin interface.  If they
@@ -300,22 +299,17 @@ extern void acct_gather_interconnect_p_conf_options(
 
 extern void acct_gather_interconnect_p_conf_values(List *data)
 {
-	config_key_pair_t *key_pair;
-
 	xassert(*data);
 
-	key_pair = xmalloc(sizeof(*key_pair));
-        key_pair->name = xstrdup("SysfsInterfaces");
-        key_pair->value = xstrdup(sysfs_interfaces);
-        list_append(*data, key_pair);
+	add_key_pair(*data, "SysfsInterfaces", "%s", sysfs_interfaces);
 }
 
 static void _blank(acct_gather_data_t *data)
 {
-        data->num_reads = 0;
-        data->num_writes = 0;
-        data->size_read = 0;
-        data->size_write = 0;
+	data->num_reads = 0;
+	data->num_writes = 0;
+	data->size_read = 0;
+	data->size_write = 0;
 }
 
 extern int acct_gather_interconnect_p_get_data(acct_gather_data_t *data)

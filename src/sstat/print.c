@@ -169,7 +169,7 @@ void print_fields(slurmdb_step_rec_t *step)
 			break;
 		case PRINT_CONSUMED_ENERGY_RAW:
 			field->print_routine(field,
-					     step->stats.consumed_energy,
+					     &step->stats.consumed_energy,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_AVEDISKREAD:
@@ -226,12 +226,12 @@ void print_fields(slurmdb_step_rec_t *step)
 			if (tmp_uint64 != NO_VAL64)
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
 				convert_num_unit((double)tmp_uint64, outbuf,
-					 sizeof(outbuf), UNIT_NONE, params.units,
-					 params.convert_flags);
+					sizeof(outbuf), UNIT_NONE, params.units,
+					params.convert_flags);
 #else
 				convert_num_unit((double)tmp_uint64, outbuf,
-					 sizeof(outbuf), UNIT_NONE, NO_VAL,
-					 params.convert_flags);
+					sizeof(outbuf), UNIT_NONE, NO_VAL,
+					params.convert_flags);
 #endif
 			field->print_routine(field,
 					     outbuf,
@@ -296,7 +296,7 @@ void print_fields(slurmdb_step_rec_t *step)
 				tmp_uint64 = NO_VAL64;
 
 			field->print_routine(field,
-					     tmp_uint64,
+					     &tmp_uint64,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_MAXDISKWRITE:
@@ -335,7 +335,7 @@ void print_fields(slurmdb_step_rec_t *step)
 				tmp_uint64 = NO_VAL64;
 
 			field->print_routine(field,
-					     tmp_uint64,
+					     &tmp_uint64,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_MAXPAGES:
@@ -374,7 +374,7 @@ void print_fields(slurmdb_step_rec_t *step)
 				tmp_uint64 = NO_VAL64;
 
 			field->print_routine(field,
-					     tmp_uint64,
+					     &tmp_uint64,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_MAXRSS:
@@ -385,14 +385,15 @@ void print_fields(slurmdb_step_rec_t *step)
 
 			if (tmp_uint64 != NO_VAL64)
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
-				convert_num_unit((double)tmp_uint64, outbuf,
-					 sizeof(outbuf), UNIT_NONE, params.units,
-					 params.convert_flags);
+			convert_num_unit((double)tmp_uint64, outbuf,
+				 sizeof(outbuf), UNIT_NONE, params.units,
+				 params.convert_flags);
 #else
-				convert_num_unit((double)tmp_uint64, outbuf,
-					 sizeof(outbuf), UNIT_NONE, NO_VAL,
-					 params.convert_flags);
+			convert_num_unit((double)tmp_uint64, outbuf,
+				 sizeof(outbuf), UNIT_NONE, NO_VAL,
+				 params.convert_flags);
 #endif
+
 			field->print_routine(field,
 					     outbuf,
 					     (curr_inx == field_count));
@@ -418,7 +419,7 @@ void print_fields(slurmdb_step_rec_t *step)
 				tmp_uint64 = NO_VAL64;
 
 			field->print_routine(field,
-					     tmp_uint64,
+					     &tmp_uint64,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_MAXVSIZE:
@@ -457,7 +458,7 @@ void print_fields(slurmdb_step_rec_t *step)
 				tmp_uint64 = NO_VAL64;
 
 			field->print_routine(field,
-					     tmp_uint64,
+					     &tmp_uint64,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_MINCPU:
@@ -497,7 +498,7 @@ void print_fields(slurmdb_step_rec_t *step)
 				tmp_uint64 = NO_VAL64;
 
 			field->print_routine(field,
-					     tmp_uint64,
+					     &tmp_uint64,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_TRESUIA:
@@ -571,7 +572,7 @@ void print_fields(slurmdb_step_rec_t *step)
 			break;
 		case PRINT_NTASKS:
 			field->print_routine(field,
-					     step->ntasks,
+					     &step->ntasks,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_PIDS:
@@ -651,7 +652,7 @@ void print_fields(slurmdb_step_rec_t *step)
 					     outbuf,
 					     (curr_inx == field_count));
 			break;
-#endif						
+#endif	
 		default:
 			break;
 		}
