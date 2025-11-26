@@ -47,7 +47,7 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 	char *extra = NULL;
 	char *tmp = NULL;
 	List txn_list = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 	int set = 0;
 	int i=0;
@@ -160,7 +160,7 @@ extern List as_kingbase_get_txn(kingbase_conn_t *kingbase_conn, uid_t uid,
 
 			xstrfmtcat(name_extra, "(name like E'%%\\'%s\\'%%'"
 				   " or name='%s')"
-				   " or (info like E'%%user=\\'%s\\'%%')",
+				   " or (info like E'%%`user`=\\'%s\\'%%')",
 				   object, object, object);
 
 			set = 1;

@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Copyright (C) 2010-2016 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
@@ -53,6 +53,7 @@
 #include "slurm/slurm.h"
 
 #include "src/common/read_config.h"
+#include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 #include "src/strigger/strigger.h"
@@ -62,7 +63,6 @@ static int   _get_trigger(void);
 static int   _set_trigger(void);
 static char *_trig_flags(uint16_t flags);
 static int   _trig_offset(uint16_t offset);
-static char *_trig_user(uint32_t user_id);
 
 int main(int argc, char **argv)
 {
@@ -70,7 +70,7 @@ int main(int argc, char **argv)
 	log_options_t opts = LOG_OPTS_STDERR_ONLY;
 	log_init("strigger", opts, SYSLOG_FACILITY_DAEMON, NULL);
 
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 	parse_command_line(argc, argv);
 	if (params.verbose) {
 		opts.stderr_level += params.verbose;
@@ -158,6 +158,10 @@ static int _set_trigger(void)
 		ti.trig_type |= TRIGGER_TYPE_IDLE;
 	if (params.node_up)
 		ti.trig_type |= TRIGGER_TYPE_UP;
+	if (params.node_draining)
+		ti.trig_type |= TRIGGER_TYPE_DRAINING;
+	if (params.node_resume)
+		ti.trig_type |= TRIGGER_TYPE_RESUME;
 	if (params.reconfig)
 		ti.trig_type |= TRIGGER_TYPE_RECONFIG;
 	if (params.pri_ctld_fail) {
@@ -225,6 +229,7 @@ static int _get_trigger(void)
 {
 	trigger_info_msg_t * trig_msg;
 	int line_no = 0, i;
+	char *user;
 
 	if (slurm_get_triggers(&trig_msg)) {
 		slurm_perror("slurm_get_triggers");
@@ -295,6 +300,20 @@ static int _get_trigger(void)
 					!= TRIGGER_RES_TYPE_FRONT_END)) ||
 			    (trig_msg->trigger_array[i].trig_type
 					!= TRIGGER_TYPE_UP))
+				continue;
+		}
+		if (params.node_draining) {
+			if ((trig_msg->trigger_array[i].res_type !=
+				    TRIGGER_RES_TYPE_NODE) ||
+			    (trig_msg->trigger_array[i].trig_type !=
+				    TRIGGER_TYPE_DRAINING))
+				continue;
+		}
+		if (params.node_resume) {
+			if ((trig_msg->trigger_array[i].res_type !=
+				    TRIGGER_RES_TYPE_NODE) ||
+			    (trig_msg->trigger_array[i].trig_type !=
+				    TRIGGER_TYPE_RESUME))
 				continue;
 		}
 		if (params.time_limit) {
@@ -404,15 +423,17 @@ static int _get_trigger(void)
 		}
 		line_no++;
 
+		user = uid_to_string(trig_msg->trigger_array[i].user_id);
 		printf("%7u %-9s %7s %-35s %6d %-8s %-5s %s\n",
 			trig_msg->trigger_array[i].trig_id,
 			trigger_res_type(trig_msg->trigger_array[i].res_type),
 			trig_msg->trigger_array[i].res_id,
 			trigger_type(trig_msg->trigger_array[i].trig_type),
 			_trig_offset(trig_msg->trigger_array[i].offset),
-			_trig_user(trig_msg->trigger_array[i].user_id),
+			user,
 			_trig_flags(trig_msg->trigger_array[i].flags),
 			trig_msg->trigger_array[i].program);
+		xfree(user);
 	}
 
 	slurm_free_trigger_msg(trig_msg);
@@ -432,15 +453,4 @@ static int _trig_offset(uint16_t offset)
 	rc  = offset;
 	rc -= 0x8000;
 	return rc;
-}
-
-static char *_trig_user(uint32_t user_id)
-{
-	uid_t uid = user_id;
-	struct passwd *pw;
-
-	pw = getpwuid(uid);
-	if (pw == NULL)
-		return "unknown";
-	return pw->pw_name;
 }

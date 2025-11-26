@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  container.c - slurmstepd container handling
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC.
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -42,19 +41,21 @@
 
 #include "src/common/data.h"
 #include "src/common/fd.h"
+#include "src/common/oci_config.h"
+#include "src/common/read_config.h"
 #include "src/common/run_command.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+#include "src/interfaces/serializer.h"
 
 #include "src/slurmd/slurmstepd/container.h"
-#include "src/slurmd/slurmstepd/read_oci_conf.h"
 #include "src/slurmd/slurmstepd/slurmstepd.h"
 
 /*
  * We need a location inside of the container that is controlled by Slurm to
  * pass the startup script and I/O handling for batch steps.
  *
- * /tmp/slurm was choosen since runc will always mount it private
+ * /tmp/slurm was chosen since runc will always mount it private
  */
 #define SLURM_CONTAINER_BATCH_SCRIPT "/tmp/slurm/startup"
 #define SLURM_CONTAINER_ENV_FILE "environment"
@@ -65,25 +66,70 @@
 oci_conf_t *oci_conf = NULL;
 
 static char *create_argv[] = {
-	"/bin/sh", "-c", "echo 'create disabled'; exit 1", NULL };
+	"/bin/sh", "-c", "echo 'RunTimeCreate never configured in oci.conf'; exit 1", NULL };
 static char *delete_argv[] = {
-	"/bin/sh", "-c", "echo 'delete disabled'; exit 1", NULL };
+	"/bin/sh", "-c", "echo 'RunTimeDelete never configured in oci.conf'; exit 1", NULL };
 static char *kill_argv[] = {
-	"/bin/sh", "-c", "echo 'kill disabled'; exit 1", NULL };
+	"/bin/sh", "-c", "echo 'RunTimeKill never configured in oci.conf'; exit 1", NULL };
 static char *query_argv[] = {
-	"/bin/sh", "-c", "echo 'query disabled'; exit 1", NULL };
+	"/bin/sh", "-c", "echo 'RunTimeQuery never configured in oci.conf'; exit 1", NULL };
 static char *run_argv[] = {
-	"/bin/sh", "-c", "echo 'run disabled'; exit 1", NULL };
+	"/bin/sh", "-c", "echo 'RunTimeRun never configured in oci.conf'; exit 1", NULL };
 static char *start_argv[] = {
-	"/bin/sh", "-c", "echo 'start disabled'; exit 1", NULL };
+	"/bin/sh", "-c", "echo 'RunTimeStart never configured in oci.conf'; exit 1", NULL };
 
-static char *_generate_pattern(const char *pattern, stepd_step_rec_t *job,
-			       int task_id, char *rootfs_path, char **cmd_args)
+static char *_get_config_path(stepd_step_rec_t *step);
+static char *_generate_spooldir(stepd_step_rec_t *step,
+				stepd_step_task_info_t *task);
+static void _generate_patterns(stepd_step_rec_t *step,
+			       stepd_step_task_info_t *task);
+
+static void _dump_command_args(run_command_args_t *args, const char *caller)
 {
+	if (get_log_level() < LOG_LEVEL_DEBUG3)
+		return;
+
+	for (int i = 0; args->script_argv[i]; i++)
+		debug3("%s: command argv[%d]=%s",
+		       caller, i, args->script_argv[i]);
+}
+
+static void _pattern_argv(char **buffer, char **offset, char **cmd_args)
+{
+	for (char **arg = cmd_args; arg && *arg; arg++) {
+		if (arg != cmd_args)
+			xstrfmtcatat(*buffer, offset, " ");
+
+		xstrfmtcatat(*buffer, offset, "'");
+
+		/*
+		 * POSIX 1003.1 2.2.2 only bans a single quote in single quotes
+		 * for escaping
+		 */
+
+		for (char *c = *arg; *c != '\0'; c++) {
+			if (*c == '\'')
+				xstrfmtcatat(*buffer, offset, "'\"'\"'");
+
+			xstrfmtcatat(*buffer, offset, "%c", *c);
+		}
+
+		xstrfmtcatat(*buffer, offset, "'");
+	}
+}
+
+static char *_generate_pattern(const char *pattern, stepd_step_rec_t *step,
+			       int task_id, char **cmd_args)
+{
+	step_container_t *c = step->container;
 	char *buffer = NULL, *offset = NULL;
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
 
 	if (!pattern)
 		return NULL;
+
+	xassert((task_id == -1) || (step->node_tasks >= task_id));
 
 	for (const char *b = pattern; *b; b++) {
 		if (*b == '%') {
@@ -92,61 +138,61 @@ static char *_generate_pattern(const char *pattern, stepd_step_rec_t *job,
 				xstrfmtcatat(buffer, &offset, "%s", "%");
 				break;
 			case '@':
-				for (char **arg = cmd_args; arg && *arg;
-				     arg++) {
-					if (arg != cmd_args)
-						xstrfmtcatat(buffer, &offset,
-							     " ");
-
-					xstrfmtcatat(buffer, &offset, "'");
-
-					/*
-					 * POSIX 1003.1 2.2.2 only bans a single
-					 * quote in single quotes for escaping
-					 */
-
-					for (char *c = *arg; *c != '\0'; c++) {
-						if (*c == '\'')
-							xstrfmtcatat(buffer,
-								     &offset,
-								     "'\"'\"'");
-
-						xstrfmtcatat(buffer, &offset,
-							     "%c", *c);
-					}
-
-					xstrfmtcatat(buffer, &offset, "'");
-				}
+				if (cmd_args)
+					_pattern_argv(&buffer, &offset,
+						      cmd_args);
+				else
+					xstrfmtcatat(buffer, &offset,
+						     "\"/bin/false\"");
 				break;
 			case 'b':
-				xstrfmtcatat(buffer, &offset, "%s", job->cwd);
+				xstrfmtcatat(buffer, &offset, "%s", c->bundle);
 				break;
 			case 'e':
 				xstrfmtcatat(buffer, &offset, "%s/%s",
-					     job->cwd, SLURM_CONTAINER_ENV_FILE);
+					     c->spool_dir,
+					     SLURM_CONTAINER_ENV_FILE);
 				break;
 			case 'j':
 				xstrfmtcatat(buffer, &offset, "%u",
-					     job->step_id.job_id);
+					     step->step_id.job_id);
+				break;
+			case 'm':
+				if (c->spool_dir)
+					xstrfmtcatat(buffer, &offset, "%s",
+						     c->spool_dir);
+				else
+					xstrfmtcatat(buffer, &offset, "%s",
+						     conf->spooldir);
 				break;
 			case 'n':
 				xstrfmtcatat(buffer, &offset, "%s",
-					     job->node_name);
+					     step->node_name);
+				break;
+			case 'p':
+				if (task_id >= 0)
+					xstrfmtcatat(buffer, &offset, "%u",
+						     step->task[task_id]->pid);
+				else
+					xstrfmtcatat(buffer, &offset, "%u",
+						     INFINITE);
 				break;
 			case 'r':
-				xstrfmtcatat(buffer, &offset, "%s",
-					     rootfs_path);
+				xstrfmtcatat(buffer, &offset, "%s", c->rootfs);
 				break;
 			case 's':
 				xstrfmtcatat(buffer, &offset, "%u",
-					     job->step_id.step_id);
+					     step->step_id.step_id);
 				break;
 			case 't':
 				xstrfmtcatat(buffer, &offset, "%d", task_id);
 				break;
 			case 'u':
 				xstrfmtcatat(buffer, &offset, "%s",
-					     job->user_name);
+					     step->user_name);
+				break;
+			case 'U':
+				xstrfmtcatat(buffer, &offset, "%u", step->uid);
 				break;
 			default:
 				fatal("%s: unexpected replacement character: %c",
@@ -160,54 +206,102 @@ static char *_generate_pattern(const char *pattern, stepd_step_rec_t *job,
 	return buffer;
 }
 
-static int _mkpath(const char *path, uid_t uid, gid_t gid)
-{
-	if ((mkdir(path, 0750) < 0) && (errno != EEXIST)) {
-		error("%s: mkdir(%s): %m", __func__, path);
-		return errno;
-	}
-
-	if (chown(path, uid, gid) < 0) {
-		error("%s: chown(%s): %m", __func__, path);
-		return errno;
-	}
-
-	if (chmod(path, 0750) < 0) {
-		error("%s: chmod(%s, 750): %m", __func__, path);
-		return errno;
-	}
-
-	return SLURM_SUCCESS;
-}
-
-static int _read_config(const char *jconfig, data_t **config)
+static int _mkdir(const char *pathname, mode_t mode, uid_t uid, gid_t gid)
 {
 	int rc;
-	buf_t *buffer = NULL;
 
-	xassert(config && !*config);
-
-	errno = SLURM_SUCCESS;
-	if (!(buffer = create_mmap_buf(jconfig))) {
+	if ((rc = mkdir(pathname, mode)))
 		rc = errno;
-		error("%s: unable to open: %s", __func__, jconfig);
-		goto cleanup;
+	else {
+		/*
+		 * Directory was successfully created so it needs user:group set
+		 */
+		if (chown(pathname, uid, gid) < 0) {
+			error("%s: chown(%s): %m", __func__, pathname);
+			return errno;
+		}
+
+		if (chmod(pathname, mode) < 0) {
+			error("%s: chmod(%s, 750): %m", __func__, pathname);
+			return errno;
+		}
+
+		debug("%s: created %s for %u:%u mode %o",
+		      __func__, pathname, uid, gid, mode);
+
+		return SLURM_SUCCESS;
 	}
 
-	if ((rc = data_g_deserialize(config, get_buf_data(buffer),
-				     remaining_buf(buffer), MIME_TYPE_JSON))) {
-		error("%s: unable to parse config.json: %s",
-		      __func__, slurm_strerror(rc));
-	}
+	if (rc == EEXIST)
+		return SLURM_SUCCESS;
 
-cleanup:
-	free_buf(buffer);
-	buffer = NULL;
+	error("%s: unable to mkdir(%s): %s",
+	      __func__, pathname, slurm_strerror(rc));
 
 	return rc;
 }
 
-static int _write_config(const stepd_step_rec_t *job, const char *jconfig,
+/*
+ * Create entire directory path while setting uid:gid for every newly created
+ * directory.
+ */
+static int _mkpath(const char *pathname, uid_t uid, gid_t gid)
+{
+	static const mode_t mode = S_IRWXU | S_IRWXG;
+	int rc;
+	char *p, *dst;
+
+	p = dst = xstrdup(pathname);
+
+	while ((p = xstrchr(p + 1, '/'))) {
+		*p = '\0';
+
+		if ((rc = _mkdir(dst, mode, uid, gid)))
+			goto cleanup;
+
+		*p = '/';
+	}
+
+	/* final directory */
+	rc = _mkdir(dst, mode, uid, gid);
+
+cleanup:
+	xfree(dst);
+	return rc;
+}
+
+static int _load_config(stepd_step_rec_t *step)
+{
+	step_container_t *c = step->container;
+	int rc;
+	buf_t *buffer = NULL;
+	char *path = _get_config_path(step);
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
+	xassert(!c->config);
+	xassert(path);
+
+	errno = SLURM_SUCCESS;
+	if (!(buffer = create_mmap_buf(path))) {
+		rc = errno;
+		error("%s: unable to open: %s", __func__, path);
+		goto cleanup;
+	}
+
+	if ((rc = serialize_g_string_to_data(&c->config, get_buf_data(buffer),
+					     remaining_buf(buffer),
+					     MIME_TYPE_JSON))) {
+		error("%s: unable to parse %s: %s",
+		      __func__, path, slurm_strerror(rc));
+	}
+
+cleanup:
+	FREE_NULL_BUFFER(buffer);
+	xfree(path);
+	return rc;
+}
+
+static int _write_config(const stepd_step_rec_t *step, const char *jconfig,
 			 const char *out)
 {
 	int outfd = -1;
@@ -231,7 +325,7 @@ static int _write_config(const stepd_step_rec_t *job, const char *jconfig,
 
 	outfd = -1;
 
-	if (chown(jconfig, (uid_t) -1, (gid_t) job->gid) < 0) {
+	if (chown(jconfig, (uid_t) -1, (gid_t) step->gid) < 0) {
 		error("%s: chown(%s): %m", __func__, jconfig);
 		goto rwfail;
 	}
@@ -252,26 +346,59 @@ rwfail:
 	return rc;
 }
 
-static int _modify_config(stepd_step_rec_t *job, data_t *config,
-			  char *rootfs_path)
+static bool _match_env(const data_t *data, void *needle)
 {
-	int rc = SLURM_SUCCESS;
-	data_t *mnts, *env;
-	char **cmd_env = NULL;
+	bool match;
+	const char *needle_name = needle;
+	char *name = NULL, *value;
 
-	/* Disable terminal to ensure stdin/err/out are used */
-	data_set_bool(data_define_dict_path(config, "/process/terminal/"),
-		      false);
+	if (!data_get_string_converted(data, &name)) {
+		xfree(name);
+		return false;
+	}
+
+	value = xstrstr(name, "=");
+
+	if (value)
+		*value = '\0';
+
+	match = !xstrcmp(name, needle_name);
+
+	xfree(name);
+
+	return match;
+}
+
+static int _modify_config(stepd_step_rec_t *step, stepd_step_task_info_t *task)
+{
+	step_container_t *c = step->container;
+	int rc = SLURM_SUCCESS;
+	data_t *mnts, *env, *args;
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
+
+	data_set_bool(data_define_dict_path(c->config, "/process/terminal/"),
+		      (step->flags & LAUNCH_PTY));
 
 	/* point to correct rootfs */
-	data_set_string_fmt(data_define_dict_path(config, "/root/path/"),
-			    "%s/rootfs", job->container);
+	data_set_string(data_define_dict_path(c->config, "/root/path/"),
+			c->rootfs);
 
-	mnts = data_define_dict_path(config, "/mounts/");
+	mnts = data_define_dict_path(c->config, "/mounts/");
 	if (data_get_type(mnts) != DATA_TYPE_LIST)
 		data_set_list(mnts);
 
-	if (job->batch) {
+	if (c->mount_spool_dir) {
+		data_t *mnt = data_set_dict(data_list_append(mnts));
+		data_t *opt = data_set_list(data_key_set(mnt, "options"));
+		data_set_string(data_key_set(mnt, "destination"),
+				c->mount_spool_dir);
+		data_set_string(data_key_set(mnt, "type"), "none");
+		data_set_string(data_key_set(mnt, "source"), c->spool_dir);
+		data_set_string(data_list_append(opt), "bind");
+	}
+
+	if (step->batch) {
 		data_t *mnt, *opt;
 
 		/*
@@ -279,7 +406,7 @@ static int _modify_config(stepd_step_rec_t *job, data_t *config,
 		 * sure to not conflict with that:
 		 * https://github.com/opencontainers/runc/blob/master/libcontainer/rootfs_linux.go#L610-L613
 		 */
-		if (xstrcmp(job->task[0]->ifname, "/dev/null")) {
+		if (xstrcmp(step->task[0]->ifname, "/dev/null")) {
 			data_t *mnt = data_set_dict(data_list_append(mnts));
 			data_t *opt = data_set_list(
 				data_key_set(mnt, "options"));
@@ -287,12 +414,12 @@ static int _modify_config(stepd_step_rec_t *job, data_t *config,
 					SLURM_CONTAINER_STDIN);
 			data_set_string(data_key_set(mnt, "type"), "none");
 			data_set_string(data_key_set(mnt, "source"),
-					job->task[0]->ifname);
+					step->task[0]->ifname);
 			data_set_string(data_list_append(opt), "bind");
 		}
 
 		/* Bind mount stdout */
-		if (xstrcmp(job->task[0]->ofname, "/dev/null")) {
+		if (xstrcmp(step->task[0]->ofname, "/dev/null")) {
 			data_t *mnt = data_set_dict(data_list_append(mnts));
 			data_t *opt = data_set_list(
 				data_key_set(mnt, "options"));
@@ -301,12 +428,12 @@ static int _modify_config(stepd_step_rec_t *job, data_t *config,
 					SLURM_CONTAINER_STDOUT);
 			data_set_string(data_key_set(mnt, "type"), "none");
 			data_set_string(data_key_set(mnt, "source"),
-					job->task[0]->ofname);
+					step->task[0]->ofname);
 			data_set_string(data_list_append(opt), "bind");
 		}
 
 		/* Bind mount stderr */
-		if (xstrcmp(job->task[0]->efname, "/dev/null")) {
+		if (xstrcmp(step->task[0]->efname, "/dev/null")) {
 			data_t *mnt = data_set_dict(data_list_append(mnts));
 			data_t *opt = data_set_list(
 				data_key_set(mnt, "options"));
@@ -315,7 +442,7 @@ static int _modify_config(stepd_step_rec_t *job, data_t *config,
 					SLURM_CONTAINER_STDERR);
 			data_set_string(data_key_set(mnt, "type"), "none");
 			data_set_string(data_key_set(mnt, "source"),
-					job->task[0]->efname);
+					step->task[0]->efname);
 			data_set_string(data_list_append(opt), "bind");
 		}
 
@@ -330,172 +457,286 @@ static int _modify_config(stepd_step_rec_t *job, data_t *config,
 				SLURM_CONTAINER_BATCH_SCRIPT);
 		data_set_string(data_key_set(mnt, "type"), "none");
 		data_set_string_own(data_key_set(mnt, "source"),
-				    job->task[0]->argv[0]);
-		job->task[0]->argv[0] = xstrdup(SLURM_CONTAINER_BATCH_SCRIPT);
+				    step->task[0]->argv[0]);
+		step->task[0]->argv[0] = xstrdup(SLURM_CONTAINER_BATCH_SCRIPT);
 		data_set_string(data_list_append(opt), "bind");
 		data_set_string(data_list_append(opt), "ro");
 	}
 
-	env = data_define_dict_path(config, "/process/env/");
-	if (data_get_type(env) != DATA_TYPE_LIST)
-		data_set_list(env);
+	if (oci_conf->disable_hooks) {
+		data_t *hooks = data_resolve_dict_path(c->config, "/hooks/");
 
-	if (oci_conf->create_env_file) {
-		cmd_env = env_array_create();
-		env_array_merge(&cmd_env, (const char **) job->env);
-	}
+		for (int i = 0; oci_conf->disable_hooks[i]; i++) {
+			data_t *hook = data_key_get(hooks,
+						    oci_conf->disable_hooks[i]);
 
-	/* set/append requested env */
-	for (char **ptr = job->env; *ptr != NULL; ptr++) {
-		data_set_string(data_list_append(env), *ptr);
+			if (hook) {
+				int count = 0;
 
-		if (oci_conf->create_env_file) {
-			char *name = xstrdup(*ptr);
-			char *value = xstrstr(name, "=");
+				if (data_get_type(hook) == DATA_TYPE_LIST) {
+					count = data_get_list_length(hook);
+				} else {
+					error("Invalid type for hook %s",
+					      oci_conf->disable_hooks[i]);
+				}
 
-			if (value) {
-				*value = '\0';
-				value++;
+				debug("%s: hook %s found and disabled %d entries",
+				      __func__, oci_conf->disable_hooks[i],
+				      count);
+
+				data_key_unset(hooks,
+					       oci_conf->disable_hooks[i]);
+			} else {
+				debug("%s: hook %s not found",
+				      __func__,  oci_conf->disable_hooks[i]);
 			}
-
-			env_array_append(&cmd_env, name, value);
-
-			xfree(name);
 		}
 	}
 
-	if (oci_conf->create_env_file) {
-		char *envfile = NULL;
+	/* overwrite environ with the final step->env contents */
+	env = data_set_list(data_define_dict_path(c->config, "/process/env/"));
+	for (char **ptr = step->env; *ptr; ptr++) {
+		data_t *entry;
+		char *name = xstrdup(*ptr);
+		char *value = xstrstr(name, "=");
 
-		/* keep _generate_pattern() in sync with this path */
-		xstrfmtcat(envfile, "%s/%s",
-			   job->cwd, SLURM_CONTAINER_ENV_FILE);
+		if (value)
+			*value = '\0';
 
-		rc = env_array_to_file(envfile, (const char **) cmd_env);
+		if (!(entry = data_list_find_first(env, _match_env, name)))
+			entry = data_list_append(env);
 
-		if (!rc && chown(envfile, job->uid, job->gid) < 0) {
-			error("%s: chown(%s): %m", __func__, envfile);
-			rc = errno;
-		}
-
-		if (!rc && chmod(envfile, 0750) < 0) {
-			error("%s: chmod(%s, 750): %m", __func__, envfile);
-			rc = errno;
-		}
-
-		xfree(envfile);
+		data_set_string(entry, *ptr);
+		xfree(name);
 	}
 
-	/* Overwrite args */
-	if (job->node_tasks <= 0) {
-		/* should have been caught at submission */
-		error("%s: no node tasks?", __func__);
+	args = data_define_dict_path(c->config, "/process/args/");
+	data_set_list(args);
 
-		return ESLURM_BAD_TASK_COUNT;
-	} else if (job->node_tasks > 1) {
-		/* should have been caught at submission */
-		error("%s: unexpected number of tasks %u > 1",
-		      __func__, job->node_tasks);
-
-		return ESLURM_BAD_TASK_COUNT;
-	} else {
-		/* just 1 task */
-		stepd_step_task_info_t *task = job->task[0];
-		data_t *args = data_set_list(
-			data_define_dict_path(config, "/process/args/"));
-		char *gen, **old_argv = task->argv;
-
-		/* move args to the config.json for runtime to handle */
-		for (int i = 0; i < task->argc; i++) {
-			data_set_string_own(data_list_append(args),
-					    task->argv[i]);
-			task->argv[i] = NULL;
-		}
-
-		/*
-		 * containers do not use task->argv but we will leave a canary
-		 * to catch any code paths that avoid the container code
-		 */
-		xassert(job->argv == task->argv);
-		job->argv = task->argv = xcalloc(4, sizeof(*task->argv));
-		task->argv[0] = xstrdup("/bin/sh");
-		task->argv[1] = xstrdup("-c");
-		task->argv[2] = xstrdup("echo 'this should never execute with a container'; exit 1");
-
-		/*
-		 * Generate all the operations for later while we have all the
-		 * info needed
-		 */
-		gen = _generate_pattern(oci_conf->runtime_create, job, task->id,
-					rootfs_path, old_argv);
-		if (gen)
-			create_argv[2] = gen;
-
-		gen = _generate_pattern(oci_conf->runtime_delete, job, task->id,
-					rootfs_path, old_argv);
-		if (gen)
-			delete_argv[2] = gen;
-
-		gen = _generate_pattern(oci_conf->runtime_kill, job, task->id,
-					rootfs_path, old_argv);
-		if (gen)
-			kill_argv[2] = gen;
-
-		gen = _generate_pattern(oci_conf->runtime_query, job, task->id,
-					rootfs_path, old_argv);
-		if (gen)
-			query_argv[2] = gen;
-
-		gen = _generate_pattern(oci_conf->runtime_run, job, task->id,
-					rootfs_path, old_argv);
-
-		if (gen)
-			run_argv[2] = gen;
-
-		gen = _generate_pattern(oci_conf->runtime_start, job, task->id,
-					rootfs_path, old_argv);
-		if (gen)
-			start_argv[2] = gen;
-
-		env_array_free(old_argv);
+	/* move args to the config.json for runtime to handle */
+	for (int i = 0; i < task->argc; i++) {
+		data_set_string_own(data_list_append(args), task->argv[i]);
+		task->argv[i] = NULL;
 	}
-
-	env_array_free(cmd_env);
 
 	return rc;
 }
 
-static void _generate_bundle_path(stepd_step_rec_t *job, char *rootfs_path)
+static int _generate_container_paths(stepd_step_rec_t *step)
 {
-	char *path = NULL;
+	step_container_t *c = step->container;
+	int rc = SLURM_SUCCESS;
 
-	/* write new config.json in spool dir or requested pattern */
-	if (oci_conf->container_path) {
-		path = _generate_pattern(oci_conf->container_path, job,
-					 job->task[0]->id, rootfs_path, NULL);
-	} else if (job->step_id.step_id == SLURM_BATCH_SCRIPT) {
-		xstrfmtcat(path, "%s/oci-job%05u-batch/", conf->spooldir,
-			   job->step_id.job_id);
-	} else if (job->step_id.step_id == SLURM_INTERACTIVE_STEP) {
-		xstrfmtcat(path, "%s/oci-job%05u-interactive/", conf->spooldir,
-			   job->step_id.job_id);
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
+
+	if (c->config) {
+		if ((rc = data_retrieve_dict_path_string(c->config,
+							 "/root/path/",
+							 &c->rootfs))) {
+			debug("%s: unable to find /root/path/", __func__);
+			return rc;
+		}
+
+		if (c->rootfs[0] != '/') {
+			/* always provide absolute path */
+			char *t = NULL;
+
+			xstrfmtcat(t, "%s/%s", c->bundle, c->rootfs);
+			SWAP(c->rootfs, t);
+			xfree(t);
+		}
 	} else {
-		xstrfmtcat(path, "%s/oci-job%05u-%05u/", conf->spooldir,
-			   job->step_id.job_id, job->step_id.step_id);
+		/* default to bundle path without config.json */
+		c->rootfs = xstrdup(c->bundle);
 	}
 
-	debug4("%s: swapping cwd from %s to %s", __func__, job->cwd, path);
-	xfree(job->cwd);
-	job->cwd = path;
+	/* generate step's spool_dir */
+	if (oci_conf->mount_spool_dir) {
+		c->mount_spool_dir =
+			_generate_pattern(oci_conf->mount_spool_dir, step,
+					  step->task[0]->id, NULL);
+	} else {
+		c->mount_spool_dir = xstrdup("/var/run/slurm/");
+	}
+
+	xfree(c->spool_dir);
+	c->spool_dir = _generate_spooldir(step, NULL);
+
+	if ((rc = _mkpath(c->spool_dir, step->uid, step->gid)))
+		fatal("%s: unable to create spool directory %s: %s",
+		      __func__, c->spool_dir, slurm_strerror(rc));
+
+	return rc;
 }
 
-extern int setup_container(stepd_step_rec_t *job)
+static bool _pattern_has_taskid(const char *pattern)
+{
+	const char *p = pattern;
+
+	while (*p) {
+		if (!(p = xstrchr(p, '%')))
+			break;
+
+		if ((p[1] == '%') && (p[2] != '\0'))
+			p += 2;
+		else if (p[1] == 't')
+			return true;
+		else
+			p++;
+	}
+
+	return false;
+}
+
+static char *_generate_spooldir(stepd_step_rec_t *step,
+				stepd_step_task_info_t *task)
+{
+	int id = -1;
+	char **argv = NULL, *pattern, *path;
+
+	if (oci_conf->container_path) {
+		pattern = xstrdup(oci_conf->container_path);
+	} else if (step->step_id.step_id == SLURM_BATCH_SCRIPT) {
+		pattern = xstrdup("%m/oci-job%j-batch/task-%t/");
+	} else if (step->step_id.step_id == SLURM_INTERACTIVE_STEP) {
+		pattern = xstrdup("%m/oci-job%j-interactive/task-%t/");
+	} else {
+		pattern = xstrdup("%m/oci-job%j-%s/task-%t/");
+	}
+
+	if (task) {
+		id = task->id;
+		argv = task->argv;
+	} else {
+		char *start, *end, *next;
+
+		/* trim pattern at first taskid replacement */
+
+		if (pattern[0] == '/')
+			next = pattern + 1;
+		else
+			next = pattern;
+
+		while (next) {
+			char term;
+
+			start = next;
+
+			if (!(end = xstrchr(next, '/'))) {
+				end = start + strlen(start);
+				next = NULL;
+			} else {
+				next = end + 1;
+			}
+
+			term = *end;
+			*end = '\0';
+
+			if (_pattern_has_taskid(start)) {
+				/* cut pattern at this directory */
+				*start = '\0';
+				*end = term;
+				break;
+			}
+
+			*end = term;
+		}
+	}
+
+	xassert((id != -1) || !xstrstr(pattern, "%t"));
+	path = _generate_pattern(pattern, step, id, argv);
+	debug3("%s: task:%d pattern:%s path:%s", __func__, id, pattern, path);
+	xfree(pattern);
+
+	return path;
+}
+
+extern void container_task_init(stepd_step_rec_t *step,
+				stepd_step_task_info_t *task)
 {
 	int rc;
-	char *jconfig = NULL;
-	data_t *config = NULL;
-	char *out = NULL;
-	char *rootfs_path = NULL;
+	step_container_t *c = step->container;
+
+	if (!oci_conf) {
+		debug2("%s: ignoring step container when oci.conf not configured",
+		       __func__);
+		return;
+	}
+
+	xassert(c->spool_dir);
+	xfree(c->spool_dir);
+
+	/* re-generate out the spool_dir now we know the task */
+	c->spool_dir = _generate_spooldir(step, task);
+
+	if ((rc = _mkpath(c->spool_dir, step->uid, step->gid)))
+		fatal("%s: unable to create spool directory %s: %s",
+		      __func__, c->spool_dir, slurm_strerror(rc));
+}
+
+static char *_get_config_path(stepd_step_rec_t *step)
+{
+	step_container_t *c = step->container;
+	char *path = NULL;
+
+	if (!step->container)
+		return NULL;
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
+
+	/* OCI runtime spec reqires config.json to be in root of bundle */
+	xstrfmtcat(path, "%s/config.json", c->bundle);
+
+	return path;
+}
+
+static data_for_each_cmd_t _foreach_config_env(const data_t *data, void *arg)
+{
+	int rc;
+	stepd_step_rec_t *step = arg;
+	char *name = NULL, *value;
+
+	if (data_get_string_converted(data, &name))
+		return DATA_FOR_EACH_FAIL;
+
+	value = xstrstr(name, "=");
+
+	if (value) {
+		*value = '\0';
+		value++;
+	}
+
+	rc = setenvf(&step->env, name, "%s", value);
+
+	xfree(name);
+
+	return (rc ? DATA_FOR_EACH_FAIL : DATA_FOR_EACH_CONT);
+}
+
+static int _merge_step_config_env(stepd_step_rec_t *step)
+{
+	step_container_t *c = step->container;
+	data_t *env = data_resolve_dict_path(c->config, "/process/env/");
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
+
+	if (!env)
+		return SLURM_SUCCESS;
+
+	xassert(!oci_conf->ignore_config_json);
+
+	if (data_list_for_each_const(env, _foreach_config_env, step) < 0)
+		return ESLURM_DATA_CONV_FAILED;
+
+	return SLURM_SUCCESS;
+}
+
+extern int setup_container(stepd_step_rec_t *step)
+{
+	step_container_t *c = step->container;
+	int rc;
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
 
 	if ((rc = get_oci_conf(&oci_conf)) && (rc != ENOENT)) {
 		error("%s: error loading oci.conf: %s",
@@ -505,72 +746,31 @@ extern int setup_container(stepd_step_rec_t *job)
 
 	if (!oci_conf) {
 		debug("%s: OCI Container not configured. Ignoring %pS requested container: %s",
-		      __func__, job, job->container);
+		      __func__, step, c->bundle);
 		return ESLURM_CONTAINER_NOT_CONFIGURED;
 	}
 
-	if ((rc = data_init(MIME_TYPE_JSON_PLUGIN, NULL))) {
+	if ((rc = serializer_g_init(MIME_TYPE_JSON_PLUGIN, NULL))) {
 		error("Unable to load JSON plugin: %s",
 		      slurm_strerror(rc));
 		goto error;
 	}
 
-	/* OCI runtime spec reqires config.json to be in root of bundle */
-	xstrfmtcat(jconfig, "%s/config.json", job->container);
+	if (!oci_conf->ignore_config_json) {
+		if ((rc = _load_config(step)))
+			goto error;
 
-	if ((rc = _read_config(jconfig, &config))) {
-		goto error;
-	}
-	xassert(config);
-
-	xfree(jconfig);
-
-	if ((rc = data_retrieve_dict_path_string(config, "/root/path/",
-						 &rootfs_path))) {
-		debug("%s: unable to find /root/path/", __func__);
-		goto error;
+		if ((rc = _merge_step_config_env(step)))
+			goto error;
 	}
 
-	if (rootfs_path[0] != '/') {
-		/* always provide absolute path */
-		char *t = NULL;
-
-		xstrfmtcat(t, "%s/%s", job->container, rootfs_path);
-		xfree(rootfs_path);
-		rootfs_path = t;
-	}
-
-	_generate_bundle_path(job, rootfs_path);
-
-	if ((rc = _mkpath(job->cwd, job->uid, job->gid)))
+	if ((rc = _generate_container_paths(step)))
 		goto error;
-
-	xstrfmtcat(jconfig, "%s/config.json", job->cwd);
-
-	if ((rc = _modify_config(job, config, rootfs_path)))
-		goto error;
-
-	if ((rc = data_g_serialize(&out, config, MIME_TYPE_JSON,
-				   DATA_SER_FLAGS_PRETTY))) {
-		error("%s: serialization of config failed: %s",
-		      __func__, slurm_strerror(rc));
-		goto error;
-	}
-
-	FREE_NULL_DATA(config);
-
-	if ((rc = _write_config(job, jconfig, out)))
-	    goto error;
 
 error:
 	if (rc)
 		error("%s: container setup failed: %s",
 		      __func__, slurm_strerror(rc));
-	xfree(rootfs_path);
-	xfree(out);
-	xfree(jconfig);
-	FREE_NULL_DATA(config);
-	xfree(jconfig);
 
 	return rc;
 }
@@ -589,17 +789,21 @@ static data_t *_get_container_state()
 	};
 
 	/* request container get deleted if known at all any more */
+	_dump_command_args(&run_command_args, __func__);
 	out = run_command(&run_command_args);
 	debug("%s: RunTimeQuery rc:%u output:%s", __func__, rc, out);
 
-	if (!out || !out[0]) {
+	if (!out || !out[0] || rc) {
 		error("%s: RunTimeQuery failed rc:%u output:%s", __func__, rc, out);
 		return NULL;
 	}
 
-	if (data_g_deserialize(&state, out, strlen(out), MIME_TYPE_JSON)) {
-		error("%s: unable to parse JSON: %s",
+	if (serialize_g_string_to_data(&state, out, strlen(out),
+				       MIME_TYPE_JSON)) {
+		error("%s: unable to parse container state: %s",
 		      __func__, out);
+		log_flag_hex(STEPS, out, strlen(out),
+			     "unable to parse container state response");
 	}
 
 	xfree(out);
@@ -624,12 +828,13 @@ static char *_get_container_status()
 static void _kill_container()
 {
 	int stime = 2500;
-	char *status = _get_container_status();
+	char *status = NULL;
 	run_command_args_t run_command_args = {
 		.max_wait = -1,
 	};
 
-	if (!status) {
+	if (!oci_conf->ignore_config_json &&
+	    !(status = _get_container_status())) {
 		debug("container already dead");
 	} else if (!xstrcasecmp(status, "running")) {
 		run_command_args.script_argv = kill_argv;
@@ -644,13 +849,17 @@ static void _kill_container()
 			xfree(status);
 			status = _get_container_status();
 
-			if (!status || !xstrcasecmp(status, "stopped"))
+			if (!oci_conf->ignore_config_json &&
+			    (!status || !xstrcasecmp(status, "stopped")))
 				break;
 
 			out = run_command(&run_command_args);
 			debug("%s: RunTimeKill rc:%u output:%s",
 			      __func__, kill_status, out);
 			xfree(out);
+
+			if (oci_conf->ignore_config_json)
+				break;
 
 			/*
 			 * use exp backoff up to 1s to wait for the container to
@@ -679,6 +888,7 @@ static void _kill_container()
 		run_command_args.script_path = delete_argv[0];
 		run_command_args.script_type = "RunTimeDelete";
 		run_command_args.status = &delete_status;
+		_dump_command_args(&run_command_args, __func__);
 		out = run_command(&run_command_args);
 		debug("%s: RunTimeDelete rc:%u output:%s",
 		      __func__, delete_status, out);
@@ -687,13 +897,14 @@ static void _kill_container()
 	}
 }
 
-static void _run(stepd_step_rec_t *job, stepd_step_task_info_t *task)
+static void _run(stepd_step_rec_t *step, stepd_step_task_info_t *task)
 {
+	debug3("%s: executing: %s", __func__, run_argv[2]);
 	execv(run_argv[0], run_argv);
 	fatal("execv(%s) failed: %m", run_argv[0]);
 }
 
-static void _create_start(stepd_step_rec_t *job,
+static void _create_start(stepd_step_rec_t *step,
 			  stepd_step_task_info_t *task)
 {
 	int stime = 250, rc = SLURM_ERROR;
@@ -703,9 +914,13 @@ static void _create_start(stepd_step_rec_t *job,
 		.status = &rc,
 	};
 
+	if (oci_conf->ignore_config_json)
+		fatal("IgnoreFileConfigJson=true and RunTimeStart are mutually exclusive");
+
 	run_command_args.script_argv = create_argv;
 	run_command_args.script_path = create_argv[0];
 	run_command_args.script_type = "RunTimeCreate";
+	_dump_command_args(&run_command_args, __func__);
 	out = run_command(&run_command_args);
 	debug("%s: RunTimeCreate rc:%u output:%s", __func__, rc, out);
 	xfree(out);
@@ -746,12 +961,13 @@ static void _create_start(stepd_step_rec_t *job,
 	run_command_args.script_argv = start_argv;
 	run_command_args.script_path = start_argv[0];
 	run_command_args.script_type = "RunTimeStart";
+	_dump_command_args(&run_command_args, __func__);
 	out = run_command(&run_command_args);
 	debug("%s: RunTimeStart rc:%u output:%s", __func__, rc, out);
 	xfree(out);
 
 	/*
-	 * the inital PID is now dead but the container could still be running
+	 * the initial PID is now dead but the container could still be running
 	 * but it likely is running outside of slurmstepd's process group
 	 */
 
@@ -785,43 +1001,249 @@ static void _create_start(stepd_step_rec_t *job,
 	_exit(rc);
 }
 
-extern void container_run(stepd_step_rec_t *job,
-			  stepd_step_task_info_t *task)
+static void _generate_patterns(stepd_step_rec_t *step,
+			       stepd_step_task_info_t *task)
 {
-	if (!oci_conf) {
-		debug("%s: OCI Container not configured. Ignoring %pS requested container: %s",
-		      __func__, job, job->container);
-		return;
+	char *gen;
+	int id = -1;
+	char **argv = NULL;
+
+	debug2("%s: %ps TaskId=%d",
+	       __func__, &step->step_id, (task ? task->id : -1));
+
+	if (task) {
+		id = task->id;
+		argv = task->argv;
 	}
 
-	if (oci_conf->runtime_run)
-		_run(job, task);
-	else
-		_create_start(job, task);
+	gen = _generate_pattern(oci_conf->runtime_create, step, id, argv);
+	if (gen) {
+		static bool set = false;
+		if (set)
+			xfree(create_argv[2]);
+		create_argv[2] = gen;
+		set = true;
+	}
 
+	gen = _generate_pattern(oci_conf->runtime_delete, step, id, argv);
+	if (gen) {
+		static bool set = false;
+		if (set)
+			xfree(delete_argv[2]);
+		delete_argv[2] = gen;
+		set = true;
+	}
+
+	gen = _generate_pattern(oci_conf->runtime_kill, step, id, argv);
+	if (gen) {
+		static bool set = false;
+		if (set)
+			xfree(kill_argv[2]);
+		kill_argv[2] = gen;
+		set = true;
+	}
+
+	gen = _generate_pattern(oci_conf->runtime_query, step, id, argv);
+	if (gen) {
+		static bool set = false;
+		if (set)
+			xfree(query_argv[2]);
+		query_argv[2] = gen;
+		set = true;
+	}
+
+	gen = _generate_pattern(oci_conf->runtime_run, step, id, argv);
+	if (gen) {
+		static bool set = false;
+		if (set)
+			xfree(run_argv[2]);
+		run_argv[2] = gen;
+		set = true;
+	}
+
+	gen = _generate_pattern(oci_conf->runtime_start, step, id, argv);
+	if (gen) {
+		static bool set = false;
+		if (set)
+			xfree(start_argv[2]);
+		start_argv[2] = gen;
+		set = true;
+	}
 }
 
-extern void cleanup_container(stepd_step_rec_t *job)
+extern void container_run(stepd_step_rec_t *step,
+			  stepd_step_task_info_t *task)
 {
-	char *jconfig = NULL;
+	step_container_t *c = step->container;
+	int rc;
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
 
 	if (!oci_conf) {
 		debug("%s: OCI Container not configured. Ignoring %pS requested container: %s",
-		      __func__, job, job->container);
+		      __func__, step, c->bundle);
 		return;
 	}
 
-	xstrfmtcat(jconfig, "%s/config.json", job->cwd);
+	if (oci_conf->env_exclude_set) {
+		char **env = env_array_exclude((const char **) step->env,
+					       &oci_conf->env_exclude);
+#ifdef MEMORY_LEAK_DEBUG
+		env_array_free(step->env);
+#endif
+		step->env = env;
+	}
 
-	if (unlink(jconfig) < 0)
-		error("unlink(%s): %m", jconfig);
+	if (c->config) {
+		int rc;
+		char *out = NULL;
+		char *jconfig = NULL;
 
-	xfree(jconfig);
+		/* create new config.json in spooldir */
+		xstrfmtcat(jconfig, "%s/config.json", c->spool_dir);
 
-	if (rmdir(job->cwd))
-		error("rmdir(%s): %m", jconfig);
+		if ((rc = _modify_config(step, task)))
+			fatal("%s: configuring container failed: %s",
+			      __func__, slurm_strerror(rc));
 
+		if ((rc = serialize_g_data_to_string(&out, NULL, c->config,
+						     MIME_TYPE_JSON,
+						     SER_FLAGS_PRETTY))) {
+			fatal("%s: serialization of config failed: %s",
+			      __func__, slurm_strerror(rc));
+		}
+
+		FREE_NULL_DATA(c->config);
+
+		if ((rc = _write_config(step, jconfig, out)))
+			fatal("%s: unable to write %s: %s",
+			      __func__, jconfig, slurm_strerror(rc));
+
+		debug("%s: wrote %s", __func__, jconfig);
+
+		/*
+		 * Swap bundle path to spool directory to ensure runtime uses
+		 * correct config.json
+		 */
+		xfree(c->bundle);
+		c->bundle = xstrdup(c->spool_dir);
+
+		xfree(out);
+		xfree(jconfig);
+	}
+
+	if (oci_conf->create_env_file) {
+		char *envfile = NULL;
+		bool nl = (oci_conf->create_env_file ==
+			   NEWLINE_TERMINATED_ENV_FILE);
+
+		/* keep _generate_pattern() in sync with this path */
+		xstrfmtcat(envfile, "%s/%s", c->spool_dir,
+			   SLURM_CONTAINER_ENV_FILE);
+
+		if ((rc = env_array_to_file(envfile, (const char **) step->env,
+				       nl)))
+			fatal("%s: unable to write %s: %s",
+			      __func__, envfile, slurm_strerror(rc));
+
+		if (chown(envfile, step->uid, step->gid) < 0)
+			fatal("%s: chown(%s): %m", __func__, envfile);
+
+		if (!rc && chmod(envfile, 0750) < 0)
+			error("%s: chmod(%s, 750): %m", __func__, envfile);
+
+		debug("%s: wrote %s", __func__, envfile);
+
+		xfree(envfile);
+	}
+
+	if (oci_conf->runtime_env_exclude_set) {
+		extern char **environ;
+		char **env = env_array_exclude((const char **) environ,
+					       &oci_conf->runtime_env_exclude);
+
+#ifdef MEMORY_LEAK_DEBUG
+		env_unset_environment();
+#endif
+		environ = env;
+	}
+
+	debug4("%s: setting cwd from %s to %s",
+	       __func__, step->cwd, c->spool_dir);
+	xfree(step->cwd);
+	step->cwd = xstrdup(c->spool_dir);
+
+	_generate_patterns(step, task);
+
+	if (oci_conf->runtime_run)
+		_run(step, task);
+	else
+		_create_start(step, task);
+}
+
+extern void cleanup_container(stepd_step_rec_t *step)
+{
+	step_container_t *c = step->container;
+
+	xassert(c->magic == STEP_CONTAINER_MAGIC);
+
+	if (!oci_conf) {
+		debug("%s: OCI Container not configured. Ignoring %pS requested container: %s",
+		      __func__, step, c->bundle);
+		return;
+	}
+
+	/* cleanup may be called without ever setting up container */
+
+	_generate_patterns(step, NULL);
 	_kill_container();
 
+	if (oci_conf->disable_cleanup)
+		goto done;
+
+	if (step->node_tasks > 0) {
+		/* clear every config.json and task dir */
+		for (int i = 0; i < step->node_tasks; i++) {
+			xfree(c->spool_dir);
+			c->spool_dir = _generate_spooldir(step, step->task[i]);
+			_generate_patterns(step, step->task[i]);
+
+			if (!oci_conf->ignore_config_json) {
+				char *jconfig = NULL;
+
+				xstrfmtcat(jconfig, "%s/config.json",
+					   c->spool_dir);
+
+				if ((unlink(jconfig) < 0) && (errno != ENOENT))
+					error("unlink(%s): %m", jconfig);
+				xfree(jconfig);
+			}
+
+			if (oci_conf->create_env_file) {
+				char *envfile = NULL;
+
+				xstrfmtcat(envfile, "%s/%s", c->spool_dir,
+					   SLURM_CONTAINER_ENV_FILE);
+
+				if (unlink(envfile) && (errno != ENOENT))
+					error("unlink(%s): %m", envfile);
+
+				xfree(envfile);
+			}
+
+			if (rmdir(c->spool_dir) && (errno != ENOENT))
+				error("rmdir(%s): %m", c->spool_dir);
+			xfree(c->spool_dir);
+		}
+	}
+
+	/* swap to non-task spool_dir */
+	xfree(c->spool_dir);
+	c->spool_dir = _generate_spooldir(step, NULL);
+
+	if (rmdir(c->spool_dir) && (errno != ENOENT))
+		error("rmdir(%s): %m", c->spool_dir);
+
+done:
 	FREE_NULL_OCI_CONF(oci_conf);
 }

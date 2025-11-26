@@ -45,32 +45,33 @@
  * acct_policy_add_job_submit - Note that a job has been submitted for
  *	accounting policy purposes.
  */
-extern void acct_policy_add_job_submit(job_record_t *job_ptr);
+extern void acct_policy_add_job_submit(job_record_t *job_ptr, bool assoc_lock);
 
 /*
  * acct_policy_remove_job_submit - Note that a job has finished (might
  *      not had started or been allocated resources) for accounting
  *      policy purposes.
  */
-extern void acct_policy_remove_job_submit(job_record_t *job_ptr);
+extern void acct_policy_remove_job_submit(job_record_t *job_ptr,
+					  bool assoc_lock);
 
 /*
  * acct_policy_job_begin - Note that a job is starting for accounting
  *	policy purposes.
  */
-extern void acct_policy_job_begin(job_record_t *job_ptr);
+extern void acct_policy_job_begin(job_record_t *job_ptr, bool assoc_lock);
 
 /*
  * acct_policy_job_fini - Note that a job is completing for accounting
  *	policy purposes.
  */
-extern void acct_policy_job_fini(job_record_t *job_ptr);
+extern void acct_policy_job_fini(job_record_t *job_ptr, bool assoc_lock);
 
 /*
  * acct_policy_alter_job - if resources change on a job this needs to
  * be called after they have been validated, but before they actually
  * do.  Each of the resources can be changed one at a time.  If no
- * change happens on a resouce just put old values in for the new.
+ * change happens on a resource just put old values in for the new.
  * At the time of writing this function any node or cpu size change
  * while running was already handled in the job_pre|post_resize_acctg functions.
  */
@@ -127,12 +128,6 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 						 uint64_t *tres_req_cnt,
 						 bool assoc_mgr_locked);
-
-/*
- * Determine of the specified job can execute right now or is currently
- * blocked by an association or QOS limit. Does not re-validate job state.
- */
-extern bool acct_policy_job_runnable_state(job_record_t *job_ptr);
 
 /*
  * Using the limits on the job get the max nodes possible.

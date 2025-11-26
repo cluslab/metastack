@@ -1,6 +1,5 @@
 /*****************************************************************************\
- *  Copyright (C) 2021 SchedMD LLC
- *  Written by Scott Hilton <scott@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -43,11 +42,11 @@
 char *name_user = NULL, *uid_user = NULL;
 char *name_root = NULL, *uid_root = NULL;
 
-// void debug_print(char *names, List char_list, int expected_count,
+// void debug_print(char *names, list_t *char_list, int expected_count,
 // 		 char **expected_strings)
 // {
 // 	char *string = NULL;
-// 	ListIterator itr = list_iterator_create(char_list);
+// 	list_itr_t *itr = list_iterator_create(char_list);
 // 	info("names: %s", names);
 
 // 	while((string = (char*)list_next(itr))){
@@ -85,8 +84,8 @@ void test(char *names, bool gid, int expected_count,
 	  char **expected_strings)
 {
 	int count;
-	ListIterator itr;
-	List char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
+	list_t *char_list = list_create(xfree_ptr);
 
 	count = slurm_addto_id_char_list(char_list, names, gid);
 
@@ -362,7 +361,7 @@ END_TEST
 
 START_TEST(null_names)
 {
-	List char_list = list_create(NULL);
+	list_t *char_list = list_create(NULL);
 	int count = slurm_addto_id_char_list(char_list, NULL, 0);
 	ck_assert_int_eq(count, 0);
 	FREE_NULL_LIST(char_list);

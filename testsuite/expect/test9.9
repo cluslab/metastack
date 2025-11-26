@@ -2,8 +2,7 @@
 ############################################################################
 # Purpose: Timing test for 1000 jobs.
 ############################################################################
-# Copyright (C) 2012 SchedMD LLC
-# Written by Danny Auble <da@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -31,6 +30,10 @@ set test_script "$test_dir/test_script"
 
 if {[get_config_param "FrontendName"] ne "MISSING" || $enable_memory_leak_debug != 0} {
 	set job_cnt 2
+}
+
+if {[check_config_select "linear"]} {
+    skip "Test requires SelectType != linear"
 }
 
 proc cleanup {} {

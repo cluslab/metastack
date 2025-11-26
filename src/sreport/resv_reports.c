@@ -2,7 +2,7 @@
  *  resv_reports.c - functions for generating reservation reports
  *                       from accounting infrastructure.
  *****************************************************************************
- *  Copyright (C) 2010-2015 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Danny Auble <da@llnl.gov>
@@ -174,7 +174,7 @@ static int _set_resv_cond(int *start, int argc, char **argv,
 
 static int _setup_print_fields_list(List format_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	print_field_t *field = NULL;
 	char *object = NULL;
 
@@ -212,7 +212,7 @@ static int _setup_print_fields_list(List format_list)
 				field->len = 29;
 			else
 				field->len = 20;
-			field->print_routine = slurmdb_report_print_time;
+			field->print_routine = print_fields_str;
 		} else if (!xstrncasecmp("Associations",
 					 object, MAX(command_len, 2))) {
 			field->type = PRINT_RESV_ASSOCS;
@@ -246,7 +246,7 @@ static int _setup_print_fields_list(List format_list)
 				field->len = 29;
 			else
 				field->len = 20;
-			field->print_routine = slurmdb_report_print_time;
+			field->print_routine = print_fields_str;
 		} else if (!xstrncasecmp("Name", object,
 					 MAX(command_len, 2))) {
 			field->type = PRINT_RESV_NAME;
@@ -307,7 +307,7 @@ static int _setup_print_fields_list(List format_list)
 			xfree(field);
 			continue;
 		}
- #ifdef __METASTACK_OPT_PRINT_COMMAND
+#ifdef __METASTACK_OPT_PRINT_COMMAND
 		char *env_sacctmgr = NULL;
 
 		char *format =NULL;
@@ -349,8 +349,8 @@ static List _get_resv_list(int argc, char **argv,
 	}
 
 	if (print_fields_have_header) {
-		char start_char[20];
-		char end_char[20];
+		char start_char[256];
+		char end_char[256];
 		time_t my_start = resv_cond->time_start;
 		time_t my_end = resv_cond->time_end-1;
 
@@ -386,16 +386,16 @@ static void _resv_tres_report(slurmdb_reservation_rec_t *resv_ptr,
 	uint64_t idle_secs = 0, total_reported = 0;
 	uint64_t tres_alloc_cnt = 0, tres_alloc_secs = 0;
 	int curr_inx = 1;
-	char *temp_char = NULL, *tres_tmp = NULL;
+	char *tmp_char = NULL, *tres_tmp = NULL;
 	slurmdb_tres_rec_t *tres_rec;
 	print_field_t *field;
 	int field_count = 0;
-	ListIterator iter = NULL;
-	int32_t total_time = 0;
+	list_itr_t *iter = NULL;
+	uint64_t total_time = 0;
 
-	total_time = resv_ptr->time_end - resv_ptr->time_start;
-	if (total_time <= 0)
+	if (resv_ptr->time_end <= resv_ptr->time_start)
 		return;
+	total_time = resv_ptr->time_end - resv_ptr->time_start;
 
 	/*
 	 * Need to get allocated from reservation which is in
@@ -435,21 +435,26 @@ static void _resv_tres_report(slurmdb_reservation_rec_t *resv_ptr,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_RESV_TRES_CNT:
-			field->print_routine(field, tres_alloc_cnt,
+			field->print_routine(field, &tres_alloc_cnt,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_RESV_ID:
-			field->print_routine(field, resv_ptr->id,
+			field->print_routine(field, &resv_ptr->id,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_RESV_TRES_ALLOC:
-			field->print_routine(field, tres_alloc_secs,
-					     total_reported,
+			tmp_char = sreport_get_time_str(tres_alloc_secs,
+							total_reported);
+			field->print_routine(field, tmp_char,
 					     (curr_inx == field_count));
+			xfree(tmp_char);
 			break;
 		case PRINT_RESV_TRES_IDLE:
-			field->print_routine(field, idle_secs, total_reported,
+			tmp_char = sreport_get_time_str(idle_secs,
+							total_reported);
+			field->print_routine(field, tmp_char,
 					     (curr_inx == field_count));
+			xfree(tmp_char);
 			break;
 		case PRINT_RESV_NODES:
 			field->print_routine(field, resv_ptr->nodes,
@@ -460,11 +465,11 @@ static void _resv_tres_report(slurmdb_reservation_rec_t *resv_ptr,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_RESV_START:
-			field->print_routine(field, resv_ptr->time_start,
+			field->print_routine(field, &resv_ptr->time_start,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_RESV_END:
-			field->print_routine(field, resv_ptr->time_end,
+			field->print_routine(field, &resv_ptr->time_end,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_RESV_FLAGS:
@@ -473,13 +478,14 @@ static void _resv_tres_report(slurmdb_reservation_rec_t *resv_ptr,
 				.flags = resv_ptr->flags,
 			};
 
-			temp_char = reservation_flags_string(&resv_info);
-			field->print_routine(field, temp_char,
+			tmp_char = reservation_flags_string(&resv_info);
+			field->print_routine(field, tmp_char,
 					     (curr_inx == field_count));
+			tmp_char = NULL;
 			break;
 		}
 		case PRINT_RESV_TIME:
-			field->print_routine(field, (uint32_t)total_time,
+			field->print_routine(field, &total_time,
 					     (curr_inx == field_count));
 			break;
 		case PRINT_RESV_TRES_NAME:
@@ -493,7 +499,7 @@ static void _resv_tres_report(slurmdb_reservation_rec_t *resv_ptr,
 			xfree(tres_tmp);
 			break;
 		case PRINT_RESV_TRES_USAGE:
-			field->print_routine(field, total_reported,
+			field->print_routine(field, &total_reported,
 					     (curr_inx == field_count));
 			break;
 		default:
@@ -502,7 +508,7 @@ static void _resv_tres_report(slurmdb_reservation_rec_t *resv_ptr,
 			break;
 		}
 		curr_inx++;
-		xfree(temp_char);
+		xfree(tmp_char);
 	}
 	list_iterator_reset(iter);
 	printf("\n");
@@ -511,7 +517,7 @@ static void _resv_tres_report(slurmdb_reservation_rec_t *resv_ptr,
 extern int resv_utilization(int argc, char **argv)
 {
 	int rc = SLURM_SUCCESS;
-	ListIterator resv_itr = NULL;
+	list_itr_t *resv_itr = NULL;
 	slurmdb_reservation_rec_t *resv_ptr = NULL;
 	List resv_list = NULL;
 	List req_tres_list = tres_list;
@@ -552,7 +558,7 @@ extern int resv_utilization(int argc, char **argv)
 	resv_itr = list_iterator_create(resv_list);
 	while ((resv_ptr = list_next(resv_itr))) {
 		List resv_tres_list = NULL;
-		ListIterator tres_itr;
+		list_itr_t *tres_itr;
 		slurmdb_tres_rec_t *resv_tres, *req_tres;
 
 		slurmdb_tres_list_from_string(&resv_tres_list,

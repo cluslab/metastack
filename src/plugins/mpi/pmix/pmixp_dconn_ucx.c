@@ -71,8 +71,6 @@ typedef struct {
 	void *buffer;
 	size_t len;
 	void *msg;
-	int nodeid;
-	uint64_t msgid;
 } pmixp_ucx_req_t;
 
 typedef struct {
@@ -84,84 +82,6 @@ typedef struct {
 	pmixp_p2p_data_t eng_hdr;
 	pmixp_rlist_t pending;
 } pmixp_dconn_ucx_t;
-
-/* UCX debug variables */
-static uint64_t _send_msg_id = 0, _recv_msg_id = 0;
-
-static void _ucx_prof_output(double ts, char *direction, char *state, int nodeid,
-			     uint64_t msgid, size_t len)
-
-{
-	PMIXP_DEBUG_TS(ts, "UCX: %s [%s] nodeid=%d, mid=%lu, size=%zu",
-		    direction, state, nodeid, msgid, len);
-}
-
-#ifndef PMIXP_PROFILE_DELAY
-#define PMIXP_UCX_PROFILE(direction, state, req) {             \
-	double ts;                                             \
-	PMIXP_DEBUG_GET_TS(ts);                                \
-	_ucx_prof_output(ts, direction, state, req->nodeid,    \
-			 req->msgid, req->len);                \
-}
-#else
-
-static void _ucx_prof_deserialize_out(void *priv,
-				      double ts, size_t size, char data[])
-{
-	char *direction, *state;
-	int nodeid;
-	uint64_t msgid;
-	size_t len;
-	size_t offset = 0;
-	size_t buf_size = sizeof(direction) + sizeof(state) +
-			sizeof(nodeid) + sizeof(msgid) +
-			sizeof(len);
-	xassert(buf_size == size);
-
-	PMIXP_PROF_DESERIALIZE(data, size, offset, direction);
-	PMIXP_PROF_DESERIALIZE(data, size, offset, state);
-	PMIXP_PROF_DESERIALIZE(data, size, offset, nodeid);
-	PMIXP_PROF_DESERIALIZE(data, size, offset, msgid);
-	PMIXP_PROF_DESERIALIZE(data, size, offset, len);
-
-	_ucx_prof_output(ts, direction, state, nodeid, msgid, len);
-}
-
-PMIXP_PROFILE_DEFINE(static, _ucx_prof, NULL, _ucx_prof_deserialize_out)
-
-static void _ucx_prof_serialize(char *direction, char *state,
-				pmixp_ucx_req_t *req)
-{
-	size_t buf_size = sizeof(direction) + sizeof(state) +
-			sizeof(req->nodeid) + sizeof(req->msgid) +
-			sizeof(req->len);
-	char buf[buf_size];
-	size_t offset = 0;
-	PMIXP_PROF_SERIALIZE(buf, buf_size, offset, direction);
-	PMIXP_PROF_SERIALIZE(buf, buf_size, offset, state);
-	PMIXP_PROF_SERIALIZE(buf, buf_size, offset, req->nodeid);
-	PMIXP_PROF_SERIALIZE(buf, buf_size, offset, req->msgid);
-	PMIXP_PROF_SERIALIZE(buf, buf_size, offset, req->len);
-	PMIXP_PROFILE(&_ucx_prof, buf, buf_size);
-}
-
-#define PMIXP_UCX_PROFILE(direction, state, req) {                     \
-	if(PMIXP_PROFILE_DELAY()) {                                    \
-		_ucx_prof_serialize(direction, state, req);            \
-	} else {                                                       \
-		double ts;                                             \
-		PMIXP_DEBUG_GET_TS(ts)                                 \
-		_ucx_prof_output(ts, direction, state, req->nodeid,    \
-				 req->msgid, req->len);                \
-	}                                                              \
-}
-
-#endif
-
-#define PMIXP_UCX_PROF_SND(state, req) PMIXP_UCX_PROFILE("send", state, req)
-#define PMIXP_UCX_PROF_RCV(state, req) PMIXP_UCX_PROFILE("recv", state, req)
-
-
 
 static inline void _recv_req_release(pmixp_ucx_req_t *req)
 {
@@ -184,7 +104,6 @@ static void send_handle(void *request, ucs_status_t status)
 	pmixp_ucx_req_t *req = (pmixp_ucx_req_t *) request;
 	if (UCS_OK == status){
 		req->status = PMIXP_UCX_COMPLETE;
-		PMIXP_UCX_PROF_SND("completed", req);
 	} else {
 		PMIXP_ERROR("UCX send request failed: %s",
 			    ucs_status_string(status));
@@ -243,7 +162,6 @@ static int _load_ucx_lib()
 	setenv("UCX_MEM_MALLOC_HOOKS", "no", 1);
 	setenv("UCX_MEM_MALLOC_RELOC", "no", 1);
 	setenv("UCX_MEM_EVENTS", "no", 1);
-    setenv("UCX_ZCOPY_THRESH", "inf", 1);
 
 #ifdef PMIXP_UCX_LIBPATH
 	/* If this Slurm build doesn't allow RPATH's
@@ -251,7 +169,7 @@ static int _load_ucx_lib()
 	 * we have from autoconf
 	 */
 	char *full_path = NULL;
-	xstrfmtcat(full_path, "%s/libucp.so", PMIXP_UCX_LIBPATH);
+	xstrfmtcat(full_path, "%s/libucp.so.0", PMIXP_UCX_LIBPATH);
 	_ucx_lib_handler = dlopen(full_path, RTLD_LAZY | RTLD_GLOBAL);
 	xfree(full_path);
 	if (_ucx_lib_handler) {
@@ -262,7 +180,7 @@ static int _load_ucx_lib()
 	 * known by dynamic linker.
 	 */
 #endif
-	_ucx_lib_handler = dlopen("libucp.so", RTLD_LAZY | RTLD_GLOBAL);
+	_ucx_lib_handler = dlopen("libucp.so.0", RTLD_LAZY | RTLD_GLOBAL);
 	if (!_ucx_lib_handler) {
 		char *err = dlerror();
 		PMIXP_ERROR("Cannot open UCX lib: %s", (err) ? err : "unknown");
@@ -384,7 +302,7 @@ err_worker:
 
 }
 
-static void _release_send_requests(pmixp_rlist_t *l, char *type)
+static void _release_send_requests(pmixp_rlist_t *l)
 {
 	size_t count = pmixp_rlist_count(l);
 	size_t i;
@@ -392,8 +310,7 @@ static void _release_send_requests(pmixp_rlist_t *l, char *type)
 		pmixp_ucx_req_t *req;
 		req = (pmixp_ucx_req_t*)pmixp_rlist_deq(l);
 		xassert(req);
-		PMIXP_ERROR("WARNING: %s: canceling send request: %p, status=%d",
-		       type, req, req->status);
+
 		ucp_request_cancel(ucp_worker, req);
 		if (req->buffer) {
 			/* NOTE: since we are finalizing, we don't really care
@@ -405,7 +322,7 @@ static void _release_send_requests(pmixp_rlist_t *l, char *type)
 	}
 }
 
-static void _release_recv_requests(pmixp_rlist_t *l, char *type)
+static void _release_recv_requests(pmixp_rlist_t *l)
 {
 	size_t count = pmixp_rlist_count(l);
 	size_t i;
@@ -414,8 +331,6 @@ static void _release_recv_requests(pmixp_rlist_t *l, char *type)
 		pmixp_ucx_req_t *req;
 		req = (pmixp_ucx_req_t*)pmixp_rlist_deq(l);
 		xassert(req);
-		PMIXP_ERROR("WARNING: %s: canceling recv request: %p, status=%d",
-		       type, req, req->status);
 		ucp_request_cancel(ucp_worker, req);
 		_recv_req_release(req);
 	}
@@ -424,11 +339,11 @@ static void _release_recv_requests(pmixp_rlist_t *l, char *type)
 void pmixp_dconn_ucx_stop()
 {
 	slurm_mutex_lock(&_ucx_worker_lock);
-	_release_send_requests(&_snd_pending, "_snd_pending");
-	_release_send_requests(&_snd_complete, "_snd_complete");
+	_release_send_requests(&_snd_pending);
+	_release_send_requests(&_snd_complete);
 
-	_release_recv_requests(&_rcv_pending, "_rcv_pending");
-	_release_recv_requests(&_rcv_complete, "_rcv_complete");
+	_release_recv_requests(&_rcv_pending);
+	_release_recv_requests(&_rcv_complete);
 	slurm_mutex_unlock(&_ucx_worker_lock);
 }
 
@@ -521,11 +436,8 @@ static bool _ucx_progress()
 			continue;
 		}
 		new_msg = true;
-		req->nodeid = (int)info_tag.sender_tag;
 		req->buffer = msg;
 		req->len = info_tag.length;
-		req->msgid = _recv_msg_id++;
-		PMIXP_UCX_PROF_RCV("enqueued", req);
 		if (PMIXP_UCX_ACTIVE == req->status) {
 			/* this message is long enough, so it makes
 			 * sense to do the progres one more timer */
@@ -577,7 +489,6 @@ static bool _ucx_progress()
 		/* Skip failed receives
 		 * TODO: what more can we do? */
 		if (PMIXP_UCX_FAILED != req->status){
-			PMIXP_UCX_PROF_RCV("completed", req);
 			_ucx_process_msg(req->buffer, req->len);
 		}
 		elem = pmixp_rlist_next(&_rcv_complete, elem);
@@ -591,8 +502,10 @@ static bool _ucx_progress()
 			rc = SLURM_ERROR;
 		}
 		xassert(_direct_hdr_set);
-		_direct_hdr.send_complete(req->msg,
-					  PMIXP_P2P_REGULAR, rc);
+		if (req->buffer) {
+			_direct_hdr.send_complete(req->msg,
+						  PMIXP_P2P_REGULAR, rc);
+		}
 		elem = pmixp_rlist_next(&_snd_complete, elem);
 	}
 
@@ -810,22 +723,15 @@ static int _ucx_send(void *_priv, void *msg)
 	pmixp_dconn_ucx_t *priv = (pmixp_dconn_ucx_t *)_priv;
 	int rc = SLURM_SUCCESS;
 	bool release = false;
-	size_t msize = _direct_hdr.buf_size(msg);
-	pmixp_ucx_req_t req_init = {
-		.nodeid = priv->nodeid,
-		.msg = msg,
-		.msgid = _send_msg_id++,
-		.len = msize
-	};
 
 	slurm_mutex_lock(&_ucx_worker_lock);
 	if (!priv->connected) {
-		PMIXP_UCX_PROF_SND("pending", (&req_init));
 		pmixp_rlist_enq(&priv->pending, msg);
 	} else {
 		pmixp_ucx_req_t *req = NULL;
 		xassert(_direct_hdr_set);
 		char *mptr = _direct_hdr.buf_ptr(msg);
+		size_t msize = _direct_hdr.buf_size(msg);
 		req = (pmixp_ucx_req_t*)
 			ucp_tag_send_nb(priv->server_ep,
 					(void*)mptr, msize,
@@ -837,13 +743,14 @@ static int _ucx_send(void *_priv, void *msg)
 			goto exit;
 		} else if (UCS_OK == UCS_PTR_STATUS(req)) {
 			/* defer release until we unlock ucp worker */
-			PMIXP_UCX_PROF_SND("completed", (&req_init));
 			release = true;
 		} else {
-			PMIXP_UCX_PROF_SND("enqueued", (&req_init));
-			*req = req_init;
+			req->msg = msg;
+			req->buffer = mptr;
+			req->len = msize;
 			pmixp_rlist_enq(&_snd_pending, (void*)req);
 			_activate_progress();
+
 		}
 	}
 exit:

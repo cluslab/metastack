@@ -1,10 +1,18 @@
 Usage: slurmrestd [OPTIONS] [host:port]...
 	-a <authentication types>
 		List of authentication types to accept.
-	-f file
+	-d <data_parser plugins to load>
+		CSV list of data_parser plugins.
+	-f <file>
 		Use specified file for slurmctld configuration
-	-h
+	-g <group id>
+		Change group id before processing client request.
+	--generate-openapi-spec
+		Dump OpenAPI specification to stdout.
+	-h, --help
 		Print this help message.
+	--max-connections <count>
+		Set max count of connections to process.
 	-s <OpenAPI plugins to load>
 		CSV list of OpenAPI plugins.
 	-t <thread count>

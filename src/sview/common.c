@@ -74,18 +74,7 @@ static int _find_node_inx (char *name)
 
 static void _display_topology(void)
 {
-	int i, one_liner = 1;
-
-	if (TOPO_DEBUG) {
-		g_print("_display_topology,  record_count = %d\n",
-			g_topo_info_msg_ptr->record_count);
-	}
-
-	for (i = 0; i < g_topo_info_msg_ptr->record_count; i++) {
-		slurm_print_topo_record(stdout,
-					&g_topo_info_msg_ptr->topo_array[i],
-					one_liner);
-	}
+	slurm_print_topo_info_msg(stdout, g_topo_info_msg_ptr, NULL, 0);
 }
 
 static void _foreach_popup_all(GtkTreeModel  *model,
@@ -148,7 +137,7 @@ static gboolean _frame_callback(GtkWindow *window,
 		working_sview_config.fi_popup_width = event->configure.width;
 		working_sview_config.fi_popup_height = event->configure.height;
 
-		ListIterator itr = list_iterator_create(popup_list);
+		list_itr_t *itr = list_iterator_create(popup_list);
 		popup_info_t *popup_win = NULL;
 
 		while ((popup_win = list_next(itr))) {
@@ -588,7 +577,7 @@ extern void free_switch_nodes_maps(
 	while (sw_nodes_bitmaps_ptr++) {
 		if (!sw_nodes_bitmaps_ptr->node_bitmap)
 			break;
-		bit_free(sw_nodes_bitmaps_ptr->node_bitmap);
+		FREE_NULL_BITMAP(sw_nodes_bitmaps_ptr->node_bitmap);
 		if (sw_nodes_bitmaps_ptr->node_bitmap)
 			xfree(sw_nodes_bitmaps_ptr->nodes);
 	}
@@ -600,7 +589,7 @@ extern int build_nodes_bitmap(char *node_names, bitstr_t **bitmap)
 {
 	char *this_node_name;
 	bitstr_t *my_bitmap;
-	hostlist_t host_list;
+	hostlist_t *host_list;
 	int node_inx = -1;
 
 	if (TOPO_DEBUG)
@@ -809,7 +798,7 @@ extern void set_page_opts(int page, display_data_t *display_data,
 			  int count, char* initial_opts)
 {
 	page_opts_t *page_opts;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *col_name = NULL;
 
 	xassert(page < PAGE_CNT);
@@ -971,7 +960,7 @@ extern void create_page(GtkNotebook *notebook, display_data_t *display_data)
 
 }
 
-extern GtkTreeView *create_treeview(display_data_t *local, List *button_list)
+extern GtkTreeView *create_treeview(display_data_t *local, list_t **button_list)
 {
 	signal_params_t *signal_params = xmalloc(sizeof(signal_params_t));
 	GtkTreeView *tree_view = GTK_TREE_VIEW(gtk_tree_view_new());
@@ -1635,7 +1624,7 @@ extern void destroy_signal_params(void *arg)
 
 extern gboolean delete_popup(GtkWidget *widget, GtkWidget *event, char *title)
 {
-	ListIterator itr = list_iterator_create(popup_list);
+	list_itr_t *itr = list_iterator_create(popup_list);
 	popup_info_t *popup_win = NULL;
 
 	while ((popup_win = list_next(itr))) {
@@ -1656,7 +1645,7 @@ extern gboolean delete_popup(GtkWidget *widget, GtkWidget *event, char *title)
 
 extern gboolean delete_popups(void)
 {
-	ListIterator itr = list_iterator_create(popup_list);
+	list_itr_t *itr = list_iterator_create(popup_list);
 	popup_info_t *popup_win = NULL;
 
 	while ((popup_win = list_next(itr))) {
@@ -1670,29 +1659,29 @@ extern gboolean delete_popups(void)
 
 extern void *popup_thr(popup_info_t *popup_win)
 {
-	void (*specifc_info) (popup_info_t *popup_win) = NULL;
+	void (*specific_info) (popup_info_t *popup_win) = NULL;
 	int running = 1;
 	if (_DEBUG)
 		g_print("popup_thr:global_row_count = %d \n",
 			global_row_count);
 	switch(popup_win->type) {
 	case PART_PAGE:
-		specifc_info = specific_info_part;
+		specific_info = specific_info_part;
 		break;
 	case JOB_PAGE:
-		specifc_info = specific_info_job;
+		specific_info = specific_info_job;
 		break;
 	case NODE_PAGE:
-		specifc_info = specific_info_node;
+		specific_info = specific_info_node;
 		break;
 	case RESV_PAGE:
-		specifc_info = specific_info_resv;
+		specific_info = specific_info_resv;
 		break;
 	case FRONT_END_PAGE:
-		specifc_info = specific_info_front_end;
+		specific_info = specific_info_front_end;
 		break;
 	case BB_PAGE:
-		specifc_info = specific_info_bb;
+		specific_info = specific_info_bb;
 		break;
 	case SUBMIT_PAGE:
 	default:
@@ -1704,7 +1693,7 @@ extern void *popup_thr(popup_info_t *popup_win)
 	/* when popup is killed running will be set to 0 */
 	while (running) {
 		gdk_threads_enter();
-		(specifc_info)(popup_win);
+		(specific_info)(popup_win);
 		gdk_threads_leave();
 		sleep(working_sview_config.refresh_delay);
 	}
@@ -1824,7 +1813,7 @@ extern char *get_reason(void)
 		NULL);
 	int response = 0;
 	char *user_name = NULL;
-	char time_str[32];
+	char time_str[256];
 	time_t now = time(NULL);
 
 	gtk_window_set_type_hint(GTK_WINDOW(popup),
@@ -1961,8 +1950,7 @@ extern void display_edit_note(char *edit_note)
 	msg_id = gtk_statusbar_push(GTK_STATUSBAR(main_statusbar),
 				    STATUS_ADMIN_EDIT,
 				    edit_note);
-	if (!sview_thread_new(_editing_thr, GINT_TO_POINTER(msg_id),
-			      false, &error))
+	if (!sview_thread_new(_editing_thr, GINT_TO_POINTER(msg_id), &error))
 		g_printerr("Failed to create edit thread: %s\n",
 			   error->message);
 
@@ -2209,4 +2197,27 @@ extern void select_admin_common(GtkTreeModel *model, GtkTreeIter *iter,
 	g_list_free(selected_rows);
 
 	return;
+}
+
+extern void set_column_width_fixed(GtkTreeView *tree_view,
+				   int sortid,
+				   int width)
+{
+	GList* col_list;
+	GList *col;
+
+	xassert(tree_view);
+
+	if (!(col_list = gtk_tree_view_get_columns(tree_view)))
+		return;
+
+	for (col = col_list; col; col = g_list_next(col)) {
+		if (gtk_tree_view_column_get_sort_column_id(col->data) ==
+		    sortid) {
+			gtk_tree_view_column_set_sizing(
+				col->data, GTK_TREE_VIEW_COLUMN_FIXED);
+			gtk_tree_view_column_set_fixed_width(col->data, width);
+		}
+	}
+	g_list_free(col_list);
 }

@@ -2,8 +2,7 @@
 ############################################################################
 # Purpose: Validate heterogeneous gpu job options.
 ############################################################################
-# Copyright (C) 2020 SchedMD LLC.
-# Written by Brian Christiansen <brian@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -109,8 +108,8 @@ proc test_gpu_bind {} {
 	]
 
 	set submission_errors {
-		"error: Invalid --gpu-bind argument: gpu:blah"
-		"error: Invalid --gpu-bind argument: gpu:blah"
+		"error: Invalid --gpu-bind argument: blah"
+		"error: Invalid --gpu-bind argument: blah"
 	}
 
 	foreach cmd {sbatch srun salloc} {
@@ -137,11 +136,11 @@ proc test_gpu_bind {} {
 	]
 
 	set regexes [list \
-		"^JobId=.*TresBind=gpu:closest.*JobId=.*TresBind=gpu:closest" \
-		"^JobId=.*TresBind=gpu:closest.*JobId=.*TresBind=gpu:map_gpu:1" \
-		"^JobId=.*TresBind=gpu:map_gpu:1.*JobId=.*TresBind=gpu:closest" \
-		"^JobId=.*TresBind=gpu:closest.*JobId=" \
-		"^JobId=.*JobId=.*TresBind=gpu:closest" \
+		"^JobId=.*TresBind=gres/gpu:closest.*JobId=.*TresBind=gres/gpu:closest" \
+		"^JobId=.*TresBind=gres/gpu:closest.*JobId=.*TresBind=gres/gpu:map_gpu:1" \
+		"^JobId=.*TresBind=gres/gpu:map_gpu:1.*JobId=.*TresBind=gres/gpu:closest" \
+		"^JobId=.*TresBind=gres/gpu:closest.*JobId=" \
+		"^JobId=.*JobId=.*TresBind=gres/gpu:closest" \
 	]
 
 	foreach cmd {sbatch srun salloc} {
@@ -232,10 +231,10 @@ proc test_cpus_per_gpu {} {
 	log_info "Testing --cpus-per-gpu"
 
 	set tests [list \
-		"--cpus-per-gpu=1 : --cpus-per-gpu=2" \
-		"--cpus-per-gpu=2 : --cpus-per-gpu=1" \
-		"--cpus-per-gpu=2 : -n1" \
-		"-n1 : --cpus-per-gpu=2" \
+		"--gpus=1 --cpus-per-gpu=1 : --gpus=1 --cpus-per-gpu=2" \
+		"--gpus=1 --cpus-per-gpu=2 : --gpus=1 --cpus-per-gpu=1" \
+		"--gpus=1 --cpus-per-gpu=2 : -n1" \
+		"-n1 : --gpus=1 --cpus-per-gpu=2" \
 	]
 
 	set regexes [list \
@@ -423,10 +422,10 @@ proc test_gpus_per_task {} {
 	]
 
 	set regexes [list \
-		"^JobId=.*TresPerTask=.*gpu:1.*JobId=.*TresPerTask=.*gpu:2" \
-		"^JobId=.*TresPerTask=.*gpu:2.*JobId=.*TresPerTask=.*gpu:1" \
-		"^JobId=.*TresPerTask=.*gpu:2.*JobId=.*" \
-		"^JobId=.*JobId=.*TresPerTask=.*gpu:2" \
+		"^JobId=.*TresPerTask=.*gpu=1.*JobId=.*TresPerTask=.*gpu=2" \
+		"^JobId=.*TresPerTask=.*gpu=2.*JobId=.*TresPerTask=.*gpu=1" \
+		"^JobId=.*TresPerTask=.*gpu=2.*JobId=.*" \
+		"^JobId=.*JobId=.*TresPerTask=.*gpu=2" \
 	]
 
 	foreach cmd {sbatch srun salloc} {
@@ -486,9 +485,9 @@ proc test_mem_per_gpu {} {
 
 test_gpu_bind
 test_gpu_freq
-test_gpus_per_node
 
 if {[check_config_select "cons_tres"]} {
+    test_gpus_per_node
 	test_cpus_per_gpu
 	test_gpus_per_job
 	test_gpus_per_socket

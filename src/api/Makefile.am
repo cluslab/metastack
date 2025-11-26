@@ -97,6 +97,7 @@ slurmapi_src =           \
 	burst_buffer_info.c \
 	assoc_mgr_info.c    \
 	cancel.c         \
+	cluster_info.c   \
 	complete.c       \
 	config_info.c    \
 	crontab.c        \
@@ -133,6 +134,7 @@ common_dir = $(top_builddir)/src/common
 
 slurmapi_add = 			 \
 	$(common_dir)/libcommon.la	\
+	$(top_builddir)/src/interfaces/libcommon_interfaces.la \
 	-lpthread
 
 libslurmhelper_la_SOURCES = $(slurmapi_src)
@@ -168,7 +170,8 @@ libslurm_pmi_la_LDFLAGS        = \
 libslurm_o_SOURCES =
 
 libslurm_o_LDADD =				\
-	$(top_builddir)/src/common/libcommon.o
+	$(top_builddir)/src/common/libcommon.o \
+	$(top_builddir)/src/interfaces/libcommon_interfaces.o
 
 libslurm.o$(EXEEXT): $(libslurmhelper_la_OBJECTS) $(libslurm_o_LDADD)
 	$(LINK) $(libslurmhelper_la_OBJECTS) $(libslurm_o_LDADD)
@@ -177,14 +180,16 @@ force:
 $(libslurm_o_LDADD) $(convenience_libs) $(slurmapi_add) : force
 	@cd `dirname $@` && $(MAKE) `basename $@`
 
-# select/cray needs to load select/linear, thus plugin_context_ is required
 $(VERSION_SCRIPT) :
 	(echo "{ global:";   \
 	 echo "   islurm_*;"; \
+	 echo "   sack_*;"; \
 	 echo "   slurm_*;"; \
 	 echo "   slurmdb_*;"; \
-	 echo "   plugin_context_*;"; \
 	 echo "   working_cluster_rec;"; \
+	 echo "   node_record_count;"; \
+	 echo "   active_node_record_count;"; \
+	 echo "   node_record_table_ptr;"; \
 	 echo "  local: *;"; \
 	 echo "};") > $(VERSION_SCRIPT)
 

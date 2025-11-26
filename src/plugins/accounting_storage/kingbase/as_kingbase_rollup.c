@@ -83,7 +83,7 @@ typedef struct {
 	time_t end;
 	uint32_t flags;
 	int id;
-	hostlist_t hl;
+	hostlist_t *hl;
 	List local_assocs; /* list of assocs to spread unused time
 			      over of type local_id_usage_t */
 	List loc_tres;
@@ -152,7 +152,7 @@ static int _find_id_usage(void *x, void *key)
 static void _remove_job_tres_time_from_cluster(List c_tres, List j_tres,
 					       int seconds)
 {
-	ListIterator c_itr;
+	list_itr_t *c_itr;
 	local_tres_usage_t *loc_c_tres, *loc_j_tres;
 	uint64_t time;
 
@@ -228,7 +228,7 @@ static local_tres_usage_t *_add_time_tres(List tres_list, int type, uint32_t id,
 static void _add_time_tres_list(List tres_list_out, List tres_list_in, int type,
 				uint64_t time_in, bool times_count)
 {
-	ListIterator itr;
+	list_itr_t *itr;
 	local_tres_usage_t *loc_tres;
 
 	xassert(tres_list_in);
@@ -250,7 +250,7 @@ static void _add_time_tres_list(List tres_list_out, List tres_list_in, int type,
 static int _update_unused_wall(local_resv_usage_t *r_usage, List job_tres,
 			       int job_seconds)
 {
-	ListIterator resv_itr;
+	list_itr_t *resv_itr;
 	local_tres_usage_t *loc_tres;
 	uint32_t resv_tres_id;
 	uint64_t resv_tres_count;
@@ -285,7 +285,7 @@ static int _update_unused_wall(local_resv_usage_t *r_usage, List job_tres,
 		 * With a Flex reservation you can easily have more time than is
 		 * possible.  Just print this debug3 warning if it happens.
 		 */
-		debug3("WARNING: Unused wall is less than zero; this should never happen outside a Flex reservation. Setting it to zero for resv id = %d, start = %ld.",
+		debug3("Unused wall is less than zero; this should never happen outside a Flex reservation. Setting it to zero for resv id = %d, start = %ld.",
 		       r_usage->id, r_usage->orig_start);
 		r_usage->unused_wall = 0;
 	}
@@ -294,7 +294,7 @@ static int _update_unused_wall(local_resv_usage_t *r_usage, List job_tres,
 
 static void _add_job_alloc_time_to_cluster(List c_tres_list, List j_tres)
 {
-	ListIterator c_itr = list_iterator_create(c_tres_list);
+	list_itr_t *c_itr = list_iterator_create(c_tres_list);
 	local_tres_usage_t *loc_c_tres, *loc_j_tres;
 
 	while ((loc_c_tres = list_next(c_itr))) {
@@ -537,7 +537,7 @@ static void _setup_cluster_tres_usage(kingbase_conn_t *kingbase_conn,
 				      local_tres_usage_t *loc_tres,
 				      char **query)
 {
-	char start_char[20], end_char[20];
+	char start_char[256], end_char[256];
 	uint64_t total_used;
 
 	if (!loc_tres)
@@ -691,7 +691,7 @@ static int _process_cluster_usage(kingbase_conn_t *kingbase_conn,
 {
 	int rc = SLURM_SUCCESS;
 	char *query = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 	local_tres_usage_t *loc_tres;
 
 	if (!c_usage)
@@ -750,7 +750,7 @@ static void _create_id_usage_insert(char *cluster_name, int type,
 				    char **query)
 {
 	local_tres_usage_t *loc_tres;
-	ListIterator itr;
+	list_itr_t *itr;
 	bool first;
 	char *table = NULL, *id_name = NULL;
 
@@ -861,8 +861,8 @@ static local_cluster_usage_t *_setup_cluster_usage(kingbase_conn_t *kingbase_con
 	char *query = NULL;
 	KCIResult *result = NULL;
 	int i = 0;
-	ListIterator d_itr = NULL;
-	ListIterator r_itr = NULL;
+	list_itr_t *d_itr = NULL;
+	list_itr_t *r_itr = NULL;
 	local_cluster_usage_t *loc_c_usage;
 	local_resv_usage_t *loc_r_usage;
 
@@ -1047,8 +1047,7 @@ static local_cluster_usage_t *_setup_cluster_usage(kingbase_conn_t *kingbase_con
 		seconds -= resv_seconds;
 		if (seconds > 0) {
 			if (((state & NODE_STATE_BASE) == NODE_STATE_FUTURE) ||
-			    ((state & NODE_STATE_CLOUD) &&
-			     (state & NODE_STATE_POWERED_DOWN)))
+			     (state & NODE_STATE_POWERED_DOWN))
 				_add_tres_time_2_list(c_usage->loc_tres,
 							KCIResultGetColumnValue(result, i, EVENT_REQ_TRES),
 							TIME_PDOWN,
@@ -1097,7 +1096,7 @@ static local_cluster_usage_t *_setup_cluster_usage(kingbase_conn_t *kingbase_con
 	return c_usage;
 }
 
-extern int _setup_resv_usage(kingbase_conn_t *kingbase_conn,
+static int _setup_resv_usage(kingbase_conn_t *kingbase_conn,
 			     char *cluster_name,
 			     time_t curr_start,
 			     time_t curr_end,
@@ -1106,7 +1105,7 @@ extern int _setup_resv_usage(kingbase_conn_t *kingbase_conn,
 {
 	KCIResult *result = NULL;
 	int i;
-	char *query;
+	char *query = NULL;
 	char *resv_str = NULL;
 	local_resv_usage_t *r_usage = NULL;
 	char *resv_req_inx[] = {
@@ -1232,6 +1231,35 @@ extern int _setup_resv_usage(kingbase_conn_t *kingbase_conn,
 	return SLURM_SUCCESS;
 }
 
+static void _add_planned_time(local_cluster_usage_t *c_usage, time_t job_start,
+			      time_t job_eligible, uint32_t array_pending,
+			      uint32_t row_rcpu)
+{
+	int eligible_start, eligible_end, loc_seconds = 0;
+
+	if (!c_usage || (job_start && (job_start < c_usage->start)))
+		return;
+
+	eligible_start = MAX(job_eligible, c_usage->start);
+	eligible_end = job_start ? MIN(job_start, c_usage->end) : c_usage->end;
+	loc_seconds = (eligible_end - eligible_start);
+
+	if (loc_seconds <= 0)
+		return;
+
+	/*
+	* If we have pending jobs in an array
+	* they haven't been inserted into the
+	* database yet as proper job records,
+	* so handle them here.
+	*/
+	if (array_pending)
+		loc_seconds *= array_pending;
+
+	_add_time_tres(c_usage->loc_tres, TIME_RESV, TRES_CPU,
+		       loc_seconds * (uint64_t) row_rcpu, 0);
+}
+
 extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 				  char *cluster_name,
 				  time_t start, time_t end,
@@ -1245,10 +1273,10 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 	time_t curr_end = curr_start + add_sec;
 	char *query = NULL;
 	KCIResult *result = NULL;
-	ListIterator a_itr = NULL;
-	ListIterator c_itr = NULL;
-	ListIterator w_itr = NULL;
-	ListIterator r_itr = NULL;
+	list_itr_t *a_itr = NULL;
+	list_itr_t *c_itr = NULL;
+	list_itr_t *w_itr = NULL;
+	list_itr_t *r_itr = NULL;
 	List assoc_usage_list = list_create(_destroy_local_id_usage);
 	List cluster_down_list = list_create(_destroy_local_cluster_usage);
 	List wckey_usage_list = list_create(_destroy_local_id_usage);
@@ -1374,6 +1402,7 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 
 		/* now get the jobs during this time only  */
 		query = xstrdup_printf("select %s from `%s_%s` as job "
+					   "FORCE INDEX (rollup) "
 				       "where (job.time_eligible and "
 				       "job.time_eligible < %ld and "
 				       "(job.time_end >= %ld or "
@@ -1550,10 +1579,6 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 
 			/* first figure out the reservation */
 			if (resv_id) {
-				if (seconds <= 0) {
-					_transfer_loc_tres(&loc_tres, a_usage);
-					continue;
-				}
 				/*
 				 * Since we have already added the entire
 				 * reservation as used time on the cluster we
@@ -1579,6 +1604,19 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 					 */
 					if (r_usage->id != resv_id)
 						continue;
+
+					if (r_usage->flags &
+					    RESERVE_FLAG_IGN_JOBS) {
+						_add_planned_time(
+							c_usage,
+							MIN(row_start,
+							    r_usage->end),
+							MAX(row_eligible,
+							    r_usage->start),
+							array_pending,
+							row_rcpu);
+					}
+
 					temp_end = row_end;
 					temp_start = row_start;
 					if (r_usage->start > temp_start)
@@ -1625,17 +1663,8 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 				continue;
 			}
 
-			/*
-			 * only record time for the clusters that have
-			 * registered.  This continue should rarely if
-			 * ever happen.
-			 */
-			if (!c_usage) {
-				_transfer_loc_tres(&loc_tres, a_usage);
-				continue;
-			}
+			if (c_usage && row_start && (seconds > 0)) {
 
-			if (row_start && (seconds > 0)) {
 				/* info("%d assoc %d adds " */
 				/*      "(%d)(%d-%d) * %d = %d " */
 				/*      "to %d", */
@@ -1658,44 +1687,8 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 			 */
 			_transfer_loc_tres(&loc_tres, a_usage);
 
-			/* now reserved time */
-			if (!row_start || (row_start >= c_usage->start)) {
-				int temp_end = row_start;
-				int temp_start = row_eligible;
-				if (c_usage->start > temp_start)
-					temp_start = c_usage->start;
-				if (!temp_end || (c_usage->end < temp_end))
-					temp_end = c_usage->end;
-				loc_seconds = (temp_end - temp_start);
-				if (loc_seconds > 0) {
-					/*
-					 * If we have pending jobs in an array
-					 * they haven't been inserted into the
-					 * database yet as proper job records,
-					 * so handle them here.
-					 */
-					if (array_pending)
-						loc_seconds *= array_pending;
-
-					/* info("%d assoc %d reserved " */
-					/*      "(%d)(%d-%d) * %d * %d = %d " */
-					/*      "to %d", */
-					/*      job_id, */
-					/*      assoc_id, */
-					/*      temp_end - temp_start, */
-					/*      temp_end, temp_start, */
-					/*      row_rcpu, */
-					/*      array_pending, */
-					/*      loc_seconds, */
-					/*      row_rcpu); */
-
-					_add_time_tres(c_usage->loc_tres,
-						       TIME_RESV, TRES_CPU,
-						       loc_seconds *
-						       (uint64_t) row_rcpu,
-						       0);
-				}
-			}
+			_add_planned_time(c_usage, row_start, row_eligible,
+					  array_pending, row_rcpu);
 		}
 		KCIResultDealloc(result);
 
@@ -1705,7 +1698,7 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 		query = NULL;
 		list_iterator_reset(r_itr);
 		while ((r_usage = list_next(r_itr))) {
-			ListIterator t_itr;
+			list_itr_t *t_itr;
 			local_tres_usage_t *loc_tres;
 
 			xstrfmtcat(query, "update `%s_%s` set unused_wall=%f where id_resv=%u and time_start=%ld;",
@@ -1722,7 +1715,7 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 				int64_t idle = loc_tres->total_time -
 					loc_tres->time_alloc;
 				char *assoc = NULL;
-				ListIterator tmp_itr = NULL;
+				list_itr_t *tmp_itr = NULL;
 				int assoc_cnt, resv_unused_secs;
 
 				if (idle <= 0)
@@ -1793,7 +1786,7 @@ extern int as_kingbase_hourly_rollup(kingbase_conn_t *kingbase_conn,
 			list_iterator_reset(c_itr);
 			while ((loc_c_usage = list_next(c_itr))) {
 				local_tres_usage_t *loc_tres;
-				ListIterator tmp_itr = list_iterator_create(
+				list_itr_t *tmp_itr = list_iterator_create(
 					loc_c_usage->loc_tres);
 				while ((loc_tres = list_next(tmp_itr)))
 					_add_time_tres(c_usage->loc_tres,

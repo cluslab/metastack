@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  auth_jwt.c - JWT token-based slurm authentication plugin
  *****************************************************************************
- *  Copyright (C) 2019 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -38,6 +37,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -52,6 +52,7 @@
 #include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+#include "src/interfaces/serializer.h"
 
 #include "auth_jwt.h"
 
@@ -91,8 +92,7 @@ typedef struct {
 
 	bool verified;
 	bool cannot_verify;
-	bool uid_set;
-	bool gid_set;
+	bool ids_set;
 
 	uid_t uid;
 	gid_t gid;
@@ -102,19 +102,19 @@ typedef struct {
 	char *username;
 } auth_token_t;
 
-data_t *jwks = NULL;
-buf_t *key = NULL;
-char *token = NULL;
-__thread char *thread_token = NULL;
-__thread char *thread_username = NULL;
+static data_t *jwks = NULL;
+static buf_t *key = NULL;
+static char *token = NULL;
+static char *claim_field = NULL;
+static __thread char *thread_token = NULL;
+static __thread char *thread_username = NULL;
 
 /*
  * This plugin behaves differently than the others in that it needs to operate
  * asynchronously. If we're running in one of the daemons, it's presumed that
  * we're receiving tokens but do not need to generate them as part of our
  * responses. In the client commands, responses are not validated, although
- * for safety the auth_p_get_uid()/auth_p_get_gid() calls are set to
- * fatal.
+ * for safety the auth_p_get_ids call is set to fatal.
  *
  * This plugin does implement a few calls that are unique to its operation:
  *	auth_p_thread_config() - used to set a different token specific to
@@ -124,20 +124,50 @@ __thread char *thread_username = NULL;
  *		requestor for a given username and duration.
  */
 
-static const char *jwt_key_field = "jwt_key=";
-static const char *jwks_key_field = "jwks=";
+static void _check_key_permissions(const char *path, int bad_perms)
+{
+	struct stat buf;
+
+	xassert(path);
+
+	if (stat(path, &buf))
+		fatal("%s: cannot stat '%s': %m", plugin_type, path);
+
+	if ((buf.st_uid != 0) && (buf.st_uid != slurm_conf.slurm_user_id))
+		warning("%s: '%s' owned by uid=%u, instead of SlurmUser(%u) or root",
+			plugin_type, path, buf.st_uid,
+			slurm_conf.slurm_user_id);
+
+#ifdef __METASTACK_BUG_JWT_FILE_PERMISSION
+	if (buf.st_mode & bad_perms){
+		if(strcmp(plugin_type, "auth/jwt") == 0){
+			fatal("%s: key file is insecure: '%s' Current:0%o, Required:0600",
+			      plugin_type, path, buf.st_mode & 0777);
+		}else{
+			fatal("%s: key file is insecure: '%s' Current:0%o",
+			      plugin_type, path, buf.st_mode & 0777);			
+		}
+	}
+#else
+	if (buf.st_mode & bad_perms){
+		fatal("%s: key file is insecure: '%s' mode=0%o",
+		      plugin_type, path, buf.st_mode & 0777);
+	}
+#endif
+}
 
 static data_for_each_cmd_t _build_jwks_keys(data_t *d, void *arg)
 {
 	char *alg, *kid, *n, *e, *key;
 
-	/* Ignore non-RS256 keys in the JWKS */
-	alg = data_get_string(data_key_get(d, "alg"));
-	if (xstrcasecmp(alg, "RS256"))
-		return DATA_FOR_EACH_CONT;
-
 	if (!(kid = data_get_string(data_key_get(d, "kid"))))
 		fatal("%s: failed to load kid field", __func__);
+
+	/* Ignore non-RS256 keys in the JWKS if algorthim is provided */
+	if ((alg = data_get_string(data_key_get(d, "alg"))) &&
+	    xstrcasecmp(alg, "RS256"))
+		return DATA_FOR_EACH_CONT;
+
 	if (!(e = data_get_string(data_key_get(d, "e"))))
 		fatal("%s: failed to load e field", __func__);
 	if (!(n = data_get_string(data_key_get(d, "n"))))
@@ -147,27 +177,23 @@ static data_for_each_cmd_t _build_jwks_keys(data_t *d, void *arg)
 	debug3("key for kid %s mod %s exp %s is\n%s", kid, n, e, key);
 
 	data_set_int(data_key_set(d, "slurm-pem-len"), strlen(key));
-	data_set_string_own(data_key_set(d, "slurm-pem"), key);
+	data_set_string(data_key_set(d, "slurm-pem"), key);
 
 	return DATA_FOR_EACH_CONT;
 }
 
 static void _init_jwks(void)
 {
-	char *begin, *start, *end, *key_file;
+	char *key_file;
 	buf_t *buf;
 
-	if (!(begin = xstrstr(slurm_conf.authalt_params, jwks_key_field)))
+	if (!(key_file = conf_get_opt_str(slurm_conf.authalt_params, "jwks=")))
 		return;
 
-	if (data_init(MIME_TYPE_JSON_PLUGIN, NULL))
-		fatal("%s: data_init() failed", __func__);
+	_check_key_permissions(key_file, S_IWOTH);
 
-	start = begin + strlen(jwks_key_field);
-	if ((end = xstrstr(start, ",")))
-		key_file = xstrndup(start, (end - start));
-	else
-		key_file = xstrdup(start);
+	if (serializer_g_init(MIME_TYPE_JSON_PLUGIN, NULL))
+		fatal("%s: serializer_g_init() failed", __func__);
 
 	debug("loading jwks file `%s`", key_file);
 	if (!(buf = create_mmap_buf(key_file))) {
@@ -175,10 +201,11 @@ static void _init_jwks(void)
 		      plugin_type, key_file);
 	}
 
-	if (data_g_deserialize(&jwks, buf->head, buf->size, MIME_TYPE_JSON))
+	if (serialize_g_string_to_data(&jwks, buf->head, buf->size,
+				       MIME_TYPE_JSON))
 		fatal("%s: failed to deserialize jwks file `%s`",
 		      __func__, key_file);
-	free_buf(buf);
+	FREE_NULL_BUFFER(buf);
 
 	/* force everything to be a string */
 	(void) data_convert_tree(jwks, DATA_TYPE_STRING);
@@ -189,17 +216,9 @@ static void _init_jwks(void)
 
 static void _init_hs256(void)
 {
-	char *begin, *key_file = NULL;
+	char *key_file;
 
-	if ((begin = xstrstr(slurm_conf.authalt_params, jwt_key_field))) {
-		char *start = begin + strlen(jwt_key_field);
-		char *end = NULL;
-
-		if ((end = xstrstr(start, ",")))
-			key_file = xstrndup(start, (end - start));
-		else
-			key_file = xstrdup(start);
-	}
+	key_file = conf_get_opt_str(slurm_conf.authalt_params, "jwt_key=");
 
 	/*
 	 * If jwks was loaded, and jwt is not explicitly configured, skip setup.
@@ -217,6 +236,8 @@ static void _init_hs256(void)
 		fatal("No jwt_key set. Please set the jwt_key=/path/to/key/file option in AuthAltParameters in slurmdbd.conf.");
 	}
 
+	_check_key_permissions(key_file, S_IRWXO);
+
 	debug("%s: Loading key: %s", __func__, key_file);
 
 	if (!(key = create_mmap_buf(key_file))) {
@@ -230,8 +251,24 @@ static void _init_hs256(void)
 extern int init(void)
 {
 	if (running_in_slurmctld() || running_in_slurmdbd()) {
+		char *claim;
+
 		_init_jwks();
 		_init_hs256();
+
+		/*
+		 * Support an optional custom username claim field in addition
+		 * to 'sun' and 'username'.
+		 */
+		if ((claim = xstrstr(slurm_conf.authalt_params, "userclaimfield="))) {
+			char *end;
+
+			claim_field = xstrdup(claim + 15);
+			if ((end = xstrstr(claim_field, ",")))
+				*end = '\0';
+
+			info("Custom user claim field: %s", claim_field);
+		}
 	} else {
 		/* we must be in a client command */
 		token = getenv("SLURM_JWT");
@@ -250,28 +287,27 @@ extern int init(void)
 
 extern int fini(void)
 {
+	xfree(claim_field);
 	FREE_NULL_DATA(jwks);
 	FREE_NULL_BUFFER(key);
 
 	return SLURM_SUCCESS;
 }
 
-auth_token_t *auth_p_create(char *auth_info, uid_t r_uid, void *data, int dlen)
+extern auth_token_t *auth_p_create(char *auth_info, uid_t r_uid, void *data,
+				   int dlen)
 {
 	return xmalloc(sizeof(auth_token_t));
 }
 
-int auth_p_destroy(auth_token_t *cred)
+extern void auth_p_destroy(auth_token_t *cred)
 {
-	if (cred == NULL) {
-		slurm_seterrno(ESLURM_AUTH_MEMORY);
-		return SLURM_ERROR;
-	}
+	if (!cred)
+		return;
 
 	xfree(cred->token);
 	xfree(cred->username);
 	xfree(cred);
-	return SLURM_SUCCESS;
 }
 
 typedef struct {
@@ -280,7 +316,7 @@ typedef struct {
 	jwt_t **jwt;
 } foreach_rs256_args_t;
 
-data_for_each_cmd_t _verify_rs256_jwt(data_t *d, void *arg)
+static data_for_each_cmd_t _verify_rs256_jwt(data_t *d, void *arg)
 {
 	char *alg, *kid, *key;
 	int len;
@@ -319,7 +355,7 @@ data_for_each_cmd_t _verify_rs256_jwt(data_t *d, void *arg)
  *
  * Return SLURM_SUCCESS if the credential is in order and valid.
  */
-int auth_p_verify(auth_token_t *cred, char *auth_info)
+extern int auth_p_verify(auth_token_t *cred, char *auth_info)
 {
 	int rc;
 	const char *alg;
@@ -415,10 +451,16 @@ int auth_p_verify(auth_token_t *cred, char *auth_info)
 	 * 'username' is used otherwise
 	 */
 	if (!(username = xstrdup(jwt_get_grant(jwt, "sun"))) &&
-	    !(username = xstrdup(jwt_get_grant(jwt, "username")))) {
+	    !(username = xstrdup(jwt_get_grant(jwt, "username"))) &&
+	    (!claim_field ||
+	     !(username = xstrdup(jwt_get_grant(jwt, claim_field)))))
+	{
 		error("%s: jwt_get_grant failure", __func__);
 		goto fail;
 	}
+
+	jwt_free(jwt);
+	jwt = NULL;
 
 	if (!cred->username)
 		cred->username = username;
@@ -452,64 +494,39 @@ fail:
 	return SLURM_ERROR;
 }
 
-uid_t auth_p_get_uid(auth_token_t *cred)
+extern void auth_p_get_ids(auth_token_t *cred, uid_t *uid, gid_t *gid)
 {
-	if (cred == NULL || !cred->verified) {
-		slurm_seterrno(ESLURM_AUTH_BADARG);
-		return SLURM_AUTH_NOBODY;
-	}
+	*uid = SLURM_AUTH_NOBODY;
+	*gid = SLURM_AUTH_NOBODY;
+
+	if (!cred || !cred->verified)
+		return;
 
 	if (cred->cannot_verify)
 		fatal("%s: asked for uid for an unverifiable token, this should never happen",
 		      __func__);
 
-	if (cred->uid_set)
-		return cred->uid;
-
-	if (uid_from_string(cred->username, &cred->uid)) {
-		slurm_seterrno(ESLURM_USER_ID_MISSING);
-		return SLURM_AUTH_NOBODY;
+	if (cred->ids_set) {
+		*uid = cred->uid;
+		*gid = cred->gid;
+		return;
 	}
 
-	cred->uid_set = true;
+	if (uid_from_string(cred->username, &cred->uid))
+		return;
 
-	return cred->uid;
+	if (((cred->gid = gid_from_uid(cred->uid)) == (gid_t) -1))
+		return;
+
+	cred->ids_set = true;
+
+	*uid = cred->uid;
+	*gid = cred->gid;
 }
 
-gid_t auth_p_get_gid(auth_token_t *cred)
+extern char *auth_p_get_host(auth_token_t *cred)
 {
-	uid_t uid;
-
-	if (cred == NULL || !cred->verified) {
-		slurm_seterrno(ESLURM_AUTH_BADARG);
-		return SLURM_AUTH_NOBODY;
-	}
-
-	if (cred->cannot_verify)
-		fatal("%s: asked for gid for an unverifiable token, this should never happen",
-		      __func__);
-
-	if (cred->gid_set)
-		return cred->gid;
-
-	if ((uid = auth_p_get_uid(cred)) == SLURM_AUTH_NOBODY) {
-		slurm_seterrno(ESLURM_USER_ID_MISSING);
-		return SLURM_AUTH_NOBODY;
-	}
-
-	if (((cred->gid = gid_from_uid(uid)) == (gid_t) -1)) {
-		slurm_seterrno(ESLURM_USER_ID_MISSING);
-		return SLURM_AUTH_NOBODY;
-	}
-
-	cred->gid_set = true;
-
-	return cred->gid;
-}
-
-char *auth_p_get_host(auth_token_t *cred)
-{
-	if (cred == NULL) {
+	if (!cred) {
 		slurm_seterrno(ESLURM_AUTH_BADARG);
 		return NULL;
 	}
@@ -520,7 +537,7 @@ char *auth_p_get_host(auth_token_t *cred)
 
 extern int auth_p_get_data(auth_token_t *cred, char **data, uint32_t *len)
 {
-	if (cred == NULL) {
+	if (!cred) {
 		slurm_seterrno(ESLURM_AUTH_BADARG);
 		return SLURM_ERROR;
 	}
@@ -530,11 +547,22 @@ extern int auth_p_get_data(auth_token_t *cred, char **data, uint32_t *len)
 	return SLURM_SUCCESS;
 }
 
-int auth_p_pack(auth_token_t *cred, buf_t *buf, uint16_t protocol_version)
+extern void *auth_p_get_identity(auth_token_t *cred)
+{
+	if (!cred) {
+		slurm_seterrno(ESLURM_AUTH_BADARG);
+		return NULL;
+	}
+
+	return NULL;
+}
+
+extern int auth_p_pack(auth_token_t *cred, buf_t *buf,
+		       uint16_t protocol_version)
 {
 	char *pack_this = (thread_token) ? thread_token : token;
 
-	if (buf == NULL) {
+	if (!buf) {
 		slurm_seterrno(ESLURM_AUTH_BADARG);
 		return SLURM_ERROR;
 	}
@@ -551,7 +579,7 @@ int auth_p_pack(auth_token_t *cred, buf_t *buf, uint16_t protocol_version)
 	return SLURM_SUCCESS;
 }
 
-auth_token_t *auth_p_unpack(buf_t *buf, uint16_t protocol_version)
+extern auth_token_t *auth_p_unpack(buf_t *buf, uint16_t protocol_version)
 {
 	auth_token_t *cred = NULL;
 	uint32_t uint32_tmp;
@@ -581,7 +609,7 @@ unpack_error:
 	return NULL;
 }
 
-int auth_p_thread_config(const char *token, const char *username)
+extern int auth_p_thread_config(const char *token, const char *username)
 {
 	xfree(thread_token);
 	xfree(thread_username);
@@ -592,21 +620,28 @@ int auth_p_thread_config(const char *token, const char *username)
 	return SLURM_SUCCESS;
 }
 
-void auth_p_thread_clear(void)
+extern void auth_p_thread_clear(void)
 {
 	xfree(thread_token);
 	xfree(thread_username);
 }
 
-char *auth_p_token_generate(const char *username, int lifespan)
+extern char *auth_p_token_generate(const char *username, int lifespan)
 {
 	jwt_alg_t opt_alg = JWT_ALG_HS256;
 	time_t now = time(NULL);
 	jwt_t *jwt;
 	char *token, *xtoken;
+	long grant_time = now + lifespan;
 
 	if (!key) {
 		error("%s: cannot issue tokens, no key loaded", __func__);
+		return NULL;
+	}
+
+	if ((lifespan >= NO_VAL) || (lifespan <= 0) || (grant_time <= 0)) {
+		error("%s: cannot issue token: requested lifespan %ds not supported",
+		      __func__, lifespan);
 		return NULL;
 	}
 
@@ -619,7 +654,7 @@ char *auth_p_token_generate(const char *username, int lifespan)
 		error("%s: jwt_add_grant_int failure", __func__);
 		goto fail;
 	}
-	if (jwt_add_grant_int(jwt, "exp", now + lifespan)) {
+	if (jwt_add_grant_int(jwt, "exp", grant_time)) {
 		error("%s: jwt_add_grant_int failure", __func__);
 		goto fail;
 	}
@@ -639,6 +674,11 @@ char *auth_p_token_generate(const char *username, int lifespan)
 		goto fail;
 	}
 	xtoken = xstrdup(token);
+	/*
+	 * Ideally this would be jwt_free_str() instead of free(),
+	 * but that function doesn't exist in older versions of libjwt.
+	 */
+	free(token);
 
 	jwt_free(jwt);
 

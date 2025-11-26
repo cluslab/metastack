@@ -58,12 +58,12 @@
 ** for details.
 */
 strong_alias(parse_time, slurm_parse_time);
+strong_alias(parse_time_make_str_utc, slurm_parse_time_make_str_utc);
 //slurm_make_time_str is already exported
 strong_alias(time_str2mins, slurm_time_str2mins);
 strong_alias(time_str2secs, slurm_time_str2secs);
 strong_alias(secs2time_str, slurm_secs2time_str);
 strong_alias(mins2time_str, slurm_mins2time_str);
-strong_alias(mon_abbr, slurm_mon_abbr);
 
 typedef struct unit_names {
 	char *name;
@@ -250,7 +250,8 @@ static int _get_time(const char *time_str, int *pos, int *hour, int *minute,
 	while (isspace((int)time_str[offset])) {
 		offset++;
 	}
-	if (xstrncasecmp(time_str+offset, "pm", 2)== 0) {
+
+	if (!xstrncasecmp(time_str + offset, "pm", 2)) {
 		hr += 12;
 		if (hr > 23) {
 			if (hr == 24)
@@ -259,7 +260,7 @@ static int _get_time(const char *time_str, int *pos, int *hour, int *minute,
 				goto prob;
 		}
 		offset += 2;
-	} else if (xstrncasecmp(time_str+offset, "am", 2) == 0) {
+	} else if (!xstrncasecmp(time_str + offset, "am", 2)) {
 		if (hr > 11) {
 			if (hr == 12)
 				hr = 0;
@@ -397,7 +398,7 @@ static int _get_date(const char *time_str, int *pos, int *month, int *mday,
 /* Convert string to equivalent time value
  * input formats:
  *   today or tomorrow
- *   midnight, noon, fika (3 PM), teatime (4 PM)
+ *   midnight, noon, elevenses (11 AM), fika (3 PM), teatime (4 PM)
  *   HH:MM[:SS] [AM|PM]
  *   MMDD[YY] or MM/DD[/YY] or MM.DD[.YY]
  *   MM/DD[/YY]-HH:MM[:SS]
@@ -419,7 +420,7 @@ extern time_t parse_time(const char *time_str, int past)
 	struct tm res_tm;
 	time_t ret_time;
 
-	if (xstrncasecmp(time_str, "uts", 3) == 0) {
+	if (!xstrncasecmp(time_str, "uts", 3)) {
 		char *last = NULL;
 		long uts = strtol(time_str+3, &last, 10);
 		if ((uts < 1000000) || (uts == LONG_MAX) ||
@@ -436,14 +437,14 @@ extern time_t parse_time(const char *time_str, int past)
 		if (isblank((int)time_str[pos]) ||
 		    (time_str[pos] == '-') || (time_str[pos] == 'T'))
 			continue;
-		if (xstrncasecmp(time_str+pos, "today", 5) == 0) {
+		if (!xstrncasecmp(time_str + pos, "today", 5)) {
 			month = time_now_tm.tm_mon;
 			mday = time_now_tm.tm_mday;
 			year = time_now_tm.tm_year;
 			pos += 4;
 			continue;
 		}
-		if (xstrncasecmp(time_str+pos, "tomorrow", 8) == 0) {
+		if (!xstrncasecmp(time_str + pos, "tomorrow", 8)) {
 			time_t later = time_now + (24 * 60 * 60);
 			struct tm later_tm;
 			localtime_r(&later, &later_tm);
@@ -453,35 +454,42 @@ extern time_t parse_time(const char *time_str, int past)
 			pos += 7;
 			continue;
 		}
-		if (xstrncasecmp(time_str+pos, "midnight", 8) == 0) {
+		if (!xstrncasecmp(time_str + pos, "midnight", 8)) {
 			hour   = 0;
 			minute = 0;
 			second = 0;
 			pos += 7;
 			continue;
 		}
-		if (xstrncasecmp(time_str+pos, "noon", 4) == 0) {
+		if (!xstrncasecmp(time_str + pos, "noon", 4)) {
 			hour   = 12;
 			minute = 0;
 			second = 0;
 			pos += 3;
 			continue;
 		}
-		if (xstrncasecmp(time_str+pos, "fika", 4) == 0) {
+		if (!xstrncasecmp(time_str + pos, "elevenses", 9)) {
+			hour   = 11;
+			minute = 0;
+			second = 0;
+			pos += 8;
+			continue;
+		}
+		if (!xstrncasecmp(time_str + pos, "fika", 4)) {
 			hour   = 15;
 			minute = 0;
 			second = 0;
 			pos += 3;
 			continue;
 		}
-		if (xstrncasecmp(time_str+pos, "teatime", 7) == 0) {
+		if (!xstrncasecmp(time_str + pos, "teatime", 7)) {
 			hour   = 16;
 			minute = 0;
 			second = 0;
 			pos += 6;
 			continue;
 		}
-		if (xstrncasecmp(time_str+pos, "now", 3) == 0) {
+		if (!xstrncasecmp(time_str+pos, "now", 3)) {
 			int i;
 			long delta = 0;
 			time_t later;
@@ -646,6 +654,50 @@ static char *_relative_date_fmt(const struct tm *when)
 	return "%a %H:%M";			/* near distance */
 }
 
+static void _make_time_str_internal(time_t *time, bool utc, char *string,
+				    int size)
+{
+	struct tm time_tm;
+
+	if (utc)
+		gmtime_r(time, &time_tm);
+	else
+		localtime_r(time, &time_tm);
+	if ((*time == (time_t) 0) || (*time == (time_t) INFINITE)) {
+		snprintf(string, size, "Unknown");
+	} else if (*time == (time_t) NO_VAL) {
+		snprintf(string, size, "None");
+	} else {
+		static char fmt_buf[32];
+		static const char *display_fmt = "%FT%T";
+
+		if (!utc) {
+			char *fmt = getenv("SLURM_TIME_FORMAT");
+
+			if ((!fmt) || (!*fmt) || (!xstrcmp(fmt, "standard"))) {
+				;
+			} else if (!xstrcmp(fmt, "relative")) {
+				display_fmt = _relative_date_fmt(&time_tm);
+			} else if ((strchr(fmt, '%')  == NULL) ||
+				   (strlen(fmt) >= sizeof(fmt_buf))) {
+				error("invalid SLURM_TIME_FORMAT = '%s'", fmt);
+			} else {
+				strlcpy(fmt_buf, fmt, sizeof(fmt_buf));
+				display_fmt = fmt_buf;
+			}
+		}
+
+		/*
+		 * The result from strftime() is undefined if the buffer is
+		 * too small. Fill it with "#######..." instead.
+		 */
+		if (!strftime(string, size, display_fmt, &time_tm)) {
+			memset(string, '#', size);
+			string[size - 1] = 0;
+		}
+	}
+}
+
 /*
  * slurm_make_time_str - convert time_t to formatted string for user output
  *
@@ -661,39 +713,19 @@ static char *_relative_date_fmt(const struct tm *when)
 extern void
 slurm_make_time_str (time_t *time, char *string, int size)
 {
-	struct tm time_tm;
+	_make_time_str_internal(time, false, string, size);
+}
 
-	localtime_r(time, &time_tm);
-	if ((*time == (time_t) 0) || (*time == (time_t) INFINITE)) {
-		snprintf(string, size, "Unknown");
-	} else if (*time == (time_t) NO_VAL) {
-		snprintf(string, size, "None");
-	} else {
-		static char fmt_buf[32];
-		static const char *display_fmt;
-		static bool use_relative_format;
-
-		if (!display_fmt) {
-			char *fmt = getenv("SLURM_TIME_FORMAT");
-			display_fmt = "%FT%T";
-
-			if ((!fmt) || (!*fmt) || (!xstrcmp(fmt, "standard"))) {
-				;
-			} else if (xstrcmp(fmt, "relative") == 0) {
-				use_relative_format = true;
-			} else if ((strchr(fmt, '%')  == NULL) ||
-				   (strlen(fmt) >= sizeof(fmt_buf))) {
-				error("invalid SLURM_TIME_FORMAT = '%s'", fmt);
-			} else {
-				strlcpy(fmt_buf, fmt, sizeof(fmt_buf));
-				display_fmt = fmt_buf;
-			}
-		}
-		if (use_relative_format)
-			display_fmt = _relative_date_fmt(&time_tm);
-
-		slurm_strftime(string, size, display_fmt, &time_tm);
-	}
+/*
+ * Convert time_t to fixed "%FT%T" formatted string expressed in UTC.
+ *
+ * IN time - a timestamp
+ * OUT string - pointer user defined buffer
+ * IN size - length of string buffer (recommend 32 bytes)
+ */
+extern void parse_time_make_str_utc(time_t *time, char *string, int size)
+{
+	_make_time_str_internal(time, true, string, size);
 }
 
 /* Convert a string to an equivalent time value
@@ -755,7 +787,7 @@ extern int time_str2mins(const char *string)
 {
 	int i = time_str2secs(string);
 	if ((i != INFINITE) &&  (i != NO_VAL))
-		i = (i + 59) / 60;	/* round up */
+		i = ROUNDUP(i, 60);	/* round up */
 	return i;
 }
 
@@ -808,50 +840,5 @@ extern void mins2time_str(uint32_t time, char *string, int size)
 				"%2.2ld:%2.2ld:%2.2ld",
 				hours, minutes, seconds);
 		}
-	}
-}
-
-extern char *mon_abbr(int mon)
-{
-	switch(mon) {
-	case 0:
-		return "Ja";
-		break;
-	case 1:
-		return "Fe";
-		break;
-	case 2:
-		return "Ma";
-		break;
-	case 3:
-		return "Ap";
-		break;
-	case 4:
-		return "Ma";
-		break;
-	case 5:
-		return "Ju";
-		break;
-	case 6:
-		return "Jl";
-		break;
-	case 7:
-		return "Au";
-		break;
-	case 8:
-		return "Se";
-		break;
-	case 9:
-		return "Oc";
-		break;
-	case 10:
-		return "No";
-		break;
-	case 11:
-		return "De";
-		break;
-	default:
-		return "Un";
-		break;
 	}
 }

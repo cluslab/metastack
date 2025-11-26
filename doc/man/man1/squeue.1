@@ -1,4 +1,4 @@
-.TH squeue "1" "Slurm Commands" "October 2022" "Slurm Commands"
+.TH squeue "1" "Slurm Commands" "October 2024" "Slurm Commands"
 
 .SH "NAME"
 squeue \- view information about jobs located in the Slurm scheduling queue.
@@ -27,6 +27,12 @@ that are in a "revoked" state.
 .IP
 
 .TP
+\fB\-\-cache\fR
+When CacheQuery is set to "enable", specify querying job information from 
+the cache data. The "CacheQuery" parameter is configured in the slurm.conf file.
+.IP
+
+.TP
 \fB\-r\fR, \fB\-\-array\fR
 Display one job array element per line.
 Without this option, the display will be optimized for use with job arrays
@@ -35,24 +41,20 @@ array index values printed using a regular expression).
 .IP
 
 .TP
-\fB\-\-array\-unique\fR
-Display one unique pending job array element per line. Without this option,
-the pending job array elements will be grouped into the master array job to
-optimize the display.  This can also be set with the environment variable
-SQUEUE_ARRAY_UNIQUE.
-.IP
-
-.TP
-\fB\-\-cache\fR
-When CacheQuery is set to "enable", specify querying job information from 
-the cache data.
-.IP
-
-.TP
 \fB\-M\fR, \fB\-\-clusters\fR=<\fIcluster_name\fR>
-Clusters to issue commands to.  Multiple cluster names may be comma separated.
+Clusters to issue commands to. Multiple cluster names may be comma separated.
 A value of '\fIall\fR' will query to run on all clusters.
+Note that the \fBslurmdbd\fR must be up for this option to work properly, unless
+running in a federation with either \fBFederationParameters=fed_display\fR
+configured or the \fB\-\-federation\fR option set.
 This option implicitly sets the \fB\-\-local\fR option.
+.IP
+
+.TP
+\fB\-\-expand\-patterns\fR
+Expand any filename patterns from in \f3StdOut\fP, \f3StdErr\fP and \f3StdIn\fP.
+Fields that map to a range of values will use the first value of the range. For
+example "%t" for task id will be replaced by "0".
 .IP
 
 .TP
@@ -149,9 +151,7 @@ Executing (batch) host. For an allocated session, this is the host on which
 the session is executing (i.e. the node from which the \fBsrun\fR or the
 \fBsalloc\fR command was executed). For a batch job, this is the node executing
 the batch script. In the case of a typical Linux cluster, this would be the
-compute node zero of the allocation. In the case of a Cray ALPS
-system, this would be the front\-end host whose slurmd daemon executes the job
-script.
+compute node zero of the allocation.
 .IP
 
 .TP
@@ -165,7 +165,7 @@ default value of zero.
 .TP
 \fB%C\fR
 Number of CPUs (processors) requested by the job or allocated to
-it if already running.  As a job is completing this number will
+it if already running. As a job is completing this number will
 reflect the current number of CPUs allocated.
 (Valid for jobs only)
 .IP
@@ -198,7 +198,8 @@ Time at which the job ended or is expected to end (based upon its time limit).
 Job dependencies remaining. This job will not begin execution until these
 dependent jobs complete. In the case of a job that can not run due to job
 dependencies never being satisfied, the full original job dependency
-specification will be reported. A value of NULL implies this job has no
+specification will be reported. Once a dependency is satisfied, it is
+removed from the job. A value of NULL implies this job has no
 dependencies.
 (Valid for jobs only)
 .IP
@@ -353,14 +354,14 @@ The command to be executed.
 .IP
 
 .TP
-\fB%od\fR
-The order in which jobs are pending in the partition (Multi-partition jobs show the minimum order in which partitions are submitted).
+\fB%O\fR
+Are contiguous nodes requested by the job.
 (Valid for jobs only)
 .IP
 
 .TP
-\fB%O\fR
-Are contiguous nodes requested by the job.
+\fB%od\fR
+The order in which jobs are pending in the partition (Multi-partition jobs show the minimum order in which partitions are submitted).
 (Valid for jobs only)
 .IP
 
@@ -399,22 +400,12 @@ See the \fBJOB REASON CODES\fR section below for more information.
 
 .TP
 \fB%R\fR
-For pending jobs: the reason a job is waiting for execution
+For pending jobs: the reason a job has not been started by the scheduler
 is printed within parenthesis.
 For terminated jobs with failure: an explanation as to why the
 job failed is printed within parenthesis.
 For all other job states: the list of allocate nodes.
 See the \fBJOB REASON CODES\fR section below for more information.
-(Valid for jobs only)
-.IP
-
-.TP
-\fB%s\fR
-Node selection plugin specific data for a job. Possible data includes:
-Geometry requirement of resource allocation (X,Y,Z dimensions),
-Connection type (TORUS, MESH, or NAV == torus else mesh),
-Permit rotation of geometry (yes or no),
-Node use (VIRTUAL or COPROCESSOR), etc.
 (Valid for jobs only)
 .IP
 
@@ -518,7 +509,7 @@ option described above (which supports greater flexibility in formatting, but
 does not support access to all fields because we ran out of letters).
 Requests a comma separated list of job information to be displayed.
 
-The format of each field is "type[:[.][size][sufix]]"
+The format of each field is "type[:[.][size][suffix]]"
 .IP
 .RS 10
 .TP
@@ -534,7 +525,7 @@ By default output is left justified.
 .IP
 
 .TP
-\fIsufix\fR
+\fIsuffix\fR
 Arbitrary string to append to the end of the field.
 .IP
 .RE
@@ -604,9 +595,7 @@ Executing (batch) host. For an allocated session, this is the host on which
 the session is executing (i.e. the node from which the \fBsrun\fR or the
 \fBsalloc\fR command was executed). For a batch job, this is the node executing
 the batch script. In the case of a typical Linux cluster, this would be the
-compute node zero of the allocation. In the case of a Cray ALPS
-system, this would be the front\-end host whose slurmd daemon executes the job
-script.
+compute node zero of the allocation.
 (Valid for jobs only)
 .IP
 
@@ -669,6 +658,11 @@ OCI container bundle path.
 .IP
 
 .TP
+\fBContainerID\fR
+OCI container assigned ID.
+.IP
+
+.TP
 \fBCores\fR
 Number of cores per socket requested by the job.
 This reports the value of the \fBsrun \-\-cores\-per\-socket\fR option.
@@ -716,14 +710,17 @@ Delay boot time.
 Job dependencies remaining. This job will not begin execution until these
 dependent jobs complete. In the case of a job that can not run due to job
 dependencies never being satisfied, the full original job dependency
-specification will be reported. A value of NULL implies this job has no
+specification will be reported. Once a dependency is satisfied, it is
+removed from the job. A value of NULL implies this job has no
 dependencies.
 (Valid for jobs only)
 .IP
 
 .TP
 \fBDerivedEC\fR
-Derived exit code for the job, which is the highest exit code of any job step.
+The highest exit code returned by the job's job steps (srun invocations).
+Following the colon is the signal that caused the process to terminate if
+it was terminated by a signal.
 (Valid for jobs only)
 .IP
 
@@ -740,8 +737,16 @@ The time of job termination, actual or expected.
 .IP
 
 .TP
+\fBExcNodes\fR
+The nodes requested to be excluded when allocating this job.
+(Valid for jobs only)
+.IP
+
+.TP
 \fBexit_code\fR
-The exit code for the job.
+The exit code returned by the job, typically as set by the exit() function.
+Following the colon is the signal that caused the process to terminate if it was
+terminated by a signal.
 (Valid for jobs only)
 .IP
 
@@ -916,7 +921,7 @@ The number of tasks per socket allocated to the job.
 .TP
 \fBNumCPUs\fR
 Number of CPUs (processors) requested by the job or allocated to
-it if already running.  As a job is completing, this number will
+it if already running. As a job is completing, this number will
 reflect the current number of CPUs allocated.
 (Valid for jobs and job steps)
 .IP
@@ -1104,16 +1109,6 @@ When (S:C:T) has not been set, "*" is displayed.
 .IP
 
 .TP
-\fBSelectJobInfo\fR
-Node selection plugin specific data for a job. Possible data includes:
-Geometry requirement of resource allocation (X,Y,Z dimensions),
-Connection type (TORUS, MESH, or NAV == torus else mesh),
-Permit rotation of geometry (yes or no),
-Node use (VIRTUAL or COPROCESSOR), etc.
-(Valid for jobs only)
-.IP
-
-.TP
 \fBSiblingsActive\fR
 Cluster names of where federated sibling jobs exist.
 (Valid for federated jobs only)
@@ -1194,7 +1189,7 @@ The directory for standard out to output to.
 Job or job step ID.
 In the case of job arrays, the job ID format will be of the form
 "<base_job_id>_<index>".
-(Valid forjob steps only)
+(Valid for job steps only)
 .IP
 
 .TP
@@ -1347,8 +1342,8 @@ By default, prints a time stamp with the header.
 .IP
 
 .TP
-\fB\-j\fR, \fB\-\-jobs\fR=<\fIjob_id_list\fR>
-Requests a comma separated list of job IDs to display.  Defaults to all jobs.
+\fB\-j\fR, \fB\-\-jobs\fR[=<\fIjob_id_list\fR>]
+Specify a comma separated list of job IDs to display. Defaults to all jobs.
 The \fB\-\-jobs\fR=<\fIjob_id_list\fR> option may be used in conjunction with
 the \fB\-\-steps\fR option to print step information about specific jobs.
 Note: If a list of job IDs is provided, the jobs are displayed even if
@@ -1364,9 +1359,11 @@ Use the environment variable SLURM_BITSTR_LEN to specify larger field sizes.
 .IP
 
 .TP
-\f3\-\-json\fP
-Dump job information as JSON. All other formatting and filtering arguments will
-be ignored.
+\f3\-\-json\fP, \f3\-\-json\fP=\fIlist\fR, \f3\-\-json\fP=<\fIdata_parser\fR>
+Dump information as JSON using the default data_parser plugin or explicit
+data_parser with parameters. All information is dumped, even if it would
+normally not be. Sorting and formatting arguments passed to other options are
+ignored; however, filtering arguments are still used.
 .IP
 
 .TP
@@ -1394,14 +1391,15 @@ Equivalent to \fB\-\-user=<my username>\fR.
 
 .TP
 \fB\-n\fR, \fB\-\-name\fR=<\fIname_list\fR>
-Request jobs or job steps having one of the specified names.  The
+Request jobs or job steps having one of the specified names. The
 list consists of a comma separated list of job names.
 .IP
 
 .TP
 \fB\-\-nocache\fR
 When CacheQuery is set to "cache", specify querying job information from 
-the source data.
+the source data. The "CacheQuery" parameter is configured in the slurm.conf 
+file.
 .IP
 
 .TP
@@ -1421,6 +1419,17 @@ A node_name of \fBlocalhost\fR is mapped to the current host name.
 .TP
 \fB\-h\fR, \fB\-\-noheader\fR
 Do not print a header on the output.
+.IP
+
+.TP
+\fB\-\-notme\fR
+Opposite of \fB\-\-me\fR; only display jobs that are not from the invoking user.
+.IP
+
+.TP
+\fB\-\-only\-job\-state\fR
+Only query for the job state. Query utilizes RPC that only retains JobID
+and State information, reducing work required by slurmctld to respond.
 .IP
 
 .TP
@@ -1489,7 +1498,7 @@ Slurm is configured to use the backfill scheduling plugin.
 
 .TP
 \fB\-t\fR, \fB\-\-states\fR=<\fIstate_list\fR>
-Specify the states of jobs to view.  Accepts a comma separated list of
+Specify the states of jobs to view. Accepts a comma separated list of
 state names or "all". If "all" is specified then jobs of all states will be
 reported. If no state is specified then pending, running, and completing
 jobs are reported. See the \fBJOB STATE CODES\fR section below for a list of
@@ -1499,8 +1508,8 @@ equivalent).
 .IP
 
 .TP
-\fB\-s\fR, \fB\-\-steps\fR
-Specify the job steps to view.  This flag indicates that a comma separated list
+\fB\-s\fR, \fB\-\-steps\fR[=<\fIstep_list\fR>]
+Specify the job steps to view. This flag indicates that a comma separated list
 of job steps to view follows without an equal sign (see examples).
 The job step format is "job_id[_array_id].step_id". Defaults to all job
 steps. Since this option's argument is optional, for proper parsing
@@ -1533,19 +1542,21 @@ Print version information and exit.
 .IP
 
 .TP
-\f3\-\-yaml\fP
-Dump job information as YAML. All other formatting and filtering arguments will
-be ignored.
+\f3\-\-yaml\fP, \f3\-\-yaml\fP=\fIlist\fR, \f3\-\-yaml\fP=<\fIdata_parser\fR>
+Dump information as YAML using the default data_parser plugin or explicit
+data_parser with parameters. All information is dumped, even if it would
+normally not be. Sorting and formatting arguments passed to other options are
+ignored; however, filtering arguments are still used.
 .IP
 
 .SH "JOB REASON CODES"
-These codes identify the reason that a job is waiting for execution.
-A job may be waiting for more than one reason, in which case only
-one of those reasons is displayed.
+These codes identify the reason that a job has not been started by the scheduler.
+There may be multiple reasons why a job cannot start yet, in which case only the
+reason that was encountered by the attempted scheduling method will be displayed.
 
 The Reasons listed below are some of the more common ones you might see.
-For a full list of Reason codes see our Resource Limits page:
-<https://slurm.schedmd.com/resource_limits.html>
+For a full list of Reason codes refer to this page page:
+<https://slurm.schedmd.com/job_reason_codes.html>
 
 .TP 22
 \fBAssocGrp*Limit\fR
@@ -1679,7 +1690,7 @@ One or more higher priority jobs exist for this partition or advanced reservatio
 
 .TP
 \fBProlog\fR
-Its PrologSlurmctld program is still running.
+Its Prolog program is still running.
 .IP
 
 .TP
@@ -1753,7 +1764,8 @@ Waiting for the scheduler to determine the appropriate reason.
 Jobs typically pass through several states in the course of their
 execution.
 The typical states are PENDING, RUNNING, SUSPENDED, COMPLETING, and COMPLETED.
-An explanation of each state follows.
+The following states are recognized by squeue. A full list of possible states
+is available at <https://slurm.schedmd.com/job_state_codes.html>.
 
 .TP 20
 \fBBF  BOOT_FAIL\fR
@@ -2022,33 +2034,6 @@ A valid strftime() format can also be specified. For example, a value of
 \fB\-u <user_list>, \-\-users=<user_list>\fR
 .IP
 
-.TP
-\fBSQUEUE_EXTEND\fR
-The import format for the SQUEUE_EXTEND environment variable is as follows:
-export SQUEUE_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
-where '.' indicates left indentation and no '.' indicates right indentation.
-The '-' sign after the colon represents left alignment.
-The number represents the length of the print format. 
-
-Fields for stepd as follow,
-numtasks, gres/tres-per-node, stepid, stepname, timelimit, 
-timeused, nodes, partition, starttime, userid, username. 
-Fields for Job as follow,
-account, jobid,gres/tres-per-node, batchhost, mincpus, numcpus, mintmpdisk, numnodes, 
-endtime, dependency, feature, arrayjobid, groupname, groupid, oversubscribe/shared, sockets, 
-jobarrayid, cores, name, threads, comment, arraytaskid, timelimit, timeleft, minmemory, timeused, 
-reqnodes, nodelist, command, contiguous, priority, partition, qos, prioritylong, reason, reasonlist, 
-selectjobinfo, starttime, statecompact, state, userid, username, reservation, submittime, wckey, licenses, 
-EXCNODES, corespec, nice, schednodes, sct, workdir, accruetime, admin_comment, allocnodes, allocsid, 
-associd, batchflag, boardspernode, burstbuffer, burstbufferstate, cluster, clusterfeature, container, 
-cpuspertask, cpus-per-tres, deadline, delayboot, derivedec, eligibletime, exit_code, lastschedeval, maxcpus, 
-maxnodes, mcslabel, mem-per-tres, mintime, network, ntperboard, ntpercore, ntpernode, ntpersocket, numtasks, 
-origin, originraw, order, packjobid, packjobidset, packjoboffset, pendingtime, preempttime, prefer, profile, 
-reboot, reqswitch, requeue, resizetime, restartcnt, siblingsactive, siblingsactiveraw, siblingsviable, 
-siblingsviableraw, sperboard, stderr, stdin, stdout, system_comment, tres, 
-tres-bind, tres-freq, tres-per-job, tres-per-node, tres-per-socket, tres-per-task, wait4switch.
-.IP
-
 .SH "EXAMPLES"
 
 .TP
@@ -2113,7 +2098,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 .SH "SEE ALSO"
 \fBscancel\fR(1), \fBscontrol\fR(1), \fBsinfo\fR(1), \fBsrun\fR(1),

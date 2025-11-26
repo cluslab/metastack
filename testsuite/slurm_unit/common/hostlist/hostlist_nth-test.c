@@ -1,6 +1,5 @@
 /*****************************************************************************\
- *  Copyright (C) 2021 SchedMD LLC
- *  Written by Chad Vizino <chad@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -41,19 +40,19 @@
 #include "src/common/hostlist.h"
 
 /* these are not in slurm.h */
-char *slurm_hostlist_nth(hostlist_t, int);
-int slurm_hostlist_delete_nth(hostlist_t, int);
-char *slurm_hostset_nth(hostset_t, int);
-hostset_t slurm_hostset_create(const char*);
-void slurm_hostset_destroy(hostset_t);
-int slurm_hostset_count(hostset_t);
+char *slurm_hostlist_nth(hostlist_t *, int);
+int slurm_hostlist_delete_nth(hostlist_t *, int);
+char *slurm_hostset_nth(hostset_t *, int);
+hostset_t *slurm_hostset_create(const char*);
+void slurm_hostset_destroy(hostset_t *);
+int slurm_hostset_count(hostset_t *);
 
 #ifndef NDEBUG
 /* note: only works in CK_FORK mode */
 START_TEST(hostlist_nth_lo_assert_check)
 {
-	hostlist_t hl = slurm_hostlist_create("host1,host2");
-	ck_assert_ptr_ne(hl, NULL);
+	hostlist_t *hl = slurm_hostlist_create("host1,host2");
+	ck_assert(hl != NULL);
 
 	/* expect SIGABRT */
 	/* index must be >= 0 */
@@ -64,8 +63,8 @@ END_TEST
 /* note: only works in CK_FORK mode */
 START_TEST(hostlist_delete_nth_hi_assert_check)
 {
-	hostlist_t hl = slurm_hostlist_create("host1,host2");
-	ck_assert_ptr_ne(hl, NULL);
+	hostlist_t *hl = slurm_hostlist_create("host1,host2");
+	ck_assert(hl != NULL);
 
 	/* expect SIGABRT */
 	/* index must be < 2 */
@@ -76,14 +75,14 @@ END_TEST
 
 START_TEST(hostlist_nth_check)
 {
-	hostlist_t hl = NULL;
+	hostlist_t *hl = NULL;
 	char *p;
 	int n;
 
-	ck_assert_ptr_eq(slurm_hostlist_nth(hl, 0), NULL);
+	ck_assert(slurm_hostlist_nth(hl, 0) == NULL);
 
 	hl = slurm_hostlist_create("host[1-3],host5");
-	ck_assert_ptr_ne(hl, NULL);
+	ck_assert(hl != NULL);
 
 	n = slurm_hostlist_count(hl);
 	ck_assert_int_eq(n, 4);
@@ -122,7 +121,7 @@ END_TEST
 
 START_TEST(hostset_nth_check)
 {
-	hostset_t hs;
+	hostset_t *hs;
 	char *p;
 	int n;
 

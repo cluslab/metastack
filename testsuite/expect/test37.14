@@ -15,8 +15,7 @@
 #          fedr/fed3/...
 #          3. controllers are up and running.
 ############################################################################
-# Copyright (C) 2017 SchedMD LLC.
-# Written by Isaac Hartung <ihartung@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -229,7 +228,7 @@ if {[setup_federation $fed_name]} {
 }
 
 # get number of nodes per cluster
-set node_count [llength [get_nodes_by_state idle,allocm,comp]]
+set node_count [llength [get_nodes_by_state idle,alloc,comp "[default_partition] --local"]]
 
 log_info "################################################################"
 log_info "Setup cluster features"
@@ -349,9 +348,9 @@ set r0  "(\\s+($jid(0)).+$eol)"
 set r1  "(\\s+($jid(1)).+$eol)"
 set r2  "(\\s+($jid(2)).+$eol)"
 
-set regf1 "CLUSTER: $fedc1$eol$r0"
-set regf2 "CLUSTER: $fedc2$eol$r1"
-set regf3 "CLUSTER: $fedc3$eol$r2"
+set regf1 "$fedc1\\s+$r0"
+set regf2 "$fedc2\\s+$r1"
+set regf3 "$fedc3\\s+$r2"
 
 squeue "$regf1$regf2$regf3"
 

@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2010-2017 SchedMD LLC <https://www.schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Mark Grondona <grondona1@llnl.gov>,
  *    Christopher J. Morrone <morrone2@llnl.gov>, et. al.
@@ -83,9 +83,11 @@ enum {
 	LONG_OPT_BURST_BUFFER_SPEC,
 	LONG_OPT_CLUSTER,
 	LONG_OPT_CLUSTER_CONSTRAINT,
+	LONG_OPT_COMPLETE_FLAG,
 	LONG_OPT_COMMENT,
 	LONG_OPT_COMPRESS,
 	LONG_OPT_CONTAINER,
+	LONG_OPT_CONTAINER_ID,
 	LONG_OPT_CONTEXT,
 	LONG_OPT_CONTIGUOUS,
 	LONG_OPT_CORE,
@@ -108,6 +110,8 @@ enum {
 	LONG_OPT_EXCLUSIVE,
 	LONG_OPT_EXPORT,
 	LONG_OPT_EXPORT_FILE,
+	LONG_OPT_EXTERNAL_LAUNCHER,
+	LONG_OPT_EXTRA,
 	LONG_OPT_GET_USER_ENV,
 	LONG_OPT_GID,
 	LONG_OPT_GPU_BIND,
@@ -199,11 +203,13 @@ enum {
 	LONG_OPT_REQUEUE,
 	LONG_OPT_RESERVATION,
 	LONG_OPT_RESV_PORTS,
+	LONG_OPT_SEGMENT_SIZE,
 	LONG_OPT_SEND_LIBS,
 	LONG_OPT_SIGNAL,
 	LONG_OPT_SLURMD_DEBUG,
 	LONG_OPT_SOCKETSPERNODE,
 	LONG_OPT_SPREAD_JOB,
+	LONG_OPT_STEPMGR,
 	LONG_OPT_SWITCH_REQ,
 	LONG_OPT_SWITCH_WAIT,
 	LONG_OPT_SWITCHES,
@@ -214,7 +220,10 @@ enum {
 	LONG_OPT_THREADSPERCORE,
 	LONG_OPT_TIME_MIN,
 	LONG_OPT_TMP,
+	LONG_OPT_TREE_WIDTH,
+	LONG_OPT_TRES_BIND,
 	LONG_OPT_TRES_PER_JOB,
+	LONG_OPT_TRES_PER_TASK,
 	LONG_OPT_UID,
 	LONG_OPT_UMASK,
 	LONG_OPT_USAGE,
@@ -224,7 +233,7 @@ enum {
 	LONG_OPT_WHOLE,
 	LONG_OPT_WRAP,
 	LONG_OPT_X11,
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	LONG_OPT_JOB_MONITOR,
 #endif
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
@@ -251,10 +260,6 @@ typedef struct {
  * options only processed by sbatch
  */
 typedef struct {
-	/* batch script argv and argc, if provided on the command line */
-	int script_argc;
-	char **script_argv;
-
 	char *array_inx;		/* --array			*/
 	char *batch_features;		/* --batch			*/
 	char *export_file;		/* --export-file=file		*/
@@ -280,9 +285,6 @@ typedef struct {
  * options only processed by srun
  */
 typedef struct {
-	int argc;			/* length of argv array		*/
-	char **argv;			/* left over on command line	*/
-
 	uint16_t accel_bind_type;	/* --accel-bind			*/
 	char *alloc_nodelist;		/* grabbed from the environment	*/
 	char *bcast_exclude;		/* --bcast-exclude */
@@ -295,11 +297,13 @@ typedef struct {
 	cpu_bind_type_t cpu_bind_type;	/* --cpu-bind			*/
 	bool debugger_test;		/* --debugger-test		*/
 	bool disable_status;		/* --disable-status		*/
+	bool external_launcher;		/* --external-launcher		*/
 	char *epilog;			/* --epilog			*/
 	bool exact;			/* --exact			*/
 	bool exclusive;			/* --exclusive			*/
 	bool interactive;		/* --interactive		*/
 	uint32_t jobid;			/* --jobid			*/
+	uint32_t array_task_id;		/* --jobid			*/
 	int32_t kill_bad_exit;		/* --kill-on-bad-exit		*/
 	bool labelio;			/* --label-output		*/
 	int32_t max_threads;		/* --threads			*/
@@ -317,16 +321,16 @@ typedef struct {
 	bool preserve_env;		/* --preserve-env		*/
 	char *prolog;			/* --prolog			*/
 	char *propagate;		/* --propagate[=RLIMIT_CORE,...]*/
-	bool pty;			/* --pty			*/
+	char *pty;			/* --pty[=fd]			*/
 	bool quit_on_intr;		/* --quit-on-interrupt		*/
 	int relative;			/* --relative			*/
-	int resv_port_cnt;		/* --resv_ports			*/
 	bool send_libs;			/* --send-libs			*/
 	int slurmd_debug;		/* --slurmd-debug		*/
 	char *task_epilog;		/* --task-epilog		*/
 	char *task_prolog;		/* --task-prolog		*/
 	bool test_exec;			/* test_exec set		*/
 	bool test_only;			/* --test-only			*/
+	uint16_t tree_width;		/* --treewidth			*/
 	bool unbuffered;		/* --unbuffered			*/
 	bool whole;			/* --whole			*/
 } srun_opt_t;
@@ -347,7 +351,10 @@ typedef struct {
 
 	void (*help_func)(void);	/* Print --help info		*/
 	void (*usage_func)(void);	/* Print --usage info		*/
+	void (*autocomplete_func)(const char *); /* Print --autocomplete= info*/
 
+	int argc;			/* command/script argc		*/
+	char **argv;			/* command/script argv		*/
 	char *burst_buffer;		/* --bb				*/
 	char *burst_buffer_file;	/* --bbf			*/
 	char *clusters;			/* cluster to run this on. */
@@ -355,15 +362,17 @@ typedef struct {
 	gid_t gid;			/* local gid			*/
 	char *chdir;			/* --chdir			*/
 	int ntasks;			/* --ntasks			*/
-	bool ntasks_set;		/* ntasks explicitly set	*/
+	bool ntasks_set;		/* ntasks explicit or implicitly set */
+	bool ntasks_opt_set;		/* ntasks explicitly set by user opt */
 	int cpus_per_task;		/* --cpus-per-task=n		*/
 	bool cpus_set;			/* cpus_per_task explicitly set	*/
 	int min_nodes;			/* --nodes=n			*/
 	int max_nodes;			/* --nodes=x-n			*/
+	char *job_size_str;		/* --nodes			*/
 	bool nodes_set;			/* nodes explicitly set		*/
 	int sockets_per_node;		/* --sockets-per-node=n		*/
 	int cores_per_socket;		/* --cores-per-socket=n		*/
-	uint32_t job_flags;		/* --kill_invalid_dep, --gres-flags */
+	uint64_t job_flags;		/* --kill_invalid_dep, --gres-flags */
 	int threads_per_core;		/* --threads-per-core=n		*/
 	int ntasks_per_node;		/* --ntasks-per-node=n		*/
 	int ntasks_per_gpu;		/* --ntasks-per-gpu=n		*/
@@ -393,7 +402,7 @@ typedef struct {
 	char *dependency;		/* --dependency			*/
 	int nice;			/* --nice			*/
 #ifdef __METASTACK_NEW_TIME_PREDICT
-	int predict_job;  /* Marks the job that executes the time prediction function */
+	int predict_job;		/* Marks the job that executes the time prediction function */
 #endif
 	uint32_t priority;		/* --priority			*/
 	char *account;			/* --account			*/
@@ -407,7 +416,7 @@ typedef struct {
 	bool hold;			/* --hold			*/
 	bool no_kill;			/* --no-kill			*/
 	char *acctg_freq;		/* --acctg-freq=<type1>=<freq1>,... */
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	char *abnormal_dete;
 #endif
 	bool overcommit;		/* --overcommit			*/
@@ -460,6 +469,7 @@ typedef struct {
 	char *c_constraint;		/* --cluster-constraint		*/
 	char *gres;			/* --gres			*/
 	char *container;		/* --container			*/
+	char *container_id;		/* --container-id		*/
 	char *context;			/* --context			*/
 	bool contiguous;		/* --contiguous			*/
 	char *nodefile;			/* --nodefile			*/
@@ -470,13 +480,14 @@ typedef struct {
 	bool reboot;			/* --reboot			*/
 
 	time_t begin;			/* --begin			*/
-	char *extra;			/* unused			*/
+	char *extra;			/* --extra			*/
 	uint16_t mail_type;		/* --mail-type			*/
 	char *mail_user;		/* --mail-user			*/
 	int get_user_env_time;		/* --get-user-env[=timeout]	*/
 	int get_user_env_mode;		/* --get-user-env=[S|L]		*/
 	char *wckey;			/* workload characterization key */
 	char *reservation;		/* --reservation		*/
+	int resv_port_cnt;		/* --resv_ports			*/
 	int req_switch;			/* min number of switches	*/
 	int wait4switch;		/* max time to wait for min switches */
 	char **spank_job_env;		/* SPANK controlled environment for job
@@ -486,16 +497,18 @@ typedef struct {
 	uint32_t cpu_freq_min;		/* Minimum cpu frequency	*/
 	uint32_t cpu_freq_max;		/* Maximum cpu frequency	*/
 	uint32_t cpu_freq_gov;		/* cpu frequency governor	*/
-	uint8_t power;			/* power management flags	*/
 	char *mcs_label;		/* mcs label			*/
 	time_t deadline;		/* ---deadline			*/
 	uint32_t delay_boot;		/* --delay-boot			*/
+	uint16_t segment_size;		/* --segment			*/
 	uint32_t step_het_comp_cnt;     /* How many components are in this het
 					 * step that is part of a non-hetjob. */
 	char *step_het_grps;		/* what het groups are used by step */
 	char *submit_line;		/* submit line of the caller	*/
 	char *tres_bind;		/* derived from gpu_bind	*/
 	char *tres_freq;		/* derived from gpu_freq	*/
+	char *tres_per_task;		/* --tres_per_task		*/
+
 	uint16_t x11;			/* --x11			*/
 	char *x11_magic_cookie;		/* cookie retrieved from xauth	*/
 	char *x11_target;		/* target host, or unix socket	*/
@@ -516,9 +529,28 @@ typedef struct {
 #endif
 } slurm_opt_t;
 
+/*
+ * Parse a tres request and return the sum of the requested counts for a
+ * particular tres.
+ *
+ * IN in_val - The tres request of the format: "name[[:type]:count]". This can
+ *             be a comma-delimited list.
+ * IN tres_name - name of the tres to sum
+ * OUT cnt - total count
+ * IN/OUT save_ptr - pointer to make this function reentrant
+ * OUT rc - SLURM_SUCCESS if successful, an error code otherwise
+ *
+ * RET - true if there are additional values to parse, false if the whole string
+ *       has been parsed
+ */
+extern bool slurm_option_get_tres_per_tres(
+	char *in_val, char *tres_name, uint64_t *cnt, char **save_ptr, int *rc);
+
 extern struct option *slurm_option_table_create(slurm_opt_t *opt,
 						char **opt_string);
 extern void slurm_option_table_destroy(struct option *optz);
+extern void slurm_option_update_tres_per_task(int cnt, char *tres_str,
+					      char **tres_per_task_p);
 
 /*
  * Process individual argument for the current job component
@@ -580,7 +612,7 @@ extern bool slurm_option_set_by_env(slurm_opt_t *opt, int optval);
 /*
  * Was the option set by an data_t value?
  */
-extern bool slurm_option_set_by_env(slurm_opt_t *opt, int optval);
+extern bool slurm_option_set_by_data(slurm_opt_t *opt, int optval);
 
 /*
  * Get option value by common option name.
@@ -655,5 +687,10 @@ extern char *slurm_option_get_argv_str(const int argc, char **argv);
  */
 extern job_desc_msg_t *slurm_opt_create_job_desc(slurm_opt_t *opt_local,
 						 bool set_defaults);
+
+/*
+ * Compatible with shell/bash completions.
+ */
+extern void suggest_completion(struct option *opts, const char *query);
 
 #endif	/* _SLURM_OPT_H_ */

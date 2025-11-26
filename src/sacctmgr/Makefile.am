@@ -9,7 +9,7 @@ bin_PROGRAMS = sacctmgr
 
 sacctmgr_DEPENDENCIES = $(LIB_SLURM_BUILD)
 
-sacctmgr_LDADD = $(LIB_SLURM) $(DL_LIBS) $(READLINE_LIBS)
+sacctmgr_LDADD = $(LIB_SLURM) $(READLINE_LIBS)
 
 sacctmgr_SOURCES =	\
 	account_functions.c	\
@@ -21,6 +21,7 @@ sacctmgr_SOURCES =	\
 	event_functions.c	\
 	federation_functions.c	\
 	file_functions.c	\
+	instance_functions.c	\
 	runaway_job_functions.c \
 	job_functions.c		\
 	reservation_functions.c	\
@@ -35,6 +36,12 @@ sacctmgr_SOURCES =	\
 
 sacctmgr_LDFLAGS = -export-dynamic $(CMD_LDFLAGS)
 
+REF = usage.txt
+include $(top_srcdir)/make_ref.include
+noinst_LTLIBRARIES = $(LIB_REF)
+EXTRA_sacctmgr_DEPENDENCIES = $(LIB_REF)
+sacctmgr_LDADD += $(LIB_REF)
+
 force:
-$(sacctmgr_LDADD) : force
+$(sacctmgr_DEPENDENCIES) : force
 	@cd `dirname $@` && $(MAKE) `basename $@`

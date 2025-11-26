@@ -2,7 +2,7 @@
  *  user_reports.c - functions for generating user reports
  *                     from accounting infrastructure.
  *****************************************************************************
- *  Copyright (C) 2010-2015 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Danny Auble <da@llnl.gov>
@@ -167,7 +167,7 @@ static int _set_cond(int *start, int argc, char **argv,
 
 static int _setup_print_fields_list(List format_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	print_field_t *field = NULL;
 	char *object = NULL;
 
@@ -216,7 +216,7 @@ static int _setup_print_fields_list(List format_list)
 				field->len = 18;
 			else
 				field->len = 10;
-			field->print_routine = slurmdb_report_print_time;
+			field->print_routine = print_fields_str;
 		} else if (!xstrncasecmp("Login", object,
 					 MAX(command_len, 1))) {
 			field->type = PRINT_USER_LOGIN;
@@ -244,14 +244,14 @@ static int _setup_print_fields_list(List format_list)
 				field->len = 18;
 			else
 				field->len = 10;
-			field->print_routine = slurmdb_report_print_time;
+			field->print_routine = print_fields_str;
 		} else {
 			exit_code = 1;
 			fprintf(stderr, " Unknown field '%s'\n", object);
 			xfree(field);
 			continue;
 		}
- #ifdef __METASTACK_OPT_PRINT_COMMAND
+#ifdef __METASTACK_OPT_PRINT_COMMAND
 		char *env_sacctmgr = NULL;
 		char *format =NULL;
 		if ((env_sacctmgr = getenv("SREPORT_EXTEND"))) {
@@ -275,7 +275,7 @@ static int _setup_print_fields_list(List format_list)
 static int _set_user_acct(void *x, void *arg)
 {
 	slurmdb_report_user_rec_t *orig_report_user;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 	char *acct;
 
 	orig_report_user = (slurmdb_report_user_rec_t *) x;
@@ -299,7 +299,7 @@ static void _user_top_tres_report(slurmdb_tres_rec_t *tres,
 			slurmdb_report_user_rec_t *slurmdb_report_user)
 {
 	slurmdb_tres_rec_t *cluster_tres_rec, *tres_rec, *total_energy;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 	print_field_t *field;
 	char *tres_tmp = NULL, *tmp_char = NULL;
 	struct passwd *pwd = NULL;
@@ -343,12 +343,13 @@ static void _user_top_tres_report(slurmdb_tres_rec_t *tres,
 			tmp_char = NULL;	/* Not xmalloced */
 			break;
 		case PRINT_USER_USED:
-			field->print_routine(field,
-					     tres_rec ?
-					     tres_rec->alloc_secs : 0,
-					     cluster_tres_rec ?
-					     cluster_tres_rec->alloc_secs : 0,
+			tmp_char = sreport_get_time_str(
+					tres_rec ? tres_rec->alloc_secs : 0,
+					cluster_tres_rec ?
+					cluster_tres_rec->alloc_secs : 0);
+			field->print_routine(field, tmp_char,
 					     (curr_inx == field_count));
+			xfree(tmp_char);
 			break;
 		case PRINT_USER_ENERGY:
 			/* For backward compatibility with pre-TRES logic,
@@ -364,9 +365,11 @@ static void _user_top_tres_report(slurmdb_tres_rec_t *tres,
 					slurmdb_find_tres_in_list,
 					&tres_energy)))
 				user_energy_cnt = total_energy->alloc_secs;
-			field->print_routine(field, user_energy_cnt,
-					     cluster_energy_cnt,
+			tmp_char = sreport_get_time_str(user_energy_cnt,
+							cluster_energy_cnt);
+			field->print_routine(field, tmp_char,
 					     (curr_inx == field_count));
+			xfree(tmp_char);
 			break;
 		case PRINT_USER_TRES_NAME:
 			xstrfmtcat(tres_tmp, "%s%s%s",
@@ -393,7 +396,7 @@ static void _set_usage_column_width(List print_fields_list,
 				    List slurmdb_report_cluster_list)
 {
 	print_field_t *field, *usage_field = NULL, *energy_field = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 
 	xassert(print_fields_list);
 	xassert(slurmdb_report_cluster_list);
@@ -420,7 +423,7 @@ static void _merge_user_report(List slurmdb_report_cluster_list)
 {
 	slurmdb_report_cluster_rec_t *slurmdb_report_cluster = NULL;
 	slurmdb_report_cluster_rec_t *first_report_cluster = NULL;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 
 	if (list_count(slurmdb_report_cluster_list) < 2)
 		return;
@@ -461,8 +464,8 @@ extern int user_top(int argc, char **argv)
 {
 	int rc = SLURM_SUCCESS;
 	slurmdb_user_cond_t *user_cond = xmalloc(sizeof(slurmdb_user_cond_t));
-	ListIterator itr = NULL, itr2 = NULL;
-	ListIterator cluster_itr = NULL;
+	list_itr_t *itr = NULL, *itr2 = NULL;
+	list_itr_t *cluster_itr = NULL;
 	List format_list = list_create(xfree_ptr);
 	List slurmdb_report_cluster_list = NULL;
 	int i = 0;
@@ -495,8 +498,8 @@ extern int user_top(int argc, char **argv)
 		_merge_user_report(slurmdb_report_cluster_list);
 
 	if (print_fields_have_header) {
-		char start_char[20];
-		char end_char[20];
+		char start_char[256];
+		char end_char[256];
 		time_t my_start = user_cond->assoc_cond->usage_start;
 		time_t my_end = user_cond->assoc_cond->usage_end-1;
 
@@ -504,8 +507,14 @@ extern int user_top(int argc, char **argv)
 		slurm_make_time_str(&my_end, end_char, sizeof(end_char));
 		printf("----------------------------------------"
 		       "----------------------------------------\n");
-		printf("Top %u Users %s - %s (%d secs)\n",
-		       top_limit, start_char, end_char,
+
+		if (top_limit != INFINITE)
+			printf("Top %u", top_limit);
+		else
+			printf("Top ALL");
+
+		printf(" Users %s - %s (%d secs)\n",
+		       start_char, end_char,
 		       (int)(user_cond->assoc_cond->usage_end
 			- user_cond->assoc_cond->usage_start));
 

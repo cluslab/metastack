@@ -2,7 +2,99 @@
 
 <h1>Presentations</h1>
 
-<p>Note that some of the older material contains dated information.</p>
+<p>Note that older presentations may contain outdated information.</p>
+
+<h2>Presentations from Cray User Group, May 2024</h2>
+<ul>
+<li><a href="MISC24/Slurm-24.05-CUG24.pdf">Slurm <s>24.08</s> 24.05, and Beyond</a>,
+Tim Wickberg, SchedMD</li>
+</ul>
+
+<h2>Presentations from SC23, November 2023</h2>
+<ul>
+<li><a href="SC23/Slurm-and-or-vs-Kubernetes.pdf">Slurm and/or/vs Kubernetes</a>,
+Tim Wickberg, SchedMD</li>
+<li><a href="SC23/Slurm-SC23-BOF.pdf">Slurm 23.02, 23.11, and Beyond</a>,
+Tim Wickberg, SchedMD</li>
+</ul>
+
+<h2>Presentations from Slurm User Group Meeting, September 2023</h2>
+<ul>
+
+<!-- Tuesday -->
+
+<li>Keynote: <a href="SLUG23/quinoa.pdf">Improving quinoa through the development of genetic and genomic resources</a>,
+David Jarvis, Brigham Young University</li>
+
+<li><a href="SLUG23/NERSC-SLUG23.pdf">Never use Slurm HA again: Solve all your problems with Kubernetes</a>,
+Chris Samuel and Doug Jacobsen, NERSC</li>
+
+<!--<li><a href="SLUG23/">Guardant Health Site Report</a>,
+Younts, Guardant</li>-->
+
+<li><a href="SLUG23/containers-slug23.pdf">Containers in Slurm</a>,
+Scott Hilton, SchedMD</li>
+
+<!--<li><a href="SLUG23/CoreWeave-SLUG23.pdf">The Best of Both Worlds: Slurm on Kubernetes</a>,
+Navarre Pratt and Jacob Feldman, CoreWeave</li>-->
+
+<li><a href="SLUG23/LLSC-SLUG23.pdf">Optimizing Diverse Workloads and Resource Usage with Slurm</a>,
+Chansup Byun et al, LLSC</li>
+
+<li><a href="SLUG23/REST-API-SLUG23.pdf">Slurm's REST API</a>,
+Nathan Rini, SchedMD</li>
+
+<li><a href="SLUG23/GCP-Recursion-SLUG23.pdf">Build a flexible and powerful High Performance Computing foundation with Google Cloud</a>,
+Volker Eyrich (Google) and Joshua Fryer (Recursion)</li>
+
+<li><a href="SLUG23/Dow-SLUG23.pdf">Demand Driven Cluster Elasticity</a>,
+Mike Fazio, Dow</li>
+
+<li><a href="SLUG23/Field-Notes-7.pdf">Field Notes 7 &ndash; How to make the most of Slurm and avoid common issues</a>,
+Jason Booth, SchedMD</li>
+
+<!-- Wednesday -->
+
+<li><a href="SLUG23/SDSC-SLUG23.pdf">Accelerating Genomics Research Machine Learning with Slurm</a>,
+Willy Markuske, San Diego Supercomputing Center (SDSC)</li>
+
+<li><a href="SLUG23/DTU-SLUG23.pdf">Saving Power with Slurm</a>,
+Ole Nielsen, Technical University of Denmark (DTU)</li>
+
+<li><a href="SLUG23/flux_in_slurm.pdf">Running Flux in Slurm</a>,
+Ryan Day, LLNL</li>
+
+<li><a href="SLUG23/CINECA-SLUG23.pdf">Site Report: CINECA experience with Slurm</a>,
+Alessandro Marani, CINECA</li>
+
+<li><a href="SLUG23/step-management-slug23.pdf">Step Management Enhancements</a>,
+Brian Christiansen, SchedMD</li>
+
+<li><a href="SLUG23/LANL-Batsim-SLUG23.pdf">System and Job Scheduling Simulation For Enhancing Production HPC</a>,
+Vivian Hafener, LANL</li>
+
+<li><a href="SLUG23/GT-SLUG23.pdf">Site Update: Georgia Institute of Technology</a>,
+Marian Zvada and Aaron Jezghani, Georgia Tech</li>
+
+<li><a href="SLUG23/AWS-SLUG23.pdf">Building Blocks in the Cloud: Scaling LEGO Engineering with AWS High-Performance Computing</a>,
+Brian Skjerven and Matt Vaughn, AWS</li>
+
+<li><a href="SLUG23/roadmap-slug23.pdf">Slurm 23.02, 23.11, and Beyond (Roadmap)</a>,
+Tim Wickberg, SchedMD</li>
+
+</ul>
+
+<h2>Presentations from Dell HPC Community, September 2023</h2>
+<ul>
+<li><a href="MISC23/DellHPC_20230906.pdf">Slurm and/or/vs Kubernetes</a>,
+Tim Wickberg, SchedMD</li>
+</ul>
+
+<h2>Presentations from Cray User Group, May 2023</h2>
+<ul>
+<li><a href="MISC23/CUG23-Slurm-Roadmap.pdf">Slurm 23.02, 23.11, and Beyond</a>,
+Tim Wickberg, SchedMD</li>
+</ul>
 
 <h2>Presentations from SC22, November 2022</h2>
 <ul>
@@ -429,8 +521,8 @@ Tim Wickberg, SchedMD</li>
 <h2>Presentations from Slurm User Group Meeting, September 2016</h2>
 <ul>
 
-<!--- <li>Welcome: <a href="SLUG16/welcome.pdf">SLUG 2016 Welcome</a>,
-Nikos Nikoloutsakos, GRNET</li> --->
+<!-- <li>Welcome: <a href="SLUG16/welcome.pdf">SLUG 2016 Welcome</a>,
+Nikos Nikoloutsakos, GRNET</li> -->
 
 <li>Keynote: <a href="SLUG16/Cournia-SLURM2016.pdf">Computer-aided drug design for novel anti-cancer agents</a>,
 Dr. Zoe Cournia (Biomedical Research Foundation, Academy of Athens)</li>
@@ -945,7 +1037,7 @@ Yiannis Georgiou (Bull) and Matthieu Hautreux (CEA)</li>
 <li><a href="slurm_ug_2012/SUG2012-Soner.pdf">Integer Programming Based Herogeneous CPU-GPU Clusters</a>,
 Seren Soner, Bogazici University</li>
 
-<li><a href="slurm_ug_2012/SUG2012_Emeras.pdf">Job Resource Utilizaiton as a Metric for Clusters Comparision and Optimization</a>,
+<li><a href="slurm_ug_2012/SUG2012_Emeras.pdf">Job Resource Utilization as a Metric for Clusters Comparison and Optimization</a>,
 Joseph Emeras, INRIA/LIG</li>
 
 </ul>
@@ -1014,7 +1106,7 @@ Alejandro Lucero, BSC</li>
 <li><a href="slurm_ug_2011/SLURM_Grid_Ideas.pdf">Proposed Design for Enhanced Enterprise-wide Scheduling</a>,
 Don Lipari, LLNL</li>
 
-<li><a href="slurm_ug_2011/Bright_Computing_SLURM_integration.pdf">Bright Cluster Manager &amp; SLURM</ Slurm</a>,
+<li><a href="slurm_ug_2011/Bright_Computing_SLURM_integration.pdf">Bright Cluster Manager &amp; SLURM</a>,
 Robert Stober, Bright Computing</li>
 
 <li><a href="slurm_ug_2011/User.steps.design.pdf">Job Step Management in User Space</a>,
@@ -1118,7 +1210,7 @@ Yiannis Georgiou, et. al.
 (ICDCN 2014, January 2014)</li>
 
 <li><a href="http://www.cs.huji.ac.il/~feit/parsched/jsspp12/p8-georgiou.pdf">
-Evaluating scalability and efficiency of the Resource and Job Management System on large HPC Clusters</b></a>,
+<b>Evaluating scalability and efficiency of the Resource and Job Management System on large HPC Clusters</b></a>,
 Yiannis Georgiou (BULL S.A.S, France); Matthieu Hautreux (CEA-DAM, France)
 (16th Workshop on Job Scheduling Strategies for Parallel Processing, May 2012)</li>
 
@@ -1170,6 +1262,6 @@ Danny Auble of LLNL about Slurm.</p>
 Learning Chef: Compute Cluter with Slurm</a>
 A Slurm Cookbook by Adam DeConinck</p>
 
-<p style="text-align:center;">Last modified 5 December 2022</p>
+<p style="text-align:center;">Last modified 07 May 2024</p>
 
 <!--#include virtual="footer.txt"-->

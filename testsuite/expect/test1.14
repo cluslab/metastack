@@ -3,7 +3,7 @@
 # Purpose: Test of Slurm functionality
 #          Test exclusive resource allocation for a step (--exclusive option).
 ############################################################################
-# Copyright (C) 2021 SchedMD LLC
+# Copyright (C) SchedMD LLC.
 # Copyright (C) 2007 The Regents of the University of California.
 # Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
 # Written by Morris Jette <jette1@llnl.gov>
@@ -35,6 +35,10 @@ set job_id           0
 
 if {[get_config_param "FrontendName"] ne "MISSING"} {
 	skip "This test is incompatible with front-end systems"
+}
+
+if {[check_config_select "linear"]} {
+    skip "Test requires SelectType != linear"
 }
 
 proc cleanup {} {
@@ -88,9 +92,9 @@ proc test_cpus {} {
 	subtest {![wait_for_job -timeout 30 $job_id RUNNING]} "Job ($job_id) should start"
 	subtest {![wait_for_file $test_dir/step1]} "File ($test_dir/step1) should be created by step1"
 	subtest {![wait_for_file $test_dir/step2]} "File ($test_dir/step2) should be created by step2"
-	subtest { [wait_for_file -timeout 5 $test_dir/step3]} "File ($test_dir/step3) shouldn't exists yet"
+	subtest { [wait_for_file -timeout 30 $test_dir/step3]} "File ($test_dir/step3) shouldn't exist yet"
 	run_command -fail "$bin_touch $test_dir/next"
-	subtest {![wait_for_file -timeout 5 $test_dir/step3]} "File ($test_dir/step3) should be created by step3"
+	subtest {![wait_for_file $test_dir/step3]} "File ($test_dir/step3) should be created by step3"
 	subtest {![wait_for_job -timeout 30 $job_id DONE]} "Job ($job_id) should finish"
 }
 

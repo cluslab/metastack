@@ -50,11 +50,12 @@
 #include "slurm/slurm.h"
 #include "slurm/slurm_errno.h"
 #include "src/common/slurm_xlator.h"
-#include "src/common/cli_filter.h"
+#include "src/interfaces/cli_filter.h"
 #include "src/common/data.h"
-#include "src/common/plugstack.h"
 #include "src/common/slurm_opt.h"
+#include "src/common/spank.h"
 #include "src/common/xstring.h"
+#include "src/interfaces/serializer.h"
 #include "src/lua/slurm_lua.h"
 #include "src/plugins/cli_filter/common/cli_filter_common.h"
 
@@ -126,7 +127,7 @@ int init(void)
         if ((rc = slurm_lua_init()) != SLURM_SUCCESS)
                 return rc;
 
-	if ((rc = data_init(MIME_TYPE_JSON_PLUGIN, NULL))) {
+	if ((rc = serializer_g_init(MIME_TYPE_JSON_PLUGIN, NULL))) {
 		error("%s: unable to load JSON serializer: %s", __func__,
 		      slurm_strerror(rc));
 		return rc;
@@ -176,13 +177,8 @@ static int _setup_option_field_argv(lua_State *st, slurm_opt_t *opt)
 	char **argv = NULL;
 	int  argc = 0;
 
-	if (opt->sbatch_opt) {
-		argv = opt->sbatch_opt->script_argv;
-		argc = opt->sbatch_opt->script_argc;
-	} else if (opt->srun_opt) {
-		argv = opt->srun_opt->argv;
-		argc = opt->srun_opt->argc;
-	}
+	argv = opt->argv;
+	argc = opt->argc;
 
 	return _setup_stringarray(st, argc, argv);
 }

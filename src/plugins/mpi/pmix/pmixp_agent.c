@@ -59,6 +59,8 @@
 
 static pthread_mutex_t agent_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t agent_running_cond = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t abort_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t abort_mutex_cond = PTHREAD_COND_INITIALIZER;
 
 static eio_handle_t *_io_handle = NULL;
 static eio_handle_t *_abort_handle = NULL;
@@ -82,7 +84,7 @@ static int _abort_conn_read(eio_obj_t *obj, List objs);
 static struct io_operations abort_ops = {
 	.readable = &_conn_readable,
 	.handle_read = &_abort_conn_read,
-	.handle_close = &_abort_conn_close
+	.handle_close = &_abort_conn_close,
 };
 
 static struct io_operations srv_ops = {
@@ -351,6 +353,11 @@ rwfail:
 static void *_pmix_abort_thread(void *args)
 {
 	PMIXP_DEBUG("Start abort thread");
+
+	slurm_mutex_lock(&abort_mutex);
+	slurm_cond_signal(&abort_mutex_cond);
+	slurm_mutex_unlock(&abort_mutex);
+
 	eio_handle_mainloop(_abort_handle);
 	PMIXP_DEBUG("Abort thread exit");
 	return NULL;
@@ -363,6 +370,7 @@ int pmixp_abort_agent_start(char ***env)
 	eio_obj_t *obj;
 	uint16_t *ports;
 
+	slurm_mutex_lock(&abort_mutex);
 	if ((ports = slurm_get_srun_port_range()))
 		abort_server_socket = slurm_init_msg_engine_ports(ports);
 	else
@@ -388,16 +396,22 @@ int pmixp_abort_agent_start(char ***env)
 	eio_new_initial_obj(_abort_handle, obj);
 	slurm_thread_create(&_abort_tid, _pmix_abort_thread, NULL);
 
+	/* wait for the abort EIO thread to initialize */
+	slurm_cond_wait(&abort_mutex_cond, &abort_mutex);
+
+	slurm_mutex_unlock(&abort_mutex);
 	return SLURM_SUCCESS;
 }
 
 int pmixp_abort_agent_stop(void)
 {
+	slurm_mutex_lock(&abort_mutex);
 	if (_abort_tid) {
 		eio_signal_shutdown(_abort_handle);
-		pthread_join(_abort_tid, NULL);
-		_abort_tid = 0;
+		slurm_thread_join(_abort_tid);
 	}
+	slurm_mutex_unlock(&abort_mutex);
+
 	return pmixp_abort_code_get();
 }
 
@@ -414,8 +428,8 @@ int pmixp_agent_start(void)
 	slurm_cond_wait(&agent_running_cond, &agent_mutex);
 
 	/* Establish the early direct connection */
-	if (pmixp_info_srv_wireup_early()) {
-		if (pmixp_server_wireup_early()) {
+	if (pmixp_info_srv_direct_conn_early()) {
+		if (pmixp_server_direct_conn_early()) {
 			slurm_mutex_unlock(&agent_mutex);
 			return SLURM_ERROR;
 		}
@@ -455,22 +469,17 @@ int pmixp_agent_stop(void)
 
 	slurm_mutex_lock(&agent_mutex);
 
-	/* Finalize early wireup */
-	pmixp_server_wireup_early_fini();
-
 	if (_agent_tid) {
 		eio_signal_shutdown(_io_handle);
 		/* wait for the agent thread to stop */
-		pthread_join(_agent_tid, NULL);
-		_agent_tid = 0;
+		slurm_thread_join(_agent_tid);
 	}
 
 	if (_timer_tid) {
 		/* cancel timer */
 		if (write(timer_data.stop_out, &c, 1) == -1)
 			rc = SLURM_ERROR;
-		pthread_join(_timer_tid, NULL);
-		_timer_tid = 0;
+		slurm_thread_join(_timer_tid);
 
 		/* close timer fds */
 		_shutdown_timeout_fds();

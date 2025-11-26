@@ -48,6 +48,8 @@
 #include "src/common/node_conf.h"
 #include "src/common/xstring.h"
 
+#include "../common/common_topo.h"
+
 /*
  * These variables are required by the generic plugin interface.  If they
  * are not found in the plugin, the plugin loader will ignore it.
@@ -74,6 +76,7 @@
  */
 const char plugin_name[]        = "topology 3d_torus plugin";
 const char plugin_type[]        = "topology/3d_torus";
+const uint32_t plugin_id = TOPOLOGY_PLUGIN_3DTORUS;
 const uint32_t plugin_version   = SLURM_VERSION_NUMBER;
 
 extern void nodes_to_hilbert_curve(void);
@@ -101,7 +104,17 @@ extern int fini(void)
  * topo_build_config - build or rebuild system topology information
  *	after a system startup or reconfiguration.
  */
-extern int topo_build_config(void)
+extern int topology_p_build_config(void)
+{
+	return SLURM_SUCCESS;
+}
+
+extern int topology_p_eval_nodes(topology_eval_t *topo_eval)
+{
+	return common_topo_choose_nodes(topo_eval);
+}
+
+extern int topology_p_whole_topo(bitstr_t *node_mask)
 {
 	return SLURM_SUCCESS;
 }
@@ -109,7 +122,7 @@ extern int topo_build_config(void)
 /*
  * topo_generate_node_ranking  -  populate node_rank fields
  */
-extern bool topo_generate_node_ranking(void)
+extern bool topology_p_generate_node_ranking(void)
 {
 	nodes_to_hilbert_curve();
 	return true;
@@ -121,14 +134,44 @@ extern bool topo_generate_node_ranking(void)
  *
  * in 3d_torus plugin, only use node name as the topology address
  */
-extern int topo_get_node_addr(char* node_name, char** paddr, char** ppattern)
+extern int topology_p_get_node_addr(char *node_name, char **paddr,
+				    char **ppattern)
 {
-#ifndef HAVE_FRONT_END
-	if (find_node_record(node_name) == NULL)
-		return SLURM_ERROR;
-#endif
+	return common_topo_get_node_addr(node_name, paddr, ppattern);
+}
 
-	*paddr = xstrdup(node_name);
-	*ppattern = xstrdup("node");
+extern int topology_p_split_hostlist(hostlist_t *hl, hostlist_t ***sp_hl,
+				     int *count, uint16_t tree_width)
+{
+	return common_topo_split_hostlist_treewidth(
+		hl, sp_hl, count, tree_width);
+}
+
+extern int topology_p_topology_free(void *topoinfo_ptr)
+{
+	return SLURM_SUCCESS;
+}
+
+extern int topology_p_get(topology_data_t type, void *data)
+{
+	return SLURM_SUCCESS;
+}
+
+extern int topology_p_topology_pack(void *topoinfo_ptr, buf_t *buffer,
+				    uint16_t protocol_version)
+{
+	return SLURM_SUCCESS;
+}
+
+extern int topology_p_topology_print(void *topoinfo_ptr, char *nodes_list,
+				     char **out)
+{
+	*out = NULL;
+	return SLURM_SUCCESS;
+}
+
+extern int topology_p_topology_unpack(void **topoinfo_pptr, buf_t *buffer,
+				      uint16_t protocol_version)
+{
 	return SLURM_SUCCESS;
 }

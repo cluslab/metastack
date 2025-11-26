@@ -90,8 +90,6 @@ const uint32_t plugin_version   = SLURM_VERSION_NUMBER;
 static bool _user_access(uid_t run_uid, uint32_t submit_uid,
 			 part_record_t *part_ptr)
 {
-	int i;
-
 	if (run_uid == 0) {
 		if (part_ptr->flags & PART_FLAG_NO_ROOT)
 			return false;
@@ -101,10 +99,10 @@ static bool _user_access(uid_t run_uid, uint32_t submit_uid,
 	if ((part_ptr->flags & PART_FLAG_ROOT_ONLY) && (submit_uid != 0))
 		return false;
 
-	if (part_ptr->allow_uids == NULL)
+	if (!part_ptr->allow_uids_cnt)
 		return true;	/* AllowGroups=ALL */
 
-	for (i=0; part_ptr->allow_uids[i]; i++) {
+	for (int i = 0; i < part_ptr->allow_uids_cnt; i++) {
 		if (part_ptr->allow_uids[i] == run_uid)
 			return true;	/* User in AllowGroups */
 	}
@@ -156,7 +154,7 @@ static bool _valid_memory(part_record_t *part_ptr, job_desc_msg_t *job_desc)
 extern int job_submit(job_desc_msg_t *job_desc, uint32_t submit_uid,
 		      char **err_msg)
 {
-	ListIterator part_iterator;
+	list_itr_t *part_iterator;
 	part_record_t *part_ptr;
 	part_record_t *top_prio_part = NULL;
 
@@ -192,7 +190,7 @@ extern int job_submit(job_desc_msg_t *job_desc, uint32_t submit_uid,
 }
 
 extern int job_modify(job_desc_msg_t *job_desc, job_record_t *job_ptr,
-		      uint32_t submit_uid)
+		      uint32_t submit_uid, char **err_msg)
 {
 	return SLURM_SUCCESS;
 }

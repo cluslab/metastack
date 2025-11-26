@@ -26,7 +26,7 @@
 
 #include <dlfcn.h>
 #include "src/common/slurm_xlator.h"
-#include "src/common/gres.h"
+#include "src/interfaces/gres.h"
 #include "src/common/log.h"
 #include "src/common/list.h"
 #include "ctype.h"
@@ -195,13 +195,13 @@ dsmiReturn_t dsmiDeviceGetName(uint32_t device, char *name, unsigned int length)
 	struct dsmi_chip_info_stru info = {{0},{0},{0}};
 	ret = dsmi_get_chip_info(0, &info);
 	strcpy(name, (char *)info.chip_type);
-    strcat(name, " ");
-    strcat(name, (char *)info.chip_name);
-    strcat(name, " ");
-    strcat(name, (char *)info.chip_ver);
+	xstrcat(name, " ");
+	xstrcat(name, (char *)info.chip_name);
+	xstrcat(name, " ");
+	xstrcat(name, (char *)info.chip_ver);
 
 	if(ret != 0 )
-        error("DSMI: Failed to get name of the NPU.");
+		error("DSMI: Failed to get name of the NPU.");
 	return DSMI_SUCCESS;
 }
 
@@ -348,7 +348,7 @@ static void _parse_npu_freq2(char *npu_freq, unsigned int *npu_freq_code,
 			     unsigned int *mem_freq_code,
 			     unsigned int *mem_freq_value, bool *verbose_flag)
 {
-	char *tmp, *tok, *sep, *save_ptr = NULL;
+	char *tmp = NULL, *tok = NULL, *sep = NULL, *save_ptr = NULL;
 	if (!npu_freq || !npu_freq[0])
 		return;
 	tmp = xstrdup(npu_freq);
@@ -388,7 +388,7 @@ static void _parse_npu_freq(char *npu_freq, unsigned int *npu_freq_num,
 	unsigned int def_mem_freq_code = 0, def_mem_freq_value = 0;
 	unsigned int job_npu_freq_code = 0, job_npu_freq_value = 0;
 	unsigned int job_mem_freq_code = 0, job_mem_freq_value = 0;
-	char *def_freq;
+	char *def_freq = NULL;
 
 	_parse_npu_freq2(npu_freq, &job_npu_freq_code, &job_npu_freq_value,
 			 &job_mem_freq_code, &job_mem_freq_value, verbose_flag);
@@ -441,8 +441,8 @@ static bool _dsmi_get_mem_freqs(uint32_t device,
 	int ret = 0;
 	DEF_TIMERS;
 	START_TIMER;
-    int device_num = 0;
-    ret = dsmi_get_device_count(&device_num);
+	int device_num = 0;
+	ret = dsmi_get_device_count(&device_num);
 
 	if(ret !=0 )
 	{
@@ -824,11 +824,11 @@ static unsigned int _dsmi_get_gfx_freq(uint32_t device)
 	END_TIMER;
 	debug3("dsmi_get_device_frequency(AI core) took %ld microseconds",
 	        DELTA_TIMER);
-    if(ret != 0 ){
-    	error("%s: Failed to get the NPU frequency: %u", __func__,freq);
-    	return 0;
-    }
-    return freq;
+	if(ret != 0 ){
+		error("%s: Failed to get the NPU frequency: %u", __func__,freq);
+		return 0;
+	}
+	return freq;
 }
 
 static unsigned int _dsmi_get_mem_freq(uint32_t device)
@@ -841,11 +841,11 @@ static unsigned int _dsmi_get_mem_freq(uint32_t device)
 	END_TIMER;
 	debug3("dsmi_get_device_frequency(memory) took %ld microseconds",
 	        DELTA_TIMER);
-    if(ret != 0 ){
-    	error("%s: Failed to get the NPU frequency: %u", __func__,freq);
-    	return 0;
-    }
-    return freq;
+	if(ret != 0 ){
+		error("%s: Failed to get the NPU frequency: %u", __func__,freq);
+		return 0;
+	}
+	return freq;
 }
 
 /*
@@ -1118,28 +1118,6 @@ static void _dsmi_get_device_minor_number(uint32_t device,
 }
 
 /*
- * Does a linear search for string str in array of strings str_arr, starting
- * from index 0.
- * Returns the index of the first match found, else returns -1 if not found.
- *
- * str - the string to search for
- * str_array - the array of strings to search in
- * size - the size of str_arr
- */
-// static int _get_index_from_str_arr(char *str, char **str_arr, unsigned int size)
-// {
-// 	int i;
-// 	if (str_arr == NULL || str == NULL)
-// 		return -1;
-// 	for (i = 0; i < size; ++i) {
-// 		if (xstrcmp(str, str_arr[i]) == 0) {
-// 			return i;
-// 		}
-// 	}
-// 	return -1;
-// }
-
-/*
  * Get the total # of NPUs in the system
  */
 extern void gpu_p_get_device_count(unsigned int *device_count)
@@ -1246,12 +1224,6 @@ extern int fini(void)
 	return SLURM_SUCCESS;
 }
 
-extern int gpu_p_reconfig(void)
-{
-	return SLURM_SUCCESS;
-}
-
-
 extern List gpu_p_get_system_gpu_list(node_config_load_t *node_config)
 {
 	List gres_list_system = NULL;
@@ -1306,9 +1278,9 @@ extern void gpu_p_step_hardware_fini(void)
 extern char *gpu_p_test_cpu_conv(char *cpu_range)
 {
 	unsigned long cpu_set[CPU_SET_SIZE];
-	bitstr_t *cpu_aff_mac_bitstr;
-	int i;
-	char *result;
+	bitstr_t *cpu_aff_mac_bitstr = NULL;
+	int i = 0;
+	char *result = NULL;
 	info("%s: cpu_range: %s", __func__, cpu_range);
 
 	if (!cpu_range) {
@@ -1380,6 +1352,15 @@ extern char *gpu_p_test_cpu_conv(char *cpu_range)
 }
 
 extern int gpu_p_energy_read(uint32_t dv_ind, gpu_status_t *npu)
+{
+	return SLURM_SUCCESS;
+}
+
+/*
+ * The Ascend 910 AI processor does not yet provide an interface 
+ * to get the device utilization of a given process.
+ */
+extern int gpu_p_usage_read(pid_t pid, acct_gather_data_t *data)
 {
 	return SLURM_SUCCESS;
 }

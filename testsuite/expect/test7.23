@@ -2,8 +2,7 @@
 ############################################################################
 # Purpose:  Confirm min_mem_per_{cpu,node} in lua JobSubmitPlugin
 ############################################################################
-# Copyright (C) 2021 SchedMD LLC
-# Written by Chad Vizino
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -30,6 +29,10 @@ set job_name		"$test_name"
 
 if {![have_lua]} {
 	skip "LUA must be installed and enabled to test lua job_submit plugin."
+}
+
+if {[check_config_select "linear"]} {
+    skip "Test requires SelectType!=select/linear"
 }
 
 proc test_min_mem { cmd min_mem_per_cpu_exp min_mem_per_node_exp } {
@@ -64,6 +67,7 @@ reconfigure -fail
 testproc test_min_mem "$salloc -J $job_name $bin_true" nil nil
 testproc test_min_mem "$srun -J $job_name $bin_true" nil nil
 testproc test_min_mem "$sbatch -J $job_name -o /dev/null --wrap $bin_true" nil nil
+
 testproc test_min_mem "$salloc -J $job_name --mem-per-cpu=1024 $bin_true" 1024 nil
 testproc test_min_mem "$srun -J $job_name --mem-per-cpu=1024 $bin_true" 1024 nil
 testproc test_min_mem "$sbatch -J $job_name --mem-per-cpu=1024 -o /dev/null --wrap $bin_true" 1024 nil

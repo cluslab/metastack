@@ -49,80 +49,6 @@ typedef struct {
 	uint32_t seq;
 } pmixp_coll_ring_cbdata_t;
 
-
-typedef struct {
-	void *coll;
-	void *coll_ctx;
-	char *operation;
-	size_t msgsize;
-	uint32_t contrib_id;
-	uint32_t collseq;
-	uint32_t hopseq;
-	uint32_t nodeid;
-} pmixp_ring_profile_t;
-
-static void _ring_prof_output(double ts, pmixp_ring_profile_t *prof)
-{
-	PMIXP_DEBUG_TS(ts,
-		       "RING: coll=%p; ctx=%p; [%s]; nodeid=%u; collseq=%u; hopseq=%u; contrib_id=%d; size=%lu;",
-		       prof->coll, prof->coll_ctx, prof->operation,
-		       prof->nodeid, prof->collseq,
-		       prof->hopseq, prof->contrib_id, prof->msgsize);
-}
-
-#define PMIXP_RING_PROF_SETUP_REC(prof_var,                               \
-				  _coll, _coll_ctx, op, _nodeid, _collseq,\
-				  _hopseq, _contrib_id, _msgsize )        \
-pmixp_ring_profile_t prof_var = {                                         \
-	.coll = _coll,                                                    \
-	.coll_ctx = _coll_ctx,                                            \
-	.operation = op,                                                  \
-	.nodeid = _nodeid,                                                \
-	.collseq = _collseq,                                              \
-	.hopseq = _hopseq,                                                \
-	.contrib_id = _contrib_id,                                        \
-	.msgsize = _msgsize                                               \
-}                                                                         \
-
-#ifndef PMIXP_PROFILE_DELAY
-
-#define PMIXP_RING_PROFILE(coll, coll_ctx, op, nodeid, collseq,           \
-			  hopseq, contrib_id, msgsize) {                  \
-	double ts;                                                        \
-	PMIXP_DEBUG_GET_TS(ts);                                           \
-	PMIXP_RING_PROF_SETUP_REC(prof,                                   \
-				   coll, coll_ctx, op, nodeid, collseq,   \
-				   hopseq, contrib_id, msgsize);          \
-	_ring_prof_output(ts, &prof);                                \
-}
-#else
-
-static void _ring_prof_deserialize_out(void *priv, double ts,
-				       size_t size, char data[])
-{
-	pmixp_ring_profile_t prof;
-	xassert(sizeof(prof) == size);
-	memcpy(&prof, data, size);
-	_ring_prof_output(ts, &prof);
-}
-PMIXP_PROFILE_DEFINE(static, _ring_prof, NULL, _ring_prof_deserialize_out)
-
-#define PMIXP_RING_PROFILE(coll, coll_ctx, op, nodeid, collseq,           \
-			  hopseq, contrib_id, msgsize) {                  \
-	PMIXP_RING_PROF_SETUP_REC(prof,                                   \
-				   coll, coll_ctx, op, nodeid, collseq,   \
-				   hopseq, contrib_id, msgsize);          \
-	if(PMIXP_PROFILE_DELAY()) {                                       \
-		PMIXP_PROFILE(&_ring_prof, (void*)&prof, sizeof(prof));   \
-	} else {                                                          \
-		double ts;                                                \
-		PMIXP_DEBUG_GET_TS(ts)                                    \
-		_ring_prof_output(ts, &prof);                             \
-	}                                                                 \
-}
-
-#endif
-
 static void _progress_coll_ring(pmixp_coll_ring_ctx_t *coll_ctx);
 
 static inline int _ring_prev_id(pmixp_coll_t *coll)
@@ -171,14 +97,14 @@ static void _ring_sent_cb(int rc, pmixp_p2p_ctx_t ctx, void *_cbdata)
 		slurm_mutex_lock(&coll->lock);
 	}
 #ifdef PMIXP_COLL_DEBUG
-	PMIXP_DEBUG("%p: ctx=%p, collseq=%d", coll, coll_ctx, coll_ctx->seq);
+	PMIXP_DEBUG("%p: called %d", coll_ctx, coll_ctx->seq);
 #endif
 	if (cbdata->seq != coll_ctx->seq) {
 		/* it seems like this collective was reset since the time
 		 * we initiated this send.
 		 * Just exit to avoid data corruption.
 		 */
-		PMIXP_DEBUG("%p: collective was reset!", coll);
+		PMIXP_DEBUG("%p: collective was reset!", coll_ctx);
 		goto exit;
 	}
 	coll_ctx->forward_cnt++;
@@ -338,7 +264,11 @@ static int _ring_forward_data(pmixp_coll_ring_ctx_t *coll_ctx, uint32_t contrib_
 
 	pmixp_coll_ring_ctx_sanity_check(coll_ctx);
 
-	PMIXP_RING_PROFILE(coll, coll_ctx, "forward", _ring_next_id(coll), hdr.seq, hdr.hop_seq, hdr.msgsize, hdr.contrib_id);
+#ifdef PMIXP_COLL_DEBUG
+	PMIXP_DEBUG("%p: transit data to nodeid=%d, seq=%d, hop=%d, size=%lu, contrib=%d",
+		    coll_ctx, _ring_next_id(coll), hdr.seq,
+		    hdr.hop_seq, hdr.msgsize, hdr.contrib_id);
+#endif
 	if (!buf) {
 		rc = SLURM_ERROR;
 		goto exit;
@@ -351,7 +281,8 @@ static int _ring_forward_data(pmixp_coll_ring_ctx_t *coll_ctx, uint32_t contrib_
 
 	/* insert payload to buf */
 	offset = get_buf_offset(buf);
-	pmixp_server_buf_reserve(buf, size);
+	if ((rc = try_grow_buf_remaining(buf, size)))
+		goto exit;
 	memcpy(get_buf_data(buf) + offset, data, size);
 	set_buf_offset(buf, offset + size);
 
@@ -370,7 +301,7 @@ static void _reset_coll_ring(pmixp_coll_ring_ctx_t *coll_ctx)
 {
 	pmixp_coll_t *coll = _ctx_get_coll(coll_ctx);
 #ifdef PMIXP_COLL_DEBUG
-	PMIXP_DEBUG("%p: ctx=%p", coll, coll_ctx);
+	PMIXP_DEBUG("%p: called", coll_ctx);
 #endif
 	pmixp_coll_ring_ctx_sanity_check(coll_ctx);
 	coll_ctx->in_use = false;
@@ -403,8 +334,6 @@ static void _libpmix_cb(void *_vcbdata)
 	slurm_mutex_unlock(&coll->lock);
 
 	xfree(cbdata);
-
-	PMIXP_DEBUG("%p: buffers released", coll);
 }
 
 static void _invoke_callback(pmixp_coll_ring_ctx_t *coll_ctx)
@@ -462,8 +391,7 @@ static void _progress_coll_ring(pmixp_coll_ring_ctx_t *coll_ctx)
 		case PMIXP_COLL_RING_FINALIZE:
 			if(_ring_fwd_done(coll_ctx)) {
 #ifdef PMIXP_COLL_DEBUG
-				PMIXP_DEBUG("%p: ctx=%p [%s] collseq=%d COMPLETED",
-					    coll, coll_ctx,
+				PMIXP_DEBUG("%p: %s seq=%d is DONE", coll,
 					    pmixp_coll_type2str(coll->type),
 					    coll_ctx->seq);
 #endif
@@ -548,7 +476,7 @@ pmixp_coll_ring_ctx_t *pmixp_coll_ring_ctx_select(pmixp_coll_t *coll,
 	return ret;
 }
 
-int pmixp_coll_ring_init(pmixp_coll_t *coll, hostlist_t *hl)
+int pmixp_coll_ring_init(pmixp_coll_t *coll, hostlist_t **hl)
 {
 #ifdef PMIXP_COLL_DEBUG
 	PMIXP_DEBUG("called");
@@ -557,9 +485,10 @@ int pmixp_coll_ring_init(pmixp_coll_t *coll, hostlist_t *hl)
 	pmixp_coll_ring_ctx_t *coll_ctx = NULL;
 	pmixp_coll_ring_t *ring = &coll->state.ring;
 	char *p;
+	int rel_id = hostlist_find(*hl, pmixp_info_hostname());
 
 	/* compute the next absolute id of the neighbor */
-	p = hostlist_nth(*hl, _ring_next_id(coll));
+	p = hostlist_nth(*hl, (rel_id + 1) % coll->peers_cnt);
 	ring->next_peerid = pmixp_info_job_hostid(p);
 	free(p);
 
@@ -591,8 +520,8 @@ void pmixp_coll_ring_free(pmixp_coll_ring_t *ring)
 		FREE_NULL_BUFFER(coll_ctx->ring_buf);
 		xfree(coll_ctx->contrib_map);
 	}
-	list_destroy(ring->fwrd_buf_pool);
-	list_destroy(ring->ring_buf_pool);
+	FREE_NULL_LIST(ring->fwrd_buf_pool);
+	FREE_NULL_LIST(ring->ring_buf_pool);
 }
 
 inline static int _pmixp_coll_contrib(pmixp_coll_ring_ctx_t *coll_ctx,
@@ -607,14 +536,9 @@ inline static int _pmixp_coll_contrib(pmixp_coll_ring_ctx_t *coll_ctx,
 	coll->ts = time(NULL);
 
 	/* save contribution */
-	if (!size_buf(coll_ctx->ring_buf)) {
-		grow_buf(coll_ctx->ring_buf, size * coll->peers_cnt);
-	} else if(remaining_buf(coll_ctx->ring_buf) < size) {
-		uint32_t new_size = size_buf(coll_ctx->ring_buf) + size *
-			_ring_remain_contrib(coll_ctx);
-		grow_buf(coll_ctx->ring_buf, new_size);
-	}
-	grow_buf(coll_ctx->ring_buf, size);
+	if (try_grow_buf_remaining(coll_ctx->ring_buf, size))
+		return SLURM_ERROR;
+
 	data_ptr = get_buf_data(coll_ctx->ring_buf) +
 		get_buf_offset(coll_ctx->ring_buf);
 	memcpy(data_ptr, data, size);
@@ -659,8 +583,10 @@ int pmixp_coll_ring_local(pmixp_coll_t *coll, char *data, size_t size,
 		goto exit;
 	}
 
-	PMIXP_RING_PROFILE(coll, coll_ctx, "contrib", pmixp_info_nodeid(),
-			  coll_ctx->seq, 0, coll->my_peerid, size);
+#ifdef PMIXP_COLL_DEBUG
+	PMIXP_DEBUG("%p: contrib/loc: seqnum=%u, state=%d, size=%lu",
+		    coll_ctx, coll_ctx->seq, coll_ctx->state, size);
+#endif
 
 	if (_pmixp_coll_contrib(coll_ctx, coll->my_peerid, 0, data, size)) {
 		goto exit;
@@ -699,7 +625,7 @@ int pmixp_coll_ring_check(pmixp_coll_t *coll, pmixp_coll_ring_msg_hdr_t *hdr)
 			    hdr->seq, nodename, hdr->nodeid, coll->seq);
 		pmixp_debug_hang(0); /* enable hang to debug this! */
 		slurm_kill_job_step(pmixp_info_jobid(),
-				    pmixp_info_stepid(), SIGKILL);
+				    pmixp_info_stepid(), SIGKILL, 0);
 		xfree(nodename);
 		return SLURM_SUCCESS;
 	} else if (PMIXP_COLL_REQ_SKIP == rc) {
@@ -731,9 +657,12 @@ int pmixp_coll_ring_neighbor(pmixp_coll_t *coll, pmixp_coll_ring_msg_hdr_t *hdr,
 		ret = SLURM_ERROR;
 		goto exit;
 	}
+#ifdef PMIXP_COLL_DEBUG
+	PMIXP_DEBUG("%p: contrib/nbr: seqnum=%u, state=%d, nodeid=%d, contrib=%d, seq=%d, size=%lu",
+		    coll_ctx, coll_ctx->seq, coll_ctx->state, hdr->nodeid,
+		    hdr->contrib_id, hdr->hop_seq, hdr->msgsize);
+#endif
 
-	PMIXP_RING_PROFILE(coll, coll_ctx, "contrib", hdr->nodeid, coll_ctx->seq,
-			  hdr->hop_seq, hdr->contrib_id, hdr->msgsize);
 
 	/* verify msg size */
 	if (hdr->msgsize != remaining_buf(buf)) {
@@ -848,8 +777,8 @@ void pmixp_coll_ring_log(pmixp_coll_t *coll)
 		if (coll_ctx->in_use) {
 			int id;
 			char *done_contrib = NULL, *wait_contrib = NULL;
-			hostlist_t hl_done_contrib = NULL,
-				hl_wait_contrib = NULL, *tmp_list;
+			hostlist_t *hl_done_contrib = NULL,
+				*hl_wait_contrib = NULL, **tmp_list;
 
 			PMIXP_ERROR("\t seq=%d contribs: loc=%d/prev=%d/fwd=%d",
 				    coll_ctx->seq, coll_ctx->contrib_local,

@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  slurmscriptd.h - Definitions of functions and structures for slurmscriptd.
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC.
- *  Written by Marshall Garey <marshall@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -54,14 +53,6 @@ extern void slurmscriptd_flush(void);
 extern void slurmscriptd_flush_job(uint32_t job_id);
 
 /*
- * slurmscriptd_reconfig - re-initialize slurmscriptd configuration
- *
- * This function acquires locks in slurmctld_lock_t, so none of those should be
- * locked upon calling this function.
- */
-extern void slurmscriptd_reconfig(void);
-
-/*
  * slurmscriptd_run_bb_lua
  * Tell slurmscriptd to run a specific function in the script in the
  * burst_buffer/lua plugin
@@ -70,6 +61,7 @@ extern void slurmscriptd_reconfig(void);
  * IN argc - number of arguments
  * IN argv - arguments for the script
  * IN timeout - timeout in seconds
+ * IN job_buf - packed job info, or NULL
  * OUT resp - response message from the script
  * OUT track_script_signalled - true if the script was killed by track_script,
  *                              false otherwise.
@@ -77,10 +69,35 @@ extern void slurmscriptd_reconfig(void);
  */
 extern int slurmscriptd_run_bb_lua(uint32_t job_id, char *function,
 				   uint32_t argc, char **argv, uint32_t timeout,
-				   char **resp, bool *track_script_signalled);
+				   buf_t *job_buf, char **resp,
+				   bool *track_script_signalled);
 
 extern int slurmscriptd_run_mail(char *script_path, uint32_t argc, char **argv,
 				 char **env, uint32_t timeout, char **resp);
+
+/*
+ * slurmscriptd_run_power
+ * Run a power script in slurmscriptd
+ * IN script_path - fulle path to the script
+ * IN hosts - Slurm hostlist expression to pass to the script
+ * IN features - node features to pass to the script
+ * IN job_id - job id for the script (may be zero if not applicable)
+ * IN script_name - description of the script
+ * IN timeout - timeout in seconds
+ * IN tmp_file_env_name - name of the environment variable in which the path of
+ *                        the temporary file is stored
+ * IN tmp_file_str - data to put in the temporary file
+ */
+extern void slurmscriptd_run_power(char *script_path, char *hosts,
+				   char *features, uint32_t job_id,
+				   char *script_name, uint32_t timeout,
+				   char *tmp_file_env_name, char *tmp_file_str);
+
+extern int slurmscriptd_run_reboot(char *script_path, uint32_t argc,
+				   char **argv);
+
+extern void slurmscriptd_run_resv(char *script_path, uint32_t argc, char **argv,
+				  uint32_t timeout, char *script_name);
 
 /*
  * slurmscriptd_run_prepilog

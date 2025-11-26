@@ -2,8 +2,7 @@
  *  slurmscriptd_protocol_pack.c - functions to pack and unpack structures
  *	for RPCs for slurmscriptd.
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC.
- *  Written by Marshall Garey <marshall@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -37,37 +36,26 @@
 
 #include "slurm/slurm_errno.h"
 
+#include "src/common/env.h"
 #include "src/common/log.h"
 #include "src/common/pack.h"
 #include "src/common/xmalloc.h"
 #include "src/slurmctld/slurmscriptd_protocol_pack.h"
 
-/* Use this when you don't know the count of char* in the array env */
-static void _pack_env(char **env, buf_t *buffer)
-{
-	uint32_t env_var_cnt = 0;
-
-	/*
-	 * Pack the environment. We don't know how many environment variables
-	 * there are, but we need to pack the number of environment variables
-	 * so we know how to unpack. So we have to loop env twice: once
-	 * to get the number of environment variables so we can pack that first,
-	 * then again to pack the environment.
-	 */
-	while (env && env[env_var_cnt])
-		env_var_cnt++;
-	packstr_array(env, env_var_cnt, buffer);
-}
-
 static void _pack_run_script(run_script_msg_t *script_msg, buf_t *buffer)
 {
 	packstr_array(script_msg->argv, script_msg->argc, buffer);
-	_pack_env(script_msg->env, buffer);
+	packstr_array(script_msg->env, envcount(script_msg->env), buffer);
+	/* Use packmem for extra_buf - treat it as data, not as a string */
+	pack32(script_msg->extra_buf_size, buffer);
+	packmem(script_msg->extra_buf, script_msg->extra_buf_size, buffer);
 	pack32(script_msg->job_id, buffer);
 	packstr(script_msg->script_name, buffer);
 	packstr(script_msg->script_path, buffer);
 	pack32(script_msg->script_type, buffer);
 	pack32(script_msg->timeout, buffer);
+	packstr(script_msg->tmp_file_env_name, buffer);
+	packstr(script_msg->tmp_file_str, buffer);
 }
 
 static int _unpack_run_script(run_script_msg_t **msg, buf_t *buffer)
@@ -80,11 +68,16 @@ static int _unpack_run_script(run_script_msg_t **msg, buf_t *buffer)
 
 	safe_unpackstr_array(&script_msg->argv, &script_msg->argc, buffer);
 	safe_unpackstr_array(&script_msg->env, &tmp32, buffer);
+	safe_unpack32(&script_msg->extra_buf_size, buffer);
+	safe_unpackmem_xmalloc(&script_msg->extra_buf,
+			       &script_msg->extra_buf_size, buffer);
 	safe_unpack32(&script_msg->job_id, buffer);
-	safe_unpackstr_xmalloc(&script_msg->script_name, &tmp32, buffer);
-	safe_unpackstr_xmalloc(&script_msg->script_path, &tmp32, buffer);
+	safe_unpackstr(&script_msg->script_name, buffer);
+	safe_unpackstr(&script_msg->script_path, buffer);
 	safe_unpack32(&script_msg->script_type, buffer);
 	safe_unpack32(&script_msg->timeout, buffer);
+	safe_unpackstr(&script_msg->tmp_file_env_name, buffer);
+	safe_unpackstr(&script_msg->tmp_file_str, buffer);
 
 	return rc;
 
@@ -114,8 +107,8 @@ static int _unpack_script_complete(script_complete_t **resp_msg,
 	*resp_msg = data;
 
 	safe_unpack32(&data->job_id, buffer);
-	safe_unpackstr_xmalloc(&data->resp_msg, &tmp32, buffer);
-	safe_unpackstr_xmalloc(&data->script_name, &tmp32, buffer);
+	safe_unpackstr(&data->resp_msg, buffer);
+	safe_unpackstr(&data->script_name, buffer);
 	safe_unpack32(&data->script_type, buffer);
 	safe_unpackbool(&data->signalled, buffer);
 	safe_unpack32(&tmp32, buffer);
@@ -149,36 +142,6 @@ unpack_error:
 	error("%s: Failed to unpack message", __func__);
 	xfree(data);
 	*resp_msg = NULL;
-	return SLURM_ERROR;
-}
-
-static void _pack_reconfig(reconfig_msg_t *msg, buf_t *buffer)
-{
-	pack64(msg->debug_flags, buffer);
-	packstr(msg->logfile, buffer);
-	pack16(msg->log_fmt, buffer);
-	pack16(msg->slurmctld_debug, buffer);
-	pack16(msg->syslog_debug, buffer);
-}
-
-static int _unpack_reconfig(reconfig_msg_t **msg, buf_t *buffer)
-{
-	uint32_t tmp32;
-	reconfig_msg_t *data = xmalloc(sizeof *data);
-	*msg = data;
-
-	safe_unpack64(&data->debug_flags, buffer);
-	safe_unpackstr_xmalloc(&data->logfile, &tmp32, buffer);
-	safe_unpack16(&data->log_fmt, buffer);
-	safe_unpack16(&data->slurmctld_debug, buffer);
-	safe_unpack16(&data->syslog_debug, buffer);
-
-	return SLURM_SUCCESS;
-
-unpack_error:
-	error("%s: Failed to unpack message", __func__);
-	slurmscriptd_free_reconfig(data);
-	*msg = NULL;
 	return SLURM_ERROR;
 }
 
@@ -239,9 +202,6 @@ extern int slurmscriptd_pack_msg(slurmscriptd_msg_t *msg, buf_t *buffer)
 	case SLURMSCRIPTD_REQUEST_FLUSH_JOB:
 		_pack_flush_job(msg->msg_data, buffer);
 		break;
-	case SLURMSCRIPTD_REQUEST_RECONFIG:
-		_pack_reconfig(msg->msg_data, buffer);
-		break;
 	case SLURMSCRIPTD_REQUEST_RUN_SCRIPT:
 		_pack_run_script(msg->msg_data, buffer);
 		break;
@@ -269,10 +229,9 @@ extern int slurmscriptd_pack_msg(slurmscriptd_msg_t *msg, buf_t *buffer)
 
 extern int slurmscriptd_unpack_msg(slurmscriptd_msg_t *msg, buf_t *buffer)
 {
-	uint32_t tmp32;
 	int rc = SLURM_SUCCESS;
 
-	safe_unpackstr_xmalloc(&msg->key, &tmp32, buffer);
+	safe_unpackstr(&msg->key, buffer);
 	switch (msg->msg_type) {
 	case SLURMSCRIPTD_REQUEST_FLUSH:
 		/* Nothing to unpack */
@@ -280,10 +239,6 @@ extern int slurmscriptd_unpack_msg(slurmscriptd_msg_t *msg, buf_t *buffer)
 	case SLURMSCRIPTD_REQUEST_FLUSH_JOB:
 		rc = _unpack_flush_job((flush_job_msg_t **)(&msg->msg_data),
 				       buffer);
-		break;
-	case SLURMSCRIPTD_REQUEST_RECONFIG:
-		rc = _unpack_reconfig((reconfig_msg_t **)(&msg->msg_data),
-				      buffer);
 		break;
 	case SLURMSCRIPTD_REQUEST_SCRIPT_COMPLETE:
 		rc = _unpack_script_complete(

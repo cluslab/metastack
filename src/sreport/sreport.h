@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  sreport.h - report generating tool for slurm accounting header file.
  *****************************************************************************
- *  Copyright (C) 2010-2015 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008 Lawrence Livermore National Security.
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
@@ -61,9 +61,9 @@
 #include "slurm/slurm.h"
 #include "slurm/slurmdb.h"
 
-#include "src/common/slurm_jobacct_gather.h"
+#include "src/interfaces/jobacct_gather.h"
 #include "src/common/parse_time.h"
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/xstring.h"
 #include "src/common/print_fields.h"
@@ -99,8 +99,7 @@ extern char *cluster_flag;
 extern char *tres_usage_str;
 extern bool user_case_norm;
 
-extern void slurmdb_report_print_time(print_field_t *field,
-			       uint64_t value, uint64_t total_time, int last);
+extern char *sreport_get_time_str(uint64_t value, uint64_t total_time);
 extern int parse_option_end(char *option);
 extern time_t sanity_check_endtime(time_t endtime);
 extern char *strip_quotes(char *option, int *increased);

@@ -47,10 +47,22 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
+#include "slurm/slurm.h"
+
 #include "src/common/read_config.h"
 #include "src/common/slurm_time.h"
 #include "src/common/xstring.h"
+
+#include "src/interfaces/data_parser.h"
+#include "src/interfaces/select.h"
+
 #include "src/squeue/squeue.h"
+
+typedef struct {
+	int job_ids_count;
+	slurm_selected_step_t *job_ids;
+	int index;
+} job_state_args_t;
 
 /********************
  * Global Variables *
@@ -61,12 +73,13 @@ int max_line_size;
 /*************
  * Functions *
  *************/
-extern int dump_data(int argc, char **argv);
-static int  _get_info(bool clear_old, bool log_cluster_name);
+static int _get_info(bool clear_old, bool log_cluster_name, int argc,
+		     char **argv);
 static int  _get_window_width( void );
-static int  _multi_cluster(List clusters);
-static int  _print_job(bool clear_old, bool log_cluster_name);
-static int  _print_job_steps( bool clear_old );
+static int _multi_cluster(List clusters, int argc, char **argv);
+static int _print_job(bool clear_old, bool log_cluster_name, int argc,
+		      char **argv);
+static int _print_job_steps(bool clear_old, int argc, char **argv);
 
 int
 main (int argc, char **argv)
@@ -74,7 +87,7 @@ main (int argc, char **argv)
 	log_options_t opts = LOG_OPTS_STDERR_ONLY ;
 	int error_code = SLURM_SUCCESS;
 
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 	log_init(xbasename(argv[0]), opts, SYSLOG_FACILITY_USER, NULL);
 	parse_command_line( argc, argv );
 	if (params.verbose) {
@@ -86,18 +99,15 @@ main (int argc, char **argv)
 	if (params.clusters)
 		working_cluster_rec = list_peek(params.clusters);
 
-	if (params.mimetype)
-		exit(dump_data(argc, argv));
-
 	while (1) {
 		if ((!params.no_header) &&
 		    (params.iterate || params.verbose || params.long_list))
 			print_date();
 
 		if (!params.clusters) {
-			if (_get_info(false, false))
+			if (_get_info(false, false, argc, argv))
 				error_code = 1;
-		} else if (_multi_cluster(params.clusters) != 0)
+		} else if (_multi_cluster(params.clusters, argc, argv))
 			error_code = 1;
 
 		if ( params.iterate ) {
@@ -113,9 +123,9 @@ main (int argc, char **argv)
 		exit (0);
 }
 
-static int _multi_cluster(List clusters)
+static int _multi_cluster(List clusters, int argc, char **argv)
 {
-	ListIterator itr;
+	list_itr_t *itr;
 	bool log_cluster_name = false, first = true;
 	int rc = 0, rc2;
 
@@ -130,7 +140,7 @@ static int _multi_cluster(List clusters)
 				printf("\n");
 			printf("CLUSTER: %s\n", working_cluster_rec->name);
 		}
-		rc2 = _get_info(true, log_cluster_name);
+		rc2 = _get_info(true, log_cluster_name, argc, argv);
 		if (rc2)
 			rc = 1;
 	}
@@ -139,17 +149,18 @@ static int _multi_cluster(List clusters)
 	return rc;
 }
 
-static int _get_info(bool clear_old, bool log_cluster_name )
+static int _get_info(bool clear_old, bool log_cluster_name, int argc,
+		     char **argv)
 {
 	if ( params.step_flag ){
-		return _print_job_steps( clear_old );
+		return _print_job_steps(clear_old, argc, argv);
 	}else{
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		if(update_client_port(params.cache_query, params.nocache_query)){
 			return SLURM_ERROR;
 		}
 #endif
-		return _print_job(clear_old, log_cluster_name);
+		return _print_job(clear_old, log_cluster_name, argc, argv);
 	}
 }
 
@@ -176,9 +187,125 @@ _get_window_width( void )
 	return width;
 }
 
+static int _foreach_add_job(void *x, void *arg)
+{
+	job_state_args_t *args = arg;
+	squeue_job_step_t *job_step_id = x;
+	slurm_selected_step_t *id = &args->job_ids[args->index];
+
+	*id = (slurm_selected_step_t) SLURM_SELECTED_STEP_INITIALIZER;
+	/* FIXME: squeue_job_step_t doesn't include HetComponent */
+	id->array_task_id = job_step_id->array_id;
+	id->step_id = job_step_id->step_id;
+	args->index++;
+
+	return SLURM_SUCCESS;
+}
+
+static void _populate_array_job_states(job_state_response_job_t *src,
+				       slurm_job_info_t *job)
+{
+	xassert(src->array_job_id);
+
+	job->array_job_id = src->array_job_id;
+	job->array_task_id = src->array_task_id;
+
+	if (!src->array_task_id_bitmap)
+		return;
+
+	job->array_bitmap = bit_copy(src->array_task_id_bitmap);
+	job->array_task_str = bit_fmt_full(job->array_bitmap);
+}
+
+static int _query_job_states(int argc, char **argv)
+{
+	int rc = SLURM_SUCCESS;
+	job_state_response_msg_t *jsr = NULL;
+	job_state_args_t args = { 0 };
+	job_info_msg_t *job_msg = NULL;
+
+	if (params.job_list) {
+		args.job_ids_count = list_count(params.job_list);
+		args.job_ids = xcalloc(args.job_ids_count,
+				       sizeof(*args.job_ids));
+
+		if (list_for_each_ro(params.job_list, _foreach_add_job,
+				     &args) < 0)
+			fatal("list job_ids should not fail");
+	}
+
+	if ((rc = slurm_load_job_state(args.job_ids_count, args.job_ids, &jsr)))
+		goto cleanup;
+
+	if (params.mimetype) {
+		openapi_resp_job_state_t resp = {
+			.jobs = jsr,
+		};
+
+		if (is_data_parser_deprecated(params.data_parser))
+			rc = error("%s does not support dumping for job states",
+				   params.data_parser);
+		else
+			DATA_DUMP_CLI(OPENAPI_JOB_STATE_RESP, resp, argc, argv,
+				      NULL, params.mimetype, params.data_parser,
+				      rc);
+		goto cleanup;
+	}
+
+	if (!params.format && !params.format_long)
+		params.format = "%.18i %.2t";
+
+	if (!params.format_list) {
+		if (params.format)
+			rc = parse_format(params.format);
+		else if (params.format_long)
+			rc = parse_long_format(params.format_long);
+
+		if (rc)
+			goto cleanup;
+	}
+
+	job_msg = xmalloc(sizeof(*job_msg));
+	if (jsr && (jsr->jobs_count > 0)) {
+		job_msg->record_count = jsr->jobs_count;
+		job_msg->job_array = xcalloc(job_msg->record_count,
+					     sizeof(*job_msg->job_array));
+
+		for (int i = 0; i < jsr->jobs_count; i++) {
+			job_state_response_job_t *src = &jsr->jobs[i];
+			slurm_job_info_t *job = &job_msg->job_array[i];
+
+			job->job_id = src->job_id;
+
+			if (src->array_job_id) {
+				_populate_array_job_states(src, job);
+			} else if ((job->het_job_id = src->het_job_id)) {
+				job->het_job_offset =
+					(src->job_id - job->het_job_id);
+				job->array_task_id = NO_VAL;
+			} else {
+				job->array_task_id = NO_VAL;
+			}
+
+			job->job_state = src->state;
+		}
+	}
+
+	print_jobs_array(job_msg->job_array, job_msg->record_count,
+			 params.format_list);
+
+cleanup:
+#ifdef MEMORY_LEAK_DEBUG
+	slurm_free_job_info_msg(job_msg);
+	xfree(args.job_ids);
+	slurm_free_job_state_response_msg(jsr);
+#endif
+	return rc;
+}
 
 /* _print_job - print the specified job's information */
-static int _print_job(bool clear_old, bool log_cluster_name)
+static int _print_job(bool clear_old, bool log_cluster_name, int argc,
+		      char **argv)
 {
 	static job_info_msg_t *old_job_ptr;
 	job_info_msg_t *new_job_ptr = NULL;
@@ -195,7 +322,7 @@ static int _print_job(bool clear_old, bool log_cluster_name)
 		show_flags |= SHOW_FEDERATION | SHOW_SIBLING;
 
 	/* We require detail data when CPUs are requested */
-	if (params.format && strstr(params.format, "C"))
+	if ((params.format && strstr(params.format, "C")) || params.detail_flag)
 		show_flags |= SHOW_DETAIL;
 
 	if (old_job_ptr) {
@@ -222,6 +349,8 @@ static int _print_job(bool clear_old, bool log_cluster_name)
 			error_code = SLURM_SUCCESS;
 			new_job_ptr = old_job_ptr;
 		}
+	} else if (params.only_state) {
+		return (error_code = _query_job_states(argc, argv));
 	} else if (params.job_id) {
 		error_code = slurm_load_job(&new_job_ptr, params.job_id,
 					    show_flags);
@@ -238,6 +367,30 @@ static int _print_job(bool clear_old, bool log_cluster_name)
 		return SLURM_ERROR;
 	}
 	old_job_ptr = new_job_ptr;
+
+	if (params.mimetype) {
+		int rc;
+		squeue_filter_jobs_for_json(new_job_ptr);
+		openapi_resp_job_info_msg_t resp = {
+			.jobs = new_job_ptr,
+			.last_backfill = new_job_ptr->last_backfill,
+			.last_update = new_job_ptr->last_update,
+		};
+
+		if (is_data_parser_deprecated(params.data_parser))
+			DATA_DUMP_CLI_DEPRECATED(JOB_INFO_MSG, *new_job_ptr,
+						 "jobs", argc, argv, NULL,
+						 params.mimetype, rc);
+		else
+			DATA_DUMP_CLI(OPENAPI_JOB_INFO_RESP, resp, argc, argv,
+				      NULL, params.mimetype, params.data_parser,
+				      rc);
+#ifdef MEMORY_LEAK_DEBUG
+		slurm_free_job_info_msg(new_job_ptr);
+#endif
+		return rc;
+	}
+
 	if (params.job_id || params.user_id)
 		old_job_ptr->last_update = (time_t) 0;
 
@@ -277,8 +430,7 @@ static int _print_job(bool clear_old, bool log_cluster_name)
 
 
 /* _print_job_step - print the specified job step's information */
-static int
-_print_job_steps( bool clear_old )
+static int _print_job_steps(bool clear_old, int argc, char **argv)
 {
 	int error_code;
 	static job_step_info_response_msg_t * old_step_ptr = NULL;
@@ -312,6 +464,29 @@ _print_job_steps( bool clear_old )
 		return SLURM_ERROR;
 	}
 	old_step_ptr = new_step_ptr;
+
+	if (params.mimetype) {
+		int rc;
+		openapi_resp_job_step_info_msg_t resp = {
+			.steps = new_step_ptr,
+			.last_update = new_step_ptr->last_update,
+		};
+
+		if (is_data_parser_deprecated(params.data_parser))
+			DATA_DUMP_CLI_DEPRECATED(STEP_INFO_MSG_PTR,
+						 new_step_ptr, "steps", argc,
+						 argv, NULL, params.mimetype,
+						 rc);
+		else
+			DATA_DUMP_CLI(OPENAPI_STEP_INFO_MSG, resp, argc, argv,
+				      NULL, params.mimetype, params.data_parser,
+				      rc);
+
+#ifdef MEMORY_LEAK_DEBUG
+		slurm_free_job_step_info_response_msg(new_step_ptr);
+#endif
+		return rc;
+	}
 
 	if (params.verbose) {
 		printf ("last_update_time=%ld records=%u\n",

@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  run_command.c - run a command asynchronously and return output
  *****************************************************************************
- *  Copyright (C) 2014-2017 SchedMD LLC.
- *  Written by Morris Jette <jette@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -47,7 +46,7 @@
 #include <unistd.h>
 #include <inttypes.h>		/* for uint16_t, uint32_t definitions */
 
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__)
+#ifndef POLLRDHUP
 #define POLLRDHUP POLLHUP
 #endif
 
@@ -62,6 +61,7 @@
 static int command_shutdown = 0;
 static int child_proc_count = 0;
 static pthread_mutex_t proc_count_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 static int child_proc_watch_dog_count = 0;
 static pthread_mutex_t proc_watch_dog_count_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -165,12 +165,60 @@ static void _kill_pg(pid_t pid)
 	killpg(pid, SIGKILL);
 }
 
+static void _run_command_child(run_command_args_t *args, int write_fd)
+{
+	int devnull;
+
+	if ((devnull = open("/dev/null", O_RDWR)) < 0) {
+		/*
+		 * We must avoid calling non-async-signal-safe functions at
+		 * this point (like error() or similar), so we won't log
+		 * anything now. If we want to log we could use write().
+		 */
+		_exit(127);
+	}
+	dup2(devnull, STDIN_FILENO);
+	dup2(write_fd, STDERR_FILENO);
+	dup2(write_fd, STDOUT_FILENO);
+	run_command_child_pre_exec();
+	run_command_child_exec(args->script_path, args->script_argv, args->env);
+}
+
+extern void run_command_child_exec(const char *path, char **argv, char **env)
+{
+	if (!env)
+		execv(path, argv);
+	else
+		execve(path, argv, env);
+	error("%s: execv(%s): %m", __func__, path);
+	_exit(127);
+}
+
+extern void run_command_child_pre_exec(void)
+{
+	closeall(3);
+	/* coverity[leaked_handle] */
+	setpgid(0, 0);
+	/*
+	 * sync euid -> ruid, egid -> rgid to avoid issues with fork'd
+	 * processes using access() or similar calls.
+	 */
+	if (setresgid(getegid(), getegid(), -1)) {
+		error("%s: Unable to setresgid()", __func__);
+		_exit(127);
+	}
+	if (setresuid(geteuid(), geteuid(), -1)) {
+		error("%s: Unable to setresuid()", __func__);
+		_exit(127);
+	}
+}
+
 extern char *run_command(run_command_args_t *args)
 {
-	int i, new_wait, resp_size = 0, resp_offset = 0;
 	pid_t cpid;
 	char *resp = NULL;
 	int pfd[2] = { -1, -1 };
+	bool free_argv = false;
 
 	if ((args->script_path == NULL) || (args->script_path[0] == '\0')) {
 		error("%s: no script specified", __func__);
@@ -192,169 +240,170 @@ extern char *run_command(run_command_args_t *args)
 		resp = xstrdup("Run command failed - configuration error");
 		return resp;
 	}
-	if (!args->turnoff_output) {
-		if (pipe(pfd) != 0) {
-			error("%s: pipe(): %m", __func__);
-			*(args->status) = 127;
-			resp = xstrdup("System error");
-			return resp;
-		}
+	if (pipe(pfd) != 0) {
+		error("%s: pipe(): %m", __func__);
+		*(args->status) = 127;
+		resp = xstrdup("System error");
+		return resp;
+	}
+	if (!(args->script_argv)) {
+		args->script_argv = xcalloc(2, sizeof(char *));
+		args->script_argv[0] = xstrdup(args->script_path);
+		free_argv = true;
 	}
 	slurm_mutex_lock(&proc_count_mutex);
 	child_proc_count++;
 	slurm_mutex_unlock(&proc_count_mutex);
 	if ((cpid = fork()) == 0) {
-		/*
-		 * container_g_join() needs to be called in the child process
-		 * to avoid a race condition if this process makes a file
-		 * before we add the pid to the container in the parent.
-		 */
-		if (args->container_join &&
-		    ((*(args->container_join))(args->job_id, getuid()) !=
-		     SLURM_SUCCESS))
-			error("container_g_join(%u): %m", args->job_id);
-
-		if (!args->turnoff_output) {
-			int devnull;
-			if ((devnull = open("/dev/null", O_RDWR)) < 0) {
-				error("%s: Unable to open /dev/null: %m",
-				      __func__);
-				_exit(127);
-			}
-			dup2(devnull, STDIN_FILENO);
-			dup2(pfd[1], STDERR_FILENO);
-			dup2(pfd[1], STDOUT_FILENO);
-			closeall(3);
-		} else {
-			closeall(0);
-		}
-		setpgid(0, 0);
-		/*
-		 * sync euid -> ruid, egid -> rgid to avoid issues with fork'd
-		 * processes using access() or similar calls.
-		 */
-		if (setresgid(getegid(), getegid(), -1)) {
-			error("%s: Unable to setresgid()", __func__);
-			_exit(127);
-		}
-		if (setresuid(geteuid(), geteuid(), -1)) {
-			error("%s: Unable to setresuid()", __func__);
-			_exit(127);
-		}
-		if (!args->env)
-			execv(args->script_path, args->script_argv);
-		else
-			execve(args->script_path, args->script_argv, args->env);
-		error("%s: execv(%s): %m", __func__, args->script_path);
-		_exit(127);
+		_run_command_child(args, pfd[1]);
+		/* We should never get here. */
 	} else if (cpid < 0) {
-		if (!args->turnoff_output) {
-			close(pfd[0]);
-			close(pfd[1]);
-		}
+		close(pfd[0]);
+		close(pfd[1]);
 		error("%s: fork(): %m", __func__);
 		slurm_mutex_lock(&proc_count_mutex);
 		child_proc_count--;
 		slurm_mutex_unlock(&proc_count_mutex);
-	} else if (!args->turnoff_output) {
-		bool send_terminate = true;
-		struct pollfd fds;
-		struct timeval tstart;
-		resp_size = 1024;
-		resp = xmalloc(resp_size);
+	} else {
 		close(pfd[1]);
-		gettimeofday(&tstart, NULL);
 		if (args->tid)
 			track_script_reset_cpid(args->tid, cpid);
-		while (1) {
-			if (command_shutdown) {
-				error("%s: killing %s operation on shutdown",
-				      __func__, args->script_type);
-				break;
-			}
-
-			/*
-			 * Pass zero as the status to just see if this script
-			 * exists in track_script - if not, then we need to bail
-			 * since this script was killed.
-			 */
-			if (args->tid &&
-			    track_script_killed(args->tid, 0, false))
-				break;
-
-			fds.fd = pfd[0];
-			fds.events = POLLIN | POLLHUP | POLLRDHUP;
-			fds.revents = 0;
-			if (args->max_wait <= 0) {
-				new_wait = MAX_POLL_WAIT;
-			} else {
-				new_wait = args->max_wait - _tot_wait(&tstart);
-				if (new_wait <= 0) {
-					error("%s: %s poll timeout @ %d msec",
-					      __func__, args->script_type,
-					      args->max_wait);
-					if (args->timed_out)
-						*(args->timed_out) = true;
-					break;
-				}
-				new_wait = MIN(new_wait, MAX_POLL_WAIT);
-			}
-			i = poll(&fds, 1, new_wait);
-			if (i == 0) {
-				continue;
-			} else if (i < 0) {
-				error("%s: %s poll:%m",
-				      __func__, args->script_type);
-				break;
-			}
-			if ((fds.revents & POLLIN) == 0) {
-				send_terminate = false;
-				break;
-			}
-			i = read(pfd[0], resp + resp_offset,
-				 resp_size - resp_offset);
-			if (i == 0) {
-				send_terminate = false;
-				break;
-			} else if (i < 0) {
-				if (errno == EAGAIN)
-					continue;
-				send_terminate = false;
-				error("%s: read(%s): %m", __func__,
-				      args->script_path);
-				break;
-			} else {
-				resp_offset += i;
-				if (resp_offset + 1024 >= resp_size) {
-					resp_size *= 2;
-					resp = xrealloc(resp, resp_size);
-				}
-			}
-		}
-		/* Kill immediately if the script isn't exiting normally. */
-		if (send_terminate) {
-			_kill_pg(cpid);
-			waitpid(cpid, args->status, 0);
-		} else {
-			/*
-			 * If the STDOUT is closed from the script we may reach
-			 * this point without any input in pfd[0], so just wait
-			 * for the process here until args->max_wait.
-			 */
-			run_command_waitpid_timeout(args->script_type,
-						    cpid, args->status,
-						    args->max_wait,
-						    _tot_wait(&tstart),
-						    args->tid, args->timed_out);
-		}
+		resp = run_command_poll_child(cpid,
+					      args->max_wait,
+					      args->orphan_on_shutdown,
+					      pfd[0],
+					      args->script_path,
+					      args->script_type,
+					      args->tid,
+					      args->status,
+					      args->timed_out);
 		close(pfd[0]);
 		slurm_mutex_lock(&proc_count_mutex);
 		child_proc_count--;
 		slurm_mutex_unlock(&proc_count_mutex);
+	}
+	if (free_argv) {
+		xfree(args->script_argv[0]);
+		xfree(args->script_argv);
+	}
+
+	return resp;
+}
+
+extern char *run_command_poll_child(int cpid,
+				    int max_wait,
+				    bool orphan_on_shutdown,
+				    int read_fd,
+				    const char *script_path,
+				    const char *script_type,
+				    pthread_t tid,
+				    int *status,
+				    bool *timed_out)
+{
+	bool send_terminate = true;
+	struct pollfd fds;
+	struct timeval tstart;
+	int resp_size = 1024, resp_offset = 0;
+	int new_wait;
+	int i;
+	char *resp;
+
+	resp = xmalloc(resp_size);
+	gettimeofday(&tstart, NULL);
+
+	while (1) {
+		if (command_shutdown) {
+			error("%s: %s %s operation on shutdown",
+			      __func__,
+			      orphan_on_shutdown ?
+			      "orphaning" : "killing",
+			      script_type);
+			break;
+		}
+
+		/*
+		 * Pass zero as the status to just see if this script
+		 * exists in track_script - if not, then we need to bail
+		 * since this script was killed.
+		 */
+		if (tid &&
+		    track_script_killed(tid, 0, false))
+			break;
+
+		fds.fd = read_fd;
+		fds.events = POLLIN | POLLHUP | POLLRDHUP;
+		fds.revents = 0;
+		if (max_wait <= 0) {
+			new_wait = MAX_POLL_WAIT;
+		} else {
+			new_wait = max_wait - _tot_wait(&tstart);
+			if (new_wait <= 0) {
+				error("%s: %s poll timeout @ %d msec",
+				      __func__, script_type,
+				      max_wait);
+				if (timed_out)
+					*(timed_out) = true;
+				break;
+			}
+			new_wait = MIN(new_wait, MAX_POLL_WAIT);
+		}
+		i = poll(&fds, 1, new_wait);
+
+		if (i == 0) {
+			continue;
+		} else if (i < 0) {
+			if ((errno == EAGAIN) || (errno == EINTR))
+				continue;
+			error("%s: %s poll:%m",
+			      __func__, script_type);
+			break;
+		}
+		if ((fds.revents & POLLIN) == 0) {
+			send_terminate = false;
+			break;
+		}
+		i = read(read_fd, resp + resp_offset,
+			 resp_size - resp_offset);
+		if (i == 0) {
+			send_terminate = false;
+			break;
+		} else if (i < 0) {
+			if (errno == EAGAIN)
+				continue;
+			send_terminate = false;
+			error("%s: read(%s): %m",
+			      __func__,
+			      script_path);
+			break;
+		} else {
+			resp_offset += i;
+			if (resp_offset + 1024 >= resp_size) {
+				resp_size *= 2;
+				resp = xrealloc(resp, resp_size);
+			}
+		}
+	}
+	if (command_shutdown && orphan_on_shutdown) {
+		/* Don't kill the script on shutdown */
+		*status = 0;
+	} else if (send_terminate) {
+		/*
+		 * Kill immediately if the script isn't exiting
+		 * normally.
+		 */
+		_kill_pg(cpid);
+		waitpid(cpid, status, 0);
 	} else {
-		if (args->tid)
-			track_script_reset_cpid(args->tid, cpid);
-		waitpid(cpid, args->status, 0);
+		/*
+		 * If the STDOUT is closed from the script we may reach
+		 * this point without any input in read_fd, so just wait
+		 * for the process here until max_wait.
+		 */
+		run_command_waitpid_timeout(script_type,
+					    cpid, status,
+					    max_wait,
+					    _tot_wait(&tstart),
+					    tid, timed_out);
 	}
 
 	return resp;
@@ -410,7 +459,7 @@ extern int run_watch_dog_command(run_command_args_t *args, pid_t* cpid, gid_t gi
 	if(args == NULL) {
 	    return -1;
 	}
-	if ((args->script_path == NULL) || (args->script_path[0] == '\0')) {
+	if ((args == NULL) || (args->script_path == NULL) || (args->script_path[0] == '\0')) {
 		error("%s: no script specified", __func__);
 		//*(args->status) = 127;
 		return -1;
@@ -437,10 +486,10 @@ extern int run_watch_dog_command(run_command_args_t *args, pid_t* cpid, gid_t gi
 		* to avoid a race condition if this process makes a file
 		* before we add the pid to the container in the parent.
 		*/
-		if (args->container_join &&
-			((*(args->container_join))(args->job_id, getuid()) !=
-				SLURM_SUCCESS))
-			error("container_g_join(%u): %m", args->job_id);
+		// if (args->container_join &&
+		// 	((*(args->container_join))(args->job_id, getuid()) !=
+		// 		SLURM_SUCCESS))
+		// 	error("container_g_join(%u): %m", args->job_id);
 	
 		closeall(0);
 		setpgid(0, 0);
@@ -498,7 +547,7 @@ extern int run_command_waitpid_timeout(
 		if (rc < 0) {
 			if (errno == EINTR)
 				continue;
-			error("waitpid: %m");
+			error("%s: waitpid(%d): %m", __func__, pid);
 			return -1;
 		} else if (command_shutdown) {
 			error("%s: killing %s on shutdown",

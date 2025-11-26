@@ -3,8 +3,7 @@
 # Purpose: Test of Slurm functionality
 #          Test some invalid combinations of --gpu options
 ############################################################################
-# Copyright (C) 2018 SchedMD LLC
-# Written by Morris Jette
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -71,7 +70,7 @@ if {[regexp "Submitted batch job ($number)" $output - job_id]} {
 # Specify inconsistent --cpus-per-task and --gpus-per-task/--cpus-per-gpu
 #
 set output [run_command_output -xfail -subtest "$sbatch --gpus-per-task=1 --cpus-per-gpu=1 --cpus-per-task=2 -N1 --output=/dev/null -t1 --wrap $bin_hostname"]
-subtest {[regexp "sbatch: error: --cpus-per-gpu is mutually exclusive with --cpus-per-task" $output]} "Job should be rejected at submit time"
+subtest {[regexp "sbatch: fatal: --cpus-per-task, --tres-per-task=cpu:#, and --cpus-per-gpu are mutually exclusive" $output]} "Job should be rejected at submit time"
 if {[regexp "Submitted batch job ($number)" $output - job_id]} {
 	lappend job_id_list $job_id
 }

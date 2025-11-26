@@ -69,7 +69,28 @@ extern char *make_full_path(const char *);
 
 /* Wrapper functions for name and address resolution routines.
  */
-extern struct addrinfo *get_addr_info(const char *hostname, uint16_t port);
+
+/*
+ * Resolve hostname:port pair with getaddrinfo()
+ * IN hostname - string with hostname or NULL for all interfaces
+ * IN serv - string with port number or service name
+ * RET NULL on resolution failure or pointer to array of addresses
+ */
+extern struct addrinfo *xgetaddrinfo(const char *hostname, const char *serv);
+/*
+ * Resolve hostname:port pair with getaddrinfo() where port is numeric
+ * IN hostname - string with hostname or NULL for all interfaces
+ * IN port - port number
+ * RET NULL on resolution failure or pointer to array of addresses
+ */
+extern struct addrinfo *xgetaddrinfo_port(const char *hostname,
+					  uint16_t port);
 extern char *xgetnameinfo(struct sockaddr *addr, socklen_t addrlen);
+
+extern int host_has_addr_family(const char *hostname, const char *srv,
+				bool *ipv4, bool *ipv6);
+/* Functions responsible for cleanup of getnameinfo cache */
+extern void getnameinfo_cache_destroy(void *obj);
+extern void getnameinfo_cache_purge(void);
 
 #endif /* !_UTIL_NET_H */

@@ -89,14 +89,17 @@ build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
 check_PROGRAMS = $(am__EXEEXT_2)
-TESTS = job-resources-test$(EXEEXT) log-test$(EXEEXT) \
-	pack-test$(EXEEXT) $(am__EXEEXT_1)
+TESTS = log-test$(EXEEXT) $(am__EXEEXT_1)
 @HAVE_CHECK_TRUE@am__append_1 = xhash-test \
 @HAVE_CHECK_TRUE@	 data-test \
+@HAVE_CHECK_TRUE@	 serializer-test \
 @HAVE_CHECK_TRUE@	 slurm_opt-test \
 @HAVE_CHECK_TRUE@	 xstring-test \
 @HAVE_CHECK_TRUE@	 parse_time-test \
-@HAVE_CHECK_TRUE@	 reverse_tree-test
+@HAVE_CHECK_TRUE@	 job-resources-test \
+@HAVE_CHECK_TRUE@	 pack-test \
+@HAVE_CHECK_TRUE@	 reverse_tree-test \
+@HAVE_CHECK_TRUE@	 xahash-test
 
 subdir = testsuite/slurm_unit/common
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -105,6 +108,7 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/ax_gcc_builtin.m4 \
 	$(top_srcdir)/auxdir/ax_lib_hdf5.m4 \
 	$(top_srcdir)/auxdir/ax_pthread.m4 \
+	$(top_srcdir)/auxdir/gtk-2.0.m4 \
 	$(top_srcdir)/auxdir/libtool.m4 \
 	$(top_srcdir)/auxdir/ltoptions.m4 \
 	$(top_srcdir)/auxdir/ltsugar.m4 \
@@ -115,12 +119,10 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/x_ac_affinity.m4 \
 	$(top_srcdir)/auxdir/x_ac_c99.m4 \
 	$(top_srcdir)/auxdir/x_ac_cgroup.m4 \
-	$(top_srcdir)/auxdir/x_ac_cray.m4 \
 	$(top_srcdir)/auxdir/x_ac_curl.m4 \
 	$(top_srcdir)/auxdir/x_ac_databases.m4 \
 	$(top_srcdir)/auxdir/x_ac_debug.m4 \
 	$(top_srcdir)/auxdir/x_ac_deprecated.m4 \
-	$(top_srcdir)/auxdir/x_ac_dlfcn.m4 \
 	$(top_srcdir)/auxdir/x_ac_env.m4 \
 	$(top_srcdir)/auxdir/x_ac_freeipmi.m4 \
 	$(top_srcdir)/auxdir/x_ac_hpe_slingshot.m4 \
@@ -132,19 +134,21 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/x_ac_lz4.m4 \
 	$(top_srcdir)/auxdir/x_ac_man2html.m4 \
 	$(top_srcdir)/auxdir/x_ac_munge.m4 \
-	$(top_srcdir)/auxdir/x_ac_netloc.m4 \
 	$(top_srcdir)/auxdir/x_ac_nvml.m4 \
 	$(top_srcdir)/auxdir/x_ac_ofed.m4 \
 	$(top_srcdir)/auxdir/x_ac_oneapi.m4 \
 	$(top_srcdir)/auxdir/x_ac_pam.m4 \
+	$(top_srcdir)/auxdir/x_ac_pkgconfig.m4 \
 	$(top_srcdir)/auxdir/x_ac_pmix.m4 \
 	$(top_srcdir)/auxdir/x_ac_printf_null.m4 \
 	$(top_srcdir)/auxdir/x_ac_ptrace.m4 \
+	$(top_srcdir)/auxdir/x_ac_rdkafka.m4 \
 	$(top_srcdir)/auxdir/x_ac_readline.m4 \
-	$(top_srcdir)/auxdir/x_ac_rrdtool.m4 \
 	$(top_srcdir)/auxdir/x_ac_rsmi.m4 \
+	$(top_srcdir)/auxdir/x_ac_s2n.m4 \
 	$(top_srcdir)/auxdir/x_ac_selinux.m4 \
 	$(top_srcdir)/auxdir/x_ac_setproctitle.m4 \
+	$(top_srcdir)/auxdir/x_ac_sview.m4 \
 	$(top_srcdir)/auxdir/x_ac_systemd.m4 \
 	$(top_srcdir)/auxdir/x_ac_ucx.m4 \
 	$(top_srcdir)/auxdir/x_ac_uid_gid_size.m4 \
@@ -159,16 +163,17 @@ CONFIG_HEADER = $(top_builddir)/config.h \
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 @HAVE_CHECK_TRUE@am__EXEEXT_1 = xhash-test$(EXEEXT) data-test$(EXEEXT) \
+@HAVE_CHECK_TRUE@	serializer-test$(EXEEXT) \
 @HAVE_CHECK_TRUE@	slurm_opt-test$(EXEEXT) xstring-test$(EXEEXT) \
 @HAVE_CHECK_TRUE@	parse_time-test$(EXEEXT) \
-@HAVE_CHECK_TRUE@	reverse_tree-test$(EXEEXT)
-am__EXEEXT_2 = job-resources-test$(EXEEXT) log-test$(EXEEXT) \
-	pack-test$(EXEEXT) $(am__EXEEXT_1)
+@HAVE_CHECK_TRUE@	job-resources-test$(EXEEXT) \
+@HAVE_CHECK_TRUE@	pack-test$(EXEEXT) reverse_tree-test$(EXEEXT) \
+@HAVE_CHECK_TRUE@	xahash-test$(EXEEXT)
+am__EXEEXT_2 = log-test$(EXEEXT) $(am__EXEEXT_1)
 data_test_SOURCES = data-test.c
 data_test_OBJECTS = data_test-data-test.$(OBJEXT)
 am__DEPENDENCIES_1 =
-am__DEPENDENCIES_2 = $(top_builddir)/src/api/libslurm.o \
-	$(am__DEPENDENCIES_1)
+am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1)
 @HAVE_CHECK_TRUE@data_test_DEPENDENCIES = $(am__DEPENDENCIES_2)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -178,20 +183,24 @@ data_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(data_test_CFLAGS) \
 	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 job_resources_test_SOURCES = job-resources-test.c
-job_resources_test_OBJECTS = job-resources-test.$(OBJEXT)
-job_resources_test_LDADD = $(LDADD)
-job_resources_test_DEPENDENCIES = $(top_builddir)/src/api/libslurm.o \
-	$(am__DEPENDENCIES_1)
+job_resources_test_OBJECTS =  \
+	job_resources_test-job-resources-test.$(OBJEXT)
+@HAVE_CHECK_TRUE@job_resources_test_DEPENDENCIES =  \
+@HAVE_CHECK_TRUE@	$(am__DEPENDENCIES_2)
+job_resources_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(job_resources_test_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+	$(LDFLAGS) -o $@
 log_test_SOURCES = log-test.c
 log_test_OBJECTS = log-test.$(OBJEXT)
 log_test_LDADD = $(LDADD)
-log_test_DEPENDENCIES = $(top_builddir)/src/api/libslurm.o \
-	$(am__DEPENDENCIES_1)
+log_test_DEPENDENCIES = $(am__DEPENDENCIES_1)
 pack_test_SOURCES = pack-test.c
-pack_test_OBJECTS = pack-test.$(OBJEXT)
-pack_test_LDADD = $(LDADD)
-pack_test_DEPENDENCIES = $(top_builddir)/src/api/libslurm.o \
-	$(am__DEPENDENCIES_1)
+pack_test_OBJECTS = pack_test-pack-test.$(OBJEXT)
+@HAVE_CHECK_TRUE@pack_test_DEPENDENCIES = $(am__DEPENDENCIES_2)
+pack_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(pack_test_CFLAGS) \
+	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 parse_time_test_SOURCES = parse_time-test.c
 parse_time_test_OBJECTS = parse_time_test-parse_time-test.$(OBJEXT)
 @HAVE_CHECK_TRUE@parse_time_test_DEPENDENCIES = $(am__DEPENDENCIES_2)
@@ -208,6 +217,13 @@ reverse_tree_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(reverse_tree_test_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
 	-o $@
+serializer_test_SOURCES = serializer-test.c
+serializer_test_OBJECTS = serializer_test-serializer-test.$(OBJEXT)
+@HAVE_CHECK_TRUE@serializer_test_DEPENDENCIES = $(am__DEPENDENCIES_2)
+serializer_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(serializer_test_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
+	-o $@
 slurm_opt_test_SOURCES = slurm_opt-test.c
 slurm_opt_test_OBJECTS = slurm_opt_test-slurm_opt-test.$(OBJEXT)
 @HAVE_CHECK_TRUE@slurm_opt_test_DEPENDENCIES = $(am__DEPENDENCIES_2)
@@ -215,6 +231,12 @@ slurm_opt_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(slurm_opt_test_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o \
 	$@
+xahash_test_SOURCES = xahash-test.c
+xahash_test_OBJECTS = xahash_test-xahash-test.$(OBJEXT)
+@HAVE_CHECK_TRUE@xahash_test_DEPENDENCIES = $(am__DEPENDENCIES_2)
+xahash_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(xahash_test_CFLAGS) \
+	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 xhash_test_SOURCES = xhash-test.c
 xhash_test_OBJECTS = xhash_test-xhash-test.$(OBJEXT)
 @HAVE_CHECK_TRUE@xhash_test_DEPENDENCIES = $(am__DEPENDENCIES_2)
@@ -243,11 +265,13 @@ DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir) -I$(top_builddir)/slurm
 depcomp = $(SHELL) $(top_srcdir)/auxdir/depcomp
 am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/data_test-data-test.Po \
-	./$(DEPDIR)/job-resources-test.Po ./$(DEPDIR)/log-test.Po \
-	./$(DEPDIR)/pack-test.Po \
+	./$(DEPDIR)/job_resources_test-job-resources-test.Po \
+	./$(DEPDIR)/log-test.Po ./$(DEPDIR)/pack_test-pack-test.Po \
 	./$(DEPDIR)/parse_time_test-parse_time-test.Po \
 	./$(DEPDIR)/reverse_tree_test-reverse_tree-test.Po \
+	./$(DEPDIR)/serializer_test-serializer-test.Po \
 	./$(DEPDIR)/slurm_opt_test-slurm_opt-test.Po \
+	./$(DEPDIR)/xahash_test-xahash-test.Po \
 	./$(DEPDIR)/xhash_test-xhash-test.Po \
 	./$(DEPDIR)/xstring_test-xstring-test.Po
 am__mv = mv -f
@@ -270,8 +294,8 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = data-test.c job-resources-test.c log-test.c pack-test.c \
-	parse_time-test.c reverse_tree-test.c slurm_opt-test.c \
-	xhash-test.c xstring-test.c
+	parse_time-test.c reverse_tree-test.c serializer-test.c \
+	slurm_opt-test.c xahash-test.c xhash-test.c xstring-test.c
 RECURSIVE_TARGETS = all-recursive check-recursive cscopelist-recursive \
 	ctags-recursive dvi-recursive html-recursive info-recursive \
 	install-data-recursive install-dvi-recursive \
@@ -532,14 +556,6 @@ CHECK_CFLAGS = @CHECK_CFLAGS@
 CHECK_LIBS = @CHECK_LIBS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
-CRAY_JOB_CPPFLAGS = @CRAY_JOB_CPPFLAGS@
-CRAY_JOB_LDFLAGS = @CRAY_JOB_LDFLAGS@
-CRAY_SELECT_CPPFLAGS = @CRAY_SELECT_CPPFLAGS@
-CRAY_SELECT_LDFLAGS = @CRAY_SELECT_LDFLAGS@
-CRAY_SWITCH_CPPFLAGS = @CRAY_SWITCH_CPPFLAGS@
-CRAY_SWITCH_LDFLAGS = @CRAY_SWITCH_LDFLAGS@
-CRAY_TASK_CPPFLAGS = @CRAY_TASK_CPPFLAGS@
-CRAY_TASK_LDFLAGS = @CRAY_TASK_LDFLAGS@
 CSCOPE = @CSCOPE@
 CTAGS = @CTAGS@
 CXX = @CXX@
@@ -547,12 +563,9 @@ CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
-DATAWARP_CPPFLAGS = @DATAWARP_CPPFLAGS@
-DATAWARP_LDFLAGS = @DATAWARP_LDFLAGS@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
-DL_LIBS = @DL_LIBS@
 DSYMUTIL = @DSYMUTIL@
 DUMPBIN = @DUMPBIN@
 ECHO_C = @ECHO_C@
@@ -590,7 +603,6 @@ HDF5_LIBS = @HDF5_LIBS@
 HDF5_TYPE = @HDF5_TYPE@
 HDF5_VERSION = @HDF5_VERSION@
 HPE_SLINGSHOT_CFLAGS = @HPE_SLINGSHOT_CFLAGS@
-HPE_SLINGSHOT_LIBS = @HPE_SLINGSHOT_LIBS@
 HTTP_PARSER_CPPFLAGS = @HTTP_PARSER_CPPFLAGS@
 HTTP_PARSER_LDFLAGS = @HTTP_PARSER_LDFLAGS@
 HWLOC_CPPFLAGS = @HWLOC_CPPFLAGS@
@@ -633,14 +645,10 @@ MUNGE_LDFLAGS = @MUNGE_LDFLAGS@
 MUNGE_LIBS = @MUNGE_LIBS@
 MYSQL_CFLAGS = @MYSQL_CFLAGS@
 MYSQL_LIBS = @MYSQL_LIBS@
-NETLOC_CPPFLAGS = @NETLOC_CPPFLAGS@
-NETLOC_LDFLAGS = @NETLOC_LDFLAGS@
-NETLOC_LIBS = @NETLOC_LIBS@
 NM = @NM@
 NMEDIT = @NMEDIT@
 NUMA_LIBS = @NUMA_LIBS@
 NVML_CPPFLAGS = @NVML_CPPFLAGS@
-NVML_LIBS = @NVML_LIBS@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
@@ -648,7 +656,6 @@ OFED_CPPFLAGS = @OFED_CPPFLAGS@
 OFED_LDFLAGS = @OFED_LDFLAGS@
 OFED_LIBS = @OFED_LIBS@
 ONEAPI_CPPFLAGS = @ONEAPI_CPPFLAGS@
-ONEAPI_LIBS = @ONEAPI_LIBS@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -678,21 +685,25 @@ PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
 PTHREAD_CXX = @PTHREAD_CXX@
 PTHREAD_LIBS = @PTHREAD_LIBS@
 RANLIB = @RANLIB@
+RDKAFKA_CPPFLAGS = @RDKAFKA_CPPFLAGS@
+RDKAFKA_LDFLAGS = @RDKAFKA_LDFLAGS@
+RDKAFKA_LIBS = @RDKAFKA_LIBS@
 READLINE_LIBS = @READLINE_LIBS@
 RELEASE = @RELEASE@
-RRDTOOL_CPPFLAGS = @RRDTOOL_CPPFLAGS@
-RRDTOOL_LDFLAGS = @RRDTOOL_LDFLAGS@
-RRDTOOL_LIBS = @RRDTOOL_LIBS@
 RSMI_CPPFLAGS = @RSMI_CPPFLAGS@
-RSMI_LDFLAGS = @RSMI_LDFLAGS@
-RSMI_LIBS = @RSMI_LIBS@
+S2N_CPPFLAGS = @S2N_CPPFLAGS@
+S2N_DIR = @S2N_DIR@
+S2N_LDFLAGS = @S2N_LDFLAGS@
+S2N_LIBS = @S2N_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SLEEP_CMD = @SLEEP_CMD@
+SLURMCTLD_INTERFACES = @SLURMCTLD_INTERFACES@
 SLURMCTLD_PORT = @SLURMCTLD_PORT@
 SLURMCTLD_PORT_COUNT = @SLURMCTLD_PORT_COUNT@
 SLURMDBD_PORT = @SLURMDBD_PORT@
+SLURMD_INTERFACES = @SLURMD_INTERFACES@
 SLURMD_PORT = @SLURMD_PORT@
 SLURMRESTD_PORT = @SLURMRESTD_PORT@
 SLURM_API_AGE = @SLURM_API_AGE@
@@ -767,6 +778,7 @@ mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
 pdfdir = @pdfdir@
+pkgconfigdir = @pkgconfigdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
@@ -793,19 +805,27 @@ SUBDIRS = bitstring \
 	  slurmdb_pack
 
 AM_CPPFLAGS = -I$(top_srcdir) -ldl -lpthread
-LDADD = $(top_builddir)/src/api/libslurm.o $(DL_LIBS)
+LDADD = $(LIB_SLURM)
 @HAVE_CHECK_TRUE@MYCFLAGS = @CHECK_CFLAGS@ -Wall -D_ISO99_SOURCE \
 @HAVE_CHECK_TRUE@	-Wunused-but-set-variable
 @HAVE_CHECK_TRUE@xhash_test_CFLAGS = $(MYCFLAGS)
 @HAVE_CHECK_TRUE@xhash_test_LDADD = $(LDADD) @CHECK_LIBS@
+@HAVE_CHECK_TRUE@xahash_test_CFLAGS = $(MYCFLAGS)
+@HAVE_CHECK_TRUE@xahash_test_LDADD = $(LDADD) @CHECK_LIBS@
 @HAVE_CHECK_TRUE@data_test_CFLAGS = $(MYCFLAGS)
 @HAVE_CHECK_TRUE@data_test_LDADD = $(LDADD) @CHECK_LIBS@
+@HAVE_CHECK_TRUE@serializer_test_CFLAGS = $(MYCFLAGS)
+@HAVE_CHECK_TRUE@serializer_test_LDADD = $(LDADD) @CHECK_LIBS@
 @HAVE_CHECK_TRUE@slurm_opt_test_CFLAGS = $(MYCFLAGS)
 @HAVE_CHECK_TRUE@slurm_opt_test_LDADD = $(LDADD) @CHECK_LIBS@
 @HAVE_CHECK_TRUE@xstring_test_CFLAGS = $(MYCFLAGS)
 @HAVE_CHECK_TRUE@xstring_test_LDADD = $(LDADD) @CHECK_LIBS@
 @HAVE_CHECK_TRUE@parse_time_test_CFLAGS = $(MYCFLAGS)
 @HAVE_CHECK_TRUE@parse_time_test_LDADD = $(LDADD) @CHECK_LIBS@
+@HAVE_CHECK_TRUE@job_resources_test_CFLAGS = $(MYCFLAGS)
+@HAVE_CHECK_TRUE@job_resources_test_LDADD = $(LDADD) @CHECK_LIBS@
+@HAVE_CHECK_TRUE@pack_test_CFLAGS = $(MYCFLAGS)
+@HAVE_CHECK_TRUE@pack_test_LDADD = $(LDADD) @CHECK_LIBS@
 @HAVE_CHECK_TRUE@reverse_tree_test_CFLAGS = $(MYCFLAGS)
 @HAVE_CHECK_TRUE@reverse_tree_test_LDADD = $(LDADD) @CHECK_LIBS@
 all: all-recursive
@@ -857,7 +877,7 @@ data-test$(EXEEXT): $(data_test_OBJECTS) $(data_test_DEPENDENCIES) $(EXTRA_data_
 
 job-resources-test$(EXEEXT): $(job_resources_test_OBJECTS) $(job_resources_test_DEPENDENCIES) $(EXTRA_job_resources_test_DEPENDENCIES) 
 	@rm -f job-resources-test$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(job_resources_test_OBJECTS) $(job_resources_test_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(job_resources_test_LINK) $(job_resources_test_OBJECTS) $(job_resources_test_LDADD) $(LIBS)
 
 log-test$(EXEEXT): $(log_test_OBJECTS) $(log_test_DEPENDENCIES) $(EXTRA_log_test_DEPENDENCIES) 
 	@rm -f log-test$(EXEEXT)
@@ -865,7 +885,7 @@ log-test$(EXEEXT): $(log_test_OBJECTS) $(log_test_DEPENDENCIES) $(EXTRA_log_test
 
 pack-test$(EXEEXT): $(pack_test_OBJECTS) $(pack_test_DEPENDENCIES) $(EXTRA_pack_test_DEPENDENCIES) 
 	@rm -f pack-test$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(pack_test_OBJECTS) $(pack_test_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(pack_test_LINK) $(pack_test_OBJECTS) $(pack_test_LDADD) $(LIBS)
 
 parse_time-test$(EXEEXT): $(parse_time_test_OBJECTS) $(parse_time_test_DEPENDENCIES) $(EXTRA_parse_time_test_DEPENDENCIES) 
 	@rm -f parse_time-test$(EXEEXT)
@@ -875,9 +895,17 @@ reverse_tree-test$(EXEEXT): $(reverse_tree_test_OBJECTS) $(reverse_tree_test_DEP
 	@rm -f reverse_tree-test$(EXEEXT)
 	$(AM_V_CCLD)$(reverse_tree_test_LINK) $(reverse_tree_test_OBJECTS) $(reverse_tree_test_LDADD) $(LIBS)
 
+serializer-test$(EXEEXT): $(serializer_test_OBJECTS) $(serializer_test_DEPENDENCIES) $(EXTRA_serializer_test_DEPENDENCIES) 
+	@rm -f serializer-test$(EXEEXT)
+	$(AM_V_CCLD)$(serializer_test_LINK) $(serializer_test_OBJECTS) $(serializer_test_LDADD) $(LIBS)
+
 slurm_opt-test$(EXEEXT): $(slurm_opt_test_OBJECTS) $(slurm_opt_test_DEPENDENCIES) $(EXTRA_slurm_opt_test_DEPENDENCIES) 
 	@rm -f slurm_opt-test$(EXEEXT)
 	$(AM_V_CCLD)$(slurm_opt_test_LINK) $(slurm_opt_test_OBJECTS) $(slurm_opt_test_LDADD) $(LIBS)
+
+xahash-test$(EXEEXT): $(xahash_test_OBJECTS) $(xahash_test_DEPENDENCIES) $(EXTRA_xahash_test_DEPENDENCIES) 
+	@rm -f xahash-test$(EXEEXT)
+	$(AM_V_CCLD)$(xahash_test_LINK) $(xahash_test_OBJECTS) $(xahash_test_LDADD) $(LIBS)
 
 xhash-test$(EXEEXT): $(xhash_test_OBJECTS) $(xhash_test_DEPENDENCIES) $(EXTRA_xhash_test_DEPENDENCIES) 
 	@rm -f xhash-test$(EXEEXT)
@@ -894,12 +922,14 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/data_test-data-test.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/job-resources-test.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/job_resources_test-job-resources-test.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/log-test.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pack-test.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pack_test-pack-test.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/parse_time_test-parse_time-test.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/reverse_tree_test-reverse_tree-test.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/serializer_test-serializer-test.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/slurm_opt_test-slurm_opt-test.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xahash_test-xahash-test.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xhash_test-xhash-test.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xstring_test-xstring-test.Po@am__quote@ # am--include-marker
 
@@ -944,6 +974,34 @@ data_test-data-test.obj: data-test.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(data_test_CFLAGS) $(CFLAGS) -c -o data_test-data-test.obj `if test -f 'data-test.c'; then $(CYGPATH_W) 'data-test.c'; else $(CYGPATH_W) '$(srcdir)/data-test.c'; fi`
 
+job_resources_test-job-resources-test.o: job-resources-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(job_resources_test_CFLAGS) $(CFLAGS) -MT job_resources_test-job-resources-test.o -MD -MP -MF $(DEPDIR)/job_resources_test-job-resources-test.Tpo -c -o job_resources_test-job-resources-test.o `test -f 'job-resources-test.c' || echo '$(srcdir)/'`job-resources-test.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/job_resources_test-job-resources-test.Tpo $(DEPDIR)/job_resources_test-job-resources-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='job-resources-test.c' object='job_resources_test-job-resources-test.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(job_resources_test_CFLAGS) $(CFLAGS) -c -o job_resources_test-job-resources-test.o `test -f 'job-resources-test.c' || echo '$(srcdir)/'`job-resources-test.c
+
+job_resources_test-job-resources-test.obj: job-resources-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(job_resources_test_CFLAGS) $(CFLAGS) -MT job_resources_test-job-resources-test.obj -MD -MP -MF $(DEPDIR)/job_resources_test-job-resources-test.Tpo -c -o job_resources_test-job-resources-test.obj `if test -f 'job-resources-test.c'; then $(CYGPATH_W) 'job-resources-test.c'; else $(CYGPATH_W) '$(srcdir)/job-resources-test.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/job_resources_test-job-resources-test.Tpo $(DEPDIR)/job_resources_test-job-resources-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='job-resources-test.c' object='job_resources_test-job-resources-test.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(job_resources_test_CFLAGS) $(CFLAGS) -c -o job_resources_test-job-resources-test.obj `if test -f 'job-resources-test.c'; then $(CYGPATH_W) 'job-resources-test.c'; else $(CYGPATH_W) '$(srcdir)/job-resources-test.c'; fi`
+
+pack_test-pack-test.o: pack-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pack_test_CFLAGS) $(CFLAGS) -MT pack_test-pack-test.o -MD -MP -MF $(DEPDIR)/pack_test-pack-test.Tpo -c -o pack_test-pack-test.o `test -f 'pack-test.c' || echo '$(srcdir)/'`pack-test.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/pack_test-pack-test.Tpo $(DEPDIR)/pack_test-pack-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pack-test.c' object='pack_test-pack-test.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pack_test_CFLAGS) $(CFLAGS) -c -o pack_test-pack-test.o `test -f 'pack-test.c' || echo '$(srcdir)/'`pack-test.c
+
+pack_test-pack-test.obj: pack-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pack_test_CFLAGS) $(CFLAGS) -MT pack_test-pack-test.obj -MD -MP -MF $(DEPDIR)/pack_test-pack-test.Tpo -c -o pack_test-pack-test.obj `if test -f 'pack-test.c'; then $(CYGPATH_W) 'pack-test.c'; else $(CYGPATH_W) '$(srcdir)/pack-test.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/pack_test-pack-test.Tpo $(DEPDIR)/pack_test-pack-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pack-test.c' object='pack_test-pack-test.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pack_test_CFLAGS) $(CFLAGS) -c -o pack_test-pack-test.obj `if test -f 'pack-test.c'; then $(CYGPATH_W) 'pack-test.c'; else $(CYGPATH_W) '$(srcdir)/pack-test.c'; fi`
+
 parse_time_test-parse_time-test.o: parse_time-test.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(parse_time_test_CFLAGS) $(CFLAGS) -MT parse_time_test-parse_time-test.o -MD -MP -MF $(DEPDIR)/parse_time_test-parse_time-test.Tpo -c -o parse_time_test-parse_time-test.o `test -f 'parse_time-test.c' || echo '$(srcdir)/'`parse_time-test.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/parse_time_test-parse_time-test.Tpo $(DEPDIR)/parse_time_test-parse_time-test.Po
@@ -972,6 +1030,20 @@ reverse_tree_test-reverse_tree-test.obj: reverse_tree-test.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(reverse_tree_test_CFLAGS) $(CFLAGS) -c -o reverse_tree_test-reverse_tree-test.obj `if test -f 'reverse_tree-test.c'; then $(CYGPATH_W) 'reverse_tree-test.c'; else $(CYGPATH_W) '$(srcdir)/reverse_tree-test.c'; fi`
 
+serializer_test-serializer-test.o: serializer-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(serializer_test_CFLAGS) $(CFLAGS) -MT serializer_test-serializer-test.o -MD -MP -MF $(DEPDIR)/serializer_test-serializer-test.Tpo -c -o serializer_test-serializer-test.o `test -f 'serializer-test.c' || echo '$(srcdir)/'`serializer-test.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/serializer_test-serializer-test.Tpo $(DEPDIR)/serializer_test-serializer-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='serializer-test.c' object='serializer_test-serializer-test.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(serializer_test_CFLAGS) $(CFLAGS) -c -o serializer_test-serializer-test.o `test -f 'serializer-test.c' || echo '$(srcdir)/'`serializer-test.c
+
+serializer_test-serializer-test.obj: serializer-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(serializer_test_CFLAGS) $(CFLAGS) -MT serializer_test-serializer-test.obj -MD -MP -MF $(DEPDIR)/serializer_test-serializer-test.Tpo -c -o serializer_test-serializer-test.obj `if test -f 'serializer-test.c'; then $(CYGPATH_W) 'serializer-test.c'; else $(CYGPATH_W) '$(srcdir)/serializer-test.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/serializer_test-serializer-test.Tpo $(DEPDIR)/serializer_test-serializer-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='serializer-test.c' object='serializer_test-serializer-test.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(serializer_test_CFLAGS) $(CFLAGS) -c -o serializer_test-serializer-test.obj `if test -f 'serializer-test.c'; then $(CYGPATH_W) 'serializer-test.c'; else $(CYGPATH_W) '$(srcdir)/serializer-test.c'; fi`
+
 slurm_opt_test-slurm_opt-test.o: slurm_opt-test.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(slurm_opt_test_CFLAGS) $(CFLAGS) -MT slurm_opt_test-slurm_opt-test.o -MD -MP -MF $(DEPDIR)/slurm_opt_test-slurm_opt-test.Tpo -c -o slurm_opt_test-slurm_opt-test.o `test -f 'slurm_opt-test.c' || echo '$(srcdir)/'`slurm_opt-test.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/slurm_opt_test-slurm_opt-test.Tpo $(DEPDIR)/slurm_opt_test-slurm_opt-test.Po
@@ -985,6 +1057,20 @@ slurm_opt_test-slurm_opt-test.obj: slurm_opt-test.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='slurm_opt-test.c' object='slurm_opt_test-slurm_opt-test.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(slurm_opt_test_CFLAGS) $(CFLAGS) -c -o slurm_opt_test-slurm_opt-test.obj `if test -f 'slurm_opt-test.c'; then $(CYGPATH_W) 'slurm_opt-test.c'; else $(CYGPATH_W) '$(srcdir)/slurm_opt-test.c'; fi`
+
+xahash_test-xahash-test.o: xahash-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xahash_test_CFLAGS) $(CFLAGS) -MT xahash_test-xahash-test.o -MD -MP -MF $(DEPDIR)/xahash_test-xahash-test.Tpo -c -o xahash_test-xahash-test.o `test -f 'xahash-test.c' || echo '$(srcdir)/'`xahash-test.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/xahash_test-xahash-test.Tpo $(DEPDIR)/xahash_test-xahash-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='xahash-test.c' object='xahash_test-xahash-test.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xahash_test_CFLAGS) $(CFLAGS) -c -o xahash_test-xahash-test.o `test -f 'xahash-test.c' || echo '$(srcdir)/'`xahash-test.c
+
+xahash_test-xahash-test.obj: xahash-test.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xahash_test_CFLAGS) $(CFLAGS) -MT xahash_test-xahash-test.obj -MD -MP -MF $(DEPDIR)/xahash_test-xahash-test.Tpo -c -o xahash_test-xahash-test.obj `if test -f 'xahash-test.c'; then $(CYGPATH_W) 'xahash-test.c'; else $(CYGPATH_W) '$(srcdir)/xahash-test.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/xahash_test-xahash-test.Tpo $(DEPDIR)/xahash_test-xahash-test.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='xahash-test.c' object='xahash_test-xahash-test.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xahash_test_CFLAGS) $(CFLAGS) -c -o xahash_test-xahash-test.obj `if test -f 'xahash-test.c'; then $(CYGPATH_W) 'xahash-test.c'; else $(CYGPATH_W) '$(srcdir)/xahash-test.c'; fi`
 
 xhash_test-xhash-test.o: xhash-test.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xhash_test_CFLAGS) $(CFLAGS) -MT xhash_test-xhash-test.o -MD -MP -MF $(DEPDIR)/xhash_test-xhash-test.Tpo -c -o xhash_test-xhash-test.o `test -f 'xhash-test.c' || echo '$(srcdir)/'`xhash-test.c
@@ -1260,23 +1346,9 @@ recheck: all $(check_PROGRAMS)
 	        am__force_recheck=am--force-recheck \
 	        TEST_LOGS="$$log_list"; \
 	exit $$?
-job-resources-test.log: job-resources-test$(EXEEXT)
-	@p='job-resources-test$(EXEEXT)'; \
-	b='job-resources-test'; \
-	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
-	--log-file $$b.log --trs-file $$b.trs \
-	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
-	"$$tst" $(AM_TESTS_FD_REDIRECT)
 log-test.log: log-test$(EXEEXT)
 	@p='log-test$(EXEEXT)'; \
 	b='log-test'; \
-	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
-	--log-file $$b.log --trs-file $$b.trs \
-	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
-	"$$tst" $(AM_TESTS_FD_REDIRECT)
-pack-test.log: pack-test$(EXEEXT)
-	@p='pack-test$(EXEEXT)'; \
-	b='pack-test'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
@@ -1291,6 +1363,13 @@ xhash-test.log: xhash-test$(EXEEXT)
 data-test.log: data-test$(EXEEXT)
 	@p='data-test$(EXEEXT)'; \
 	b='data-test'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+serializer-test.log: serializer-test$(EXEEXT)
+	@p='serializer-test$(EXEEXT)'; \
+	b='serializer-test'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
@@ -1316,9 +1395,30 @@ parse_time-test.log: parse_time-test$(EXEEXT)
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
+job-resources-test.log: job-resources-test$(EXEEXT)
+	@p='job-resources-test$(EXEEXT)'; \
+	b='job-resources-test'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+pack-test.log: pack-test$(EXEEXT)
+	@p='pack-test$(EXEEXT)'; \
+	b='pack-test'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 reverse_tree-test.log: reverse_tree-test$(EXEEXT)
 	@p='reverse_tree-test$(EXEEXT)'; \
 	b='reverse_tree-test'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+xahash-test.log: xahash-test$(EXEEXT)
+	@p='xahash-test$(EXEEXT)'; \
+	b='xahash-test'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
@@ -1384,12 +1484,14 @@ clean-am: clean-checkPROGRAMS clean-generic clean-libtool \
 
 distclean: distclean-recursive
 		-rm -f ./$(DEPDIR)/data_test-data-test.Po
-	-rm -f ./$(DEPDIR)/job-resources-test.Po
+	-rm -f ./$(DEPDIR)/job_resources_test-job-resources-test.Po
 	-rm -f ./$(DEPDIR)/log-test.Po
-	-rm -f ./$(DEPDIR)/pack-test.Po
+	-rm -f ./$(DEPDIR)/pack_test-pack-test.Po
 	-rm -f ./$(DEPDIR)/parse_time_test-parse_time-test.Po
 	-rm -f ./$(DEPDIR)/reverse_tree_test-reverse_tree-test.Po
+	-rm -f ./$(DEPDIR)/serializer_test-serializer-test.Po
 	-rm -f ./$(DEPDIR)/slurm_opt_test-slurm_opt-test.Po
+	-rm -f ./$(DEPDIR)/xahash_test-xahash-test.Po
 	-rm -f ./$(DEPDIR)/xhash_test-xhash-test.Po
 	-rm -f ./$(DEPDIR)/xstring_test-xstring-test.Po
 	-rm -f Makefile
@@ -1438,12 +1540,14 @@ installcheck-am:
 
 maintainer-clean: maintainer-clean-recursive
 		-rm -f ./$(DEPDIR)/data_test-data-test.Po
-	-rm -f ./$(DEPDIR)/job-resources-test.Po
+	-rm -f ./$(DEPDIR)/job_resources_test-job-resources-test.Po
 	-rm -f ./$(DEPDIR)/log-test.Po
-	-rm -f ./$(DEPDIR)/pack-test.Po
+	-rm -f ./$(DEPDIR)/pack_test-pack-test.Po
 	-rm -f ./$(DEPDIR)/parse_time_test-parse_time-test.Po
 	-rm -f ./$(DEPDIR)/reverse_tree_test-reverse_tree-test.Po
+	-rm -f ./$(DEPDIR)/serializer_test-serializer-test.Po
 	-rm -f ./$(DEPDIR)/slurm_opt_test-slurm_opt-test.Po
+	-rm -f ./$(DEPDIR)/xahash_test-xahash-test.Po
 	-rm -f ./$(DEPDIR)/xhash_test-xhash-test.Po
 	-rm -f ./$(DEPDIR)/xstring_test-xstring-test.Po
 	-rm -f Makefile

@@ -15,9 +15,30 @@ function _find_in_str(str, arg)
 		else
 			return false
 		end
-        else
-                return false
-        end
+	else
+	        return false
+	end
+end
+
+function _verbose_wrapper(options, fmt, ...)
+	--[[ Implicit definition of arg was removed in Lua 5.2 --]]
+	local arg = {...}
+
+	--[[
+	--   Logging to client at levels lower than info is only possible for
+	--   sbatch and scrontab in case of salloc and srun only info and error
+	--   are displayed.
+	--   In older versions of Lua - prior to Lua 5.2 you may need to use
+	--   unpack as a built-in instead of table.unpack
+	--]]
+
+	if options["type"] == "sbatch" or options["type"] == "scrontab" then
+		slurm.log_verbose(fmt, table.unpack(arg))
+	else
+		if options["verbose"] and tonumber(options["verbose"]) >= 1 then
+			slurm.log_info(fmt, table.unpack(arg))
+		end
+	end
 end
 
 function slurm_cli_pre_submit(options, pack_offset)
@@ -29,31 +50,29 @@ function slurm_cli_pre_submit(options, pack_offset)
 	-- If strict policy enforcement is a requirement than job_submit plugin should be used.
 	--]]
 
-	--[[ Dump environment in JSON format ]]--
+	--[[ Dump environment in JSON format --]]
 	env_json = slurm.json_env()
-	slurm.log_verbose("slurm_cli_pre_submit: Running with following environment variables:%s", env_json);
+	_verbose_wrapper(options, "slurm_cli_pre_submit: Running with following environment variables:%s", env_json);
 
-	--[[ Dump options set when running (slurmctld default behavior is not shown here) ]]--
+	--[[ Dump options set when running (slurmctld default behavior is not shown here) --]]
 	opt_json = slurm.json_cli_options(options)
-	slurm.log_verbose("slurm_cli_pre_submit: Running with following options set:%s", opt_json)
+	_verbose_wrapper(options, "slurm_cli_pre_submit: Running with following options set:%s", opt_json)
 
-	--[[ Store a variable for potential use in slurm_cli_post_submit ]]--
+	--[[ Store a variable for potential use in slurm_cli_post_submit --]]
 	slurm.cli_store(0,options["type"])
 
-
-	if options["type"] == "srun"
+	--[[
+	-- Print an advice message to srun user, to avoid --pty for jobs
+	-- with time limit higher than 1h
+	-- The conditional like options["pty"] == "set" used to work
+	-- in versions of Slurm prior to 23.02
+	--]]
+	if options["type"] == "srun" and options["pty"] ~= nil
 	then
-		if options["uid"] == "0" --[[or options["uid"] == SpecialUser]]--
-		then
-			slurm.log_info("srun allowed for uid: %s", options["uid"])
-		else
-			local time_limit_in_minutes = slurm.time_str2mins(options["time"])
-			if options["pty"] == "set" and time_limit_in_minutes > (4 * 60)
-			then
-				slurm.log_error("Use of srun with --pty is forbidden for uid: %s for time longer than 4h", options["uid"])
-				return slurm.ERROR
-			end
-		end
+	    if slurm.time_str2mins(options["time"]) > 60
+	    then
+	        slurm.log_info("Running an interactive job, with --pty emulation shouldn't be used with TimeLimit > 1h.")
+	    end
 	end
 
 	if options["type"] == "sbatch" and options["wrap"] ~= nil
@@ -97,14 +116,14 @@ function slurm_cli_setup_defaults(options, early_pass)
 	-- Make --hint=nomultithread a default behavior
 	-- if user specifies other --hint=XX option then
 	-- it will override the setting done here
-	--]]--
+	--]]
 	options['hint'] = 'nomultithread'
 
-        return slurm.SUCCESS
+	return slurm.SUCCESS
 end
 
 function slurm_cli_post_submit(offset, job_id, step_id)
 	saved_type = slurm.cli_retrieve(0);
 	slurm.log_info("Submitted: %d.%d component: %d using: %s", job_id, step_id, offset, saved_type);
-        return slurm.SUCCESS
+	return slurm.SUCCESS
 end

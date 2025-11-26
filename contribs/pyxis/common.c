@@ -51,7 +51,7 @@ char *get_line_from_file(FILE *fp)
 char *join_strings(char *const strings[], const char *sep)
 {
 	size_t strings_count, result_len = 0;
-	char *result;
+	char *result = NULL;
 
 	if (strings[0] == NULL)
 		return NULL;
@@ -76,6 +76,9 @@ char *join_strings(char *const strings[], const char *sep)
 
 bool array_contains(char **array, size_t len, const char *entry)
 {
+	if (entry == NULL) {
+		return false;
+	}
 	for (size_t i = 0; i < len; ++i) {
 		if (strcmp(array[i], entry) == 0) {
 			return (true);

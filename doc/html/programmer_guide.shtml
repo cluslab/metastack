@@ -2,19 +2,21 @@
 
 <h1><a name="top">Slurm Programmer's Guide</a></h1>
 
-<h2>Contents</h2>
-<a href="#Overview">Overview</a><br>
-<a href="#Plugins">Plugins</a><br>
-<a href="#Directory-Structure">Directory Structure</a><br>
-<a href="#Documentation">Documentation</a><br>
-<a href="#Source-Code">Source Code</a><br>
-<a href="#Source-Code-Management">Source Code Management</a><br>
-<a href="#Adding-New-Modules">Adding New Modules</a><br>
-<a href="#Compiling">Compiling</a><br>
-<a href="#Configuration">Configuration</a><br>
-<a href="#Test-Suite">Test Suite</a><br>
-<a href="#Adding-Files-and-Directories">Adding Files and Directories</a><br>
-<a href="#Tricks-of-the-Trade">Tricks of the Trade</a><br>
+<h2 id="contents">Contents<a class="slurm_link" href="#contents"></a></h2>
+<ul>
+<li><a href="#Overview">Overview</a></li>
+<li><a href="#Plugins">Plugins</a></li>
+<li><a href="#Directory-Structure">Directory Structure</a></li>
+<li><a href="#Documentation">Documentation</a></li>
+<li><a href="#Source-Code">Source Code</a></li>
+<li><a href="#Source-Code-Management">Source Code Management</a></li>
+<li><a href="#Adding-New-Modules">Adding New Modules</a></li>
+<li><a href="#Compiling">Compiling</a></li>
+<li><a href="#Configuration">Configuration</a></li>
+<li><a href="#Test-Suite">Test Suite</a></li>
+<li><a href="#Adding-Files-and-Directories">Adding Files and Directories</a></li>
+<li><a href="#Tricks-of-the-Trade">Tricks of the Trade</a></li>
+</ul>
 
 <h2 id="Overview">Overview<a class="slurm_link" href="#Overview"></a></h2>
 
@@ -56,7 +58,8 @@ of subdirectories for each type of file.</p>
 <b>configure.ac</b>, <b>Makefile.am</b>, <b>Make-rpm.mk</b>, <b>META</b>, <b>README</b>,
 <b>slurm.spec.in</b>, and the contents of the <b>auxdir</b> directory. <span class="commandline">autoconf</span>
 and <span class="commandline">make</span> commands are used to build and install
-Slurm in an automated fashion. NOTE: <span class="commandline">autoconf</span>
+Slurm in an automated fashion.
+<b>NOTE</b>: <span class="commandline">autoconf</span>
 version 2.52 or higher is required to build Slurm. Execute
 <span class="commandline">autoconf -V</span> to check your version number.
 The build process is described in the README file.
@@ -72,8 +75,7 @@ All of the top-level subdirectories are described below.</p>
 these header files in this location makes for better code portability.<br>
 <b>src</b> &mdash; Contains all source code and header files not in the "slurm" subdirectory
 described above.<br>
-<b>testsuite</b> &mdash; DejaGnu and Expect are used for testing all of its files
-are here.</p>
+<b>testsuite</b> &mdash; Check, Expect and Pytest tests are here.</p>
 
 
 <h2 id="Documentation">Documentation
@@ -168,7 +170,7 @@ with our work.</p>
 </h2>
 <p>Add the new file name to the Makefile.am file in the appropriate directory.
 Then execute autoreconf (at the top level of the Slurm source directory).
-Note that a relatively current version of auotmake is required.
+Note that a relatively current version of automake is required.
 The autoreconf program will build Makefile.in files from the Makefile.am files.
 If any new files need to be installed, update the slurm.spec file to identify
 the RPM in which the new files should be placed</p>
@@ -176,7 +178,7 @@ the RPM in which the new files should be placed</p>
 <p>If new directories need to be added, add to the configure.ac file the path
 to the Makefile to be built in the new directory. In summary:<br>
 <u>autoreconf</u> translates <u>.am</u> files into <u>.in</u> files<br>
-<u>configure</u> tranlates <u>.in</u> files, adding paths and version numbers.</p>
+<u>configure</u> translates <u>.in</u> files, adding paths and version numbers.</p>
 
 <h2 id="Compiling">Compiling<a class="slurm_link" href="#Compiling"></a></h2>
 <p>Sending the standard output of "make" to a file makes it easier to see any
@@ -195,14 +197,18 @@ Slurm daemon(s) should execute on any node based upon the configuration file con
 It will also manage these daemons: starting, signaling, restarting, and stopping them.</p>
 
 <h2 id="Test-Suite">Test Suite<a class="slurm_link" href="#Test-Suite"></a></h2>
-<p>The <b>testsuite</b> files use a DejaGnu framework for testing. These tests
-are very limited in scope.</p>
+<p>The <b>testsuite</b> files use Check, Expect and Pytest for testing Slurm in
+differents ways.</p>
+
+<p>The Check tests are designed to unit test C code. Only with
+<i>make check</i>, without Slurm installed, they will validate that key C
+functions work correctly.</p>
 
 <p>We also have a set of Expect Slurm tests available under the <b>testsuite/expect</b>
 directory.  These tests are executed after Slurm has been installed
-and the daemons initiated. About 400 test scripts exercise all Slurm commands
+and the daemons initiated. These tests exercise all Slurm commands
 and options including stress tests.  The file <b>testsuite/expect/globals</b>
-contains default paths and procedures for all of the individual tests.  At
+contains the Expect test framewrok for all of the individual tests.  At
 the very least, you will need to set the <i>slurm_dir</i> variable to the correct
 value.  To avoid conflicts with other developers, you can override variable settings
 in a separate file named <b>testsuite/expect/globals.local</b>.</p>
@@ -213,6 +219,10 @@ starting these tests.  Tests may be executed individually by name
 or the full test suite may be executed with the single command
 <i>regression.py</i>.
 See <b>testsuite/expect/README</b> for more information.</p>
+
+<p>Slurm also has a Pytest environment that can work like the Expect one, but it
+also works together with an external QA framework to improve the overall QA
+of Slurm.</p>
 
 <h2 id="Adding-Files-and-Directories">Adding Files and Directories
 <a class="slurm_link" href="#Adding-Files-and-Directories"></a>
@@ -248,7 +258,7 @@ networking and protocol changes, or anytime you want to simulate a larger
 cluster than you really have.  The author uses this on his desktop to simulate
 multiple nodes.  However, it is important to note that not all slurm functions
 will work with multiple slurmd support enabled (e.g. many switch plugins will
-not work, it is best to use switch/none).</p>
+not work, it is best not to use any).</p>
 
 <p>Multiple support is enabled at configure-time with the
 "--enable-multiple-slurmd" parameter.  This enables a new parameter in the

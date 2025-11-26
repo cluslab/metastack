@@ -71,6 +71,7 @@
 #include "src/common/macros.h"
 #include "src/common/net.h"
 #include "src/common/slurm_protocol_api.h"
+#include "src/common/util-net.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 
@@ -118,14 +119,14 @@ cleanup:
 }
 
 /* set keepalive time on socket */
-extern int net_set_keep_alive(int sock)
+extern void net_set_keep_alive(int sock)
 {
 	int opt_int;
 	socklen_t opt_len;
 	struct linger opt_linger;
 
 	if (slurm_conf.keepalive_time == NO_VAL)
-		return 0;
+		return;
 
 	opt_len = sizeof(struct linger);
 	opt_linger.l_onoff = 1;
@@ -137,7 +138,7 @@ extern int net_set_keep_alive(int sock)
 	opt_int = slurm_conf.keepalive_time;
 	if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &opt_int, opt_len) < 0) {
 		error("Unable to set keepalive socket option: %m");
-		return -1;
+		return;
 	}
 
 /*
@@ -153,7 +154,7 @@ extern int net_set_keep_alive(int sock)
 		if (setsockopt(sock, SOL_TCP, TCP_KEEPINTVL,
 			       &opt_int, opt_len) < 0) {
 			error("Unable to set keepalive interval: %m");
-			return -1;
+			return;
 		}
 	}
 	if (slurm_conf.keepalive_probes != NO_VAL) {
@@ -161,13 +162,13 @@ extern int net_set_keep_alive(int sock)
 		if (setsockopt(sock, SOL_TCP, TCP_KEEPCNT,
 			       &opt_int, opt_len) < 0) {
 			error("Unable to set keepalive probes: %m");
-			return -1;
+			return;
 		}
 	}
 	opt_int = slurm_conf.keepalive_time;
 	if (setsockopt(sock, SOL_TCP, TCP_KEEPIDLE, &opt_int, opt_len) < 0) {
 		error("Unable to set keepalive socket time: %m");
-		return -1;
+		return;
 	}
 #endif
 
@@ -188,8 +189,53 @@ extern int net_set_keep_alive(int sock)
 	getsockopt(sock, SOL_TCP, TCP_KEEPIDLE, &opt_int, &opt_len);
 	info("got keepalive_time is %d on fd %d", opt_int, sock);
 #endif
+}
 
-	return 0;
+extern void net_set_nodelay(int sock)
+{
+	int opt_int = 1;
+
+	if (sock < 0)
+		return;
+
+	if (setsockopt(sock, SOL_TCP, TCP_NODELAY, &opt_int, sizeof(int)) < 0)
+		error("Unable to set TCP_NODELAY: %m");
+}
+
+/*
+ * Check if we can bind() the socket s to port port.
+ *
+ * IN: s - socket
+ * IN: port - port number to attempt to bind
+ * IN: local - only bind to localhost if true
+ * OUT: true/false if port was bound successfully
+ */
+static bool _is_port_ok(int s, uint16_t port, bool local)
+{
+	slurm_addr_t addr;
+	slurm_setup_addr(&addr, port);
+
+	if (!local) {
+		debug3("%s: requesting non-local port", __func__);
+	} else if (addr.ss_family == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *) &addr;
+		sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	} else if (addr.ss_family == AF_INET6) {
+		struct sockaddr_in6 *sin = (struct sockaddr_in6 *) &addr;
+		sin->sin6_addr = in6addr_loopback;
+	} else {
+		error("%s: protocol family %u unsupported",
+		      __func__, addr.ss_family);
+		return false;
+	}
+
+	if (bind(s, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		log_flag(NET, "%s: bind() failed on port:%d fd:%d: %m",
+			 __func__, port, s);
+		return false;
+	}
+
+	return true;
 }
 
 /* net_stream_listen_ports()
@@ -197,34 +243,81 @@ extern int net_set_keep_alive(int sock)
 int net_stream_listen_ports(int *fd, uint16_t *port, uint16_t *ports, bool local)
 {
 	slurm_addr_t sin;
-	int cc;
-	int val;
+	uint32_t min = ports[0], max = ports[1];
+	uint32_t num = max - min + 1;
+
+	xassert(num > 0);
+
+	srandom(getpid());
+	*port = min + (random() % num);
 
 	slurm_setup_addr(&sin, 0); /* Decide on IPv4 or IPv6 */
 
-	if ((*fd = socket(sin.ss_family, SOCK_STREAM, IPPROTO_TCP)) < 0)
-		return -1;
+	*fd = -1;
 
-	val = 1;
-	cc = setsockopt(*fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(int));
-	if (cc < 0) {
-		close(*fd);
-		return -1;
+	for (int i = 0; i < num; i++) {
+		if (*fd < 0) {
+			const int one = 1;
+
+			if ((*fd = socket(sin.ss_family, SOCK_STREAM,
+					  IPPROTO_TCP)) < 0) {
+				log_flag(NET, "%s: socket() failed: %m",
+					 __func__);
+				return -1;
+			}
+
+			if (setsockopt(*fd, SOL_SOCKET, SO_REUSEADDR, &one,
+				       sizeof(int)) < 0) {
+				log_flag(NET, "%s: setsockopt() failed: %m",
+					 __func__);
+				close(*fd);
+				return -1;
+			}
+		}
+
+		if (_is_port_ok(*fd, *port, local)) {
+			if (!listen(*fd, SLURM_DEFAULT_LISTEN_BACKLOG))
+				return *fd;
+
+			log_flag(NET, "%s: listen() failed: %m",
+				 __func__);
+
+			/*
+			 * If bind() succeeds but listen() fails we need to
+			 * close and reestablish the socket before trying
+			 * again on another port number.
+			 */
+			if (close(*fd)) {
+				log_flag(NET, "%s: close(%d) failed: %m",
+					 __func__, *fd);
+			}
+			*fd = -1;
+		}
+
+		if (*port == max)
+			*port = min;
+		else
+			++(*port);
 	}
 
-	if ((cc = sock_bind_listen_range(*fd, ports, local)) < 0)
-		return -1;
-	*port = cc;
+	if (*fd >= 0)
+		close(*fd);
 
-	return *fd;
+	error("%s: all ports in range (%u, %u) exhausted, cannot establish listening port",
+	      __func__, min, max);
+
+	return -1;
 }
 
 extern char *sockaddr_to_string(const slurm_addr_t *addr, socklen_t addrlen)
 {
-	int rc, prev_errno = errno;
+	int prev_errno = errno;
 	char *resp = NULL;
-	char host[NI_MAXHOST] = { 0 };
-	char serv[NI_MAXSERV] = { 0 };
+	int port = 0;
+	char *host = NULL;
+
+	if (addr->ss_family == AF_UNSPEC)
+		return NULL;
 
 	if (addr->ss_family == AF_UNIX) {
 		const struct sockaddr_un *addr_un =
@@ -237,20 +330,20 @@ extern char *sockaddr_to_string(const slurm_addr_t *addr, socklen_t addrlen)
 			return NULL;
 	}
 
-	resp = xmalloc(NI_MAXHOST + NI_MAXSERV);
-	rc = getnameinfo((const struct sockaddr *) addr, addrlen, host,
-			 NI_MAXHOST, serv, NI_MAXSERV, NI_NUMERICSERV);
-	if (rc == EAI_SYSTEM) {
-		error("Unable to get address: %m");
-	} else if (rc) {
-		error("Unable to get address: %s", gai_strerror(rc));
-	} else {
-		/* construct RFC3986 host port pair */
-		if (host[0] != '\0' && serv[0] != '\0')
-			xstrfmtcat(resp, "[%s]:%s", host, serv);
-		else if (serv[0] != '\0')
-			xstrfmtcat(resp, "[::]:%s", serv);
-	}
+	if (addr->ss_family == AF_INET)
+		port = ((struct sockaddr_in *) addr)->sin_port;
+	else if (addr->ss_family == AF_INET6)
+		port = ((struct sockaddr_in6 *) addr)->sin6_port;
+
+	host = xgetnameinfo((struct sockaddr *) addr, addrlen);
+
+	/* construct RFC3986 host port pair */
+	if (host && port)
+		xstrfmtcat(resp, "[%s]:%d", host, port);
+	else if (port)
+		xstrfmtcat(resp, "[::]:%d", port);
+
+	xfree(host);
 
 	/*
 	 * Avoid clobbering errno as this function is likely to be used for

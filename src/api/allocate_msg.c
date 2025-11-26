@@ -54,7 +54,7 @@
 #include "src/common/net.h"
 #include "src/common/macros.h"
 #include "src/common/read_config.h"
-#include "src/common/slurm_auth.h"
+#include "src/interfaces/auth.h"
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_common.h"
@@ -158,7 +158,7 @@ extern void slurm_allocation_msg_thr_destroy(
 
 	debug2("slurm_allocation_msg_thr_destroy: clearing up message thread");
 	eio_signal_shutdown(msg_thr->handle);
-	pthread_join(msg_thr->id, NULL);
+	slurm_thread_join(msg_thr->id);
 	eio_handle_destroy(msg_thr->handle);
 	xfree(msg_thr);
 }
@@ -166,7 +166,7 @@ extern void slurm_allocation_msg_thr_destroy(
 static void _handle_node_fail(struct allocation_msg_thread *msg_thr,
 			      slurm_msg_t *msg)
 {
-	srun_node_fail_msg_t *nf = (srun_node_fail_msg_t *)msg->data;
+	srun_node_fail_msg_t *nf = msg->data;
 
 	if (msg_thr->callback.node_fail != NULL)
 		(msg_thr->callback.node_fail)(nf);
@@ -180,7 +180,7 @@ static void _handle_node_fail(struct allocation_msg_thread *msg_thr,
 static void _handle_timeout(struct allocation_msg_thread *msg_thr,
 			    slurm_msg_t *msg)
 {
-	srun_timeout_msg_t *to = (srun_timeout_msg_t *)msg->data;
+	srun_timeout_msg_t *to = msg->data;
 
 	debug3("received timeout message");
 
@@ -191,7 +191,7 @@ static void _handle_timeout(struct allocation_msg_thread *msg_thr,
 static void _handle_user_msg(struct allocation_msg_thread *msg_thr,
 			     slurm_msg_t *msg)
 {
-	srun_user_msg_t *um = (srun_user_msg_t *)msg->data;
+	srun_user_msg_t *um = msg->data;
 	debug3("received user message");
 
 	if (msg_thr->callback.user_msg != NULL)
@@ -208,7 +208,7 @@ static void _handle_ping(struct allocation_msg_thread *msg_thr,
 static void _handle_job_complete(struct allocation_msg_thread *msg_thr,
 				 slurm_msg_t *msg)
 {
-	srun_job_complete_msg_t *comp = (srun_job_complete_msg_t *)msg->data;
+	srun_job_complete_msg_t *comp = msg->data;
 	debug3("job complete message received");
 
 	if (msg_thr->callback.job_complete != NULL)
@@ -218,7 +218,7 @@ static void _handle_job_complete(struct allocation_msg_thread *msg_thr,
 static void _handle_suspend(struct allocation_msg_thread *msg_thr,
 			    slurm_msg_t *msg)
 {
-	suspend_msg_t *sus_msg = (suspend_msg_t *)msg->data;
+	suspend_msg_t *sus_msg = msg->data;
 	debug3("received suspend message");
 
 	if (msg_thr->callback.job_suspend != NULL)
@@ -228,7 +228,7 @@ static void _handle_suspend(struct allocation_msg_thread *msg_thr,
 static void _net_forward(struct allocation_msg_thread *msg_thr,
 			 slurm_msg_t *forward_msg)
 {
-	net_forward_msg_t *msg = (net_forward_msg_t *) forward_msg->data;
+	net_forward_msg_t *msg = forward_msg->data;
 	int *local, *remote;
 	eio_obj_t *e1, *e2;
 
@@ -236,6 +236,7 @@ static void _net_forward(struct allocation_msg_thread *msg_thr,
 	remote = xmalloc(sizeof(*remote));
 
 	*remote = forward_msg->conn_fd;
+	net_set_nodelay(*remote);
 
 	if (msg->port) {
 		/* connect to host and given tcp port */
@@ -248,6 +249,7 @@ static void _net_forward(struct allocation_msg_thread *msg_thr,
 			      __func__, msg->target, msg->port);
 			goto error;
 		}
+		net_set_nodelay(*local);
 	} else if (msg->target) {
 		/* connect to local unix socket */
 		struct sockaddr_un addr;
@@ -301,7 +303,7 @@ _handle_msg(void *arg, slurm_msg_t *msg)
 	if ((req_uid != slurm_conf.slurm_user_id) && (req_uid != 0) &&
 	    (req_uid != uid)) {
 		error ("Security violation, slurm message from uid %u",
-		       (unsigned int) req_uid);
+		       req_uid);
 		return;
 	}
 
@@ -329,8 +331,8 @@ _handle_msg(void *arg, slurm_msg_t *msg)
 		_net_forward(msg_thr, msg);
 		break;
 	default:
-		error("%s: received spurious message type: %u",
-		      __func__, msg->msg_type);
+		error("%s: received spurious message type: %s",
+		      __func__, rpc_num2string(msg->msg_type));
 		break;
 	}
 	return;

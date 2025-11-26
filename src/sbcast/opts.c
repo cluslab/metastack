@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2006-2007 The Regents of the University of California.
  *  Copyright (C) 2008 Lawrence Livermore National Security.
- *  Copyright (C) 2010-2016 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
@@ -59,6 +59,8 @@
 #define OPT_LONG_HELP      0x101
 #define OPT_LONG_USAGE     0x102
 #define OPT_LONG_SEND_LIBS 0x103
+#define OPT_LONG_AUTOCOMP  0x104
+#define OPT_LONG_TREE_WIDTH 0x105
 
 
 /* getopt_long options, integers but not characters */
@@ -74,13 +76,15 @@ static void     _usage( void );
  */
 extern void parse_command_line(int argc, char **argv)
 {
-	char *env_val = NULL, *sep, *tmp;
+	char *env_val = NULL, *tmp;
 	int opt_char, ret;
 	int option_index;
 	static struct option long_options[] = {
+		{"autocomplete", required_argument, 0, OPT_LONG_AUTOCOMP},
 		{"compress",  optional_argument, 0, 'C'},
 		{"exclude",   required_argument, 0, OPT_LONG_EXCLUDE},
 		{"fanout",    required_argument, 0, 'F'},
+		{"treewidth",    required_argument, 0, OPT_LONG_TREE_WIDTH},
 		{"force",     no_argument,       0, 'f'},
 		{"jobid",     required_argument, 0, 'j'},
 		{"send-libs", optional_argument, 0, OPT_LONG_SEND_LIBS},
@@ -94,14 +98,10 @@ extern void parse_command_line(int argc, char **argv)
 		{NULL,        0,                 0, 0}
 	};
 
-	if ((tmp = xstrcasestr(slurm_conf.bcast_parameters, "Compression="))) {
-		tmp += 12;
-		sep = strchr(tmp, ',');
-		if (sep)
-			sep[0] = '\0';
+	if ((tmp = conf_get_opt_str(slurm_conf.bcast_parameters,
+				    "Compression="))) {
 		params.compress = parse_compress_type(tmp);
-		if (sep)
-			sep[0] = ',';
+		xfree(tmp);
 	}
 
 	if (slurm_conf.bcast_exclude)
@@ -113,8 +113,13 @@ extern void parse_command_line(int argc, char **argv)
 		xfree(params.exclude);
 		params.exclude = xstrdup(env_val);
 	}
-	if ( ( env_val = getenv("SBCAST_FANOUT") ) )
-		params.fanout = atoi(env_val);
+	if ((env_val = getenv("SBCAST_TREE_WIDTH")) ||
+	    (env_val = getenv("SBCAST_FANOUT"))) {
+		if (!xstrcasecmp(env_val, "off"))
+			params.tree_width = 0xfffd;
+		else
+			params.tree_width = atoi(env_val);
+	}
 	if (getenv("SBCAST_FORCE"))
 		params.flags |= BCAST_FLAG_FORCE;
 
@@ -161,8 +166,12 @@ extern void parse_command_line(int argc, char **argv)
 		case (int)'f':
 			params.flags |= BCAST_FLAG_FORCE;
 			break;
+		case OPT_LONG_TREE_WIDTH:
 		case (int)'F':
-			params.fanout = atoi(optarg);
+			if (!xstrcasecmp(optarg, "off"))
+				params.tree_width = 0xfffd;
+			else
+				params.tree_width = atoi(optarg);
 			break;
 		case (int)'j':
 			params.selected_step = slurm_parse_step_str(optarg);
@@ -198,6 +207,10 @@ extern void parse_command_line(int argc, char **argv)
 		case (int) OPT_LONG_USAGE:
 			_usage();
 			exit(0);
+		case OPT_LONG_AUTOCOMP:
+			suggest_completion(long_options, optarg);
+			exit(0);
+			break;
 		}
 	}
 
@@ -224,15 +237,10 @@ extern void parse_command_line(int argc, char **argv)
 
 	if (argv[optind+1][0] == '/') {
 		params.dst_fname = xstrdup(argv[optind+1]);
-	} else if ((tmp = xstrcasestr(slurm_conf.bcast_parameters,
-				      "DestDir="))) {
-		tmp += 8;
-		sep = strchr(tmp, ',');
-		if (sep)
-			sep[0] = '\0';
-		xstrfmtcat(params.dst_fname, "%s/%s", tmp, argv[optind+1]);
-		if (sep)
-			sep[0] = ',';
+	} else if ((params.dst_fname =
+		    conf_get_opt_str(slurm_conf.bcast_parameters,
+				     "DestDir="))) {
+		xstrfmtcat(params.dst_fname, "/%s", argv[optind+1]);
 	} else {
 #ifdef HAVE_GET_CURRENT_DIR_NAME
 		tmp = get_current_dir_name();
@@ -285,7 +293,7 @@ static void _print_options( void )
 	info("exclude    = %s", params.exclude);
 	info("force      = %s",
 	     (params.flags & BCAST_FLAG_FORCE) ? "true" : "false");
-	info("fanout     = %d", params.fanout);
+	info("treewidth     = %d", params.tree_width);
 	info("preserve   = %s",
 	     (params.flags & BCAST_FLAG_PRESERVE) ? "true" : "false");
 	info("send_libs  = %s",
@@ -310,7 +318,7 @@ Usage: sbcast [OPTIONS] SOURCE DEST\n\
   -C, --compress[=lib]  compress the file being transmitted\n\
   --exclude=<path_list> shared object paths to be excluded\n\
   -f, --force           replace destination file as required\n\
-  -F, --fanout=num      specify message fanout\n\
+  --treewidth=num       specify message treewidth\n\
   -j, --jobid=#[+#][.#] specify job ID with optional hetjob offset and/or step ID\n\
   -p, --preserve        preserve modes and times of source file\n\
   --send-libs[=yes|no]  autodetect and broadcast executable's shared objects\n\

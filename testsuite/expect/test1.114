@@ -3,8 +3,7 @@
 # Purpose: Test of Slurm functionality
 #          Test of srun --spread-job option.
 ############################################################################
-# Copyright (C) 2016 SchedMD LLC.
-# Written by Alejandro Sanchez <alex@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -79,9 +78,8 @@ proc run_spread_job { task_cnt } {
 	}
 }
 
-if {![check_config_select "cons_res"] &&
-    ![check_config_select "cons_tres"]} {
-	skip "Test is only compatible with a config of SelectType=select/cons_res or select/cons_tres"
+if {![check_config_select "cons_tres"]} {
+	skip "Test is only compatible with a config of SelectType=select/cons_tres"
 }
 
 set nodes    [get_nodes_by_state]

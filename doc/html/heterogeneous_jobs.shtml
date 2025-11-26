@@ -184,13 +184,14 @@ resource limits.</p>
 <a class="slurm_link" href="#burst_buffer"></a>
 </h2>
 
-<p>A burst buffer can either be persistent or linked to a specific job ID
-(at least the Cray implementation).
+<p>A burst buffer can either be persistent or linked to a specific job ID.
 Since a heterogeneous job consists of multiple job IDs, a job-specific burst
 buffer will be associated with only one heterogeneous job component.
-Only a persistent burst buffer can be accessed by all components of a
-heterogeneous job.
-A sample batch script demonstrating this for a Cray system is appended.</p>
+Each component can have its own burst buffer directives, and they are processed
+separately. Only a persistent burst buffer can be accessed by all components
+of a heterogeneous job. Persistent burst buffers are only available in the
+datawarp plugin. A sample batch script demonstrating this for the datawarp
+plugin is appended.</p>
 
 <pre>
 #!/bin/bash
@@ -203,16 +204,20 @@ A sample batch script demonstrating this for a Cray system is appended.</p>
 ...
 </pre>
 
-<p><b>NOTE:</b> Cray's DataWarp interface directly reads the job script, but
+<p><b>NOTE</b>: Cray's DataWarp interface directly reads the job script, but
 has no knowledge of "Slurm's "hetjob" directive, so Slurm internally rebuilds
-the script for each job component so that only that job components burst buffer
-directives are included in that script. The batch script first component of the
-job will be modified in order to replace the "#DW" directives of other
-job components with "#EXCLUDED DW" to prevent their interpretation by Cray
-infrastructure. Since the batch script will only be executed by the first job
+the script for each job component so that only that job component's burst buffer
+directives are included in that script. The batch script's first component of the
+job will be modified in order to replace the burst buffer directives of other
+job components with "#EXCLUDED directive" where directive is "DW" or "BB"
+for the datawarp plugin and is the
+<a href="burst_buffer.html#submit_lua">configured</a> value for the lua plugin.
+This prevents their interpretation by Cray infrastructure and aids
+administrators in writing an interface for the lua plugin.
+Since the batch script will only be executed by the first job
 component, the subsequent job components will not include commands from the
-original script. These scripts are build and managed by Slurm for internal
-purposes (and visiable from various Slurm commands) from a user script as shown
+original script. These scripts are built and managed by Slurm for internal
+purposes (and visible from various Slurm commands) from a user script as shown
 above. An example is shown below:</p>
 
 <pre>
@@ -472,7 +477,7 @@ allocated resources because of two srun commands executing at the same time).
 If the srun --het-group option is used to create multiple job steps (for the
 different components of a heterogeneous job), those job steps will be created
 sequentially.
-When multiple srun commmands execute at the same time, this may result in some
+When multiple srun commands execute at the same time, this may result in some
 step allocations taking place, while others are delayed.
 Only after all job step allocations have been granted will the application
 being launched.</p>
@@ -646,7 +651,7 @@ single srun command (e.g.
 <p>The sattach command can only be used to attach to a single component of
 a heterogeneous job at a time.</p>
 
-<p>License requests only work correctly when made on the first component
+<p>License requests are only allowed on the first component
 job (e.g.
 "sbatch -L ansys:2 : script.sh").<p>
 
@@ -657,11 +662,7 @@ components of a heterogeneous job.</p>
 
 <p>Heterogeneous jobs are not supported on GANG scheduling operations.</p>
 
-<p>Heterogeneous jobs are not supported on Cray ALPS systems.</p>
-
-<p>Heterogeneous jobs are not supported on IBM PE systems.</p>
-
-<p>Slurm's PERL APIs currently do not support heterogeneous jobs.</p>
+<p>Slurm's Perl APIs do not support heterogeneous jobs.</p>
 
 <p>The srun --multi-prog option can not be used to span more than one
 heterogeneous job component.</p>
@@ -785,6 +786,6 @@ Such a situation will have an adverse effect upon scheduling other jobs,
 especially other heterogeneous jobs.</p>
 
 
-<p style="text-align:center;">Last modified 10 October 2022</p>
+<p style="text-align:center;">Last modified 04 January 2024</p>
 
 <!--#include virtual="footer.txt"-->

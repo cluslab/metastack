@@ -212,9 +212,10 @@ static void _errhandler(size_t evhdlr_registration_id,
 		    (int) status, source->nspace, source->rank);
 #ifdef __METASTACK_OPT_PMIX_AGENT
 	slurm_send_kill_job_step_message();
-#else			
-	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);
-#endif	
+#else
+	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL,
+			    0);
+#endif
 }
 
 static pmix_server_module_t slurm_pmix_cb = {
@@ -236,9 +237,12 @@ int pmixp_lib_init(void)
 {
 	pmix_info_t *kvp = NULL;
 	pmix_status_t rc;
+
+#if (HAVE_PMIX_VER < 5)
 	uint32_t jobuid = pmixp_info_jobuid();
 
 	PMIXP_KVP_ADD(kvp, PMIX_USERID, &jobuid, PMIX_UINT32);
+#endif
 
 #ifdef PMIX_SERVER_TMPDIR
 	PMIXP_KVP_ADD(kvp, PMIX_SERVER_TMPDIR,

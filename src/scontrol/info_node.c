@@ -38,6 +38,45 @@
 \*****************************************************************************/
 
 #include "scontrol.h"
+#include "src/interfaces/data_parser.h"
+#include <arpa/inet.h>
+
+extern void scontrol_getaddrs(char *node_list)
+{
+	slurm_node_alias_addrs_t *alias_addrs = NULL;
+	if (!slurm_get_node_alias_addrs(node_list, &alias_addrs)) {
+		char *hostname = NULL;
+		hostlist_t *host_list = NULL;
+		int i = 0;
+
+		if (!(host_list = hostlist_create(alias_addrs->node_list))) {
+			error("hostlist_create error for %s: %m",
+			      node_list);
+			return;
+		}
+
+		while ((hostname = hostlist_shift(host_list))) {
+			char addrbuf[INET6_ADDRSTRLEN] = {0};
+			uint16_t port = 0;
+			slurm_addr_t *addr = &alias_addrs->node_addrs[i++];
+
+			slurm_get_ip_str(addr, (char *)addrbuf,
+					 INET6_ADDRSTRLEN);
+			port = slurm_get_port(addr);
+
+			if (addr->ss_family == AF_INET6)
+				printf("%s: [%s]:%d\n",
+				       hostname, addrbuf, port);
+			else
+				printf("%s: %s:%d\n", hostname, addrbuf, port);
+			free(hostname);
+		}
+
+		hostlist_destroy(host_list);
+	}
+
+	slurm_free_node_alias_addrs(alias_addrs);
+}
 
 /* Load current node table information into *node_buffer_pptr */
 extern int
@@ -46,6 +85,8 @@ scontrol_load_nodes (node_info_msg_t ** node_buffer_pptr, uint16_t show_flags)
 	int error_code;
 	static int last_show_flags = 0xffff;
 	node_info_msg_t *node_info_ptr = NULL;
+
+	show_flags |= SHOW_MIXED;
 
 	if (old_node_info_ptr) {
 		if (last_show_flags != show_flags)
@@ -132,15 +173,13 @@ scontrol_print_node(char *node_name, node_info_msg_t *node_buffer_ptr)
  * IN node_list - print information about the supplied node list
  *	(or regular expression)
  */
-extern void
-scontrol_print_node_list (char *node_list)
+extern void scontrol_print_node_list(char *node_list, int argc, char **argv)
 {
 	node_info_msg_t *node_info_ptr = NULL;
 	partition_info_msg_t *part_info_ptr = NULL;
-	hostlist_t host_list;
+	hostlist_t *host_list = NULL;
 	int error_code;
 	uint16_t show_flags = 0;
-	char *this_node_name;
 
 	if (all_flag)
 		show_flags |= SHOW_ALL;
@@ -148,22 +187,21 @@ scontrol_print_node_list (char *node_list)
 		show_flags |= SHOW_DETAIL;
 	if (future_flag)
 		show_flags |= SHOW_FUTURE;
-	
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
-    char *env_val = NULL;
-    if ((env_val = getenv("SCONTROL_NODE_CACHE_QUERY"))){
-        if(!cache_flag && !nocache_flag){
-            if(!xstrcmp(env_val, "cache"))
-                cache_flag = true;
-            else if(!xstrcmp(env_val, "nocache"))
-                nocache_flag = true;
-        }
-    }
+	char *env_val = NULL;
+	if ((env_val = getenv("SCONTROL_NODE_CACHE_QUERY"))){
+		if(!cache_flag && !nocache_flag){
+			if(!xstrcmp(env_val, "cache"))
+				cache_flag = true;
+			else if(!xstrcmp(env_val, "nocache"))
+				nocache_flag = true;
+		}
+	}
 	if(update_client_port(cache_flag, nocache_flag)){
 		return;
 	}
 #endif
-
 
 	error_code = scontrol_load_nodes(&node_info_ptr, show_flags);
 	if (error_code) {
@@ -174,7 +212,7 @@ scontrol_print_node_list (char *node_list)
 	}
 
 	if (quiet_flag == -1) {
-		char time_str[32];
+		char time_str[256];
 		slurm_make_time_str ((time_t *)&node_info_ptr->last_update,
 			             time_str, sizeof(time_str));
 		printf ("last_update_time=%s, records=%d\n",
@@ -191,17 +229,29 @@ scontrol_print_node_list (char *node_list)
 	slurm_populate_node_partitions(node_info_ptr, part_info_ptr);
 
 	if (node_list == NULL) {
-		scontrol_print_node (NULL, node_info_ptr);
-	} else {
-		if ((host_list = hostlist_create (node_list))) {
-			while ((this_node_name = hostlist_shift (host_list))) {
-				scontrol_print_node(this_node_name,
-						    node_info_ptr);
-				free(this_node_name);
-			}
+		if (mime_type) {
+			int rc;
+			openapi_resp_node_info_msg_t resp = {
+				.nodes = node_info_ptr,
+				.last_update = node_info_ptr->last_update,
+			};
 
-			hostlist_destroy(host_list);
+			if (is_data_parser_deprecated(data_parser))
+				DATA_DUMP_CLI_DEPRECATED(NODES, *node_info_ptr,
+							 "nodes", argc, argv,
+							 NULL, mime_type, rc);
+			else
+				DATA_DUMP_CLI(OPENAPI_NODES_RESP, resp, argc,
+					      argv, NULL, mime_type,
+					      data_parser, rc);
+
+			if (rc)
+				exit_code = 1;
 		} else {
+			scontrol_print_node(NULL, node_info_ptr);
+		}
+	} else {
+		if (!(host_list = hostlist_create(node_list))) {
 			exit_code = 1;
 			if (quiet_flag != 1) {
 				if (errno == EINVAL) {
@@ -216,6 +266,66 @@ scontrol_print_node_list (char *node_list)
 					perror("error parsing node list");
 			}
 		}
+
+		if (mime_type) {
+			int rc, count = 0;
+			char *node_name;
+			node_info_msg_t msg = {
+				.last_update = node_info_ptr->last_update,
+			};
+			openapi_resp_node_info_msg_t resp = {
+				.nodes = &msg,
+				.last_update = node_info_ptr->last_update,
+			};
+
+			msg.node_array = xcalloc(node_info_ptr->record_count,
+						 sizeof(*msg.node_array));
+
+			while ((node_name = hostlist_shift(host_list))) {
+				for (int i = 0; i < node_info_ptr->record_count;
+				     i++) {
+					node_info_t *n =
+						&node_info_ptr->node_array[i];
+
+					if (xstrcmp(node_name, n->name))
+						continue;
+
+					msg.node_array[count] = *n;
+					count++;
+					break;
+				}
+
+				free(node_name);
+
+				if (count >= node_info_ptr->record_count)
+					break;
+			}
+
+			msg.record_count = count;
+
+			if (is_data_parser_deprecated(data_parser))
+				DATA_DUMP_CLI_DEPRECATED(NODES, msg, "nodes",
+							 argc, argv, NULL,
+							 mime_type, rc);
+			else
+				DATA_DUMP_CLI(OPENAPI_NODES_RESP, resp, argc,
+					      argv, NULL, mime_type,
+					      data_parser, rc);
+
+			if (rc)
+				exit_code = 1;
+
+			xfree(msg.node_array);
+		} else {
+			char *node_name;
+
+			while ((node_name = hostlist_shift(host_list))) {
+				scontrol_print_node(node_name, node_info_ptr);
+				free(node_name);
+			}
+		}
+
+		hostlist_destroy(host_list);
 	}
 	return;
 }
@@ -227,50 +337,13 @@ scontrol_print_node_list (char *node_list)
 extern void	scontrol_print_topo (char *node_list)
 {
 	static topo_info_response_msg_t *topo_info_msg = NULL;
-	int i, match, match_cnt = 0;
-	hostset_t hs;
 
 	if ((topo_info_msg == NULL) &&
 	    slurm_load_topo(&topo_info_msg)) {
 		slurm_perror ("slurm_load_topo error");
 		return;
 	}
-
-	if ((node_list == NULL) || (node_list[0] == '\0')) {
-		slurm_print_topo_info_msg(stdout, topo_info_msg, one_liner);
-		return;
-	}
-
-	/* Search for matching switch name */
-	for (i=0; i<topo_info_msg->record_count; i++) {
-		if (xstrcmp(topo_info_msg->topo_array[i].name, node_list))
-			continue;
-		slurm_print_topo_record(stdout, &topo_info_msg->topo_array[i],
-					one_liner);
-		return;
-	}
-
-	/* Search for matching node name */
-	for (i=0; i<topo_info_msg->record_count; i++) {
-		if ((topo_info_msg->topo_array[i].nodes == NULL) ||
-		    (topo_info_msg->topo_array[i].nodes[0] == '\0'))
-			continue;
-		hs = hostset_create(topo_info_msg->topo_array[i].nodes);
-		if (hs == NULL)
-			fatal("hostset_create: memory allocation failure");
-		match = hostset_within(hs, node_list);
-		hostset_destroy(hs);
-		if (!match)
-			continue;
-		match_cnt++;
-		slurm_print_topo_record(stdout, &topo_info_msg->topo_array[i],
-					one_liner);
-	}
-
-	if (match_cnt == 0) {
-		error("Topology information contains no switch or "
-		      "node named %s", node_list);
-	}
+	slurm_print_topo_info_msg(stdout, topo_info_msg, node_list, one_liner);
 }
 
 /*
@@ -366,7 +439,7 @@ scontrol_print_front_end_list(char *node_list)
 {
 	front_end_info_msg_t *front_end_info_ptr = NULL;
 	int error_code;
-	hostlist_t host_list;
+	hostlist_t *host_list;
 	char *this_node_name;
 
 	error_code = scontrol_load_front_end(&front_end_info_ptr);
@@ -378,7 +451,7 @@ scontrol_print_front_end_list(char *node_list)
 	}
 
 	if (quiet_flag == -1) {
-		char time_str[32];
+		char time_str[256];
 		slurm_make_time_str((time_t *)&front_end_info_ptr->last_update,
 			            time_str, sizeof(time_str));
 		printf ("last_update_time=%s, records=%d\n",

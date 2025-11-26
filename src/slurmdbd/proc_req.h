@@ -44,7 +44,9 @@
 #include "src/common/slurm_protocol_defs.h"
 
 typedef struct {
-	slurm_persist_conn_t *conn;
+	persist_conn_t *conn;
+	persist_conn_t *conn_send;
+	pthread_mutex_t conn_send_lock;
 	void *db_conn; /* database connection */
 	char *tres_str;
 } slurmdbd_conn_t;
@@ -56,9 +58,7 @@ typedef struct {
  * msg_size IN - size of msg in bytes
  * first IN - set if first message received on the socket
  * buffer OUT - outgoing response, must be freed by caller
- * uid IN/OUT - user ID who initiated the RPC
  * RET SLURM_SUCCESS or error code */
-extern int proc_req(void *conn, persist_msg_t *msg, buf_t **out_buffer,
-		    uint32_t *uid);
+extern int proc_req(void *conn, persist_msg_t *msg, buf_t **out_buffer);
 
 #endif /* !_PROC_REQ */

@@ -140,12 +140,14 @@ extern void re_kill_job(job_record_t *job_ptr);
  *	   the request, (e.g. best-fit or other criterion)
  *	3) Call allocate_nodes() to perform the actual allocation
  */
-extern int select_nodes(job_record_t *job_ptr, bool test_only,
+/* extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			bitstr_t **select_node_bitmap, char **err_msg,
-#ifdef __METASTACK_NEW_PART_PARA_SCHED			
+			bool submission, uint32_t scheduler_type); */
+#ifdef __METASTACK_NEW_PART_PARA_SCHED	
+extern int select_nodes(job_record_t *job_ptr, bool test_only,
+			bitstr_t **select_node_bitmap, char **err_msg,		
 			bool submission, uint32_t scheduler_type, bool sched, int index);
 #endif
-
 /*
  * get_node_cnts - determine the number of nodes for the requested job.
  * IN job_ptr - pointer to the job record.
@@ -161,8 +163,6 @@ extern int get_node_cnts(job_record_t *job_ptr, uint32_t qos_flags,
 			 part_record_t *part_ptr, uint32_t *min_nodes,
 			 uint32_t *req_nodes, uint32_t *max_nodes);
 
-extern void setup_cred_arg(slurm_cred_arg_t *cred_arg, job_record_t *job_ptr);
-
 /* launch_prolog - launch job prolog script by slurmd on allocated nodes
  * IN job_ptr - pointer to the job record
  */
@@ -170,15 +170,15 @@ extern void launch_prolog(job_record_t *job_ptr);
 
 /*
  * valid_feature_counts - validate a job's features can be satisfied
- *	by the selected nodes (NOTE: does not process XOR or XAND operators)
+ *	by the selected nodes (NOTE: does not process MOR or XAND operators)
  * IN job_ptr - job to operate on
  * IN use_active - if set, then only consider nodes with the identified features
  *	active, otherwise use available features
  * IN/OUT node_bitmap - nodes available for use, clear if unusable
- * OUT has_xor - set if XOR/XAND found in feature expression
+ * OUT has_mor - set if MOR/XAND found in feature expression
  * RET SLURM_SUCCESS or error
  */
 extern int valid_feature_counts(job_record_t *job_ptr, bool use_active,
-				bitstr_t *node_bitmap, bool *has_xor);
+				bitstr_t *node_bitmap, bool *has_mor);
 
 #endif /* !_HAVE_NODE_SCHEDULER_H */

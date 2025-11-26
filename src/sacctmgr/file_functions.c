@@ -332,7 +332,7 @@ static int _print_out_assoc(List assoc_list, bool user, bool add)
 {
 	List format_list = NULL;
 	List print_fields_list = NULL;
-	ListIterator itr, itr2;
+	list_itr_t *itr, *itr2;
 	print_field_t *field = NULL;
 	slurmdb_assoc_rec_t *assoc = NULL;
 	int rc = SLURM_SUCCESS;
@@ -407,6 +407,18 @@ static int _mod_assoc(sacctmgr_file_opts_t *file_opts,
 	}
 	slurmdb_init_assoc_rec(&mod_assoc, 0);
 	memset(&assoc_cond, 0, sizeof(slurmdb_assoc_cond_t));
+
+	if (file_opts->assoc_rec.comment
+	    && xstrcmp(assoc->comment, file_opts->assoc_rec.comment)) {
+		mod_assoc.comment = file_opts->assoc_rec.comment;
+		changed = 1;
+		xstrfmtcat(my_info,
+			   "%-30.30s for %-7.7s %-10.10s "
+			   "%8s -> %s\n",
+			   " Changed Comment",
+			   type, name, assoc->comment,
+			   file_opts->assoc_rec.comment);
+	}
 
 	if ((file_opts->assoc_rec.shares_raw != NO_VAL)
 	    && (assoc->shares_raw != file_opts->assoc_rec.shares_raw)) {
@@ -645,9 +657,9 @@ static int _mod_assoc(sacctmgr_file_opts_t *file_opts,
 	if (assoc->qos_list && list_count(assoc->qos_list) &&
 	    file_opts->assoc_rec.qos_list &&
 	    list_count(file_opts->assoc_rec.qos_list)) {
-		ListIterator now_qos_itr =
-			list_iterator_create(assoc->qos_list),
-			new_qos_itr =
+		list_itr_t *now_qos_itr =
+			list_iterator_create(assoc->qos_list);
+		list_itr_t *new_qos_itr =
 			list_iterator_create(file_opts->assoc_rec.qos_list);
 		char *now_qos = NULL, *new_qos = NULL;
 
@@ -732,7 +744,7 @@ static int _mod_assoc(sacctmgr_file_opts_t *file_opts,
 
 /* 		if (ret_list && list_count(ret_list)) { */
 /* 			char *object = NULL; */
-/* 			ListIterator itr = list_iterator_create(ret_list); */
+/* 			list_itr_t *itr = list_iterator_create(ret_list); */
 /* 			printf(" Modified account defaults for " */
 /* 			       "associations...\n"); */
 /* 			while ((object = list_next(itr)))  */
@@ -791,7 +803,7 @@ static int _mod_cluster(sacctmgr_file_opts_t *file_opts,
 
 /* 		if (ret_list && list_count(ret_list)) { */
 /* 			char *object = NULL; */
-/* 			ListIterator itr = list_iterator_create(ret_list); */
+/* 			list_itr_t *itr = list_iterator_create(ret_list); */
 /* 			printf(" Modified account defaults for " */
 /* 			       "associations...\n"); */
 /* 			while ((object = list_next(itr)))  */
@@ -879,7 +891,7 @@ static int _mod_acct(sacctmgr_file_opts_t *file_opts,
 
 /* 		if (ret_list && list_count(ret_list)) { */
 /* 			char *object = NULL; */
-/* 			ListIterator itr = list_iterator_create(ret_list); */
+/* 			list_itr_t *itr = list_iterator_create(ret_list); */
 /* 			printf(" Modified account defaults for " */
 /* 			       "associations...\n"); */
 /* 			while ((object = list_next(itr)))  */
@@ -977,7 +989,7 @@ static int _mod_user(sacctmgr_file_opts_t *file_opts,
 
 /* 		if (ret_list && list_count(ret_list)) { */
 /* 			char *object = NULL; */
-/* 			ListIterator itr = list_iterator_create(ret_list); */
+/* 			list_itr_t *itr = list_iterator_create(ret_list); */
 /* 			printf(" Modified user defaults for " */
 /* 			       "associations...\n"); */
 /* 			while ((object = list_next(itr)))  */
@@ -998,7 +1010,7 @@ static int _mod_user(sacctmgr_file_opts_t *file_opts,
 	if ((!user->coord_accts || !list_count(user->coord_accts))
 	    && (file_opts->coord_list
 		&& list_count(file_opts->coord_list))) {
-		ListIterator coord_itr = NULL;
+		list_itr_t *coord_itr = NULL;
 		char *temp_char = NULL;
 		slurmdb_coord_rec_t *coord = NULL;
 		int first = 1;
@@ -1030,8 +1042,8 @@ static int _mod_user(sacctmgr_file_opts_t *file_opts,
 	} else if ((user->coord_accts && list_count(user->coord_accts))
 		   && (file_opts->coord_list
 		       && list_count(file_opts->coord_list))) {
-		ListIterator coord_itr = NULL;
-		ListIterator char_itr = NULL;
+		list_itr_t *coord_itr = NULL;
+		list_itr_t *char_itr = NULL;
 		char *temp_char = NULL;
 		slurmdb_coord_rec_t *coord = NULL;
 		List add_list = list_create(NULL);
@@ -1074,7 +1086,7 @@ static int _mod_user(sacctmgr_file_opts_t *file_opts,
 	if ((!user->wckey_list || !list_count(user->wckey_list))
 	    && (file_opts->wckey_list
 		&& list_count(file_opts->wckey_list))) {
-		ListIterator wckey_itr = NULL;
+		list_itr_t *wckey_itr = NULL;
 		char *temp_char = NULL;
 		slurmdb_wckey_rec_t *wckey = NULL;
 		int first = 1;
@@ -1106,8 +1118,8 @@ static int _mod_user(sacctmgr_file_opts_t *file_opts,
 	} else if ((user->wckey_list && list_count(user->wckey_list))
 		   && (file_opts->wckey_list
 		       && list_count(file_opts->wckey_list))) {
-		ListIterator wckey_itr = NULL;
-		ListIterator char_itr = NULL;
+		list_itr_t *wckey_itr = NULL;
+		list_itr_t *char_itr = NULL;
 		char *temp_char = NULL;
 		slurmdb_wckey_rec_t *wckey = NULL;
 		List add_list = list_create(slurmdb_destroy_wckey_rec);
@@ -1176,7 +1188,7 @@ static slurmdb_user_rec_t *_set_user_up(sacctmgr_file_opts_t *file_opts,
 	if (file_opts->coord_list) {
 		slurmdb_user_cond_t user_cond;
 		slurmdb_assoc_cond_t assoc_cond;
-		ListIterator coord_itr = NULL;
+		list_itr_t *coord_itr = NULL;
 		char *temp_char = NULL;
 		slurmdb_coord_rec_t *coord = NULL;
 
@@ -1204,7 +1216,7 @@ static slurmdb_user_rec_t *_set_user_up(sacctmgr_file_opts_t *file_opts,
 	}
 
 	if (file_opts->wckey_list) {
-		ListIterator wckey_itr = NULL;
+		list_itr_t *wckey_itr = NULL;
 		char *temp_char = NULL;
 		slurmdb_wckey_rec_t *wckey = NULL;
 
@@ -1308,7 +1320,7 @@ static int _print_file_slurmdb_hierarchical_rec_children(
 	FILE *fd, List slurmdb_hierarchical_rec_list,
 	List user_list, List acct_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	slurmdb_hierarchical_rec_t *slurmdb_hierarchical_rec = NULL;
 	char *line = NULL;
 	slurmdb_user_rec_t *user_rec = NULL;
@@ -1342,7 +1354,7 @@ static int _print_file_slurmdb_hierarchical_rec_children(
 							   admin_level));
 				if (user_rec->coord_accts
 				    && list_count(user_rec->coord_accts)) {
-					ListIterator itr2 = NULL;
+					list_itr_t *itr2 = NULL;
 					slurmdb_coord_rec_t *coord = NULL;
 					int first_coord = 1;
 					list_sort(user_rec->coord_accts,
@@ -1374,7 +1386,7 @@ static int _print_file_slurmdb_hierarchical_rec_children(
 
 				if (user_rec->wckey_list
 				    && list_count(user_rec->wckey_list)) {
-					ListIterator itr2 = NULL;
+					list_itr_t *itr2 = NULL;
 					slurmdb_wckey_rec_t *wckey = NULL;
 					int first_wckey = 1;
 					itr2 = list_iterator_create(
@@ -1403,6 +1415,10 @@ static int _print_file_slurmdb_hierarchical_rec_children(
 					list_iterator_destroy(itr2);
 				}
 			}
+			if (slurmdb_hierarchical_rec->assoc->comment)
+				xstrfmtcat(line, ":Comment='%s'",
+					   slurmdb_hierarchical_rec->
+					   assoc->comment);
 		} else {
 			acct_rec = sacctmgr_find_account_from_list(
 				acct_list,
@@ -1567,7 +1583,7 @@ extern int print_file_slurmdb_hierarchical_rec_list(
 	List user_list,
 	List acct_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	slurmdb_hierarchical_rec_t *slurmdb_hierarchical_rec = NULL;
 
 	itr = list_iterator_create(slurmdb_hierarchical_rec_list);
@@ -1634,8 +1650,8 @@ extern void load_sacctmgr_cfg_file (int argc, char **argv)
 	List user_assoc_list = NULL;
 	List mod_assoc_list = NULL;
 
-	ListIterator itr;
-	ListIterator itr2;
+	list_itr_t *itr;
+	list_itr_t *itr2;
 
 	List print_fields_list;
 	List format_list = NULL;
@@ -1873,7 +1889,7 @@ extern void load_sacctmgr_cfg_file (int argc, char **argv)
 					rc = SLURM_ERROR;
 					break;
 				}
-				/* This needs to be commited or
+				/* This needs to be committed or
 				   problems may arise */
 				slurmdb_connection_commit(db_conn, 1);
 			}
@@ -1928,7 +1944,7 @@ extern void load_sacctmgr_cfg_file (int argc, char **argv)
 					file_opts = NULL;
 					break;
 				}
-				/* This needs to be commited or
+				/* This needs to be committed or
 				   problems may arise */
 				slurmdb_connection_commit(db_conn, 1);
 				set = 1;
@@ -2235,19 +2251,18 @@ extern void load_sacctmgr_cfg_file (int argc, char **argv)
 				switch(field->type) {
 				case PRINT_DESC:
 					field->print_routine(
-						field, acct->description);
+						field, acct->description, 0);
 					break;
 				case PRINT_NAME:
 					field->print_routine(
-						field, acct->name);
+						field, acct->name, 0);
 					break;
 				case PRINT_ORG:
 					field->print_routine(
-						field, acct->organization);
+						field, acct->organization, 0);
 					break;
 				default:
-					field->print_routine(
-						field, NULL);
+					field->print_routine(field, NULL, 0);
 					break;
 				}
 			}
@@ -2287,34 +2302,37 @@ extern void load_sacctmgr_cfg_file (int argc, char **argv)
 					field->print_routine(
 						field,
 						slurmdb_admin_level_str(
-							user->admin_level));
+							user->admin_level),
+						0);
 					break;
 				case PRINT_COORDS:
 					field->print_routine(
 						field,
-						user->coord_accts);
+						&user->coord_accts,
+						0);
 					break;
 				case PRINT_DACCT:
 					field->print_routine(
 						field,
-						user->default_acct);
+						user->default_acct,
+						0);
 					break;
 				case PRINT_DWCKEY:
 					field->print_routine(
 						field,
-						user->default_wckey);
+						user->default_wckey,
+						0);
 					break;
 				case PRINT_NAME:
 					field->print_routine(
-						field, user->name);
+						field, user->name, 0);
 					break;
 				case PRINT_WCKEYS:
 					field->print_routine(
-						field, user->wckey_list);
+						field, &user->wckey_list, 0);
 					break;
 				default:
-					field->print_routine(
-						field, NULL);
+					field->print_routine(field, NULL, 0);
 					break;
 				}
 			}

@@ -46,7 +46,7 @@
 #include <sys/ioctl.h>
 
 #include "src/common/read_config.h"
-#include "src/common/slurm_priority.h"
+#include "src/interfaces/priority.h"
 #include "src/common/xstring.h"
 #include "src/sprio/sprio.h"
 
@@ -71,7 +71,7 @@ int main (int argc, char **argv)
 	log_options_t opts = LOG_OPTS_STDERR_ONLY ;
 	uint16_t show_flags = 0;
 
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 	log_init(xbasename(argv[0]), opts, SYSLOG_FACILITY_USER, NULL);
 
 	parse_command_line(argc, argv);
@@ -124,9 +124,7 @@ int main (int argc, char **argv)
 		show_flags |= SHOW_LOCAL;
 	if (params.sibling)
 		show_flags |= SHOW_FEDERATION | SHOW_SIBLING;
-	error_code = slurm_load_job_prio(&resp_msg, params.job_list,
-					 params.parts, params.user_list,
-					 show_flags);
+	error_code = slurm_load_job_prio(&resp_msg, show_flags);
 	if (error_code) {
 		slurm_perror("Couldn't get priority factors from controller");
 		exit(error_code);
@@ -135,7 +133,7 @@ int main (int argc, char **argv)
 	if (params.format == NULL) {
 		if (params.normalized) {
 			if (params.long_list) {
-				params.format = "%.15i %9r %.8u %10y %10a %10b %10f %10j %10p %10q %20t";
+				params.format = "%.15i %9r %.8u %.8o %10y %10a %10b %10f %10j %10p %10n %10q %20t";
 			} else {
 				params.format = xstrdup("%.15i %9r");
 				if (params.sibling && !params.local)
@@ -160,7 +158,7 @@ int main (int argc, char **argv)
 			}
 		} else {
 			if (params.long_list) {
-				params.format = "%.15i %9r %.8u %.10Y %.10S %.10A %.10B %.10F %.10J %.10P %.10Q %.11N %.20T";
+				params.format = "%.15i %9r %.8u %.8o %.10Y %.10S %.10A %.10B %.10F %.10J %.10P %.10n %.10Q %.11N %.20T";
 			} else {
 				params.format = xstrdup("%.15i %9r");
 				if (params.sibling && !params.local)
@@ -193,6 +191,7 @@ int main (int argc, char **argv)
 			    !list_count(resp_msg->priority_factors_list))) {
 		printf("Unable to find jobs matching user/id(s) specified\n");
 	} else if (resp_msg) {
+		filter_job_list(resp_msg->priority_factors_list);
 		print_jobs_array(resp_msg->priority_factors_list,
 				 params.format_list);
 	}

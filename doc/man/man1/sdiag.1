@@ -1,4 +1,4 @@
-.TH sdiag "1" "Slurm Commands" "May 2021" "Slurm Commands"
+.TH sdiag "1" "Slurm Commands" "May 2023" "Slurm Commands"
 
 .SH "NAME"
 sdiag \- Scheduling diagnostic tool for Slurm
@@ -9,8 +9,8 @@ sdiag
 .SH "DESCRIPTION"
 sdiag shows information related to slurmctld execution about: threads, agents,
 jobs, and scheduling algorithms. The goal is to obtain data from slurmctld
-behaviour helping to adjust configuration parameters or queues policies. The
-main reason behind is to know Slurm behaviour under systems with a high throughput.
+behavior helping to adjust configuration parameters or queues policies. The
+main reason behind is to know Slurm behavior under systems with a high throughput.
 .LP
 It has two execution modes. The default mode \fB\-\-all\fR shows several counters
 and statistics explained later, and there is another execution option
@@ -106,7 +106,7 @@ Time stamp of when the running job count was taken.
 The next block of information is related to main scheduling algorithm based
 on jobs priorities. A scheduling cycle implies to get the job_write_lock lock,
 then trying to get resources for jobs pending, starting from the most priority
-one and going in descendent order. Once a job can not get the resources the
+one and going in descending order. Once a job can not get the resources the
 loop keeps going but just for jobs requesting other partitions. Jobs with
 dependencies or affected  by accounts limits are not processed.
 
@@ -268,7 +268,7 @@ iteration.
 \fBMean table size\fR
 Mean count of different time slots tested by the backfill scheduler.
 Larger counts increase the time required for the backfill operation.
-The table size is influenced by many schuling parameters, including:
+The table size is influenced by many scheduling parameters, including:
 bf_min_age_reserve, bf_min_prio_reserve, bf_resolution, and bf_window.
 .IP
 
@@ -312,12 +312,19 @@ Get and report information. This is the default mode of operation.
 .TP
 \fB\-M\fR, \fB\-\-cluster\fR=<\fIstring\fR>
 The cluster to issue commands to. Only one cluster name may be specified.
-Note that the SlurmDBD must be up for this option to work properly.
+Note that the \fBslurmdbd\fR must be up for this option to work properly, unless
+running in a federation with \fBFederationParameters=fed_display\fR configured.
 .IP
 
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print description of options and exit.
+.IP
+
+.TP
+\f3\-\-json\fP, \f3\-\-json\fP=\fIlist\fR, \f3\-\-json\fP=<\fIdata_parser\fR>
+Dump information as JSON using the default data_parser plugin or explicit
+data_parser with parameters. Sorting and formatting arguments will be ignored.
 .IP
 
 .TP
@@ -349,6 +356,12 @@ Print list of options and exit.
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Print current version number and exit.
+.IP
+
+.TP
+\f3\-\-yaml\fP, \f3\-\-yaml\fP=\fIlist\fR, \f3\-\-yaml\fP=<\fIdata_parser\fR>
+Dump information as YAML using the default data_parser plugin or explicit
+data_parser with parameters. Sorting and formatting arguments will be ignored.
 .IP
 
 .SH "PERFORMANCE"
@@ -391,7 +404,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "SEE ALSO"

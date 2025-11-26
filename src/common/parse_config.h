@@ -289,16 +289,17 @@ typedef enum slurm_parser_operator {
 
 #ifdef __METASTACK_OPT_GRES_CONFIG
 typedef struct {
-    char *key;
-    char *value;
-    char *new_leftover;
-    slurm_parser_operator_t op;
-    hostlist_t hostlist;
+	char *key;
+	char *value;
+	char *new_leftover;
+	slurm_parser_operator_t op;
+	hostlist_t *hostlist;
 	s_p_hashtbl_t *hashtbl;
 } parsed_line_t;
 
 extern parsed_line_t *parsed_lines;
 extern int current_line_index;
+extern bool slurmctld_load_gres_flag;
 #endif
 
 typedef struct conf_file_options {
@@ -309,28 +310,31 @@ typedef struct conf_file_options {
 		       const char *line, char **leftover);
 	void (*destroy)(void *data);
 	struct conf_file_options* line_options;
+	void (*pack)(void *data, buf_t *buffer);
+	void *(*unpack)(buf_t *buffer);
 } s_p_options_t;
 
 
+s_p_hashtbl_t *s_p_hashtbl_create_cnt(const struct conf_file_options options[],
+				      int *cnt);
 s_p_hashtbl_t *s_p_hashtbl_create(const struct conf_file_options options[]);
 void s_p_hashtbl_destroy(s_p_hashtbl_t *hashtbl);
 
 /* Returns SLURM_SUCCESS if file was opened and parse correctly
  * OUT hash_val - cyclic redundancy check (CRC) character-wise value
  *                of file.
- * IN ignore_new - do not treat unrecognized keywords as a fatal error,
- *                 print debug() message and continue
+ * IN flags - flags affecting behavior.
  * OUT last_ancestor - last ancestor configuration filename used to map nested
  * 		       Include files in configless configurations.
  */
 int s_p_parse_file(s_p_hashtbl_t *hashtbl, uint32_t *hash_val, char *filename,
-		   bool ignore_new, char *last_ancestor);
+		   uint32_t flags, char *last_ancestor);
 #ifdef __METASTACK_OPT_GRES_CONFIG
 int s_p_parse_gres_file(s_p_hashtbl_t *hashtbl, uint32_t *hash_val, char *filename,
-		   bool ignore_new, char *last_ancestor, parsed_line_t *parsed_lines, int max_parsed_lines, int *num_parsed_lines);
+		   uint32_t flags, char *last_ancestor, parsed_line_t *parsed_lines, int max_parsed_lines, int *num_parsed_lines);
 
 int s_p_parse_file_gres(s_p_hashtbl_t *hashtbl, char *filename,
-		   bool ignore_new, parsed_line_t *parsed_lines, int max_lines, char *gres_node_name);
+		   uint32_t flags, parsed_line_t *parsed_lines, int max_lines, char *gres_node_name);
 #endif
 
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
@@ -340,6 +344,7 @@ int s_p_parse_file_gres(s_p_hashtbl_t *hashtbl, char *filename,
 */
 s_p_hashtbl_t *s_p_hashtbl_create_2(const struct conf_file_options options[]);
 #endif
+
 /* Returns SLURM_SUCCESS if buffer was opened and parse correctly.
  * buffer must be a valid buf_t buffer only containing strings. The parsing
  * stops at the first non string content extracted.
@@ -431,7 +436,7 @@ int s_p_parse_line_expanded(const s_p_hashtbl_t *hashtbl,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * string.  If the key is found and has a set value, the
- * value is retuned in "str".
+ * value is returned in "str".
  *
  * OUT str - pointer to a copy of the string value
  *           (caller is resonsible for freeing str with xfree())
@@ -444,6 +449,7 @@ int s_p_parse_line_expanded(const s_p_hashtbl_t *hashtbl,
  * NOTE: Caller is responsible for freeing the returned string with xfree!
  */
 int s_p_get_string(char **str, const char *key, const s_p_hashtbl_t *hashtbl);
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 /**
  * Because of the special nature of apptype.properties, we don't want the match 
@@ -457,7 +463,7 @@ int s_p_get_string_2(char **str, const char *key, const s_p_hashtbl_t *hashtbl);
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * long.  If the key is found and has a set value, the
- * value is retuned in "num".
+ * value is returned in "num".
  *
  * OUT num - pointer to a long where the value is returned
  * IN key - hash table key
@@ -473,7 +479,7 @@ int s_p_get_long(long *num, const char *key, const s_p_hashtbl_t *hashtbl);
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * uint16.  If the key is found and has a set value, the
- * value is retuned in "num".
+ * value is returned in "num".
  *
  * OUT num - pointer to a uint16_t where the value is returned
  * IN key - hash table key
@@ -490,7 +496,7 @@ int s_p_get_uint16(uint16_t *num, const char *key,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * uint32.  If the key is found and has a set value, the
- * value is retuned in "num".
+ * value is returned in "num".
  *
  * OUT num - pointer to a uint32_t where the value is returned
  * IN key - hash table key
@@ -507,7 +513,7 @@ int s_p_get_uint32(uint32_t *num, const char *key,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * uint64.  If the key is found and has a set value, the
- * value is retuned in "num".
+ * value is returned in "num".
  *
  * OUT num - pointer to a uint64_t where the value is returned
  * IN key - hash table key
@@ -524,7 +530,7 @@ int s_p_get_uint64(uint64_t *num, const char *key,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * float.  If the key is found and has a set value, the
- * value is retuned in "num".
+ * value is returned in "num".
  *
  * OUT num - pointer to a float where the value is returned
  * IN key - hash table key
@@ -541,7 +547,7 @@ int s_p_get_float(float *num, const char *key,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * double.  If the key is found and has a set value, the
- * value is retuned in "num".
+ * value is returned in "num".
  *
  * OUT num - pointer to a double where the value is returned
  * IN key - hash table key
@@ -558,7 +564,7 @@ int s_p_get_double(double *num, const char *key,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * long double.  If the key is found and has a set value, the
- * value is retuned in "num".
+ * value is returned in "num".
  *
  * OUT num - pointer to a long double where the value is returned
  * IN key - hash table key
@@ -593,7 +599,7 @@ int s_p_get_operator(slurm_parser_operator_t *opt, const char *key,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * pointer.  If the key is found and has a set value, the
- * value is retuned in "ptr".
+ * value is returned in "ptr".
  *
  * OUT num - pointer to a void pointer where the value is returned
  * IN key - hash table key
@@ -638,7 +644,7 @@ int s_p_get_expline(s_p_hashtbl_t **ptr_array[], int *count,
  *
  * Search for a key in a s_p_hashtbl_t with value of type
  * boolean.  If the key is found and has a set value, the
- * value is retuned in "flag".
+ * value is returned in "flag".
  *
  * OUT flag - pointer to a bool where the value is returned
  * IN key - hash table key
@@ -673,6 +679,8 @@ extern buf_t *s_p_pack_hashtbl(const s_p_hashtbl_t *hashtbl,
 /*
  * Given a buffer, unpack key, type, op and value into a hashtbl.
  */
+extern s_p_hashtbl_t *s_p_unpack_hashtbl_full(buf_t *buffer,
+					      const s_p_options_t options[]);
 extern s_p_hashtbl_t *s_p_unpack_hashtbl(buf_t *buffer);
 
 /*

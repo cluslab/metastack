@@ -88,6 +88,7 @@ extern int slurm_submit_batch_job(job_desc_msg_t *req,
 	switch (resp_msg.msg_type) {
 	case RESPONSE_SLURM_RC:
 		rc = ((return_code_msg_t *) resp_msg.data)->return_code;
+		slurm_free_return_code_msg(resp_msg.data);
 		if (rc)
 			slurm_seterrno_ret(rc);
 		*resp = NULL;
@@ -117,7 +118,7 @@ extern int slurm_submit_batch_het_job(List job_req_list,
 	job_desc_msg_t *req;
 	slurm_msg_t req_msg;
 	slurm_msg_t resp_msg;
-	ListIterator iter;
+	list_itr_t *iter;
 
 	slurm_msg_t_init(&req_msg);
 	slurm_msg_t_init(&resp_msg);
@@ -144,6 +145,7 @@ extern int slurm_submit_batch_het_job(List job_req_list,
 	switch (resp_msg.msg_type) {
 	case RESPONSE_SLURM_RC:
 		rc = ((return_code_msg_t *) resp_msg.data)->return_code;
+		slurm_free_return_code_msg(resp_msg.data);
 		if (rc)
 			slurm_seterrno_ret(rc);
 		*resp = NULL;

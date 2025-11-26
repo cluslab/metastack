@@ -1,6 +1,5 @@
 /*****************************************************************************\
- *  Copyright (C) 2019 SchedMD LLC
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -363,18 +362,18 @@ START_TEST(test_data_job)
 	data_set_string(arg, "gpu:10");
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_GRES, arg,
 						errors) == 0, "gres");
-	ck_assert_msg(!xstrcmp(opt.gres, "gres:gpu:10"), "gres value");
+	ck_assert_msg(!xstrcmp(opt.gres, "gres/gpu:10"), "gres value");
 #ifdef __METASTACK_NEW_GRES_DCU
 	data_set_string(arg, "dcu:10");
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_GRES, arg,
 						errors) == 0, "gres");
-	ck_assert_msg(!xstrcmp(opt.gres, "gres:dcu:10"), "gres value");	
+	ck_assert_msg(!xstrcmp(opt.gres, "gres/dcu:10"), "gres value");	
 #endif
 #ifdef __METASTACK_NEW_GRES_NPU
 	data_set_string(arg, "npu:10");
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_GRES, arg,
 						errors) == 0, "gres");
-	ck_assert_msg(!xstrcmp(opt.gres, "gres:npu:10"), "gres value");	
+	ck_assert_msg(!xstrcmp(opt.gres, "gres/npu:10"), "gres value");	
 #endif
 
 	data_set_string(arg, "invalid");
@@ -619,8 +618,8 @@ START_TEST(test_data_job)
 	opt.req_switch = 1;
 	data_set_null(arg);
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_SWITCHES, arg,
-						errors) == 0, "switches");
-	ck_assert_msg(opt.req_switch == 0, "switches value");
+						errors) != 0, "switches");
+	ck_assert_msg(opt.req_switch == 1, "switches value");
 	ck_assert_msg(opt.wait4switch == 12345, "wait 4 switches value");
 	opt.wait4switch = 12345;
 	opt.req_switch = 1;
@@ -741,7 +740,7 @@ START_TEST(test_data_job)
 
 	data_set_null(arg);
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_WAIT_ALL_NODES,
-						arg, errors) != 0,
+						arg, errors) == 0,
 		      "wait-all-nodes");
 	data_set_string(arg, "0");
 	ck_assert_msg(slurm_process_option_data(&opt, LONG_OPT_WAIT_ALL_NODES,
@@ -793,7 +792,7 @@ int main(void)
 	log_opts.stderr_level = LOG_LEVEL_DEBUG5;
 	log_init("slurm_opt-test", log_opts, 0, NULL);
 
-	/* Call slurm_conf_init() with a mock slurm.conf*/
+	/* Call slurm_init() with a mock slurm.conf*/
 	int fd;
 	char *slurm_unit_conf_filename = xstrdup("slurm_unit.conf-XXXXXX");
 	if ((fd = mkstemp(slurm_unit_conf_filename)) == -1) {
@@ -803,17 +802,25 @@ int main(void)
 	} else
 		debug("fake slurm.conf created: %s", slurm_unit_conf_filename);
 
+	/*
+	 * PluginDir=. is needed as loading the slurm.conf will check for the
+	 * existence of the dir. As 'make check' doesn't install anything the
+	 * normal PluginDir might not exist. As we don't load any plugins for
+	 * these test this should be ok.
+	 */
 	char slurm_unit_conf_content[] = "ClusterName=slurm_unit\n"
-					 "PluginDir=.\n"
+		                         "PluginDir=.\n"
 					 "SlurmctldHost=slurm_unit\n";
 	size_t csize = sizeof(slurm_unit_conf_content);
 	ssize_t rc = write(fd, slurm_unit_conf_content, csize);
 	if (rc < csize) {
-		error("error writting slurm_unit.conf (%s)",
+		error("error writing slurm_unit.conf (%s)",
 		      slurm_unit_conf_filename);
 		return EXIT_FAILURE;
 	}
-	if (slurm_conf_init(slurm_unit_conf_filename)) {
+
+	/* Do not load any plugins, we are only testing slurm_opt */
+	if (slurm_conf_init(slurm_unit_conf_filename) != SLURM_SUCCESS) {
 		error("slurm_conf_init() failed");
 		return EXIT_FAILURE;
 	}
@@ -822,12 +829,6 @@ int main(void)
 	xfree(slurm_unit_conf_filename);
 	close(fd);
 
-	/* data_init() is necessary on this test */
-	if (data_init(NULL, NULL)) {
-		error("data_init_static() failed");
-		return EXIT_FAILURE;
-	}
-
 	/* Start the actual libcheck code */
 	int number_failed;
 	SRunner *sr = srunner_create(slurm_opt_suite());
@@ -835,9 +836,6 @@ int main(void)
 	srunner_run_all(sr, CK_ENV);
 	number_failed = srunner_ntests_failed(sr);
 	srunner_free(sr);
-
-	/* Cleanup */
-	data_fini();
 
 	return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  apinfo.c - Cray Shasta PMI apinfo file creation
  *****************************************************************************
- *  Copyright 2019 Hewlett Packard Enterprise Development LP
+ *  Copyright 2019,2022 Hewlett Packard Enterprise Development LP
  *  Written by David Gloe <dgloe@cray.com>
  *
  *  This file is part of Slurm, a resource management program.
@@ -44,72 +44,6 @@
 
 #include "apinfo.h"
 
-/* Application file format version */
-#define PALS_APINFO_VERSION 1
-
-/* File header structure */
-typedef struct {
-	int version;
-	size_t total_size;
-	size_t comm_profile_size;
-	size_t comm_profile_offset;
-	int ncomm_profiles;
-	size_t cmd_size;
-	size_t cmd_offset;
-	int ncmds;
-	size_t pe_size;
-	size_t pe_offset;
-	int npes;
-	size_t node_size;
-	size_t node_offset;
-	int nnodes;
-	size_t nic_size;
-	size_t nic_offset;
-	int nnics;
-} pals_header_t;
-
-/* Network communication profile structure */
-typedef struct {
-	char tokenid[40];    /* Token UUID */
-	int vni;             /* VNI associated with this token */
-	int vlan;            /* VLAN associated with this token */
-	int traffic_classes; /* Bitmap of allowed traffic classes */
-} pals_comm_profile_t;
-
-/* MPMD command information structure */
-typedef struct {
-	int npes;         /* Number of PEs in this command */
-	int pes_per_node; /* Number of PEs per node */
-	int cpus_per_pe;  /* Number of CPUs per PE */
-} pals_cmd_t;
-
-/* PE (i.e. task) information structure */
-typedef struct {
-	int localidx; /* Node-local PE index */
-	int cmdidx;   /* Command index for this PE */
-	int nodeidx;  /* Node index this PE is running on */
-} pals_pe_t;
-
-/* Node information structure */
-typedef struct {
-	int nid;           /* Node ID */
-	char hostname[64]; /* Node hostname */
-} pals_node_t;
-
-/* NIC address type */
-typedef enum {
-	PALS_ADDR_IPV4,
-	PALS_ADDR_IPV6,
-	PALS_ADDR_MAC
-} pals_address_type_t;
-
-/* NIC information structure */
-typedef struct {
-	int nodeidx;                      /* Node index this NIC belongs to */
-	pals_address_type_t address_type; /* Address type for this NIC */
-	char address[40];                 /* Address of this NIC */
-} pals_nic_t;
-
 /*
  * Get a NID from a hostname, in format nidXXXXXX.
  * Trailing characters are ignored.
@@ -128,7 +62,7 @@ static int _get_nid(const char *hostname)
  * Parse an MPMD file to determine the number of MPMD commands and task->cmd
  * mapping. Adopted from multi_prog_parse in src/slurmd/slurmstepd/multi_prog.c.
  *
- * The file's contents are stored in job->argv[1], and follow this format:
+ * The file's contents are stored in step->argv[1], and follow this format:
  * <taskids> <command> <arguments>
  *
  * taskids is a range list of task IDs or * (for all remaining task IDs).
@@ -136,23 +70,23 @@ static int _get_nid(const char *hostname)
  * Empty lines and lines starting with # are ignored.
  * Newlines may be escaped with \.
  */
-static void _multi_prog_parse(const stepd_step_rec_t *job, int *ncmds,
+static void _multi_prog_parse(const stepd_step_rec_t *step, int *ncmds,
 			      uint32_t **tid_offsets)
 {
 	int i = 0, line_num = 0, rank_id = 0, num_cmds = 0, nranks = 0;
 	char *line = NULL, *local_data = NULL;
 	char *end_ptr = NULL, *save_ptr = NULL, *tmp_str = NULL;
 	char *rank_spec = NULL, *p = NULL, *one_rank = NULL;
-	hostlist_t hl;
+	hostlist_t *hl;
 	uint32_t *offsets = NULL;
 
-	offsets = xcalloc(job->ntasks, sizeof(uint32_t));
-	for (i = 0; i < job->ntasks; i++) {
+	offsets = xcalloc(step->ntasks, sizeof(uint32_t));
+	for (i = 0; i < step->ntasks; i++) {
 		offsets[i] = NO_VAL;
 	}
 
 	// Copy contents of MPMD file so we can tokenize it
-	local_data = xstrdup(job->argv[1]);
+	local_data = xstrdup(step->argv[1]);
 
 	// Replace escaped newlines with spaces
 	while ((p = xstrstr(local_data, "\\\n"))) {
@@ -194,7 +128,7 @@ static void _multi_prog_parse(const stepd_step_rec_t *job, int *ncmds,
 		nranks = 0;
 		// If rank_spec is '*', set all remaining ranks to this cmd
 		if (!xstrcmp(rank_spec, "*")) {
-			for (i = 0; i < job->ntasks; i++) {
+			for (i = 0; i < step->ntasks; i++) {
 				if (offsets[i] == NO_VAL) {
 					offsets[i] = num_cmds;
 					nranks++;
@@ -210,7 +144,7 @@ static void _multi_prog_parse(const stepd_step_rec_t *job, int *ncmds,
 			while ((one_rank = hostlist_pop(hl))) {
 				rank_id = strtol(one_rank, &end_ptr, 10);
 				if ((end_ptr[0] != '\0') || (rank_id < 0) ||
-				    (rank_id >= job->ntasks)) {
+				    (rank_id >= step->ntasks)) {
 					hostlist_destroy(hl);
 					error("%s: invalid rank id %s",
 					      plugin_type, one_rank);
@@ -231,7 +165,7 @@ static void _multi_prog_parse(const stepd_step_rec_t *job, int *ncmds,
 	}
 
 	// Make sure we've initialized all ranks
-	for (i = 0; i < job->ntasks; i++) {
+	for (i = 0; i < step->ntasks; i++) {
 		if (offsets[i] == NO_VAL) {
 			error("%s: no command for task id %d", plugin_type, i);
 			goto fail;
@@ -276,6 +210,13 @@ static pals_pe_t *_setup_pals_pes(int ntasks, int nnodes, uint16_t *task_cnts,
 				pes[taskid].cmdidx = 0;
 			} else {
 				pes[taskid].cmdidx = tid_offsets[taskid];
+
+				// Make sure we don't set a negative cmdidx;
+				// this can happen for non-heterogeneous job
+				// steps in a heterogeneous job.
+				if (pes[taskid].cmdidx < 0) {
+					pes[taskid].cmdidx = 0;
+				}
 			}
 		}
 	}
@@ -332,9 +273,157 @@ static pals_cmd_t *_setup_pals_cmds(int ncmds, int ntasks, int nnodes,
 }
 
 /*
+ * Open the per-job-step file created by the Slingshot plugin (if available);
+ * fill in the pals_header_t structure at the beginning of the file;
+ * return the file descriptor (and the file name in *ss_apinfop)
+ */
+static int _open_ss_info(const stepd_step_rec_t *job, const char *spool,
+			 pals_header_t *hdr, char **ss_apinfop)
+{
+	int fd = -1;
+
+	/* Open info file written by the Slingshot plugin */
+	*ss_apinfop = xstrdup_printf("%s/%s/apinfo.%u.%u",
+				     spool, HPE_SLINGSHOT_DIR,
+				     job->step_id.job_id, job->step_id.step_id);
+	fd = open(*ss_apinfop, O_RDONLY);
+	if (fd == -1) {
+		/* This is expected if Slingshot plugin isn't in use */
+		debug("%s: Couldn't open %s: %m", plugin_type, *ss_apinfop);
+		goto rwfail;
+	}
+
+	/* Read header */
+	safe_read(fd, hdr, sizeof(*hdr));
+
+	/* Check header fields */
+	if (hdr->version != PALS_APINFO_VERSION) {
+		error("%s: %s version %d doesn't match expected version %d",
+		      plugin_type, *ss_apinfop,
+		      hdr->version, PALS_APINFO_VERSION);
+		goto rwfail;
+	}
+	return fd;
+
+rwfail:
+	if (fd != -1)
+		close(fd);
+	xfree(*ss_apinfop);
+	return -1;
+}
+
+/*
+ * Given the file descriptor and pals_header_t header from the information
+ * file left by the Slingshot plugin, return a list of communication profiles
+ */
+static pals_comm_profile_t *_setup_pals_profiles(int fd, pals_header_t *hdr,
+						 char *ss_apinfo,
+						 int *nprofiles)
+{
+	pals_comm_profile_t *profiles = NULL;
+	size_t profiles_size = 0;
+
+	*nprofiles = 0;
+	if (fd < 0)
+		return NULL;
+
+	/* Check header fields */
+	if (hdr->ncomm_profiles < 0) {
+		error("%s: %s invalid ncomm_profiles %d",
+		      plugin_type, ss_apinfo, hdr->ncomm_profiles);
+		goto rwfail;
+	}
+	if (hdr->comm_profile_size != sizeof(pals_comm_profile_t)) {
+		error("%s: %s invalid comm_profile_size %zu != %zu",
+		      plugin_type, ss_apinfo, hdr->comm_profile_size,
+		      sizeof(pals_comm_profile_t));
+		goto rwfail;
+	}
+
+	debug("%s: Found %d comm profiles in %s",
+	      plugin_type, hdr->ncomm_profiles, ss_apinfo);
+
+	if (hdr->ncomm_profiles == 0)
+		return NULL;
+
+	/* Allocate space for the profiles */
+	profiles_size = hdr->ncomm_profiles * hdr->comm_profile_size;
+	profiles = xmalloc(profiles_size);
+
+	/* Read the profiles from the correct position */
+	if (lseek(fd, hdr->comm_profile_offset, SEEK_SET) == -1) {
+		error("%s: Couldn't seek to %zu in %s: %m",
+		      plugin_type, hdr->comm_profile_offset, ss_apinfo);
+		goto rwfail;
+	}
+	safe_read(fd, profiles, profiles_size);
+
+	*nprofiles = hdr->ncomm_profiles;
+	return profiles;
+
+rwfail:
+	xfree(profiles);
+	return NULL;
+}
+
+/*
+ * Given the file descriptor and pals_header_t header from the information
+ * file left by the Slingshot plugin, return a list of HSN NIC info
+ */
+static pals_hsn_nic_t *_setup_pals_nics(int fd, pals_header_t *hdr,
+				        char *ss_apinfo, int *nnics)
+{
+	pals_hsn_nic_t *nics = NULL;
+	size_t nics_size = 0;
+
+	*nnics = 0;
+	if (fd < 0)
+		return NULL;
+
+	/* Check header fields */
+	if (hdr->nnics < 0) {
+		error("%s: %s invalid nnics %d", plugin_type,
+		      ss_apinfo, hdr->nnics);
+		goto rwfail;
+	}
+	if (hdr->nic_size != sizeof(pals_hsn_nic_t)) {
+		error("%s: %s invalid nic_size %zu != %zu",
+		      plugin_type, ss_apinfo, hdr->nic_size,
+		      sizeof(pals_hsn_nic_t));
+		goto rwfail;
+	}
+
+	debug("%s: Found %d hsn nics in %s", plugin_type,
+	      hdr->nnics, ss_apinfo);
+
+	if (hdr->nnics == 0)
+		return NULL;
+
+	// Allocate space for the nics
+	nics_size = hdr->nnics * hdr->nic_size;
+	nics = xmalloc(nics_size);
+
+	// Read the profiles from the correct position
+	if (lseek(fd, hdr->nic_offset, SEEK_SET) == -1) {
+		error("%s: Couldn't seek to %zu in %s: %m", plugin_type,
+		      hdr->nic_offset, ss_apinfo);
+		goto rwfail;
+	}
+	safe_read(fd, nics, nics_size);
+
+	*nnics = hdr->nnics;
+	return nics;
+
+rwfail:
+	xfree(nics);
+	return NULL;
+}
+
+/*
  * Fill in the apinfo header
  */
-static void _build_header(pals_header_t *hdr, int ncmds, int npes, int nnodes)
+static void _build_header(pals_header_t *hdr, int ncmds, int npes, int nnodes,
+			  int nprofiles, int nnics)
 {
 	size_t offset = sizeof(pals_header_t);
 
@@ -343,7 +432,7 @@ static void _build_header(pals_header_t *hdr, int ncmds, int npes, int nnodes)
 
 	hdr->comm_profile_size = sizeof(pals_comm_profile_t);
 	hdr->comm_profile_offset = offset;
-	hdr->ncomm_profiles = 0;
+	hdr->ncomm_profiles = nprofiles;
 	offset += hdr->comm_profile_size * hdr->ncomm_profiles;
 
 	hdr->cmd_size = sizeof(pals_cmd_t);
@@ -361,10 +450,15 @@ static void _build_header(pals_header_t *hdr, int ncmds, int npes, int nnodes)
 	hdr->nnodes = nnodes;
 	offset += hdr->node_size * hdr->nnodes;
 
-	hdr->nic_size = sizeof(pals_nic_t);
+	hdr->nic_size = sizeof(pals_hsn_nic_t);
 	hdr->nic_offset = offset;
-	hdr->nnics = 0;
+	hdr->nnics = nnics;
 	offset += hdr->nic_size * hdr->nnics;
+
+	/* Don't support status reporting or NIC distances yet */
+	hdr->status_offset = 0;
+	hdr->dist_size = 0;
+	hdr->dist_offset = 0;
 
 	hdr->total_size = offset;
 }
@@ -372,7 +466,7 @@ static void _build_header(pals_header_t *hdr, int ncmds, int npes, int nnodes)
 /*
  * Open the apinfo file and return a writeable fd, or -1 on failure
  */
-static int _open_apinfo(const stepd_step_rec_t *job)
+static int _open_apinfo(const stepd_step_rec_t *step)
 {
 	int fd = -1;
 
@@ -381,7 +475,7 @@ static int _open_apinfo(const stepd_step_rec_t *job)
 	apinfo = xstrdup_printf("%s/apinfo", appdir);
 
 	// Create file
-	fd = creat(apinfo, 0600);
+	fd = open(apinfo, (O_CREAT | O_WRONLY | O_TRUNC | O_EXCL), 0600);
 	if (fd == -1) {
 		error("%s: Couldn't open apinfo file %s: %m",
 		      plugin_type, apinfo);
@@ -390,9 +484,9 @@ static int _open_apinfo(const stepd_step_rec_t *job)
 	}
 
 	// Change ownership of file to application user
-	if ((fchown(fd, job->uid, job->gid) == -1) && (getuid() == 0)) {
+	if ((fchown(fd, step->uid, step->gid) == -1) && (getuid() == 0)) {
 		error("%s: Couldn't chown %s to uid %u gid %u: %m",
-		      plugin_type, apinfo, job->uid, job->gid);
+		      plugin_type, apinfo, step->uid, step->gid);
 		close(fd);
 		return -1;
 	}
@@ -405,7 +499,7 @@ static int _open_apinfo(const stepd_step_rec_t *job)
  */
 static int _write_pals_nodes(int fd, char *nodelist)
 {
-	hostlist_t hl;
+	hostlist_t *hl;
 	char *host;
 	pals_node_t node;
 
@@ -428,13 +522,16 @@ rwfail:
 /*
  * Write the application information file
  */
-extern int create_apinfo(const stepd_step_rec_t *job)
+extern int create_apinfo(const stepd_step_rec_t *step, const char *spool)
 {
 	int fd = -1;
 	pals_header_t hdr;
+	char *ss_apinfo = NULL;
+	pals_comm_profile_t *profiles = NULL;
+	pals_hsn_nic_t *nics = NULL;
 	pals_cmd_t *cmds = NULL;
 	pals_pe_t *pes = NULL;
-	int ntasks, ncmds, nnodes;
+	int ntasks, ncmds, nnodes, nprofiles, nnics;
 	uint16_t *task_cnts;
 	uint32_t **tids;
 	uint32_t *tid_offsets;
@@ -442,28 +539,27 @@ extern int create_apinfo(const stepd_step_rec_t *job)
 	bool free_tid_offsets = false;
 
 	// Make sure the application spool directory has been created
-	if (!appdir) {
+	if (!appdir)
 		return SLURM_ERROR;
-	}
 
-	// Get relevant information from job
-	if (job->het_job_offset != NO_VAL) {
-		ntasks = job->het_job_ntasks;
-		ncmds = job->het_job_step_cnt;
-		nnodes = job->het_job_nnodes;
-		task_cnts = job->het_job_task_cnts;
-		tids = job->het_job_tids;
-		tid_offsets = job->het_job_tid_offsets;
-		nodelist = job->het_job_node_list;
+	/* Get relevant information from job */
+	if (step->het_job_offset != NO_VAL) {
+		ntasks = step->het_job_ntasks;
+		ncmds = step->het_job_step_cnt;
+		nnodes = step->het_job_nnodes;
+		task_cnts = step->het_job_task_cnts;
+		tids = step->het_job_tids;
+		tid_offsets = step->het_job_tid_offsets;
+		nodelist = step->het_job_node_list;
 	} else {
-		ntasks = job->ntasks;
-		nnodes = job->nnodes;
-		task_cnts = job->msg->tasks_to_launch;
-		tids = job->msg->global_task_ids;
-		nodelist = job->msg->complete_nodelist;
+		ntasks = step->ntasks;
+		nnodes = step->nnodes;
+		task_cnts = step->msg->tasks_to_launch;
+		tids = step->msg->global_task_ids;
+		nodelist = step->msg->complete_nodelist;
 
-		if (job->flags & LAUNCH_MULTI_PROG) {
-			_multi_prog_parse(job, &ncmds, &tid_offsets);
+		if (step->flags & LAUNCH_MULTI_PROG) {
+			_multi_prog_parse(step, &ncmds, &tid_offsets);
 			free_tid_offsets = true;
 		} else {
 			ncmds = 1;
@@ -471,7 +567,7 @@ extern int create_apinfo(const stepd_step_rec_t *job)
 		}
 	}
 
-	// Make sure we've got everything
+	/* Make sure we've got everything */
 	if (ntasks <= 0) {
 		error("%s: no tasks found", plugin_type);
 		goto rwfail;
@@ -497,29 +593,37 @@ extern int create_apinfo(const stepd_step_rec_t *job)
 		goto rwfail;
 	}
 
-	// Get information to write
-	_build_header(&hdr, ncmds, ntasks, nnodes);
+	/* Get comm profile and NIC arrays from Slingshot plugin file */
+	fd = _open_ss_info(step, spool, &hdr, &ss_apinfo);
+	profiles = _setup_pals_profiles(fd, &hdr, ss_apinfo, &nprofiles);
+	nics = _setup_pals_nics(fd, &hdr, ss_apinfo, &nnics);
+	if (fd != -1)
+		close(fd);
+	xfree(ss_apinfo);
+
+	_build_header(&hdr, ncmds, ntasks, nnodes, nprofiles, nnics);
 	pes = _setup_pals_pes(ntasks, nnodes, task_cnts, tids, tid_offsets);
-	cmds = _setup_pals_cmds(ncmds, ntasks, nnodes, job->cpus_per_task, pes);
+	cmds = _setup_pals_cmds(ncmds, ntasks, nnodes,
+				step->cpus_per_task, pes);
 
-	// Create the file
-	fd = _open_apinfo(job);
-	if (fd == -1) {
+	/* Create the file */
+	fd = _open_apinfo(step);
+	if (fd == -1)
 		goto rwfail;
-	}
 
-	// Write info
+	/* Write info */
 	safe_write(fd, &hdr, sizeof(pals_header_t));
+	safe_write(fd, profiles,
+		   (hdr.ncomm_profiles * sizeof(pals_comm_profile_t)));
 	safe_write(fd, cmds, (hdr.ncmds * sizeof(pals_cmd_t)));
 	safe_write(fd, pes, (hdr.npes * sizeof(pals_pe_t)));
 
 	if (_write_pals_nodes(fd, nodelist) == SLURM_ERROR)
 		goto rwfail;
 
-	// TODO: Write communication profiles
-	// TODO write nics
+	safe_write(fd, nics, (hdr.nnics * sizeof(pals_hsn_nic_t)));
 
-	// Flush changes to disk
+	/* Flush changes to disk */
 	if (fsync(fd) == -1) {
 		error("%s: Couldn't sync %s to disk: %m", plugin_type, apinfo);
 		goto rwfail;
@@ -527,11 +631,13 @@ extern int create_apinfo(const stepd_step_rec_t *job)
 
 	debug("%s: Wrote apinfo file %s", plugin_type, apinfo);
 
-	// Clean up and return
+	/* Clean up and return */
 	if (free_tid_offsets)
 		xfree(tid_offsets);
 
+	xfree(nics);
 	xfree(pes);
+	xfree(profiles);
 	xfree(cmds);
 	close(fd);
 	return SLURM_SUCCESS;
@@ -540,7 +646,9 @@ rwfail:
 	if (free_tid_offsets)
 		xfree(tid_offsets);
 
+	xfree(nics);
 	xfree(pes);
+	xfree(profiles);
 	xfree(cmds);
 	close(fd);
 	return SLURM_ERROR;

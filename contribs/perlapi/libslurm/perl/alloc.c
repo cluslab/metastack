@@ -65,6 +65,7 @@ hv_to_job_desc_msg(HV *hv, job_desc_msg_t *job_desc)
 	FETCH_FIELD(hv, job_desc, cpu_bind_type, uint16_t, FALSE);
 	FETCH_FIELD(hv, job_desc, dependency, charp, FALSE);
 	FETCH_FIELD(hv, job_desc, end_time, time_t, FALSE);
+	FETCH_FIELD(hv, job_desc, extra, charp, FALSE);
 
 	/* environment, env_size */
 	if ((svp = hv_fetch(hv, "environment", 11, FALSE))) {
@@ -170,7 +171,6 @@ hv_to_job_desc_msg(HV *hv, job_desc_msg_t *job_desc)
 	FETCH_FIELD(hv, job_desc, pn_min_memory, uint64_t, FALSE);
 	FETCH_FIELD(hv, job_desc, pn_min_tmp_disk, uint32_t, FALSE);
 	FETCH_FIELD(hv, job_desc, reboot, uint16_t, FALSE);
-	FETCH_PTR_FIELD(hv, job_desc, select_jobinfo, "Slurm::dynamic_plugin_data_t",  FALSE);
 
 	FETCH_FIELD(hv, job_desc, std_err, charp, FALSE);
 	FETCH_FIELD(hv, job_desc, std_in, charp, FALSE);
@@ -236,7 +236,6 @@ resource_allocation_response_msg_to_hv(resource_allocation_response_msg_t *resp_
 	}
 	STORE_FIELD(hv, resp_msg, node_cnt, uint32_t);
 	STORE_FIELD(hv, resp_msg, error_code, uint32_t);
-	STORE_PTR_FIELD(hv, resp_msg, select_jobinfo, "Slurm::dynamic_plugin_data_t");
 
 	return 0;
 }

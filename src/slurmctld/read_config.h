@@ -40,33 +40,39 @@
 #ifndef _HAVE_READ_CONFIG_H
 #define _HAVE_READ_CONFIG_H
 
-/* Convert a comma delimited list of account names into a NULL terminated
- * array of pointers to strings. Call accounts_list_free() to release memory */
-extern void accounts_list_build(char *accounts, char ***accounts_array);
-
-/* Free memory allocated for an account array by accounts_list_build() */
-extern void accounts_list_free(char ***accounts_array);
-
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 #define MAX_NODES_CAN_BORROW    65533
-#define DEFAULT_NODE_BORROW_INTERVAL 5
+#define DEFAULT_NODE_BORROW_INTERVAL 30 /* 30 seconds */
 extern char *offline_reason;
+extern char *need_return_nodes;
 extern int node_borrow_interval;		/* Detect the time interval for node borrowing */
 extern void _add_node_to_parts(node_record_t *node_ptr, part_record_t *part_ptr);
 extern void _build_node_partitions(node_record_t *node_ptr, part_record_t *part_ptr, bool add_part);
-extern int  load_all_part_borrow_nodes(void);
+extern int  load_all_part_borrow_nodes(bool *rebuild);
 extern void _remove_node_from_parts(node_record_t *node_ptr, bool clear_flag);
 extern void _return_borrowed_node(node_record_t *node_ptr);
+extern void _return_borrowed_nodes(char *nodes);
 extern void _update_borrowed_node_up(node_record_t *node_ptr, time_t now);
 extern void update_all_parts_resource(bool update_resv);
-extern int  _select_node_to_borrow(part_record_t *part_ptr, int nodes_need_borrow);
+extern int  _select_node_to_borrow(part_record_t *part_ptr, int64_t nodes_need_borrow);
 extern bool _standby_node_avail(node_record_t *node_ptr);
+extern bool _restore_all_partition_nodes_borrowed_info(void);
 extern int build_part_standby_nodes_bitmap(part_record_t *part_ptr);
 extern int valid_standby_node_parameters(part_record_t *part_ptr);
-extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *part_ptr, bool borrowed);
-extern bool validate_all_partitions_borrow_nodes(List part_list, bool update_resv);
+extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *part_ptr, bool borrowed, bool only_node_state);
+extern void clear_all_partitions_pending_jobs(List part_list);
+extern void get_all_partitions_pending_jobs(List job_list);
+extern bool validate_all_partitions_borrow_nodes(bool update_resv);
 extern bool validate_partition_borrow_nodes(part_record_t *part_ptr);
+extern void log_for_standby_nodes_flag(part_record_t *part_ptr);
+extern void set_standby_nodes_flag(part_record_t *part_ptr);
 #endif
+
+/*
+ * Convert a comma delimited list of account names into a list of
+ * slurmd_assoc_rec_t pointers from the assoc_mgr.
+ */
+extern list_t *accounts_list_build(char *accounts, bool locked);
 
 #ifdef __METASTACK_OPT_MSG_OUTPUT
 extern bool enable_reason_detail;
@@ -87,12 +93,10 @@ extern void cluster_rec_free(void);
  *              1 = recover saved job and trigger state,
  *                  node DOWN/DRAIN/FAIL state and reason information
  *              2 = recover all saved state
- * IN reconfig - true if SIGHUP or "scontrol reconfig" and there is state in
- *		 memory to preserve, otherwise recover state from disk
  * RET SLURM_SUCCESS if no error, otherwise an error code
  * Note: Operates on common variables only
  */
-extern int read_slurm_conf(int recover, bool reconfig);
+extern int read_slurm_conf(int recover);
 
 extern int dump_config_state_lite(void);
 extern int load_config_state_lite(void);
@@ -111,9 +115,7 @@ extern void build_feature_list_ne(void);
  * node_bitmap IN - Nodes with the new active_features value */
 extern void update_feature_list(List feature_list, char *new_features,
 				bitstr_t *node_bitmap);
-
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 extern void _validate_copy_het_jobs(void);
 #endif
-
 #endif /* !_HAVE_READ_CONFIG_H */

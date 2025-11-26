@@ -186,26 +186,30 @@ static int _set_rec(int *start, int argc, char **argv,
 					  MAX(command_len, 12))) ||
 			   (!xstrncasecmp(argv[i], "DerivedES",
 					  MAX(command_len, 9)))) {
-			if (job->derived_es)
-				xfree(job->derived_es);
-			job->derived_es = strip_quotes(argv[i]+end, NULL, 1);
+			xfree(job->derived_es);
+			job->derived_es =
+				strip_quotes(argv[i] + end, NULL, false);
+			set = 1;
+		} else if (!xstrncasecmp(argv[i], "Extra",
+					 MAX(command_len, 5))) {
+			xfree(job->extra);
+			job->extra = strip_quotes(argv[i] + end, NULL, false);
 			set = 1;
 		} else if (!xstrncasecmp(argv[i], "AdminComment",
 					 MAX(command_len, 12))) {
-			if (job->admin_comment)
-				xfree(job->admin_comment);
-			job->admin_comment = strip_quotes(argv[i]+end, NULL, 1);
+			xfree(job->admin_comment);
+			job->admin_comment =
+				strip_quotes(argv[i] + end, NULL, false);
 			set = 1;
 		} else if (!xstrncasecmp(argv[i], "SystemComment",
 					 MAX(command_len, 13))) {
-			if (job->system_comment)
-				xfree(job->system_comment);
-			job->system_comment = strip_quotes(argv[i]+end, NULL, 1);
+			xfree(job->system_comment);
+			job->system_comment =
+				strip_quotes(argv[i] + end, NULL, false);
 			set = 1;
 		} else if (!xstrncasecmp(argv[i], "NewWCKey",
 					 MAX(command_len, 1))) {
-			if (job->wckey)
-				xfree(job->wckey);
+			xfree(job->wckey);
 			job->wckey = strip_quotes(argv[i]+end, NULL, 1);
 			set = 1;
 		} else {
@@ -271,7 +275,7 @@ extern int sacctmgr_modify_job(int argc, char **argv)
 	ret_list = slurmdb_job_modify(db_conn, job_cond, job);
 	if (ret_list && list_count(ret_list)) {
 		char *object = NULL;
-		ListIterator itr = list_iterator_create(ret_list);
+		list_itr_t *itr = list_iterator_create(ret_list);
 		printf(" Modified jobs...\n");
 		while((object = list_next(itr))) {
 			printf("  %s\n", object);

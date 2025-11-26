@@ -44,10 +44,10 @@
 #include "src/common/slurm_xlator.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
-#include "src/common/slurm_acct_gather_energy.h"
+#include "src/interfaces/acct_gather_energy.h"
 #include "src/common/xstring.h"
-#include "src/common/cgroup.h"
-#include "src/slurmd/common/proctrack.h"
+#include "src/interfaces/cgroup.h"
+#include "src/interfaces/proctrack.h"
 #include "src/slurmd/common/xcpuinfo.h"
 #include "src/slurmd/slurmd/slurmd.h"
 #include "src/plugins/jobacct_gather/cgroup/jobacct_gather_cgroup.h"
@@ -94,7 +94,7 @@ static void _prec_extra(jag_prec_t *prec, uint32_t taskid)
 		error("Cannot get cgroup accounting data for %d", taskid);
 		return;
 	}
-	
+
 	/* We discard the data if some value was incorrect */
 	if (cgroup_acct_data->usec == NO_VAL64 &&
 	    cgroup_acct_data->ssec == NO_VAL64) {
@@ -213,10 +213,11 @@ extern int fini (void)
  *    is a Linux-style stat entry. We disregard the data if they look
  *    wrong.
  */
-#ifdef __METASTACK_LOAD_ABNORMAL
-extern void jobacct_gather_p_poll_data(List task_list, uint64_t cont_id,
-				       bool profile, collection_t *collect, write_t *data)
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
+extern void jobacct_gather_p_poll_data(
+	List task_list, int64_t cont_id, bool profile, collection_t *collect,  write_t *data)
 {
+#endif
 	static jag_callbacks_t callbacks;
 	static bool first = 1;
 
@@ -225,12 +226,12 @@ extern void jobacct_gather_p_poll_data(List task_list, uint64_t cont_id,
 		first = 0;
 		callbacks.prec_extra = _prec_extra;
 	}
-
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	jag_common_poll_data(task_list, cont_id, &callbacks, profile, collect, data);
+#endif
 
 	return;
 }
-#endif
 
 extern int jobacct_gather_p_endpoll(void)
 {
@@ -245,11 +246,11 @@ extern int jobacct_gather_p_add_task(pid_t pid, jobacct_id_t *jobacct_id)
 
 	if (is_first_task) {
 		/* Only do once in this plugin */
-		if (cgroup_g_step_create(CG_CPUACCT, jobacct_id->job)
+		if (cgroup_g_step_create(CG_CPUACCT, jobacct_id->step)
 		    != SLURM_SUCCESS)
 			return SLURM_ERROR;
 
-		if (cgroup_g_step_create(CG_MEMORY, jobacct_id->job)
+		if (cgroup_g_step_create(CG_MEMORY, jobacct_id->step)
 		    != SLURM_SUCCESS) {
 			cgroup_g_step_destroy(CG_CPUACCT);
 			return SLURM_ERROR;
@@ -257,11 +258,11 @@ extern int jobacct_gather_p_add_task(pid_t pid, jobacct_id_t *jobacct_id)
 		is_first_task = false;
 	}
 
-	if (cgroup_g_task_addto(CG_CPUACCT, jobacct_id->job, pid,
+	if (cgroup_g_task_addto(CG_CPUACCT, jobacct_id->step, pid,
 				jobacct_id->taskid) != SLURM_SUCCESS)
 		rc = SLURM_ERROR;
 
-	if (cgroup_g_task_addto(CG_MEMORY, jobacct_id->job, pid,
+	if (cgroup_g_task_addto(CG_MEMORY, jobacct_id->step, pid,
 				jobacct_id->taskid) != SLURM_SUCCESS)
 		rc = SLURM_ERROR;
 

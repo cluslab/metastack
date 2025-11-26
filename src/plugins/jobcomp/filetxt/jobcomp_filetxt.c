@@ -44,13 +44,13 @@
 #include <pwd.h>
 #include <unistd.h>
 
+#include "src/common/slurm_xlator.h"
 #include "src/common/slurm_protocol_defs.h"
-#include "src/common/slurm_jobcomp.h"
+#include "src/interfaces/jobcomp.h"
+#include "src/common/id_util.h"
 #include "src/common/parse_time.h"
 #include "src/common/slurm_time.h"
-#include "src/common/uid.h"
 #include "filetxt_jobcomp_process.h"
-
 //NOTE: import header slurmctld.h for calling utils function like "slurm_get_resource_node_detail"
 //#ifdef __METASTACK_OPT_RESC_NODEDETAIL
 #if (defined __METASTACK_OPT_RESC_NODEDETAIL) || (defined __METASTACK_OPT_SACCT_COMMAND) || (defined __METASTACK_OPT_SACCT_OUTPUT)
@@ -89,57 +89,27 @@ const char plugin_name[]       	= "Job completion text file logging plugin";
 const char plugin_type[]       	= "jobcomp/filetxt";
 const uint32_t plugin_version	= SLURM_VERSION_NUMBER;
 
+const char default_job_comp_loc[] = "/var/log/slurm_jobcomp.log";
+
 #if defined __METASTACK_OPT_ACCOUNTING_ENHANCE
 #define JOB_FORMAT "JobId=%lu UserId=%s(%lu) GroupId=%s(%lu) Name=%s JobState=%s Partition=%s "\
 		"TimeLimit=%s StartTime=%s EndTime=%s NodeList=%s NodeCnt=%u ProcCnt=%u "\
 		"WorkDir=%s ReservationName=%s Gres=%s Account=%s QOS=%s "\
 		"WcKey=%s Cluster=%s SubmitTime=%s EligibleTime=%s%s%s "\
 		"Dependency=%s McsLabel=%s TaskCnt=%u PreemptTime=%s SuspendTime=%s TotalSuspTime=%s PreSuspTime=%s StdIn=%s StdOut=%s StdErr=%s Command=%s Shared=%d Comment=%s AdminComment=%s "\
-		"ResourceNodeDetail=%s DerivedExitCode=%s ExitCode=%s %s\n"
+		"ResourceNodeDetail=%s DerivedExitCode=%s ExitCode=%s \n"
 #else
 #define JOB_FORMAT "JobId=%lu UserId=%s(%lu) GroupId=%s(%lu) Name=%s JobState=%s Partition=%s "\
 		"TimeLimit=%s StartTime=%s EndTime=%s NodeList=%s NodeCnt=%u ProcCnt=%u "\
 		"WorkDir=%s ReservationName=%s Tres=%s Account=%s QOS=%s "\
 		"WcKey=%s Cluster=%s SubmitTime=%s EligibleTime=%s%s%s "\
-		"DerivedExitCode=%s ExitCode=%s %s\n"
+		"DerivedExitCode=%s ExitCode=%s \n"
 #endif
 
 /* File descriptor used for logging */
 static pthread_mutex_t  file_lock = PTHREAD_MUTEX_INITIALIZER;
 static char *           log_name  = NULL;
 static int              job_comp_fd = -1;
-
-/* get the user name for the give user_id */
-static void
-_get_user_name(uint32_t user_id, char *user_name, int buf_size)
-{
-	static uint32_t cache_uid      = 0;
-	static char     cache_name[32] = "root", *uname;
-
-	if (user_id != cache_uid) {
-		uname = uid_to_string((uid_t) user_id);
-		snprintf(cache_name, sizeof(cache_name), "%s", uname);
-		xfree(uname);
-		cache_uid = user_id;
-	}
-	snprintf(user_name, buf_size, "%s", cache_name);
-}
-
-/* get the group name for the give group_id */
-static void
-_get_group_name(uint32_t group_id, char *group_name, int buf_size)
-{
-	static uint32_t cache_gid      = 0;
-	static char     cache_name[32] = "root", *gname;
-
-	if (group_id != cache_gid) {
-		gname = gid_to_string((gid_t) group_id);
-		snprintf(cache_name, sizeof(cache_name), "%s", gname);
-		xfree(gname);
-		cache_gid = group_id;
-	}
-	snprintf(group_name, buf_size, "%s", cache_name);
-}
 
 /*
  * init() is called when the plugin is loaded, before any other functions
@@ -163,22 +133,22 @@ int fini ( void )
  * logging API.
  */
 
-extern int jobcomp_p_set_location(char *location)
+extern int jobcomp_p_set_location(void)
 {
 	int rc = SLURM_SUCCESS;
 
-	if (location == NULL) {
-		return SLURM_ERROR;
-	}
+	if (!slurm_conf.job_comp_loc)
+		slurm_conf.job_comp_loc = xstrdup(default_job_comp_loc);
+
 	xfree(log_name);
-	log_name = xstrdup(location);
+	log_name = xstrdup(slurm_conf.job_comp_loc);
 
 	slurm_mutex_lock( &file_lock );
 	if (job_comp_fd >= 0)
 		close(job_comp_fd);
-	job_comp_fd = open(location, O_WRONLY | O_CREAT | O_APPEND, 0644);
+	job_comp_fd = open(log_name, O_WRONLY | O_CREAT | O_APPEND, 0644);
 	if (job_comp_fd == -1) {
-		fatal("open %s: %m", location);
+		fatal("open %s: %m", log_name);
 		rc = SLURM_ERROR;
 	} else
 		fchmod(job_comp_fd, 0644);
@@ -238,57 +208,54 @@ static void _make_time_str (time_t *time, char *string, int size)
  * IN : detail_ptr
  * OUT: buf
  */
-void get_shared (struct job_record *job_ptr, struct job_details *detail_ptr, uint16_t *shared)
-{
-	if (!detail_ptr)
-		*shared = NO_VAL16;
-	else if (detail_ptr->share_res == 1)	/* User --share */
-		*shared = 1;
-	else if ((detail_ptr->share_res == 0) ||
-		 (detail_ptr->whole_node == 1))
-		*shared = 0;			/* User --exclusive */
-	else if (detail_ptr->whole_node == WHOLE_NODE_USER)
-		*shared = JOB_SHARED_USER;	/* User --exclusive=user */
-	else if (detail_ptr->whole_node == WHOLE_NODE_MCS)
-		*shared = JOB_SHARED_MCS;	/* User --exclusive=mcs */
-	else if (job_ptr->part_ptr) {
-		/* Report shared status based upon latest partition info */
-		if (job_ptr->part_ptr->flags & PART_FLAG_EXCLUSIVE_USER)
-			*shared = JOB_SHARED_USER;
-		else if ((job_ptr->part_ptr->max_share & SHARED_FORCE) &&
-			 ((job_ptr->part_ptr->max_share & (~SHARED_FORCE)) > 1))
-			*shared = 1;		/* Partition Shared=force */
-		else if (job_ptr->part_ptr->max_share == 0)
-			*shared = 0;		/* Partition Shared=exclusive */
-		else
-			*shared = NO_VAL16;  /* Part Shared=yes or no */
-	} else
-		*shared = NO_VAL16;	/* No user or partition info */
-}
+//void get_shared (struct job_record *job_ptr, job_details_t *detail_ptr, uint16_t *shared)
+//{
+//	if (!detail_ptr)
+//		*shared = NO_VAL16;
+//	else if (detail_ptr->share_res == 1)	/* User --share */
+//		*shared = 1;
+//	else if ((detail_ptr->share_res == 0) ||
+//		 (detail_ptr->whole_node == 1))
+//		*shared = 0;			/* User --exclusive */
+//	else if (detail_ptr->whole_node == WHOLE_NODE_USER)
+//		*shared = JOB_SHARED_USER;	/* User --exclusive=user */
+//	else if (detail_ptr->whole_node == WHOLE_NODE_MCS)
+//		*shared = JOB_SHARED_MCS;	/* User --exclusive=mcs */
+//	else if (job_ptr->part_ptr) {
+//		/* Report shared status based upon latest partition info */
+//		if (job_ptr->part_ptr->flags & PART_FLAG_EXCLUSIVE_USER)
+//			*shared = JOB_SHARED_USER;
+//		else if ((job_ptr->part_ptr->max_share & SHARED_FORCE) &&
+//			 ((job_ptr->part_ptr->max_share & (~SHARED_FORCE)) > 1))
+//			*shared = 1;		/* Partition Shared=force */
+//		else if (job_ptr->part_ptr->max_share == 0)
+//			*shared = 0;		/* Partition Shared=exclusive */
+//		else
+//			*shared = NO_VAL16;  /* Part Shared=yes or no */
+//	} else
+//		*shared = NO_VAL16;	/* No user or partition info */
+//}
 #endif
 
 extern int jobcomp_p_log_record(job_record_t *job_ptr)
 {
 	int rc = SLURM_SUCCESS, tmp_int, tmp_int2;
-#ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
-	char job_rec[32768];
-#else
-	char job_rec[1024];
-#endif
-	char usr_str[32], grp_str[32], start_str[32], end_str[32], lim_str[32];
+	char *job_rec = NULL;
+	char start_str[32], end_str[32], lim_str[32];
+	char *usr_str = NULL, *grp_str = NULL;
 	char *resv_name, *tres, *account, *qos, *wckey, *cluster;
 #ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
 	char *orig_dependency = NULL, *std_in = NULL, *std_out = NULL, *std_err = NULL, *mcs_label = NULL;
 	char *command = NULL, *comment = NULL, *admin_comment = NULL;
 	char *resc_node_detail = NULL;
-	struct job_details *detail_ptr = job_ptr->details;
+	job_details_t *detail_ptr = job_ptr->details;
 	uint16_t shared = 0;
 	uint32_t num_tasks = 0;
 	char suspend_time[32], preempt_time[32], pre_susp_time[32], tot_sus_time[32];
 #endif
 	char *exit_code_str = NULL, *derived_ec_str = NULL;
 	char submit_time[32], eligible_time[32], array_id[64], het_id[64];
-	char select_buf[128], *state_string, *work_dir;
+	char *state_string, *work_dir;
 	size_t offset = 0, tot_size, wrote;
 	uint32_t job_state;
 	uint32_t time_limit;
@@ -299,8 +266,8 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 	}
 
 	slurm_mutex_lock( &file_lock );
-	_get_user_name(job_ptr->user_id, usr_str, sizeof(usr_str));
-	_get_group_name(job_ptr->group_id, grp_str, sizeof(grp_str));
+	usr_str = user_from_job(job_ptr);
+	grp_str = group_from_job(job_ptr);
 
 	if ((job_ptr->time_limit == NO_VAL) && job_ptr->part_ptr)
 		time_limit = job_ptr->part_ptr->max_time;
@@ -329,7 +296,7 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 		 * flag set when called. We remove the flags to get the eventual
 		 * completion state: JOB_FAILED, JOB_TIMEOUT, etc. */
 #ifdef __METASTACK_OPT_JOBCOMP_PENDING
-		job_state = (job_ptr->job_state == JOB_REQUEUE) ? JOB_REQUEUE: job_ptr->job_state & JOB_STATE_BASE;
+		job_state = (job_ptr->job_state == JOB_REQUEUE) ? JOB_REQUEUE : job_ptr->job_state & JOB_STATE_BASE;
 #else
 		job_state = job_ptr->job_state & JOB_STATE_BASE;
 #endif
@@ -431,9 +398,6 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 		tmp_int = WEXITSTATUS(job_ptr->exit_code);
 	xstrfmtcat(exit_code_str, "%d:%d", tmp_int, tmp_int2);
 
-	select_g_select_jobinfo_sprint(job_ptr->select_jobinfo,
-		select_buf, sizeof(select_buf), SELECT_PRINT_MIXED);
-
 #ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
 	if (job_ptr->details)
 	{
@@ -441,7 +405,7 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 			orig_dependency = xstrdup(job_ptr->details->orig_dependency);
 
 		//
-		#ifdef __METASTACK_OPT_HIST_OUTPUT
+#ifdef __METASTACK_OPT_HIST_OUTPUT
 		char stdin_path[MAXPATHLEN];
 		char stdout_path[MAXPATHLEN];
 		char stderr_path[MAXPATHLEN];
@@ -453,42 +417,42 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 			std_out = xstrdup((char*)stdout_path);
 			std_err = xstrdup((char*)stderr_path);
 		}
-		#else
+#else
 		if (job_ptr->details->std_in)
 			std_in = xstrdup(job_ptr->details->std_in);
 		if (job_ptr->details->std_out)
 			std_out = xstrdup(job_ptr->details->std_out);
 		if (job_ptr->details->std_err)
 			std_err = xstrdup(job_ptr->details->std_err);
-		#endif
+#endif
 
-		#ifdef __METASTACK_OPT_HIST_COMMAND
+#ifdef __METASTACK_OPT_HIST_COMMAND
 	//	if (detail_ptr->argv) {
 	//		get_command_str(detail_ptr, &command);
 	//	}
 		command = xstrdup(job_ptr->command);
-		#endif
+#endif
 
 		num_tasks = detail_ptr->num_tasks;
 	}
 
 	mcs_label = xstrdup(job_ptr->mcs_label);
 
-	get_shared(job_ptr, detail_ptr, &shared);
-
+	//get_shared(job_ptr, detail_ptr, &shared);
+	shared = get_job_share_value(job_ptr);
 	if (job_ptr->comment)
 		comment = xstrdup(job_ptr->comment);
 	if (job_ptr->admin_comment)
 		admin_comment = xstrdup(job_ptr->admin_comment);
 
 	if (job_ptr->suspend_time && job_ptr->tot_sus_time) {
-        time_t real_sus_time = job_ptr->suspend_time - job_ptr->tot_sus_time;
-        slurm_make_time_str(&real_sus_time, suspend_time, sizeof(suspend_time));
+		time_t real_sus_time = job_ptr->suspend_time - job_ptr->tot_sus_time;
+		slurm_make_time_str(&real_sus_time, suspend_time, sizeof(suspend_time));
 	} else if (job_ptr->suspend_time) {
 		debug2("warning: job(%u)'s suspend_time is not null, but tot_sus_time is null", job_ptr->job_id);
 	} else
 		sprintf(suspend_time, "None");
-	
+
 	if (job_ptr->preempt_time) {
 		slurm_make_time_str(&job_ptr->preempt_time, preempt_time, sizeof(preempt_time));
 	} else
@@ -506,31 +470,30 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 	} else
 		sprintf(tot_sus_time, "None");
 
-	#ifdef __METASTACK_OPT_RESC_NODEDETAIL
+#ifdef __METASTACK_OPT_RESC_NODEDETAIL
 	//resc_node_detail = slurm_get_resource_node_detail(job_ptr, ',', ';');
 	resc_node_detail = xstrdup(job_ptr->resource_node_detail);
-	#endif
-
 #endif
 
-	snprintf(job_rec, sizeof(job_rec), JOB_FORMAT,
-		 (unsigned long) job_ptr->job_id, usr_str,
-		 (unsigned long) job_ptr->user_id, grp_str,
-		 (unsigned long) job_ptr->group_id, job_ptr->name,
-		 state_string, job_ptr->partition, lim_str, start_str,
-		 end_str, job_ptr->nodes, job_ptr->node_cnt,
-		 job_ptr->total_cpus, work_dir, resv_name, tres, account, qos,
-		 wckey, cluster, submit_time, eligible_time, array_id, het_id,
+#endif
+	xstrfmtcat(job_rec, JOB_FORMAT,
+		   (unsigned long) job_ptr->job_id, usr_str,
+		   (unsigned long) job_ptr->user_id, grp_str,
+		   (unsigned long) job_ptr->group_id, job_ptr->name,
+		   state_string, job_ptr->partition, lim_str, start_str,
+		   end_str, job_ptr->nodes, job_ptr->node_cnt,
+		   job_ptr->total_cpus, work_dir, resv_name, tres, account, qos,
+		   wckey, cluster, submit_time, eligible_time, array_id, het_id,
 #ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
-		orig_dependency, mcs_label, num_tasks, preempt_time, suspend_time, tot_sus_time, pre_susp_time, std_in, std_out, std_err, command, shared, comment, admin_comment, resc_node_detail,
+			orig_dependency, mcs_label, num_tasks, preempt_time, suspend_time, tot_sus_time, pre_susp_time, std_in, std_out, std_err, command, shared, comment, admin_comment, resc_node_detail,
 #endif
-		 derived_ec_str, exit_code_str, select_buf);
+		   derived_ec_str, exit_code_str);
 	tot_size = strlen(job_rec);
-#ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
-	if (tot_size == (sizeof(job_rec) - 1)) {
-		job_rec[sizeof(job_rec) - 2] = '\n';
-	}
-#endif
+//#ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
+//	if (tot_size == (sizeof(job_rec) - 1)) {
+//		job_rec[sizeof(job_rec) - 2] = '\n';
+//	}
+//#endif
 
 	while (offset < tot_size) {
 		wrote = write(job_comp_fd, job_rec + offset,
@@ -545,6 +508,9 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 		}
 		offset += wrote;
 	}
+	xfree(job_rec);
+	xfree(usr_str);
+	xfree(grp_str);
 	xfree(derived_ec_str);
 	xfree(exit_code_str);
 #ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE

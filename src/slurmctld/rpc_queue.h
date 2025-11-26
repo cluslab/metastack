@@ -1,8 +1,7 @@
 /*****************************************************************************\
  * rpc_queue.h
  *****************************************************************************
- *  Copyright (C) 2020 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -41,6 +40,8 @@ extern void rpc_queue_init(void);
 
 extern void rpc_queue_shutdown(void);
 
-extern bool rpc_enqueue(slurm_msg_t *msg);
+extern bool rpc_queue_enabled(void);
+
+extern int rpc_enqueue(slurm_msg_t *msg);
 
 #endif

@@ -5,7 +5,7 @@
  *  Copyright (C) 2013 Bull S. A. S.
  *		Bull, Rue Jean Jaures, B.P.68, 78340, Les Clayes-sous-Bois.
  *
- *  Portions Copyright (C) 2013 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *
  *  Initially written by Rod Schultz <rod.schultz@bull.com> @ Bull
  *  and Danny Auble <da@schedmd.com> @ SchedMD.
@@ -44,6 +44,7 @@
  *  Copyright (C) 2002 The Regents of the University of California.
 \*****************************************************************************/
 
+#include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -57,12 +58,13 @@
 
 #include "src/common/slurm_xlator.h"
 #include "src/common/fd.h"
-#include "src/common/slurm_acct_gather_profile.h"
+#include "src/interfaces/acct_gather_profile.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/slurm_time.h"
 #include "src/common/xstring.h"
-#include "src/slurmd/common/proctrack.h"
+#include "src/interfaces/proctrack.h"
+#include "src/slurmd/common/privileges.h"
 #include "hdf5_api.h"
 
 #define HDF5_CHUNK_SIZE 10
@@ -156,30 +158,68 @@ static uint32_t _determine_profile(void)
 
 static void _create_directories(void)
 {
-	char *user_dir = NULL;
+	char *parent_dir = NULL, *user_dir = NULL, *hdf5_dir_rel = NULL;
+	char *slash = NULL;
+	int parent_dirfd, user_parent_dirfd;
 
 	xassert(g_job);
 	xassert(hdf5_conf.dir);
 
-	xstrfmtcat(user_dir, "%s/%s", hdf5_conf.dir, g_job->user_name);
+	parent_dir = xstrdup(hdf5_conf.dir);
+	/* split into base and new directory name */
+	while ((slash = strrchr(parent_dir, '/'))) {
+		/* fix a path with one or more trailing slashes */
+		if (slash[1] == '\0')
+			slash[0] = '\0';
+		else
+			break;
+	}
+
+	if (!slash)
+		fatal("Invalid ProfileHDF5Dir=\"%s\"", hdf5_conf.dir);
+
+	slash[0] = '\0';
+	hdf5_dir_rel = slash + 1;
+
+	if ((parent_dirfd = open(parent_dir, O_DIRECTORY | O_NOFOLLOW)) < 0)
+		fatal("Could not open ProfileHDF5Dir parent directory '%s': %m",
+		      parent_dir);
 
 	/*
-	 * To avoid race conditions (TOCTOU) with stat() calls, always
-	 * attempt to create the ProfileHDF5Dir and the user directory within.
+	 * Use *at family of syscalls to prevent TOCTOU abuse by working
+	 * on file descriptors instead of path names.
 	 */
-	if (((mkdir(hdf5_conf.dir, 0755)) < 0) && (errno != EEXIST))
-		fatal("mkdir(%s): %m", hdf5_conf.dir);
-	if (chmod(hdf5_conf.dir, 0755) < 0)
-		fatal("chmod(%s): %m", hdf5_conf.dir);
+	if ((mkdirat(parent_dirfd, hdf5_dir_rel, 0755)) < 0) {
+		/* Never chmod on EEXIST */
+		if (errno != EEXIST)
+			fatal("mkdirat(%s): %m", hdf5_conf.dir);
+	} else if (fchmodat(parent_dirfd, hdf5_dir_rel, 0755,
+			    AT_SYMLINK_NOFOLLOW) < 0)
+		fatal("fchmodat(%s): %m", hdf5_conf.dir);
 
-	if (((mkdir(user_dir, 0700)) < 0) && (errno != EEXIST))
-		fatal("mkdir(%s): %m", user_dir);
-	if (chmod(user_dir, 0700) < 0)
-		fatal("chmod(%s): %m", user_dir);
-	if (chown(user_dir, g_job->uid, g_job->gid) < 0)
-		fatal("chown(%s): %m", user_dir);
+	xstrfmtcat(user_dir, "%s/%s", hdf5_conf.dir, g_job->user_name);
+	user_parent_dirfd = openat(parent_dirfd, hdf5_dir_rel,
+				   O_DIRECTORY | O_NOFOLLOW);
+	close(parent_dirfd);
 
+	if ((mkdirat(user_parent_dirfd, g_job->user_name, 0700)) < 0) {
+		/* Never chmod on EEXIST */
+		if (errno != EEXIST)
+			fatal("mkdirat(%s): %m", user_dir);
+	} else {
+		/* fchmodat(2) man says AT_SYMLINK_NOFOLLOW not implemented. */
+		if (fchmodat(user_parent_dirfd, g_job->user_name, 0700, 0) < 0)
+			fatal("fchmodat(%s): %m", user_dir);
+
+		if (fchownat(user_parent_dirfd, g_job->user_name, g_job->uid,
+			     g_job->gid, AT_SYMLINK_NOFOLLOW) < 0)
+			fatal("fchmodat(%s): %m", user_dir);
+	}
+
+	close(user_parent_dirfd);
 	xfree(user_dir);
+	xfree(parent_dir);
+	/* Do not xfree() hdf5_dir_rel (interior pointer to freed data). */
 }
 
 /*
@@ -268,7 +308,7 @@ extern void acct_gather_profile_p_get(enum acct_gather_profile_info info_type,
 extern int acct_gather_profile_p_node_step_start(stepd_step_rec_t* job)
 {
 	int rc = SLURM_SUCCESS;
-
+	struct priv_state sprivs = { 0 };
 	char *profile_file_name;
 
 	xassert(running_in_slurmstepd());
@@ -311,16 +351,24 @@ extern int acct_gather_profile_p_node_step_start(stepd_step_rec_t* job)
 		 acct_gather_profile_to_string(g_profile_running),
 		 profile_file_name);
 
+	if (drop_privileges(g_job, true, &sprivs, false) < 0) {
+		error("%s: Unable to drop privileges", __func__);
+		xfree(profile_file_name);
+		return SLURM_ERROR;
+	}
+
 	/*
 	 * Create a new file using the default properties
 	 */
 	file_id = H5Fcreate(profile_file_name, H5F_ACC_TRUNC, H5P_DEFAULT,
 			    H5P_DEFAULT);
-	if (chown(profile_file_name, (uid_t)g_job->uid,
-		  (gid_t)g_job->gid) < 0)
-		error("chown(%s): %m", profile_file_name);
-	if (chmod(profile_file_name, 0600) < 0)
-		error("chmod(%s): %m", profile_file_name);
+
+	if (reclaim_privileges(&sprivs) < 0) {
+		error("%s: Unable to reclaim privileges", __func__);
+		xfree(profile_file_name);
+		return SLURM_ERROR;
+	}
+
 	xfree(profile_file_name);
 
 	if (file_id < 1) {
@@ -592,7 +640,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	return SLURM_SUCCESS;
 }
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* data,
 						 time_t sample_time)
 {
@@ -603,22 +651,9 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 
 extern void acct_gather_profile_p_conf_values(List *data)
 {
-	config_key_pair_t *key_pair;
-
-	xassert(*data);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileHDF5Dir");
-	key_pair->value = xstrdup(hdf5_conf.dir);
-	list_append(*data, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileHDF5Default");
-	key_pair->value = xstrdup(acct_gather_profile_to_string(hdf5_conf.def));
-	list_append(*data, key_pair);
-
-	return;
-
+	add_key_pair(*data, "ProfileHDF5Dir", "%s", hdf5_conf.dir);
+	add_key_pair(*data, "ProfileHDF5Default", "%s",
+		     acct_gather_profile_to_string(hdf5_conf.def));
 }
 
 extern bool acct_gather_profile_p_is_active(uint32_t type)

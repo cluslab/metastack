@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2004-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Copyright (C) 2010-2016 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Danny Auble <da@llnl.gov>
  *
@@ -46,6 +46,10 @@ extern time_t global_last_rollup;
 extern pthread_mutex_t rollup_lock;
 extern pthread_mutex_t usage_rollup_lock;
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+extern pthread_mutex_t assoc_lock;
+#endif
+
 extern int get_usage_for_list(mysql_conn_t *mysql_conn,
 			      slurmdbd_msg_type_t type, List object_list,
 			      char *cluster_name, time_t start, time_t end);
@@ -62,8 +66,4 @@ extern int as_mysql_roll_usage(mysql_conn_t *mysql_conn,
  */
 extern bool trigger_reroll(mysql_conn_t *mysql_conn, time_t event_time);
 
-#endif
-
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-extern pthread_mutex_t assoc_lock;
 #endif

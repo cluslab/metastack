@@ -44,7 +44,7 @@
 
 #include <slurm/slurm_errno.h>
 #include "src/common/slurm_xlator.h"
-#include "src/common/slurm_mpi.h"
+#include "src/interfaces/mpi.h"
 
 #include "setup.h"
 #include "agent.h"
@@ -83,16 +83,16 @@ const uint32_t plugin_version   = SLURM_VERSION_NUMBER;
  * The following is executed in slurmstepd.
  */
 
-extern int mpi_p_slurmstepd_prefork(const stepd_step_rec_t *job, char ***env)
+extern int mpi_p_slurmstepd_prefork(const stepd_step_rec_t *step, char ***env)
 {
 	int rc;
 
 	debug("using mpi/pmi2");
 
-	if (job->batch)
+	if (step->batch)
 		return SLURM_SUCCESS;
 
-	rc = pmi2_setup_stepd(job, env);
+	rc = pmi2_setup_stepd(step, env);
 	if (rc != SLURM_SUCCESS)
 		return rc;
 
@@ -104,27 +104,27 @@ extern int mpi_p_slurmstepd_prefork(const stepd_step_rec_t *job, char ***env)
 	return SLURM_SUCCESS;
 }
 
-extern int mpi_p_slurmstepd_task(const mpi_plugin_task_info_t *job, char ***env)
+extern int mpi_p_slurmstepd_task(const mpi_task_info_t *mpi_task, char ***env)
 {
 	int i;
 
 	env_array_overwrite_fmt(env, "PMI_FD", "%u",
-				TASK_PMI_SOCK(job->ltaskid));
+				TASK_PMI_SOCK(mpi_task->ltaskid));
 
 	env_array_overwrite_fmt(env, "PMI_JOBID", "%s",
 				job_info.pmi_jobid);
-	env_array_overwrite_fmt(env, "PMI_RANK", "%u", job->gtaskid);
-	env_array_overwrite_fmt(env, "PMI_SIZE", "%u", job->ntasks);
+	env_array_overwrite_fmt(env, "PMI_RANK", "%u", mpi_task->gtaskid);
+	env_array_overwrite_fmt(env, "PMI_SIZE", "%u", mpi_task->ntasks);
 	if (job_info.spawn_seq) { /* PMI1.1 needs this env-var */
 		env_array_overwrite_fmt(env, "PMI_SPAWNED", "%u", 1);
 	}
 	/* close unused sockets in task */
 	close(tree_sock);
 	tree_sock = 0;
-	for (i = 0; i < job->ltasks; i ++) {
+	for (i = 0; i < mpi_task->ltasks; i ++) {
 		close(STEPD_PMI_SOCK(i));
 		STEPD_PMI_SOCK(i) = 0;
-		if (i != job->ltaskid) {
+		if (i != mpi_task->ltaskid) {
 			close(TASK_PMI_SOCK(i));
 			TASK_PMI_SOCK(i) = 0;
 		}
@@ -137,13 +137,13 @@ extern int mpi_p_slurmstepd_task(const mpi_plugin_task_info_t *job, char ***env)
  */
 
 extern mpi_plugin_client_state_t *
-mpi_p_client_prelaunch(mpi_plugin_client_info_t *job, char ***env)
+mpi_p_client_prelaunch(mpi_step_info_t *mpi_step, char ***env)
 {
 	int rc;
 
 	debug("mpi/pmi2: client_prelaunch");
 
-	rc = pmi2_setup_srun(job, env);
+	rc = pmi2_setup_srun(mpi_step, env);
 	if (rc != SLURM_SUCCESS) {
 		return NULL;
 	}
@@ -168,7 +168,12 @@ extern int mpi_p_client_fini(mpi_plugin_client_state_t *state)
 	return SLURM_SUCCESS;
 }
 
-extern int fini()
+extern int init(void)
+{
+	return SLURM_SUCCESS;
+}
+
+extern int fini(void)
 {
 	/* cleanup after ourself */
 	pmi2_stop_agent();

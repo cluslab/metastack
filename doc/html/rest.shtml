@@ -1,6 +1,6 @@
 <!--#include virtual="header.txt"-->
 
-<h1>Slurm REST API</h1>
+<h1>REST API Reference</h1>
 
 <p>Slurm provides a
 	<a href="https://en.wikipedia.org/wiki/Representational_state_transfer">
@@ -9,21 +9,18 @@
 	communicate with Slurm via a REST API (in addition to the command line
 	interface (CLI) or C API).
 </p>
-<p>Please see <a href="openapi_release_notes.html">
-	OpenAPI Plugin Release Notes</a> for changes between release versions.</p>
-<p>
-	To view the currently generated API reference:
-	<a href="rest_api.html">Slurm REST API Reference</a>
-</p>
 
-<h2 id="prereq">Prerequisites<a class="slurm_link" href="#prereq"></a></h2>
-<p>slurmrestd requires additional libraries for compilation:</p>
+<p>See also:
 <ul>
-	<li><a href="download.html#httpparser">HTTP Parser</a> (>= v2.6.0)</li>
-	<li><a href="download.html#yaml">LibYAML</a> (optional)</li>
-	<li><a href="download.html#json">JSON-C</a></li>
-	<li><a href="download.html#jwt">JWT Authentication</a> (optional)</li>
+<li><a href="rest_quickstart.html">REST API Quick Start Guide</a>
+<ul>
+<li><a href="rest_quickstart.html#common_issues">Common Issues</a></li>
+</ul></li>
+<li><a href="rest_api.html">REST API Implementation Details</a></li>
+<li><a href="openapi_release_notes.html">OpenAPI Plugin Release Notes</a></li>
+<li><a href="rest_clients.html">REST API Client Guide</a></li>
 </ul>
+</p>
 
 <h2 id="stateless">Stateless<a class="slurm_link" href="#stateless"></a></h2>
 <p>Slurmrestd is stateless as it does not cache or save any state between
@@ -32,7 +29,7 @@ discarded. Any request to slurmrestd is completely synchronous with the
 Slurm controller (slurmctld or slurmdbd) and is only considered complete once
 the HTTP response code has been sent to the client. Slurmrestd will hold a
 client connection open while processing a request. Slurm database commands are
-commited at the end of every request, on the success of all API calls in the
+committed at the end of every request, on the success of all API calls in the
 request.</p>
 <p>Sites are strongly encouraged to setup a caching proxy between slurmrestd
 and clients to avoid having clients repeatedly call queries, causing usage to
@@ -58,96 +55,9 @@ authenticated.</p>
 
 <h2 id="config">Configuration<a class="slurm_link" href="#config"></a></h2>
 slurmrestd can be configured either by environment variables or command line
-arguments. Please see the <b>doc/man/man1/slurmrestd.1</b> man page for details.
-
-<h2 id="openapi">OpenAPI Specification (OAS)
-<a class="slurm_link" href="#openapi"></a>
-</h2>
-<p>Slurmrestd is compliant with
-	<a href="https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.2.md">
-		OpenAPI 3.0.2
-	</a>.
-	The OAS can be viewed at the following URLs:
-</p>
-<ul>
-	<li>/openapi.json</li>
-	<li>/openapi.yaml</li>
-	<li>/openapi/v3</li>
-</ul>
-<p>The OAS is designed to be the primary documentation for the request methods.
-There are several third party tools that automatically generate documentation
-against the OAS output listed by
-<a href="https://openapi.tools/">openapi.tools.</a></p>
-
-<p><b>NOTE:</b> Slurm attempts to strictly comply with the relevant
-<a href="https://github.com/OAI/OpenAPI-Specification">OpenAPI standards</a>.
-For reasons of compatibility, Slurm may be tested against publicly available
-OpenAPI client generators, but Slurm does not directly support any of them as
-they are outside the control of SchedMD and may change at anytime. The goal
-is to comply with the standards, supporting as many clients as possible,
-without favoring any one client. Sites are always welcome to write their own
-clients that are OpenAPI compliant. As a rule, SchedMD will debug the HTTP
-sent to and received by slurmrestd but will not directly debug any client
-source code.
-</p>
-Tested compatibility by OpenAPI plugins:
-<ul>
-	<li>openapi/v0.0.35:
-		<ul>
-			<li>
-				<a href="https://github.com/OpenAPITools/openapi-generator">
-					v4.x of OpenAPI-generator
-				</a>
-			</li>
-		</ul>
-	</li>
-	<li>openapi/v0.0.36:
-		<ul>
-			<li>
-				<a href="https://github.com/OpenAPITools/openapi-generator">
-					v4.x of OpenAPI-generator
-				</a>
-			</li>
-		</ul>
-	</li>
-	<li>openapi/v0.0.37:
-		<ul>
-			<li>
-				<a href="https://github.com/OpenAPITools/openapi-generator">
-					v4.x of OpenAPI-generator
-				</a>
-			</li>
-			<li>
-				<a href="https://github.com/OpenAPITools/openapi-generator">
-					v5.x of OpenAPI-generator
-				</a>
-			</li>
-		</ul>
-	</li>
-	<li>openapi/dbv0.0.36:
-		<ul>
-			<li>
-				<a href="https://github.com/OpenAPITools/openapi-generator">
-					v4.x of OpenAPI-generator
-				</a>
-			</li>
-		</ul>
-	</li>
-	<li>openapi/dbv0.0.37:
-		<ul>
-			<li>
-				<a href="https://github.com/OpenAPITools/openapi-generator">
-					v4.x of OpenAPI-generator
-				</a>
-			</li>
-			<li>
-				<a href="https://github.com/OpenAPITools/openapi-generator">
-					v5.x of OpenAPI-generator
-				</a>
-			</li>
-		</ul>
-	</li>
-</ul>
+arguments. Please see the <b>doc/man/man1/slurmrestd.8</b> man page and
+<a href="rest_quickstart.html#customization">REST API Quick Start Guide</a>
+for details.
 
 <h2 id="plugins">Plugins<a class="slurm_link" href="#plugins"></a></h2>
 <p>As of Slurm 20.11, the REST API uses plugins for authentication and
@@ -171,7 +81,7 @@ deprecating plugins per the
 OpenAPI standard method of setting "Deprecated: True"</a>
 in the method path. Any plugin that is not marked as deprecated will
 continue to exist in the next Slurm Major release pending any critical issues
-which will be announced seperately. Any plugin marked for deprecation will be
+which will be announced separately. Any plugin marked for deprecation will be
 removed on the next Slurm major release. In general, the last three plugins
 have been retained in each Slurm major release with the oldest getting marked
 as deprecated.
@@ -279,12 +189,12 @@ provide the correct HTTP headers (<b>X-SLURM-USER-NAME</b> and
 HTTP 1.1 compliant and that it provides the correct HTTP headers to allow
 client authentication. Slurm will explicitly trust the HTTP headers provided
 and has no way to verify them (beyond the proxy's trusted token
-<b>X-SLURM-USER-TOKEN</b>). Any authentiticating proxy will need to follow
+<b>X-SLURM-USER-TOKEN</b>). Any authenticating proxy will need to follow
 your site's security policies and ensure that the proxied requests come from
 the correct user. These requirements are standard to any authenticated
 proxy and are not Slurm specific.</p>
 
-<p>A working trival example can be found in an <a
+<p>A working trivial example can be found in an <a
 href="https://gitlab.com/SchedMD/training/docker-scale-out/-/tree/master/proxy">
 internal tool</a> used for testing and training. It uses
 <a href="https://www.php.net/">PHP</a> and
@@ -293,6 +203,6 @@ internal tool</a> used for testing and training. It uses
 
 <hr size=4 width="100%">
 
-<p style="text-align:center;">Last modified 01 July 2022</p>
+<p style="text-align:center;">Last modified 16 March 2023</p>
 
 <!--#include virtual="footer.txt"-->

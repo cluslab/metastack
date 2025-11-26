@@ -40,6 +40,8 @@
 
 #include "accounting_storage_kingbase.h"
 
+extern void as_kingbase_convert_possible(kingbase_conn_t *kingbase_conn);
+
 /* Functions for converting tables before they are created in new schema */
 extern int as_kingbase_convert_tables_pre_create(kingbase_conn_t *kingbase_conn);
 

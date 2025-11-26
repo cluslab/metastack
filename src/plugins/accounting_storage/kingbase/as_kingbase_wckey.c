@@ -39,12 +39,29 @@
 #include "as_kingbase_wckey.h"
 #include "as_kingbase_usage.h"
 
+typedef struct {
+	char *cluster_name;
+	char *default_wckey;
+	kingbase_conn_t *kingbase_conn;
+	time_t now;
+	int rc;
+	char *ret_str;
+	bool ret_str_err;
+	char *ret_str_pos;
+	char *txn_query;
+	char *txn_query_pos;
+	list_t *user_list;
+	char *user_name;
+	list_t *wckey_list;
+	char *wckey_user_name;
+} add_wckey_cond_t;
+
 /* if this changes you will need to edit the corresponding enum */
 char *wckey_req_inx[] = {
 	"id_wckey",
 	"is_def",
 	"wckey_name",
-	"user",
+	"`user`",
 	"deleted",
 };
 
@@ -112,6 +129,77 @@ end_it:
 	return rc;
 }
 
+static int _make_sure_user_has_default_internal(
+	kingbase_conn_t *kingbase_conn, char *user, char *cluster)
+{
+	KCIResult *result = NULL;
+	fetch_flag_t* fetch_flag = NULL;
+	fetch_result_t* data_rt = NULL;
+	char *query = NULL;
+	int rc = SLURM_SUCCESS;
+
+	/* only look at non * and non deleted ones */
+	query = xstrdup_printf(
+		"select distinct is_def, wckey_name from "
+		"(select * from `%s_%s` where `user`='%s' and wckey_name "
+		//"`%s_%s` where `user`='%s' and wckey_name "
+		"not like '*%%' and deleted=0 ORDER BY "
+		"is_def desc, creation_time desc) LIMIT 1;",
+		cluster, wckey_table, user);
+	debug4("%d(%s:%d) query\n%s",
+	       kingbase_conn->conn, THIS_FILE, __LINE__, query);
+	//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);
+	result = kingbase_db_query_ret(kingbase_conn, query, 0);
+	xfree(query);
+	if (KCIResultGetStatusCode(result) != EXECUTE_TUPLES_OK) {
+		KCIResultDealloc(result);
+		error("couldn't query the database");
+		return SLURM_SUCCESS;
+	}
+	/* Check to see if the user is even added to
+	   the cluster.
+	*/
+	if (!KCIResultGetRowCount(result)) {
+		KCIResultDealloc(result);
+		return SLURM_SUCCESS;
+	}
+
+	/* check if row is default */
+	char *temp = KCIResultGetColumnValue(result,0,0);
+	if (*temp != '\0') {
+		/* default found, continue */
+		KCIResultDealloc(result);
+		return SLURM_SUCCESS;
+	}
+
+	/* if we made it here, there is no default */
+	query = xstrdup_printf(
+		"update `%s_%s` set is_def=1 where "
+		"`user`='%s' and wckey_name='%s';",
+		cluster, wckey_table, user, KCIResultGetColumnValue(result,0,1));
+	KCIResultDealloc(result);
+
+	DB_DEBUG(DB_WCKEY, kingbase_conn->conn, "query\n%s",
+		 query);
+	//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);		
+	//info("[query]set_fetch_flag(false, false, false);
+	data_rt = xmalloc(sizeof(fetch_result_t));
+	fetch_flag = set_fetch_flag(false, false, false);
+	rc = kingbase_for_fetch(kingbase_conn, query, fetch_flag, data_rt);
+	xfree(query);
+	// KCIResult *res = NULL;
+	// res = KCIConnectionFetchResult(kingbase_conn->db_conn);
+	// int err = KCIResultGetStatusCode(res);
+	if (rc != SLURM_SUCCESS) {
+		error("problem with update query");
+		free_res_data(data_rt, fetch_flag); 
+		return rc;
+	}
+	free_res_data(data_rt, fetch_flag); 
+
+	return rc;
+}
+
 /* This needs to happen to make since 2.1 code doesn't have enough
  * smarts to figure out it isn't adding a default wckey if just
  * adding a new wckey for a user that has never been on the cluster before.
@@ -119,11 +207,9 @@ end_it:
 static int _make_sure_users_have_default(
 	kingbase_conn_t *kingbase_conn, List user_list, List cluster_list)
 {
-	char *query = NULL, *cluster = NULL, *user = NULL;
-	ListIterator itr = NULL, clus_itr = NULL;
+	char *cluster = NULL, *user = NULL;
+	list_itr_t *itr = NULL, *clus_itr = NULL;
 	int rc = SLURM_SUCCESS;
-	fetch_flag_t* fetch_flag = NULL;
-	fetch_result_t* data_rt = NULL;
 
 	if (!user_list)
 		return SLURM_SUCCESS;
@@ -133,70 +219,10 @@ static int _make_sure_users_have_default(
 
 	while ((user = list_next(itr))) {
 		while ((cluster = list_next(clus_itr))) {
-			KCIResult *result = NULL;
-
-
-			/* only look at non * and non deleted ones */
-			query = xstrdup_printf(
-				"select distinct is_def, wckey_name from "
-				"(select * from `%s_%s` where `user`='%s' and wckey_name "
-				//"`%s_%s` where `user`='%s' and wckey_name "
-				"not like '*%%' and deleted=0 ORDER BY "
-				"is_def desc, creation_time desc) LIMIT 1;",
-				cluster, wckey_table, user);
-			debug4("%d(%s:%d) query\n%s",
-			       kingbase_conn->conn, THIS_FILE, __LINE__, query);
-			//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);
-			result = kingbase_db_query_ret(kingbase_conn, query, 0);
-			xfree(query);
-			if (KCIResultGetStatusCode(result) != EXECUTE_TUPLES_OK) {
-				KCIResultDealloc(result);
-				error("couldn't query the database");
-				rc = SLURM_ERROR;
+			if ((rc = _make_sure_user_has_default_internal(
+				     kingbase_conn, user, cluster)) !=
+			    SLURM_SUCCESS)
 				break;
-			}
-			/* Check to see if the user is even added to
-			   the cluster.
-			*/
-			if (!KCIResultGetRowCount(result)) {
-				KCIResultDealloc(result);
-				continue;
-			}
-
-			/* check if row is default */
-			char *temp = KCIResultGetColumnValue(result,0,0);
-			if (*temp != '\0') {
-				/* default found, continue */
-				KCIResultDealloc(result);
-				continue;
-			}
-
-			/* if we made it here, there is no default */
-			query = xstrdup_printf(
-				"update `%s_%s` set is_def=1 where "
-				"`user`='%s' and wckey_name='%s';",
-				cluster, wckey_table, user, KCIResultGetColumnValue(result,0,1));
-			KCIResultDealloc(result);
-
-			DB_DEBUG(DB_WCKEY, kingbase_conn->conn, "query\n%s",
-			         query);
-			//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);		
-			//info("[query]set_fetch_flag(false, false, false);
-			data_rt = xmalloc(sizeof(fetch_result_t));
-			fetch_flag = set_fetch_flag(false, false, false);
-			rc = kingbase_for_fetch(kingbase_conn, query, fetch_flag, data_rt);
-			xfree(query);
-			// KCIResult *res = NULL;
-			// res = KCIConnectionFetchResult(kingbase_conn->db_conn);
-			// int err = KCIResultGetStatusCode(res);
-			if (rc != SLURM_SUCCESS) {
-				error("problem with update query");
-				rc = SLURM_ERROR;
-				free_res_data(data_rt, fetch_flag); 
-				break;
-			}
-			free_res_data(data_rt, fetch_flag); 
-			// KCIResultDealloc(res);
 		}
 		if (rc != SLURM_SUCCESS)
 			break;
@@ -214,7 +240,7 @@ static int _setup_wckey_cond_limits(slurmdb_wckey_cond_t *wckey_cond,
 				    char **extra)
 {
 	int set = 0;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 	char *prefix = "t1";
 	if (!wckey_cond)
@@ -270,7 +296,7 @@ static int _setup_wckey_cond_limits(slurmdb_wckey_cond_t *wckey_cond,
 			if (set){
 				xstrcat(*extra, " or ");
 			}
-			xstrfmtcat(*extra, "%s.user='%s'", prefix, object);
+			xstrfmtcat(*extra, "%s.`user`='%s'", prefix, object);
 			set = 1;
 		}
 		list_iterator_destroy(itr);
@@ -292,7 +318,7 @@ static int _cluster_remove_wckeys(kingbase_conn_t *kingbase_conn,
 	char *assoc_char = NULL;
 	time_t now = time(NULL);
 	char *query = xstrdup_printf("select t1.id_wckey, t1.wckey_name, "
-				     "t1.user from `%s_%s` as t1%s;",
+				     "t1.`user` from `%s_%s` as t1%s;",
 				     cluster_name, wckey_table, extra);
 	//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);		
 	result = kingbase_db_query_ret(kingbase_conn, query, 0);		 
@@ -368,7 +394,7 @@ static int _cluster_modify_wckeys(kingbase_conn_t *kingbase_conn,
 	time_t now = time(NULL);
 	char *query = NULL;
 
-	query = xstrdup_printf("select t1.id_wckey, t1.wckey_name, t1.user "
+	query = xstrdup_printf("select t1.id_wckey, t1.wckey_name, t1.`user` "
 			       "from `%s_%s` as t1%s;",
 			       cluster_name, wckey_table, extra);
 	//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);		
@@ -521,12 +547,176 @@ static int _cluster_get_wckeys(kingbase_conn_t *kingbase_conn,
 	return SLURM_SUCCESS;
 }
 
+static int _add_wckey_cond_wckey(void *x, void *arg)
+{
+	add_wckey_cond_t *add_wckey_cond = arg;
+	char *extra = NULL, *tmp_extra = NULL;
+	int rc;
+	char *query = NULL;
+	slurmdb_wckey_rec_t *object, check_object;
+
+	/* Check to see if it is already in the assoc_mgr */
+	memset(&check_object, 0, sizeof(check_object));
+	check_object.cluster = add_wckey_cond->cluster_name;
+	check_object.name = x;
+	check_object.user = add_wckey_cond->wckey_user_name;
+	check_object.uid = NO_VAL;
+
+	rc = assoc_mgr_fill_in_wckey(add_wckey_cond->kingbase_conn,
+				     &check_object,
+				     ACCOUNTING_ENFORCE_WCKEYS, NULL, false);
+	if (rc == SLURM_SUCCESS) {
+		debug("WCKey %s/%s/%s is already here, not adding again.",
+		      check_object.cluster, check_object.name,
+		      check_object.user);
+		return 0;
+	}
+
+	if (!xstrcmp(add_wckey_cond->default_wckey, check_object.name)) {
+		check_object.is_def = true;
+		if ((add_wckey_cond->rc = _reset_default_wckey(
+			     add_wckey_cond->kingbase_conn, &check_object) !=
+		     SLURM_SUCCESS)) {
+			add_wckey_cond->ret_str_err = true;
+			xfree(add_wckey_cond->ret_str);
+			add_wckey_cond->ret_str = xstrdup_printf(
+				"Problem resetting old default wckeys for C = %s W = %s U = %s",
+				check_object.cluster, check_object.name,
+				check_object.user);
+			error("%s", add_wckey_cond->ret_str);
+			return -1;
+		}
+	}
+
+	/* Else, add it */
+	object = xmalloc(sizeof(*object));
+	object->cluster = xstrdup(check_object.cluster);
+	object->name = xstrdup(check_object.name);
+	object->user = xstrdup(check_object.user);
+	object->is_def = check_object.is_def;
+
+	query = xstrdup_printf(
+		"insert into `%s_%s` (creation_time, mod_time, wckey_name, `user`, is_def) values (%ld, %ld, '%s', '%s', %d) on duplicate key update deleted=0, is_def=VALUES(is_def), mod_time=VALUES(mod_time);",
+		object->cluster, wckey_table,
+		add_wckey_cond->now, add_wckey_cond->now,
+		object->name, object->user, object->is_def);
+    char *query2 = NULL;
+	query2 = xstrdup_printf(
+		"insert into `%s_%s` (creation_time, mod_time, wckey_name, `user`, is_def) values (%ld, %ld, '%s', '%s', %d) on duplicate key update deleted=0, is_def=VALUES(is_def), mod_time=VALUES(mod_time) returning id_wckey;",
+		object->cluster, wckey_table,
+		add_wckey_cond->now, add_wckey_cond->now,
+		object->name, object->user, object->is_def);
+
+	DB_DEBUG(DB_WCKEY, add_wckey_cond->kingbase_conn->conn,
+		 "query\n%s", query);
+	fetch_flag_t* fetch_flag = NULL;
+	fetch_result_t* data_rt = NULL;
+	fetch_flag = set_fetch_flag(true, false, true);
+	data_rt = xmalloc(sizeof(fetch_result_t));
+	rc = kingbase_for_fetch2(add_wckey_cond->kingbase_conn, query, fetch_flag, data_rt,query2);
+	object->id = (uint32_t) data_rt->insert_ret_id;
+	xfree(query);
+	xfree(query2);
+	free_res_data(data_rt, fetch_flag); 
+	if (!object->id) {
+		add_wckey_cond->rc = SLURM_ERROR;
+		add_wckey_cond->ret_str_err = true;
+		xfree(add_wckey_cond->ret_str);
+		add_wckey_cond->ret_str = xstrdup_printf(
+			"Couldn't add wckey C = %s W = %s U = %s\n",
+			object->cluster, object->name, object->user);
+		slurmdb_destroy_wckey_rec(object);
+		error("%s", add_wckey_cond->ret_str);
+		return -1;
+	}
+
+	extra = xstrdup_printf("mod_time=%ld, wckey_name='%s', `user`='%s', is_def=%d",
+			       add_wckey_cond->now,
+			       object->name, object->user, object->is_def);
+	tmp_extra = slurm_add_slash_to_quotes2(extra);
+
+	if (!add_wckey_cond->txn_query)
+		xstrfmtcatat(add_wckey_cond->txn_query,
+			     &add_wckey_cond->txn_query_pos,
+			     "insert into `%s` (timestamp, action, name, actor, info, cluster) values ",
+			     txn_table);
+	else
+		xstrcatat(add_wckey_cond->txn_query,
+			  &add_wckey_cond->txn_query_pos,
+			  ", ");
+	xstrfmtcatat(add_wckey_cond->txn_query,
+		     &add_wckey_cond->txn_query_pos,
+		     "(%ld, %u, 'id_wckey=%u', '%s', '%s', '%s')",
+		     add_wckey_cond->now, DBD_ADD_WCKEYS,
+		     object->id, add_wckey_cond->user_name,
+		     tmp_extra, object->cluster);
+	xfree(tmp_extra);
+	xfree(extra);
+
+	if (addto_update_list(add_wckey_cond->kingbase_conn->update_list,
+			      SLURMDB_ADD_WCKEY,
+			      object) == SLURM_SUCCESS) {
+		if (!add_wckey_cond->ret_str)
+			xstrcatat(add_wckey_cond->ret_str,
+				  &add_wckey_cond->ret_str_pos,
+				  " Wckey(s)\n");
+
+		xstrfmtcatat(add_wckey_cond->ret_str,
+			     &add_wckey_cond->ret_str_pos,
+			     "  C = %-10.10s W = %-10.10s U = %-9.9s\n",
+			     object->cluster, object->name, object->user);
+		object = NULL;
+	}
+
+	slurmdb_destroy_wckey_rec(object);
+
+	return 0;
+}
+
+static int _add_wckey_cond_user(void *x, void *arg)
+{
+	add_wckey_cond_t *add_wckey_cond = arg;
+	int rc;
+
+	add_wckey_cond->wckey_user_name = x;
+
+	rc = list_for_each_ro(add_wckey_cond->wckey_list,
+			      _add_wckey_cond_wckey,
+			      add_wckey_cond);
+	if (add_wckey_cond->rc == SLURM_SUCCESS) {
+		add_wckey_cond->rc = _make_sure_user_has_default_internal(
+			add_wckey_cond->kingbase_conn, x,
+			add_wckey_cond->cluster_name);
+		if (add_wckey_cond->rc != SLURM_SUCCESS)
+			rc = -1;
+	}
+	add_wckey_cond->wckey_user_name = NULL;
+
+	return rc;
+}
+
+static int _add_wckey_cond_cluster(void *x, void *arg)
+{
+	add_wckey_cond_t *add_wckey_cond = arg;
+	int rc;
+
+	add_wckey_cond->cluster_name = x;
+
+	rc = list_for_each_ro(add_wckey_cond->user_list,
+			      _add_wckey_cond_user,
+			      add_wckey_cond);
+
+	add_wckey_cond->cluster_name = NULL;
+
+	return rc;
+}
+
 /* extern functions */
 
 extern int as_kingbase_add_wckeys(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			       List wckey_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int rc = SLURM_SUCCESS;
 	slurmdb_wckey_rec_t *object = NULL;
 	char *cols = NULL, *extra = NULL, *vals = NULL, *query = NULL,
@@ -545,6 +735,11 @@ extern int as_kingbase_add_wckeys(kingbase_conn_t *kingbase_conn, uint32_t uid,
 
 	if (!is_user_min_admin_level(kingbase_conn, uid, SLURMDB_ADMIN_OPERATOR))
 		return ESLURM_ACCESS_DENIED;
+
+	if (!wckey_list || !list_count(wckey_list)) {
+		error("%s: Trying to add empty wckey list", __func__);
+		return ESLURM_EMPTY_LIST;
+	}
 
 	local_cluster_list = list_create(NULL);
 
@@ -720,6 +915,86 @@ end_it:
 	return rc;
 }
 
+extern char *as_kingbase_add_wckeys_cond(kingbase_conn_t *kingbase_conn, uint32_t uid,
+				      slurmdb_add_assoc_cond_t *add_assoc,
+				      slurmdb_user_rec_t *user)
+{
+	add_wckey_cond_t add_wckey_cond;
+	int rc;
+	list_t *use_cluster_list;
+
+	if (!add_assoc->wckey_list || !list_count(add_assoc->wckey_list)) {
+		DB_DEBUG(DB_WCKEY, kingbase_conn->conn,
+			 "Trying to add empty wckey list");
+		return NULL;
+	}
+
+	if (check_connection(kingbase_conn) != SLURM_SUCCESS) {
+		errno = ESLURM_DB_CONNECTION;
+		return NULL;
+	}
+
+	if (!is_user_min_admin_level(kingbase_conn, uid, SLURMDB_ADMIN_OPERATOR)) {
+		errno = ESLURM_ACCESS_DENIED;
+		return NULL;
+	}
+
+	if (add_assoc->cluster_list && list_count(add_assoc->cluster_list))
+		use_cluster_list = add_assoc->cluster_list;
+	else
+		/*
+		 * No need to do a shallow copy here as we are doing a
+		 * list_for_each_ro() which will handle the locks for us.
+		 */
+		use_cluster_list = as_kingbase_cluster_list;
+
+	memset(&add_wckey_cond, 0, sizeof(add_wckey_cond));
+	if (user->default_wckey) {
+		add_wckey_cond.default_wckey = user->default_wckey;
+	} else {
+		add_wckey_cond.default_wckey = list_peek(add_assoc->wckey_list);
+		DB_DEBUG(DB_WCKEY, kingbase_conn->conn,
+			 "Default wckey not given, using %s",
+			 add_wckey_cond.default_wckey);
+	}
+	add_wckey_cond.kingbase_conn = kingbase_conn;
+	add_wckey_cond.now = time(NULL);
+	add_wckey_cond.user_list = add_assoc->user_list;
+	add_wckey_cond.user_name = uid_to_string((uid_t) uid);
+	add_wckey_cond.wckey_list = add_assoc->wckey_list;
+
+	(void) list_for_each_ro(use_cluster_list, _add_wckey_cond_cluster,
+				&add_wckey_cond);
+	xfree(add_wckey_cond.user_name);
+
+	if (add_wckey_cond.txn_query) {
+		xstrcatat(add_wckey_cond.txn_query,
+			  &add_wckey_cond.txn_query_pos,
+			  ";");
+		rc = kingbase_db_query(kingbase_conn, add_wckey_cond.txn_query);
+		xfree(add_wckey_cond.txn_query);
+		if (rc != SLURM_SUCCESS) {
+			error("Couldn't add txn");
+			rc = SLURM_SUCCESS;
+		}
+	}
+
+	if (add_wckey_cond.rc != SLURM_SUCCESS) {
+		reset_kingbase_conn(kingbase_conn);
+		if (!add_wckey_cond.ret_str_err)
+			xfree(add_wckey_cond.ret_str);
+		errno = add_wckey_cond.rc;
+		return add_wckey_cond.ret_str;
+	} else if (!add_wckey_cond.ret_str) {
+		DB_DEBUG(DB_WCKEY, kingbase_conn->conn, "didn't affect anything");
+		errno = SLURM_NO_CHANGE_IN_DATA;
+		return NULL;
+	}
+
+	errno = SLURM_SUCCESS;
+	return add_wckey_cond.ret_str;
+}
+
 extern List as_kingbase_modify_wckeys(kingbase_conn_t *kingbase_conn,
 				   uint32_t uid,
 				   slurmdb_wckey_cond_t *wckey_cond,
@@ -730,7 +1005,7 @@ extern List as_kingbase_modify_wckeys(kingbase_conn_t *kingbase_conn,
 	char *extra = NULL, *object = NULL, *vals = NULL;
 	char *user_name = NULL;
 	List use_cluster_list = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 	bool locked = false;
 
 	if (!wckey_cond || !wckey) {
@@ -745,7 +1020,7 @@ extern List as_kingbase_modify_wckeys(kingbase_conn_t *kingbase_conn,
 		if (wckey_cond->user_list
 		    && (list_count(wckey_cond->user_list) == 1)) {
 			uid_t pw_uid;
-			char *name;
+			char *name = NULL;
 			name = list_peek(wckey_cond->user_list);
 		        if ((uid_from_string (name, &pw_uid) >= 0)
 			    && (pw_uid == uid)) {
@@ -820,7 +1095,7 @@ extern List as_kingbase_remove_wckeys(kingbase_conn_t *kingbase_conn,
 	char *extra = NULL, *object = NULL;
 	char *user_name = NULL;
 	List use_cluster_list = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 	bool locked = false;
 
 	if (!wckey_cond) {
@@ -890,7 +1165,7 @@ extern List as_kingbase_get_wckeys(kingbase_conn_t *kingbase_conn, uid_t uid,
 	int i=0, is_admin=1;
 	slurmdb_user_rec_t user;
 	List use_cluster_list = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 	bool locked = false;
 
 	if (!wckey_cond) {
@@ -931,7 +1206,7 @@ empty:
 	 * coordinator of.
 	 */
 	if (!is_admin && (slurm_conf.private_data & PRIVATE_DATA_USERS))
-		xstrfmtcat(extra, " and t1.user='%s'", user.name);
+		xstrfmtcat(extra, " and t1.`user`='%s'", user.name);
 
 	wckey_list = list_create(slurmdb_destroy_wckey_rec);
 

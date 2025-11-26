@@ -1,10 +1,9 @@
 /****************************************************************************\
  *  dbd_conn.c - functions to manage the connection to the SlurmDBD
  *****************************************************************************
- *  Copyright (C) 2011-2020 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- *  Written by Danny Auble <da@schedmd.com>
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
@@ -75,7 +74,7 @@ static void _db_res_op(void)
 		trigger_primary_db_res_op();
 }
 
-static int _connect_dbd_conn(slurm_persist_conn_t *pc)
+static int _connect_dbd_conn(persist_conn_t *pc)
 {
 
 	int rc;
@@ -136,12 +135,12 @@ again:
 	return rc;
 }
 
-extern slurm_persist_conn_t *dbd_conn_open(uint16_t *persist_conn_flags,
-					   char *cluster_name,
-					   char *rem_host,
-					   uint16_t rem_port)
+extern persist_conn_t *dbd_conn_open(uint16_t *persist_conn_flags,
+				     char *cluster_name,
+				     char *rem_host,
+				     uint16_t rem_port)
 {
-	slurm_persist_conn_t *pc = xmalloc(sizeof(*pc));
+	persist_conn_t *pc = xmalloc(sizeof(*pc));
 
 	if (persist_conn_flags)
 		pc->flags = *persist_conn_flags;
@@ -177,7 +176,7 @@ extern slurm_persist_conn_t *dbd_conn_open(uint16_t *persist_conn_flags,
 	return pc;
 }
 
-extern int dbd_conn_check_and_reopen(slurm_persist_conn_t *pc)
+extern int dbd_conn_check_and_reopen(persist_conn_t *pc)
 {
 	xassert(pc);
 
@@ -198,7 +197,7 @@ extern int dbd_conn_check_and_reopen(slurm_persist_conn_t *pc)
 	return _connect_dbd_conn(pc);
 }
 
-extern void dbd_conn_close(slurm_persist_conn_t **pc)
+extern void dbd_conn_close(persist_conn_t **pc)
 {
 	int rc;
 	buf_t *buffer;
@@ -215,7 +214,7 @@ extern void dbd_conn_close(slurm_persist_conn_t **pc)
 		log_flag(NET, "We are shutdown, not sending DB_FINI to %s:%u",
 			 (*pc)->rem_host,
 			 (*pc)->rem_port);
-		return;
+		goto destroy_conn;
 	}
 
 	/* If the connection is already gone, we don't need to send a fini. */
@@ -223,7 +222,7 @@ extern void dbd_conn_close(slurm_persist_conn_t **pc)
 		log_flag(NET, "unable to send DB_FINI msg to %s:%u",
 			 (*pc)->rem_host,
 			 (*pc)->rem_port);
-		return;
+		goto destroy_conn;
 	}
 
 	buffer = init_buf(1024);
@@ -233,12 +232,13 @@ extern void dbd_conn_close(slurm_persist_conn_t **pc)
 	slurmdbd_pack_fini_msg(&req, SLURM_PROTOCOL_VERSION, buffer);
 
 	rc = slurm_persist_send_msg(*pc, buffer);
-	free_buf(buffer);
+	FREE_NULL_BUFFER(buffer);
 
 	log_flag(NET, "sent DB_FINI msg to %s:%u rc(%d):%s",
 		 (*pc)->rem_host, (*pc)->rem_port,
 		 rc, slurm_strerror(rc));
 
+destroy_conn:
 	slurm_persist_conn_destroy(*pc);
 	*pc = NULL;
 }
@@ -255,7 +255,7 @@ extern int dbd_conn_send_recv_direct(uint16_t rpc_version,
 {
 	int rc = SLURM_SUCCESS;
 	buf_t *buffer;
-	slurm_persist_conn_t *use_conn = req->conn;
+	persist_conn_t *use_conn = req->conn;
 
 	xassert(req);
 	xassert(resp);
@@ -277,7 +277,7 @@ extern int dbd_conn_send_recv_direct(uint16_t rpc_version,
 	}
 
 	rc = slurm_persist_send_msg(use_conn, buffer);
-	free_buf(buffer);
+	FREE_NULL_BUFFER(buffer);
 	if (rc != SLURM_SUCCESS) {
 		error("Sending message type %s: %d: %s",
 		      slurmdbd_msg_type_2_str(req->msg_type, 1), rc,
@@ -298,7 +298,7 @@ extern int dbd_conn_send_recv_direct(uint16_t rpc_version,
 	if (rc == SLURM_SUCCESS && resp->msg_type == DBD_ID_RC)
 		rc = ((dbd_id_rc_msg_t *)resp->data)->return_code;
 
-	free_buf(buffer);
+	FREE_NULL_BUFFER(buffer);
 end_it:
 
 	log_flag(PROTOCOL, "msg_type:%s protocol_version:%hu return_code:%d response_msg_type:%s",
@@ -308,9 +308,10 @@ end_it:
 	return rc;
 }
 
-extern int dbd_conn_send_recv_rc_msg(uint16_t rpc_version,
-				     persist_msg_t *req,
-				     int *resp_code)
+extern int dbd_conn_send_recv_rc_comment_msg(uint16_t rpc_version,
+					     persist_msg_t *req,
+					     int *resp_code,
+					     char **comment)
 {
 	int rc;
 	persist_msg_t resp;
@@ -330,6 +331,7 @@ extern int dbd_conn_send_recv_rc_msg(uint16_t rpc_version,
 	} else {	/* resp.msg_type == PERSIST_RC */
 		persist_rc_msg_t *msg = resp.data;
 		*resp_code = msg->rc;
+
 		if (msg->rc != SLURM_SUCCESS &&
 		    msg->rc != ACCOUNTING_FIRST_REG &&
 		    msg->rc != ACCOUNTING_TRES_CHANGE_DB &&
@@ -358,6 +360,12 @@ extern int dbd_conn_send_recv_rc_msg(uint16_t rpc_version,
 				      msg->ret_info, msg->rc,
 				      comment);
 		}
+
+		if (comment) {
+			*comment = msg->comment;
+			msg->comment = NULL;
+		}
+
 		slurm_persist_free_rc_msg(msg);
 	}
 
@@ -366,6 +374,14 @@ extern int dbd_conn_send_recv_rc_msg(uint16_t rpc_version,
 		 rpc_version, rc);
 
 	return rc;
+}
+
+extern int dbd_conn_send_recv_rc_msg(uint16_t rpc_version,
+				     persist_msg_t *req,
+				     int *resp_code)
+{
+	return dbd_conn_send_recv_rc_comment_msg(
+		rpc_version, req, resp_code, NULL);
 }
 
 extern int dbd_conn_send_recv(uint16_t rpc_version,

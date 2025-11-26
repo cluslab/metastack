@@ -12,6 +12,9 @@ PYTHON_EXECUTABLE=$(awk -F'=' '/^python_executable=/ {print $2}' "$predictor_pat
 # 获取当前时间
 current_date=$(date +"%Y-%m-%d")
 
+# 初始化 status_code
+status_code=0
+
 # 当新的jobHistory生成时,生成新的预测模型及标签文件
 if [ -f "$predictor_path/jobHistory" ]; then
 
@@ -59,11 +62,11 @@ else
 	
 		# 取消原有的模型
 		if [ -L $sklearn_path/sklearn_model.pkl ]; then
-	        	unlink $sklearn_path/sklearn_model.pkl
+			unlink $sklearn_path/sklearn_model.pkl
 		fi
 	
 		# 链接新的模型
-	        ln -s $sklearn_path/sklearn_model_$current_date.pkl $sklearn_path/sklearn_model.pkl
+			ln -s $sklearn_path/sklearn_model_$current_date.pkl $sklearn_path/sklearn_model.pkl
 	
 		# 删除旧的模型
 		find $sklearn_path/ -maxdepth 1 -type f -name 'sklearn_model_*' ! -name "sklearn_model_$current_date.pkl" -exec rm -f {} +

@@ -93,6 +93,10 @@ extern int pack_msg(slurm_msg_t const *msg, buf_t *buffer);
  */
 extern int unpack_msg(slurm_msg_t *msg, buf_t *buffer);
 
+extern void packstr_with_version(void *object, uint16_t protocol_version,
+				 buf_t *buffer);
+extern int unpackstr_with_version(void **object, uint16_t protocol_version,
+				  buf_t *buffer);
 extern int slurm_pack_list(List send_list,
 			   void (*pack_function) (void *object,
 						  uint16_t rpc_version,
@@ -134,5 +138,18 @@ extern void slurm_pack_selected_step(void *in, uint16_t protocol_version,
 				     buf_t *buffer);
 extern int slurm_unpack_selected_step(slurm_selected_step_t **step,
 				      uint16_t protocol_version, buf_t *buffer);
+
+extern void slurm_pack_node_alias_addrs(slurm_node_alias_addrs_t *msg,
+					buf_t *buffer,
+					uint16_t protocol_version);
+extern int slurm_unpack_node_alias_addrs(slurm_node_alias_addrs_t **msg_ptr,
+					 buf_t *buffer,
+					 uint16_t protocol_version);
+extern void slurm_pack_stepmgr_job_info(void *in,
+					uint16_t protocol_version,
+					buf_t *buffer);
+extern int slurm_unpack_stepmgr_job_info(void **out,
+					 uint16_t protocol_version,
+					 buf_t *buffer);
 
 #endif

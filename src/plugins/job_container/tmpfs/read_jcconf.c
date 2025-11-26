@@ -51,41 +51,59 @@
 char *tmpfs_conf_file = "job_container.conf";
 
 static slurm_jc_conf_t slurm_jc_conf;
+static buf_t *slurm_jc_conf_buf = NULL;
 static bool slurm_jc_conf_inited = false;
 static bool auto_basepath_set = false;
+static bool shared_set = false;
 
 static s_p_hashtbl_t *_create_ns_hashtbl(void)
 {
 	static s_p_options_t ns_options[] = {
 		{"AutoBasePath", S_P_BOOLEAN},
 		{"BasePath", S_P_STRING},
+		{"Dirs", S_P_STRING},
 		{"InitScript", S_P_STRING},
+		{"Shared", S_P_BOOLEAN},
 		{NULL}
 	};
 
 	return s_p_hashtbl_create(ns_options);
 }
 
+static void _pack_slurm_jc_conf_buf(void)
+{
+	if (slurm_jc_conf_buf)
+		FREE_NULL_BUFFER(slurm_jc_conf_buf);
+
+	slurm_jc_conf_buf = init_buf(0);
+	packbool(slurm_jc_conf.auto_basepath, slurm_jc_conf_buf);
+	packstr(slurm_jc_conf.basepath, slurm_jc_conf_buf);
+	packstr(slurm_jc_conf.dirs, slurm_jc_conf_buf);
+	packstr(slurm_jc_conf.initscript, slurm_jc_conf_buf);
+	packbool(slurm_jc_conf.shared, slurm_jc_conf_buf);
+}
+
 static int _parse_jc_conf_internal(void **dest, slurm_parser_enum_t type,
 				   const char *key, const char *value,
 				   const char *line, char **leftover)
 {
+	char *basepath = NULL;
 	int rc = 1;
 	s_p_hashtbl_t *tbl = _create_ns_hashtbl();
 	s_p_parse_line(tbl, *leftover, leftover);
 	if (value) {
-		if (!xstrcmp(value, "/tmp") ||
-		    !xstrncmp(value, "/tmp/", 5) ||
-		    !xstrcmp(value, "/dev/shm") ||
-		    !xstrncmp(value, "/dev/shm/", 9))
-			fatal("Cannot use /tmp or /dev/shm as BasePath");
-		slurm_jc_conf.basepath = xstrdup(value);
-	} else if (!s_p_get_string(&slurm_jc_conf.basepath, "BasePath", tbl)) {
+		basepath = xstrdup(value);
+	} else if (!s_p_get_string(&basepath, "BasePath", tbl)) {
 		fatal("empty basepath detected, please verify %s is correct",
 		      tmpfs_conf_file);
 		rc = 0;
 		goto end_it;
 	}
+
+	slurm_jc_conf.basepath = slurm_conf_expand_slurmd_path(basepath,
+							       conf->node_name,
+							       NULL);
+	xfree(basepath);
 
 #ifdef MULTIPLE_SLURMD
 	xstrfmtcat(slurm_jc_conf.basepath, "/%s", conf->node_name);
@@ -94,8 +112,14 @@ static int _parse_jc_conf_internal(void **dest, slurm_parser_enum_t type,
 	if (s_p_get_boolean(&slurm_jc_conf.auto_basepath, "AutoBasePath", tbl))
 		auto_basepath_set = true;
 
+	if (!s_p_get_string(&slurm_jc_conf.dirs, "Dirs", tbl))
+		debug3("empty Dirs detected");
+
 	if (!s_p_get_string(&slurm_jc_conf.initscript, "InitScript", tbl))
 		debug3("empty init script detected");
+
+	if (s_p_get_boolean(&slurm_jc_conf.shared, "Shared", tbl))
+		shared_set = true;
 
 end_it:
 	s_p_hashtbl_destroy(tbl);
@@ -111,7 +135,7 @@ static int _parse_jc_conf(void **dest, slurm_parser_enum_t type,
 {
 	if (value) {
 		bool match = false;
-		hostlist_t hl = hostlist_create(value);
+		hostlist_t *hl = hostlist_create(value);
 		if (hl) {
 			match = (hostlist_find(hl, conf->node_name) >= 0);
 			hostlist_destroy(hl);
@@ -138,7 +162,9 @@ static int _read_slurm_jc_conf(void)
 	static s_p_options_t options[] = {
 		{"AutoBasePath", S_P_BOOLEAN},
 		{"BasePath", S_P_ARRAY, _parse_jc_conf_internal, NULL},
+		{"Dirs", S_P_STRING},
 		{"NodeName", S_P_ARRAY, _parse_jc_conf, NULL},
+		{"Shared", S_P_BOOLEAN},
 		{NULL}
 	};
 
@@ -154,7 +180,7 @@ static int _read_slurm_jc_conf(void)
 
 	debug("Reading %s file %s", tmpfs_conf_file, conf_path);
 	tbl = s_p_hashtbl_create(options);
-	if (s_p_parse_file(tbl, NULL, conf_path, false, NULL) == SLURM_ERROR) {
+	if (s_p_parse_file(tbl, NULL, conf_path, 0, NULL) == SLURM_ERROR) {
 		fatal("Could not open/read/parse %s file %s",
 		      tmpfs_conf_file, conf_path);
 		goto end_it;
@@ -165,11 +191,20 @@ static int _read_slurm_jc_conf(void)
 		s_p_get_boolean(&slurm_jc_conf.auto_basepath,
 				"AutoBasePath", tbl);
 
+	if (!slurm_jc_conf.dirs &&
+	    !s_p_get_string(&slurm_jc_conf.dirs, "Dirs", tbl))
+		slurm_jc_conf.dirs = xstrdup(SLURM_TMPFS_DEF_DIRS);
+
 	if (!slurm_jc_conf.basepath) {
-		error("Configuration for this node not found in %s",
+		debug("Config not found in %s. Disabling plugin on this node",
 		      tmpfs_conf_file);
-		rc = SLURM_ERROR;
+	} else if (!xstrncasecmp(slurm_jc_conf.basepath, "none", 4)) {
+		debug("Plugin is disabled on this node per %s.",
+		      tmpfs_conf_file);
 	}
+
+	if (!shared_set)
+		s_p_get_boolean(&slurm_jc_conf.shared, "Shared", tbl);
 
 end_it:
 
@@ -179,18 +214,64 @@ end_it:
 	return rc;
 }
 
-extern slurm_jc_conf_t *get_slurm_jc_conf(void)
+extern slurm_jc_conf_t *init_slurm_jc_conf(void)
 {
 	int rc;
 	if (!slurm_jc_conf_inited) {
+		char *save_ptr = NULL, *token, *buffer;
 		memset(&slurm_jc_conf, 0, sizeof(slurm_jc_conf_t));
 		rc = _read_slurm_jc_conf();
 		if (rc == SLURM_ERROR)
 			return NULL;
+
+		xassert(slurm_jc_conf.dirs);
+
+		/* BasePath cannot be in "Dirs" */
+		buffer = xstrdup(slurm_jc_conf.dirs);
+		token = strtok_r(buffer, ",", &save_ptr);
+		while (token) {
+			char *found = xstrstr(token, slurm_jc_conf.basepath);
+			if (found == token)
+				fatal("BasePath(%s) cannot also be in Dirs.",
+				      slurm_jc_conf.basepath);
+			token = strtok_r(NULL, ",", &save_ptr);
+		}
+		xfree(buffer);
+
+		_pack_slurm_jc_conf_buf();
+
 		slurm_jc_conf_inited = true;
 	}
 
 	return &slurm_jc_conf;
+}
+
+extern slurm_jc_conf_t *set_slurm_jc_conf(buf_t *buf)
+{
+	xassert(buf);
+
+	safe_unpackbool(&slurm_jc_conf.auto_basepath, buf);
+	safe_unpackstr(&slurm_jc_conf.basepath, buf);
+	safe_unpackstr(&slurm_jc_conf.dirs, buf);
+	safe_unpackstr(&slurm_jc_conf.initscript, buf);
+	safe_unpackbool(&slurm_jc_conf.shared, buf);
+	slurm_jc_conf_inited = true;
+
+	return &slurm_jc_conf;
+unpack_error:
+	return NULL;
+}
+
+extern slurm_jc_conf_t *get_slurm_jc_conf(void)
+{
+	if (!slurm_jc_conf_inited)
+		return NULL;
+	return &slurm_jc_conf;
+}
+
+extern buf_t *get_slurm_jc_conf_buf(void)
+{
+	return slurm_jc_conf_buf;
 }
 
 extern void free_jc_conf(void)
@@ -198,6 +279,9 @@ extern void free_jc_conf(void)
 	if (slurm_jc_conf_inited) {
 		xfree(slurm_jc_conf.basepath);
 		xfree(slurm_jc_conf.initscript);
+		xfree(slurm_jc_conf.dirs);
+		FREE_NULL_BUFFER(slurm_jc_conf_buf);
+		slurm_jc_conf_inited = false;
 	}
 	return;
 }

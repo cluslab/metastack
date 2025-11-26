@@ -53,9 +53,9 @@
 #include "src/common/read_config.h"
 #include "src/common/slurm_resource_info.h"
 #include "src/common/xstring.h"
-#include "src/common/cgroup.h"
+#include "src/interfaces/cgroup.h"
 #include "src/slurmd/common/xcpuinfo.h"
-#include "src/slurmd/common/task_plugin.h"
+#include "src/interfaces/task.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
 #include "src/slurmd/slurmd/slurmd.h"
 
@@ -72,7 +72,7 @@ extern int task_cgroup_cpuset_fini(void)
 	return cgroup_g_step_destroy(CG_CPUS);
 }
 
-extern int task_cgroup_cpuset_create(stepd_step_rec_t *job)
+extern int task_cgroup_cpuset_create(stepd_step_rec_t *step)
 {
 	cgroup_limits_t limits, *slurm_limits = NULL;
 	char *job_alloc_cpus = NULL;
@@ -81,21 +81,21 @@ extern int task_cgroup_cpuset_create(stepd_step_rec_t *job)
 	int rc = SLURM_SUCCESS;
 
 	/* First create the cpuset hierarchy for this job */
-	if ((rc = cgroup_g_step_create(CG_CPUS, job)) != SLURM_SUCCESS)
+	if ((rc = cgroup_g_step_create(CG_CPUS, step)) != SLURM_SUCCESS)
 		return rc;
 
 	/* Then constrain the user/job/step to the required cores/cpus */
 
 	/* build job and job steps allocated cores lists */
-	debug("job abstract cores are '%s'", job->job_alloc_cores);
-	debug("step abstract cores are '%s'", job->step_alloc_cores);
+	debug("job abstract cores are '%s'", step->job_alloc_cores);
+	debug("step abstract cores are '%s'", step->step_alloc_cores);
 
-	if (xcpuinfo_abs_to_mac(job->job_alloc_cores,
+	if (xcpuinfo_abs_to_mac(step->job_alloc_cores,
 				&job_alloc_cpus) != SLURM_SUCCESS) {
 		error("unable to build job physical cores");
 		goto endit;
 	}
-	if (xcpuinfo_abs_to_mac(job->step_alloc_cores,
+	if (xcpuinfo_abs_to_mac(step->step_alloc_cores,
 				&step_alloc_cpus) != SLURM_SUCCESS) {
 		error("unable to build step physical cores");
 		goto endit;
@@ -113,15 +113,17 @@ extern int task_cgroup_cpuset_create(stepd_step_rec_t *job)
 
 	cgroup_init_limits(&limits);
 	limits.allow_mems = slurm_limits->allow_mems;
-	limits.step = job;
+	limits.step = step;
 
 	/* User constrain */
 	limits.allow_cores = xstrdup_printf(
 		"%s,%s", job_alloc_cpus, slurm_limits->allow_cores);
 	rc = cgroup_g_constrain_set(CG_CPUS, CG_LEVEL_USER, &limits);
 	xfree(limits.allow_cores);
-	if (rc != SLURM_SUCCESS)
+	if (rc != SLURM_SUCCESS) {
+		error("slurm cgroup might have been modified by an external software");
 		goto endit;
+	}
 
 	/* Job constrain */
 	limits.allow_cores = job_alloc_cpus;
@@ -140,7 +142,7 @@ extern int task_cgroup_cpuset_create(stepd_step_rec_t *job)
 	rc = cgroup_g_step_addto(CG_CPUS, &pid, 1);
 
 	/* validate the requested cpu frequency and set it */
-	cpu_freq_cgroup_validate(job, step_alloc_cpus);
+	cpu_freq_cgroup_validate(step, step_alloc_cpus);
 
 endit:
 	xfree(job_alloc_cpus);

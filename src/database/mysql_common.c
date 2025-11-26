@@ -55,6 +55,7 @@ static char *table_defs_table = "table_defs_table";
 typedef struct {
 	char *name;
 	char *columns;
+	bool non_unique;
 } db_key_t;
 
 static void _destroy_db_key(void *arg)
@@ -66,6 +67,15 @@ static void _destroy_db_key(void *arg)
 		xfree(db_key->columns);
 		xfree(db_key);
 	}
+}
+
+static int _find_db_key(void *x, void *key)
+{
+	db_key_t * db_key = (db_key_t *) x;
+
+	if (xstrcmp(db_key->name, (char *) key))
+		return 0;
+	return 1;
 }
 
 /* NOTE: Ensure that mysql_conn->lock is set on function entry */
@@ -237,26 +247,26 @@ static bool _alter_table_after_upgrade(mysql_conn_t *mysql_conn,
 
 	/* check to see if upgrade has happened */
 	if (!have_value) {
-		const char *info;
+		const char *tmp_char;
 		char *query;
 		/*
 		 * confirm MariaDB is being used to avoid any ambiguity with
 		 * MySQL versions
 		 */
-		info = mysql_get_server_info(mysql_conn->db_conn);
-		if (xstrcasestr(info, "mariadb") &&
+		tmp_char = mysql_get_server_info(mysql_conn->db_conn);
+		if (xstrcasestr(tmp_char, "mariadb") &&
 		    (mysql_get_server_version(mysql_conn->db_conn) >= 100201)) {
 			query = "show columns from `qos_table` like 'preempt'";
 			result = mysql_db_query_ret(mysql_conn, query, 0);
 			if (result) {
 				/*
 				 * row[4] holds the column's default value and
-				 * if it's NULL then it will need to be altered
-				 * and an upgrade is assumed
+				 * if it's not empty ('') then it will need to
+				 * be altered and an upgrade is assumed
 				 */
 				if ((row = mysql_fetch_row(result)) &&
 				    !xstrcasecmp(row[1], "text") &&
-				    !row[4])
+				    xstrcmp(row[4], "''"))
 					upgraded = true;
 				mysql_free_result(result);
 			}
@@ -285,14 +295,13 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 	MYSQL_ROW row;
 	int i = 0;
 	List columns = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *col = NULL;
 	int adding = 0;
 	int run_update = 0;
 	char *primary_key = NULL;
 	char *unique_index = NULL;
 	int old_primary = 0;
-	char *old_index = NULL;
 	char *temp = NULL, *temp2 = NULL;
 	List keys_list = NULL;
 	db_key_t *db_key = NULL;
@@ -307,12 +316,29 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 		return SLURM_ERROR;
 	}
 	xfree(query);
+
+	keys_list = list_create(_destroy_db_key);
 	while ((row = mysql_fetch_row(result))) {
-		// row[2] is the key name
-		if (!xstrcasecmp(row[2], "PRIMARY"))
+		/*
+		 * row[2] = key name
+		 * row[4] = column name
+		 */
+		if (!xstrcasecmp(row[2], "PRIMARY")) {
 			old_primary = 1;
-		else if (!old_index)
-			old_index = xstrdup(row[2]);
+			continue;
+		}
+
+		db_key = list_find_first(keys_list, _find_db_key, row[2]);
+
+		if (db_key) {
+			xstrfmtcat(db_key->columns, ", %s", row[4]);
+		} else {
+			db_key = xmalloc(sizeof(db_key_t));
+			db_key->name = xstrdup(row[2]);
+			db_key->columns = xstrdup(row[4]);
+			db_key->non_unique = false;
+			list_append(keys_list, db_key);
+		}
 	}
 	mysql_free_result(result);
 
@@ -321,22 +347,12 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 			       table_name);
 	if (!(result = mysql_db_query_ret(mysql_conn, query, 0))) {
 		xfree(query);
-		xfree(old_index);
 		return SLURM_ERROR;
 	}
 	xfree(query);
 
-	itr = NULL;
-	keys_list = list_create(_destroy_db_key);
 	while ((row = mysql_fetch_row(result))) {
-		if (!itr)
-			itr = list_iterator_create(keys_list);
-		else
-			list_iterator_reset(itr);
-		while ((db_key = list_next(itr))) {
-			if (!xstrcmp(db_key->name, row[2]))
-				break;
-		}
+		db_key = list_find_first(keys_list, _find_db_key, row[2]);
 
 		if (db_key) {
 			xstrfmtcat(db_key->columns, ", %s", row[4]);
@@ -344,21 +360,16 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 			db_key = xmalloc(sizeof(db_key_t));
 			db_key->name = xstrdup(row[2]); // name
 			db_key->columns = xstrdup(row[4]); // column name
+			db_key->non_unique = true;
 			list_append(keys_list, db_key); // don't use list_push
 		}
 	}
 	mysql_free_result(result);
 
-	if (itr) {
-		list_iterator_destroy(itr);
-		itr = NULL;
-	}
-
 	/* figure out the existing columns in the table */
 	query = xstrdup_printf("show columns from %s", table_name);
 	if (!(result = mysql_db_query_ret(mysql_conn, query, 0))) {
 		xfree(query);
-		xfree(old_index);
 		FREE_NULL_LIST(keys_list);
 		return SLURM_ERROR;
 	}
@@ -512,8 +523,17 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 		if (temp[end]) {
 			end++;
 			unique_index = xstrndup(temp, end);
-			if (old_index)
-				xstrfmtcat(query, " drop index %s,", old_index);
+
+			db_key = list_remove_first(keys_list, _find_db_key,
+						   udex_name);
+			if (db_key) {
+				xstrfmtcat(query,
+					   " drop index %s,", db_key->name);
+				_destroy_db_key(db_key);
+			} else {
+				info("adding %s to table %s",
+				     unique_index, table_name);
+			}
 			xstrfmtcat(correct_query, " drop index %s,", udex_name);
 			xstrfmtcat(query, " add %s,", unique_index);
 			xstrfmtcat(correct_query, " add %s,", unique_index);
@@ -521,10 +541,8 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 		}
 		xfree(udex_name);
 	}
-	xfree(old_index);
 
 	temp2 = ending;
-	itr = list_iterator_create(keys_list);
 	while ((temp = strstr(temp2, ", key "))) {
 		int open = 0, close = 0, name_end = 0;
 		int end = 5;
@@ -548,13 +566,9 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 			end++;
 			new_key_name = xstrndup(temp+6, name_end-6);
 			new_key = xstrndup(temp+2, end-2); // skip ', '
-			while ((db_key = list_next(itr))) {
-				if (!xstrcmp(db_key->name, new_key_name)) {
-					list_remove(itr);
-					break;
-				}
-			}
-			list_iterator_reset(itr);
+
+			db_key = list_remove_first(keys_list, _find_db_key,
+						   new_key_name);
 			if (db_key) {
 				xstrfmtcat(query,
 					   " drop key %s,", db_key->name);
@@ -575,9 +589,17 @@ static int _mysql_make_table_current(mysql_conn_t *mysql_conn, char *table_name,
 	}
 
 	/* flush extra (old) keys */
+	itr = list_iterator_create(keys_list);
 	while ((db_key = list_next(itr))) {
-		info("dropping key %s from table %s", db_key->name, table_name);
-		xstrfmtcat(query, " drop key %s,", db_key->name);
+		if (!db_key->non_unique) {
+			info("dropping unique index %s from table %s",
+			     db_key->name, table_name);
+			xstrfmtcat(query, " drop index %s,", db_key->name);
+		} else {
+			info("dropping key %s from table %s",
+			     db_key->name, table_name);
+			xstrfmtcat(query, " drop key %s,", db_key->name);
+		}
 	}
 	list_iterator_destroy(itr);
 
@@ -776,9 +798,11 @@ extern mysql_conn_t *create_mysql_conn(int conn_num, bool rollback,
 {
 	mysql_conn_t *mysql_conn = xmalloc(sizeof(mysql_conn_t));
 
-	mysql_conn->rollback = rollback;
+	if (rollback)
+		mysql_conn->flags |= DB_CONN_FLAG_ROLLBACK;
 	mysql_conn->conn = conn_num;
 	mysql_conn->cluster_name = xstrdup(cluster_name);
+	mysql_conn->wsrep_trx_fragment_size_orig = NO_VAL64;
 	slurm_mutex_init(&mysql_conn->lock);
 	mysql_conn->update_list = list_create(slurmdb_destroy_update_object);
 
@@ -793,6 +817,7 @@ extern int destroy_mysql_conn(mysql_conn_t *mysql_conn)
 		xfree(mysql_conn->cluster_name);
 		slurm_mutex_destroy(&mysql_conn->lock);
 		FREE_NULL_LIST(mysql_conn->update_list);
+		xfree(mysql_conn->wsrep_trx_fragment_unit_orig);
 		xfree(mysql_conn);
 	}
 
@@ -848,7 +873,6 @@ extern int mysql_db_get_db_connection(mysql_conn_t *mysql_conn, char *db_name,
 	bool storage_init = false;
 	char *db_host = db_info->host;
 	unsigned int my_timeout = 30;
-	bool reconnect = 0;
 
 	xassert(mysql_conn);
 
@@ -859,8 +883,6 @@ extern int mysql_db_get_db_connection(mysql_conn_t *mysql_conn, char *db_name,
 		fatal("mysql_init failed: %s",
 		      mysql_error(mysql_conn->db_conn));
 	}
-
-	mysql_options(mysql_conn->db_conn, MYSQL_OPT_RECONNECT, &reconnect);
 
 	/*
 	 * If this ever changes you will need to alter
@@ -916,7 +938,7 @@ extern int mysql_db_get_db_connection(mysql_conn_t *mysql_conn, char *db_name,
 		}
 
 		storage_init = true;
-		if (mysql_conn->rollback)
+		if (mysql_conn->flags & DB_CONN_FLAG_ROLLBACK)
 			mysql_autocommit(mysql_conn->db_conn, 0);
 		rc = _mysql_query_internal(mysql_conn->db_conn,
 					   "SET session sql_mode='ANSI_QUOTES,"
@@ -940,7 +962,7 @@ extern int mysql_db_close_db_connection(mysql_conn_t *mysql_conn)
 	return SLURM_SUCCESS;
 }
 
-extern int mysql_db_cleanup()
+extern int mysql_db_cleanup(void)
 {
 	debug3("starting mysql cleaning up");
 
@@ -1120,7 +1142,7 @@ extern int mysql_db_create_table(mysql_conn_t *mysql_conn, char *table_name,
 				 storage_field_t *fields, char *ending)
 {
 	char *query = NULL;
-	int i = 0, rc;
+	int rc;
 	storage_field_t *first_field = fields;
 
 	if (!fields || !fields->name) {
@@ -1148,13 +1170,11 @@ extern int mysql_db_create_table(mysql_conn_t *mysql_conn, char *table_name,
 
 	query = xstrdup_printf("create table if not exists %s (`%s` %s",
 			       table_name, fields->name, fields->options);
-	i = 1;
 	fields++;
 
 	while (fields && fields->name) {
 		xstrfmtcat(query, ", `%s` %s", fields->name, fields->options);
 		fields++;
-		i++;
 	}
 	xstrcat(query, ending);
 
@@ -1170,4 +1190,200 @@ extern int mysql_db_create_table(mysql_conn_t *mysql_conn, char *table_name,
 	rc = _mysql_make_table_current(
 		mysql_conn, table_name, first_field, ending);
 	return rc;
+}
+
+extern int mysql_db_get_var_str(mysql_conn_t *mysql_conn,
+				const char *variable_name,
+				char **value)
+{
+	MYSQL_ROW row = NULL;
+	MYSQL_RES *result = NULL;
+	char *query;
+
+	query = xstrdup_printf("select @@%s;", variable_name);
+	result = mysql_db_query_ret(mysql_conn, query, 0);
+	if (!result) {
+		error("%s: null result from query `%s`", __func__, query);
+		xfree(query);
+		return SLURM_ERROR;
+	}
+
+	if (mysql_num_rows(result) != 1) {
+		error("%s: invalid results from query `%s`", __func__, query);
+		xfree(query);
+		mysql_free_result(result);
+		return SLURM_ERROR;
+	}
+
+	xfree(query);
+
+	row = mysql_fetch_row(result);
+	*value = xstrdup(row[0]);
+
+	mysql_free_result(result);
+
+	return SLURM_SUCCESS;
+}
+
+extern int mysql_db_get_var_u64(mysql_conn_t *mysql_conn,
+				const char *variable_name,
+				uint64_t *value)
+{
+	char *err_check = NULL, *var_str = NULL;
+
+	if (mysql_db_get_var_str(mysql_conn, variable_name, &var_str)) {
+		return SLURM_ERROR;
+	}
+
+	*value = strtoull(var_str, &err_check, 10);
+
+	if (*err_check) {
+		error("%s: error parsing string to int `%s`",
+		      __func__, var_str);
+		xfree(var_str);
+		return SLURM_ERROR;
+	}
+	xfree(var_str);
+
+	return SLURM_SUCCESS;
+}
+
+extern void mysql_db_enable_streaming_replication(mysql_conn_t *mysql_conn)
+{
+	int rc = SLURM_SUCCESS;
+	char *query;
+	uint64_t wsrep_on, wsrep_max_ws_size, fragment_size;
+
+	/* if this errors, assume wsrep_on doesn't exist, so must be disabled */
+	if (mysql_db_get_var_u64(mysql_conn, "wsrep_on", &wsrep_on)) {
+		wsrep_on = 0;
+		if (errno == ER_UNKNOWN_SYSTEM_VARIABLE)
+			error("The prior error message regarding an undefined 'wsrep_on' variable is innocuous.  MySQL and MariaDB < 10.1 do not have this variable and Slurm will operate normally without it.");
+	}
+
+	debug2("wsrep_on=%"PRIu64, wsrep_on);
+
+	if (!wsrep_on)
+		return;
+
+	/*
+	 * wsrep_max_ws_size represents the maximum write set size in bytes.
+	 * The fragment cannot exceed this value.
+	 */
+	rc = mysql_db_get_var_u64(mysql_conn, "wsrep_max_ws_size",
+			          &wsrep_max_ws_size);
+	if (rc) {
+		error("Failed to get wsrep_max_ws_size");
+		return;
+	}
+
+	/*
+	 * Save the initial wsrep settings so they can be restored later.
+	 * If these were set previously, don't set them again.
+	 *
+	 * If these variables don't exist, streaming replication isn't supported
+	 * so don't turn it on.
+	 */
+	if (!mysql_conn->wsrep_trx_fragment_unit_orig) {
+		rc = mysql_db_get_var_str(
+			mysql_conn,
+			"wsrep_trx_fragment_unit",
+			&mysql_conn->wsrep_trx_fragment_unit_orig);
+		if (rc) {
+			if (errno == ER_UNKNOWN_SYSTEM_VARIABLE)
+				error("This version of galera does not support streaming replication.");
+			error("Unable to fetch wsrep_trx_fragment_unit.");
+			return;
+		}
+	}
+	if (mysql_conn->wsrep_trx_fragment_size_orig == NO_VAL64) {
+		rc = mysql_db_get_var_u64(
+			mysql_conn,
+			"wsrep_trx_fragment_size",
+			&mysql_conn->wsrep_trx_fragment_size_orig);
+		if (rc) {
+			if (errno == ER_UNKNOWN_SYSTEM_VARIABLE)
+				error("This version of galera does not support streaming replication.");
+			error("Unable to fetch wsrep_trx_fragment_size.");
+			return;
+		}
+	}
+
+	/*
+	 * Force the wsrep_trx_fragment_unit to bytes. The default may change
+	 * in the future, or may have been set by the site, so don't rely on it
+	 * being a specific value.
+	 */
+	query = xstrdup("SET @@SESSION.wsrep_trx_fragment_unit=\'bytes\';");
+	rc = _mysql_query_internal(mysql_conn->db_conn, query);
+	xfree(query);
+	if (rc) {
+		error("Unable to set wsrep_trx_fragment_unit.");
+		return;
+	}
+
+	/*
+	 * Set the fragment size to 128MiB, or wsrep_max_ws_size if it has been
+	 * set below that. Simply setting it to the max size does not strictly
+	 * result in the best performance.
+	 */
+	fragment_size = MIN(wsrep_max_ws_size, 134217700);
+	query = xstrdup_printf("SET @@SESSION.wsrep_trx_fragment_size=%"PRIu64";",
+			       fragment_size);
+	rc = _mysql_query_internal(mysql_conn->db_conn, query);
+	xfree(query);
+	if (rc)
+		error("Failed to set wsrep_trx_fragment_size");
+	else
+		debug2("set wsrep_trx_fragment_size=%"PRIu64" bytes",
+		       fragment_size);
+
+	return;
+}
+
+extern void mysql_db_restore_streaming_replication(mysql_conn_t *mysql_conn)
+{
+	int rc;
+	char *query;
+
+	/*
+	 * Check if the conection has saved streaming replication settings.  If
+	 * not there is nothing to restore.
+	 */
+	if (!mysql_conn->wsrep_trx_fragment_unit_orig &&
+	    (mysql_conn->wsrep_trx_fragment_size_orig == NO_VAL64)) {
+		debug2("no streaming replication settings to restore");
+		return;
+	}
+
+	if (mysql_conn->wsrep_trx_fragment_unit_orig) {
+		query = xstrdup_printf(
+				"SET @@SESSION.wsrep_trx_fragment_unit=\'%s\';",
+				mysql_conn->wsrep_trx_fragment_unit_orig);
+		rc = _mysql_query_internal(mysql_conn->db_conn, query);
+		xfree(query);
+		if (rc) {
+			error("Unable to restore wsrep_trx_fragment_unit.");
+		} else {
+			debug2("Restored wsrep_trx_fragment_unit=%s",
+			       mysql_conn->wsrep_trx_fragment_unit_orig);
+			xfree(mysql_conn->wsrep_trx_fragment_unit_orig);
+		}
+	}
+	if (mysql_conn->wsrep_trx_fragment_size_orig != NO_VAL64) {
+		query = xstrdup_printf(
+				"SET @@SESSION.wsrep_trx_fragment_size=%"PRIu64";",
+				mysql_conn->wsrep_trx_fragment_size_orig);
+		rc = _mysql_query_internal(mysql_conn->db_conn, query);
+		xfree(query);
+		if (rc) {
+			error("Unable to restore wsrep_trx_fragment_size.");
+		} else {
+			debug2("Restored wsrep_trx_fragment_size=%"PRIu64,
+			       mysql_conn->wsrep_trx_fragment_size_orig);
+			mysql_conn->wsrep_trx_fragment_size_orig = NO_VAL64;
+		}
+	}
+
+	return;
 }

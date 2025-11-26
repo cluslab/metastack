@@ -3,10 +3,12 @@ SUBDIRS =		\
 	bcast		\
 	common		\
 	database	\
+	interfaces	\
 	lua		\
 	plugins		\
 	sacct		\
 	sacctmgr	\
+	sackd		\
 	salloc		\
 	sattach		\
 	sbatch		\
@@ -26,5 +28,10 @@ SUBDIRS =		\
 	srun		\
 	sshare		\
 	sstat		\
+	stepmgr 	\
 	strigger	\
 	sview
+
+if LINUX_BUILD
+SUBDIRS += scrun
+endif

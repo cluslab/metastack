@@ -3,7 +3,7 @@
  *  mode of sview.
  *****************************************************************************
  *  Copyright (C) 2009-2011 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2012-2015 SchedMD LLC <https://www.schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
@@ -31,7 +31,6 @@
 #include "src/sview/sview.h"
 #include "src/common/parse_time.h"
 #include "src/common/proc_args.h"
-#include "src/common/state_control.h"
 #include "src/common/xstring.h"
 
 #define _DEBUG 0
@@ -237,7 +236,6 @@ static const char *_set_resv_msg(resv_desc_msg_t *resv_msg,
 				 int column)
 {
 	char *type = "";
-	char *err_msg = NULL;
 	uint32_t res_free_flags = 0;
 	int temp_int = 0;
 	uint64_t f;
@@ -265,22 +263,16 @@ static const char *_set_resv_msg(resv_desc_msg_t *resv_msg,
 		type = "burst_buffer";
 		break;
 	case SORTID_CORE_CNT:
+		if (strtok_r((char *)new_text, ",", &type)) {
+			type = NULL;
+			if (global_edit_error_msg)
+				g_free(global_edit_error_msg);
+			global_edit_error_msg = g_strdup("Using a comma separated array for CoreCnt is no longer valid.");
+			goto return_error;
+		}
+
 		type = "Core Count";
-		if (state_control_corecnt_supported() != SLURM_SUCCESS) {
-			if (global_edit_error_msg)
-				g_free(global_edit_error_msg);
-			global_edit_error_msg = g_strdup("CoreCnt or CPUCnt is only supported when SelectType includes select/cons_res or SelectTypeParameters includes OTHER_CONS_RES on a Cray.");
-			goto return_error;
-		}
-		if (state_control_parse_resv_corecnt(resv_msg, (char *)new_text,
-						     &res_free_flags, false,
-						     &err_msg) == SLURM_ERROR) {
-			if (global_edit_error_msg)
-				g_free(global_edit_error_msg);
-			global_edit_error_msg = g_strdup(err_msg);
-			xfree(err_msg);
-			goto return_error;
-		}
+		resv_msg->core_cnt = slurm_atoul((char *)new_text);
 		break;
 	case SORTID_DURATION:
 		type = "duration";
@@ -323,16 +315,16 @@ static const char *_set_resv_msg(resv_desc_msg_t *resv_msg,
 		type = "name";
 		break;
 	case SORTID_NODE_CNT:
-		type = "Node Count";
-		if (parse_resv_nodecnt(resv_msg, (char *)new_text,
-				       &res_free_flags, false,
-				       &err_msg) == SLURM_ERROR) {
+		if (strtok_r((char *)new_text, ",", &type)) {
+			type = NULL;
 			if (global_edit_error_msg)
 				g_free(global_edit_error_msg);
-			global_edit_error_msg = g_strdup(err_msg);
-			xfree(err_msg);
+			global_edit_error_msg = g_strdup("Using a comma separated array for NodeCnt is no longer valid.");
 			goto return_error;
 		}
+
+		type = "Node Count";
+		resv_msg->node_cnt = slurm_atoul((char *)new_text);
 		break;
 	case SORTID_NODELIST:
 		resv_msg->node_list = xstrdup(new_text);
@@ -351,27 +343,8 @@ static const char *_set_resv_msg(resv_desc_msg_t *resv_msg,
 		type = "users";
 		break;
 	case SORTID_TRES:
+		resv_msg->tres_str = xstrdup(new_text);
 		type = "TRES";
-		if (state_control_parse_resv_tres((char *)new_text, resv_msg,
-						  &res_free_flags, &err_msg)
-		    == SLURM_ERROR) {
-			if (global_edit_error_msg)
-				g_free(global_edit_error_msg);
-			global_edit_error_msg = g_strdup(err_msg);
-			xfree(err_msg);
-			goto return_error;
-		}
-		break;
-	case SORTID_WATTS:
-		if (state_control_parse_resv_watts((char *) new_text, resv_msg,
-						   &err_msg) == SLURM_ERROR) {
-			if (global_edit_error_msg)
-				g_free(global_edit_error_msg);
-			global_edit_error_msg = g_strdup(err_msg);
-			xfree(err_msg);
-			goto return_error;
-		}
-		type = "watts";
 		break;
 	default:
 		type = "unknown";
@@ -509,7 +482,7 @@ static void _layout_resv_record(GtkTreeView *treeview,
 				int update)
 {
 	GtkTreeIter iter;
-	char time_buf[20];
+	char time_buf[256];
 	reserve_info_t *resv_ptr = sview_resv_info->resv_ptr;
 	char *temp_char = NULL;
 
@@ -614,22 +587,14 @@ static void _layout_resv_record(GtkTreeView *treeview,
 				   find_col_name(display_data_resv,
 						 SORTID_USERS),
 				   resv_ptr->users);
-
-	temp_char = state_control_watts_to_str(resv_ptr->resv_watts);
-	add_display_treestore_line(update, treestore, &iter,
-				   find_col_name(display_data_resv,
-						 SORTID_WATTS),
-				   temp_char);
-	xfree(temp_char);
 }
 
 static void _update_resv_record(sview_resv_info_t *sview_resv_info_ptr,
 				GtkTreeStore *treestore)
 {
-	char tmp_duration[40], tmp_end[40], tmp_nodes[40], tmp_start[40];
+	char tmp_duration[40], tmp_end[256], tmp_nodes[40], tmp_start[256];
 	char tmp_cores[40], tmp_msd[40];
 	char *tmp_flags;
-	char *tmp_watts = NULL;
 	reserve_info_t *resv_ptr = sview_resv_info_ptr->resv_ptr;
 
 	secs2time_str((uint32_t)difftime(resv_ptr->end_time,
@@ -651,8 +616,6 @@ static void _update_resv_record(sview_resv_info_t *sview_resv_info_ptr,
 
 	slurm_make_time_str((time_t *)&resv_ptr->start_time, tmp_start,
 			    sizeof(tmp_start));
-
-	tmp_watts = state_control_watts_to_str(resv_ptr->resv_watts);
 
 	if (resv_ptr->max_start_delay)
 		secs2time_str(resv_ptr->max_start_delay,
@@ -683,11 +646,9 @@ static void _update_resv_record(sview_resv_info_t *sview_resv_info_ptr,
 			   SORTID_TRES,       resv_ptr->tres_str,
 			   SORTID_UPDATED,    1,
 			   SORTID_USERS,      resv_ptr->users,
-			   SORTID_WATTS,      tmp_watts,
 			   -1);
 
 	xfree(tmp_flags);
-	xfree(tmp_watts);
 
 	return;
 }
@@ -701,12 +662,11 @@ static void _append_resv_record(sview_resv_info_t *sview_resv_info_ptr,
 	_update_resv_record(sview_resv_info_ptr, treestore);
 }
 
-static void _update_info_resv(List info_list,
-			      GtkTreeView *tree_view)
+static void _update_info_resv(list_t *info_list, GtkTreeView *tree_view)
 {
 	GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
 	char *name = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	sview_resv_info_t *sview_resv_info = NULL;
 
 	set_for_update(model, SORTID_UPDATED);
@@ -770,11 +730,11 @@ static int _sview_resv_sort_aval_dec(void *s1, void *s2)
 	return 0;
 }
 
-static List _create_resv_info_list(reserve_info_msg_t *resv_info_ptr)
+static list_t *_create_resv_info_list(reserve_info_msg_t *resv_info_ptr)
 {
-	static List info_list = NULL;
-	List last_list = NULL;
-	ListIterator last_list_itr = NULL;
+	static list_t *info_list = NULL;
+	list_t *last_list = NULL;
+	list_itr_t *last_list_itr = NULL;
 	int i = 0;
 	static reserve_info_msg_t *last_resv_info_ptr = NULL;
 	sview_resv_info_t *sview_resv_info_ptr = NULL;
@@ -831,14 +791,14 @@ update_color:
 	return info_list;
 }
 
-static void _display_info_resv(List info_list, popup_info_t *popup_win)
+static void _display_info_resv(list_t *info_list, popup_info_t *popup_win)
 {
 	specific_info_t *spec_info = popup_win->spec_info;
 	char *name = (char *)spec_info->search_info->gchar_data;
 	int found = 0;
 	reserve_info_t *resv_ptr = NULL;
 	GtkTreeView *treeview = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	sview_resv_info_t *sview_resv_info = NULL;
 	int update = 0;
 	int j = 0;
@@ -989,7 +949,7 @@ extern int get_new_info_resv(reserve_info_msg_t **info_ptr,
 		if (error_code == SLURM_SUCCESS) {
 			slurm_free_reservation_info_msg(g_resv_info_ptr);
 			changed = 1;
-		} else if (slurm_get_errno() == SLURM_NO_CHANGE_IN_DATA) {
+		} else if (errno == SLURM_NO_CHANGE_IN_DATA) {
 			error_code = SLURM_NO_CHANGE_IN_DATA;
 			new_resv_ptr = g_resv_info_ptr;
 			changed = 0;
@@ -1124,7 +1084,7 @@ no_input:
 extern void get_info_resv(GtkTable *table, display_data_t *display_data)
 {
 	int error_code = SLURM_SUCCESS;
-	List info_list = NULL;
+	list_t *info_list = NULL;
 	static int view = -1;
 	static reserve_info_msg_t *resv_info_ptr = NULL;
 	char error_char[100];
@@ -1132,7 +1092,7 @@ extern void get_info_resv(GtkTable *table, display_data_t *display_data)
 	GtkTreeView *tree_view = NULL;
 	static GtkWidget *display_widget = NULL;
 	int j=0;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	sview_resv_info_t *sview_resv_info_ptr = NULL;
 	reserve_info_t *resv_ptr = NULL;
 	time_t now = time(NULL);
@@ -1186,7 +1146,7 @@ extern void get_info_resv(GtkTable *table, display_data_t *display_data)
 			gtk_widget_destroy(display_widget);
 		view = ERROR_VIEW;
 		sprintf(error_char, "slurm_load_reservations: %s",
-			slurm_strerror(slurm_get_errno()));
+			slurm_strerror(errno));
 		label = gtk_label_new(error_char);
 		gtk_table_attach_defaults(table, label, 0, 1, 0, 1);
 		gtk_widget_show(label);
@@ -1255,6 +1215,8 @@ display_it:
 		   the return value */
 		create_treestore(tree_view, display_data_resv,
 				 SORTID_CNT, SORTID_TIME_START, SORTID_COLOR);
+
+		set_column_width_fixed(tree_view, SORTID_NODELIST, 100);
 	}
 
 	view = INFO_VIEW;
@@ -1278,12 +1240,12 @@ extern void specific_info_resv(popup_info_t *popup_win)
 	char error_char[100];
 	GtkWidget *label = NULL;
 	GtkTreeView *tree_view = NULL;
-	List resv_list = NULL;
-	List send_resv_list = NULL;
+	list_t *resv_list = NULL;
+	list_t *send_resv_list = NULL;
 	sview_resv_info_t *sview_resv_info_ptr = NULL;
-	int j=0, i=-1;
-	hostset_t hostset = NULL;
-	ListIterator itr = NULL;
+	int j=0;
+	hostset_t *hostset = NULL;
+	list_itr_t *itr = NULL;
 
 	if (!spec_info->display_widget) {
 		setup_popup_info(popup_win, display_data_resv, SORTID_CNT);
@@ -1307,7 +1269,7 @@ extern void specific_info_resv(popup_info_t *popup_win)
 		if (spec_info->display_widget)
 			gtk_widget_destroy(spec_info->display_widget);
 		sprintf(error_char, "get_new_info_resv: %s",
-			slurm_strerror(slurm_get_errno()));
+			slurm_strerror(errno));
 		label = gtk_label_new(error_char);
 		gtk_table_attach_defaults(popup_win->table,
 					  label,
@@ -1358,9 +1320,7 @@ display_it:
 	   the list */
 	send_resv_list = list_create(NULL);
 	itr = list_iterator_create(resv_list);
-	i = -1;
 	while ((sview_resv_info_ptr = list_next(itr))) {
-		i++;
 		resv_ptr = sview_resv_info_ptr->resv_ptr;
 		switch(spec_info->type) {
 		case PART_PAGE:
@@ -1429,7 +1389,7 @@ extern void set_menus_resv(void *arg, void *arg2, GtkTreePath *path, int type)
 	GtkTreeView *tree_view = (GtkTreeView *)arg;
 	popup_info_t *popup_win = (popup_info_t *)arg;
 	GtkMenu *menu = (GtkMenu *)arg2;
-	List button_list = (List)arg2;
+	list_t *button_list = arg2;
 
 	switch(type) {
 	case TAB_CLICKED:
@@ -1468,7 +1428,7 @@ extern void popup_all_resv(GtkTreeModel *model, GtkTreeIter *iter, int id)
 {
 	char *name = NULL;
 	char title[100] = {0};
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	popup_info_t *popup_win = NULL;
 	GError *error = NULL;
 
@@ -1541,7 +1501,7 @@ extern void popup_all_resv(GtkTreeModel *model, GtkTreeIter *iter, int id)
 	default:
 		g_print("resv got unknown type %d\n", id);
 	}
-	if (!sview_thread_new((gpointer)popup_thr, popup_win, false, &error)) {
+	if (!sview_thread_new((gpointer)popup_thr, popup_win, &error)) {
 		g_printerr ("Failed to create resv popup thread: %s\n",
 			    error->message);
 		return;

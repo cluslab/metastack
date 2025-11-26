@@ -1,10 +1,8 @@
-slurm-helper
-============
+# slurm-helper
 
 Bunch of helper files for the Slurm resource manager
 
-Vim syntax file
----------------
+## Vim syntax file
 
 The Vim syntax file renders the Slurm batch submission scripts easier to read and to spot errors in the submission options.
 
@@ -12,7 +10,7 @@ As submission scripts are indeed shell scripts, and all Slurm options are actual
 
 This syntax file allows vim to understand the Slurm option and highlight them accordingly. Whenever possible, the syntax rules check the validity of the options and put in a special color what is not recognized as a valid option, or valid parameters values.
 
-__Installation__
+### Installation
 
 Under Linux or MacOS, simply copy the file in the directory
 
@@ -20,75 +18,140 @@ Under Linux or MacOS, simply copy the file in the directory
 
 or whatever shell other than ``sh`` you prefer.
 
-For system wide use with bash put the file in
-
-    /etc/bash_completion.d/
-
 The syntax file is then read and applied on a Shell script after the usual syntax file has been processed.
 
-__Known issues__
+### Known issues
 
 * Some regex needed to validate options or parameter values are not exactly correct, but should work in most cases.
+  * Currently, value completions do not support complex types (e.g. `param=key0:val0,key1:val1,`).
 * Any new option unknown to the syntax file will be spotted as an error.
 * On a Debian system (Ubuntu) you may see messages like...
   _get_comp_words_by_ref: command not found
   after a tab.
   Based on http://askubuntu.com/questions/33440/tab-completion-doesnt-work-for-commands you need to alter your /etc/bash.bashrc to make this work correctly.
 
-Bash completion
----------------
+## Bash completion
 
 The Bash completion script offers <TAB> completion for Slurm commands.
 
-At present the following Slurm commands are considered
-* scontrol
-* sreport
+### Instalation
 
-__Instalation__
+You must have the bash-completion package installed in order for this to work.
+Source the [slurm_completion.sh][slurm-completion] script. It is
+recommended to automate this by adding a bash sourcing line to your
+`.bashrc` or `.profile`. Alternatively, you can copy the file to
+`/etc/profile.d/` to automatically source it for login shells.
 
-Simply source the script in your .bashrc or .profile
+Additionally, there are a number of environment variables that can be set to
+alter/customize completion behavior. They are documented in
+[slurm_completion.sh][slurm-completion].
 
-__Examples__
+```sh
+# .bashrc
+source /path/to/slurm_completion.sh
+```
 
-    root@frontend:~ # squeue --<tab><tab>
-    --account<account_list>  --iterate<seconds>       --qos<qos_list>          --usage
-    --clusters<string>       --jobs<job_id_list>      --sort<sort_list>        --user<user_list>
-    --format<fmtstring>      --nodes<hostlist>        --start                  --verbose
-    --help                   --noheader               --state<state_list>      --version
-    --hide                   --partition<part_list>   --steps                  
-    root@frontend:~ # squeue --us<tab><tab>
-    --usage  --user   
-    root@frontend:~ # squeue --user <tab><tab>
-    user1     user2     user3     user4 
-    
-    root@frontend:~ # scontrol <tab><tab>
-    abort          errnumstr      pidinfo        requeue        setdebugflags  update
-    cluster        help           ping           requeuehold    show           verbose
-    completing     hold           quit           resume         shutdown       version
-    create         listpids       reboot_nodes   schedloglevel  suspend        wait_job
-    delete         notify         reconfigure    script         takeover
-    details        oneliner       release        setdebug       uhold
+### Examples
 
-    root@frontend:~ # scontrol update <tab><tab>
-    jobid=            nodename=         partitionname=    reservationname=  step=
-    root@frontend:~ # scontrol update nodename=<tab><tab>
-    root@frontend:~ # scontrol update nodename=node<tab><tab>
-    node01  node03  node05  node07  node09  node11  node13  node15  node17  node19  
-    node02  node04  node06  node08  node10  node12  node14  node16  node18  node20  
-    root@frontend:~ # scontrol update nodename=node12 
-    features=<features>  reason=<reason>      weight=<weight>      
-    gres=<gres>          state=<state>        
-    root@frontend:~ # scontrol update nodename=node12 state=<tab><tab>
-    alloc       down        fail        idle        mixed       power_up    
-    allocated   drain       failing     maint       power_down  resume      
-    root@frontend:~ # scontrol update nodename=node12 state=resume 
-    
-    root@frontend:~ # squeue --format "%<TAB><TAB>
-    %a(Account)        %E(dependency)     %i(id)             %M(time)           %s(selecplugin)
-    %A(NTasks)         %e(end)            %I(Ncores/socket)  %N(alloc_nodes)    %t(state)
-    %b(gres)           %f(features)       %j(name)           %n(reqnodes)       %T(state)
-    %c(mincpu)         %G(gID)            %k(comment)        %O(contiguous)     %U(uID)
-    %C(Ncpus)          %g(group)          %l(limit)          %p(priority)       %u(user)
-    %d(minTmp)         %H(Nsockets)       %L(timeleft)       %r(reason)         %v(reservation)
-    %D(NNodes)         %h(shared)         %m(mem)            %R(reason)         %x(excnodes)
-    
+```sh
+$ sacct --<tab><tab>
+--accounts=       --endtime=        --local           --state=
+--allclusters     --env-vars        --long            --timelimit-max=
+--allocations     --federation      --name=           --timelimit-min=
+--allusers        --fields=         --ncpus=          --truncate 
+--associations=   --file=           --nnodes=         --uid=
+--autocomplete=   --flags=          --noconvert       --units=
+--batch-script    --format=         --nodelist=       --usage 
+--brief           --gid=            --noheader        --use-local-uid 
+--cluster=        --group=          --parsable        --user=
+--clusters=       --help            --parsable2       --verbose 
+--completion      --help-fields     --partition=      --version 
+--constraints=    --helpformat      --qos=            --wckeys=
+--delimiter=      --jobs=           --reason=         --whole-hetjob=
+--duplicates      --json            --starttime=      --yaml 
+```
+
+```sh
+$ squeue --<tab><tab>
+--accounts=      --hide           --nodelist=      --states=
+--all            --iterate=       --nodes=         --steps=
+--array          --jobs=          --noheader       --usage 
+--array-unique   --json           --partitions=    --user=
+--autocomplete=  --licenses=      --priority       --users=
+--cluster=       --local          --qos=           --verbose 
+--clusters=      --long           --reservation=   --version 
+--federation     --me             --sib            --yaml 
+--format=        --name=          --sibling        
+--Format=        --noconvert      --sort=          
+--help           --node=          --start          
+
+$ squeue --users=<tab><tab>
+root,    slurm,    user0,    user1,    user2,    user3,  
+
+$ squeue --Format=<tab><tab>
+Display all 118 possibilities? (y or n)
+account,            licenses,           resvport,
+accruetime,         maxcpus,            schednodes,
+admin_comment,      maxnodes,           sct,
+allocnodes,         mcslabel,           selectjobinfo,
+allocsid,           mem-per-tres,       siblingsactive,
+arrayjobid,         mincpus,            siblingsactiveraw,
+arraytaskid,        minmemory,          siblingsviable,
+associd,            mintime,            siblingsviableraw,
+batchflag,          mintmpdisk,         sockets,
+batchhost,          name,               sperboard,
+boardspernode,      network,            starttime,
+burstbuffer,        nice,               state,
+burstbufferstate,   nodelist,           statecompact,
+cluster,            nodes,              stderr,
+clusterfeature,     ntperboard,         stdin,
+command,            ntpercore,          stdout,
+comment,            ntpernode,          stepid,
+container,          ntpersocket,        stepname,
+contiguous,         numcpus,            stepstate,
+cores,              numnodes,           submittime,
+corespec,           numtasks,           system_comment,
+cpufreq,            origin,             threads,
+cpus-per-task,      originraw,          timeleft,
+--More--
+```
+
+```sh
+$ scontrol <tab><tab>
+abort               pidinfo             shutdown 
+cancel_reboot       ping                suspend 
+cluster             reboot              takeover 
+completing          reconfigure         token 
+create              release             top 
+delete              requeue             uhold 
+errnumstr           requeuehold         update 
+fsdampeningfactor   resume              version 
+help                schedloglevel       wait_job 
+hold                setdebug            write 
+listpids            setdebugflags       
+notify              show                
+
+$ scontrol update <tab><tab>
+frontendname=     nodename=         reservationname=  
+jobid=            partitionname=    stepid=           
+
+$ scontrol update nodename=node<tab><tab>
+node00,  node03,  node06,  node09,  node12,  node15,  node18,
+node01,  node04,  node07,  node10,  node13,  node16,  node19,
+node02,  node05,  node08,  node11,  node14,  node17,  
+
+$ scontrol update nodename=node00 <tab><tab>
+activefeatures=     extra=              nodename=
+availablefeatures=  gres=               reason=
+comment=            nodeaddr=           state=
+cpubind=            nodehostname=       weight=
+
+$ scontrol update nodename=node00 state=<tab><tab>
+cancel_reboot      future             power_down_asap    undrain 
+down               idle               power_down_force   
+drain              noresp             power_up           
+fail               power_down         resume             
+```
+
+<!-- Links -->
+[slurm-completion]: ./slurm_completion.sh

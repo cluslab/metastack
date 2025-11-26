@@ -6,9 +6,11 @@
 <p>job_container/tmpfs is an optional plugin that provides job-specific, private
 temporary file system space.</p>
 
-<p>When enabled on the cluster, each job will have its own /tmp and /dev/shm
-directory, seperate from every other job as well as the system.  These are
-mapped in the job as "/tmp" and "/dev/shm".</p>
+<p>When enabled on the cluster, a filesytem namespace will be created for each
+job with a unique, private instance of /tmp and /dev/shm for the job to use.
+These directories can be changed with the <b>Dirs=</b> option in
+job_container.conf. The contents of these directories will be removed at job
+termination.</p>
 
 <h2 id="installation">Installation
 <a class="slurm_link" href="#installation"></a>
@@ -19,8 +21,8 @@ installation steps are required.</p>
 <h2 id="setup">Setup<a class="slurm_link" href="#setup"></a></h2>
 <p>Slurm must be configured to load the job container plugin by adding
 <b>JobContainerType=job_container/tmpfs</b> and <b>PrologFlags=contain</b> in
-slurm.conf.  Additional configuration must be done in the "job_container.conf"
-file, which should be placed in the same directory as the slurm.conf.</p>
+slurm.conf. Additional configuration must be done in the job_container.conf
+file, which should be placed in the same directory as slurm.conf.</p>
 
 <p>Job containers can be configured for all nodes, or for a subset of nodes.
 As an example, if all nodes will be configured the same way, you would put the
@@ -47,7 +49,12 @@ drwx------  2 tim    root 4096 Feb 10 17:14 .
 drwxr-xr-x 21 root   root 4096 Nov 15 08:46 ..
 </pre>
 
-<h2 id="spank">Spank<a class="slurm_link" href="#spank"></a></h2>
+<p>While a job is running, root should be able to confirm that
+<code>/$BasePath/$JobID/_tmp</code> exists and is empty. This directory is bind
+mounted into the job. <code>/$BasePath/$JobID</code> should be owned by root,
+and is not intended to be accessible to the user.</p>
+
+<h2 id="spank">SPANK<a class="slurm_link" href="#spank"></a></h2>
 <p>This plugin interfaces with the SPANK api, and automatically joins the job's
 container in the following functions:</p>
 <ul>
@@ -55,9 +62,9 @@ container in the following functions:</p>
 <li>spank_task_init()</li>
 </ul>
 
-<p>In addition to the job itself, The TaskProlog will also be executed inside
+<p>In addition to the job itself, the TaskProlog will also be executed inside
 the container.</p>
 
-<p style="text-align:center;">Last modified 12 May 2022</p>
+<p style="text-align:center;">Last modified 29 November 2023</p>
 
 <!--#include virtual="footer.txt"-->

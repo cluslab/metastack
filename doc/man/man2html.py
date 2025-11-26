@@ -126,13 +126,13 @@ def llnl_references(line):
         lineFix = line.replace(manStr,htmlStr)
         if lineFix != line:
             return lineFix
-        manStr = '<A HREF="https://slurm.schedmd.com/cons_res.html">https://slurm.schedmd.com/cons_res.html</A>'
-        htmlStr = '<a href="cons_res.html">cons_res</a>'
+        manStr = '<A HREF="https://slurm.schedmd.com/cons_tres.html">https://slurm.schedmd.com/cons_tres.html</A>'
+        htmlStr = '<a href="cons_tres.html">cons_tres</a>'
         lineFix = line.replace(manStr,htmlStr)
         if lineFix != line:
             return lineFix
-        manStr = '<A HREF="https://slurm.schedmd.com/cons_res_share.html">https://slurm.schedmd.com/cons_res_share.html</A>'
-        htmlStr = '<a href="cons_res_share.html">cons_res_share</a>'
+        manStr = '<A HREF="https://slurm.schedmd.com/cons_tres_share.html">https://slurm.schedmd.com/cons_tres_share.html</A>'
+        htmlStr = '<a href="cons_tres_share.html">cons_tres_share</a>'
         lineFix = line.replace(manStr,htmlStr)
         if lineFix != line:
             return lineFix
@@ -151,34 +151,56 @@ def llnl_references(line):
         lineFix = line.replace(manStr,htmlStr)
         if lineFix != line:
             return lineFix
+        manStr = '<A HREF="/man/man2html?8+logrotate">logrotate</A>'
+        htmlStr = 'logrotate'
+        lineFix = line.replace(manStr,htmlStr)
+        if lineFix != line:
+            return lineFix
+        manStr = '<A HREF="/cgi-bin/man/man2html?7+path_resolution">path_resolution</A>'
+        htmlStr = 'path_resolution'
+        lineFix = line.replace(manStr,htmlStr)
+        if lineFix != line:
+            return lineFix
+        manStr = '<A HREF="/man/man2html?7+path_resolution">path_resolution</A>'
+        htmlStr = 'path_resolution'
+        lineFix = line.replace(manStr,htmlStr)
+        if lineFix != line:
+            return lineFix
         return line
 
 def relative_reference(lineIn):
-    fullRef = "/cgi-bin/man/man2html"
-    lenRef = len(fullRef)
+    lineOt = ""
     refAnchor="<A HREF=";
     lenRefAnchor = len(refAnchor)
-    lineOt = ""
-    cursor = 0
 
-    posHREF = lineIn.find(fullRef,cursor)
-    if posHREF == -1:
-        return lineIn
-    if lineIn[posHREF+lenRef] != "?":
-        pos = lineIn.find("Return to Main Contents",cursor)
-        if pos != -1:
-            return ""
-        return "<i>man2html</i> "
-    while posHREF != -1:
-        posRefAnchor = lineIn.find(refAnchor,cursor)
-        lineOt = lineOt + lineIn[cursor:posRefAnchor+lenRefAnchor]
-        cursor = posHREF + lenRef + 3
-        lineOt = lineOt + '"'
-        posQuote = lineIn.find('"',cursor)
-        lineOt = lineOt + lineIn[cursor:posQuote] + ".html"
-        cursor = posQuote
+    for fullRef in ["/cgi-bin/man/man2html", "/man/man2html"]:
+        lenRef = len(fullRef)
+        lineOt = ""
+        cursor = 0
+
         posHREF = lineIn.find(fullRef,cursor)
-    lineOt = lineOt + lineIn[cursor:]
+        if posHREF == -1:
+            continue
+        if lineIn[posHREF+lenRef] != "?":
+            pos = lineIn.find("Return to Main Contents",cursor)
+            if pos != -1:
+                return ""
+            return "<i>man2html</i> "
+        while posHREF != -1:
+            posRefAnchor = lineIn.find(refAnchor,cursor)
+            lineOt = lineOt + lineIn[cursor:posRefAnchor+lenRefAnchor]
+            cursor = posHREF + lenRef + 3
+            lineOt = lineOt + '"'
+            posQuote = lineIn.find('"',cursor)
+            lineOt = lineOt + lineIn[cursor:posQuote] + ".html"
+            cursor = posQuote
+            posHREF = lineIn.find(fullRef,cursor)
+        lineOt = lineOt + lineIn[cursor:]
+        if lineOt != lineIn:
+            break;
+
+    if lineOt == "":
+        return lineIn
     return lineOt
 
 
@@ -227,16 +249,16 @@ def version_rewrite(matchobj):
 files = []
 version = sys.argv[1]
 for f in sys.argv[4:]:
-    posLastDot = f.rfind(".")
-    mhtmlname = f[:posLastDot] + ".mhtml"
+    dirname, basefilename = os.path.split(f)
+    posLastDot = basefilename.rfind(".")
+    mhtmlname = basefilename[:posLastDot] + ".mhtml"
     cmd = "man2html < " + f + "> " + mhtmlname
     os.system(cmd)
     print(">>>>>>> " + mhtmlname)
     files.append(mhtmlname)
 
 for filename in files:
-    dirname, basefilename = os.path.split(filename)
-    newfilename = basefilename[:-6] + '.html'
+    newfilename = filename[:-6] + '.html'
     print('Converting', filename, '->', newfilename)
     shtml = codecs.open(filename, 'r', encoding='utf-8')
     html = codecs.open(newfilename, 'w', encoding='utf-8')

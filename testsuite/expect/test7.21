@@ -2,7 +2,7 @@
 ############################################################################
 # Purpose: Test of SPANK plugin that links libslurm and queries job info
 ############################################################################
-# Copyright (C) 2018-2019 SchedMD LLC
+# Copyright (C) SchedMD LLC.
 # Copyright (C) 2008-2009 Lawrence Livermore National Security.
 # Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
 # Written by Morris Jette <jette1@llnl.gov>
@@ -36,12 +36,7 @@ set file_prog       "${cwd}/$test_name.prog"
 set orig_spank_conf "$test_dir/orig_conf"
 set new_spank_conf  "$test_dir/new_conf"
 set spank_out       "$test_dir/spank.out"
-
-# TODO: Remove this precondition check once 21.08 is no longer supported
-regexp {(\d+).(\d+).(\S+)} [get_config_param SLURM_VERSION] - major minor release
-if {$major < 22} {
-        skip "This test is disabled in Slurm versions older than 22.05 (see bug 11829 and 13967)"
-}
+set job_id          0
 
 if {![is_super_user]} {
 	skip "This test must be run as SlurmUser"
@@ -174,7 +169,7 @@ expect {
 	}
 }
 if {$matches != 4} {
-	fail "Local (srun) sbatch spank plugin failure ($matches != 2)"
+	fail "Local (srun) sbatch spank plugin failure ($matches != 4)"
 }
 
 spawn $bin_rm $spank_out
@@ -184,6 +179,9 @@ log_info "Testing sbatch array.........."
 make_bash_script $file_in "$srun $bin_echo IT_RAN"
 set matches 0
 set array_job_id [submit_job -fail "--array=1-2 -W -N1 -t1 -o $file_out $file_in"]
+
+wait_for_job $array_job_id "DONE"
+wait_for_file -fail $file_out
 
 # Check echo worked
 spawn $bin_cat $file_out

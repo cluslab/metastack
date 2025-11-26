@@ -97,6 +97,7 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/ax_gcc_builtin.m4 \
 	$(top_srcdir)/auxdir/ax_lib_hdf5.m4 \
 	$(top_srcdir)/auxdir/ax_pthread.m4 \
+	$(top_srcdir)/auxdir/gtk-2.0.m4 \
 	$(top_srcdir)/auxdir/libtool.m4 \
 	$(top_srcdir)/auxdir/ltoptions.m4 \
 	$(top_srcdir)/auxdir/ltsugar.m4 \
@@ -107,13 +108,10 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/x_ac_affinity.m4 \
 	$(top_srcdir)/auxdir/x_ac_c99.m4 \
 	$(top_srcdir)/auxdir/x_ac_cgroup.m4 \
-	$(top_srcdir)/auxdir/x_ac_cray.m4 \
 	$(top_srcdir)/auxdir/x_ac_curl.m4 \
 	$(top_srcdir)/auxdir/x_ac_databases.m4 \
 	$(top_srcdir)/auxdir/x_ac_debug.m4 \
 	$(top_srcdir)/auxdir/x_ac_deprecated.m4 \
-	$(top_srcdir)/auxdir/x_ac_dlfcn.m4 \
-	$(top_srcdir)/auxdir/x_ac_dsmi.m4 \
 	$(top_srcdir)/auxdir/x_ac_env.m4 \
 	$(top_srcdir)/auxdir/x_ac_freeipmi.m4 \
 	$(top_srcdir)/auxdir/x_ac_hpe_slingshot.m4 \
@@ -125,19 +123,21 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/x_ac_lz4.m4 \
 	$(top_srcdir)/auxdir/x_ac_man2html.m4 \
 	$(top_srcdir)/auxdir/x_ac_munge.m4 \
-	$(top_srcdir)/auxdir/x_ac_netloc.m4 \
 	$(top_srcdir)/auxdir/x_ac_nvml.m4 \
 	$(top_srcdir)/auxdir/x_ac_ofed.m4 \
 	$(top_srcdir)/auxdir/x_ac_oneapi.m4 \
 	$(top_srcdir)/auxdir/x_ac_pam.m4 \
+	$(top_srcdir)/auxdir/x_ac_pkgconfig.m4 \
 	$(top_srcdir)/auxdir/x_ac_pmix.m4 \
 	$(top_srcdir)/auxdir/x_ac_printf_null.m4 \
 	$(top_srcdir)/auxdir/x_ac_ptrace.m4 \
+	$(top_srcdir)/auxdir/x_ac_rdkafka.m4 \
 	$(top_srcdir)/auxdir/x_ac_readline.m4 \
-	$(top_srcdir)/auxdir/x_ac_rrdtool.m4 \
 	$(top_srcdir)/auxdir/x_ac_rsmi.m4 \
+	$(top_srcdir)/auxdir/x_ac_s2n.m4 \
 	$(top_srcdir)/auxdir/x_ac_selinux.m4 \
 	$(top_srcdir)/auxdir/x_ac_setproctitle.m4 \
+	$(top_srcdir)/auxdir/x_ac_sview.m4 \
 	$(top_srcdir)/auxdir/x_ac_systemd.m4 \
 	$(top_srcdir)/auxdir/x_ac_ucx.m4 \
 	$(top_srcdir)/auxdir/x_ac_uid_gid_size.m4 \
@@ -219,14 +219,6 @@ CHECK_CFLAGS = @CHECK_CFLAGS@
 CHECK_LIBS = @CHECK_LIBS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
-CRAY_JOB_CPPFLAGS = @CRAY_JOB_CPPFLAGS@
-CRAY_JOB_LDFLAGS = @CRAY_JOB_LDFLAGS@
-CRAY_SELECT_CPPFLAGS = @CRAY_SELECT_CPPFLAGS@
-CRAY_SELECT_LDFLAGS = @CRAY_SELECT_LDFLAGS@
-CRAY_SWITCH_CPPFLAGS = @CRAY_SWITCH_CPPFLAGS@
-CRAY_SWITCH_LDFLAGS = @CRAY_SWITCH_LDFLAGS@
-CRAY_TASK_CPPFLAGS = @CRAY_TASK_CPPFLAGS@
-CRAY_TASK_LDFLAGS = @CRAY_TASK_LDFLAGS@
 CSCOPE = @CSCOPE@
 CTAGS = @CTAGS@
 CXX = @CXX@
@@ -234,15 +226,9 @@ CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
-DATAWARP_CPPFLAGS = @DATAWARP_CPPFLAGS@
-DATAWARP_LDFLAGS = @DATAWARP_LDFLAGS@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
-DL_LIBS = @DL_LIBS@
-DSMI_CPPFLAGS = @DSMI_CPPFLAGS@
-DSMI_LDFLAGS = @DSMI_LDFLAGS@
-DSMI_LIBS = @DSMI_LIBS@
 DSYMUTIL = @DSYMUTIL@
 DUMPBIN = @DUMPBIN@
 ECHO_C = @ECHO_C@
@@ -280,7 +266,6 @@ HDF5_LIBS = @HDF5_LIBS@
 HDF5_TYPE = @HDF5_TYPE@
 HDF5_VERSION = @HDF5_VERSION@
 HPE_SLINGSHOT_CFLAGS = @HPE_SLINGSHOT_CFLAGS@
-HPE_SLINGSHOT_LIBS = @HPE_SLINGSHOT_LIBS@
 HTTP_PARSER_CPPFLAGS = @HTTP_PARSER_CPPFLAGS@
 HTTP_PARSER_LDFLAGS = @HTTP_PARSER_LDFLAGS@
 HWLOC_CPPFLAGS = @HWLOC_CPPFLAGS@
@@ -323,14 +308,10 @@ MUNGE_LDFLAGS = @MUNGE_LDFLAGS@
 MUNGE_LIBS = @MUNGE_LIBS@
 MYSQL_CFLAGS = @MYSQL_CFLAGS@
 MYSQL_LIBS = @MYSQL_LIBS@
-NETLOC_CPPFLAGS = @NETLOC_CPPFLAGS@
-NETLOC_LDFLAGS = @NETLOC_LDFLAGS@
-NETLOC_LIBS = @NETLOC_LIBS@
 NM = @NM@
 NMEDIT = @NMEDIT@
 NUMA_LIBS = @NUMA_LIBS@
 NVML_CPPFLAGS = @NVML_CPPFLAGS@
-NVML_LIBS = @NVML_LIBS@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
@@ -338,7 +319,6 @@ OFED_CPPFLAGS = @OFED_CPPFLAGS@
 OFED_LDFLAGS = @OFED_LDFLAGS@
 OFED_LIBS = @OFED_LIBS@
 ONEAPI_CPPFLAGS = @ONEAPI_CPPFLAGS@
-ONEAPI_LIBS = @ONEAPI_LIBS@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -368,21 +348,25 @@ PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
 PTHREAD_CXX = @PTHREAD_CXX@
 PTHREAD_LIBS = @PTHREAD_LIBS@
 RANLIB = @RANLIB@
+RDKAFKA_CPPFLAGS = @RDKAFKA_CPPFLAGS@
+RDKAFKA_LDFLAGS = @RDKAFKA_LDFLAGS@
+RDKAFKA_LIBS = @RDKAFKA_LIBS@
 READLINE_LIBS = @READLINE_LIBS@
 RELEASE = @RELEASE@
-RRDTOOL_CPPFLAGS = @RRDTOOL_CPPFLAGS@
-RRDTOOL_LDFLAGS = @RRDTOOL_LDFLAGS@
-RRDTOOL_LIBS = @RRDTOOL_LIBS@
 RSMI_CPPFLAGS = @RSMI_CPPFLAGS@
-RSMI_LDFLAGS = @RSMI_LDFLAGS@
-RSMI_LIBS = @RSMI_LIBS@
+S2N_CPPFLAGS = @S2N_CPPFLAGS@
+S2N_DIR = @S2N_DIR@
+S2N_LDFLAGS = @S2N_LDFLAGS@
+S2N_LIBS = @S2N_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SLEEP_CMD = @SLEEP_CMD@
+SLURMCTLD_INTERFACES = @SLURMCTLD_INTERFACES@
 SLURMCTLD_PORT = @SLURMCTLD_PORT@
 SLURMCTLD_PORT_COUNT = @SLURMCTLD_PORT_COUNT@
 SLURMDBD_PORT = @SLURMDBD_PORT@
+SLURMD_INTERFACES = @SLURMD_INTERFACES@
 SLURMD_PORT = @SLURMD_PORT@
 SLURMRESTD_PORT = @SLURMRESTD_PORT@
 SLURM_API_AGE = @SLURM_API_AGE@
@@ -457,6 +441,7 @@ mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
 pdfdir = @pdfdir@
+pkgconfigdir = @pkgconfigdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
@@ -474,9 +459,7 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-
-# NOTE: other must be in the list before cray_aries lest the build break
-SUBDIRS = other cons_common cons_res cons_tres cray_aries linear
+SUBDIRS = cons_tres linear
 all: all-recursive
 
 .SUFFIXES:
@@ -737,16 +720,16 @@ uninstall-am:
 # Here are the current plugin_ids for each plugin.
 
 # bluegene	           = 100 ==> Not currently used
-# cons_res	           = 101
+# cons_res	           = 101 ==> Not currently used
 # linear	           = 102
 # bgq		           = 103 ==> Not currently used
 # alps + linear            = 104 ==> Not currently used
 # alps + cons_res          = 105 ==> Not currently used
 # serial                   = 106 ==> Not currently used
-# cray_aries + linear      = 107
-# cray_aries + cons_res    = 108
+# cray_aries + linear      = 107 ==> Not currently used
+# cray_aries + cons_res    = 108 ==> Not currently used
 # cons_tres                = 109
-# cray_aries + cons_tres   = 110
+# cray_aries + cons_tres   = 110 ==> Not currently used
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

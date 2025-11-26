@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  cron.c
  *****************************************************************************
- *  Copyright (C) 2020 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -47,6 +46,8 @@
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 
+#define LEAP_YEAR(y) ((y % 4) == 0 && ((y % 100) != 0 || (y % 400) == 0))
+
 extern cron_entry_t *new_cron_entry(void)
 {
 	cron_entry_t *entry = xmalloc(sizeof(*entry));
@@ -72,6 +73,7 @@ extern void free_cron_entry(void *in)
 	xfree(entry->day_of_month);
 	xfree(entry->month);
 	xfree(entry->day_of_week);
+	xfree(entry->cronspec);
 	xfree(entry->command);
 	xfree(entry);
 }
@@ -182,6 +184,9 @@ extern char *cronspec_from_cron_entry(cron_entry_t *entry)
 }
 
 /*
+ * Determine how many months there are between now and the next month this job
+ * could run in.
+ *
  * One important note: struct tm has jan == 0, but the crontab
  * format and our bitstring have jan == 1.
  */
@@ -189,17 +194,23 @@ static int _next_month(cron_entry_t *entry, struct tm *tm)
 {
 	int months_to_advance = 0;
 
+	/* tm_mon should be 0-11 */
+	xassert(tm->tm_mon >= 0);
+	xassert(tm->tm_mon <= 11);
+
 	/* month is current valid, nice and easy, no major adjustments needed */
 	if (entry->flags & CRON_WILD_MONTH ||
 	    bit_test(entry->month, tm->tm_mon + 1))
 		return 0;
 
+	/* Start testing from now to get the closest month */
 	for (int i = tm->tm_mon; i < 12; i++) {
 		if (bit_test(entry->month, i + 1))
 			goto found;
 		months_to_advance++;
 	}
 
+	/* Loop around to begining of the year if needed */
 	for (int i = 0; i < tm->tm_mon; i++) {
 		if (bit_test(entry->month, i + 1))
 			goto found;
@@ -222,16 +233,28 @@ found:
 	return 0;
 }
 
+/*
+ * Determine how many days there are between now and the next day of the week
+ * this job could run on.
+ *
+ * Intended for use when day of week is specified in the cron entry.
+ */
 static int _next_day_of_week(cron_entry_t *entry, struct tm *tm)
 {
 	int days_to_advance = 0;
 
+	/* tm_wday should be 0-6 */
+	xassert(tm->tm_wday >= 0);
+	xassert(tm->tm_wday <= 6);
+
+	/* Start testing from now to get the closest day */
 	for (int i = tm->tm_wday; i < 7; i++) {
 		if (bit_test(entry->day_of_week, i))
 			return days_to_advance;
 		days_to_advance++;
 	}
 
+	/* Loop around to begining of the week if needed */
 	for (int i = 0; i < tm->tm_wday; i++) {
 		if (bit_test(entry->day_of_week, i))
 			return days_to_advance;
@@ -241,47 +264,62 @@ static int _next_day_of_week(cron_entry_t *entry, struct tm *tm)
 	return 0;
 }
 
+/* Return number of days in a given tm->tm_mon */
+static int _days_in_month(struct tm *tm)
+{
+	/* Default to maximum days in month (highest likelihood) */
+	int days_in_month = 31;
+
+	/* tm_mon should be 0-11 */
+	xassert(tm->tm_mon >= 0);
+	xassert(tm->tm_mon <= 11);
+
+	switch (tm->tm_mon) {
+	case 1:
+		days_in_month = LEAP_YEAR(tm->tm_year) ? 29 : 28;
+		break;
+	case 3:
+	case 5:
+	case 8:
+	case 10:
+		days_in_month = 30;
+		break;
+	}
+
+	return days_in_month;
+}
+
+/*
+ * Determine how many days there are between now and the next day of the month
+ * this job could run on.
+ *
+ * Intended for use when day of month is specified in the cron entry.
+ */
 static int _next_day_of_month(cron_entry_t *entry, struct tm *tm)
 {
 	int days_to_advance = 0;
+	int days_in_month;
 
-	for (int i = tm->tm_mday; i < 29; i++) {
+	/* tm_mday should be 1-31 */
+	xassert(tm->tm_mday >= 1);
+	xassert(tm->tm_mday <= 31);
+
+	days_in_month = _days_in_month(tm);
+
+	/*
+	 * Advance days within tm month till cron entry day found (and return
+	 * count) or reach days in tm month.
+	 */
+	for (int i = tm->tm_mday; i <= days_in_month; i++) {
 		if (bit_test(entry->day_of_month, i))
 			return days_to_advance;
 		days_to_advance++;
 	}
 
-	/* february == 1 */
-	if (tm->tm_mon != 1) {
-		if (bit_test(entry->day_of_month, 29))
-			return days_to_advance;
-		days_to_advance++;
-		if (bit_test(entry->day_of_month, 30))
-			return days_to_advance;
-		days_to_advance++;
-		if ((tm->tm_mon == 0) || (tm->tm_mon == 2) ||
-		    (tm->tm_mon == 4) || (tm->tm_mon == 6) ||
-		    (tm->tm_mon == 7) || (tm->tm_mon == 9) ||
-		    (tm->tm_mon == 11)) {
-			if (bit_test(entry->day_of_month, 31))
-				return days_to_advance;
-			days_to_advance++;
-		}
-	} else {
-		/* (ab)use mktime() to figure out leap years for februrary */
-		struct tm test = { 0 };
-		test.tm_year = tm->tm_year;
-		test.tm_mon = 1;
-		test.tm_mday = 29;
-		slurm_mktime(&test);
-		if (test.tm_mon == 1) {
-			/* leap year! */
-			if (bit_test(entry->day_of_month, 29))
-				return days_to_advance;
-			days_to_advance++;
-		}
-	}
-
+	/*
+	 * Continue advancing days within next month till tm_mday found and return
+	 * aggregated count of advanced days.
+	 */
 	for (int i = 1; i < tm->tm_mday; i++) {
 		if (bit_test(entry->day_of_month, i))
 			return days_to_advance;
@@ -291,18 +329,24 @@ static int _next_day_of_month(cron_entry_t *entry, struct tm *tm)
 	return days_to_advance;
 }
 
-extern time_t calc_next_cron_start(cron_entry_t *entry)
+extern time_t calc_next_cron_start(cron_entry_t *entry, time_t next)
 {
 	struct tm tm;
 	time_t now = time(NULL);
-	localtime_r(&now, &tm);
 	int validated_month, days_to_add;
 
 	/*
-	 * Always move into the next minute to avoid running again this minute.
+	 * Avoid running twice in the same minute.
 	 */
-	tm.tm_sec = 0;
-	tm.tm_min++;
+	if (next && next > now + 60) {
+		now = next;
+		localtime_r(&now, &tm);
+		tm.tm_sec = 0;
+	} else {
+		localtime_r(&now, &tm);
+		tm.tm_sec = 0;
+		tm.tm_min++;
+	}
 
 month:
 	_next_month(entry, &tm);

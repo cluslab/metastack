@@ -44,7 +44,7 @@
 #include "as_kingbase_jobacct_process.h"
 
 typedef struct {
-	hostlist_t hl;
+	hostlist_t *hl;
 	time_t start;
 	time_t end;
 	bitstr_t *asked_bitmap;
@@ -63,6 +63,8 @@ char *job_req_inx[] = {
 	"t1.derived_ec",
 	"t1.derived_es",
 	"t1.exit_code",
+	"t1.extra",
+	"t1.failed_node",
 	"t1.flags",
 	"t1.id_array_job",
 	"t1.id_array_task",
@@ -80,6 +82,7 @@ char *job_req_inx[] = {
 	"t1.job_db_inx",
 	"t1.job_name",
 	"t1.kill_requid",
+	"t1.licenses",
 	"t1.mem_req",
 	"t1.node_inx",
 	"t1.nodelist",
@@ -103,20 +106,20 @@ char *job_req_inx[] = {
 #ifdef __METASTACK_OPT_SACCT_COMMAND
 	"t1.command",
 #endif
-#ifdef __METASTACK_OPT_SACCT_OUTPUT
-	"t1.stdout",
-	"t1.stderr",
-#endif
 	"t1.mcs_label",
 	"t4.batch_script",
+	"t1.std_err",
+	"t1.std_in",
+	"t1.std_out",
 	"t1.submit_line",
 	"t4.env_vars",
 	"t2.acct",
 	"t2.lft",
+	"t2.lineage",
 #ifdef __METASTACK_OPT_RESC_NODEDETAIL
 	"t1.resource_node_detail",
 #endif
-	"t2.user"
+	"t2.`user`"
 };
 
 enum {
@@ -130,6 +133,8 @@ enum {
 	JOB_REQ_DERIVED_EC,
 	JOB_REQ_DERIVED_ES,
 	JOB_REQ_EXIT_CODE,
+	JOB_REQ_EXTRA,
+	JOB_REQ_FAILED_NODE,
 	JOB_REQ_FLAGS,
 	JOB_REQ_ARRAYJOBID,
 	JOB_REQ_ARRAYTASKID,
@@ -147,6 +152,7 @@ enum {
 	JOB_REQ_DB_INX,
 	JOB_REQ_NAME,
 	JOB_REQ_KILL_REQUID,
+	JOB_REQ_LICENSES,
 	JOB_REQ_REQ_MEM,
 	JOB_REQ_NODE_INX,
 	JOB_REQ_NODELIST,
@@ -170,16 +176,16 @@ enum {
 #ifdef __METASTACK_OPT_SACCT_COMMAND
 	JOB_REQ_COMMAND,
 #endif
-#ifdef __METASTACK_OPT_SACCT_OUTPUT
-	JOB_REQ_STDOUT,
-	JOB_REQ_STDERR,
-#endif
 	JOB_REQ_MCS_LABEL,
 	JOB_REQ_SCRIPT,
+	JOB_REQ_STDERR,
+	JOB_REQ_STDIN,
+	JOB_REQ_STDOUT,
 	JOB_REQ_SUBMIT_LINE,
 	JOB_REQ_ENV,
 	JOB_REQ_ACCOUNT,
 	JOB_REQ_LFT,
+	JOB_REQ_LINEAGE,
 #ifdef __METASTACK_OPT_RESC_NODEDETAIL
 	JOB_REQ_RESC_NODE,
 #endif
@@ -283,7 +289,7 @@ enum {
 static void _setup_job_cond_selected_steps(slurmdb_job_cond_t *job_cond,
 					   char *cluster_name, char **extra)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	slurm_selected_step_t *selected_step = NULL;
 
 	if (!job_cond || (job_cond->flags & JOBCOND_FLAG_RUNAWAY))
@@ -503,13 +509,15 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 	slurmdb_step_rec_t *step = NULL;
 	time_t now = time(NULL);
 	List job_list = list_create(slurmdb_destroy_job_rec);
-	ListIterator itr = NULL, itr2 = NULL;
+	list_itr_t *itr = NULL;
 	List local_cluster_list = NULL;
 	int set = 0,i=0,rows=0;
 	char *prefix="t2";
 	int rc = SLURM_SUCCESS;
 	int last_id = -1, curr_id = -1;
+	int comb_id = 0;
 	local_cluster_t *curr_cluster = NULL;
+	bool jobid_filtered = false;
 
 	/* This is here to make sure we are looking at only this user
 	 * if this flag is set.  We also include any accounts they may be
@@ -521,65 +529,24 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 	if (!is_admin && ((slurm_conf.private_data & PRIVATE_DATA_JOBS) ||
 			  (job_cond->flags & JOBCOND_FLAG_SCRIPT) ||
 			  (job_cond->flags & JOBCOND_FLAG_ENV))) {
-		query = xstrdup_printf("select lft from `%s_%s` "
-				       "where `user`='%s'",
-				       cluster_name, assoc_table, user->name);
-		if (user->coord_accts) {
+		if (!extra)
+			xstrcat(extra, " where ");
+		else
+			xstrcat(extra, " and ");
+		xstrfmtcat(extra, "((%s.lineage like '%%/0-%s/%%')",
+			   prefix, user->name);
+		if (!(slurmdbd_conf->flags & DBD_CONF_FLAG_DISABLE_COORD_DBD) &&
+		    user->coord_accts && list_count(user->coord_accts)) {
 			slurmdb_coord_rec_t *coord = NULL;
 			itr = list_iterator_create(user->coord_accts);
 			while ((coord = list_next(itr))) {
-				xstrfmtcat(query, " or acct='%s'",
-					   coord->name);
+				xstrfmtcat(extra,
+					   " or (%s.lineage like '%%/%s/%%')",
+					   prefix, coord->name);
 			}
 			list_iterator_destroy(itr);
 		}
-		DB_DEBUG(DB_JOB, kingbase_conn->conn, "query\n%s", query);
-		//info("[query] line %d, %s: query: %s", __LINE__, __func__, query);
-		result = kingbase_db_query_ret(kingbase_conn, query, 0);
-		xfree(query);
-		if (KCIResultGetStatusCode(result) != EXECUTE_TUPLES_OK) {
-			KCIResultDealloc(result);
-			xfree(extra);
-			rc = SLURM_ERROR;
-			goto end_it;
-		}
-	
-		set = 0;
-        rows = KCIResultGetRowCount(result);
-        for(i = 0 ; i < rows ; ++i){
-			if (set) {
-				xstrfmtcat(extra,
-					   " or (%s between %s.lft and %s.rgt)",
-					   KCIResultGetColumnValue(result,i,0), prefix, prefix);
-			} else {
-				set = 1;
-				if (extra)
-					xstrfmtcat(extra,
-						   " and ((%s between %s.lft "
-						   "and %s.rgt)",
-						   KCIResultGetColumnValue(result,i,0), prefix,
-						   prefix);
-				else
-					xstrfmtcat(extra,
-						   " where ((%s between %s.lft "
-						   "and %s.rgt)",
-						   KCIResultGetColumnValue(result,i,0), prefix,
-						   prefix);
-			}
-		}
-		i = 0;
-		KCIResultDealloc(result);
-
-		if (set)
-			xstrcat(extra, ")");
-		else {
-			xfree(extra);
-			debug("User %s has no associations, and is not admin, "
-			      "so not returning any jobs.", user->name);
-			/* This user has no valid associations, so
-			 * they will not have any jobs. */
-			goto end_it;
-		}
+		xstrcatchar(extra, ')');
 	}
 
 	setup_job_cluster_cond_limits(kingbase_conn, job_cond,
@@ -625,6 +592,8 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 		xstrcat(query, extra);
 		xfree(extra);
 	}
+	if (job_cond->step_list)
+		jobid_filtered = true;
 
 	/* Here we want to order them this way in such a way so it is
 	   easy to look for duplicates, it is also easy to sort the
@@ -664,13 +633,26 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 		char *db_inx_char = KCIResultGetColumnValue(result,i,JOB_REQ_DB_INX);
 		bool job_ended = 0;
 		int start = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_START));
+		int arrayjob = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_ARRAYJOBID));
+		int hetjob = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_HET_JOB_ID));
 
 		curr_id = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_JOBID));
-
-		if (job_cond && !(job_cond->flags & JOBCOND_FLAG_DUP)
-		    && (curr_id == last_id)
-		    && (slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_STATE)) != JOB_RESIZING))
-			continue;
+		if (job_cond && !(job_cond->flags & JOBCOND_FLAG_DUP)) {
+			if ((curr_id == last_id) &&
+			    (slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_STATE)) != JOB_RESIZING))
+				continue;
+			/*
+			 * Doing advanced duplication removal when requesting
+			 * specific jobIDs and hetjobs/arrayjobs involved
+			*/
+			if (jobid_filtered) {
+				if ((last_id != hetjob) &&
+				    (last_id != arrayjob)) {
+					comb_id = arrayjob + hetjob;
+				} else if (comb_id != (arrayjob + hetjob))
+					continue;
+			}
+		}
 
 		/* check the bitmap to see if this is one of the jobs
 		   we are looking for */
@@ -744,6 +726,9 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 		temp = KCIResultGetColumnValue(result,i,JOB_REQ_LFT);
 		if (*temp != '\0')
 			job->lft = slurm_atoul(temp);
+		temp = KCIResultGetColumnValue(result,i,JOB_REQ_LINEAGE);
+		if (*temp != '\0')
+			job->lineage = xstrdup(temp);
 		temp = KCIResultGetColumnValue(result,i,JOB_REQ_ACCOUNT);
 		char *temp2 = KCIResultGetColumnValue(result,i,JOB_REQ_ACCOUNT1);
 		if (*temp != '\0')
@@ -769,14 +754,6 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 		if (*temp != '\0')
 			job->command = xstrdup(temp);
 #endif
-#ifdef __METASTACK_OPT_SACCT_OUTPUT
-		temp = KCIResultGetColumnValue(result,i,JOB_REQ_STDOUT);
-		if (*temp != '\0')
-			job->stdout = xstrdup(temp);
-		temp = KCIResultGetColumnValue(result,i,JOB_REQ_STDERR);
-		if (*temp != '\0')
-			job->stderr = xstrdup(temp);
-#endif
 		job->eligible = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_ELIGIBLE));
 		job->submit = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_SUBMIT));
 		job->start = start;
@@ -786,6 +763,10 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 		job->script = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_SCRIPT));
 
 		job->env = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_ENV));
+
+		job->std_err = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_STDERR));
+		job->std_in = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_STDIN));
+		job->std_out = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_STDOUT));
 
 		job->submit_line = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_SUBMIT_LINE));
 
@@ -891,6 +872,7 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 		job->jobname = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_NAME));
 		job->gid = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_GID));
 		job->exitcode = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_EXIT_CODE));
+		job->failed_node = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_FAILED_NODE));
 		job->derived_ec = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_DERIVED_EC));
 		job->derived_es = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_DERIVED_ES));
 		job->admin_comment = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_ADMIN_COMMENT));
@@ -900,6 +882,8 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 #endif
 		job->constraints = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_CONSTRAINTS));
 		job->container = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_CONTAINER));
+		job->extra = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_EXTRA));
+		job->licenses = xstrdup(KCIResultGetColumnValue(result,i,JOB_REQ_LICENSES));
 		job->flags = slurm_atoul(KCIResultGetColumnValue(result,i,JOB_REQ_FLAGS));
 
 		/*
@@ -1214,8 +1198,6 @@ static int _cluster_get_jobs(kingbase_conn_t *kingbase_conn,
 	KCIResultDealloc(result);
 
 end_it:
-	if (itr2)
-		list_iterator_destroy(itr2);
 
 	FREE_NULL_LIST(local_cluster_list);
 
@@ -1233,8 +1215,8 @@ extern List setup_cluster_list_with_inx(kingbase_conn_t *kingbase_conn,
 	List local_cluster_list = NULL;
 	time_t now = time(NULL);
 	KCIResult *result = NULL;
-	hostlist_t temp_hl = NULL;
-	hostlist_iterator_t h_itr = NULL;
+	hostlist_t *temp_hl = NULL;
+	hostlist_iterator_t *h_itr = NULL;
 	int i = 0 ,rows = 0;
 	char *query = NULL;
 	int dims = 0;
@@ -1353,7 +1335,7 @@ extern int good_nodes_from_inx(List local_cluster_list,
 		    || (start >= (*curr_cluster)->end)) {
 			local_cluster_t *local_cluster = NULL;
 
-			ListIterator itr =
+			list_itr_t *itr =
 				list_iterator_create(local_cluster_list);
 			while ((local_cluster = list_next(itr))) {
 				if ((start >= local_cluster->start)
@@ -1382,7 +1364,7 @@ extern int setup_job_cluster_cond_limits(kingbase_conn_t *kingbase_conn,
 					 char *cluster_name, char **extra)
 {
 	int set = 0;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 
 	if (!job_cond)
@@ -1477,7 +1459,7 @@ extern int setup_job_cond_limits(slurmdb_job_cond_t *job_cond,
 				 char **extra)
 {
 	int set = 0;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 
 	if (!job_cond || (job_cond->flags & JOBCOND_FLAG_RUNAWAY))
@@ -1802,14 +1784,14 @@ extern List as_kingbase_jobacct_process_get_jobs(kingbase_conn_t *kingbase_conn,
 {
 	char *extra = NULL;
 	char *tmp = NULL, *tmp2 = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int is_admin=1;
 	int i;
 	List job_list = NULL;
 	slurmdb_user_rec_t user;
 	int only_pending = 0;
 	List use_cluster_list = NULL;
-	char *cluster_name;
+	char *cluster_name = NULL;
 	bool locked = false;
 	assoc_mgr_lock_t locks = { NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK,
 				   READ_LOCK, NO_LOCK, NO_LOCK };

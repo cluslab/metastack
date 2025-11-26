@@ -21,7 +21,7 @@
 ############################################################################
 # Copyright (C) 2002-2007 The Regents of the University of California.
 # Copyright (C) 2008-2010 Lawrence Livermore National Security.
-# Portions Copyright (C) 2010-2018 SchedMD LLC.
+# Copyright (C) SchedMD LLC.
 # Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
 # Written by Morris Jette <jette1@llnl.gov>
 # Additions by Joseph Donaghy <donaghy1@llnl.gov>
@@ -372,7 +372,7 @@ set no_delim_slash       "\[^(,:/\r\n\]"
 # The second **optional** group matches GRES type.
 # The third group matches GRES count.
 # Test out the regex here: https://regex101.com/r/FlNYKM/7
-set gres_regex "($no_delim_slash*):($no_delim*)?:?($no_delim*)"
+set gres_regex "($no_delim_slash*):($no_delim*)?:?($no_delim*)?:?($no_delim*)"
 
 #basic #defines in slurm.h
 set NO_VAL 0xfffffffe
@@ -687,7 +687,7 @@ proc get_subtest_fail_count {} {
 #	reset_bash_prompt
 #
 # DESCRIPTION
-#	The procedure will normally be called within an expect body to
+#	The procedure must be called within an expect body to
 #	reset the bash prompt to the $test_prompt.
 #
 # EXAMPLE
@@ -709,7 +709,8 @@ proc get_subtest_fail_count {} {
 proc reset_bash_prompt {} {
 	global testsuite_dir
 
-	send "source $testsuite_dir/reset_bash_prompt.sh\n"
+	upvar spawn_id sid
+	send -i $sid "source $testsuite_dir/reset_bash_prompt.sh\n"
 }
 
 
@@ -1778,7 +1779,7 @@ proc wait_for args {
 # OPTIONS
 #	-fail
 #		fail the testif the condition is not met within the timeout
-#	-subfail
+#	-subtest
 #		if the condition is met within the timeout call subpass, otherwise
 #		call subfail
 #	-timeout <float_number>
@@ -2789,6 +2790,7 @@ proc wait_job_reason args {
 proc get_config args {
 	global sacctmgr scontrol
 
+	set config_dict [list]
 	set command "$scontrol"
 	while {[llength $args]} {
 		switch -glob -- [lindex $args 0] {
@@ -3005,6 +3007,29 @@ proc get_mps_count_by_index { index hostname } {
 	return $count
 }
 
+################################################################
+#
+# NAME
+#	check_mpi - determines if mpicc and the desired --mpi option are available
+#
+# SYNOPSIS
+#	check_mpi desired_mpi
+#
+# DESCRIPTION
+#	Runs srun --mpi=list to determine if the desired mpi is available, as
+#	well as if mpicc set in globals.local is too.
+#
+# RETURN VALUE
+#	Returns true if the desired mpi and mpicc are available, false otherwise.
+#
+################################################################
+
+proc check_mpi {desired_mpi} {
+	global srun eol mpicc
+	set output [run_command_output -fail "$srun --mpi=list"]
+
+	return [regexp "${desired_mpi}${eol}" $output] && [file executable $mpicc]
+}
 
 ################################################################
 #
@@ -3276,9 +3301,7 @@ proc get_select_type_params { {partition ""} } {
 #	check_config_select type
 #
 # DESCRIPTION
-#	Determine if SelectType is equivalent to the passed one by also
-#	checking other_cons_res and other_cons_tres on SelectTypeParameters
-#	in case that select/cray_aries is configured.
+#	Determine if SelectType is equivalent to the passed type.
 #
 # ARGUMENTS
 #	type
@@ -3295,21 +3318,6 @@ proc check_config_select { type } {
 
 	if {$select_type eq "select/$type"} {
 		return true
-	}
-	if {$select_type eq "select/cray_aries"} {
-		if {$type eq "linear" &&
-		    ![param_contains $select_type_parameters "other_cons_res"] &&
-		    ![param_contains $select_type_parameters "other_cons_tres"]} {
-			return true
-		}
-		if {$type eq "cons_res" &&
-		    [param_contains $select_type_parameters "other_cons_res"]} {
-			return true
-		}
-		if {$type eq "cons_tres" &&
-		    [param_contains $select_type_parameters "other_cons_tres"]} {
-			return true
-		}
 	}
 
 	return false
@@ -3662,13 +3670,75 @@ proc make_bash_script { script_name script_contents } {
 proc check_acct_associations { } {
 	global sacctmgr number re_word_str
 
-	set rc true
+	# 2 versions after 23.11 we can remove the below function
+	# until then we should check older clusters lft/rgt
+	set rc [check_acct_associations_lft]
+
+	if { !$rc } {
+		return $rc;
+	}
+
 	log_user 0
 	log_debug "Sanity-Checking Associations"
 	#
 	# Use sacctmgr to check associations
 	#
-	spawn $sacctmgr -n -p list assoc wopi wopl withd format=lft,rgt,cluster
+	spawn $sacctmgr -n -p list assoc wopi wopl withd format=lineage,cluster
+	expect {
+	       -re "($re_word_str)\\|($re_word_str)\\|" {
+		      # Here we are checking if we have duplicates and
+		      # setting up an array to check for holes later
+
+		      set lineage $expect_out(1,string)
+		      set cluster $expect_out(2,string)
+		      set first [info exists found($cluster,$lineage)]
+
+		      if { $first } {
+			     log_error "$cluster found lineage $lineage again"
+			     set rc false
+		      } else {
+			     set found($cluster,$lineage) 1
+		      }
+		      exp_continue
+	       }
+	       timeout {
+			fail "sacctmgr add not responding"
+	       }
+	       eof {
+		      wait
+	       }
+	}
+
+	log_user 1
+	return $rc
+}
+
+proc check_acct_associations_lft { } {
+	global sacctmgr number re_word_str
+
+	set rc true
+	log_user 0
+
+	log_debug "Sanity-Checking Associations"
+
+	set clusters ""
+
+	spawn $sacctmgr show cluster format=cluster,rpc -p
+	expect {
+		-re "($re_word_str)\\|($number)\\|" {
+			# 9984 == 23.02, the last version where lft/rgt matter
+			if { $expect_out(2,string) > 9984 } {
+				exp_continue
+			}
+			set clusters [ concat $clusters "," $expect_out(1,string) ]
+			exp_continue
+		}
+	}
+
+	#
+	# Use sacctmgr to check associations
+	#
+	spawn $sacctmgr -n -p list assoc wopi wopl withd format=lft,rgt,cluster clusters="$clusters"
 	expect {
 	       -re "($number)\\|($number)\\|($re_word_str)\\|" {
 		      # Here we are checking if we have duplicates and
@@ -3725,7 +3795,6 @@ proc check_acct_associations { } {
 	log_user 1
 	return $rc
 }
-
 
 ################################################################
 #
@@ -4159,15 +4228,10 @@ proc get_nodes_by_state {{states ""} {partition ""}} {
 		set states "idle"
 	}
 
-	set output [run_command_output -fail "$sinfo -h -N -p $partition -o '%N|%t' -e"]
+	set output [run_command_output -fail "$sinfo -h -N -p $partition -o '%N' -e -t $states"]
 	foreach line [split $output "\n"] {
 		if {$line eq ""} { continue }
-		lassign [split $line |] node_name node_state
-		foreach requested_state [split $states ,] {
-			if {$node_state eq $requested_state} {
-				lappend node_list $node_name
-			}
-		}
+		lappend node_list $line
 	}
 
 	return $node_list
@@ -5042,19 +5106,30 @@ proc get_gres_count { gres_name {node_list ""} } {
 #	jobs info, and returns a dict of GRES names and their count
 #	aggregating all the types of each GRES.
 #
+# ARGUMENTS
+#	gres_param
+#		The usual coma-separated list of Gres (e.g gpu:2,craynetwork:1).
+#	only_consumable
+#		If true, the no_consume gres are ignored.
+#
 # RETURN VALUE
 #	A dict of GRES names and their count aggregating all types of
 #	each GRES.
 #
 ################################################################
 
-proc count_gres { gres_param } {
+proc count_gres {gres_param {only_consumable false}} {
 	global gres_regex
-
 	set gres_dict [dict create]
 	foreach gres [split $gres_param ","] {
-		if {[regexp $gres_regex $gres {} name type count] == 1} {
-			if {$count eq ""} { set count $type }
+		if {[regexp $gres_regex $gres {} name type nc count] == 1} {
+			if {$only_consumable && ($type eq "no_consume" || $nc eq "no_consume")} {
+				continue
+			} elseif {$nc eq ""} {
+				set count $type
+			} elseif {$count eq ""} {
+				set count $nc
+			}
 
 			if {[dict exists $gres_dict $name]} {
 				dict set gres_dict $name [expr [dict get $gres_dict $name] + $count]
@@ -5065,7 +5140,6 @@ proc count_gres { gres_param } {
 	}
 	return $gres_dict
 }
-
 
 ################################################################
 #
@@ -6276,9 +6350,9 @@ proc submit_job args {
 ################################################################################
 
 proc check_exclusive_gres { job_id node_name } {
-	# Check all GRES of the node were allocated on the job
+	# Check all consumable GRES of the node were allocated on the job
 	set gres_dict_job  [count_gres [get_job_param  $job_id "JOB_GRES"]]
-	set gres_dict_node [count_gres [get_node_param $node_name "Gres"]]
+	set gres_dict_node [count_gres [get_node_param $node_name "Gres"] true]
 
 	dict for {gres_name gres_count} $gres_dict_node {
 		# We don't want mps to be allocated with --exclusive
@@ -7118,10 +7192,16 @@ proc _test_init {} {
 
 	# Default precondition checks
 	if {![regexp "is UP" [run_command_output -nolog -none "$scontrol ping"]]} {
-		skip "The expect testsuite requires Slurm to be running, but 'scontrol ping' failed."
+		skip "The expect testsuite requires Slurm to be running, but '$scontrol ping' failed."
 	}
-	if {[llength [get_nodes_by_state]] < 1} {
+	set idle_nodes [get_nodes_by_state]
+	if {[llength $idle_nodes] < 1} {
 		skip "The expect testsuite requires there to be at least one idle node in the default partition."
+	}
+	# Ensure that idle nodes are not drained/down
+	# Checking one by one to be able to print a warning if some was drain/down
+	foreach idle_node $idle_nodes {
+		run_command -nolog -xfail "$scontrol update nodename=$idle_node state=resume"
 	}
 }
 
@@ -7242,4 +7322,3 @@ proc exit { {status 0} } {
 
 # Call _test_init at the beginning of each test
 _test_init
-

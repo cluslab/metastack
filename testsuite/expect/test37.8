@@ -16,8 +16,7 @@
 #          fedr/fed3/...
 #          3. controllers are up and running.
 ############################################################################
-# Copyright (C) 2017 SchedMD LLC.
-# Written by Isaac Hartung <ihartung@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -140,8 +139,7 @@ proc squeue { job_id regex args } {
 	global fedc1 fedc2 fedc3
 
 	set matches 0
-	set command "$my_squeue --noheader -a --local -Ostatecompact:.5i\
-		-j $job_id"
+	set command "$my_squeue --noheader -a --local -Ocluster:10,statecompact:.5 -j $job_id"
 
 	if {$args ne ""} {
 		append command " -M$args"
@@ -166,19 +164,19 @@ proc verify { job_id output } {
 	global squeue fedc1 fedc2 fedc3
 
 	if {[string match $output $fedc1]} {
-		squeue $job_id "CLUSTER: $fedc1\\s+R\\s+CLUSTER: $fedc2\\s+slurm_load_jobs error: Invalid job id specified\\s+CLUSTER: $fedc3\\s+slurm_load_jobs error: Invalid job id specified\\s+"
+		squeue $job_id "$fedc1\\s+R\\s+slurm_load_jobs error: Invalid job id specified\\s+slurm_load_jobs error: Invalid job id specified\\s+"
 		scontrol --local $job_id "JobId.+" -M$fedc1
 		scontrol --local $job_id "slurm_load_jobs error: Invalid job id specified" -M$fedc2
 		scontrol --local $job_id "slurm_load_jobs error: Invalid job id specified" -M$fedc3
 	}
 	if {[string match $output $fedc2]} {
-		squeue $job_id "CLUSTER: $fedc1\\s+RV\\s+CLUSTER: $fedc2\\s+R\\s+CLUSTER: $fedc3\\s+slurm_load_jobs error: Invalid job id specified\\s+"
+		squeue $job_id "$fedc1\\s+RV\\s+$fedc2\\s+R\\s+slurm_load_jobs error: Invalid job id specified\\s+"
 		scontrol --local $job_id "JobId.+" -M$fedc1
 		scontrol --local $job_id "slurm_load_jobs error: Invalid job id specified" -M$fedc3
 		scontrol --local $job_id "JobId.+" -M$fedc2
 	}
 	if {[string match $output $fedc3]} {
-		squeue $job_id "CLUSTER: $fedc1\\s+RV\\s+CLUSTER: $fedc2\\s+slurm_load_jobs error: Invalid job id specified\\s+CLUSTER: $fedc3\\s+R\\s+"
+		squeue $job_id "$fedc1\\s+RV\\s+slurm_load_jobs error: Invalid job id specified\\s+$fedc3\\s+R\\s+"
 		scontrol --local $job_id "JobId.+" -M$fedc1
 		scontrol --local $job_id "slurm_load_jobs error: Invalid job id specified" -M$fedc2
 		scontrol --local $job_id "JobId.+" -M$fedc3
@@ -250,7 +248,7 @@ if [setup_federation $fed_name] {
 }
 
 # Get number of nodes per cluster
-set node_count [llength [get_nodes_by_state idle,alloc,comp]]
+set node_count [llength [get_nodes_by_state idle,alloc,comp "[default_partition] --local"]]
 
 log_info "################################################################"
 log_info "Setup cluster features"
@@ -356,7 +354,7 @@ set ji2 [sbatch]
 
 set job_id [sbatch]
 
-squeue $job_id "CLUSTER: $fedc1\\s+PD\\s+CLUSTER: $fedc2\\s+PD\\s+CLUSTER: $fedc3\\s+PD\\s+"
+squeue $job_id "$fedc1\\s+PD\\s+$fedc2\\s+PD\\s+$fedc3\\s+PD\\s+"
 
 scontrol --sibling $job_id "JobId.+JobId.+JobId.+"
 

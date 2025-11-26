@@ -36,6 +36,7 @@
 \*****************************************************************************/
 
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -45,7 +46,7 @@
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 #include "src/common/list.h"
-#include "src/common/slurm_protocol_interface.h"
+#include "src/common/slurm_protocol_socket.h"
 
 #include "spawn.h"
 #include "setup.h"
@@ -161,7 +162,7 @@ extern void spawn_req_pack(spawn_req_t *req, buf_t *buf)
 	 * of protocol mismatch.
 	 */
 	(void) auth_g_pack(auth_cred, buf, SLURM_PROTOCOL_VERSION);
-	(void) auth_g_destroy(auth_cred);
+	auth_g_destroy(auth_cred);
 
 	pack32(req->seq, buf);
 	packstr(req->from_node, buf);
@@ -212,7 +213,7 @@ extern int spawn_req_unpack(spawn_req_t **req_ptr, buf_t *buf)
 		return SLURM_ERROR;
 	}
 	auth_uid = auth_g_get_uid(auth_cred);
-	(void) auth_g_destroy(auth_cred);
+	auth_g_destroy(auth_cred);
 	my_uid = getuid();
 	if ((auth_uid != 0) && (auth_uid != my_uid)) {
 		error("mpi/pmi2: spawn request apparently from uid %u",
@@ -286,11 +287,11 @@ spawn_req_send_to_srun(spawn_req_t *req, spawn_resp_t **resp_ptr)
 	spawn_req_pack(req, req_buf);
 	rc = tree_msg_to_srun_with_resp(get_buf_offset(req_buf),
 					get_buf_data(req_buf), &resp_buf);
-	free_buf(req_buf);
+	FREE_NULL_BUFFER(req_buf);
 
 	if (rc == SLURM_SUCCESS) {
 		rc = spawn_resp_unpack(resp_ptr, resp_buf);
-		free_buf(resp_buf);
+		FREE_NULL_BUFFER(resp_buf);
 	}
 	return rc;
 }
@@ -372,7 +373,7 @@ spawn_resp_send_to_stepd(spawn_resp_t *resp, char **node)
 	rc = slurm_forward_data(node, tree_sock_addr,
 				get_buf_offset(buf),
 				get_buf_data(buf));
-	free_buf(buf);
+	FREE_NULL_BUFFER(buf);
 	return rc;
 }
 
@@ -390,7 +391,7 @@ spawn_resp_send_to_srun(spawn_resp_t *resp)
 	spawn_resp_pack(resp, buf);
 
 	rc = tree_msg_to_srun(get_buf_offset(buf), get_buf_data(buf));
-	free_buf(buf);
+	FREE_NULL_BUFFER(buf);
 	return rc;
 }
 
@@ -407,7 +408,7 @@ spawn_resp_send_to_fd(spawn_resp_t *resp, int fd)
 /* 	pack16(cmd, buf); */
 	spawn_resp_pack(resp, buf);
 	rc = slurm_msg_sendto(fd, get_buf_data(buf), get_buf_offset(buf));
-	free_buf(buf);
+	FREE_NULL_BUFFER(buf);
 
 	return rc;
 }

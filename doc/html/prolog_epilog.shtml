@@ -303,9 +303,13 @@ step allocations, when and where they run.</p>
 node when it first sees a job step from a new allocation; it does not
 run the Prolog immediately when an allocation is granted.  If no job steps
 from an allocation are run on a node, it will never run the Prolog for that
-allocation.  This Prolog behaviour can be changed by the
+allocation.  This Prolog behavior can be changed by the
 PrologFlags parameter.  The Epilog, on the other hand, always
 runs on every node of an allocation when the allocation is released.</p>
+
+<p>If multiple prolog and/or epilog scripts are specified,
+(e.g. "/etc/slurm/prolog.d/*") they will run in reverse alphabetical order
+(z-a -> Z-A -> 9-0).</p>
 
 <p>Prolog and Epilog scripts should be designed to be as short as possible
 and should not call Slurm commands (e.g. squeue, scontrol, sacctmgr, etc).
@@ -321,8 +325,28 @@ sets an environment variable for the user task<br>
 <span class="commandline">unset name</span>
 clears an environment variable from the user task<br>
 <span class="commandline">print ...</span>
-writes to the task's standard output.<br>
-Special treatment is given to the <b>SLURM_PROLOG_CPU_MASK</b> variable when
+writes to the task's standard output.<br></p>
+
+<p>A TaskProlog script can just be a bash script. Here is a very basic example:
+<pre>
+#!/bin/bash
+
+# The TaskProlog script can be used for any preliminary work needed
+# before running a job step, and it can also be used to modify the
+# user's environment. There are two main mechanisms for that, which
+# rely on printing commands to stdout:
+
+# Make a variable available for the user
+echo "export VARIABLE_1=HelloWorld"
+
+# Unset variables for the user
+echo "unset MANPATH"
+
+# We can also print messages if needed
+echo "print This message has been printed with TaskProlog"
+</pre></p>
+
+<p>Special treatment is given to the <b>SLURM_PROLOG_CPU_MASK</b> variable when
 set in the task prolog. The variable is interpreted as a coma separated list
 of hex maps. It allows you to specify the CPU(s) that will be bound to a
 task and is applied using sched_setaffinity.
@@ -419,7 +443,8 @@ Available in PrologSlurmctld, SrunProlog, TaskProlog, EpilogSlurmctld,
 SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_CLUSTER_NAME</b>
-Name of the cluster executing the job.</li>
+Name of the cluster executing the job. Available in Prolog, PrologSlurmctld,
+Epilog and EpilogSlurmctld.</li>
 
 <li><b>SLURM_CONF</b>
 Location of the slurm.conf file. Available in Prolog, SrunProlog, TaskProlog,
@@ -430,13 +455,14 @@ Count of processors available to the job on current node. Available in
 SrunProlog, TaskProlog, SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_DISTRIBUTION</b>
-Distribution type for the job. Available in SrunProlog and SrunEpilog.</li>
+Distribution type for the job. Available in SrunProlog, TaskProlog, SrunEpilog
+and TaskEpilog.</li>
 
 <li><b>SLURMD_NODENAME</b>
 Name of the node running the task. In the case of a parallel job executing
 on multiple compute nodes, the various tasks will have this environment
 variable set to different values on each compute node. Available in Prolog,
-TaskProlog, Epilog and TaskEpilog.</li>
+SrunProlog, TaskProlog, Epilog, SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_GPUS</b>
 Count of the GPUs available to the job. Available in SrunProlog, TaskProlog,
@@ -464,6 +490,9 @@ Count of processors available per node.</li>
 The highest exit code of all of the job steps.
 Available in Epilog and EpilogSlurmctld.</li>
 
+<li><b>SLURM_JOB_END_TIME</b>
+The UNIX timestamp for a job's end time.</li>
+
 <li><b>SLURM_JOB_EXIT_CODE</b>
 The exit code of the job script (or salloc). The value is the status
 as returned by the <span class="commandline">wait()</span> system call
@@ -479,22 +508,31 @@ The second number is the signal that caused the process to
 terminate if it was terminated by a signal.
 Available in Epilog and EpilogSlurmctld.</li>
 
+<li><b>SLURM_JOB_EXTRA</b>
+Extra field added to the job.
+Available in Prolog, PrologSlurmctld, Epilog, EpilogSlurmctld, and
+ResumeProgram (via SLURM_RESUME_FILE).</li>
+
 <li><b>SLURM_JOB_GID</b>
 Group ID of the job's owner.</li>
 
 <li><b>SLURM_JOB_GPUS</b>
 The GPU IDs of GPUs in the job allocation (if any).
-Available in the Prolog and Epilog.</li>
+Available in the Prolog, SrunProlog, TaskProlog, Epilog, SrunEpilog and
+TaskProlog.</li>
 
 <li><b>SLURM_JOB_GROUP</b>
 Group name of the job's owner.
-Available in PrologSlurmctld and EpilogSlurmctld only.</li>
+Available in PrologSlurmctld and EpilogSlurmctld.</li>
 
 <li><b>SLURM_JOB_ID</b>
 Job ID.</li>
 
 <li><b>SLURM_JOBID</b>
 Job ID.</li>
+
+<li><b>SLURM_JOB_LICENSES</b>
+Name and count of any license(s) requested.</li>
 
 <li><b>SLURM_JOB_NAME</b>
 Name of the job.
@@ -505,17 +543,20 @@ SrunEpilog and TaskEpilog.</li>
 Nodes assigned to job. A Slurm hostlist expression.
 <span class="commandline">scontrol show hostnames</span>
 can be used to convert this to a
-list of individual host names.
-Available in PrologSlurmctld SrunProlog, TaskProlog, EpilogSlurmctld,
-SrunEpilog and TaskEpilog.</li>
+list of individual host names.</li>
 
 <li><b>SLURM_NTASKS</b>
 Number of tasks requested by the job.
-Available in Prolog, SrunProlog, TaskProlog, Epilog, SrunEpilog and
-TaskEpilog.</li>
+Available in SrunProlog, TaskProlog, SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_JOB_NUM_NODES</b>
 Number of nodes assigned to a job.</li>
+
+<li><b>SLURM_JOB_OVERSUBSCRIBE</b>
+Job OverSubscribe status.
+See the <a href="squeue.html#OPT_OverSubscribe">squeue man page</a> for
+possible values.
+Available in Prolog, PrologSlurmctld, Epilog and EpilogSlurmctld.</li>
 
 <li><b>SLURM_JOB_PARTITION</b>
 Partition that job runs in.</li>
@@ -525,12 +566,14 @@ QOS assigned to job. Available in SrunProlog, TaskProlog, SrunEpilog
 and TaskEpilog.</li>
 
 <li><b>SLURM_JOB_RESERVATION</b>
-Reservation requested for the job.
-Available in Prolog, PrologSlurmctld, Epilog and EpilogSlurmctld.</li>
+Reservation requested for the job.</li>
 
 <li><b>SLURM_JOB_RESTART_COUNT</b>
 Number of times the job has been restarted.
 Available in Prolog, PrologSlurmctld, Epilog and EpilogSlurmctld.</li>
+
+<li><b>SLURM_JOB_START_TIME</b>
+The UNIX timestamp of a job's start time.</li>
 
 <li><b>SLURM_JOB_STDERR</b>
 Job's stderr path.
@@ -560,20 +603,15 @@ in SrunProlog, TaskProlog, SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_LOCALID</b>
 Node local task ID for the process within a job. Available in SrunProlog,
-Taskprolog, SrunEpilog and TaskEpilog.</li>
+TaskProlog, SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_NNODES</b>
 Number of nodes assigned to a job. Available in SrunProlog, TaskProlog,
 SrunEpilog and TaskEpilog.</li>
 
-<li><b>SLURM_NODE_ALIASES</b>
-Contains the node name, communication address and hostname of a node.
-Used for cloud environments. Available in Prolog (PrologFlags=alloc only),
-SrunProlog, TaskProlog, SrunEpilog and TaskEpilog.</li>
-
 <li><b>SLURM_NODEID</b>
 ID of current node relative to other nodes in a multi-node job. Available in
-TaskProlog and TaskEpilog.</li>
+SrunProlog, TaskProlog, SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_PRIO_PROCESS</b>
 Scheduling priority (nice value) at the time of submission. Available in
@@ -644,7 +682,8 @@ The value is one of the following:
 </li>
 
 <li><b>SLURM_STEP_ID</b>
-Step ID of the current job. Available in SrunProlog and SrunEpilog.</li>
+Step ID of the current job. Available in SrunProlog, TaskProlog, SrunEpilog
+and TaskEpilog.</li>
 
 <li><b>SLURM_STEPID</b>
 Step ID of the current job. Available in SrunProlog and SrunEpilog.</li>
@@ -659,7 +698,8 @@ Host from which the job was submitted. Available in SrunProlog, TaskProlog,
 SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_TASK_PID</b>
-Process ID of the process started for the task. Available in TaskProlog.</li>
+Process ID of the process started for the task. Available in SrunProlog,
+TaskProlog, SrunEpilog and TaskEpilog.</li>
 
 <li><b>SLURM_TASKS_PER_NODE</b>
 Number of tasks per node. Available in SrunProlog, TaskProlog, SrunEpilog
@@ -681,12 +721,6 @@ type. Available in SrunProlog, TaskProlog, SrunEpilog and TaskEpilog.</li>
 User name of the job's wckey (if any).
 Available in PrologSlurmctld and EpilogSlurmctld only.</li>
 
-<li><b>SLURM_WORKING_CLUSTER</b>
-For use when using a Federation. Set to the remote sibling cluster's name,
-hostname, port, rpc version and plugin ID. Available in SrunProlog,
-TaskProlog, SrunEpilog and TaskEpilog.</li>
-</ul>
-
 <p>Plugin functions may also be useful to execute logic at various well-defined
 points.</p>
 
@@ -701,8 +735,9 @@ node being set to a DRAIN state.
 If the EpilogSlurmctld fails (returns a non-zero exit code), this will only
 be logged.
 If the Prolog fails (returns a non-zero exit code), this will result in the
-node being set to a DRAIN state and the job requeued in a held state
-(unless nohold_on_prolog_fail is configured in SchedulerParameters).
+node being set to a DRAIN state and the job requeued. The job will be placed
+in a held state unless nohold_on_prolog_fail is configured in
+SchedulerParameters.
 If the PrologSlurmctld fails (returns a non-zero exit code), this will cause
 the job to be requeued. Only batch jobs can be requeued. Interactive jobs
 (salloc and srun) will be cancelled if the PrologSlurmctld fails.</p>
@@ -718,6 +753,6 @@ canceled.</p>
 
 <p>Based upon work by Jason Sollom, Cray Inc. and used by permission.</p>
 
-<p style="text-align:center;">Last modified 23 August 2022</p>
+<p style="text-align:center;">Last modified 23 September 2024</p>
 
 <!--#include virtual="footer.txt"-->

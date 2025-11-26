@@ -5,9 +5,7 @@
 # Note:    This script generates and then deletes files in the working directory
 #          named test6.15.input, test6.15.output, and test6.15.error
 ############################################################################
-# Copyright (C) 2015-2019 SchedMD LLC.
-# Written by Morris Jette <jette@schedmd.com>
-# Rewritten by Albert Gil <albert.gil@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.

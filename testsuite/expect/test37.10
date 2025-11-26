@@ -14,8 +14,7 @@
 #          fedr/fed3/...
 #          3. controllers are up and running.
 ############################################################################
-# Copyright (C) 2017 SchedMD LLC.
-# Written by Isaac Hartung <ihartung@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -138,7 +137,7 @@ proc squeue { options regex } {
 	global my_squeue
 
 	set matches 0
-	set command "$my_squeue --noheader -a "
+	set command "$my_squeue -a "
 	append command $options
 	spawn {*}$command
 	expect {
@@ -183,8 +182,8 @@ proc cleanup { } {
 	global fed_name bin_bash bin_rm test_name
 
 	cancel_federation_jobs
-	delete_federations $fed_name
 	exec $bin_bash -c "$bin_rm -f $test_name*.out"
+	delete_federations $fed_name
 }
 
 # Start test
@@ -210,7 +209,7 @@ if {[setup_federation $fed_name]} {
 }
 
 # Get number of nodes per cluster
-set node_count [llength [get_nodes_by_state idle,alloc,comp]]
+set node_count [llength [get_nodes_by_state idle,alloc,comp "[default_partition] --local"]]
 
 log_info "################################################################"
 log_info "Setup cluster features"
@@ -331,9 +330,9 @@ set reg3 "\\s*$jid($fedc3).+R.+$eol"
 
 set regs "$regpd $reg1a $reg1b $reg1c $reg2 $reg3"
 
-set regf1 "CLUSTER: $fedc1\\s*$regpd$reg1a\\s*($reg1b|$reg1c){2}$eol"
-set regf2 "CLUSTER: $fedc2\\s*$regpd$reg2$eol"
-set regf3 "CLUSTER: $fedc3\\s*$regpd$reg3"
+set regf1 "CLUSTER: $fedc1\\s*JOBID.*?$regpd$reg1a\\s*($reg1b|$reg1c){2}$eol"
+set regf2 "CLUSTER: $fedc2\\s*JOBID.*?$regpd$reg2$eol"
+set regf3 "CLUSTER: $fedc3\\s*JOBID.*?$regpd$reg3"
 
 set regex "$regf1$regf2$regf3"
 
@@ -389,9 +388,9 @@ set reg3 "\\s*$jid($fedc3).+R.+$eol"
 
 set regs "$regpd $reg1a $reg1b $reg1c $reg2 $reg3"
 
-set regf1 "CLUSTER: $fedc1$eol$regpd$reg1a\\s*($reg1b|$reg1c){2}$eol"
-set regf2 "CLUSTER: $fedc2$eol$regpd$reg2$eol"
-set regf3 "CLUSTER: $fedc3$eol$regpd$reg3"
+set regf1 "CLUSTER: $fedc1\\s*JOBID.*?$regpd$reg1a\\s*($reg1b|$reg1c){2}$eol"
+set regf2 "CLUSTER: $fedc2\\s*JOBID.*?$regpd$reg2$eol"
+set regf3 "CLUSTER: $fedc3\\s*JOBID.*?$regpd$reg3"
 
 set regex "$regf1$regf2$regf3"
 
@@ -443,9 +442,9 @@ set reg3 "\\s*$jid($fedc3).+R.+$eol"
 
 set regs "$reg1a $reg1b $reg1c $reg2 $reg3"
 
-set regf1 "CLUSTER: $fedc1$eol$reg1a\\s*($reg1b|$reg1c){2}$eol"
-set regf2 "CLUSTER: $fedc2$eol$reg2$eol"
-set regf3 "CLUSTER: $fedc3$eol$reg3"
+set regf1 "CLUSTER: $fedc1\\s*JOBID.*?$reg1a\\s*($reg1b|$reg1c){2}$eol"
+set regf2 "CLUSTER: $fedc2\\s*JOBID.*?$reg2$eol"
+set regf3 "CLUSTER: $fedc3\\s*JOBID.*?$reg3"
 
 set regex "$regf1$regf2$regf3"
 
@@ -494,9 +493,9 @@ set reg3 "\\s*$jid($fedc3).+R.+$eol"
 
 set regs "$regpd $reg1a $reg1b $reg1c $reg2 $reg3"
 
-set regf1 "CLUSTER: $fedc1$eol$regpd$reg1a\\s*($reg1b|$reg1c){2}$eol"
-set regf2 "CLUSTER: $fedc2$eol$regpd$reg2$eol"
-set regf3 "CLUSTER: $fedc3$eol$regpd$reg3"
+set regf1 "CLUSTER: $fedc1\\s*JOBID.*?$regpd$reg1a\\s*($reg1b|$reg1c){2}$eol"
+set regf2 "CLUSTER: $fedc2\\s*JOBID.*?$regpd$reg2$eol"
+set regf3 "CLUSTER: $fedc3\\s*JOBID.*?$regpd$reg3"
 
 set regex "$regf1$regf2$regf3"
 

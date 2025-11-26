@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  gpu_oneapi.c - Support oneAPI interface to an Intel GPU.
  *****************************************************************************
- *  Copyright (C) 2019 SchedMD LLC
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2022 Intel Corporation
  *  Written by Kemp Ke <kemp.ke@intel.com>
  *  Based on gpu_nvml.c, written by Danny Auble <da@schedmd.com>
@@ -39,6 +39,7 @@
 #define _GNU_SOURCE
 
 #include <dirent.h>
+#include <dlfcn.h>
 #include <limits.h>
 #include <regex.h>
 #include <sys/types.h>
@@ -47,6 +48,7 @@
 
 #include "src/plugins/gpu/common/gpu_common.h"
 #include "src/common/strlcpy.h"
+#include "src/common/xregex.h"
 
 #define MAX_GPU_NUM 256
 #define MAX_NUM_FREQUENCIES 256
@@ -317,7 +319,7 @@ static bool _oneapi_get_nearest_freq(zes_freq_handle_t freq_handle,
 
 	memcpy(freqs_sort, freqs, freqs_size * sizeof(unsigned int));
 	qsort(freqs_sort, freqs_size, sizeof(unsigned int),
-	      gpu_common_sort_freq_descending);
+	      slurm_sort_uint_list_desc);
 
 	/* Set the nearest valid frequency for the requested frequency */
 	gpu_common_get_nearest_freq(freq, freqs_size, freqs_sort);
@@ -386,7 +388,7 @@ static void _oneapi_print_freqs(ze_device_handle_t device, log_level_t l)
 						  &freqs_size))
 			continue;
 		qsort(freqs, freqs_size, sizeof(unsigned int),
-		      gpu_common_sort_freq_descending);
+		      slurm_sort_uint_list_desc);
 
 		/* Get frequency property */
 		oneapi_rc = zesFrequencyGetProperties(freq_handles[i],
@@ -467,7 +469,7 @@ static bool _oneapi_set_freqs(ze_device_handle_t device,
 	zes_freq_properties_t freq_prop;
 	zes_freq_range_t freq_range;
 	ze_result_t oneapi_rc;
-	unsigned int freq;
+	unsigned int freq = 0;
 
 	/* Get all of frequency handles */
 	oneapi_rc = zesDeviceEnumFrequencyDomains((zes_device_handle_t)device,
@@ -661,7 +663,7 @@ static void _set_freq(bitstr_t *gpus, char *gpu_freq)
 	debug2("Requested GPU graphics frequency: %s", tmp);
 	xfree(tmp);
 
-	if (!mem_freq_num || !gpu_freq_num) {
+	if (!mem_freq_num && !gpu_freq_num) {
 		debug2("%s: No frequencies to set", __func__);
 		return;
 	}
@@ -784,7 +786,6 @@ static bool _oneapi_read_cpu_affinity_list(const char *file,
 					   unsigned int size)
 {
 	char line[CPU_LINE_SIZE] = {'\0'};
-	char buf[CPU_LINE_SIZE] = {'\0'};
 	char *save_ptr = line, *tok = NULL;
 	int min_cpu = -1, max_cpu = -1;
 	FILE *fp = NULL;
@@ -806,10 +807,8 @@ static bool _oneapi_read_cpu_affinity_list(const char *file,
 			debug2("tok is :%s", tok);
 			pos = strcspn(tok, "-");
 			if (pos > 0 && pos < strlen(tok)) {
-				strlcpy(buf, tok, pos);
-				min_cpu = atoi(buf);
-				strcpy(buf, tok + pos + 1);
-				max_cpu = atoi(buf);
+				min_cpu = atoi(tok);
+				max_cpu = atoi(tok + pos + 1);
 			} else if (pos > 0 && pos == strlen(tok)) {
 				max_cpu = min_cpu = atoi(tok);
 			} else {
@@ -849,6 +848,7 @@ static bool _oneapi_get_device_name(uint32_t domain, uint32_t bus,
 				    uint32_t device, uint32_t function,
 				    char *name, uint32_t len)
 {
+	static const char *card_reg_string = "renderD[0-9]+$";
 	const char *search_path = "/sys/class/drm";
 	char device_pattern[PATH_MAX] = {'\0'};
 	char path[PATH_MAX] = {'\0'};
@@ -860,23 +860,27 @@ static bool _oneapi_get_device_name(uint32_t domain, uint32_t bus,
 	regmatch_t reg_match;
 	char *matched = NULL;
 	bool ret = false;
+	int rc;
 
 	/*
 	 * Build search pattern to search strings like
 	 * "../../devices/pci0000:89/0000:89:02.0/0000:8a:00.0
-	 * /0000:8b:01.0/0000:8c:00.0/drm/card0"
+	 * /0000:8b:01.0/0000:8c:00.0/drm/renderD0"
 	 */
 	snprintf(device_pattern, sizeof(device_pattern),
-		 "/%04x:%02x:%02x.%0x/drm/card[0-9]+$", domain, bus,
-		 device, function);
-	if (regcomp(&search_reg, device_pattern, REG_EXTENDED)) {
-		error("Device file regex compilation failed: %s",
-		      device_pattern);
+		 "/%04x:%02x:%02x.%0x/%s",
+		 domain, bus, device, function, card_reg_string);
+	if ((rc = regcomp(&search_reg, device_pattern, REG_EXTENDED))) {
+		dump_regex_error(rc, &search_reg,
+				 "Device file regex \"%s\" compilation failed",
+				 device_pattern);
 		return false;
 	}
 
-	if (regcomp(&card_reg, "card[0-9]+$", REG_EXTENDED)) {
-		error("Card regex compilation failed");
+	if ((rc = regcomp(&card_reg, card_reg_string, REG_EXTENDED))) {
+		dump_regex_error(rc, &card_reg,
+				 "Card regex \"%s\" compilation failed",
+				 card_reg_string);
 		regfree(&search_reg);
 		return false;
 	}
@@ -965,6 +969,9 @@ extern int init(void)
 
 	/* Init oneAPI */
 	setenv("ZES_ENABLE_SYSMAN", "1", 1);
+	setenv("ZE_FLAT_DEVICE_HIERARCHY", "COMPOSITE", 1);
+	setenv("ZE_ENABLE_PCI_ID_DEVICE_ORDER", "1", 1);
+
 	if (zeInit(0) != ZE_RESULT_SUCCESS)
 		fatal("zeInit failed");
 
@@ -975,11 +982,6 @@ extern int fini(void)
 {
 	debug("unloading");
 
-	return SLURM_SUCCESS;
-}
-
-extern int gpu_p_reconfig(void)
-{
 	return SLURM_SUCCESS;
 }
 
@@ -1004,10 +1006,7 @@ static List _get_system_gpu_list_oneapi(node_config_load_t *node_config)
 	ze_result_t oneapi_rc;
 	uint32_t gpu_num = MAX_GPU_NUM;
 	unsigned long cpu_set[CPU_SET_SIZE] = {0};
-	bitstr_t *cpu_aff_mac_bitstr = NULL;
 	char *cpu_aff_mac_range = NULL;
-	char *cpu_aff_abs_range = NULL;
-	char *links = NULL;
 	int i;
 
 	List gres_list_system = list_create(destroy_gres_slurmd_conf);
@@ -1021,6 +1020,13 @@ static List _get_system_gpu_list_oneapi(node_config_load_t *node_config)
 
 	/* Loop all of GPU device handles */
 	for (i = 0; i < gpu_num; i++) {
+		gres_slurmd_conf_t gres_slurmd_conf = {
+			.config_flags = GRES_CONF_ENV_ONEAPI,
+			.count = 1,
+			.cpu_cnt = node_config->cpu_cnt,
+			.name = "gpu",
+		};
+
 		/* Get PCI properties */
 		zes_handle = (zes_device_handle_t)all_devices[i];
 		oneapi_rc = zesDevicePciGetProperties(zes_handle, &pci);
@@ -1051,35 +1057,35 @@ static List _get_system_gpu_list_oneapi(node_config_load_t *node_config)
 		}
 
 		/* Convert from cpu bitmask to slurm bitstr_t (machine fmt) */
-		cpu_aff_mac_bitstr = bit_alloc(MAX_CPUS);
-		_set_cpu_set_bitstr(cpu_aff_mac_bitstr, cpu_set, CPU_SET_SIZE);
+		gres_slurmd_conf.cpus_bitmap = bit_alloc(MAX_CPUS);
+		_set_cpu_set_bitstr(gres_slurmd_conf.cpus_bitmap,
+				    cpu_set, CPU_SET_SIZE);
 
 		/* Convert from bitstr_t to cpu range str */
-		cpu_aff_mac_range = bit_fmt_full(cpu_aff_mac_bitstr);
+		cpu_aff_mac_range = bit_fmt_full(gres_slurmd_conf.cpus_bitmap);
 
 		/*
 		 * Convert cpu range str from machine to abstract (slurm) format
 		 */
 		if (node_config->xcpuinfo_mac_to_abs(cpu_aff_mac_range,
-						     &cpu_aff_abs_range)) {
+						     &gres_slurmd_conf.cpus)) {
 			error("Conversion from machine to abstract failed");
-			FREE_NULL_BITMAP(cpu_aff_mac_bitstr);
+			FREE_NULL_BITMAP(gres_slurmd_conf.cpus_bitmap);
 			xfree(cpu_aff_mac_range);
 			continue;
 		}
 
 		/* Use links to record PCI bus ID order */
-		links = gres_links_create_empty(i, gpu_num);
+		gres_slurmd_conf.links = gres_links_create_empty(i, gpu_num);
 
 		/* Get device properties */
 		oneapi_rc = zeDeviceGetProperties(all_devices[i],
 						  &device_props);
 		if (oneapi_rc != ZE_RESULT_SUCCESS) {
 			info("Failed to get device property: 0x%x", oneapi_rc);
-			FREE_NULL_BITMAP(cpu_aff_mac_bitstr);
+			FREE_NULL_BITMAP(gres_slurmd_conf.cpus_bitmap);
 			xfree(cpu_aff_mac_range);
-			xfree(cpu_aff_abs_range);
-			xfree(links);
+			xfree(gres_slurmd_conf.links);
 			continue;
 		}
 
@@ -1089,27 +1095,26 @@ static List _get_system_gpu_list_oneapi(node_config_load_t *node_config)
 		debug2("    PCI Domain/Bus/Device/Function: %u:%u:%u:%u",
 			pci.address.domain, pci.address.bus,
 			pci.address.device, pci.address.function);
-		debug2("    Links: %s", links);
+		debug2("    Links: %s", gres_slurmd_conf.links);
 		debug2("    Device File: %s", device_file);
 		debug2("    CPU Affinity Range - Machine: %s",
 			cpu_aff_mac_range);
 		debug2("    Core Affinity Range - Abstract: %s",
-			cpu_aff_abs_range);
+			gres_slurmd_conf.cpus);
 
 		/* Print out possible frequencies for this device */
 		_oneapi_print_freqs(all_devices[i], LOG_LEVEL_DEBUG2);
 
-		/* Add the GPU to list */
-		add_gres_to_list(gres_list_system, "gpu", 1,
-				 node_config->cpu_cnt, NULL,
-				 cpu_aff_mac_bitstr, device_file,
-				 device_props.name, links,
-				 NULL, GRES_CONF_ENV_ONEAPI);
+		gres_slurmd_conf.type_name = device_props.name;
+		gres_slurmd_conf.file = device_file;
 
-		FREE_NULL_BITMAP(cpu_aff_mac_bitstr);
+		/* Add the GPU to list */
+		add_gres_to_list(gres_list_system, &gres_slurmd_conf);
+
+		FREE_NULL_BITMAP(gres_slurmd_conf.cpus_bitmap);
 		xfree(cpu_aff_mac_range);
-		xfree(cpu_aff_abs_range);
-		xfree(links);
+		xfree(gres_slurmd_conf.cpus);
+		xfree(gres_slurmd_conf.links);
 	}
 
 	return gres_list_system;
@@ -1197,6 +1202,11 @@ extern void gpu_p_get_device_count(unsigned int *device_count)
 }
 
 extern int gpu_p_energy_read(uint32_t dv_ind, gpu_status_t *gpu)
+{
+	return SLURM_SUCCESS;
+}
+
+extern int gpu_p_usage_read(pid_t pid, acct_gather_data_t *data)
 {
 	return SLURM_SUCCESS;
 }
