@@ -47,7 +47,7 @@ extern pthread_mutex_t rpc_mutex;
 extern slurmdb_stats_rec_t rpc_stats;
 extern pthread_t signal_handler_thread;	/* thread ID for signal hander */
 
-extern void shutdown_threads();
+extern void shutdown_threads(void);
 
 #ifdef __METASTACK_ASSOC_HASH
 /*
@@ -71,7 +71,7 @@ extern void *slurmdbd_uid_save(void *no_data);
 extern void shutdown_uid_save(void);
 #endif
 
-extern void reconfig();
+extern void reconfig(void);
 
 extern void handle_rollup_stats(List rollup_stats_list,
 				long delta_time, int type);

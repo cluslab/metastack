@@ -1,8 +1,7 @@
 /*****************************************************************************\
- *  * rate_limit.h 
-*****************************************************************************
- *  Copyright (C) 2023 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ * rate_limit.h
+ *****************************************************************************
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -38,14 +37,11 @@
 #define _RATE_LIMIT_H
 
 #include "src/common/slurm_protocol_defs.h"
-#ifdef __METASTACK_NEW_RPC_RATE_LIMIT
 
 extern void rate_limit_init(void);
 
 extern void rate_limit_shutdown(void);
 
 extern bool rate_limit_exceeded(slurm_msg_t *msg);
-#endif
 
 #endif
-

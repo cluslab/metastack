@@ -286,7 +286,7 @@ extern int update_front_end(update_front_end_msg_t *msg_ptr, uid_t auth_uid)
 {
 #ifdef HAVE_FRONT_END
 	char  *this_node_name = NULL;
-	hostlist_t host_list;
+	hostlist_t *host_list;
 	front_end_record_t *front_end_ptr;
 	int i, rc = SLURM_SUCCESS;
 	time_t now = time(NULL);
@@ -491,7 +491,7 @@ extern void restore_front_end_state(int recover)
 {
 #ifdef HAVE_FRONT_END
 	slurm_conf_frontend_t *slurm_conf_fe_ptr;
-	ListIterator iter;
+	list_itr_t *iter;
 	uint32_t state_base, state_flags;
 	int i;
 
@@ -601,14 +601,11 @@ extern void restore_front_end_state(int recover)
 /*
  * pack_all_front_end - dump all front_end node information for all nodes
  *	in machine independent form (for network transmission)
- * OUT buffer_ptr - pointer to the stored data
- * OUT buffer_size - set to size of the buffer in bytes
  * IN protocol_version - slurm protocol version of client
- * NOTE: the caller must xfree the buffer at *buffer_ptr
+ * OUT buffer
  * NOTE: READ lock_slurmctld config before entry
  */
-extern void pack_all_front_end(char **buffer_ptr, int *buffer_size, uid_t uid,
-			       uint16_t protocol_version)
+extern buf_t *pack_all_front_end(uint16_t protocol_version)
 {
 	time_t now = time(NULL);
 	uint32_t nodes_packed = 0;
@@ -617,9 +614,6 @@ extern void pack_all_front_end(char **buffer_ptr, int *buffer_size, uid_t uid,
 	uint32_t tmp_offset;
 	front_end_record_t *front_end_ptr;
 	int i;
-
-	buffer_ptr[0] = NULL;
-	*buffer_size = 0;
 
 	buffer = init_buf(BUF_SIZE * 2);
 	nodes_packed = 0;
@@ -646,18 +640,12 @@ extern void pack_all_front_end(char **buffer_ptr, int *buffer_size, uid_t uid,
 	set_buf_offset(buffer, 0);
 	pack32(nodes_packed, buffer);
 	set_buf_offset(buffer, tmp_offset);
-
-	*buffer_size = get_buf_offset(buffer);
-	buffer_ptr[0] = xfer_buf_data(buffer);
 #else
-	buffer_ptr[0] = NULL;
-	*buffer_size = 0;
 	buffer = init_buf(64);
 	pack32(nodes_packed, buffer);
 	pack_time(now, buffer);
-	*buffer_size = get_buf_offset(buffer);
-	buffer_ptr[0] = xfer_buf_data(buffer);
 #endif
+	return buffer;
 }
 
 /* dump_all_front_end_state - save the state of all front_end nodes to file */
@@ -741,8 +729,8 @@ extern int dump_all_front_end_state(void)
 	xfree (new_file);
 	unlock_state_files ();
 
-	free_buf (buffer);
-	END_TIMER2("dump_all_front_end_state");
+	FREE_NULL_BUFFER(buffer);
+	END_TIMER2(__func__);
 	return error_code;
 #else
 	return SLURM_SUCCESS;
@@ -764,7 +752,6 @@ extern int load_all_front_end_state(bool state_only)
 	char *node_name = NULL, *reason = NULL, *state_file;
 	int error_code = 0, node_cnt = 0;
 	uint32_t node_state;
-	uint32_t name_len;
 	uint32_t reason_uid = NO_VAL;
 	time_t reason_time = 0;
 	front_end_record_t *front_end_ptr;
@@ -784,7 +771,7 @@ extern int load_all_front_end_state(bool state_only)
 	xfree(state_file);
 	unlock_state_files();
 
-	safe_unpackstr_xmalloc( &ver_str, &name_len, buffer);
+	safe_unpackstr(&ver_str, buffer);
 	debug3("Version string in front_end_state header is %s", ver_str);
 	if (ver_str && !xstrcmp(ver_str, FRONT_END_STATE_VERSION))
 		safe_unpack16(&protocol_version, buffer);
@@ -796,7 +783,7 @@ extern int load_all_front_end_state(bool state_only)
 		error("Can not recover front_end state, version incompatible");
 		error("*****************************************************");
 		xfree(ver_str);
-		free_buf(buffer);
+		FREE_NULL_BUFFER(buffer);
 		return EFAULT;
 	}
 	xfree(ver_str);
@@ -808,9 +795,9 @@ extern int load_all_front_end_state(bool state_only)
 		uint16_t obj_protocol_version = NO_VAL16;
 
 		if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
-			safe_unpackstr_xmalloc (&node_name, &name_len, buffer);
+			safe_unpackstr(&node_name, buffer);
 			safe_unpack32 (&node_state,  buffer);
-			safe_unpackstr_xmalloc (&reason,    &name_len, buffer);
+			safe_unpackstr(&reason, buffer);
 			safe_unpack_time (&reason_time, buffer);
 			safe_unpack32 (&reason_uid,  buffer);
 			safe_unpack16 (&obj_protocol_version, buffer);
@@ -883,7 +870,7 @@ extern int load_all_front_end_state(bool state_only)
 	}
 
 fini:	info("Recovered state of %d front_end nodes", node_cnt);
-	free_buf (buffer);
+	FREE_NULL_BUFFER(buffer);
 	return error_code;
 
 unpack_error:
@@ -933,7 +920,7 @@ extern void set_front_end_down (front_end_record_t *front_end_ptr,
 extern void sync_front_end_state(void)
 {
 #ifdef HAVE_FRONT_END
-	ListIterator job_iterator;
+	list_itr_t *job_iterator;
 	job_record_t *job_ptr;
 	front_end_record_t *front_end_ptr;
 	uint32_t state_flags;
@@ -954,12 +941,11 @@ extern void sync_front_end_state(void)
 			    IS_JOB_RUNNING(job_ptr)) {
 				error("front end node %s has vanished, killing %pJ",
 				      job_ptr->batch_host, job_ptr);
-				job_ptr->job_state = JOB_NODE_FAIL |
-						     JOB_COMPLETING;
+				job_state_set(job_ptr, (JOB_NODE_FAIL |
+							JOB_COMPLETING));
 #ifdef __METASTACK_OPT_CACHE_QUERY
 				_add_job_state_to_queue(job_ptr);
 #endif
-
 			} else if (job_ptr->front_end_ptr == NULL) {
 				info("front end node %s has vanished",
 				     job_ptr->batch_host);

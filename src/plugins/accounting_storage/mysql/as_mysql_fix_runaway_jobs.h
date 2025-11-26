@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  as_mysql_fix_runaway_jobs.h - functions dealing with runaway jobs.
  *****************************************************************************
- *  Copyright (C) 2016 SchedMD LLC.
- *  Written by Nathan Yee <nyee32@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.

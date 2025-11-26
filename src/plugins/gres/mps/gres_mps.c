@@ -2,7 +2,7 @@
  *  gres_mps.c - Support MPS as a generic resources.
  *  MPS or CUDA Multi-Process Services is a mechanism to share GPUs.
  *****************************************************************************
- *  Copyright (C) 2018 SchedMD LLC
+ *  Copyright (C) SchedMD LLC.
  *  Written by Morris Jette
  *
  *  This file is part of Slurm, a resource management program.
@@ -53,7 +53,7 @@
 #include "src/common/slurm_xlator.h"
 #include "src/common/bitstring.h"
 #include "src/common/env.h"
-#include "src/common/gres.h"
+#include "src/interfaces/gres.h"
 #include "src/common/hostlist.h"
 #include "src/common/list.h"
 #include "src/common/xmalloc.h"
@@ -91,7 +91,6 @@ const char plugin_name[] = "Gres MPS plugin";
 const char	plugin_type[]		= "gres/mps";
 const uint32_t	plugin_version		= SLURM_VERSION_NUMBER;
 
-static char	*gres_name		= "mps";
 static List	gres_devices		= NULL;
 
 extern int init(void)
@@ -118,13 +117,13 @@ extern int gres_p_node_config_load(List gres_conf_list,
 				   node_config_load_t *config)
 {
 	return gres_c_s_init_share_devices(
-		gres_conf_list, &gres_devices, config, "gpu", gres_name);
+		gres_conf_list, &gres_devices, config, "gpu");
 }
 
 /* Given a global device ID, return its gres/mps count */
 static uint64_t _get_dev_count(int global_id)
 {
-	ListIterator itr;
+	list_itr_t *itr;
 	shared_dev_info_t *mps_ptr;
 	uint64_t count = NO_VAL64;
 
@@ -149,32 +148,17 @@ static uint64_t _get_dev_count(int global_id)
 	return count;
 }
 
-static void _set_env(char ***env_ptr, bitstr_t *gres_bit_alloc,
-		     bitstr_t *usable_gres, uint64_t gres_per_node,
-		     bool *already_seen, int *local_inx,
-		     bool is_task, bool is_job, gres_internal_flags_t flags)
+static void _set_env(common_gres_env_t *gres_env)
 {
-	char *global_list = NULL, *local_list = NULL, *perc_env = NULL;
 	char perc_str[64];
 	uint64_t count_on_dev, percentage;
-	int global_id = -1;
 
+	gres_env->global_id = -1;
+	gres_env->gres_conf_flags = GRES_CONF_ENV_NVML;
+	gres_env->gres_devices = gres_devices;
+	gres_env->prefix = "";
 
-	if (*already_seen) {
-		perc_env = xstrdup(getenvp(*env_ptr,
-					  "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE"));
-	}
-
-	gres_common_gpu_set_env(env_ptr, gres_bit_alloc,
-				usable_gres, already_seen, local_inx,
-				is_task, is_job, flags, GRES_CONF_ENV_NVML,
-				gres_devices);
-
-
-	common_gres_set_env(gres_devices, env_ptr,
-			    usable_gres, "", local_inx, gres_bit_alloc,
-			    &local_list, &global_list,
-			    is_task, is_job, &global_id, flags, true);
+	gres_common_gpu_set_env(gres_env);
 
 	/*
 	 * Set environment variables if GRES is found. Otherwise, unset
@@ -182,30 +166,27 @@ static void _set_env(char ***env_ptr, bitstr_t *gres_bit_alloc,
 	 * This is useful for jobs and steps that request --gres=none within an
 	 * existing job allocation with GRES.
 	 */
-	if (perc_env) {
-		env_array_overwrite(env_ptr,
-				    "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE",
-				    perc_env);
-		xfree(perc_env);
-	} else if (gres_per_node && shared_info) {
-		count_on_dev = _get_dev_count(global_id);
+	if (gres_env->gres_cnt && shared_info) {
+		count_on_dev = _get_dev_count(gres_env->global_id);
 		if (count_on_dev > 0) {
-			percentage = (gres_per_node * 100) / count_on_dev;
+			percentage = (gres_env->gres_cnt * 100) / count_on_dev;
 			percentage = MAX(percentage, 1);
 		} else
 			percentage = 0;
 		snprintf(perc_str, sizeof(perc_str), "%"PRIu64, percentage);
-		env_array_overwrite(env_ptr,
+		env_array_overwrite(gres_env->env_ptr,
 				    "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE",
 				    perc_str);
-	} else if (gres_per_node) {
+	} else if (gres_env->gres_cnt) {
 		error("shared_info list is NULL");
-		snprintf(perc_str, sizeof(perc_str), "%"PRIu64, gres_per_node);
-		env_array_overwrite(env_ptr,
+		snprintf(perc_str, sizeof(perc_str), "%"PRIu64,
+			 gres_env->gres_cnt);
+		env_array_overwrite(gres_env->env_ptr,
 				    "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE",
 				    perc_str);
 	} else {
-		unsetenvp(*env_ptr, "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE");
+		unsetenvp(*gres_env->env_ptr,
+			  "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE");
 	}
 }
 
@@ -218,19 +199,15 @@ extern void gres_p_job_set_env(char ***job_env_ptr,
 			       uint64_t gres_per_node,
 			       gres_internal_flags_t flags)
 {
-	/*
-	 * Variables are not static like in step_*_env since we could be calling
-	 * this from the slurmd where we are dealing with a different job each
-	 * time we hit this function, so we don't want to keep track of other
-	 * unrelated job's status.  This can also get called multiple times
-	 * (different prologs and such) which would also result in bad info each
-	 * call after the first.
-	 */
-	int local_inx = 0;
-	bool already_seen = false;
+	common_gres_env_t gres_env = {
+		.bit_alloc = gres_bit_alloc,
+		.env_ptr = job_env_ptr,
+		.flags = flags,
+		.gres_cnt = gres_per_node,
+		.is_job = true,
+	};
 
-	_set_env(job_env_ptr, gres_bit_alloc, NULL, gres_per_node,
-		 &already_seen, &local_inx, false, true, flags);
+	_set_env(&gres_env);
 }
 
 /*
@@ -242,34 +219,42 @@ extern void gres_p_step_set_env(char ***step_env_ptr,
 				uint64_t gres_per_node,
 				gres_internal_flags_t flags)
 {
-	static int local_inx = 0;
-	static bool already_seen = false;
+	common_gres_env_t gres_env = {
+		.bit_alloc = gres_bit_alloc,
+		.env_ptr = step_env_ptr,
+		.flags = flags,
+		.gres_cnt = gres_per_node,
+	};
 
-	_set_env(step_env_ptr, gres_bit_alloc, NULL, gres_per_node,
-		 &already_seen, &local_inx, false, false, flags);
+	_set_env(&gres_env);
 }
 
 /*
  * Reset environment variables as appropriate for a job (i.e. this one task)
  * based upon the job step's GRES state and assigned CPUs.
  */
-extern void gres_p_task_set_env(char ***step_env_ptr,
+extern void gres_p_task_set_env(char ***task_env_ptr,
 				bitstr_t *gres_bit_alloc,
+				uint64_t gres_cnt,
 				bitstr_t *usable_gres,
-				uint64_t gres_per_node,
 				gres_internal_flags_t flags)
 {
-	static int local_inx = 0;
-	static bool already_seen = false;
+	common_gres_env_t gres_env = {
+		.bit_alloc = gres_bit_alloc,
+		.env_ptr = task_env_ptr,
+		.flags = flags,
+		.gres_cnt = gres_cnt,
+		.is_task = true,
+		.usable_gres = usable_gres,
+	};
 
-	_set_env(step_env_ptr, gres_bit_alloc, usable_gres, gres_per_node,
-		 &already_seen, &local_inx, true, false, flags);
+	_set_env(&gres_env);
 }
 
 /* Send GRES information to slurmstepd on the specified file descriptor */
 extern void gres_p_send_stepd(buf_t *buffer)
 {
-	common_send_stepd(buffer, gres_devices);
+	gres_send_stepd(buffer, gres_devices);
 
 	gres_c_s_send_stepd(buffer);
 
@@ -279,7 +264,7 @@ extern void gres_p_send_stepd(buf_t *buffer)
 /* Receive GRES information from slurmd on the specified file descriptor */
 extern void gres_p_recv_stepd(buf_t *buffer)
 {
-	common_recv_stepd(buffer, &gres_devices);
+	gres_recv_stepd(buffer, &gres_devices);
 
 	gres_c_s_recv_stepd(buffer);
 
@@ -344,54 +329,54 @@ extern void gres_p_step_hardware_fini(void)
  * Build record used to set environment variables as appropriate for a job's
  * prolog or epilog based GRES allocated to the job.
  */
-extern gres_epilog_info_t *gres_p_epilog_build_env(
+extern gres_prep_t *gres_p_prep_build_env(
 	gres_job_state_t *gres_js)
 {
 	int i;
-	gres_epilog_info_t *gres_ei;
+	gres_prep_t *gres_prep;
 
-	gres_ei = xmalloc(sizeof(gres_epilog_info_t));
-	gres_ei->node_cnt = gres_js->node_cnt;
-	gres_ei->gres_bit_alloc = xcalloc(gres_ei->node_cnt,
+	gres_prep = xmalloc(sizeof(gres_prep_t));
+	gres_prep->node_cnt = gres_js->node_cnt;
+	gres_prep->gres_bit_alloc = xcalloc(gres_prep->node_cnt,
 					  sizeof(bitstr_t *));
-	gres_ei->gres_cnt_node_alloc = xcalloc(gres_ei->node_cnt,
+	gres_prep->gres_cnt_node_alloc = xcalloc(gres_prep->node_cnt,
 					       sizeof(uint64_t));
-	for (i = 0; i < gres_ei->node_cnt; i++) {
+	for (i = 0; i < gres_prep->node_cnt; i++) {
 		if (gres_js->gres_bit_alloc &&
 		    gres_js->gres_bit_alloc[i]) {
-			gres_ei->gres_bit_alloc[i] =
+			gres_prep->gres_bit_alloc[i] =
 				bit_copy(gres_js->gres_bit_alloc[i]);
 		}
 		if (gres_js->gres_bit_alloc &&
 		    gres_js->gres_bit_alloc[i]) {
-			gres_ei->gres_cnt_node_alloc[i] =
+			gres_prep->gres_cnt_node_alloc[i] =
 				gres_js->gres_cnt_node_alloc[i];
 		}
 	}
 
-	return gres_ei;
+	return gres_prep;
 }
 
 /*
  * Set environment variables as appropriate for a job's prolog or epilog based
  * GRES allocated to the job.
  */
-extern void gres_p_epilog_set_env(char ***epilog_env_ptr,
-				  gres_epilog_info_t *gres_ei, int node_inx)
+extern void gres_p_prep_set_env(char ***prep_env_ptr,
+				gres_prep_t *gres_prep, int node_inx)
 {
 	int dev_inx = -1, global_id = -1, i;
 	uint64_t count_on_dev, gres_per_node = 0, percentage;
 	gres_device_t *gres_device;
-	ListIterator iter;
+	list_itr_t *iter;
 
-	if (gres_common_epilog_set_env(epilog_env_ptr,
-				       gres_ei, node_inx,
-				       GRES_CONF_ENV_NVML, gres_devices))
+	if (gres_common_prep_set_env(prep_env_ptr,
+				     gres_prep, node_inx,
+				     GRES_CONF_ENV_NVML, gres_devices))
 		return;
 
-	if (gres_ei->gres_bit_alloc &&
-	    gres_ei->gres_bit_alloc[node_inx])
-		dev_inx = bit_ffs(gres_ei->gres_bit_alloc[node_inx]);
+	if (gres_prep->gres_bit_alloc &&
+	    gres_prep->gres_bit_alloc[node_inx])
+		dev_inx = bit_ffs(gres_prep->gres_bit_alloc[node_inx]);
 	if (dev_inx >= 0) {
 		/* Translate bit to device number, may differ */
 		i = -1;
@@ -406,9 +391,9 @@ extern void gres_p_epilog_set_env(char ***epilog_env_ptr,
 		list_iterator_destroy(iter);
 	}
 	if ((global_id >= 0) &&
-	    gres_ei->gres_cnt_node_alloc &&
-	    gres_ei->gres_cnt_node_alloc[node_inx]) {
-		gres_per_node = gres_ei->gres_cnt_node_alloc[node_inx];
+	    gres_prep->gres_cnt_node_alloc &&
+	    gres_prep->gres_cnt_node_alloc[node_inx]) {
+		gres_per_node = gres_prep->gres_cnt_node_alloc[node_inx];
 		count_on_dev = _get_dev_count(global_id);
 		if (count_on_dev > 0) {
 			percentage = (gres_per_node * 100) / count_on_dev;
@@ -416,8 +401,8 @@ extern void gres_p_epilog_set_env(char ***epilog_env_ptr,
 		} else
 			percentage = 0;
 
-		xassert(*epilog_env_ptr);
-		env_array_overwrite_fmt(epilog_env_ptr,
+		xassert(*prep_env_ptr);
+		env_array_overwrite_fmt(prep_env_ptr,
 					"CUDA_MPS_ACTIVE_THREAD_PERCENTAGE",
 					"%"PRIu64, percentage);
 	}

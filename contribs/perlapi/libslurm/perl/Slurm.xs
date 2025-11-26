@@ -142,7 +142,7 @@ slurm_job_reason_string(slurm_t self, uint32_t inx)
 			      out of the mix Slurm-> doesn't work,
 			      only Slurm::
 			    */
-		RETVAL = slurm_job_reason_string(inx);
+		RETVAL = (char *)slurm_job_state_reason_string(inx);
 	OUTPUT:
 		RETVAL
 
@@ -484,8 +484,7 @@ slurm_kill_job(slurm_t self, uint32_t job_id, uint16_t signal, uint16_t batch_fl
 	C_ARGS:
 		job_id, signal, batch_flag
 
-int
-slurm_kill_job_step(slurm_t self, uint32_t job_id, uint32_t step_id, uint16_t signal)
+int slurm_kill_job_step(slurm_t self, uint32_t job_id, uint32_t step_id, uint16_t signal, uint16_t flags)
 	INIT:
 		if (self); /* this is needed to avoid a warning about
 			      unused variables.  But if we take slurm_t self
@@ -493,7 +492,7 @@ slurm_kill_job_step(slurm_t self, uint32_t job_id, uint32_t step_id, uint16_t si
 			      only Slurm::
 			    */
 	C_ARGS:
-		job_id, step_id, signal
+		job_id, step_id, signal, flags
 
 int
 slurm_signal_job(slurm_t self, uint32_t job_id, uint16_t signal)
@@ -615,7 +614,7 @@ slurm_print_ctl_conf(slurm_t self, FILE *out, HV *conf)
 # $key_pairs = $slurm->ctl_conf_2_key_pairs($conf);
 # XXX: config_key_pair_t not exported
 #
-List
+list_t *
 slurm_ctl_conf_2_key_pairs(slurm_t self, HV *conf)
 	PREINIT:
 		slurm_conf_t cc;
@@ -628,7 +627,7 @@ slurm_ctl_conf_2_key_pairs(slurm_t self, HV *conf)
 		if (hv_to_slurm_ctl_conf(conf, &cc) < 0) {
 			XSRETURN_UNDEF;
 		}
-		RETVAL = (List)slurm_ctl_conf_2_key_pairs(&cc);
+		RETVAL = slurm_ctl_conf_2_key_pairs(&cc);
 		if(RETVAL == NULL) {
 			XSRETURN_UNDEF;
 		}
@@ -685,7 +684,7 @@ slurm_print_slurmd_status(slurm_t self, FILE *out, HV *slurmd_status)
 		out, &st
 
 void
-slurm_print_key_pairs(slurm_t self, FILE *out, List key_pairs, char *title)
+slurm_print_key_pairs(slurm_t self, FILE *out, list_t *key_pairs, char *title)
 	INIT:
 		if (out == NULL) {
 			Perl_croak (aTHX_ "Invalid output stream specified: FILE not found");
@@ -1357,7 +1356,7 @@ slurm_load_topo(slurm_t self)
 		RETVAL
 
 void
-slurm_print_topo_info_msg(slurm_t self, FILE *out, HV *topo_info_msg, int one_liner=0)
+slurm_print_topo_info_msg(slurm_t self, FILE *out, HV *topo_info_msg, char *node_list, int one_liner=0)
 	PREINIT:
 		topo_info_response_msg_t ti_msg;
 	INIT:
@@ -1373,29 +1372,9 @@ slurm_print_topo_info_msg(slurm_t self, FILE *out, HV *topo_info_msg, int one_li
 			XSRETURN_UNDEF;
 		}
 	C_ARGS:
-		out, &ti_msg, one_liner
+		out, &ti_msg, node_list, one_liner
 	CLEANUP:
 		xfree(ti_msg.topo_array);
-
-void
-slurm_print_topo_record(slurm_t self, FILE *out, HV *topo_info, int one_liner=0)
-	PREINIT:
-		topo_info_t ti;
-	INIT:
-		if (self); /* this is needed to avoid a warning about
-			      unused variables.  But if we take slurm_t self
-			      out of the mix Slurm-> doesn't work,
-			      only Slurm::
-			    */
-		if (out == NULL) {
-			Perl_croak (aTHX_ "Invalid output stream specified: FILE not found");
-		}
-		if(hv_to_topo_info(topo_info, &ti) < 0) {
-			XSRETURN_UNDEF;
-		}
-	C_ARGS:
-		out, &ti, one_liner
-
 
 ######################################################################
 #	SLURM SELECT READ/PRINT/UPDATE FUNCTIONS
@@ -1908,23 +1887,17 @@ slurm_pull_trigger(slurm_t self, HV *trigger_info)
 ######################################################################
 MODULE=Slurm PACKAGE=Slurm::Hostlist PREFIX=slurm_hostlist_
 
-hostlist_t
-slurm_hostlist_create(char* hostlist)
+hostlist_t *slurm_hostlist_create(char *hostlist)
 
-int
-slurm_hostlist_count(hostlist_t hl)
+int slurm_hostlist_count(hostlist_t *hl)
 
-int
-slurm_hostlist_find(hostlist_t hl, char* hostname)
+int slurm_hostlist_find(hostlist_t *hl, char *hostname)
 
-int
-slurm_hostlist_push(hostlist_t hl, char* hosts)
+int slurm_hostlist_push(hostlist_t *hl, char *hosts)
 
-int
-slurm_hostlist_push_host(hostlist_t hl, char* host)
+int slurm_hostlist_push_host(hostlist_t *hl, char *host)
 
-char_xfree *
-slurm_hostlist_ranged_string(hostlist_t hl)
+char_xfree *slurm_hostlist_ranged_string(hostlist_t *hl)
 	CODE:
 		RETVAL = slurm_hostlist_ranged_string_xmalloc(hl);
 		if (RETVAL == NULL) {
@@ -1933,8 +1906,7 @@ slurm_hostlist_ranged_string(hostlist_t hl)
 	OUTPUT:
 		RETVAL
 
-char_free *
-slurm_hostlist_shift(hostlist_t hl = NULL)
+char_free *slurm_hostlist_shift(hostlist_t *hl = NULL)
 	CODE:
 		RETVAL = slurm_hostlist_shift(hl);
 		if (RETVAL == NULL) {
@@ -1943,11 +1915,9 @@ slurm_hostlist_shift(hostlist_t hl = NULL)
 	OUTPUT:
 		RETVAL
 
-void
-slurm_hostlist_uniq(hostlist_t hl)
+void slurm_hostlist_uniq(hostlist_t *hl)
 
-void
-slurm_hostlist_DESTROY(hostlist_t hl)
+void slurm_hostlist_DESTROY(hostlist_t *hl)
 	CODE:
 		slurm_hostlist_destroy(hl);
 
@@ -1960,22 +1930,22 @@ slurm_hostlist_DESTROY(hostlist_t hl)
 MODULE = Slurm		PACKAGE = Slurm::List		PREFIX=slurm_list_
 
 #void
-#slurm_list_append(List l, void *x)
+#slurm_list_append(list_t *l, void *x)
 
 int
-slurm_list_count(List l)
+slurm_list_count(list_t *l)
 
 int
-slurm_list_is_empty(List l)
+slurm_list_is_empty(list_t *l)
 
-#List
+#list_t *
 #slurm_list_create(ListDelF f)
 
 #void
-#slurm_list_sort(List l, ListCmpF f)
+#slurm_list_sort(list_t *l, ListCmpF f)
 
 void
-slurm_list_DESTROY(List l)
+slurm_list_DESTROY(list_t *l)
 	CODE:
 		slurm_list_destroy(l);
 
@@ -1983,27 +1953,27 @@ slurm_list_DESTROY(List l)
 MODULE = Slurm		PACKAGE = Slurm::ListIterator	PREFIX=slurm_list_iterator_
 
 #void *
-#slurm_list_iterator_find(ListIterator i, ListFindF f, void *key)
+#slurm_list_iterator_find(list_itr_t *i, ListFindF f, void *key)
 #	CODE:
 #		RETVAL = slurm_list_find(i, f, key)
 #	OUTPUT:
 #		RETVAL
 
-ListIterator
-slurm_list_iterator_create(List l)
+list_itr_t *
+slurm_list_iterator_create(list_t *l)
 
 void
-slurm_list_iterator_reset(ListIterator i)
+slurm_list_iterator_reset(list_itr_t *i)
 
 #void *
-#slurm_list_iterator_next(ListIterator i)
+#slurm_list_iterator_next(list_itr_t *i)
 #	CODE:
 #		RETVAL = slurm_list_next(i)
 #	OUTPUT:
 #		RETVAL
 
 void
-slurm_list_iterator_DESTROY(ListIterator i)
+slurm_list_iterator_DESTROY(list_itr_t *i)
 	CODE:
 		slurm_list_iterator_destroy(i);
 
@@ -2202,9 +2172,6 @@ slurm_bit_pick_cnt(bitstr_t *b, bitoff_t nbits)
 
 bitoff_t
 slurm_bit_get_bit_num(bitstr_t *b, int pos)
-
-int
-slurm_bit_get_pos_num(bitstr_t *b, bitoff_t pos)
 
 void
 slurm_bit_DESTROY(bitstr_t *b)

@@ -2,6 +2,61 @@
 
 <h1>Control Group v2 plugin</h1>
 
+<h2 id="contents">Contents
+<a class="slurm_link" href="#contents"></a>
+</h2>
+
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#conversion">Conversion from cgroup v1</a>
+    <ul>
+        <li><a href="#reconfigure_systemd">Reconfigure SystemD</a></li>
+        <li><a href="#general_conversion">General conversion</a></li>
+    </ul>
+</li>
+<li><a href="#v2_rules">Following cgroup v2 rules</a>
+    <ul>
+        <li><a href="#top_down">Top-down Constraint</a></li>
+        <li><a href="#no_internal_process">No Internal Process Constraint</a></li>
+    </ul>
+</li>
+<li><a href="#systemd_rules">Following systemd rules</a>
+    <ul>
+        <li><a href="#real_sysd_prob">The real problem: systemd + restarting slurmd</a></li>
+        <li><a href="#consequences_nosysd">Consequences of not following systemd rules</a></li>
+        <li><a href="#distro_no_sysd">What happens with Linux distros without systemd?</a></li>
+    </ul>
+</li>
+<li><a href="#v2_overview">cgroup/v2 overview</a>
+    <ul>
+        <li><a href="#slurmd_startup">slurmd startup</a></li>
+        <li><a href="#slurmd_restart">slurmd restart</a></li>
+        <li><a href="#stepd_start">slurmstepd start</a></li>
+        <li><a href="#term_clean">Termination and cleanup</a></li>
+        <li><a href="#manual_startup">Special case - manual startup</a></li>
+        <li><a href="#troubleshooting_startup">Troubleshooting startup</a></li>
+    </ul>
+</li>
+<li><a href="#hierarchy_overview">Hierarchy overview</a></li>
+<li><a href="#task_level">Working at the task level</a></li>
+<li><a href="#ebpf_controller">The eBPF based devices controller</a></li>
+<li><a href="#diff_ver">Running different nodes with different cgroup versions</a></li>
+<li><a href="#configuration">Configuration</a>
+    <ul>
+        <li><a href="#cgroup_plugin">Cgroup Plugin</a></li>
+        <li><a href="#dev_options">Developer options</a></li>
+        <li><a href="#ignored_params">Ignored parameters</a></li>
+    </ul>
+</li>
+<li><a href="#requirements">Requirements</a></li>
+<li><a href="#pam_slurm_adopt">PAM Slurm Adopt plugin on cgroup v2</a></li>
+<li><a href="#limitations">Limitations</a></li>
+</ul>
+
+<h2 id="overview">Overview
+<a class="slurm_link" href="#overview"></a>
+</h2>
+
 <p>Slurm provides support for systems with Control Group v2.<br>
 Documentation for this cgroup version can be found in kernel.org
 <a href="https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html">
@@ -22,6 +77,96 @@ interact with systemd and a lot of concepts will overlap. Finally, it is
 recommended that you understand the concept of
 <a href="https://ebpf.io/what-is-ebpf">eBPF technology</a>, since in cgroup v2
 the device cgroup controller is eBPF-based.</p>
+
+<h2 id="conversion">Conversion from cgroup v1
+<a class="slurm_link" href="#conversion"></a></h2>
+
+<p>Existing Slurm installations may be running with Slurm's cgroup/v1 plugin.
+Sites that wish to use the new features of cgroup/v2 can convert their nodes
+to run with cgroup v2 if it is supported by the OS. Slurm supports compute
+nodes running a mix of cgroup/v1 and cgroup/v2 plugins.</p>
+
+<h3 id="reconfigure_systemd">Reconfigure Systemd
+<a class="slurm_link" href="#reconfigure_systemd"></a></h3>
+
+<p>In certain circumstances, it may be necessary to make some changes to the
+systemd configuration to support cgroup v2. You will need to complete the
+procedure in this section if either of these conditions apply:
+<ol>
+<li>Systemd version is less than 252</li>
+<li>The file <code>/proc/1/cgroup</code> contains multiple lines or the first
+   line starts with a non-zero value. For example:
+<ul>
+<li>Systemd needs to be reconfigured:
+<pre>
+12:cpuset:/
+11:hugetlb:/
+10:perf_event:/
+. . .
+</pre>
+</li>
+<li>Ready for cgroup v2 (skip to the <a href="#general_conversion">
+next section</a>):
+<pre>
+0::/init.scope
+</pre>
+</li>
+</ul>
+</li>
+</ol>
+</p>
+
+<p>The following procedure will reconfigure such systems for cgroup v2:
+
+<ol>
+<li>Swap kernel commandline options for systemd to cgroup v2 support:
+<pre>systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=0 cgroup_no_v1=all</pre>
+Example commands for <b>Debian</b> based systems:
+<pre>sed -e 's@^GRUB_CMDLINE_LINUX=@#GRUB_CMDLINE_LINUX=@' -i /etc/default/grub
+echo 'GRUB_CMDLINE_LINUX="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=0 cgroup_no_v1=all"' >> /etc/default/grub
+update-grub</pre>
+Example command for <b>Red Hat</b> based systems:
+<pre>grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=0 cgroup_no_v1=all"</pre>
+</li>
+<li>Reboot to apply new kernel command line options.</li>
+<li>Verify kernel has correct command line options:
+<pre>grep -o -e systemd.unified_cgroup_hierarchy=. -e systemd.legacy_systemd_cgroup_controller=. /proc/cmdline
+systemd.unified_cgroup_hierarchy=1
+systemd.legacy_systemd_cgroup_controller=0</pre>
+If the output does not match exactly, then repeat prior steps
+and verify kernel is given correct command line options.
+</li>
+<li>Verify that there is not any <a href="https://docs.kernel.org/admin-guide/cgroup-v1/index.html">cgroup v1</a>
+controller mounted and <a
+href="https://github.com/systemd/systemd/blob/main/docs/CGROUP_DELEGATION.md#three-different-tree-setups-">
+that your system is not running in hybrid mode</a><br>Example of hybrid mode:
+<pre>$ grep -v ^0: /proc/self/cgroup
+8:net_cls,net_prio:/
+6:name=systemd:/</pre>
+If there are any entries, then a reboot is required. If there are entries after
+a reboot then there is a process actively mounting Cgroup v1 mounts that will
+need to be stopped.</li>
+</ol>
+</p>
+
+<h3 id="general_conversion">General conversion
+<a class="slurm_link" href="#general_conversion"></a></h3>
+
+<p>The following procedure is required when switching from cgroup v1 to v2:
+
+<ol>
+<li>Modify Slurm configuration to allow cgroup/v2 plugin:<br>
+<b>/etc/slurm/cgroup.conf</b>:
+<ul>
+<li>Remove line starting with:<pre>CgroupAutomount=</pre></li>
+<li>Remove line starting with:<pre>CgroupMountpoint=</pre></li>
+<li>Remove line if present:<pre>CgroupPlugin=cgroup/v1</pre></li>
+<li>Add line:<pre>CgroupPlugin=autodetect</pre></li>
+</ul>
+</li>
+<li>Restart Slurm daemons per normal startup procedure</li>
+</ol>
+</p>
 
 <h2 id="v2_rules">Following cgroup v2 rules
 <a class="slurm_link" href="#v2_rules"></a>
@@ -84,22 +229,26 @@ rules, forces Slurm to choose a design which coexists with both.</p>
 <a class="slurm_link" href="#real_sysd_prob"></a>
 </h3>
 <p>When designing the cgroup/v2 plugin for Slurm, the initial idea was to let
-slurmd setup the required hierarchy in its own cgroup directory. Then it would
-place jobs and steps and move newer forked slurmstepds into the corresponding
-directories.</p>
-<p>This worked fine, until we needed to restart slurmd. Since the hierarchy was
-already created, the slurmd restart just terminated the slurmd process and then
-started a new one, but then it would try to put the new process directly in
-the root of the specific group tree. Since this directory was now a domain
-controller and not a leaf anymore, systemd would fail to start the daemon.
-</p>
+slurmd setup the required hierarchy in its own root cgroup directory. It
+would create a specific directory for itself and then place jobs and steps in
+other corresponding directories. This would guarantee the
+<a href="#no_internal_process">no internal process constraint</a> rule.</p>
+
+<p>This worked fine until we needed to restart slurmd. Since the entire
+hierarchy was already created starting at the slurmd cgroup, the slurmd restart
+would terminate the slurmd process and then start a new one, which would be
+put into the root of the original group tree. Since this directory was now what
+is called a "domain controller" (it contained sub-directories) and not a leaf
+anymore, the <a href="#no_internal_process">no internal process constraint</a>
+rule would be broken and systemd would fail to start the daemon.</p>
+
 <p>Lacking any mechanism in systemd to tackle this situation, this left us with
 no other choice but to separate slurmd and forked slurmstepds into separate
 subtree directories. Because of the design rule of systemd about being the
 single-writer on the tree, it was not possible to just do a "mkdir" from
 slurmd or the slurmstepd itself and then move the stepd process into a new and
-separate directory, that would mean this directory was not controlled by systemd
-and would cause problems.</p>
+separate directory, that would mean this directory would not be controlled by
+systemd and would cause problems.</p>
 
 <p>The only way that a "mkdir" could work was if it was done inside a
 "delegated" cgroup subtree, so we needed to find a way to find a Unit with
@@ -114,11 +263,6 @@ One is a "Service" and the other is a "Scope". We are interested the "scope":
 directory and then adds the provided pid to the directory. The scope will remain
 until this pid is gone.</li>
 </ul>
-<p>Because we wanted to keep the systemd scope for any pid, we needed to call a
-specific function named "abandonScope" in systemd's dbus interface. Abandoning a
-scope makes it so that the scope will continue to be alive while there's a
-living pid in its cgroup tree, not just the initial pid.
-</p>
 <p>It is worth noting that a discussion with main systemd developers raised
 the <i>RemainAfterExit</i> systemd parameter. This parameter is intended to keep
 the unit alive even if all the processes on it are gone. This option is only
@@ -200,8 +344,6 @@ name) or not. The cgroup directory associated with this scope will be fixed as:
 "/sys/fs/cgroup/system.slice/slurmstepd.scope" or
 "/sys/fs/cgroup/system.slice/nodename_slurmstepd.scope".
 </p>
-<p>The scope is also "abandoned" calling the dbus method of "abandonScope" with
-the purpose explained <a href="#real_sysd_prob">previously</a> on this page.</p>
 <p>Since the call to dbus "startTransientUnit" requires a pid as a parameter,
 slurmd needs to fork a "slurmstepd infinity" and use this parameter as the
 argument.</p>
@@ -289,9 +431,107 @@ Slurm.</p>
 <p>When slurmd ends (since on supported systems it has been started by systemd)
 its cgroup will just be cleaned up by systemd.</p>
 
-<h3 id="hierarchy_overview">Hierarchy overview
-<a class="slurm_link" href="#hierarchy_overview"></a>
+<h3 id="manual_startup">Special case - manual startup
+<a class="slurm_link" href="#manual_startup"></a>
 </h3>
+<p>Starting slurmd from systemd creates the slurmd unit with its own cgroup.
+Then slurmd starts the slurmstepd.scope which in turn creates a new cgroup
+tree. Any new process spawned for a job is migrated into this scope. If,
+instead of starting slurmd from systemd, one starts slurmd manually from the
+command line, things are different. The slurmd will be spawned into the same
+terminal's cgroup and will share the cgroup tree with the terminal process
+itself (and possibly with other user processes).</p>
+
+<p>This situation is detected by slurmd by reading the <b>INVOCATION_ID</b>
+environment variable. This variable is normally set by systemd when it starts
+a process and is a way to determine if slurmd has been started in its own
+cgroup or started manually into a shared cgroup. In the first case slurmd
+doesn't try to move itself to any other cgroup. In the second case, where
+<b>INVOCATION_ID</b> is not set, it will try to move itself to a new
+subdirectory inside the slurmstepd.scope cgroup.</p>
+
+<p>A problem arises when <b>INVOCATION_ID</b> is set in your environment and
+you try to start slurmd manually. slurmd will think it is in its own cgroup
+and won't try to migrate itself and, if MemSpecLimit or CoreSpecLimit are set,
+slurmd will apply memory or core limits into this cgroup, indirectly limiting
+your terminal or other processes. For example, starting slurmd in your terminal
+with low memory in MemSpecLimit, sending it to the background, and then trying
+to run any program that consumes memory, might end up with your processes
+being OOMed.</p>
+
+<p>To avoid this situation we recommend you unset <b>INVOCATION_ID</b> before
+starting Slurm, in situations where this environment variable is set.</p>
+
+<p>Another problem related to this is when not all controllers are enabled in
+your terminal's cgroup, which is what typically happens in the systemd
+<i>user.slice</i>. Then slurmd will fail to initialize because it won't detect
+the required controllers, and will display errors similar to these:</p>
+
+<pre>
+]# slurmd -Dv
+slurmd: error: Controller cpuset is not enabled!
+slurmd: error: Controller cpu is not enabled!
+...
+slurmd: slurmd version 23.11.0-0rc1 started
+slurmd: error: cpu cgroup controller is not available.
+slurmd: error: There's an issue initializing memory or cpu controller
+slurmd: error: Couldn't load specified plugin name for jobacct_gather/cgroup: Plugin init() callback failed
+slurmd: error: cannot create jobacct_gather context for jobacct_gather/cgroup
+slurmd: fatal: Unable to initialize jobacct_gather
+</pre>
+
+<p>One workaround is to set <i>EnableControllers=yes</i> in slurm.conf, but
+note that this won't save you from possibly having other processes have OOM
+errors, as mentioned previously. Moreover, that will modify your entire cgroup
+tree from the root <i>/sys/fs/cgroup</i>. So the real solution is to either
+start slurmd through a unit file, or unset the <b>INVOCATION_ID</b>
+environment variable.</p>
+
+<p><b>NOTE</b>: Be aware that this doesn't only happen when starting slurmd
+manually. It may happen if you use custom scripts to start slurmd, even if the
+scripts are run with systemd. We encourage you to use our provided
+slurmd.service file or at least to unset the <b>INVOCATION_ID</b> explicitly
+in your startup scripts.</p>
+
+<h3 id="troubleshooting_startup">Troubleshooting startup
+<a class="slurm_link" href="#troubleshooting_startup"></a>
+</h3>
+<p> As the integration with systemd has some degree of complexity, and due to
+different configurations or changes in OS setups, we encourage you to set the
+debug flags in slurm.conf in order to diagnose what is going on if slurm doesn't
+start in cgroup/v2:</p>
+<pre>
+DebugFlags=cgroup
+SlurmdDebug=debug
+</pre>
+
+<p>If slurmd starts but throws cgroup errors, it is advisable to look at which
+cgroup slurmd has been started in. For example, this shows slurmd started in
+the user slice cgroup, which is generally wrong, and has possibly been started
+manually from the terminal with <b>INVOCATION_ID</b> set:</p>
+<pre>
+[root@llagosti ~]# cat /proc/$(pidof slurmd)/cgroup
+0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-tmaster-47247.scope
+[root@llagosti ~]# grep -i INVOCATION_ID= /proc/47279/environ
+grep: /proc/47279/environ: binary file matches
+</pre>
+
+<p>Instead, when slurmd is manually and correctly started:</p>
+<pre>
+[root@llagosti ~]# cat /proc/$(pidof slurmd)/cgroup
+0::/system.slice/gamba1_slurmstepd.scope/slurmd
+</pre>
+
+<p>Finally, if slurmd is started by systemd you should see it living in its own
+cgroup:</p>
+<pre>
+[root@llagosti ~]# cat /proc/$(pidof slurmd)/cgroup
+0::/system.slice/slurmd.service
+</pre>
+
+<h2 id="hierarchy_overview">Hierarchy overview
+<a class="slurm_link" href="#hierarchy_overview"></a>
+</h2>
 Hierarchy will take this form:
 <div class="figure">
 <img src="cg_hierarchy.jpg"></img>
@@ -367,7 +607,7 @@ is done to add a pid to a step with <i>proctrack_g_add_pid</i>.</p>
 <p>In Control Group v2, the devices controller interfaces has been removed.
 Instead of controlling it through files, now it is required to create a bpf
 program of type BPF_PROG_TYPE_CGROUP_DEVICE and attach it to the desired
-cgroup. This program is created by slurmtepd dynamically and inserted into
+cgroup. This program is created by slurmstepd dynamically and inserted into
 the kernel with a bpf syscall, and describes which devices are allowed or
 denied for the job, step and task.</p>
 <p>The only devices that are managed are the ones described in the
@@ -427,11 +667,11 @@ mode for creating the cgroup directories without creating a systemd "scope".
 This is only if a call to dbus returned an error, as it would be with
 <b>IgnoreSystemd</b>.
 </li>
-<li><b>CgroupAutomount=[yes|no]</b>: This option is only used when
-<b>IgnoreSystemd</b> is set. If both are set slurmd will check all the
-available controllers in <i>/sys/fs/cgroup</i> and will enable them recursively
-until it reaches the slurmd level. This will imply that the manually created
-slurmstepd directories will also have these controllers set.
+<li><b>EnableControllers=[yes|no]</b>: When set, slurmd will check all the
+available controllers in <i>/sys/fs/cgroup/cgroup.controllers</i> and will
+enable them recursively in the cgroup.subtree_control file until it reaches
+the slurmd level. This is generally required in RHEL8/Rocky8, some containers,
+or with systemd &lt; 244.
 </li>
 <li><b>CgroupMountPoint=/path/to/mount/point</b>: In most cases with cgroup v2,
 this parameter should not be used because <i>/sys/fs/cgroup</i> will be the only
@@ -442,14 +682,11 @@ cgroup directory.
 <h3 id="ignored_params">Ignored parameters
 <a class="slurm_link" href="#ignored_params"></a>
 </h3>
-<p>Since Cgroup v2 doesn't provide the Kmem* or swappiness interfaces anymore in
-the memory controller, the following parameters in cgroup.conf will be ignored:
+<p>Since Cgroup v2 doesn't provide the swappiness interface anymore in
+the memory controller, the following parameter in cgroup.conf will be ignored:
 </p>
 <pre>
-AllowedKmemSpace=
 MemorySwappiness=
-MaxKmemPercent=
-MinKmemSpace=
 </pre>
 
 <h2 id="requirements">Requirements
@@ -462,9 +699,9 @@ were correctly detected on your system.</p>
 <colgroup>
 <col width="5%">
 <col width="20%">
+<col width="20%">
 <col width="15%">
-<col width="15%">
-<col width="35%">
+<col width="30%">
 </colgroup>
 <tr bgcolor="#e0e0e0">
 <td><u><b>Library</b></u></td>
@@ -475,15 +712,15 @@ were correctly detected on your system.</p>
 </tr>
 <tr>
 <td>eBPF</td>
-<td>include/linux/ebpf.h</td>
-<td>kernel-headers</td>
-<td>--with-ebpf=</td>
+<td>include/linux/bpf.h</td>
+<td>kernel-headers (>= 5.7)</td>
+<td>--with-bpf=</td>
 <td>Constrain devices to a job/step/task</td>
 </tr>
 <tr>
 <td>dBus</td>
 <td>dbus-1.0/dbus/dbus.h</td>
-<td>dbus-devel</td>
+<td>dbus-devel (>= 1.11.16)</td>
 <td>n/a</td>
 <td>dBus API for contacting systemd</td>
 </tr>
@@ -507,6 +744,37 @@ will be put into the largest job id. Thanks to this we removed the dependency of
 the plugin against the specific cgroup hierarchy.
 </p>
 
-<p style="text-align:center;">Last modified 16 June 2022</p>
+<h2 id="limitations">Limitations
+<a class="slurm_link" href="#limitations"></a>
+</h2>
+<p>
+The <i>cgroup/v2</i> plugin can provide all the accounting statistics for
+CPU and Memory that the kernel cgroup interface offers. This does not
+include virtual memory, so expect a value of 0 for metrics such as <i>AveVMSize,
+MaxVMSize, MaxVMSizeNode, MaxVMSizeTask</i> and <i>vmem</i> in
+<i>TRESUsageInTot</i> when <i>jobacct_gather/cgroup</i> is used in combination
+with <i>cgroup/v2</i>.</p>
+<p>In what regards to real stack size (RSS), this plugin provides cgroup's
+<i>memory.current</i> value from the memory interface, which is not equal to the
+RSS value provided by procfs. Nevertheless it is the same value that the kernel
+uses in its OOM killer logic.
+</p>
+
+<p>RHEL8 / Rocky8: According to its release notes, support for cgroups v2
+started as a technology preview in RHEL8.0 and the features were backported to
+the 4.18 kernel. In RHEL8.2 the notes say cgroups v2 was fully supported, but
+they emit a warning that not all features are implemented. We recommend
+contacting Red Hat for the status of their support for cgroups v2, which should
+be tracked in their ticket: BZ#1401552. This release also comes with systemd
+239, which does not support the cpuset interface.
+</p>
+
+<p>Systemd &lt; 244: Prior to this version, systemd did not support the cpuset
+controller, and in old kernels the cpu controller is not enabled by default.
+The cpu controller can be enabled in system.conf by setting
+<code>DefaultCpuAccounting=yes</code>. For the cpuset controller, you need to
+set <code>EnableControllers=yes</code> in cgroup.conf.
+</p>
+<p style="text-align:center;">Last modified 11 October 2024</p>
 
 <!--#include virtual="footer.txt"-->

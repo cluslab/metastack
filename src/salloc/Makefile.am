@@ -9,13 +9,13 @@ bin_PROGRAMS = salloc
 
 salloc_SOURCES = salloc.c salloc.h opt.c opt.h
 
-convenience_libs = $(LIB_SLURM) $(DL_LIBS)
+convenience_libs = $(LIB_SLURM)
 salloc_DEPENDENCIES = $(LIB_SLURM_BUILD)
 
 salloc_LDADD = \
 	$(convenience_libs)
 
-salloc_LDFLAGS = -export-dynamic $(CMD_LDFLAGS)
+salloc_LDFLAGS = $(CMD_LDFLAGS)
 
 force:
 $(convenience_libs) : force

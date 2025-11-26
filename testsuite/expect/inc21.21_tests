@@ -2,8 +2,7 @@
 ############################################################################
 # Purpose: Test for accounting records of specific job names with their ID
 ############################################################################
-# Copyright (C) 2015 SchedMD LLC.
-# Written by Nathan Yee <nyee32@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -41,7 +40,7 @@ proc inc21_21_good { test_type limit } {
 
 	log_info "====== Test $test_type ======"
 
-	if {($test_type eq "maxcpus" || $test_type eq "maxcpumins") && [default_part_exclusive] != 0} {
+	if {($test_type eq "maxcpus" || $test_type eq "maxcpumins") && ([default_part_exclusive] != 0 || [check_config_select "linear"])} {
 		log_warn "Unable to perform test with exclusive node allocations"
 		set is_skip 1
 		return
@@ -140,7 +139,7 @@ proc inc21_21_grp_test { test_type limit } {
 		return
 	}
 
-	if { [default_part_exclusive] != 0} {
+	if { [default_part_exclusive] != 0 || [check_config_select "linear"]} {
 		log_warn "This test can't be run Exclusive node allocations"
 		set is_skip 1
 		return
@@ -201,11 +200,11 @@ sleep 10"
 	set running 0
 	spawn $squeue -A $ta -h -o "\%t \%r"
 	expect {
-		-re "PD." {
+		-re "PD ." {
 			incr pending
 			exp_continue
 		}
-		-re "R.None" {
+		-re "R ." {
 			incr running
 			exp_continue
 		}
@@ -235,7 +234,7 @@ sleep 10"
 # submit and jobs
 #
 proc inc21_21_submit_test { limit } {
-	global file_in srun sbatch squeue scancel bin_id number bin_sleep is_skip
+	global file_in srun sbatch squeue scancel bin_id number bin_sleep is_skip re_word_str
 	global bin_rm ta maxjob_lim maxsub_lim
 	global acct_mod_desc acct_mod_acct_vals acct_mod_assoc_vals
 	global acct_mod_assoc_test_vals job_list
@@ -309,7 +308,7 @@ proc inc21_21_submit_test { limit } {
 			incr matches
 			exp_continue
 		}
-		-re "($job_id(0)|$job_id(1)).R.None" {
+		-re "($job_id(0)|$job_id(1)).R.$re_word_str" {
 			incr matches
 			exp_continue
 		}

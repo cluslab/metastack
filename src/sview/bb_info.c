@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  bb_info.c - Functions related to Burst Buffer display mode of sview.
  *****************************************************************************
- *  Copyright (C) 2014-2015 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Written by Nathan Yee <nyee32@shedmd.com>
  *
  *  This file is part of Slurm, a resource management program.
@@ -194,7 +194,7 @@ static void _layout_bb_record(GtkTreeView *treeview,
 			      sview_bb_info_t *sview_bb_info, int update)
 {
 	GtkTreeIter iter;
-	char time_buf[20], tmp_user_id[60], tmp_size[20];
+	char time_buf[256], tmp_user_id[60], tmp_size[20];
 	char bb_name_id[32];
 	char *tmp_state, *tmp_user_name;
 	burst_buffer_resv_t *bb_ptr = sview_bb_info->bb_ptr;
@@ -315,7 +315,7 @@ static void _get_size_str(char *buf, size_t buf_size, uint64_t num)
 static void _update_bb_record(sview_bb_info_t *sview_bb_info_ptr,
 			      GtkTreeStore *treestore)
 {
-	char tmp_create_time[40];
+	char tmp_create_time[256];
 	char tmp_size[20], tmp_user_id[60], bb_name_id[32];
 	char *tmp_state, *tmp_user_name;
 	burst_buffer_resv_t *bb_ptr = sview_bb_info_ptr->bb_ptr;
@@ -384,11 +384,11 @@ static void _append_bb_record(sview_bb_info_t *sview_bb_info_ptr,
 }
 
 /* Update the Burst Buffer inforamtion record */
-static void _update_info_bb(List info_list, GtkTreeView *tree_view)
+static void _update_info_bb(list_t *info_list, GtkTreeView *tree_view)
 {
 	GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
 	char *name = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	sview_bb_info_t *sview_bb_info = NULL;
 
 	set_for_update(model, SORTID_UPDATED);
@@ -426,11 +426,11 @@ static void _update_info_bb(List info_list, GtkTreeView *tree_view)
 	last_model = model;
 }
 
-static List _create_bb_info_list(burst_buffer_info_msg_t *bb_info_ptr)
+static list_t *_create_bb_info_list(burst_buffer_info_msg_t *bb_info_ptr)
 {
-	static List info_list = NULL;
-	List last_list = NULL;
-	ListIterator last_list_itr = NULL;
+	static list_t *info_list = NULL;
+	list_t *last_list = NULL;
+	list_itr_t *last_list_itr = NULL;
 	int i, j, pos = 0;
 	static burst_buffer_info_msg_t *last_bb_info_ptr = NULL;
 	sview_bb_info_t *sview_bb_info_ptr = NULL;
@@ -513,14 +513,14 @@ static List _create_bb_info_list(burst_buffer_info_msg_t *bb_info_ptr)
 	return info_list;
 }
 
-static void _display_info_bb(List info_list, popup_info_t *popup_win)
+static void _display_info_bb(list_t *info_list, popup_info_t *popup_win)
 {
 	specific_info_t *spec_info = popup_win->spec_info;
 	char *name = (char *)spec_info->search_info->gchar_data;
 	//int found = 0;
 	burst_buffer_resv_t *bb_ptr = NULL;
 	GtkTreeView *treeview = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	sview_bb_info_t *sview_bb_info = NULL;
 	int update = 0;
 	char bb_name_id[32];
@@ -616,7 +616,7 @@ extern int get_new_info_bb(burst_buffer_info_msg_t **info_ptr, int force)
 		if (error_code == SLURM_SUCCESS) {
 			slurm_free_burst_buffer_info_msg(g_bb_info_ptr);
 			changed = 1;
-		} else if (slurm_get_errno() == SLURM_NO_CHANGE_IN_DATA) {
+		} else if (errno == SLURM_NO_CHANGE_IN_DATA) {
 			error_code = SLURM_NO_CHANGE_IN_DATA;
 			new_bb_ptr = g_bb_info_ptr;
 			changed = 0;
@@ -657,7 +657,7 @@ extern void admin_edit_bb(GtkCellRendererText *cell,
 extern void get_info_bb(GtkTable *table, display_data_t *display_data)
 {
 	int error_code = SLURM_SUCCESS;
-	List info_list = NULL;
+	list_t *info_list = NULL;
 	static int view = -1;
 	static burst_buffer_info_msg_t *bb_info_ptr = NULL;
 	char error_char[100];
@@ -715,7 +715,7 @@ extern void get_info_bb(GtkTable *table, display_data_t *display_data)
 			gtk_widget_destroy(display_widget);
 		view = ERROR_VIEW;
 		sprintf(error_char, "slurm_load_reservations: %s",
-			slurm_strerror(slurm_get_errno()));
+			slurm_strerror(errno));
 		label = gtk_label_new(error_char);
 		gtk_table_attach_defaults(table, label, 0, 1, 0, 1);
 		gtk_widget_show(label);
@@ -787,11 +787,10 @@ extern void specific_info_bb(popup_info_t *popup_win)
 	char error_char[100];
 	GtkWidget *label = NULL;
 	GtkTreeView *tree_view = NULL;
-	List bb_list = NULL;
-	List send_bb_list = NULL;
+	list_t *bb_list = NULL;
+	list_t *send_bb_list = NULL;
 	sview_bb_info_t *sview_bb_info_ptr = NULL;
-	int i = -1;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 
 	if (!spec_info->display_widget) {
 		setup_popup_info(popup_win, display_data_bb, SORTID_CNT);
@@ -815,7 +814,7 @@ extern void specific_info_bb(popup_info_t *popup_win)
 		if (spec_info->display_widget)
 			gtk_widget_destroy(spec_info->display_widget);
 		sprintf(error_char, "get_new_info_bb: %s",
-			slurm_strerror(slurm_get_errno()));
+			slurm_strerror(errno));
 		label = gtk_label_new(error_char);
 		gtk_table_attach_defaults(popup_win->table,
 					  label,
@@ -868,12 +867,10 @@ display_it:
 	 */
 	send_bb_list = list_create(NULL);
 	itr = list_iterator_create(bb_list);
-	i = -1;
 	/*
 	 * Set up additional menu options(ie the right click menu stuff)
 	 */
 	while ((sview_bb_info_ptr = list_next(itr))) {
-		i++;
 		switch (spec_info->type) {
 		case BB_PAGE:
 			list_push(send_bb_list, sview_bb_info_ptr);
@@ -950,7 +947,7 @@ extern void popup_all_bb(GtkTreeModel *model, GtkTreeIter *iter, int id)
 {
 	char *name = NULL;
 	char title[100] = {0};
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	popup_info_t *popup_win = NULL;
 	GError *error = NULL;
 
@@ -1005,7 +1002,7 @@ extern void popup_all_bb(GtkTreeModel *model, GtkTreeIter *iter, int id)
 	default:
 		g_print("Burst Buffer got unknown type %d\n", id);
 	}
-	if (!sview_thread_new((gpointer)popup_thr, popup_win, false, &error)) {
+	if (!sview_thread_new((gpointer)popup_thr, popup_win, &error)) {
 		g_printerr ("Failed to create burst buffer popup thread: %s\n",
 			    error->message);
 		return;

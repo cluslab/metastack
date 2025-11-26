@@ -2,8 +2,7 @@
  *  job_submit_pbs.c - Translate PBS job options specifications to the Slurm
  *			equivalents, particularly job dependencies.
  *****************************************************************************
- *  Copyright (C) 2013 SchedMD LLC.
- *  Written by Morris Jette <jette@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -231,7 +230,7 @@ static void _xlate_before(char *depend, uint32_t submit_uid, uint32_t my_job_id)
 			new_dep = NULL;
 			_decr_depend_cnt(job_ptr);
 
-			slurm_thread_create_detached(NULL, _dep_agent, job_ptr);
+			slurm_thread_create_detached(_dep_agent, job_ptr);
 		}
 		tok = strtok_r(NULL, ":", &last_ptr);
 	}
@@ -349,7 +348,7 @@ extern int job_submit(job_desc_msg_t *job_desc, uint32_t submit_uid)
 
 /* Lua script hook called for "modify job" event. */
 extern int job_modify(job_desc_msg_t *job_desc, job_record_t *job_ptr,
-		      uint32_t submit_uid)
+		      uint32_t submit_uid, char **err_msg)
 {
 	/* Locks: Read config, write job, read node, read partition
 	 * HAVE BEEN SET ON ENTRY TO THIS FUNCTION */

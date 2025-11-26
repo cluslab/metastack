@@ -9,15 +9,15 @@ import sys
 
 # 获取配置
 def get_config_value(key, filepath):
-    with open(filepath, 'r') as file:
-        for line in file:
-            # 跳过注释行
-            if line.startswith('#'):
-                continue
-            # 查找指定的键
-            if line.startswith(key):
-                return line.split('=')[1].strip().strip('"')
-    return None
+	with open(filepath, 'r') as file:
+		for line in file:
+			# 跳过注释行
+			if line.startswith('#'):
+				continue
+			# 查找指定的键
+			if line.startswith(key):
+				return line.split('=')[1].strip().strip('"')
+	return None
 
 # 配置文件路径
 configuration_path='/opt/gridview/slurm/etc/luaconfig/predictor/configuration'
@@ -47,7 +47,11 @@ if is_file_empty(f"{predictor_path}/jobHistory"):
 	sys.exit(1)  # 退出脚本，状态码1表示错误
 
 # 读取数据
-data = pd.read_csv(f"{predictor_path}/jobHistory", delimiter='|')
+try:
+	data = pd.read_csv(f"{predictor_path}/jobHistory", delimiter='|')
+except Exception as e:
+	print(f"Error reading file: {e}")
+	sys.exit(1)
 
 # 处理数据
 # 去掉 ReqMem 中的 'M' 并将其转换为整数
@@ -67,9 +71,9 @@ y = data[target]
 # 标签编码
 label_encoders = {}
 for feature in ['User', 'Partition', 'Timelimit']:
-    le = LabelEncoder()
-    X.loc[:, feature] = le.fit_transform(X[feature])
-    label_encoders[feature] = le
+	le = LabelEncoder()
+	X.loc[:, feature] = le.fit_transform(X[feature])
+	label_encoders[feature] = le
 
 # 划分数据集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)

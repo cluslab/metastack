@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2010-2018 SchedMD LLC <https://www.schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Mark Grondona <grondona1@llnl.gov>, et. al.
  *  CODE-OCEC-09-009. All rights reserved.
@@ -46,28 +46,26 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
-#include <pwd.h>		/* getpwuid   */
 #include <stdio.h>
 #include <stdlib.h>		/* getenv, strtol, etc. */
-#include <sys/param.h>		/* MAXPATHLEN */
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 
 #include "slurm/slurm.h"
-#include "src/common/cli_filter.h"
+#include "src/interfaces/cli_filter.h"
 #include "src/common/cpu_frequency.h"
 #include "src/common/list.h"
 #include "src/common/log.h"
 #include "src/common/parse_time.h"
-#include "src/common/plugstack.h"
 #include "src/common/proc_args.h"
 #include "src/common/read_config.h" /* contains getnodename() */
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_resource_info.h"
 #include "src/common/slurm_rlimits_info.h"
-#include "src/common/slurm_acct_gather_profile.h"
+#include "src/interfaces/acct_gather_profile.h"
+#include "src/common/spank.h"
 #include "src/common/uid.h"
 #include "src/common/x11_util.h"
 #include "src/common/xmalloc.h"
@@ -78,11 +76,16 @@
 
 static void _help(void);
 static void _usage(void);
+static void _autocomplete(const char *query);
 
 /*---- global variables, defined in opt.h ----*/
 salloc_opt_t saopt;
-slurm_opt_t opt =
-	{ .salloc_opt = &saopt, .help_func = _help, .usage_func = _usage };
+slurm_opt_t opt = {
+	.salloc_opt = &saopt,
+	.help_func = _help,
+	.usage_func = _usage,
+	.autocomplete_func = _autocomplete,
+};
 int error_exit = 1;
 bool first_pass = true;
 int immediate_exit = 1;
@@ -95,12 +98,12 @@ static void  _opt_env(void);
 static void  _opt_args(int argc, char **argv, int het_job_offset);
 static bool  _opt_verify(void);
 static void  _set_options(int argc, char **argv);
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 static int	 _get_int(const char *my_str);
 static void _process_abnormal_dete();
 #endif
 /*---[ end forward declarations of static functions ]---------------------*/
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 /*
  * Convert a string to an integer.
  * my_str: IN - The input string to be converted to an integer.
@@ -142,10 +145,14 @@ static void _process_abnormal_dete(){
 		When the relationship between time_window and task is not satisfied, the output message prompts the user
 	*/
 	if (opt.acctg_freq) {
-		if ((sub_str = xstrcasestr(opt.acctg_freq, "task=")))
+		task = _get_int(opt.acctg_freq);
+		if ((task == -1) && (sub_str = xstrcasestr(opt.acctg_freq, "task=")))
 			task = _get_int(sub_str + 5);
-	} else if ((sub_str = xstrcasestr(slurm_conf.job_acct_gather_freq, "task=")))
-		task = _get_int(sub_str + 5);
+	} else if (slurm_conf.job_acct_gather_freq) {
+		task = _get_int(slurm_conf.job_acct_gather_freq);
+		if ((task == -1) && (sub_str = xstrcasestr(slurm_conf.job_acct_gather_freq, "task=")))
+			task = _get_int(sub_str + 5);
+	}
 
 	if ((sub_str = xstrcasestr(opt.abnormal_dete, "time_window="))) {
 		minutes = _get_int(sub_str + 12);
@@ -252,6 +259,7 @@ env_vars_t env_vars[] = {
   { "SALLOC_CLUSTERS", 'M' },
   { "SLURM_CLUSTERS", 'M' },
   { "SALLOC_CONTAINER", LONG_OPT_CONTAINER },
+  { "SALLOC_CONTAINER_ID", LONG_OPT_CONTAINER_ID },
   { "SALLOC_CONSTRAINT", 'C' },
   { "SALLOC_CORE_SPEC", 'S' },
   { "SALLOC_CPU_FREQ_REQ", LONG_OPT_CPU_FREQ },
@@ -318,11 +326,13 @@ env_vars_t env_vars[] = {
   { "SALLOC_THREAD_SPEC", LONG_OPT_THREAD_SPEC },
   { "SALLOC_THREADS_PER_CORE", LONG_OPT_THREADSPERCORE },
   { "SALLOC_TIMELIMIT", 't' },
+  { "SALLOC_TRES_BIND", LONG_OPT_TRES_BIND },
+  { "SALLOC_TRES_PER_TASK", LONG_OPT_TRES_PER_TASK },
   { "SALLOC_USE_MIN_NODES", LONG_OPT_USE_MIN_NODES },
   { "SALLOC_WAIT_ALL_NODES", LONG_OPT_WAIT_ALL_NODES },
   { "SALLOC_WAIT4SWITCH", LONG_OPT_SWITCH_WAIT },
   { "SALLOC_WCKEY", LONG_OPT_WCKEY },
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
   { "SALLOC_JOB_MONITOR", LONG_OPT_JOB_MONITOR },
 #endif
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
@@ -389,20 +399,19 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 	if ((optind < argc) && !xstrcmp(argv[optind], ":")) {
 		debug("hetjob component separator");
 	} else {
-		command_argc = 0;
+		opt.argc = 0;
 		if (optind < argc) {
 			rest = argv + optind;
-			while (rest[command_argc] != NULL)
-				command_argc++;
+			while (rest[opt.argc] != NULL)
+				opt.argc++;
 		}
-		command_argv = (char **) xmalloc((command_argc + 1) *
-						 sizeof(char *));
-		for (i = 0; i < command_argc; i++) {
+		opt.argv = (char **) xmalloc((opt.argc + 1) * sizeof(char *));
+		for (i = 0; i < opt.argc; i++) {
 			if ((i == 0) && (rest == NULL))
 				break;	/* Fix for CLANG false positive */
-			command_argv[i] = xstrdup(rest[i]);
+			opt.argv[i] = xstrdup(rest[i]);
 		}
-		command_argv[i] = NULL;	/* End of argv's (for possible execv) */
+		opt.argv[i] = NULL; /* End of argv's (for possible execv) */
 	}
 
 	if (opt.container &&
@@ -414,7 +423,10 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 #ifdef __METASTACK_NEW_TIME_PREDICT
 	if (opt.predict_job != 0) {
 		opt.predict_job = -1;
-    }
+	}
+
+	uid_t ori_uid = opt.uid;
+	opt.uid = getuid();
 #endif
 
 	if (cli_filter_g_pre_submit(&opt, het_job_offset)) {
@@ -422,10 +434,14 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 		exit(error_exit);
 	}
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+	opt.uid = ori_uid;
+#endif
+
 	if (!_opt_verify())
 		exit(error_exit);
-		
-#ifdef __METASTACK_LOAD_ABNORMAL
+
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	if (opt.abnormal_dete != NULL) {
 		_process_abnormal_dete();
 		debug("Concatenate the job-monitor and acctg-freq parameters : salloc -> acctg_freq = %s" , opt.acctg_freq);
@@ -433,18 +449,19 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 #endif
 }
 
-/* _get_shell - return a string containing the default shell for this user
- * NOTE: This function is NOT reentrant (see getpwuid_r if needed) */
+/* return a string containing the default shell for this user */
 static char *_get_shell(void)
 {
-	struct passwd *pw_ent_ptr;
+	uid_t uid = opt.uid;
+	char *shell;
 
-	pw_ent_ptr = getpwuid(opt.uid);
-	if (!pw_ent_ptr) {
-		pw_ent_ptr = getpwnam("nobody");
-		error("warning - no user information for user %u", opt.uid);
-	}
-	return pw_ent_ptr->pw_shell;
+	if (uid == SLURM_AUTH_NOBODY)
+		uid = getuid();
+
+	if (!(shell = uid_to_shell(uid)))
+		fatal("no user information for user %u", uid);
+
+	return shell;
 }
 
 static void _salloc_default_command(int *argcp, char **argvp[])
@@ -501,13 +518,20 @@ static void _salloc_default_command(int *argcp, char **argvp[])
 static bool _opt_verify(void)
 {
 	bool verified = true;
-	hostlist_t hl = NULL;
+	hostlist_t *hl = NULL;
 	int hl_cnt = 0;
 
 	validate_options_salloc_sbatch_srun(&opt);
 
 	if (opt.quiet && opt.verbose) {
 		error ("don't specify both --verbose (-v) and --quiet (-Q)");
+		verified = false;
+	}
+
+	if ((opt.resv_port_cnt != NO_VAL) &&
+	    !(opt.job_flags & STEPMGR_ENABLED) &&
+	    !xstrstr(slurm_conf.slurmctld_params, "enable_stepmgr")) {
+		error("Slurmstepd step management must be enabled to use --resv-ports for job allocations");
 		verified = false;
 	}
 
@@ -521,12 +545,14 @@ static bool _opt_verify(void)
 			exit(error_exit);
 		}
 		opt.burst_buffer = xstrdup(get_buf_data(buf));
-		free_buf(buf);
+		FREE_NULL_BUFFER(buf);
 		xfree(opt.burst_buffer_file);
 	}
 
 	if (opt.container && !getenv("SLURM_CONTAINER"))
 		setenvf(NULL, "SLURM_CONTAINER", "%s", opt.container);
+	if (opt.container_id && !getenv("SLURM_CONTAINER_ID"))
+		setenvf(NULL, "SLURM_CONTAINER_ID", "%s", opt.container_id);
 
 	if (opt.hint &&
 	    !validate_hint_option(&opt)) {
@@ -545,69 +571,21 @@ static bool _opt_verify(void)
 	if (opt.exclude && !_valid_node_list(&opt.exclude))
 		exit(error_exit);
 
-	if (opt.nodefile) {
-		char *tmp;
-		xfree(opt.nodelist);
-		if (!(tmp = slurm_read_hostfile(opt.nodefile, 0))) {
-			error("Invalid --nodefile node file");
-			exit(-1);
-		}
-		opt.nodelist = xstrdup(tmp);
-		free(tmp);
-	}
-
-	if (!opt.nodelist) {
-		if ((opt.nodelist = xstrdup(getenv("SLURM_HOSTFILE")))) {
-			/* make sure the file being read in has a / in
-			   it to make sure it is a file in the
-			   valid_node_list function */
-			if (!strstr(opt.nodelist, "/")) {
-				char *add_slash = xstrdup("./");
-				xstrcat(add_slash, opt.nodelist);
-				xfree(opt.nodelist);
-				opt.nodelist = add_slash;
-			}
-			opt.distribution &= SLURM_DIST_STATE_FLAGS;
-			opt.distribution |= SLURM_DIST_ARBITRARY;
-			if (!_valid_node_list(&opt.nodelist)) {
-				error("Failure getting NodeNames from "
-				      "hostfile");
-				exit(error_exit);
-			} else {
-				debug("loaded nodes (%s) from hostfile",
-				      opt.nodelist);
-			}
-		}
-	} else {
-		if (!_valid_node_list(&opt.nodelist))
-			exit(error_exit);
-	}
-
-	if (opt.nodelist) {
+	if (opt.nodelist && !opt.nodes_set) {
 		hl = hostlist_create(opt.nodelist);
-		if (!hl) {
-			error("memory allocation failure");
-			exit(error_exit);
-		}
+		if (!hl)
+			fatal("Invalid node list specified");
 		hostlist_uniq(hl);
 		hl_cnt = hostlist_count(hl);
-		if (opt.nodes_set)
-			opt.min_nodes = MAX(hl_cnt, opt.min_nodes);
-		else
-			opt.min_nodes = hl_cnt;
+		opt.min_nodes = hl_cnt;
 		opt.nodes_set = true;
-	}
-
-	if ((opt.ntasks_per_node > 0) && (!opt.ntasks_set)) {
-		opt.ntasks = opt.min_nodes * opt.ntasks_per_node;
-		opt.ntasks_set = 1;
 	}
 
 	if (opt.cpus_set && (opt.pn_min_cpus < opt.cpus_per_task))
 		opt.pn_min_cpus = opt.cpus_per_task;
 
-	if ((saopt.no_shell == false) && (command_argc == 0))
-		_salloc_default_command(&command_argc, &command_argv);
+	if ((saopt.no_shell == false) && (opt.argc == 0))
+		_salloc_default_command(&opt.argc, &opt.argv);
 
 	/* check for realistic arguments */
 	if (opt.ntasks <= 0) {
@@ -635,7 +613,7 @@ static bool _opt_verify(void)
 	 * if (n/plane_size < N) and ((N-1) * plane_size >= n) -->
 	 * problem Simple check will not catch all the problem/invalid
 	 * cases.
-	 * The limitations of the plane distribution in the cons_res
+	 * The limitations of the plane distribution in the cons_tres
 	 * environment are more extensive and are documented in the
 	 * Slurm reference guide.  */
 	if ((opt.distribution & SLURM_DIST_STATE_BASE) == SLURM_DIST_PLANE &&
@@ -659,6 +637,7 @@ static bool _opt_verify(void)
 	/* massage the numbers */
 	if ((opt.nodes_set || opt.extra_set)				&&
 	    ((opt.min_nodes == opt.max_nodes) || (opt.max_nodes == 0))	&&
+	    (opt.ntasks_per_node == NO_VAL) &&
 	    !opt.ntasks_set) {
 		/* 1 proc / node default */
 		opt.ntasks = opt.min_nodes;
@@ -692,26 +671,10 @@ static bool _opt_verify(void)
 		 *  make sure # of procs >= min_nodes
 		 */
 		if (opt.ntasks < opt.min_nodes) {
-
-			info ("Warning: can't run %d processes on %d "
-			      "nodes, setting nnodes to %d",
-			      opt.ntasks, opt.min_nodes, opt.ntasks);
+			warning("can't run %d processes on %d nodes, setting nnodes to %d",
+				opt.ntasks, opt.min_nodes, opt.ntasks);
 
 			opt.min_nodes = opt.max_nodes = opt.ntasks;
-
-			if (hl_cnt > opt.min_nodes) {
-				int del_cnt, i;
-				char *host;
-				del_cnt = hl_cnt - opt.min_nodes;
-				for (i=0; i<del_cnt; i++) {
-					host = hostlist_pop(hl);
-					free(host);
-				}
-				xfree(opt.nodelist);
-				opt.nodelist =
-					hostlist_ranged_string_xmalloc(hl);
-			}
-
 		}
 
 	} /* else if (opt.ntasks_set && !opt.nodes_set) */
@@ -720,8 +683,10 @@ static bool _opt_verify(void)
 	   of nodes */
 	if (((opt.distribution & SLURM_DIST_STATE_BASE) == SLURM_DIST_ARBITRARY)
 	    && (!opt.nodes_set || !opt.ntasks_set)) {
+		FREE_NULL_HOSTLIST(hl);
+		hl = hostlist_create(opt.nodelist);
 		if (!hl)
-			hl = hostlist_create(opt.nodelist);
+			fatal("Invalid node list specified");
 		if (!opt.ntasks_set) {
 			opt.ntasks_set = 1;
 			opt.ntasks = hostlist_count(hl);
@@ -733,20 +698,12 @@ static bool _opt_verify(void)
 		}
 	}
 
-	if (hl)
-		hostlist_destroy(hl);
+	FREE_NULL_HOSTLIST(hl);
 
 	if ((opt.deadline) && (opt.begin) && (opt.deadline < opt.begin)) {
 		error("Incompatible begin and deadline time specification");
 		exit(error_exit);
 	}
-
-#ifdef HAVE_NATIVE_CRAY
-	if (opt.network && opt.shared)
-		fatal("Requesting network performance counters requires "
-		      "exclusive access.  Please add the --exclusive option "
-		      "to your request.");
-#endif
 
 	if (opt.mem_bind_type && (getenv("SLURM_MEM_BIND") == NULL)) {
 		char *tmp = slurm_xstr_mem_bind_type(opt.mem_bind_type);
@@ -775,6 +732,12 @@ static bool _opt_verify(void)
 	    (getenv("SLURM_NTASKS_PER_CORE") == NULL)) {
 		setenvf(NULL, "SLURM_NTASKS_PER_CORE", "%d",
 			opt.ntasks_per_core);
+		if ((opt.threads_per_core !=  NO_VAL) &&
+		    (opt.threads_per_core < opt.ntasks_per_core)) {
+			error("--ntasks-per-core (%d) can not be bigger than --threads-per-core (%d)",
+			opt.ntasks_per_core, opt.threads_per_core);
+			verified = false;
+		}
 	}
 
 	if ((opt.ntasks_per_gpu != NO_VAL) &&
@@ -797,6 +760,7 @@ static bool _opt_verify(void)
 			opt.ntasks_per_npu);
 	}
 #endif
+
 	if ((opt.ntasks_per_node > 0) &&
 	    (getenv("SLURM_NTASKS_PER_NODE") == NULL)) {
 		setenvf(NULL, "SLURM_NTASKS_PER_NODE", "%d",
@@ -932,14 +896,24 @@ extern int   spank_unset_job_env(const char *name)
 	return 0;	/* not found */
 }
 
+static void _autocomplete(const char *query)
+{
+	char *opt_string = NULL;
+	struct option *optz = slurm_option_table_create(&opt, &opt_string);
+
+	suggest_completion(optz, query);
+
+	xfree(opt_string);
+	slurm_option_table_destroy(optz);
+}
+
 static void _usage(void)
 {
  	printf(
 "Usage: salloc [-N numnodes|[min nodes]-[max nodes]] [-n num-processors]\n"
 "              [-c cpus-per-node] [-r n] [-p partition] [--hold] [-t minutes]\n"
 "              [--immediate[=secs]] [--no-kill] [--overcommit] [-D path]\n"
-"              [--oversubscribe] [-J jobname]\n"
-"              [--verbose] [--gid=group] [--uid=user] [--licenses=names]\n"
+"              [--oversubscribe] [-J jobname] [--verbose] [--licenses=names]\n"
 "              [--clusters=cluster_names]\n"
 "              [--contiguous] [--mincpus=n] [--mem=MB] [--tmp=MB] [-C list]\n"
 "              [--account=name] [--dependency=type:jobid[+time]] [--comment=name]\n"
@@ -967,6 +941,7 @@ static void _usage(void)
 "              [--npus-per-node=n] [--npus-per-socket=n]  [--npus-per-task=n]\n"
 "              [--mem-per-npu=MB]\n"
 #endif
+"			   [--tres-bind=...] [--tres-per-task=list]\n"
 "              [command [args...]]\n");
 }
 
@@ -986,6 +961,7 @@ static void _help(void)
 "  -c, --cpus-per-task=ncpus   number of cpus required per task\n"
 "      --comment=name          arbitrary comment\n"
 "      --container             Path to OCI container bundle\n"
+"      --container-id          OCI container ID\n"
 "      --cpu-freq=min[-max[:gov]] requested cpu frequency (and governor)\n"
 "      --delay-boot=mins       delay boot for desired node features\n"
 "  -d, --dependency=type:jobid[:time] defer job until condition on jobid is satisfied\n"
@@ -993,7 +969,6 @@ static void _help(void)
 "                              this deadline (start > (deadline - time[-min]))\n"
 "  -D, --chdir=path            change working directory\n"
 "      --get-user-env          used by Moab.  See srun man page.\n"
-"      --gid=group_id          group ID to run job as (user root only)\n"
 "      --gres=list             required generic resources\n"
 "      --gres-flags=opts       flags related to GRES management\n"
 "  -H, --hold                  submit job in held state\n"
@@ -1036,7 +1011,8 @@ static void _help(void)
 "      --thread-spec=threads   count of reserved threads\n"
 "  -t, --time=minutes          time limit\n"
 "      --time-min=minutes      minimum time limit (if distinct)\n"
-"      --uid=user_id           user ID to run job as (user root only)\n"
+"      --tres-bind=...         task to tres binding options\n"
+"      --tres-per-task=list    list of tres required per task\n"
 "      --use-min-nodes         if a range of node counts is given, prefer the\n"
 "                              smaller count\n"
 "  -v, --verbose               verbose mode (multiple -v's increase verbosity)\n"
@@ -1064,6 +1040,7 @@ static void _help(void)
 "      --mem-per-cpu=MB        maximum amount of real memory per allocated\n"
 "                              cpu required by the job.\n"
 "                              --mem >= --mem-per-cpu if --mem is specified.\n"
+"      --resv-ports            reserve communication ports\n"
 "\n"
 "Affinity/Multi-core options: (when the task/affinity plugin is enabled)\n"
 "                              For the following 4 options, you are\n"
@@ -1072,7 +1049,7 @@ static void _help(void)
 "      --sockets-per-node=S    number of sockets per node to allocate\n"
 "      --cores-per-socket=C    number of cores per socket to allocate\n"
 "      --threads-per-core=T    number of threads per core to allocate\n"
-"  -B  --extra-node-info=S[:C[:T]]  combine request of sockets per node,\n"
+"  -B, --extra-node-info=S[:C[:T]]  combine request of sockets per node,\n"
 "                              cores per socket and threads per core.\n"
 "                              Specify an asterisk (*) as a placeholder,\n"
 "                              a minimum value, or a min-max range.\n"
@@ -1129,12 +1106,6 @@ static void _help(void)
 	spank_print_options(stdout, 6, 30);
 
 	printf("\n"
-#ifdef HAVE_NATIVE_CRAY			/* Native Cray specific options */
-"Cray related options:\n"
-"      --network=type          Use network performance counters\n"
-"                              (system, network, or processor)\n"
-"\n"
-#endif
 "\n"
 "Help options:\n"
 "  -h, --help                  show this help message\n"

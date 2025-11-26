@@ -39,9 +39,10 @@
 #include "slurm/slurm_errno.h"
 
 #include "src/common/assoc_mgr.h"
-#include "src/common/select.h"
-#include "src/common/slurm_accounting_storage.h"
-#include "src/common/slurm_priority.h"
+
+#include "src/interfaces/accounting_storage.h"
+#include "src/interfaces/priority.h"
+#include "src/interfaces/select.h"
 
 #include "src/slurmctld/slurmctld.h"
 #include "src/slurmctld/acct_policy.h"
@@ -203,8 +204,6 @@ static void _rm_usage_node_bitmap(job_record_t *job_ptr,
 				  uint16_t *grp_node_job_cnt,
 				  uint64_t *grp_used_tres)
 {
-	int i, i_first, i_last;
-
 	xassert(grp_used_tres);
 
 	if (!job_ptr->job_resrcs || !job_ptr->job_resrcs->node_bitmap) {
@@ -230,23 +229,20 @@ static void _rm_usage_node_bitmap(job_record_t *job_ptr,
 		error("%s: grp_node_job_cnt is NULL", __func__);
 		return;
 	}
-	i_first = bit_ffs(job_ptr->job_resrcs->node_bitmap);
-	if (i_first == -1)
-		i_last = -2;
-	else
-		i_last = bit_fls(job_ptr->job_resrcs->node_bitmap);
-	for (i = i_first; i <= i_last; i++) {
-		if (!bit_test(job_ptr->job_resrcs->node_bitmap, i))
-			continue;
+
+	for (int i = 0;
+	     next_node_bitmap(job_ptr->job_resrcs->node_bitmap, &i); i++) {
 		if (--grp_node_job_cnt[i] == 0)
 			bit_clear(grp_node_bitmap, i);
 #ifdef __METASTACK_BUG_DEBUG_GRPNODELIMIT
 		else {
 			node_record_t *tmp_node_ptr = NULL;
 			tmp_node_ptr = node_record_table_ptr[i];
-			debug2("%s: DebugGrpNodeLimit. after clear job(%u), there are still %d jobs on node(%s) belong to assoc %u(%s/%s)", 
-						 __func__, job_ptr->job_id, grp_node_job_cnt[i], tmp_node_ptr->name, 
-						 job_ptr->assoc_ptr->id, job_ptr->assoc_ptr->acct, job_ptr->assoc_ptr->user);
+			if (tmp_node_ptr != NULL) {
+				debug2("%s: DebugGrpNodeLimit. after clear job(%u), there are still %d jobs on node(%s) belong to assoc %u(%s/%s)", 
+							__func__, job_ptr->job_id, grp_node_job_cnt[i], tmp_node_ptr->name, 
+							job_ptr->assoc_ptr->id, job_ptr->assoc_ptr->acct, job_ptr->assoc_ptr->user);
+			}
 		}
 #endif
 	}
@@ -286,6 +282,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 			return WAIT_QOS_MAX_CPU_PER_USER;
 		case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 			return WAIT_QOS_MAX_CPU_MINS_PER_JOB;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+			return WAIT_QOS_MAX_CPU_RUN_MINS_PER_ACCT;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+			return WAIT_QOS_MAX_CPU_RUN_MINS_PER_USER;
 		case WAIT_QOS_MIN_UNK:
 			return WAIT_QOS_MIN_CPU;
 		default:
@@ -323,6 +323,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 			return WAIT_QOS_MAX_MEM_PER_USER;
 		case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 			return WAIT_QOS_MAX_MEM_MINS_PER_JOB;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+			return WAIT_QOS_MAX_MEM_RUN_MINS_PER_ACCT;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+			return WAIT_QOS_MAX_MEM_RUN_MINS_PER_USER;
 		case WAIT_QOS_MIN_UNK:
 			return WAIT_QOS_MIN_MEM;
 		default:
@@ -360,6 +364,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 			return WAIT_QOS_MAX_ENERGY_PER_USER;
 		case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 			return WAIT_QOS_MAX_ENERGY_MINS_PER_JOB;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+			return WAIT_QOS_MAX_ENERGY_RUN_MINS_PER_ACCT;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+			return WAIT_QOS_MAX_ENERGY_RUN_MINS_PER_USER;
 		case WAIT_QOS_MIN_UNK:
 			return WAIT_QOS_MIN_ENERGY;
 		default:
@@ -393,6 +401,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 			return WAIT_QOS_MAX_NODE_PER_USER;
 		case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 			return WAIT_QOS_MAX_NODE_MINS_PER_JOB;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+			return WAIT_QOS_MAX_NODE_RUN_MINS_PER_ACCT;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+			return WAIT_QOS_MAX_NODE_RUN_MINS_PER_USER;
 		case WAIT_QOS_MIN_UNK:
 			return WAIT_QOS_MIN_NODE;
 		default:
@@ -430,6 +442,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 			return WAIT_QOS_MAX_BILLING_PER_USER;
 		case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 			return WAIT_QOS_MAX_BILLING_MINS_PER_JOB;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+			return WAIT_QOS_MAX_BILLING_RUN_MINS_PER_ACCT;
+		case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+			return WAIT_QOS_MAX_BILLING_RUN_MINS_PER_USER;
 		case WAIT_QOS_MIN_UNK:
 			return WAIT_QOS_MIN_BILLING;
 		default:
@@ -468,6 +484,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 				return WAIT_QOS_MAX_GRES_PER_USER;
 			case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 				return WAIT_QOS_MAX_GRES_MINS_PER_JOB;
+			case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+				return WAIT_QOS_MAX_GRES_RUN_MINS_PER_ACCT;
+			case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+				return WAIT_QOS_MAX_GRES_RUN_MINS_PER_USER;
 			case WAIT_QOS_MIN_UNK:
 				return WAIT_QOS_MIN_GRES;
 			default:
@@ -501,6 +521,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 				return WAIT_QOS_MAX_LIC_PER_USER;
 			case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 				return WAIT_QOS_MAX_LIC_MINS_PER_JOB;
+			case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+				return WAIT_QOS_MAX_LIC_RUN_MINS_PER_ACCT;
+			case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+				return WAIT_QOS_MAX_LIC_RUN_MINS_PER_USER;
 			case WAIT_QOS_MIN_UNK:
 				return WAIT_QOS_MIN_LIC;
 			default:
@@ -537,6 +561,10 @@ static int _get_tres_state_reason(int tres_pos, int unk_reason)
 				return WAIT_QOS_MAX_BB_PER_USER;
 			case WAIT_QOS_MAX_UNK_MINS_PER_JOB:
 				return WAIT_QOS_MAX_BB_MINS_PER_JOB;
+			case WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT:
+				return WAIT_QOS_MAX_BB_RUN_MINS_PER_ACCT;
+			case WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER:
+				return WAIT_QOS_MAX_BB_RUN_MINS_PER_USER;
 			case WAIT_QOS_MIN_UNK:
 				return WAIT_QOS_MIN_BB;
 			default:
@@ -668,7 +696,9 @@ static void _qos_adjust_limit_usage(int type, job_record_t *job_ptr,
 				continue;
 
 			used_limits->tres[i] += job_ptr->tres_alloc_cnt[i];
+			used_limits->tres_run_secs[i] += used_tres_run_secs[i];
 			used_limits_a->tres[i] += job_ptr->tres_alloc_cnt[i];
+			used_limits_a->tres_run_secs[i] += used_tres_run_secs[i];
 
 			qos_ptr->usage->grp_used_tres[i] +=
 				job_ptr->tres_alloc_cnt[i];
@@ -806,7 +836,8 @@ static int _find_qos_part(void *x, void *key)
 	return 0;
 }
 
-static void _adjust_limit_usage(int type, job_record_t *job_ptr)
+static void _adjust_limit_usage(int type, job_record_t *job_ptr,
+				bool assoc_locked)
 {
 	slurmdb_assoc_rec_t *assoc_ptr = NULL;
 	assoc_mgr_lock_t locks =
@@ -814,6 +845,16 @@ static void _adjust_limit_usage(int type, job_record_t *job_ptr)
 	uint64_t used_tres_run_secs[slurmctld_tres_cnt];
 	int i;
 	uint32_t job_cnt = 1;
+
+	if (assoc_locked) {
+		xassert(verify_assoc_lock(ASSOC_LOCK, WRITE_LOCK));
+		xassert(verify_assoc_lock(QOS_LOCK, WRITE_LOCK));
+		xassert(verify_assoc_lock(TRES_LOCK, READ_LOCK));
+	} else {
+		xassert(verify_assoc_unlock(ASSOC_LOCK));
+		xassert(verify_assoc_unlock(QOS_LOCK));
+		xassert(verify_assoc_unlock(TRES_LOCK));
+	}
 
 	memset(used_tres_run_secs, 0, sizeof(uint64_t) * slurmctld_tres_cnt);
 
@@ -842,8 +883,8 @@ static void _adjust_limit_usage(int type, job_record_t *job_ptr)
 		    (type == ACCT_POLICY_REM_SUBMIT)) &&
 		   job_ptr->array_recs && job_ptr->array_recs->task_cnt)
 		job_cnt = job_ptr->array_recs->task_cnt;
-
-	assoc_mgr_lock(&locks);
+	if (!assoc_locked)
+		assoc_mgr_lock(&locks);
 
 	/*
 	 * This handles removal of the accrual_cnt pending on
@@ -864,7 +905,7 @@ static void _adjust_limit_usage(int type, job_record_t *job_ptr)
 	    job_ptr->part_ptr_list &&
 	    (IS_JOB_PENDING(job_ptr) || !job_ptr->tres_alloc_str)) {
 		bool job_first = false;
-		ListIterator part_itr;
+		list_itr_t *part_itr;
 		part_record_t *part_ptr;
 		List part_qos_list = NULL;
 
@@ -924,7 +965,7 @@ static void _adjust_limit_usage(int type, job_record_t *job_ptr)
 		 */
 		if ((type == ACCT_POLICY_JOB_BEGIN) &&
 		    job_ptr->part_ptr_list) {
-			ListIterator part_itr;
+			list_itr_t *part_itr;
 			part_record_t *part_ptr;
 			List part_qos_list = list_create(NULL);
 
@@ -1081,7 +1122,8 @@ static void _adjust_limit_usage(int type, job_record_t *job_ptr)
 		/* now handle all the group limits of the parents */
 		assoc_ptr = assoc_ptr->usage->parent_assoc_ptr;
 	}
-	assoc_mgr_unlock(&locks);
+	if (!assoc_locked)
+		assoc_mgr_unlock(&locks);
 }
 
 static void _set_time_limit(uint32_t *time_limit, uint32_t part_max_time,
@@ -1108,9 +1150,18 @@ static void _qos_alter_job(job_record_t *job_ptr,
 			   uint64_t *new_used_tres_run_secs)
 {
 	int i;
+	slurmdb_used_limits_t *used_limits_a = NULL, *used_limits_u = NULL;
 
 	if (!qos_ptr || !job_ptr)
 		return;
+
+	used_limits_a =	acct_policy_get_acct_used_limits(
+		&qos_ptr->usage->acct_limit_list,
+		job_ptr->assoc_ptr->acct);
+
+	used_limits_u = acct_policy_get_user_used_limits(
+		&qos_ptr->usage->user_limit_list,
+		job_ptr->user_id);
 
 	for (i=0; i<slurmctld_tres_cnt; i++) {
 		if (used_tres_run_secs[i] == new_used_tres_run_secs[i])
@@ -1129,6 +1180,22 @@ static void _qos_alter_job(job_record_t *job_ptr,
 				used_tres_run_sec_decr;
 		else
 			qos_ptr->usage->grp_used_tres_run_secs[i] = 0;
+
+		if ((used_tres_run_sec_decr < 0) ||
+		    (used_tres_run_sec_decr <
+		     used_limits_a->tres_run_secs[i]))
+			used_limits_a->tres_run_secs[i] -=
+				used_tres_run_sec_decr;
+		else
+			used_limits_a->tres_run_secs[i] = 0;
+
+		if ((used_tres_run_sec_decr < 0) ||
+		    (used_tres_run_sec_decr <
+		     used_limits_u->tres_run_secs[i]))
+			used_limits_u->tres_run_secs[i] -=
+				used_tres_run_sec_decr;
+		else
+			used_limits_u->tres_run_secs[i] = 0;
 
 		debug2("altering %pJ QOS %s got %"PRIu64" just removed %"PRIu64" and added %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -1603,15 +1670,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 				*reason = _get_tres_state_reason(
 					tres_pos, WAIT_QOS_MAX_UNK_PER_ACCT);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds per-acct max tres limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos],
-                        qos_ptr->max_tres_pa_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"min tres(%s) request %"PRIu64" exceeds per-acct max tres limit %"PRIu64" for qos %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						job_desc->tres_req_cnt[tres_pos],
+						qos_ptr->max_tres_pa_ctld[tres_pos],
+						qos_ptr->name);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "min tres(%s) request %"PRIu64" exceeds "
@@ -1641,15 +1708,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 				*reason = _get_tres_state_reason(
 					tres_pos, WAIT_QOS_MAX_UNK_PER_USER);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds per-user max tres limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos],
-                        qos_ptr->max_tres_pu_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"min tres(%s) request %"PRIu64" exceeds per-user max tres limit %"PRIu64" for qos %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						job_desc->tres_req_cnt[tres_pos],
+						qos_ptr->max_tres_pu_ctld[tres_pos],
+						qos_ptr->name);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "min tres(%s) request %"PRIu64" exceeds "
@@ -1668,15 +1735,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 				*reason = _get_tres_state_reason(
 					tres_pos, WAIT_QOS_GRP_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos],
-                        qos_ptr->grp_tres_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+				        "min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64" for qos %s",
+				        assoc_mgr_tres_name_array[tres_pos],
+				        job_desc->tres_req_cnt[tres_pos],
+				        qos_ptr->grp_tres_ctld[tres_pos],
+				        qos_ptr->name);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "min tres(%s) request %"PRIu64" exceeds "
@@ -1706,14 +1773,14 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 			if (reason)
 				*reason = WAIT_QOS_GRP_SUB_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "group max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
-                        qos_ptr->grp_submit_jobs,
-                        qos_ptr->usage->grp_used_submit_jobs, job_cnt,
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"group max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
+						qos_ptr->grp_submit_jobs,
+						qos_ptr->usage->grp_used_submit_jobs, job_cnt,
+						qos_ptr->name);
+			}
 #endif
 			debug2("job submit for user %s(%u): group max submit job limit exceeded %u (used:%u + requested:%d) for qos '%s'",
 			       user_name,
@@ -1745,15 +1812,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 					tres_pos,
 					WAIT_QOS_MAX_UNK_MINS_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "tres(%s) time limit request %"PRIu64" exceeds max per-job limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        ((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
-                        qos_ptr->max_tres_mins_pj_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"tres(%s) time limit request %"PRIu64" exceeds max per-job limit %"PRIu64" for qos %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
+						qos_ptr->max_tres_mins_pj_ctld[tres_pos],
+						qos_ptr->name);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "tres(%s) time limit request %"PRIu64" "
@@ -1783,15 +1850,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 				*reason = _get_tres_state_reason(
 					tres_pos, WAIT_QOS_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "tres(%s) time limit request %"PRIu64" exceeds group max limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        ((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
-                        qos_ptr->grp_tres_mins_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"tres(%s) time limit request %"PRIu64" exceeds group max limit %"PRIu64" for qos %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
+						qos_ptr->grp_tres_mins_ctld[tres_pos],
+						qos_ptr->name);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "tres(%s) time limit request %"PRIu64" "
@@ -1821,15 +1888,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 				*reason = _get_tres_state_reason(
 					tres_pos, WAIT_QOS_GRP_UNK_RUN_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "tres(%s) time limit request %"PRIu64" exceeds group max running limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        ((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
-                        qos_ptr->grp_tres_run_mins_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"tres(%s) time limit request %"PRIu64" exceeds group max running limit %"PRIu64" for qos %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
+						qos_ptr->grp_tres_run_mins_ctld[tres_pos],
+						qos_ptr->name);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "tres(%s) time limit request %"PRIu64" "
@@ -1841,6 +1908,56 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 			       ((uint64_t)job_desc->time_limit *
 				job_desc->tres_req_cnt[tres_pos]),
 			       qos_ptr->grp_tres_run_mins_ctld[tres_pos],
+			       qos_ptr->name);
+			rc = false;
+			goto end_it;
+		}
+
+		if (!_validate_tres_time_limits(
+			    &tres_pos,
+			    &job_desc->time_limit,
+			    part_ptr->max_time,
+			    job_desc->tres_req_cnt,
+			    qos_ptr->max_tres_run_mins_pa_ctld,
+			    qos_out_ptr->max_tres_run_mins_pa_ctld,
+			    &acct_policy_limit_set->time,
+			    strict_checking)) {
+			if (reason)
+				*reason = _get_tres_state_reason(
+					tres_pos,
+					WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT);
+			debug2("job submit for user %s(%u): tres(%s) time limit request %"PRIu64"exceeds account max running limit %"PRIu64"for qos '%s'",
+			       user_name,
+			       job_desc->user_id,
+			       assoc_mgr_tres_name_array[tres_pos],
+			       ((uint64_t)job_desc->time_limit *
+				job_desc->tres_req_cnt[tres_pos]),
+			       qos_ptr->max_tres_run_mins_pa_ctld[tres_pos],
+			       qos_ptr->name);
+			rc = false;
+			goto end_it;
+		}
+
+		if (!_validate_tres_time_limits(
+			    &tres_pos,
+			    &job_desc->time_limit,
+			    part_ptr->max_time,
+			    job_desc->tres_req_cnt,
+			    qos_ptr->max_tres_run_mins_pu_ctld,
+			    qos_out_ptr->max_tres_run_mins_pu_ctld,
+			    &acct_policy_limit_set->time,
+			    strict_checking)) {
+			if (reason)
+				*reason = _get_tres_state_reason(
+					tres_pos,
+					WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER);
+			debug2("job submit for user %s(%u): tres(%s) time limit request %"PRIu64"exceeds user max running limit %"PRIu64"for qos '%s'",
+			       user_name,
+			       job_desc->user_id,
+			       assoc_mgr_tres_name_array[tres_pos],
+			       ((uint64_t)job_desc->time_limit *
+				job_desc->tres_req_cnt[tres_pos]),
+			       qos_ptr->max_tres_run_mins_pu_ctld[tres_pos],
 			       qos_ptr->name);
 			rc = false;
 			goto end_it;
@@ -1860,13 +1977,13 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 				if (reason)
 					*reason = WAIT_QOS_MAX_WALL_PER_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "time limit %u exceeds qos max %u",
-                        job_desc->time_limit, 
-                        qos_ptr->max_wall_pj);
-            }
+				if (enable_reason_detail) {
+					xfree(job_desc->reason_detail);
+					xstrfmtcat(job_desc->reason_detail, 
+					        "time limit %u exceeds qos max %u",
+					        job_desc->time_limit, 
+					        qos_ptr->max_wall_pj);
+				}
 #endif
 				debug2("job submit for user %s(%u): "
 				       "time limit %u exceeds qos max %u",
@@ -1894,13 +2011,13 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 				if (reason)
 					*reason = WAIT_QOS_GRP_WALL;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "time limit %u exceeds qos grp max %u",
-                        job_desc->time_limit,
-                        qos_ptr->grp_wall);
-            }
+				if (enable_reason_detail) {
+					xfree(job_desc->reason_detail);
+					xstrfmtcat(job_desc->reason_detail, 
+							"time limit %u exceeds qos grp max %u",
+							job_desc->time_limit,
+							qos_ptr->grp_wall);
+				}
 #endif
 				debug2("job submit for user %s(%u): "
 				       "time limit %u exceeds qos grp max %u",
@@ -1926,16 +2043,17 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 			*reason = _get_tres_state_reason(
 				tres_pos, WAIT_QOS_MAX_UNK_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds per-job max tres limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos],
-                        qos_ptr->max_tres_pj_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+		if (enable_reason_detail) {
+			xfree(job_desc->reason_detail);
+			xstrfmtcat(job_desc->reason_detail, 
+					"min tres(%s) request %"PRIu64" exceeds per-job max tres limit %"PRIu64" for qos %s",
+					assoc_mgr_tres_name_array[tres_pos],
+					job_desc->tres_req_cnt[tres_pos],
+					qos_ptr->max_tres_pj_ctld[tres_pos],
+					qos_ptr->name);
+		}
 #endif
+
 		debug2("job submit for user %s(%u): "
 		       "min tres(%s) request %"PRIu64" exceeds "
 		       "per-job max tres limit %"PRIu64" for qos '%s'",
@@ -1963,15 +2081,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 			*reason = _get_tres_state_reason(
 				tres_pos, WAIT_QOS_MAX_UNK_PER_NODE);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds per-node max tres limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos] / job_desc->tres_req_cnt[TRES_ARRAY_NODE],
-                        qos_ptr->max_tres_pn_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+		if (enable_reason_detail) {
+			xfree(job_desc->reason_detail);
+			xstrfmtcat(job_desc->reason_detail, 
+					"min tres(%s) request %"PRIu64" exceeds per-node max tres limit %"PRIu64" for qos %s",
+					assoc_mgr_tres_name_array[tres_pos],
+					job_desc->tres_req_cnt[tres_pos] / job_desc->tres_req_cnt[TRES_ARRAY_NODE],
+					qos_ptr->max_tres_pn_ctld[tres_pos],
+					qos_ptr->name);
+		}
 #endif
 		debug2("job submit for user %s(%u): "
 		       "min tres(%s) request %"PRIu64" exceeds "
@@ -1991,6 +2109,8 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 	 * qos_ptr->max_jobs.
 	 */
 
+	/* we don't need to check min_tres_pj here */
+
 	if ((qos_out_ptr->max_submit_jobs_pa == INFINITE) &&
 	    (qos_ptr->max_submit_jobs_pa != INFINITE)) {
 		slurmdb_used_limits_t *used_limits =
@@ -2005,14 +2125,14 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 			if (reason)
 				*reason = WAIT_QOS_MAX_SUB_JOB_PER_ACCT;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "qos max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
-                        qos_ptr->max_submit_jobs_pa,
-                        used_limits->submit_jobs, job_cnt,
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"qos max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
+						qos_ptr->max_submit_jobs_pa,
+						used_limits->submit_jobs, job_cnt,
+						qos_ptr->name);
+			}
 #endif
 			debug2("job submit for account %s: qos max submit job limit exceeded %u (used:%u + requested:%d) for qos '%s'",
 			       assoc_ptr->acct,
@@ -2038,17 +2158,17 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 			if (reason)
 				*reason = WAIT_QOS_MAX_SUB_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "qos max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
-                        qos_ptr->max_submit_jobs_pu,
-                        used_limits->submit_jobs,
-                        job_cnt,
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"qos max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
+						qos_ptr->max_submit_jobs_pu,
+						used_limits->submit_jobs,
+						job_cnt,
+						qos_ptr->name);
+			}
 #endif
-			debug2("job submit for user %s(%u): qos max submit job limit exceeded %u (used:%u + requested:%d) for qos %s",
+			debug2("job submit for user %s(%u): qos max submit job limit exceeded %u (used:%u + requested:%d) for qos '%s'",
 			       user_name,
 			       job_desc->user_id,
 			       qos_ptr->max_submit_jobs_pu,
@@ -2071,15 +2191,15 @@ static int _qos_policy_validate(job_desc_msg_t *job_desc,
 			*reason = _get_tres_state_reason(
 				tres_pos, WAIT_QOS_MIN_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds per-job max tres limit %"PRIu64" for qos %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos],
-                        qos_ptr->min_tres_pj_ctld[tres_pos],
-                        qos_ptr->name);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"min tres(%s) request %"PRIu64" exceeds per-job max tres limit %"PRIu64" for qos %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						job_desc->tres_req_cnt[tres_pos],
+						qos_ptr->min_tres_pj_ctld[tres_pos],
+						qos_ptr->name);
+			}
 #endif
 		debug2("job submit for user %s(%u): "
 		       "min tres(%s) request %"PRIu64" exceeds "
@@ -2145,12 +2265,12 @@ static int _qos_job_runnable_pre_select(job_record_t *job_ptr,
 			xfree(job_ptr->state_desc);
 			job_ptr->state_reason = WAIT_QOS_GRP_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max jobs limit %u with using %u for QOS %s",
-                    qos_ptr->grp_jobs,
-                    qos_ptr->usage->grp_used_jobs, 
-                    qos_ptr->name);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max jobs limit %u with using %u for QOS %s",
+					qos_ptr->grp_jobs,
+					qos_ptr->usage->grp_used_jobs, 
+					qos_ptr->name);
 #endif
 			debug2("%pJ being held, the job is at or exceeds group max jobs limit %u with %u for QOS %s",
 			       job_ptr, qos_ptr->grp_jobs,
@@ -2160,6 +2280,8 @@ static int _qos_job_runnable_pre_select(job_record_t *job_ptr,
 			goto end_it;
 		}
 	}
+
+	/* we don't need to check grp_submit_jobs here */
 
 	/* we don't need to check grp_tres_run_mins here */
 
@@ -2195,12 +2317,12 @@ static int _qos_job_runnable_pre_select(job_record_t *job_ptr,
 			xfree(job_ptr->state_desc);
 			job_ptr->state_reason = WAIT_QOS_GRP_WALL;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group wall limit %u with %u for QOS %s",
-                    qos_ptr->grp_wall,
-                    wall_mins,
-                    qos_ptr->name);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group wall limit %u with %u for QOS %s",
+					qos_ptr->grp_wall,
+					wall_mins,
+					qos_ptr->name);
 #endif
 			debug2("%pJ being held, the job is at or exceeds group wall limit %u with %u for QOS %s",
 			       job_ptr, qos_ptr->grp_wall,
@@ -2231,6 +2353,10 @@ static int _qos_job_runnable_pre_select(job_record_t *job_ptr,
 
 	/* we don't need to check max_tres_pu here */
 
+	/* we don't need to check max_tres_run_mins_pa here */
+
+	/* we don't need to check max_tres_run_mins_pu here */
+
 	if ((qos_out_ptr->max_jobs_pa == INFINITE)
 	    && (qos_ptr->max_jobs_pa != INFINITE)) {
 
@@ -2241,13 +2367,13 @@ static int _qos_job_runnable_pre_select(job_record_t *job_ptr,
 			job_ptr->state_reason =
 				WAIT_QOS_MAX_JOB_PER_ACCT;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "max jobs per-acct (%s) limit %u with %u for QOS %s",
-                    used_limits_a->acct,
-                    qos_ptr->max_jobs_pa,
-                    used_limits_a->jobs,
-                    qos_ptr->name);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"max jobs per-acct (%s) limit %u with %u for QOS %s",
+					used_limits_a->acct,
+					qos_ptr->max_jobs_pa,
+					used_limits_a->jobs,
+					qos_ptr->name);
 #endif
 			debug2("%pJ being held, the job is at or exceeds max jobs per-acct (%s) limit %u with %u for QOS %s",
 			       job_ptr, used_limits_a->acct,
@@ -2268,12 +2394,12 @@ static int _qos_job_runnable_pre_select(job_record_t *job_ptr,
 			job_ptr->state_reason =
 				WAIT_QOS_MAX_JOB_PER_USER;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "max jobs per-user limit %u with %u for QOS %s",
-                    qos_ptr->max_jobs_pu,
-                    used_limits->jobs,
-                    qos_ptr->name);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"max jobs per-user limit %u with %u for QOS %s",
+					qos_ptr->max_jobs_pu,
+					used_limits->jobs,
+					qos_ptr->name);
 #endif
 			debug2("%pJ being held, the job is at or exceeds max jobs per-user limit %u with %u for QOS %s",
 			       job_ptr, qos_ptr->max_jobs_pu,
@@ -2319,11 +2445,11 @@ static int _qos_job_runnable_pre_select(job_record_t *job_ptr,
 			job_ptr->state_reason =
 				WAIT_QOS_MAX_WALL_PER_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "time limit %u exceeds QOS max wall per-job %u",
-                    time_limit, 
-                    qos_out_ptr->max_wall_pj);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"time limit %u exceeds QOS max wall per-job %u",
+					time_limit, 
+					qos_out_ptr->max_wall_pj);
 #endif
 			debug2("%pJ being held, time limit %u exceeds QOS max wall pj %u",
 			       job_ptr, time_limit, qos_out_ptr->max_wall_pj);
@@ -2344,6 +2470,8 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 {
 	uint64_t tres_usage_mins[slurmctld_tres_cnt];
 	uint64_t tres_run_mins[slurmctld_tres_cnt];
+	uint64_t tres_run_mins_pa[slurmctld_tres_cnt];
+	uint64_t tres_run_mins_pu[slurmctld_tres_cnt];
 	uint64_t orig_node_cnt;
 	slurmdb_used_limits_t *used_limits = NULL, *used_limits_a = NULL;
 	bool safe_limits = false;
@@ -2363,8 +2491,19 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 	if (accounting_enforce & ACCOUNTING_ENFORCE_SAFE)
 		safe_limits = true;
 
+	used_limits_a =	acct_policy_get_acct_used_limits(
+		&qos_ptr->usage->acct_limit_list,
+		assoc_ptr->acct);
+
+	used_limits = acct_policy_get_user_used_limits(
+		&qos_ptr->usage->user_limit_list,
+		job_ptr->user_id);
+
+
 	/* clang needs this memset to avoid a warning */
 	memset(tres_run_mins, 0, sizeof(tres_run_mins));
+	memset(tres_run_mins_pa, 0, sizeof(tres_run_mins_pa));
+	memset(tres_run_mins_pu, 0, sizeof(tres_run_mins_pu));
 	memset(tres_usage_mins, 0, sizeof(tres_usage_mins));
 	if (job_ptr->qos_ptr &&
 	    (job_ptr->qos_ptr->usage_factor >= 0))
@@ -2372,6 +2511,10 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 	for (i=0; i<slurmctld_tres_cnt; i++) {
 		tres_run_mins[i] =
 			qos_ptr->usage->grp_used_tres_run_secs[i] / 60;
+		tres_run_mins_pa[i] =
+			used_limits_a->tres_run_secs[i] / 60;
+		tres_run_mins_pu[i] =
+			used_limits->tres_run_secs[i] / 60;
 		tres_usage_mins[i] =
 			(uint64_t)(qos_ptr->usage->usage_tres_raw[i] / 60.0);
 
@@ -2382,17 +2525,10 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		 */
 		if (usage_factor == 0.0) {
 			tres_run_mins[i] *= usage_factor;
+			tres_run_mins_pa[i] *= usage_factor;
 			tres_usage_mins[i] *= usage_factor;
 		}
 	}
-
-	used_limits_a =	acct_policy_get_acct_used_limits(
-		&qos_ptr->usage->acct_limit_list,
-		assoc_ptr->acct);
-
-	used_limits = acct_policy_get_user_used_limits(
-		&qos_ptr->usage->user_limit_list,
-		job_ptr->user_id);
 
 	tres_usage = _validate_tres_usage_limits_for_qos(
 		&tres_pos, qos_ptr->grp_tres_mins_ctld,
@@ -2405,13 +2541,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "QOS %s group max tres(%s) minutes limit of %"PRIu64" is already at or exceeded with %"PRIu64,
-                    qos_ptr->name,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    qos_ptr->grp_tres_mins_ctld[tres_pos],
-                    tres_usage_mins[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s group max tres(%s) minutes limit of %"PRIu64" is already at or exceeded with %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				qos_ptr->grp_tres_mins_ctld[tres_pos],
+				tres_usage_mins[tres_pos]);
 #endif
 		debug2("%pJ being held, QOS %s group max tres(%s) minutes limit of %"PRIu64" is already at or exceeded with %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2426,13 +2562,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "QOS %s's group max tres(%s) minutes of %"PRIu64" with %"PRIu64,
-                    qos_ptr->name,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    qos_ptr->grp_tres_mins_ctld[tres_pos],
-                    job_tres_time_limit[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s's group max tres(%s) minutes of %"PRIu64" with %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				qos_ptr->grp_tres_mins_ctld[tres_pos],
+				job_tres_time_limit[tres_pos]);
 #endif
 		debug2("%pJ being held, the job is requesting more than allowed with QOS %s's group max tres(%s) minutes of %"PRIu64" with %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2454,14 +2590,14 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "QOS %s's group max tres(%s) minutes of %"PRIu64", available %"PRIu64", request %"PRIu64,
-                    qos_ptr->name,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    qos_ptr->grp_tres_mins_ctld[tres_pos],
-                    qos_ptr->grp_tres_mins_ctld[tres_pos] - tres_usage_mins[tres_pos],
-                    job_tres_time_limit[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s's group max tres(%s) minutes of %"PRIu64", available %"PRIu64", request %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				qos_ptr->grp_tres_mins_ctld[tres_pos],
+				qos_ptr->grp_tres_mins_ctld[tres_pos] - tres_usage_mins[tres_pos],
+				job_tres_time_limit[tres_pos]);
 #endif
 		debug2("%pJ being held, the job is at or exceeds QOS %s's group max tres(%s) minutes of %"PRIu64" of which %"PRIu64" are still available but request is for %"PRIu64" (plus %"PRIu64" already in use) tres minutes (request tres count %"PRIu64")",
 		       job_ptr, qos_ptr->name,
@@ -2503,13 +2639,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_GRP_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                tres_req_cnt[tres_pos],
-                qos_ptr->grp_tres_ctld[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				tres_req_cnt[tres_pos],
+				qos_ptr->grp_tres_ctld[tres_pos]);
 #endif
 		debug2("%pJ is being held, QOS %s min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2524,14 +2660,14 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_GRP_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s group max tres(%s) limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                qos_ptr->grp_tres_ctld[tres_pos],
-                qos_ptr->usage->grp_used_tres[tres_pos],
-                tres_req_cnt[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s group max tres(%s) limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				qos_ptr->grp_tres_ctld[tres_pos],
+				qos_ptr->usage->grp_used_tres[tres_pos],
+				tres_req_cnt[tres_pos]);
 #endif
 		debug2("%pJ being held, if allowed the job request will exceed QOS %s group max tres(%s) limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2548,6 +2684,8 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 
 	/* we don't need to check grp_jobs here */
 
+	/* we don't need to check grp_submit_jobs here */
+
 	tres_usage = _validate_tres_usage_limits_for_qos(
 		&tres_pos,
 		qos_ptr->grp_tres_run_mins_ctld,
@@ -2562,13 +2700,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_GRP_UNK_RUN_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s group max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                job_tres_time_limit[tres_pos],
-                qos_ptr->grp_tres_run_mins_ctld[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s group max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				job_tres_time_limit[tres_pos],
+				qos_ptr->grp_tres_run_mins_ctld[tres_pos]);
 #endif
 		debug2("%pJ is being held, QOS %s group max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2583,14 +2721,14 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_GRP_UNK_RUN_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s group max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                qos_ptr->grp_tres_run_mins_ctld[tres_pos],
-                tres_run_mins[tres_pos],
-                job_tres_time_limit[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s group max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				qos_ptr->grp_tres_run_mins_ctld[tres_pos],
+				tres_run_mins[tres_pos],
+				job_tres_time_limit[tres_pos]);
 #endif
 		debug2("%pJ being held, if allowed the job request will exceed QOS %s group max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2622,13 +2760,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_MAX_UNK_MINS_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s's max tres(%s) minutes of %"PRIu64" with %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                qos_ptr->max_tres_mins_pj_ctld[tres_pos],
-                job_tres_time_limit[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s's max tres(%s) minutes of %"PRIu64" with %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				qos_ptr->max_tres_mins_pj_ctld[tres_pos],
+				job_tres_time_limit[tres_pos]);
 #endif
 		debug2("%pJ being held, the job is requesting more than allowed with QOS %s's max tres(%s) minutes of %"PRIu64" with %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2651,13 +2789,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_MAX_UNK_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s min tres(%s) per job request %"PRIu64" exceeds max tres limit %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                tres_req_cnt[tres_pos],
-                qos_ptr->max_tres_pj_ctld[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s min tres(%s) per job request %"PRIu64" exceeds max tres limit %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				tres_req_cnt[tres_pos],
+				qos_ptr->max_tres_pj_ctld[tres_pos]);
 #endif
 		debug2("%pJ is being held, QOS %s min tres(%s) per job request %"PRIu64" exceeds max tres limit %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2685,13 +2823,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		if (tres_req_cnt[TRES_ARRAY_NODE] > 1)
 			req_per_node /= tres_req_cnt[TRES_ARRAY_NODE];
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s min tres(%s) per node request %"PRIu64" exceeds max tres limit %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                req_per_node,
-                qos_ptr->max_tres_pn_ctld[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s min tres(%s) per node request %"PRIu64" exceeds max tres limit %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				req_per_node,
+				qos_ptr->max_tres_pn_ctld[tres_pos]);
 #endif
 		debug2("%pJ is being held, QOS %s min tres(%s) per node request %"PRIu64" exceeds max tres limit %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2714,13 +2852,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_MIN_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s min tres(%s) per job request %"PRIu64" exceeds min tres limit %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                tres_req_cnt[tres_pos],
-                qos_ptr->min_tres_pj_ctld[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s min tres(%s) per job request %"PRIu64" exceeds min tres limit %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				tres_req_cnt[tres_pos],
+				qos_ptr->min_tres_pj_ctld[tres_pos]);
 #endif
 		debug2("%pJ is being held, QOS %s min tres(%s) per job request %"PRIu64" exceeds min tres limit %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2753,14 +2891,14 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_MAX_UNK_PER_ACCT);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s min tres(%s) request %"PRIu64" exceeds max tres per account (%s) limit %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                tres_req_cnt[tres_pos],
-                used_limits_a->acct,
-                qos_ptr->max_tres_pa_ctld[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s min tres(%s) request %"PRIu64" exceeds max tres per account (%s) limit %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				tres_req_cnt[tres_pos],
+				used_limits_a->acct,
+				qos_ptr->max_tres_pa_ctld[tres_pos]);
 #endif
 		debug2("%pJ is being held, QOS %s min tres(%s) request %"PRIu64" exceeds max tres per account (%s) limit %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2780,15 +2918,15 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_MAX_UNK_PER_ACCT);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s max tres(%s) per account (%s) limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                used_limits_a->acct,
-                qos_ptr->max_tres_pa_ctld[tres_pos],
-                used_limits_a->tres[tres_pos],
-                tres_req_cnt[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s max tres(%s) per account (%s) limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				used_limits_a->acct,
+				qos_ptr->max_tres_pa_ctld[tres_pos],
+				used_limits_a->tres[tres_pos],
+				tres_req_cnt[tres_pos]);
 #endif
 		debug2("%pJ being held, if allowed the job request will exceed QOS %s max tres(%s) per account (%s) limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2826,13 +2964,13 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_MAX_UNK_PER_USER);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s min tres(%s) request %"PRIu64" exceeds max tres per user limit %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                tres_req_cnt[tres_pos],
-                qos_ptr->max_tres_pu_ctld[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s min tres(%s) request %"PRIu64" exceeds max tres per user limit %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				tres_req_cnt[tres_pos],
+				qos_ptr->max_tres_pu_ctld[tres_pos]);
 #endif
 		debug2("%pJ is being held, QOS %s min tres(%s) request %"PRIu64" exceeds max tres per user limit %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2851,14 +2989,14 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 		job_ptr->state_reason = _get_tres_state_reason(
 			tres_pos, WAIT_QOS_MAX_UNK_PER_USER);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-        xstrfmtcat(job_ptr->reason_detail, 
-                "QOS %s max tres(%s) per user limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
-                qos_ptr->name,
-                assoc_mgr_tres_name_array[tres_pos],
-                qos_ptr->max_tres_pu_ctld[tres_pos],
-                used_limits->tres[tres_pos],
-                tres_req_cnt[tres_pos]);
+		xfree(job_ptr->reason_detail);
+		xstrfmtcat(job_ptr->reason_detail, 
+				"QOS %s max tres(%s) per user limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
+				qos_ptr->name,
+				assoc_mgr_tres_name_array[tres_pos],
+				qos_ptr->max_tres_pu_ctld[tres_pos],
+				used_limits->tres[tres_pos],
+				tres_req_cnt[tres_pos]);
 #endif
 		debug2("%pJ being held, if allowed the job request will exceed QOS %s max tres(%s) per user limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
 		       job_ptr, qos_ptr->name,
@@ -2882,6 +3020,82 @@ static int _qos_job_runnable_post_select(job_record_t *job_ptr,
 	/* we don't need to check submit_jobs_pu here */
 
 	/* we don't need to check max_wall_pj here */
+
+	tres_usage = _validate_tres_usage_limits_for_qos(
+		&tres_pos, qos_ptr->max_tres_run_mins_pa_ctld,
+		qos_out_ptr->max_tres_run_mins_pa_ctld, job_tres_time_limit,
+		tres_run_mins_pa, NULL, NULL, true);
+	switch (tres_usage) {
+	case TRES_USAGE_CUR_EXCEEDS_LIMIT:
+		/* not possible because the curr_usage sent in is NULL */
+		break;
+	case TRES_USAGE_REQ_EXCEEDS_LIMIT:
+		xfree(job_ptr->state_desc);
+		job_ptr->state_reason = _get_tres_state_reason(
+			tres_pos, WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT);
+		debug2("%pJ is being held, QOS %s account max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
+		       job_ptr, qos_ptr->name,
+		       assoc_mgr_tres_name_array[tres_pos],
+		       job_tres_time_limit[tres_pos],
+		       qos_ptr->max_tres_run_mins_pa_ctld[tres_pos]);
+		rc = false;
+		goto end_it;
+		break;
+	case TRES_USAGE_REQ_NOT_SAFE_WITH_USAGE:
+		xfree(job_ptr->state_desc);
+		job_ptr->state_reason = _get_tres_state_reason(
+			tres_pos, WAIT_QOS_MAX_UNK_RUN_MINS_PER_ACCT);
+		debug2("%pJ being held, if allowed the job request will exceed QOS %s account max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
+		       job_ptr, qos_ptr->name,
+		       assoc_mgr_tres_name_array[tres_pos],
+		       qos_ptr->max_tres_run_mins_pa_ctld[tres_pos],
+		       tres_run_mins_pa[tres_pos],
+		       job_tres_time_limit[tres_pos]);
+		rc = false;
+		goto end_it;
+		break;
+	case TRES_USAGE_OKAY:
+		/* all good */
+		break;
+	}
+
+	tres_usage = _validate_tres_usage_limits_for_qos(
+		&tres_pos, qos_ptr->max_tres_run_mins_pu_ctld,
+		qos_out_ptr->max_tres_run_mins_pu_ctld, job_tres_time_limit,
+		tres_run_mins_pu, NULL, NULL, true);
+	switch (tres_usage) {
+	case TRES_USAGE_CUR_EXCEEDS_LIMIT:
+		/* not possible because the curr_usage sent in is NULL */
+		break;
+	case TRES_USAGE_REQ_EXCEEDS_LIMIT:
+		xfree(job_ptr->state_desc);
+		job_ptr->state_reason = _get_tres_state_reason(
+			tres_pos, WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER);
+		debug2("%pJ is being held, QOS %s user max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
+		       job_ptr, qos_ptr->name,
+		       assoc_mgr_tres_name_array[tres_pos],
+		       job_tres_time_limit[tres_pos],
+		       qos_ptr->max_tres_run_mins_pu_ctld[tres_pos]);
+		rc = false;
+		goto end_it;
+		break;
+	case TRES_USAGE_REQ_NOT_SAFE_WITH_USAGE:
+		xfree(job_ptr->state_desc);
+		job_ptr->state_reason = _get_tres_state_reason(
+			tres_pos, WAIT_QOS_MAX_UNK_RUN_MINS_PER_USER);
+		debug2("%pJ being held, if allowed the job request will exceed QOS %s user max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
+		       job_ptr, qos_ptr->name,
+		       assoc_mgr_tres_name_array[tres_pos],
+		       qos_ptr->max_tres_run_mins_pu_ctld[tres_pos],
+		       tres_run_mins_pu[tres_pos],
+		       job_tres_time_limit[tres_pos]);
+		rc = false;
+		goto end_it;
+		break;
+	case TRES_USAGE_OKAY:
+		/* all good */
+		break;
+	}
 
 end_it:
 	if (!rc)
@@ -3005,9 +3219,9 @@ end_it:
  * acct_policy_add_job_submit - Note that a job has been submitted for
  *	accounting policy purposes.
  */
-extern void acct_policy_add_job_submit(job_record_t *job_ptr)
+extern void acct_policy_add_job_submit(job_record_t *job_ptr, bool assoc_locked)
 {
-	_adjust_limit_usage(ACCT_POLICY_ADD_SUBMIT, job_ptr);
+	_adjust_limit_usage(ACCT_POLICY_ADD_SUBMIT, job_ptr, assoc_locked);
 }
 
 /*
@@ -3015,29 +3229,31 @@ extern void acct_policy_add_job_submit(job_record_t *job_ptr)
  *      not had started or been allocated resources) for accounting
  *      policy purposes.
  */
-extern void acct_policy_remove_job_submit(job_record_t *job_ptr)
+extern void acct_policy_remove_job_submit(job_record_t *job_ptr,
+					  bool assoc_locked)
 {
-	_adjust_limit_usage(ACCT_POLICY_REM_SUBMIT, job_ptr);
+	_adjust_limit_usage(ACCT_POLICY_REM_SUBMIT, job_ptr, assoc_locked);
 }
 
 /*
  * acct_policy_job_begin - Note that a job is starting for accounting
  *	policy purposes.
  */
-extern void acct_policy_job_begin(job_record_t *job_ptr)
+extern void acct_policy_job_begin(job_record_t *job_ptr, bool assoc_locked)
 {
-	_adjust_limit_usage(ACCT_POLICY_JOB_BEGIN, job_ptr);
+	_adjust_limit_usage(ACCT_POLICY_JOB_BEGIN, job_ptr, assoc_locked);
 }
 
 /*
  * acct_policy_job_fini - Note that a job is completing for accounting
  *	policy purposes.
  */
-extern void acct_policy_job_fini(job_record_t *job_ptr)
+extern void acct_policy_job_fini(job_record_t *job_ptr, bool assoc_locked)
 {
 	/* if end_time_exp == NO_VAL this has already happened */
 	if (job_ptr->end_time_exp != (time_t)NO_VAL)
-		_adjust_limit_usage(ACCT_POLICY_JOB_FINI, job_ptr);
+		_adjust_limit_usage(ACCT_POLICY_JOB_FINI, job_ptr,
+				    assoc_locked);
 	else
 		debug2("We have already ran the job_fini for %pJ", job_ptr);
 }
@@ -3063,6 +3279,12 @@ extern void acct_policy_alter_job(job_record_t *job_ptr,
 
 	time_limit_secs = (uint64_t)job_ptr->time_limit * 60;
 	new_time_limit_secs = (uint64_t)new_time_limit * 60;
+
+	/* take into account usage factor */
+	if (job_ptr->qos_ptr && (job_ptr->qos_ptr->usage_factor >= 0)) {
+		time_limit_secs *= job_ptr->qos_ptr->usage_factor;
+		new_time_limit_secs *= job_ptr->qos_ptr->usage_factor;
+	}
 
 	/* clang needs these memset to avoid a warning */
 	memset(used_tres_run_secs, 0, sizeof(used_tres_run_secs));
@@ -3138,10 +3360,12 @@ static void _get_accrue_create_cnt(uint32_t *max_jobs_accrue, int *create_cnt,
 				   uint32_t in_accrue, uint32_t in_used)
 {
 	/*
-	 * If we already set max_jobs_accrue then call it good.
 	 * If in_accrue is INFINITE we don't have a limit
+	 * If we already set max_jobs_accrue and it is the most restrictive,
+	 * then call it good.
 	 */
-	if ((*max_jobs_accrue != INFINITE) || (in_accrue == INFINITE))
+	if ((in_accrue == INFINITE) ||
+	    ((*max_jobs_accrue != INFINITE) && (*max_jobs_accrue <= in_accrue)))
 		return;
 
 	*max_jobs_accrue = in_accrue;
@@ -3149,8 +3373,6 @@ static void _get_accrue_create_cnt(uint32_t *max_jobs_accrue, int *create_cnt,
 		*create_cnt = *max_jobs_accrue - in_used;
 	else
 		*create_cnt = 0;
-
-	return;
 }
 
 static void _add_accrue_time_internal(slurmdb_assoc_rec_t *assoc_ptr,
@@ -3266,7 +3488,7 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 	char *user_name = NULL;
 	bool rc = true;
 	assoc_mgr_lock_t locks =
-		{ .assoc = READ_LOCK, .qos = READ_LOCK, .tres = READ_LOCK };
+		{ .assoc = READ_LOCK, .qos = WRITE_LOCK, .tres = READ_LOCK };
 	bool strict_checking;
 	double limit_factor = -1.0;
 	uint64_t grp_tres_ctld[slurmctld_tres_cnt];
@@ -3289,7 +3511,7 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 		assoc_mgr_lock(&locks);
 
 	xassert(verify_assoc_lock(ASSOC_LOCK, READ_LOCK));
-	xassert(verify_assoc_lock(QOS_LOCK, READ_LOCK));
+	xassert(verify_assoc_lock(QOS_LOCK, WRITE_LOCK));
 	xassert(verify_assoc_lock(TRES_LOCK, READ_LOCK));
 
 	assoc_mgr_set_qos_tres_cnt(&qos_rec);
@@ -3343,15 +3565,15 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 				*reason = _get_tres_state_reason(
 					tres_pos, WAIT_ASSOC_GRP_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64" for account %s",
-                        assoc_mgr_tres_name_array[tres_pos], 
-                        job_desc->tres_req_cnt[tres_pos],
-                        grp_tres_ctld[tres_pos], 
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64" for account %s",
+						assoc_mgr_tres_name_array[tres_pos], 
+						job_desc->tres_req_cnt[tres_pos],
+						grp_tres_ctld[tres_pos], 
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "min tres(%s) request %"PRIu64" exceeds "
@@ -3377,14 +3599,14 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 			if (reason)
 				*reason = WAIT_ASSOC_GRP_SUB_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "group max submit job limit exceeded %u (used:%u + requested:%d) for account %s",
-                        assoc_ptr->grp_submit_jobs,
-                        assoc_ptr->usage->used_submit_jobs, job_cnt,
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"group max submit job limit exceeded %u (used:%u + requested:%d) for account %s",
+						assoc_ptr->grp_submit_jobs,
+						assoc_ptr->usage->used_submit_jobs, job_cnt,
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): group max submit job limit exceeded %u (used:%u + requested:%d) for account '%s'",
 			       user_name,
@@ -3411,15 +3633,15 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 					tres_pos,
 					WAIT_ASSOC_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "tres(%s) time limit request %"PRIu64" exceeds group max limit %"PRIu64" for account %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        ((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
-                        assoc_ptr->grp_tres_mins_ctld[tres_pos],
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"tres(%s) time limit request %"PRIu64" exceeds group max limit %"PRIu64" for account %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
+						assoc_ptr->grp_tres_mins_ctld[tres_pos],
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "tres(%s) time limit request %"PRIu64" "
@@ -3452,15 +3674,15 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 					tres_pos,
 					WAIT_ASSOC_GRP_UNK_RUN_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "tres(%s) time limit request %"PRIu64" exceeds group max running limit %"PRIu64" for account %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        ((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
-                        assoc_ptr->grp_tres_run_mins_ctld[tres_pos],
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"tres(%s) time limit request %"PRIu64" exceeds group max running limit %"PRIu64" for account %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
+						assoc_ptr->grp_tres_run_mins_ctld[tres_pos],
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "tres(%s) time limit request %"PRIu64" "
@@ -3489,14 +3711,14 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 			if (reason)
 				*reason = WAIT_ASSOC_GRP_WALL;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "time limit %u exceeds max group wall %u for account %s",
-                        job_desc->time_limit,
-                        assoc_ptr->grp_wall,
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"time limit %u exceeds max group wall %u for account %s",
+						job_desc->time_limit,
+						assoc_ptr->grp_wall,
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "time limit %u exceeds max group %u for "
@@ -3511,7 +3733,7 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 		}
 
 		/* We don't need to look at the regular limits for
-		 * parents since we have pre-propogated them, so just
+		 * parents since we have pre-propagated them, so just
 		 * continue with the next parent
 		 */
 		if (parent) {
@@ -3534,15 +3756,15 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 				*reason = _get_tres_state_reason(
 					tres_pos, WAIT_ASSOC_MAX_UNK_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds max tres limit %"PRIu64" for account %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos],
-                        max_tres_ctld[tres_pos],
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"min tres(%s) request %"PRIu64" exceeds max tres limit %"PRIu64" for account %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						job_desc->tres_req_cnt[tres_pos],
+						max_tres_ctld[tres_pos],
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "min tres(%s) request %"PRIu64" exceeds "
@@ -3570,15 +3792,15 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 					tres_pos,
 					WAIT_ASSOC_MAX_UNK_PER_NODE);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "min tres(%s) request %"PRIu64" exceeds max tres limit %"PRIu64" per node for account %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        job_desc->tres_req_cnt[tres_pos] / job_desc->tres_req_cnt[TRES_ARRAY_NODE],
-                        assoc_ptr->max_tres_pn_ctld[tres_pos],
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"min tres(%s) request %"PRIu64" exceeds max tres limit %"PRIu64" per node for account %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						job_desc->tres_req_cnt[tres_pos] / job_desc->tres_req_cnt[TRES_ARRAY_NODE],
+						assoc_ptr->max_tres_pn_ctld[tres_pos],
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "min tres(%s) request %"PRIu64" exceeds "
@@ -3607,14 +3829,14 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 			if (reason)
 				*reason = WAIT_ASSOC_MAX_SUB_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "account max submit job limit exceeded %u (used:%u + requested:%d) for account %s",
-                        assoc_ptr->max_submit_jobs,
-                        assoc_ptr->usage->used_submit_jobs, job_cnt,
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"account max submit job limit exceeded %u (used:%u + requested:%d) for account %s",
+						assoc_ptr->max_submit_jobs,
+						assoc_ptr->usage->used_submit_jobs, job_cnt,
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): account max submit job limit exceeded %u (used:%u + requested:%d) for account '%s'",
 			       user_name,
@@ -3640,15 +3862,15 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 					tres_pos,
 					WAIT_ASSOC_MAX_UNK_MINS_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "tres(%s) time limit request %"PRIu64" exceeds max per-job limit %"PRIu64" for account %s",
-                        assoc_mgr_tres_name_array[tres_pos],
-                        ((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
-                        assoc_ptr->max_tres_mins_ctld[tres_pos],
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"tres(%s) time limit request %"PRIu64" exceeds max per-job limit %"PRIu64" for account %s",
+						assoc_mgr_tres_name_array[tres_pos],
+						((uint64_t)job_desc->time_limit * job_desc->tres_req_cnt[tres_pos]),
+						assoc_ptr->max_tres_mins_ctld[tres_pos],
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "tres(%s) time limit request %"PRIu64" "
@@ -3676,14 +3898,14 @@ static bool _acct_policy_validate(job_desc_msg_t *job_desc,
 			if (reason)
 				*reason = WAIT_ASSOC_MAX_WALL_PER_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            if (enable_reason_detail) {
-                xfree(job_desc->reason_detail);
-                xstrfmtcat(job_desc->reason_detail, 
-                        "time limit %u exceeds max %u for account %s",
-                        job_desc->time_limit,
-                        assoc_ptr->max_wall_pj,
-                        assoc_ptr->acct);
-            }
+			if (enable_reason_detail) {
+				xfree(job_desc->reason_detail);
+				xstrfmtcat(job_desc->reason_detail, 
+						"time limit %u exceeds max %u for account %s",
+						job_desc->time_limit,
+						assoc_ptr->max_wall_pj,
+						assoc_ptr->acct);
+			}
 #endif
 			debug2("job submit for user %s(%u): "
 			       "time limit %u exceeds max %u for "
@@ -3754,7 +3976,7 @@ extern bool acct_policy_validate(job_desc_msg_t *job_desc,
 {
 	int rc = true;
 	assoc_mgr_lock_t locks =
-		{ .assoc = READ_LOCK, .qos = READ_LOCK, .tres = READ_LOCK };
+		{ .assoc = READ_LOCK, .qos = WRITE_LOCK, .tres = READ_LOCK };
 	acct_policy_validate_args_t args = {
 		.acct_policy_limit_set = acct_policy_limit_set,
 		.assoc_in = assoc_in, .job_desc = job_desc,
@@ -3803,7 +4025,7 @@ extern bool acct_policy_validate_het_job(List submit_job_list)
 	assoc_mgr_lock_t locks =
 		{ .assoc = READ_LOCK, .qos = READ_LOCK, .tres = READ_LOCK };
 	List het_job_limit_list;
-	ListIterator iter1, iter2;
+	list_itr_t *iter1, *iter2;
 	job_record_t *job_ptr1, *job_ptr2;
 	het_job_limits_t *job_limit1, *job_limit2;
 	bool rc = true;
@@ -3874,7 +4096,7 @@ extern bool acct_policy_validate_het_job(List submit_job_list)
 						&reason,
 						&acct_policy_limit_set,
 						false);
-				bit_free(job_desc.array_bitmap);
+				FREE_NULL_BITMAP(job_desc.array_bitmap);
 				if (!rc)
 					break;
 			}
@@ -3883,30 +4105,10 @@ extern bool acct_policy_validate_het_job(List submit_job_list)
 	list_iterator_destroy(iter1);
 
 	xfree(job_desc.tres_req_cnt);
-	list_destroy(het_job_limit_list);
+	FREE_NULL_LIST(het_job_limit_list);
 	xfree(acct_policy_limit_set.tres);
 
 	return rc;
-}
-
-/*
- * Determine if the specified job can execute right now or is currently
- * blocked by an association or QOS limit. Does not re-validate job state.
- */
-extern bool acct_policy_job_runnable_state(job_record_t *job_ptr)
-{
-	/* If any more limits are added this will need to be added to */
-	if ((job_ptr->state_reason >= WAIT_QOS_GRP_CPU
-	     && job_ptr->state_reason <= WAIT_ASSOC_MAX_SUB_JOB) ||
-	    (job_ptr->state_reason == WAIT_ASSOC_JOB_LIMIT) ||
-	    (job_ptr->state_reason == WAIT_ASSOC_RESOURCE_LIMIT) ||
-	    (job_ptr->state_reason == WAIT_ASSOC_TIME_LIMIT) ||
-	    (job_ptr->state_reason == WAIT_QOS_JOB_LIMIT) ||
-	    (job_ptr->state_reason == WAIT_QOS_TIME_LIMIT)) {
-		return false;
-	}
-
-	return true;
 }
 
 /*
@@ -3930,7 +4132,7 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 			 * parent or not
 			 */
 	assoc_mgr_lock_t locks =
-		{ .assoc = READ_LOCK, .qos = READ_LOCK, .tres = READ_LOCK };
+		{ .assoc = READ_LOCK, .qos = WRITE_LOCK, .tres = READ_LOCK };
 
 	/* check to see if we are enforcing associations */
 	if (!accounting_enforce)
@@ -3941,7 +4143,7 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 		job_ptr->state_reason = FAIL_ACCOUNT;
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
-#endif
+#endif		
 		return false;
 	}
 
@@ -3950,12 +4152,12 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 		return true;
 
 	/* clear old state reason */
-	if (!acct_policy_job_runnable_state(job_ptr)) {
+	if (job_state_reason_check(job_ptr->state_reason, JSR_QOS_ASSOC)) {
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = WAIT_NO_REASON;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
-#endif
+		xfree(job_ptr->reason_detail);
+#endif		
 	}
 
 	slurmdb_init_qos_rec(&qos_rec, 0, INFINITE);
@@ -4010,12 +4212,12 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 			xfree(job_ptr->state_desc);
 			job_ptr->state_reason = WAIT_ASSOC_GRP_JOB;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max jobs limit %u with %u for account %s",
-                    assoc_ptr->grp_jobs,
-                    assoc_ptr->usage->used_jobs, 
-                    assoc_ptr->acct);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max jobs limit %u with %u for account %s",
+					assoc_ptr->grp_jobs,
+					assoc_ptr->usage->used_jobs, 
+					assoc_ptr->acct);
 #endif
 			debug2("%pJ being held, assoc %u is at or exceeds group max jobs limit %u with %u for account %s",
 			       job_ptr, assoc_ptr->id, assoc_ptr->grp_jobs,
@@ -4079,7 +4281,7 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 
 		/*
 		 * We don't need to look at the regular limits for parents
-		 * since we have pre-propogated them, so just continue with
+		 * since we have pre-propagated them, so just continue with
 		 * the next parent.
 		 */
 		if (parent) {
@@ -4098,12 +4300,12 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 			xfree(job_ptr->state_desc);
 			job_ptr->state_reason = WAIT_ASSOC_MAX_JOBS;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "max jobs limit %u with %u for account %s",
-                    assoc_ptr->max_jobs, 
-                    assoc_ptr->usage->used_jobs, 
-                    assoc_ptr->acct);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"max jobs limit %u with %u for account %s",
+					assoc_ptr->max_jobs, 
+					assoc_ptr->usage->used_jobs, 
+					assoc_ptr->acct);
 #endif
 			debug2("%pJ being held, assoc %u is at or exceeds max jobs limit %u with %u for account %s",
 			       job_ptr, assoc_ptr->id,
@@ -4157,13 +4359,11 @@ extern bool acct_policy_job_runnable_pre_select(job_record_t *job_ptr,
 		parent = 1;
 	}
 end_it:
-
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	if(!rc){
 		_add_job_state_to_queue(job_ptr);
 	}
 #endif
-
 	if (!assoc_mgr_locked)
 		assoc_mgr_unlock(&locks);
 	slurmdb_free_qos_rec_members(&qos_rec);
@@ -4199,7 +4399,7 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			 * parent or not
 			 */
 	assoc_mgr_lock_t locks =
-		{ .assoc = READ_LOCK, .qos = READ_LOCK, .tres = READ_LOCK };
+		{ .assoc = READ_LOCK, .qos = WRITE_LOCK, .tres = READ_LOCK };
 
 	xassert(job_ptr);
 	xassert(job_ptr->part_ptr);
@@ -4226,11 +4426,11 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 		safe_limits = true;
 
 	/* clear old state reason */
-	if (!acct_policy_job_runnable_state(job_ptr)) {
+	if (job_state_reason_check(job_ptr->state_reason, JSR_QOS_ASSOC)) {
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = WAIT_NO_REASON;
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-        xfree(job_ptr->reason_detail);
+		xfree(job_ptr->reason_detail);
 #endif
 	}
 
@@ -4333,12 +4533,12 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max tres(%s) minutes limit %"PRIu64" with usage %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    assoc_ptr->grp_tres_mins_ctld[tres_pos],
-                    tres_usage_mins[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max tres(%s) minutes limit %"PRIu64" with usage %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					assoc_ptr->grp_tres_mins_ctld[tres_pos],
+					tres_usage_mins[tres_pos]);
 #endif
 			debug2("%pJ being held, assoc %u(%s/%s/%s) group max tres(%s) minutes limit of %"PRIu64" is already at or exceeded with %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4354,12 +4554,12 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max tres(%s) minutes limit %"PRIu64" with usage %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    assoc_ptr->grp_tres_mins_ctld[tres_pos],
-                    job_tres_time_limit[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max tres(%s) minutes limit %"PRIu64" with usage %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					assoc_ptr->grp_tres_mins_ctld[tres_pos],
+					job_tres_time_limit[tres_pos]);
 #endif
 			debug2("%pJ being held, the job is requesting more than allowed with assoc %u(%s/%s/%s) group max tres(%s) minutes of %"PRIu64" with %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4382,14 +4582,14 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_GRP_UNK_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max tres(%s) minutes limit %"PRIu64" with available %"PRIu64", using %"PRIu64", request %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    assoc_ptr->grp_tres_mins_ctld[tres_pos],
-                    assoc_ptr->grp_tres_mins_ctld[tres_pos] - tres_usage_mins[tres_pos],
-                    tres_run_mins[tres_pos],
-                    tres_req_cnt[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max tres(%s) minutes limit %"PRIu64" with available %"PRIu64", using %"PRIu64", request %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					assoc_ptr->grp_tres_mins_ctld[tres_pos],
+					assoc_ptr->grp_tres_mins_ctld[tres_pos] - tres_usage_mins[tres_pos],
+					tres_run_mins[tres_pos],
+					tres_req_cnt[tres_pos]);
 #endif
 			debug2("%pJ being held, the job is at or exceeds assoc %u(%s/%s/%s) group max tres(%s) minutes of %"PRIu64" of which %"PRIu64" are still available but request is for %"PRIu64" (plus %"PRIu64" already in use) tres minutes (request tres count %"PRIu64")",
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4428,12 +4628,12 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_GRP_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "assoc min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    tres_req_cnt[tres_pos],
-                    grp_tres_ctld[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"assoc min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					tres_req_cnt[tres_pos],
+					grp_tres_ctld[tres_pos]);
 #endif
 			debug2("%pJ is being held, assoc %u(%s/%s/%s) min tres(%s) request %"PRIu64" exceeds group max tres limit %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4449,13 +4649,13 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_GRP_UNK);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max tres(%s) limit %"PRIu64" with used %"PRIu64" + requested %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    grp_tres_ctld[tres_pos],
-                    assoc_ptr->usage->grp_used_tres[tres_pos],
-                    tres_req_cnt[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max tres(%s) limit %"PRIu64" with used %"PRIu64" + requested %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					grp_tres_ctld[tres_pos],
+					assoc_ptr->usage->grp_used_tres[tres_pos],
+					tres_req_cnt[tres_pos]);
 #endif
 			debug2("%pJ being held, if allowed the job request will exceed assoc %u(%s/%s/%s) group max tres(%s) limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4494,12 +4694,12 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_GRP_UNK_RUN_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    job_tres_time_limit[tres_pos],
-                    assoc_ptr->grp_tres_run_mins_ctld[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					job_tres_time_limit[tres_pos],
+					assoc_ptr->grp_tres_run_mins_ctld[tres_pos]);
 #endif
 			debug2("%pJ is being held, assoc %u(%s/%s/%s) group max running tres(%s) minutes request %"PRIu64" exceeds limit %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4515,13 +4715,13 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_GRP_UNK_RUN_MIN);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "group max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    assoc_ptr->grp_tres_run_mins_ctld[tres_pos],
-                    tres_run_mins[tres_pos],
-                    job_tres_time_limit[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"group max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					assoc_ptr->grp_tres_run_mins_ctld[tres_pos],
+					tres_run_mins[tres_pos],
+					job_tres_time_limit[tres_pos]);
 #endif
 			debug2("%pJ being held, if allowed the job request will exceed assoc %u(%s/%s/%s) group max running tres(%s) minutes limit %"PRIu64" with already used %"PRIu64" + requested %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4544,7 +4744,7 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 
 
 		/* We don't need to look at the regular limits for
-		 * parents since we have pre-propogated them, so just
+		 * parents since we have pre-propagated them, so just
 		 * continue with the next parent
 		 */
 		if (parent) {
@@ -4562,12 +4762,12 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_MAX_UNK_MINS_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "max tres(%s) minutes of %"PRIu64" with requesting %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    assoc_ptr->max_tres_mins_ctld[tres_pos],
-                    job_tres_time_limit[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"max tres(%s) minutes of %"PRIu64" with requesting %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					assoc_ptr->max_tres_mins_ctld[tres_pos],
+					job_tres_time_limit[tres_pos]);
 #endif
 			debug2("%pJ being held, the job is requesting more than allowed with assoc %u(%s/%s/%s) max tres(%s) minutes of %"PRIu64" with %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4589,12 +4789,12 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_MAX_UNK_PER_JOB);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "max tres(%s) limit of %"PRIu64" with requesting %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    max_tres_ctld[tres_pos],
-                    tres_req_cnt[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"max tres(%s) limit of %"PRIu64" with requesting %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					max_tres_ctld[tres_pos],
+					tres_req_cnt[tres_pos]);
 #endif
 			debug2("%pJ is being held, the job is requesting more than allowed with assoc %u(%s/%s/%s) max tres(%s) limit of %"PRIu64" with %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4617,12 +4817,12 @@ extern bool acct_policy_job_runnable_post_select(job_record_t *job_ptr,
 			job_ptr->state_reason = _get_tres_state_reason(
 				tres_pos, WAIT_ASSOC_MAX_UNK_PER_NODE);
 #ifdef __METASTACK_OPT_MSG_OUTPUT
-            xfree(job_ptr->reason_detail);
-            xstrfmtcat(job_ptr->reason_detail, 
-                    "max tres(%s) per node limit of %"PRIu64" with requesting %"PRIu64,
-                    assoc_mgr_tres_name_array[tres_pos],
-                    assoc_ptr->max_tres_pn_ctld[tres_pos],
-                    tres_req_cnt[tres_pos]);
+			xfree(job_ptr->reason_detail);
+			xstrfmtcat(job_ptr->reason_detail, 
+					"max tres(%s) per node limit of %"PRIu64" with requesting %"PRIu64,
+					assoc_mgr_tres_name_array[tres_pos],
+					assoc_ptr->max_tres_pn_ctld[tres_pos],
+					tres_req_cnt[tres_pos]);
 #endif
 			debug2("%pJ is being held, the job is requesting more than allowed with assoc %u(%s/%s/%s) max tres(%s) per node limit of %"PRIu64" with %"PRIu64,
 			       job_ptr, assoc_ptr->id, assoc_ptr->acct,
@@ -4649,7 +4849,6 @@ end_it:
 		_add_job_state_to_queue(job_ptr);
 	}
 #endif
-
 	if (!assoc_mgr_locked)
 		assoc_mgr_unlock(&locks);
 	slurmdb_free_qos_rec_members(&qos_rec);
@@ -4786,7 +4985,7 @@ extern int acct_policy_update_pending_job(job_record_t *job_ptr)
 	job_desc_msg_t job_desc;
 	acct_policy_limit_set_t acct_policy_limit_set;
 	bool update_accounting = false;
-	struct job_details *details_ptr;
+	job_details_t *details_ptr;
 	int rc = SLURM_SUCCESS;
 	uint64_t tres_req_cnt[slurmctld_tres_cnt];
 
@@ -4876,7 +5075,7 @@ extern bool acct_policy_job_time_out(job_record_t *job_ptr)
 	slurmdb_qos_rec_t qos_rec;
 	slurmdb_assoc_rec_t *assoc = NULL;
 	assoc_mgr_lock_t locks =
-		{ .assoc = READ_LOCK, .qos = READ_LOCK, .tres = READ_LOCK };
+		{ .assoc = READ_LOCK, .qos = WRITE_LOCK, .tres = READ_LOCK };
 	time_t now;
 	int i, tres_pos = 0;
 	acct_policy_tres_usage_t tres_usage;
@@ -5051,6 +5250,7 @@ static void _get_accrue_limits(job_record_t *job_ptr,
 	xassert(verify_assoc_lock(QOS_LOCK, WRITE_LOCK));
 
 	if (job_ptr->qos_ptr) {
+		/* Find the most restrictive qos limit */
 		_get_accrue_create_cnt(max_jobs_accrue_ptr, create_cnt_ptr,
 				       job_ptr->qos_ptr->grp_jobs_accrue,
 				       job_ptr->qos_ptr->usage->accrue_cnt);
@@ -5069,6 +5269,10 @@ static void _get_accrue_limits(job_record_t *job_ptr,
 
 	assoc_ptr = job_ptr->assoc_ptr;
 	while (assoc_ptr) {
+		/*
+		 * Find the first limit whether it be from the qos above or in
+		 * the hierarchy.
+		 */
 		if (*max_jobs_accrue_ptr != INFINITE)
 			break;
 
@@ -5077,7 +5281,7 @@ static void _get_accrue_limits(job_record_t *job_ptr,
 				       assoc_ptr->usage->accrue_cnt);
 		/*
 		 * We don't need to look at the regular limits for
-		 * parents since we have pre-propogated them, so just
+		 * parents since we have pre-propagated them, so just
 		 * continue with the next parent
 		 */
 		if (!parent)
@@ -5100,7 +5304,7 @@ static void _handle_add_accrue(job_record_t *job_ptr,
 			       int create_cnt,
 			       time_t now)
 {
-	struct job_details *details_ptr = job_ptr->details;
+	job_details_t *details_ptr = job_ptr->details;
 	job_record_t *old_job_ptr;
 
 	/* No limit (or there is space to accrue) */
@@ -5187,7 +5391,7 @@ extern int acct_policy_handle_accrue_time(job_record_t *job_ptr,
 {
 	slurmdb_qos_rec_t *qos_ptr;
 	slurmdb_assoc_rec_t *assoc_ptr;
-	struct job_details *details_ptr;
+	job_details_t *details_ptr;
 	slurmdb_used_limits_t *used_limits_acct = NULL;
 	slurmdb_used_limits_t *used_limits_user = NULL;
 
@@ -5312,7 +5516,7 @@ extern void acct_policy_add_accrue_time(job_record_t *job_ptr,
 				   NO_LOCK, NO_LOCK, NO_LOCK };
 	int create_cnt = 0;
 	uint32_t max_jobs_accrue = INFINITE;
-	struct job_details *details_ptr = job_ptr->details;
+	job_details_t *details_ptr = job_ptr->details;
 	time_t now = time(NULL);
 
 	/*
@@ -5336,7 +5540,7 @@ extern void acct_policy_add_accrue_time(job_record_t *job_ptr,
 		/*
 		 * If the job was previously accruing time (for example,
 		 * ACCRUE_ALWAYS could have been on or not having
-		 * ACCOUTING_ENFORCE_LIMITS), we need to remove the accrue_time.
+		 * ACCOUNTING_ENFORCE_LIMITS), we need to remove the accrue_time.
 		 */
 		if (details_ptr)
 			details_ptr->accrue_time = 0;
@@ -5571,8 +5775,6 @@ extern void acct_policy_set_qos_order(job_record_t *job_ptr,
 			*qos_ptr_1 = job_ptr->qos_ptr;
 	} else if (job_ptr->part_ptr && job_ptr->part_ptr->qos_ptr)
 		*qos_ptr_1 = job_ptr->part_ptr->qos_ptr;
-
-	return;
 }
 
 /*
@@ -5600,7 +5802,7 @@ extern slurmdb_used_limits_t *acct_policy_get_acct_used_limits(
 		used_limits->acct = xstrdup(acct);
 
 		used_limits->tres = xmalloc(i);
-		used_limits->tres_run_mins = xmalloc(i);
+		used_limits->tres_run_secs = xmalloc(i);
 
 		list_append(*acct_limit_list, used_limits);
 	}
@@ -5633,7 +5835,7 @@ extern slurmdb_used_limits_t *acct_policy_get_user_used_limits(
 		used_limits->uid = user_id;
 
 		used_limits->tres = xmalloc(i);
-		used_limits->tres_run_mins = xmalloc(i);
+		used_limits->tres_run_secs = xmalloc(i);
 
 		list_append(*user_limit_list, used_limits);
 	}

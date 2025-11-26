@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  file_bcast.c - File transfer agent (handles message traffic)
  *****************************************************************************
- *  Copyright (C) 2015-2016 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008-2009 Lawrence Livermore National Security.
  *  Copyright (C) 2006-2007 The Regents of the University of California.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
@@ -64,7 +64,7 @@
 #include "src/common/run_command.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
-#include "src/common/slurm_protocol_interface.h"
+#include "src/common/slurm_protocol_socket.h"
 #include "src/common/slurm_time.h"
 #include "src/common/timers.h"
 #include "src/common/uid.h"
@@ -78,7 +78,8 @@
  * seen any common systems where this is not the correct path.
  */
 #define LDD_PATH "/usr/bin/ldd"
-#define MAX_THREADS      8	/* These can be huge messages, so
+#define DEFAULT_THREADS 8
+#define MAX_THREADS     64	/* These can be huge messages, so
 				 * only run MAX_THREADS at one time */
 
 int block_len;				/* block size */
@@ -121,7 +122,7 @@ static int _file_state(struct bcast_parameters *params)
 	verbose("size     = %ld", (long) f_stat.st_size);
 
 	if (!f_stat.st_size) {
-		error("Warning: file `%s` is empty.", params->src_fname);
+		warning("file `%s` is empty.", params->src_fname);
 		return SLURM_SUCCESS;
 	}
 	src = mmap(NULL, f_stat.st_size, PROT_READ, MAP_SHARED, fd, 0);
@@ -168,7 +169,7 @@ static int _file_bcast(struct bcast_parameters *params,
 		       job_sbcast_cred_msg_t *sbcast_cred)
 {
 	List ret_list = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 	ret_data_info_t *ret_data_info = NULL;
 	int rc = SLURM_SUCCESS, msg_rc;
 	slurm_msg_t msg;
@@ -177,7 +178,7 @@ static int _file_bcast(struct bcast_parameters *params,
 	slurm_msg_set_r_uid(&msg, SLURM_AUTH_UID_ANY);
 	msg.data = bcast_msg;
 	msg.flags = USE_BCAST_NETWORK;
-	msg.forward.tree_width = params->fanout;
+	msg.forward.tree_width = params->tree_width;
 	msg.msg_type = REQUEST_FILE_BCAST;
 
 	ret_list = slurm_send_recv_msgs(sbcast_cred->node_list, &msg,
@@ -323,6 +324,7 @@ static int _bcast_file(struct bcast_parameters *params)
 
 	memset(&bcast_msg, 0, sizeof(file_bcast_msg_t));
 	bcast_msg.fname		= params->dst_fname;
+	bcast_msg.exe_fname = params->exe_fname;
 	bcast_msg.block_no	= 1;
 	if (params->flags & BCAST_FLAG_FORCE)
 		bcast_msg.flags |= FILE_BCAST_FORCE;
@@ -342,10 +344,10 @@ static int _bcast_file(struct bcast_parameters *params)
 		bcast_msg.mtime     = f_stat.st_mtime;
 	}
 
-	if (!params->fanout)
-		params->fanout = MAX_THREADS;
-	else
-		params->fanout = MIN(MAX_THREADS, params->fanout);
+	if (!params->tree_width)
+		params->tree_width = DEFAULT_THREADS;
+	else if (params->tree_width != 0xfffd)
+		params->tree_width = MIN(MAX_THREADS, params->tree_width);
 
 	while (more) {
 		START_TIMER;
@@ -603,6 +605,7 @@ static int _bcast_shared_objects(struct bcast_parameters *params,
 		goto fini;
 	}
 
+	params->exe_fname = save_dst;
 	params->flags |= BCAST_FLAG_SHARED_OBJECT;
 	excl_paths = _fill_in_excluded_paths(params);
 	args.params = params;
@@ -610,6 +613,7 @@ static int _bcast_shared_objects(struct bcast_parameters *params,
 
 	list_for_each(lib_paths, _foreach_shared_object, &args);
 	params->flags &= ~BCAST_FLAG_SHARED_OBJECT;
+	params->exe_fname = NULL;
 	params->dst_fname = save_dst;
 	params->src_fname = save_src;
 

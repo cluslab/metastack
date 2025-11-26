@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  gpu_generic.c - Support generic interface to a GPU.
  *****************************************************************************
- *  Copyright (C) 2019 SchedMD LLC
- *  Written by Danny Auble <da@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -37,8 +36,8 @@
 #define _GNU_SOURCE
 
 #include "src/common/slurm_xlator.h"
-#include "src/common/gpu.h"
-#include "src/common/gres.h"
+#include "src/interfaces/gpu.h"
+#include "src/interfaces/gres.h"
 #include "src/common/log.h"
 
 /*
@@ -84,12 +83,6 @@ extern int fini(void)
 	return SLURM_SUCCESS;
 }
 
-extern int gpu_p_reconfig(void)
-{
-	return SLURM_SUCCESS;
-}
-
-
 extern List gpu_p_get_system_gpu_list(node_config_load_t *node_config)
 {
 	return NULL;
@@ -100,25 +93,19 @@ extern void gpu_p_step_hardware_init(bitstr_t *usable_gpus, char *tres_freq)
 	xassert(tres_freq);
 	xassert(usable_gpus);
 #ifdef __METASTACK_NEW_GRES_DCU
-log_flag(GRES, "__METASTACK_NEW_GRES_DCU, usable_gpus: %d, tres_freq: %s", usable_gpus?1:0, tres_freq);
+	log_flag(GRES, "__METASTACK_NEW_GRES_DCU, usable_gpus: %d, tres_freq: %s", usable_gpus?1:0, tres_freq);
 #endif
 
 	if (!usable_gpus)
 		return;		/* Job allocated no GPUs */
 	if (!tres_freq)
 		return;		/* No TRES frequency spec */
-
-#ifdef __METASTACK_NEW_GRES_DCU
-	if (!strstr(tres_freq, "gpu:") || !strstr(tres_freq, "dcu:"))
-		fprintf(stderr, "GpuFreq=control_disabled\n");
-	else
-		return;
-#else
-	if (!strstr(tres_freq, "gpu:"))
+#if defined(__METASTACK_NEW_GRES_DCU) && defined(__METASTACK_NEW_GRES_NPU)
+	if (!strstr(tres_freq, "gpu:") && !strstr(tres_freq, "dcu:") && !strstr(tres_freq, "npu:"))
 		return;		/* No GPU frequency spec */
+#endif
 
 	fprintf(stderr, "GpuFreq=control_disabled\n");
-#endif
 }
 
 extern void gpu_p_step_hardware_fini(void)
@@ -139,4 +126,9 @@ extern int gpu_p_energy_read(uint32_t dv_ind, gpu_status_t *gpu)
 extern void gpu_p_get_device_count(unsigned int *device_count)
 {
 	return;
+}
+
+extern int gpu_p_usage_read(pid_t pid, acct_gather_data_t *data)
+{
+	return SLURM_SUCCESS;
 }

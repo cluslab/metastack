@@ -35,22 +35,22 @@
 #endif
 
 #include <ctype.h>
+#include <dlfcn.h>
 #include <errno.h>
+#include <limits.h>
 #include <pwd.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <syslog.h>
 #include <unistd.h>
-#include <dlfcn.h>
 
 #include "slurm/slurm.h"
-#include "src/common/xmalloc.h"
 #include "src/common/read_config.h"
+#include "src/common/xmalloc.h"
 
 /*  Define the externally visible functions in this file.
  */
@@ -177,6 +177,19 @@ _log_msg(int level, const char *format, ...)
 }
 
 /*
+ * pam 1.5.3 stopped providing _pam_drop_reply().  Our use does not currently
+ * fetch sensitive data so simply free this structure.
+ */
+static void _pam_slurm_drop_response(struct pam_response *reply, int replies)
+{
+	for (int i = 0; i < replies; i++) {
+		if (reply[i].resp)
+			free(reply[i].resp);
+	}
+	free(reply);
+}
+
+/*
  *  Parses module args passed via PAM's config.
  */
 static void
@@ -236,7 +249,7 @@ _parse_args(struct _options *opts, int argc, const char **argv)
 static int
 _hostrange_member(char *hostname, char *str)
 {
-	hostlist_t hl;
+	hostlist_t *hl;
 	int found_host;
 
 	if (!*hostname || !*str)
@@ -296,11 +309,11 @@ static int
 _slurm_match_allocation(uid_t uid)
 {
 	int authorized = 0, i;
-	char hostname[MAXHOSTNAMELEN];
+	char hostname[HOST_NAME_MAX];
 	char *nodename = NULL;
 	job_info_msg_t * msg;
 
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 
 	if (_gethostname_short(hostname, sizeof(hostname)) < 0) {
 		_log_msg(LOG_ERR, "gethostname: %m");
@@ -414,7 +427,7 @@ _send_denial_msg(pam_handle_t *pamh, struct _options *opts,
 		_log_msg(LOG_ERR, "unable to converse with app: %s",
 			 pam_strerror(pamh, retval));
 	if (prsp != NULL)
-		_pam_drop_reply(prsp, 1);
+		_pam_slurm_drop_response(prsp, 1);
 
 	return;
 }

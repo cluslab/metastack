@@ -1,7 +1,7 @@
 /*****************************************************************************\
  *  print.c - sprio print job functions
  *****************************************************************************
- *  Portions Copyright (C) 2010-2017 SchedMD LLC <https://www.schedmd.com>.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2009 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Don Lipari <lipari1@llnl.gov>
@@ -58,7 +58,7 @@ static int	_print_str(char *str, int width, bool right, bool cut_output);
  * Global Print Functions
  *****************************************************************************/
 
-int print_jobs_array(List jobs, List format)
+int print_jobs_array(list_t *jobs, list_t *format)
 {
 	if (!params.no_header)
 		print_job_from_format(NULL, format);
@@ -78,20 +78,26 @@ int print_jobs_array(List jobs, List format)
 	return SLURM_SUCCESS;
 }
 
-double get_priority_from_factors(priority_factors_object_t *prio_factors)
+double get_priority_from_factors(priority_factors_object_t *prio_factors_obj)
 {
 	int i = 0;
-	double priority = prio_factors->priority_age
-		+ prio_factors->priority_assoc
-		+ prio_factors->priority_fs
-		+ prio_factors->priority_js
-		+ prio_factors->priority_part
-		+ prio_factors->priority_qos
-		+ (double)((int64_t)prio_factors->priority_site - NICE_OFFSET)
-		- (double)((int64_t)prio_factors->nice - NICE_OFFSET);
+	priority_factors_t *prio_factors;
+	double priority;
 
-	if (prio_factors->direct_prio > 0)
-		return prio_factors->direct_prio;
+	if (prio_factors_obj->direct_prio > 0)
+		return prio_factors_obj->direct_prio;
+
+	prio_factors = prio_factors_obj->prio_factors;
+	xassert(prio_factors);
+
+	priority = prio_factors->priority_age +
+		prio_factors->priority_assoc +
+		prio_factors->priority_fs +
+		prio_factors->priority_js +
+		prio_factors->priority_part +
+		prio_factors->priority_qos +
+		(double)((int64_t)prio_factors->priority_site - NICE_OFFSET) -
+		(double)((int64_t)prio_factors->nice - NICE_OFFSET);
 
 	for (i = 0; i < prio_factors->tres_cnt; i++) {
 		if (!prio_factors->priority_tres[i])
@@ -112,7 +118,7 @@ static int _print_str(char *str, int width, bool right, bool cut_output)
 	int printed = 0;
 
 #ifdef __METASTACK_OPT_PRINT_COMMAND
-    bool right_format = false;
+	bool right_format = false;
 	int length = 0;
 	int abs_len = 0;
 	
@@ -123,7 +129,7 @@ static int _print_str(char *str, int width, bool right, bool cut_output)
 			right_format = true;
 		width = abs_len;
 	}
-#endif
+#endif	
 	if (right == true && width != 0)
 		snprintf(format, 64, "%%%ds", width);
 	else if (width != 0)
@@ -197,9 +203,9 @@ static int _print_norm(double number, int width, bool right, bool cut_output)
 /*****************************************************************************
  * Job Print Functions
  *****************************************************************************/
-int print_job_from_format(priority_factors_object_t * job, List list)
+int print_job_from_format(priority_factors_object_t * job, list_t *list)
 {
-	ListIterator i = list_iterator_create(list);
+	list_itr_t *i = list_iterator_create(list);
 	job_format_t *current;
 
 	while ((current = list_next(i))) {
@@ -216,7 +222,7 @@ int print_job_from_format(priority_factors_object_t * job, List list)
 	return SLURM_SUCCESS;
 }
 
-int job_format_add_function(List list, int width, bool right, char *suffix,
+int job_format_add_function(list_t *list, int width, bool right, char *suffix,
 			    int (*function) (priority_factors_object_t *,
 			    int, bool, char*))
 {
@@ -230,6 +236,19 @@ int job_format_add_function(List list, int width, bool right, char *suffix,
 	return SLURM_SUCCESS;
 }
 
+int _print_account(priority_factors_object_t *job, int width, bool right,
+		     char *suffix)
+{
+	if (job == NULL)	/* Print the Header instead */
+		_print_str("ACCOUNT", width, right, true);
+	else if (job == (priority_factors_object_t *) -1)
+		_print_str("", width, right, true);
+	else
+		_print_str(job->account, width, right, true);
+	if (suffix)
+		printf("%s", suffix);
+	return SLURM_SUCCESS;
+}
 
 int _print_job_job_id(priority_factors_object_t * job, int width,
 		      bool right, char* suffix)
@@ -263,10 +282,13 @@ int _print_age_priority_normalized(priority_factors_object_t * job, int width,
 		_print_str("AGE", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_age, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else {
 		double num = 0;
+		priority_factors_t *prio_factors = job->prio_factors;
 		if (weight_age)
-			num = job->priority_age / weight_age;
+			num = prio_factors->priority_age / weight_age;
 		_print_norm(num, width, right, true);
 	}
 	if (suffix)
@@ -281,8 +303,10 @@ int _print_age_priority_weighted(priority_factors_object_t * job, int width,
 		_print_str("AGE", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_age, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else
-		_print_int(job->priority_age, width, right, true);
+		_print_int(job->prio_factors->priority_age, width, right, true);
 	if (suffix)
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
@@ -295,10 +319,12 @@ int _print_assoc_priority_normalized(priority_factors_object_t * job, int width,
 		_print_str("ASSOC", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_assoc, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else {
 		double num = 0;
 		if (weight_assoc)
-			num = job->priority_assoc / weight_assoc;
+			num = job->prio_factors->priority_assoc / weight_assoc;
 		_print_norm(num, width, right, true);
 	}
 
@@ -314,8 +340,11 @@ int _print_assoc_priority_weighted(priority_factors_object_t * job, int width,
 		_print_str("ASSOC", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_assoc, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else
-		_print_int(job->priority_assoc, width, right, true);
+		_print_int(job->prio_factors->priority_assoc,
+			   width, right, true);
 	if (suffix)
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
@@ -340,10 +369,12 @@ int _print_fs_priority_normalized(priority_factors_object_t * job, int width,
 		_print_str("FAIRSHARE", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_fs, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else {
 		double num = 0;
 		if (weight_fs)
-			num = job->priority_fs / weight_fs;
+			num = job->prio_factors->priority_fs / weight_fs;
 		_print_norm(num, width, right, true);
 	}
 
@@ -359,8 +390,10 @@ int _print_fs_priority_weighted(priority_factors_object_t * job, int width,
 		_print_str("FAIRSHARE", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_fs, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else
-		_print_int(job->priority_fs, width, right, true);
+		_print_int(job->prio_factors->priority_fs, width, right, true);
 	if (suffix)
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
@@ -413,10 +446,12 @@ int _print_js_priority_normalized(priority_factors_object_t * job, int width,
 		_print_str("JOBSIZE", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_js, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else {
 		double num = 0;
 		if (weight_js)
-			num = job->priority_js / weight_js;
+			num = job->prio_factors->priority_js / weight_js;
 		_print_norm(num, width, right, true);
 	}
 
@@ -433,8 +468,10 @@ int _print_js_priority_weighted(priority_factors_object_t * job, int width,
 		_print_str("JOBSIZE", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_js, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else {
-		_print_int(job->priority_js, width, right, true);
+		_print_int(job->prio_factors->priority_js, width, right, true);
 	}
 	if (suffix)
 		printf("%s", suffix);
@@ -449,10 +486,12 @@ int _print_part_priority_normalized(priority_factors_object_t * job, int width,
 		_print_str("PARTITION", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_part, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else {
 		double num = 0;
 		if (weight_part)
-			num = job->priority_part / weight_part;
+			num = job->prio_factors->priority_part / weight_part;
 		_print_norm(num, width, right, true);
 	}
 
@@ -468,8 +507,11 @@ int _print_part_priority_weighted(priority_factors_object_t * job, int width,
 		_print_str("PARTITION", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_part, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else
-		_print_int(job->priority_part, width, right, true);
+		_print_int(job->prio_factors->priority_part,
+			   width, right, true);
 	if (suffix)
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
@@ -489,6 +531,20 @@ int _print_partition(priority_factors_object_t *job, int width, bool right,
 	return SLURM_SUCCESS;
 }
 
+int _print_qos_name(priority_factors_object_t *job, int width, bool right,
+		     char *suffix)
+{
+	if (job == NULL)	/* Print the Header instead */
+		_print_str("QOSNAME", width, right, true);
+	else if (job == (priority_factors_object_t *) -1)
+		_print_str("", width, right, true);
+	else
+		_print_str(job->qos, width, right, true);
+	if (suffix)
+		printf("%s", suffix);
+	return SLURM_SUCCESS;
+}
+
 int _print_qos_priority_normalized(priority_factors_object_t * job, int width,
 				   bool right, char* suffix)
 {
@@ -496,10 +552,12 @@ int _print_qos_priority_normalized(priority_factors_object_t * job, int width,
 		_print_str("QOS", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_qos, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else {
 		double num = 0;
 		if (weight_qos)
-			num = job->priority_qos / weight_qos;
+			num = job->prio_factors->priority_qos / weight_qos;
 		_print_norm(num, width, right, true);
 	}
 
@@ -515,8 +573,10 @@ int _print_qos_priority_weighted(priority_factors_object_t * job, int width,
 		_print_str("QOS", width, right, true);
 	else if (job == (priority_factors_object_t *) -1)
 		_print_int(weight_qos, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_int(0, width, right, true);
 	else
-		_print_int(job->priority_qos, width, right, true);
+		_print_int(job->prio_factors->priority_qos, width, right, true);
 	if (suffix)
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
@@ -532,7 +592,8 @@ int _print_site_priority(priority_factors_object_t * job, int width,
 	else if (job->direct_prio > 0)
 		_print_int(0, width, right, true);
 	else
-		_print_int((int64_t)job->priority_site - NICE_OFFSET, width,
+		_print_int((int64_t)job->prio_factors->priority_site -
+			   NICE_OFFSET, width,
 			   right, true);
 	if (suffix)
 		printf("%s", suffix);
@@ -549,7 +610,8 @@ int _print_job_nice(priority_factors_object_t * job, int width,
 	else if (job->direct_prio > 0)
 		_print_int(0, width, right, true);
 	else
-		_print_int((int64_t)job->nice - NICE_OFFSET, width, right, true);
+		_print_int((int64_t)job->prio_factors->nice - NICE_OFFSET,
+			   width, right, true);
 	if (suffix)
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
@@ -578,17 +640,22 @@ int _print_tres_normalized(priority_factors_object_t * job, int width,
 		_print_str("TRES", width, right, true);
 	} else if (job == (priority_factors_object_t *) -1)
 		_print_str("", width, right, true);
+	else if (job->direct_prio > 0)
+		_print_str("", width, right, true);
 	else {
+		priority_factors_t *prio_factors = job->prio_factors;
 		char *values = xstrdup("");
 		int i = 0;
 
-		for (i = 0; i < job->tres_cnt; i++) {
-			if (!job->priority_tres[i])
+		for (i = 0; i < prio_factors->tres_cnt; i++) {
+			if (!prio_factors->priority_tres[i])
 				continue;
 			if (values[0])
 				xstrcat(values, ",");
-			xstrfmtcat(values, "%s=%.2f", job->tres_names[i],
-				   job->priority_tres[i]/job->tres_weights[i]);
+			xstrfmtcat(values, "%s=%.2f",
+				   prio_factors->tres_names[i],
+				   prio_factors->priority_tres[i] /
+				   prio_factors->tres_weights[i]);
 		}
 
 		_print_str(values, width, right, true);
@@ -606,17 +673,21 @@ int _print_tres_weighted(priority_factors_object_t * job, int width,
 		_print_str("TRES", width, right, true);
 	} else if (job == (priority_factors_object_t *) -1)
 		_print_str(weight_tres, width, right, true);
+	else if (job->direct_prio > 0)
+		_print_str("", width, right, true);
 	else {
+		priority_factors_t *prio_factors = job->prio_factors;
 		char *values = xstrdup("");
 		int i = 0;
 
-		for (i = 0; i < job->tres_cnt; i++) {
-			if (!job->priority_tres[i])
+		for (i = 0; i < prio_factors->tres_cnt; i++) {
+			if (!prio_factors->priority_tres[i])
 				continue;
 			if (values[0])
 				xstrcat(values, ",");
-			xstrfmtcat(values, "%s=%.0f", job->tres_names[i],
-				   job->priority_tres[i]);
+			xstrfmtcat(values, "%s=%.0f",
+				   prio_factors->tres_names[i],
+				   prio_factors->priority_tres[i]);
 		}
 
 		_print_str(values, width, right, true);

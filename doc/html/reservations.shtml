@@ -28,7 +28,8 @@ reservation created.</p>
 <p>Reservations can be created, updated, or destroyed only by user root
 or the configured <i>SlurmUser</i> using the <i>scontrol</i> command.
 The <i>scontrol</i> and <i>sview</i> commands can be used
-to view reservations.
+to view reservations. Additionally, root and the configured <i>SlurmUser</i>
+have access to all reservations, even if they would normally not have access.
 The man pages for the various commands contain details.</p>
 
 <h2 id="creation">Reservation Creation
@@ -68,14 +69,14 @@ ReservationName=root_3 StartTime=2009-02-06T16:00:00
 <p>A variation of this would be to configure licenses to represent system
 resources, such as a global file system.
 The system resource may not require an actual license for use, but
-Slurm licenses can be used to prevent jobs needed the resource from being
+Slurm licenses can be used to prevent jobs needing the resource from being
 started when that resource is unavailable.
 One could create a reservation for all of those licenses in order to perform
 maintenance on that resource.
 In the example below, we create a reservation for 1000 licenses with the name
 of "lustre". 
 If there are a total of 1000 lustre licenses configured in this cluster,
-this reservation will prevent any job specifying the need for needed a lustre
+this reservation will prevent any job specifying the need for a lustre
 license from being scheduled on this cluster during this reservation.</p>
 <pre>
 $ scontrol create reservation starttime=2009-04-06T16:00:00 \
@@ -159,7 +160,7 @@ feature that every selected node must contain.</p>
 whole nodes.
 This capability permits the administrator to identify the core count to be
 reserved on each node as shown in the examples below.<br>
-<b>NOTE:</b> Core reservations are not available when the system is configured
+<b>NOTE</b>: Core reservations are not available when the system is configured
 to use the select/linear plugin.</p>
 <pre>
 # Create a two core reservation for user alan
@@ -218,7 +219,7 @@ ReservationName=test StartTime=2020-08-28T11:07:09
      NodeName=node04 CoreIDs=0-5
    TRES=cpu=24
    Users=user1 Accounts=(null) Licenses=(null)
-   State=ACTIVE BurstBuffer=(null) Watts=n/a
+   State=ACTIVE BurstBuffer=(null)
    MaxStartDelay=(null)
 </pre>
 
@@ -278,7 +279,7 @@ $ scontrol delete ReservationName=alan_6
 </pre>
 <p>
 
-<b>NOTE:</b> By default, when a reservation ends the reservation request will be
+<b>NOTE</b>: By default, when a reservation ends the reservation request will be
 removed from any pending jobs submitted to the reservation and will be put into
 a held state.  Use the NO_HOLD_JOBS_AFTER_END reservation flag to let jobs run
 outside of the reservation after the reservation is gone.
@@ -378,11 +379,15 @@ $ scontrol create reservation user=operator nodes=tux8 \
 <a class="slurm_link" href="#replace"></a>
 </h2>
 
-<p>Slurm can create an advanced reservation for which nodes which are allocated
-to jobs are automatically replaced with new idle nodes.
+<p>By default, nodes in a reservation that are DOWN or DRAINED will be replaced,
+but not nodes that are allocated to jobs. This behavior may be explicitly
+requested with the <b>REPLACE_DOWN</b> flag.</p>
+
+<p>However, you may instruct Slurm to also replace nodes which are allocated to
+jobs with new idle nodes. This is done using the <b>REPLACE</b> flag as shown in
+the example below.
 The effect of this is to always maintain a constant size pool of resources.
-This is accomplished by using the <b>REPLACE</b> flag as shown in the example
-below. This option is not supported for reservations specifying cores which
+This option is not supported for reservations specifying cores which
 span more than one node, rather than full nodes. (E.g. a 1 core reservation on
 node "tux1" will be moved if node "tux1" goes down, but a reservation
 containing 2 cores on node "tux1" and 3 cores on "tux2" will not be moved if
@@ -424,11 +429,6 @@ JOBID PARTITION  NAME  USER ST  TIME  NODES NODELIST(REASON)
    97     debug   tmp   foo  R  0:09      1 tux0
    98     debug   tmp   foo  R  0:07      1 tux1
 </pre>
-
-<p><b>NOTE</b>: If you want the reservation to maintain the size you specify,
-but not grow as the reservation is used you can use the <b>REPLACE_DOWN</b>
-flag. Nodes that are DOWN or DRAINED will be replaced, but not nodes that
-have jobs running on them.
 
 <h2 id="flex">FLEX Reservations<a class="slurm_link" href="#flex"></a></h2>
 
@@ -480,7 +480,7 @@ $ scontrol show res
 ReservationName=user1_850 StartTime=2020-07-29T13:44:13 EndTime=2020-07-29T13:54:13 Duration=00:10:00
    Nodes=node05 NodeCnt=1 CoreCnt=12 Features=(null) PartitionName=(null) Flags=SPEC_NODES,MAGNETIC
    TRES=cpu=12
-   Users=user1 Accounts=(null) Licenses=(null) State=ACTIVE BurstBuffer=(null) Watts=n/a
+   Users=user1 Accounts=(null) Licenses=(null) State=ACTIVE BurstBuffer=(null)
    MaxStartDelay=(null)
 
 $ sbatch -N1 -t5:00 test.job
@@ -529,7 +529,7 @@ considering the initiation of jobs.
 This will prevent the initiation of some jobs which would complete execution
 before a reservation given fewer jobs to time-slice with.</p>
 
-<p style="text-align: center;">Last modified 10 October 2022</p>
+<p style="text-align: center;">Last modified 02 August 2024</p>
 
 <!--#include virtual="footer.txt"-->
 

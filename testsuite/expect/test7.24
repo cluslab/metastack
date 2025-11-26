@@ -2,8 +2,7 @@
 ############################################################################
 # Purpose: Test of SPANK error codes
 ############################################################################
-# Copyright (C) 2021 SchedMD LLC
-# Written by Nathan Rini <nate@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -125,6 +124,13 @@ proc process_result {function context expected_rc reports drains fails job_id_as
 	set short_function [string replace $function 0 [expr {[string length "slurm_spank_"]-1}]]
 
 	set rc 0
+
+	# TODO: Temporary debug traces to for rare failures.
+	#       Remove once ticket 19090 is fixed.
+	log_debug "Expected RC: ${reports}"
+	log_debug "Output: ${output}"
+	log_debug "Regexp string: error: spank: required plugin \\S+: $short_function\\\(\\\) failed with rc=(-?\\d+)"
+
 	set reported [regexp "error: spank: required plugin \\S+: $short_function\\\(\\\) failed with rc=(-?\\d+)" $output wholematch rc]
 	subtest {$rc == $reports} \
 		[concat "SPANK API failure report expected rc:$reports == rc:$rc" ]
@@ -133,11 +139,15 @@ proc process_result {function context expected_rc reports drains fails job_id_as
 		if {[subtest {$job_id > 0} "jobid != 0"]} {
 			set jobs_dict [get_jobs $job_id]
 			set job_state [dict get $jobs_dict $job_id "JobState"]
-			set failed [expr {$job_state eq "FAILED"}]
+			set failed [expr {$job_state eq "FAILED" || $job_state eq "CANCELLED"}]
 
-			subtest {$fails == $failed} [concat "JobId=$job_id state: " \
-				[expr {$fails ?  "FAILED" : "!FAILED"}] \
-				" == $job_state" ]
+			if {$fails} {
+				set failstr "FAILED"
+			} else {
+				set failstr "!FAILED"
+			}
+
+			subtest {$fails == $failed} "JobId=$job_id state: expected=$failstr == actual=$job_state"
 		}
 	} else {
 		subtest {$job_id == 0} "jobid should not have been assigned"
@@ -237,13 +247,13 @@ log_info "Testing srun.........."
 set srun_test "$srun -K -I10 -W10 -w $testnode -t1 true"
 testproc test_interactive "$srun_test" slurm_spank_init local                    $::RETURN_ERROR   -3000 0 1 0
 testproc test_interactive "$srun_test" slurm_spank_init_post_opt local           $::RETURN_ERROR   -3000 0 1 0
-testproc test_interactive "$srun_test" slurm_spank_local_user_init local         $::RETURN_ERROR   -3000 0 0 1
-testproc test_interactive "$srun_test" slurm_spank_user_init remote              $::RETURN_SUCCESS -3000 0 0 1
+testproc test_interactive "$srun_test" slurm_spank_local_user_init local         $::RETURN_ERROR   -3000 0 1 1
+testproc test_interactive "$srun_test" slurm_spank_user_init remote              $::RETURN_ERROR   -3000 0 1 1
 testproc test_interactive "$srun_test" slurm_spank_task_init_privileged remote   $::RETURN_ERROR   -3000 0 1 1
 if {$pgid} {
 testproc test_interactive "$srun_test" slurm_spank_task_post_fork remote         $::RETURN_TIMEOUT -3000 0 0 1
 } else {
-testproc test_interactive "$srun_test" slurm_spank_task_post_fork remote         $::RETURN_SUCCESS -3000 0 0 1
+testproc test_interactive "$srun_test" slurm_spank_task_post_fork remote         $::RETURN_ERROR   -3000 0 1 1
 }
 testproc test_interactive "$srun_test" slurm_spank_task_init remote              $::RETURN_ERROR   -3000 0 1 1
 testproc test_interactive "$srun_test" slurm_spank_task_exit remote              $::RETURN_SUCCESS -3000 0 0 1
@@ -256,12 +266,12 @@ testproc test_interactive "$salloc_test" slurm_spank_init_post_opt allocator    
 testproc test_interactive "$salloc_test" slurm_spank_init local                  $::RETURN_ERROR   -3000 0 1 0
 testproc test_interactive "$salloc_test" slurm_spank_init_post_opt local         $::RETURN_ERROR   -3000 0 1 0
 testproc test_interactive "$salloc_test" slurm_spank_local_user_init local       $::RETURN_ERROR   -3000 0 1 1
-testproc test_interactive "$salloc_test" slurm_spank_user_init remote            $::RETURN_SUCCESS -3000 0 0 1
+testproc test_interactive "$salloc_test" slurm_spank_user_init remote            $::RETURN_ERROR   -3000 0 1 1
 testproc test_interactive "$salloc_test" slurm_spank_task_init_privileged remote $::RETURN_ERROR   -3000 0 1 1
 if {$pgid} {
 testproc test_interactive "$salloc_test" slurm_spank_task_post_fork remote       $::RETURN_TIMEOUT -3000 0 0 1
 } else {
-testproc test_interactive "$salloc_test" slurm_spank_task_post_fork remote       $::RETURN_SUCCESS -3000 0 0 1
+testproc test_interactive "$salloc_test" slurm_spank_task_post_fork remote       $::RETURN_ERROR   -3000 0 1 1
 }
 testproc test_interactive "$salloc_test" slurm_spank_task_init remote            $::RETURN_ERROR   -3000 0 1 1
 testproc test_interactive "$salloc_test" slurm_spank_task_exit remote            $::RETURN_SUCCESS -3000 0 0 1
@@ -278,20 +288,20 @@ testproc test_interactive "$salloc_test" slurm_spank_exit allocator             
 #                                                                                                                         outputs
 log_info "Testing sbatch.........."
 make_bash_script $file_in "$srun $bin_echo IT_RAN"
-set sbatch_test "$sbatch -W -w $testnode -t1 -o $file_out -e $file_out $file_in"
+set sbatch_test "$sbatch --no-requeue -W -w $testnode -t1 -o $file_out -e $file_out $file_in"
 testproc test_batch slurm_spank_init allocator                                   -3000              1    -3000  0    0 1 0 0
 testproc test_batch slurm_spank_init_post_opt allocator                          -3000              1    -3000  0    0 1 0 0
 testproc test_batch slurm_spank_init local                                        1                 1     1    -3000 0 1 1 1
 testproc test_batch slurm_spank_init_post_opt local                              $::RETURN_ERROR    1     1    -3000 0 1 1 1
 testproc test_batch slurm_spank_local_user_init local                            $::RETURN_ERROR    1     1    -3000 0 1 1 1
 if {!$pgid} {
-	testproc test_batch slurm_spank_user_init remote                         $::RETURN_SUCCESS  0     0    -3000 1 0 1 1
+	testproc test_batch slurm_spank_user_init remote                         $::RETURN_ERROR    1     1    -3000 1 1 1 1
 } else {
 	testproc test_batch slurm_spank_user_init remote                         $::RETURN_SUCCESS  0     0    -3000 0 0 1 1
 }
 testproc test_batch slurm_spank_task_init_privileged remote                      $::RETURN_ERROR    1     1    -3000 0 1 1 1
 if {!$pgid} {
-	testproc test_batch slurm_spank_task_post_fork remote                    $::RETURN_SUCCESS  0     0    -3000 1 0 1 1
+	testproc test_batch slurm_spank_task_post_fork remote                    $::RETURN_ERROR    1     1    -3000 1 1 1 1
 } else {
 	testproc test_batch slurm_spank_task_post_fork remote                    $::RETURN_TIMEOUT  0     0    -3000 1 0 1 1
 }

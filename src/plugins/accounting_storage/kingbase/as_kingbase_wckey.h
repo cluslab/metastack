@@ -43,6 +43,11 @@
 
 extern int as_kingbase_add_wckeys(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			    List wckey_list);
+
+extern char *as_kingbase_add_wckeys_cond(kingbase_conn_t *kingbase_conn, uint32_t uid,
+				      slurmdb_add_assoc_cond_t *add_assoc,
+				      slurmdb_user_rec_t *user);
+
 extern List as_kingbase_modify_wckeys(kingbase_conn_t *kingbase_conn,
 				uint32_t uid,
 				slurmdb_wckey_cond_t *wckey_cond,

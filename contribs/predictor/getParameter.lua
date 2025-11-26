@@ -14,10 +14,10 @@ function getParameter(options)
 		-- predictionFunction=1开启预测流程只适用于白名单用户
 		-- predictionFunction=2开启预测流程适用全部用户
 		predictionFunction=get_config_value("predictionFunction")
-                
+
 		-- etc配置路径
 		etc_path=get_config_value("etc_path")
-                
+
 		-- 预测工具路径
 		predictor_path=get_config_value("predictor_path")
 
@@ -25,7 +25,7 @@ function getParameter(options)
 		predictUsers=predictor_path .. "/predictUsers"
 
 	end
-		
+
 	-- 获取初始参数 
 
 	-- 获取 user_name
@@ -37,8 +37,6 @@ function getParameter(options)
 	handle:close()
 
 	user_name = tmp_user_name
-
-	-- slurm.log_info("allowed for user_name: %s", user_name)
 
 	-- 获取 partition
 	partition_list = 0
@@ -71,12 +69,10 @@ function getParameter(options)
 		end
 
 		partition = default_partition
-        
+
 	end
 
 	partition_list = partition
-
-	-- slurm.log_info("allowed for partition_list: %s", partition_list)
 
 	-- 获取 req_node
 	req_node = 0
@@ -96,7 +92,7 @@ function getParameter(options)
 			req_node = math.ceil(tmp_ntasks / tmp_ntasks_per_node)
 
 		else 
-            
+
 			-- 无法准确计算出使用的节点时
 			req_node = 1
 
@@ -108,8 +104,6 @@ function getParameter(options)
 		req_node = nodes
 
 	end
-
-	-- slurm.log_info("allowed for req_node: %s", req_node)
 
 	-- 获取 req_cpu
 	req_cpu = 0
@@ -127,7 +121,7 @@ function getParameter(options)
 			req_cpu = ntasks
 
 		-- task为1
- 		else
+		else
 			req_cpu = req_node
 
 		end
@@ -150,8 +144,6 @@ function getParameter(options)
 
 	end
 
-	-- slurm.log_info("allowed for req_cpu: %s", req_cpu)
-
 	-- 获取 req_mem
 	req_mem = 0
 	local mem = options["mem"] or "nil"
@@ -170,7 +162,7 @@ function getParameter(options)
 	-- 函数将字符串转换为兆字节
 	local function str_to_mbytes(arg)
 
- 		-- 对--mem=0做异常处理
+		-- 对--mem=0做异常处理
 		if not arg or type(arg) ~= "string" or arg:find("%?") then
 			arg = "0"
 		end
@@ -204,14 +196,14 @@ function getParameter(options)
 		-- 将KB转换为MB，四舍五入
 		elseif suffix == "k" and _end_on_byte(suffix) then
 			result = math.ceil(result / 1024)
-        
+
 		-- 已经在MB，什么都不做
 		elseif suffix == "m" and _end_on_byte(suffix) then
-        
+
 		-- GB转换为MB
 		elseif suffix == "g" and _end_on_byte(suffix) then
 			result = result * 1024
-        
+
 		-- 将TB转换为MB
 		elseif suffix == "t" and _end_on_byte(suffix) then
 			result = result * 1024 * 1024
@@ -233,7 +225,7 @@ function getParameter(options)
 	elseif mem_per_cpu ~= "nil" then
 
 		req_mem = tostring(str_to_mbytes(mem_per_cpu) * req_cpu)
-    
+
 	-- 都未指定时,使用DefMemPerCPU
 	elseif mem == "nil" and mem_per_cpu == "nil" then
 
@@ -251,13 +243,8 @@ function getParameter(options)
 
 	end
 
-	-- slurm.log_info("allowed for req_mem: %s", req_mem)
-
 	-- 获取 time_limit
 	time_limit = slurm.time_str2mins(options["time"])
 	time_min = slurm.time_str2mins(options["time-min"])
-
-	-- slurm.log_info("allowed for time_limit: %s", time_limit)
-	-- slurm.log_info("allowed for time_min: %s", time_min)
 
 end

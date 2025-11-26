@@ -3,9 +3,8 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Copyright (C) 2013 SchedMD
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- *  Written by David Bigagli <david@schedmd.com>
  *  CODE-OCEC-09-009. All rights reserved.
  *
  *  This file is part of Slurm, a resource management program.
@@ -54,8 +53,8 @@
 
 #include "src/common/forward.h"
 #include "src/common/parse_time.h"
-#include "src/common/select.h"
-#include "src/common/slurm_auth.h"
+#include "src/interfaces/select.h"
+#include "src/interfaces/auth.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/uid.h"
 #include "src/common/xstring.h"

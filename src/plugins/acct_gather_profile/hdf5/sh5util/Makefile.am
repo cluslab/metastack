@@ -14,15 +14,15 @@ if BUILD_HDF5
 bin_PROGRAMS = sh5util
 
 sh5util_SOURCES = $(SHDF5_SOURCES)
-sh5util_LDADD = $(LIB_SLURM) $(DL_LIBS) \
+sh5util_LDADD = $(LIB_SLURM) \
 	../libhdf5_api.la
 sh5util_DEPENDENCIES = $(LIB_SLURM_BUILD) ../libhdf5_api.la
 
-sh5util_LDFLAGS = -export-dynamic $(CMD_LDFLAGS) \
+sh5util_LDFLAGS = $(CMD_LDFLAGS) \
 	$(HDF5_LDFLAGS) $(HDF5_LIBS)
 
 force:
-$(sh5util_LDADD) : force
+$(sh5util_DEPENDENCIES) : force
 	@cd `dirname $@` && $(MAKE) `basename $@`
 
 else

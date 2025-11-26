@@ -2,8 +2,7 @@
  *  as_mysql_convert.h - functions dealing with converting from tables in
  *                    slurm <= 17.02.
  *****************************************************************************
- *  Copyright (C) 2015-2017 SchedMD LLC.
- *  Written by Danny Auble <da@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -39,6 +38,8 @@
 #define _HAVE_AS_MYSQL_CONVERT_H
 
 #include "accounting_storage_mysql.h"
+
+extern void as_mysql_convert_possible(mysql_conn_t *mysql_conn);
 
 /* Functions for converting tables before they are created in new schema */
 extern int as_mysql_convert_tables_pre_create(mysql_conn_t *mysql_conn);

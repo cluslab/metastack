@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  opt.c
  *****************************************************************************
- *  Copyright (C) 2020 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -58,10 +57,17 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 
 	if (opt.nodes_set) {
 		desc->min_nodes = opt.min_nodes;
-		if (opt.max_nodes)
+		if (opt.max_nodes) {
 			desc->max_nodes = opt.max_nodes;
-	} else if (opt.ntasks_set && (opt.ntasks == 0))
+			if (opt.job_size_str)
+				desc->job_size_str = xstrdup(opt.job_size_str);
+			else
+				desc->job_size_str = NULL;
+		}
+	} else if (opt.ntasks_set && (opt.ntasks == 0)) {
 		desc->min_nodes = 0;
+		desc->job_size_str = NULL;
+	}
 	if (opt.ntasks_per_node)
 		desc->ntasks_per_node = opt.ntasks_per_node;
 	desc->user_id = opt.uid;
@@ -95,6 +101,7 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	desc->apptype = xstrdup(opt.apptype);
 #endif
+
 	/* job constraints */
 	if (opt.pn_min_cpus > -1)
 		desc->pn_min_cpus = opt.pn_min_cpus;
@@ -164,32 +171,31 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 	if (opt.wait4switch >= 0)
 		desc->wait4switch = opt.wait4switch;
 
-	desc->power_flags = opt.power;
 	if (opt.job_flags)
 		desc->bitflags = opt.job_flags;
 	desc->mcs_label = xstrdup(opt.mcs_label);
 
 	if (opt.cpus_per_gpu)
-		xstrfmtcat(desc->cpus_per_tres, "gres:gpu:%d", opt.cpus_per_gpu);
+		xstrfmtcat(desc->cpus_per_tres, "gres/gpu:%d", opt.cpus_per_gpu);
 #ifdef __METASTACK_NEW_GRES_DCU
 	if (opt.cpus_per_dcu)
-		xstrfmtcat(desc->cpus_per_tres, "gres:dcu:%d", opt.cpus_per_dcu);
+		xstrfmtcat(desc->cpus_per_tres, "gres/dcu:%d", opt.cpus_per_dcu);
 #endif
 #ifdef __METASTACK_NEW_GRES_NPU
 	if (opt.cpus_per_npu)
-		xstrfmtcat(desc->cpus_per_tres, "gres:npu:%d", opt.cpus_per_npu);
+		xstrfmtcat(desc->cpus_per_tres, "gres/npu:%d", opt.cpus_per_npu);
 #endif
 	desc->tres_bind = xstrdup(opt.tres_bind);
 	desc->tres_freq = xstrdup(opt.tres_freq);
-	xfmt_tres(&desc->tres_per_job, "gres:gpu", opt.gpus);
-	xfmt_tres(&desc->tres_per_node, "gres:gpu", opt.gpus_per_node);
+	xfmt_tres(&desc->tres_per_job, "gres/gpu", opt.gpus);
+	xfmt_tres(&desc->tres_per_node, "gres/gpu", opt.gpus_per_node);
 #ifdef __METASTACK_NEW_GRES_DCU
-	xfmt_tres(&desc->tres_per_job, "gres:dcu", opt.dcus);
-	xfmt_tres(&desc->tres_per_node, "gres:dcu", opt.dcus_per_node);
+	xfmt_tres(&desc->tres_per_job, "gres/dcu", opt.dcus);
+	xfmt_tres(&desc->tres_per_node, "gres/dcu", opt.dcus_per_node);
 #endif
 #ifdef __METASTACK_NEW_GRES_NPU
-	xfmt_tres(&desc->tres_per_job, "gres:npu", opt.npus);
-	xfmt_tres(&desc->tres_per_node, "gres:npu", opt.npus_per_node);
+	xfmt_tres(&desc->tres_per_job, "gres/npu", opt.npus);
+	xfmt_tres(&desc->tres_per_node, "gres/npu", opt.npus_per_node);
 #endif
 	/* --gres=none for jobs means no GRES, so don't send it to slurmctld */
 	if (opt.gres && xstrcasecmp(opt.gres, "NONE")) {
@@ -198,23 +204,25 @@ extern void fill_job_desc_from_opts(job_desc_msg_t *desc)
 		else
 			desc->tres_per_node = xstrdup(opt.gres);
 	}
-	xfmt_tres(&desc->tres_per_socket, "gres:gpu", opt.gpus_per_socket);
-	xfmt_tres(&desc->tres_per_task, "gres:gpu", opt.gpus_per_task);
-	if (opt.mem_per_gpu != NO_VAL64)
-		xstrfmtcat(desc->mem_per_tres, "gres:gpu:%"PRIu64, opt.mem_per_gpu);
+	xfmt_tres(&desc->tres_per_socket, "gres/gpu", opt.gpus_per_socket);
 #ifdef __METASTACK_NEW_GRES_DCU
-	xfmt_tres(&desc->tres_per_socket, "gres:dcu", opt.dcus_per_socket);
-	xfmt_tres(&desc->tres_per_task, "gres:dcu", opt.dcus_per_task);
-	if (opt.mem_per_dcu != NO_VAL64)
-		xstrfmtcat(desc->mem_per_tres, "gres:dcu:%"PRIu64, opt.mem_per_dcu);
+	xfmt_tres(&desc->tres_per_socket, "gres/dcu", opt.dcus_per_socket);
 #endif
 #ifdef __METASTACK_NEW_GRES_NPU
-	xfmt_tres(&desc->tres_per_socket, "gres:npu", opt.npus_per_socket);
-	xfmt_tres(&desc->tres_per_task, "gres:npu", opt.npus_per_task);
-	if (opt.mem_per_npu != NO_VAL64)
-		xstrfmtcat(desc->mem_per_tres, "gres:npu:%"PRIu64, opt.mem_per_npu);
+	xfmt_tres(&desc->tres_per_socket, "gres/npu", opt.npus_per_socket);
 #endif
+	desc->tres_per_task = xstrdup(opt.tres_per_task);
+	if (opt.mem_per_gpu != NO_VAL64)
+		xstrfmtcat(desc->mem_per_tres, "gres/gpu:%"PRIu64, opt.mem_per_gpu);
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	desc->watch_dog = xstrdup(opt.watch_dog);
+#endif
+#ifdef __METASTACK_NEW_GRES_DCU
+	if (opt.mem_per_dcu != NO_VAL64)
+		xstrfmtcat(desc->mem_per_tres, "gres/dcu:%"PRIu64, opt.mem_per_dcu);
+#endif
+#ifdef __METASTACK_NEW_GRES_DCU
+	if (opt.mem_per_npu != NO_VAL64)
+		xstrfmtcat(desc->mem_per_tres, "gres/npu:%"PRIu64, opt.mem_per_npu);
 #endif
 }

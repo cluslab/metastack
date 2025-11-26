@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  x11_forwarding.c - setup x11 port forwarding
  *****************************************************************************
- *  Copyright (C) 2017-2019 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -67,7 +66,7 @@ static uint32_t job_id = NO_VAL;
 static uid_t job_uid;
 
 static bool local_xauthority = false;
-static char hostname[256] = {0};
+static char hostname[HOST_NAME_MAX] = {0};
 
 static eio_handle_t *eio_handle;
 
@@ -150,6 +149,9 @@ static int _x11_socket_read(eio_obj_t *obj, List objs)
 
 	slurm_free_msg_members(&resp);
 
+	net_set_nodelay(*local);
+	net_set_nodelay(*remote);
+
 	/* setup eio to handle both sides of the connection now */
 	e1 = eio_obj_create(*local, &half_duplex_ops, remote);
 	e2 = eio_obj_create(*remote, &half_duplex_ops, local);
@@ -170,43 +172,23 @@ shutdown:
 	return SLURM_ERROR;
 }
 
-/*
- * Get home directory for a given uid.
- *
- * IN: uid
- * OUT: an xmalloc'd string, or NULL on error.
- */
-static char *_get_home(uid_t uid)
-{
-	struct passwd pwd, *pwd_ptr = NULL;
-	char pwd_buf[PW_BUF_SIZE];
-
-	if (slurm_getpwuid_r(uid, &pwd, pwd_buf, PW_BUF_SIZE, &pwd_ptr)
-	    || (pwd_ptr == NULL)) {
-		error("%s: getpwuid_r(%u):%m", __func__, uid);
-		return NULL;
-	}
-
-	return xstrdup(pwd.pw_dir);
-}
-
-extern int shutdown_x11_forward(stepd_step_rec_t *job)
+extern int shutdown_x11_forward(stepd_step_rec_t *step)
 {
 	int rc = SLURM_SUCCESS;
 
 	debug("x11 forwarding shutdown in progress");
 	eio_signal_shutdown(eio_handle);
 
-	if (job->x11_xauthority) {
+	if (step->x11_xauthority) {
 		if (local_xauthority) {
-			if (unlink(job->x11_xauthority)) {
+			if (unlink(step->x11_xauthority)) {
 				error("%s: problem unlinking xauthority file %s: %m",
-				      __func__, job->x11_xauthority);
+				      __func__, step->x11_xauthority);
 				rc = SLURM_ERROR;
 			}
 		} else
-			rc = x11_delete_xauth(job->x11_xauthority, hostname,
-					      job->x11_display);
+			rc = x11_delete_xauth(step->x11_xauthority, hostname,
+					      step->x11_display);
 	}
 
 	info("x11 forwarding shutdown complete");
@@ -220,7 +202,7 @@ extern int shutdown_x11_forward(stepd_step_rec_t *job)
  * IN: job
  * OUT: SLURM_SUCCESS or SLURM_ERROR
  */
-extern int setup_x11_forward(stepd_step_rec_t *job)
+extern int setup_x11_forward(stepd_step_rec_t *step)
 {
 	int listen_socket = -1;
 	uint16_t port;
@@ -240,38 +222,38 @@ extern int setup_x11_forward(stepd_step_rec_t *job)
 		.readable = _x11_socket_readable,
 		.handle_read = _x11_socket_read,
 	};
-	srun_info_t *srun = list_peek(job->sruns);
+	srun_info_t *srun = list_peek(step->sruns);
 	/* This should always be set to something else we have a bug. */
 	xassert(srun && srun->protocol_version);
 	protocol_version = srun->protocol_version;
 
-	job_id = job->step_id.job_id;
-	job_uid = job->uid;
-	x11_target = xstrdup(job->x11_target);
-	x11_target_port = job->x11_target_port;
+	job_id = step->step_id.job_id;
+	job_uid = step->uid;
+	x11_target = xstrdup(step->x11_target);
+	x11_target_port = step->x11_target_port;
 
-	slurm_set_addr(&alloc_node, job->x11_alloc_port, job->x11_alloc_host);
+	slurm_set_addr(&alloc_node, step->x11_alloc_port, step->x11_alloc_host);
 
 	debug("X11Parameters: %s", slurm_conf.x11_params);
 
 	if (xstrcasestr(slurm_conf.x11_params, "home_xauthority")) {
-		char *home = NULL;
-		if (!(home = _get_home(job->uid))) {
-			error("could not find HOME in environment");
+		char *home = xstrdup(step->pw_dir);
+		if (!home && !(home = uid_to_dir(step->uid))) {
+			error("Could not look up user home directory");
 			goto shutdown;
 		}
-		job->x11_xauthority = xstrdup_printf("%s/.Xauthority", home);
+		step->x11_xauthority = xstrdup_printf("%s/.Xauthority", home);
 		xfree(home);
 	} else {
 		/* use a node-local XAUTHORITY file instead of ~/.Xauthority */
 		int fd;
 		local_xauthority = true;
-		job->x11_xauthority = slurm_get_tmp_fs(conf->node_name);
-		xstrcat(job->x11_xauthority, "/.Xauthority-XXXXXX");
+		step->x11_xauthority = slurm_get_tmp_fs(conf->node_name);
+		xstrcat(step->x11_xauthority, "/.Xauthority-XXXXXX");
 
 		/* protect against weak file permissions in old glibc */
 		umask(0077);
-		if ((fd = mkstemp(job->x11_xauthority)) == -1) {
+		if ((fd = mkstemp(step->x11_xauthority)) == -1) {
 			error("%s: failed to create temporary XAUTHORITY file: %m",
 			      __func__);
 			goto shutdown;
@@ -292,22 +274,22 @@ extern int setup_x11_forward(stepd_step_rec_t *job)
 		goto shutdown;
 	}
 
-	job->x11_display = port - X11_TCP_PORT_OFFSET;
+	step->x11_display = port - X11_TCP_PORT_OFFSET;
 
 	info("X11 forwarding established on DISPLAY=%s:%d.0",
-	     hostname, job->x11_display);
+	     hostname, step->x11_display);
 
 	eio_handle = eio_handle_create(0);
 	obj = eio_obj_create(listen_socket, &x11_socket_ops, NULL);
 	eio_new_initial_obj(eio_handle, obj);
-	slurm_thread_create_detached(NULL, _eio_thread, NULL);
+	slurm_thread_create_detached(_eio_thread, NULL);
 
 	return SLURM_SUCCESS;
 
 shutdown:
 	xfree(x11_target);
-	job->x11_display = 0;
-	xfree(job->x11_xauthority);
+	step->x11_display = 0;
+	xfree(step->x11_xauthority);
 	if (listen_socket != -1)
 		close(listen_socket);
 

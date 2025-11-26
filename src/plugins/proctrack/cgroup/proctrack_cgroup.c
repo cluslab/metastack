@@ -48,7 +48,7 @@
 #include "slurm/slurm_errno.h"
 #include "src/common/log.h"
 #include "src/common/xstring.h"
-#include "src/common/cgroup.h"
+#include "src/interfaces/cgroup.h"
 #include "src/common/read_config.h"
 #include "src/slurmd/common/xcpuinfo.h"
 #include "src/slurmd/slurmd/slurmd.h"
@@ -155,20 +155,20 @@ extern int fini (void)
 /*
  * Uses slurmd job-step manager's pid as the unique container id.
  */
-extern int proctrack_p_create (stepd_step_rec_t *job)
+extern int proctrack_p_create(stepd_step_rec_t *step)
 {
 	int rc;
 
-	if ((rc = cgroup_g_step_create(CG_TRACK, job)) != SLURM_SUCCESS)
+	if ((rc = cgroup_g_step_create(CG_TRACK, step)) != SLURM_SUCCESS)
 		return rc;
 
 	/* Use slurmstepd pid as the id of the container. */
-	job->cont_id = (uint64_t)job->jmgr_pid;
+	step->cont_id = (uint64_t)step->jmgr_pid;
 
-	return cgroup_g_step_addto(CG_TRACK, &job->jmgr_pid, 1);
+	return cgroup_g_step_addto(CG_TRACK, &step->jmgr_pid, 1);
 }
 
-extern int proctrack_p_add (stepd_step_rec_t *job, pid_t pid)
+extern int proctrack_p_add(stepd_step_rec_t *step, pid_t pid)
 {
 	return cgroup_g_step_addto(CG_TRACK, &pid, 1);
 }
@@ -209,10 +209,11 @@ extern int proctrack_p_signal (uint64_t id, int signal)
 		if (pids[i] == (pid_t)id)
 			continue;
 
-		/* only signal slurm tasks unless signal is SIGKILL */
 		slurm_task = _slurm_cgroup_is_pid_a_slurm_task(id, pids[i]);
-		if (slurm_task == 1 || signal == SIGKILL) {
-			debug2("killing process %d (%s) with signal %d", pids[i],
+		if (slurm_cgroup_conf.signal_children_processes ||
+		    (slurm_task == 1) || (signal == SIGKILL)) {
+			debug2("sending process %d (%s) signal %d",
+			       pids[i],
 			       (slurm_task==1)?"slurm_task":"inherited_task",
 			       signal);
 			kill(pids[i], signal);

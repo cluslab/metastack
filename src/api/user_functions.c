@@ -41,7 +41,7 @@
 #include "slurm/slurm_errno.h"
 #include "slurm/slurmdb.h"
 
-#include "src/common/slurm_accounting_storage.h"
+#include "src/interfaces/accounting_storage.h"
 
 /*
  * add users to accounting system
@@ -54,6 +54,19 @@ extern int slurmdb_users_add(void *db_conn, List user_list)
 		db_api_uid = getuid();
 
 	return acct_storage_g_add_users(db_conn, db_api_uid, user_list);
+}
+
+extern char *slurmdb_users_add_cond(void *db_conn,
+				    slurmdb_add_assoc_cond_t *add_assoc,
+				    slurmdb_user_rec_t *user)
+{
+	xassert(add_assoc);
+
+	if (db_api_uid == -1)
+		db_api_uid = getuid();
+
+	return acct_storage_g_add_users_cond(
+		db_conn, db_api_uid, add_assoc, user);
 }
 
 /*

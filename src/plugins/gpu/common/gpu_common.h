@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  gpu_common.h - GPU plugin common header file
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC
- *  Written by Michael Hinton <hinton@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -41,9 +40,11 @@
 #include "slurm/slurm_errno.h"
 
 #include "src/common/slurm_xlator.h"
-#include "src/common/cgroup.h"
-#include "src/common/gpu.h"
-#include "src/common/gres.h"
+#include "src/common/assoc_mgr.h"
+#include "src/interfaces/cgroup.h"
+#include "src/interfaces/gpu.h"
+#include "src/interfaces/gres.h"
+#include "src/interfaces/jobacct_gather.h"
 #include "src/common/list.h"
 #include "src/common/log.h"
 #include "src/common/read_config.h"
@@ -103,7 +104,5 @@ extern void gpu_common_print_freqs(unsigned int freqs[], unsigned int size,
  * characters lower case.
  */
 extern void gpu_common_underscorify_tolower(char *str);
-
-extern int gpu_common_sort_freq_descending(const void *a, const void *b);
 
 #endif /* !_GPU_COMMON_H */

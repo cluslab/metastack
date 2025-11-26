@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  parse.c
  *****************************************************************************
- *  Copyright (C) 2020 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -99,7 +98,7 @@ static int _handle_step(bitstr_t *b, int start, char **pos)
 		bit_set(mask, i);
 
 	bit_and(b, mask);
-	bit_free(mask);
+	FREE_NULL_BITMAP(mask);
 
 	return SLURM_SUCCESS;
 }
@@ -161,6 +160,39 @@ extern cron_entry_t *cronspec_to_bitstring(char *pos)
 				pos += 5;
 			else
 				pos += 8;
+		} else if (!strncasecmp(pos, "elevenses", 9)) {
+			/* "0 11 * * *" */
+			bit_set(entry->minute, 0);
+			bit_set(entry->hour, 11);
+			bit_set_all(entry->day_of_month);
+			entry->flags |= CRON_WILD_DOM;
+			bit_set_all(entry->month);
+			entry->flags |= CRON_WILD_MONTH;
+			bit_set_all(entry->day_of_week);
+			entry->flags |= CRON_WILD_DOW;
+			pos += 9;
+		} else if (!strncasecmp(pos, "fika", 4)) {
+			/* "0 15 * * *" */
+			bit_set(entry->minute, 0);
+			bit_set(entry->hour, 15);
+			bit_set_all(entry->day_of_month);
+			entry->flags |= CRON_WILD_DOM;
+			bit_set_all(entry->month);
+			entry->flags |= CRON_WILD_MONTH;
+			bit_set_all(entry->day_of_week);
+			entry->flags |= CRON_WILD_DOW;
+			pos += 4;
+		} else if (!strncasecmp(pos, "teatime", 7)) {
+			/* "0 16 * * *" */
+			bit_set(entry->minute, 0);
+			bit_set(entry->hour, 16);
+			bit_set_all(entry->day_of_month);
+			entry->flags |= CRON_WILD_DOM;
+			bit_set_all(entry->month);
+			entry->flags |= CRON_WILD_MONTH;
+			bit_set_all(entry->day_of_week);
+			entry->flags |= CRON_WILD_DOW;
+			pos += 7;
 		} else if (!strncasecmp(pos, "hourly", 6)) {
 			/* "0 * * * *" */
 			bit_set(entry->minute, 0);

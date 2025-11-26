@@ -107,6 +107,6 @@ const char *c_string_peek(const c_string_t *cs);
 
 extern void print_fields_str(print_field_t *field, char *value, int last);
 
-#define KEYDIR "NONE"
+#define KEYDIR "/opt/gridview/slurm-3.1.0"
 #endif /* !_SJINFO_H */
 

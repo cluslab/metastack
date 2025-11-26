@@ -3,8 +3,7 @@
 # Purpose: Test of Slurm functionality
 #          Validate that Allow/Deny accounts are enforced.
 ############################################################################
-# Copyright (C) 2013 SchedMD LLC
-# Written by Nathan Yee <nyee32@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -117,11 +116,11 @@ proc test_part { acct part acct_con } {
 
 	spawn $srun -I5 -A $acct -p $part true
 	expect {
-		-re "error" {
+		-re "error:" {
 			if { $acct_con == 1 } {
 				log_debug "This error is expected"
 			} else {
-				fail "This error should not have occured"
+				fail "This error should not have occurred"
 			}
 			exp_continue
 		}

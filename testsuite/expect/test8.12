@@ -5,7 +5,6 @@
 ############################################################################
 # Copyright (C) 2002 The Regents of the University of California.
 # Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
-# Written by Marcin Stolarek <cinek@schedmd.com>
 # CODE-OCEC-09-009. All rights reserved.
 #
 # This file is part of Slurm, a resource management program.
@@ -61,10 +60,10 @@ proc setup {use_flex {start_time ""}} {
 	global res_name user_name default_partition
 
 	if {$use_flex} {
-		log_info "Creting a reservation with Flags=FLEX"
+		log_info "Creating a reservation with Flags=FLEX"
 		set flags "Flags=FLEX"
 	} else {
-		log_info "Creting a reservation WITHOUT Flags=FLEX"
+		log_info "Creating a reservation WITHOUT Flags=FLEX"
 		set flags ""
 	}
 	if {[create_res $res_name "StartTime=now$start_time Duration=1 NodeCnt=1 partition=$default_partition user=$user_name $flags"]} {

@@ -1,6 +1,5 @@
 /*****************************************************************************\
- *  Copyright (C) 2020 SchedMD LLC
- *  Written by Jeff DeGraw <jeff@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -42,8 +41,8 @@ START_TEST(easy)
 {
 	int count;
 	char *names = "hi,this,that";
-	List char_list = list_create(xfree_ptr);
-	ListIterator itr;
+	list_t *char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
 
 	count = slurm_addto_char_list(char_list, names);
 	itr = list_iterator_create(char_list);
@@ -61,8 +60,8 @@ START_TEST(commas_at_end)
 {
 	int count;
 	char *names = "hi,this,that,,,,,,,,,,,,,,,,,,,,,,,,";
-	List char_list = list_create(xfree_ptr);
-	ListIterator itr;
+	list_t *char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
 
 	count = slurm_addto_char_list(char_list, names);
 	itr = list_iterator_create(char_list);
@@ -80,8 +79,8 @@ START_TEST(commas_at_start)
 {
 	int count;
 	char *names = ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,hi,this,that";
-	List char_list = list_create(xfree_ptr);
-	ListIterator itr;
+	list_t *char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
 
 	count = slurm_addto_char_list(char_list, names);
 	itr = list_iterator_create(char_list);
@@ -99,8 +98,8 @@ START_TEST(commas_between)
 {
 	int count;
 	char *names = "hi,,,,,,,this,,,,,,,,that";
-	List char_list = list_create(xfree_ptr);
-	ListIterator itr;
+	list_t *char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
 
 	count = slurm_addto_char_list(char_list, names);
 	itr = list_iterator_create(char_list);
@@ -118,7 +117,7 @@ START_TEST(null_list)
 {
 	int count;
 	char *names = "hi,this,that";
-	List char_list = NULL;
+	list_t *char_list = NULL;
 
 	count = slurm_addto_char_list(char_list, names);
 	ck_assert_int_eq(count, 0);
@@ -130,8 +129,8 @@ END_TEST
 START_TEST(brackets) {
 	int count;
 	char *names = "hi[0-2],,hi[2-3],,this";
-	List char_list = list_create(xfree_ptr);
-	ListIterator itr;
+	list_t *char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
 
 	count = slurm_addto_char_list(char_list, names);
 	itr = list_iterator_create(char_list);
@@ -150,8 +149,8 @@ END_TEST
 START_TEST(duplicates) {
 	int count;
 	char *names = "hi,hi,hi,hi";
-	List char_list = list_create(xfree_ptr);
-	ListIterator itr;
+	list_t *char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
 
 	count = slurm_addto_char_list(char_list, names);
 	itr = list_iterator_create(char_list);
@@ -166,7 +165,7 @@ END_TEST
 START_TEST(spaces) {
 	int count;
 	char *names = "hi, this, that";
-	List char_list = list_create(xfree_ptr);
+	list_t *char_list = list_create(xfree_ptr);
 
 	count = slurm_addto_char_list(char_list, names);
 	ck_assert_int_eq(count, 3);
@@ -179,8 +178,8 @@ START_TEST(quotes)
 {
 	int count;
 	char *names = xstrdup("\"hi,this\'");
-	List char_list = list_create(xfree_ptr);
-	ListIterator itr;
+	list_t *char_list = list_create(xfree_ptr);
+	list_itr_t *itr;
 
 	count = slurm_addto_char_list(char_list, names);
 	itr = list_iterator_create(char_list);

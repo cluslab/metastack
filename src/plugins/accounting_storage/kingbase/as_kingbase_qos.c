@@ -152,7 +152,7 @@ static int _preemption_loop(kingbase_conn_t *kingbase_conn, int begin_qosid,
 static int _setup_qos_cond_limits(slurmdb_qos_cond_t *qos_cond, char **extra)
 {
 	int set = 0;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 
 	xassert(extra);
@@ -471,7 +471,7 @@ static int _setup_qos_limits(slurmdb_qos_rec_t *qos,
 		char *preempt_val = NULL;
 		char *tmp_char = NULL, *last_preempt = NULL;
 		bool adding_straight = 0;
-		ListIterator preempt_itr =
+		list_itr_t *preempt_itr =
 			list_iterator_create(qos->preempt_list);
 
 		xstrcat(*cols, ", preempt");
@@ -740,7 +740,7 @@ end_modify:
 extern int as_kingbase_add_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			    List qos_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int rc = SLURM_SUCCESS;
 	slurmdb_qos_rec_t *object = NULL;
 	char *cols = NULL, *extra = NULL, *vals = NULL, *query = NULL,
@@ -759,6 +759,11 @@ extern int as_kingbase_add_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 
 	if (!is_user_min_admin_level(kingbase_conn, uid, SLURMDB_ADMIN_SUPER_USER))
 		return ESLURM_ACCESS_DENIED;
+
+	if (!qos_list || !list_count(qos_list)) {
+		error("%s: Trying to add empty qos list", __func__);
+		return ESLURM_EMPTY_LIST;
+	}
 
 	assoc_mgr_lock(&locks);
 	qos_cnt = g_qos_count;
@@ -1024,7 +1029,7 @@ extern List as_kingbase_modify_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			     qos->max_tres_mins_pj, KCIResultGetColumnValue(result, i, MQOS_MTMPJ),
 			     NULL, "max_tres_mins_pj", &vals, qos_rec->id, 0);
 		mod_tres_str(&qos_rec->max_tres_run_mins_pa,
-			     qos->max_tres_run_mins_pa, KCIResultGetColumnValue(result, i, MQOS_MTRM),
+			     qos->max_tres_run_mins_pa, KCIResultGetColumnValue(result, i, MQOS_MTRMA),
 			     NULL, "max_tres_run_mins_pa", &vals,
 			     qos_rec->id, 0);
 		mod_tres_str(&qos_rec->max_tres_run_mins_pu,
@@ -1049,7 +1054,7 @@ extern List as_kingbase_modify_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 		qos_rec->priority = qos->priority;
 
 		if (qos->preempt_list) {
-			ListIterator new_preempt_itr =
+			list_itr_t *new_preempt_itr =
 				list_iterator_create(qos->preempt_list);
 			char *new_preempt = NULL;
 			bool cleared = 0;
@@ -1069,10 +1074,8 @@ extern List as_kingbase_modify_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 				} else {
 					if (!cleared) {
 						cleared = 1;
-						bit_nclear(
-							qos_rec->preempt_bitstr,
-							0,
-							qos_cnt-1);
+						bit_clear_all(
+							qos_rec->preempt_bitstr);
 					}
 
 					bit_set(qos_rec->preempt_bitstr,
@@ -1136,7 +1139,7 @@ extern List as_kingbase_modify_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 extern List as_kingbase_remove_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 				slurmdb_qos_cond_t *qos_cond)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	List ret_list = NULL;
 	int rc = SLURM_SUCCESS;
 	char *object = NULL;
@@ -1195,9 +1198,9 @@ extern List as_kingbase_remove_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 		else
 			xstrfmtcat(assoc_char, " or id_qos='%s'", KCIResultGetColumnValue(result, i, 0));
 		xstrfmtcat(extra,
-			   ", qos=replace(qos, ',%s,', '')"
-			   ", delta_qos=replace(replace(delta_qos, ',+%s,', ''), ',-%s,', '')",
-			   KCIResultGetColumnValue(result, i, 0), KCIResultGetColumnValue(result, i, 0), KCIResultGetColumnValue(result, i, 0));
+			   ", qos=replace(qos, ',%s,', if(qos=',%s,', '', ','))"
+			   ", delta_qos=replace(replace(delta_qos, ',+%s,', if(delta_qos=',+%s,', '', ',')), ',-%s,', if(delta_qos=',-%s,', '', ','))",
+			   KCIResultGetColumnValue(result, i, 0), KCIResultGetColumnValue(result, i, 0), KCIResultGetColumnValue(result, i, 0), KCIResultGetColumnValue(result, i, 0), KCIResultGetColumnValue(result, i, 0), KCIResultGetColumnValue(result, i, 0));
 
 		qos_rec = xmalloc(sizeof(slurmdb_qos_rec_t));
 		/* we only need id when removing no real need to init */
@@ -1223,11 +1226,14 @@ extern List as_kingbase_remove_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 	slurm_rwlock_rdlock(&as_kingbase_cluster_list_lock);
 	cluster_list_tmp = list_shallow_copy(as_kingbase_cluster_list);
 	if (list_count(cluster_list_tmp)) {
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-		slurm_mutex_lock(&assoc_lock);
-#endif
 		itr = list_iterator_create(cluster_list_tmp);
 		while ((object = list_next(itr))) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+			uint32_t rpc_version = get_cluster_version(kingbase_conn, object);
+			if (rpc_version < SLURM_23_11_PROTOCOL_VERSION) {
+				slurm_mutex_lock(&assoc_lock);
+			}
+#endif
 			/*
 			 * remove this qos from all the associations
 			 * that have it
@@ -1247,20 +1253,36 @@ extern List as_kingbase_remove_qos(kingbase_conn_t *kingbase_conn, uint32_t uid,
 			xfree(query);
 			if (rc == SLURM_ERROR) {
 				reset_kingbase_conn(kingbase_conn);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+				if (rpc_version < SLURM_23_11_PROTOCOL_VERSION) {
+					slurm_mutex_unlock(&assoc_lock);
+				}
+#endif
 				break;
 			}
 
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+			rc = remove_common(kingbase_conn, DBD_REMOVE_QOS, now,
+						user_name, qos_table, name_char,
+						assoc_char, object, NULL, NULL,
+						NULL);
+
+			if (rpc_version < SLURM_23_11_PROTOCOL_VERSION) {
+				slurm_mutex_unlock(&assoc_lock);
+			}
+			if (rc != SLURM_SUCCESS){
+				break;
+			}
+#else
 			if ((rc = remove_common(kingbase_conn, DBD_REMOVE_QOS, now,
 						user_name, qos_table, name_char,
 						assoc_char, object, NULL, NULL, 
 						NULL))
 			    != SLURM_SUCCESS)
 				break;
+#endif	
 		}
 		list_iterator_destroy(itr);
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-		slurm_mutex_unlock(&assoc_lock);
-#endif
 	} else
 		rc = remove_common(kingbase_conn, DBD_REMOVE_QOS, now,
 				   user_name, qos_table, name_char,

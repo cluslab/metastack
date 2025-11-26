@@ -1,9 +1,7 @@
 /*****************************************************************************\
  *  common_jag.c - slurm job accounting gather common plugin functions.
  *****************************************************************************
- *  Copyright (C) 2013 SchedMD LLC
- *  Written by Danny Auble <da@schedmd.com>, who borrowed heavily
- *  from the original code in jobacct_gather/linux
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -47,20 +45,20 @@
 
 #include "src/common/slurm_xlator.h"
 #include "src/common/assoc_mgr.h"
-#include "src/common/slurm_jobacct_gather.h"
+#include "src/interfaces/gpu.h"
+#include "src/interfaces/jobacct_gather.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
-#include "src/common/slurm_acct_gather_energy.h"
-#include "src/common/slurm_acct_gather_filesystem.h"
-#include "src/common/slurm_acct_gather_interconnect.h"
+#include "src/interfaces/acct_gather_energy.h"
+#include "src/interfaces/acct_gather_filesystem.h"
+#include "src/interfaces/acct_gather_interconnect.h"
 #include "src/common/xstring.h"
-#include "src/slurmd/common/proctrack.h"
-
-#include "common_jag.h"
-
+#include "src/interfaces/proctrack.h"
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
 #include <unistd.h>
 #endif
+#include "common_jag.h"
+
 /* These are defined here so when we link with something other than
  * the slurmstepd we will have these symbols defined.  They will get
  * overwritten when linking with the slurmstepd.
@@ -81,7 +79,7 @@ List prec_list = NULL;
 static int my_pagesize = 0;
 static int energy_profile = ENERGY_DATA_NODE_ENERGY_UP;
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 static int _get_process_status_line(pid_t pid, jag_prec_t *prec) 
 {
 	char *filename = NULL;
@@ -89,7 +87,7 @@ static int _get_process_status_line(pid_t pid, jag_prec_t *prec)
 	int fd, attempts = 1;
 	ssize_t n;
 	char *status = NULL;
-    int flag = 0 ;
+	int flag = 0 ;
 	xstrfmtcat(filename, "/proc/%u/status", pid);
 
 	fd = open(filename, O_RDONLY);
@@ -349,7 +347,6 @@ again:
 	}
 }
 
-
 /* _get_process_data_line() - get line of data from /proc/<pid>/stat
  *
  * IN:	in - input file descriptor
@@ -390,9 +387,8 @@ static int _get_process_data_line(int in, jag_prec_t *prec) {
 	/* parse these two strings separately, skipping the leading "(". */
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
 	memset(cmd, 0, sizeof(cmd));
-#endif	
+#endif
 	nvals = sscanf(sbuf, "%d (%39c", &prec->pid, cmd);
-
 	if (nvals < 2)
 		return 0;
 
@@ -543,6 +539,7 @@ static int _init_tres(jag_prec_t *prec, void *empty)
 {
 	/* Initialize read/writes */
 	for (int i = 0; i < prec->tres_count; i++) {
+		prec->tres_data[i].last_time = 0;
 		prec->tres_data[i].num_reads = INFINITE64;
 		prec->tres_data[i].num_writes = INFINITE64;
 		prec->tres_data[i].size_read = INFINITE64;
@@ -577,28 +574,28 @@ void _set_smaps_file(char **proc_smaps_file, pid_t pid)
 static int _get_cmdline(char *proc_cmdline_file, jag_prec_t *prec)
 {
 	FILE *fp = NULL;
-    char buffer[1024] = {0};
-    size_t len = 0;
+	char buffer[1024] = {0};
+	size_t len = 0;
 
 	if (!proc_cmdline_file || !prec) {
-        return -1;
-    }
+		return -1;
+	}
 	if (!(fp = fopen(proc_cmdline_file, "r")))
 		return -1;
 	len = fread(buffer, 1, sizeof(buffer) - 1, fp);
 
 	if (len <= 0) {
-        fclose(fp);
-        return -1;
+		fclose(fp);
+		return -1;
 	}
 	buffer[len] = '\0';
 	fclose(fp);
-    for (size_t i = 0; i < len; i++) {
-        if (buffer[i] == '\0') {
-            buffer[i] = ' ';
-        }
-    }
-    prec->cmdline = xstrdup(buffer);
+	for (size_t i = 0; i < len; i++) {
+		if (buffer[i] == '\0') {
+			buffer[i] = ' ';
+		}
+	}
+	prec->cmdline = xstrdup(buffer);
 	return 0;
 }
 #endif
@@ -607,15 +604,22 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 {
 	static int no_share_data = -1;
 	static int use_pss = -1;
+	static int disable_gpu_acct = -1;
 	char *proc_file = NULL;
 	FILE *stat_fp = NULL;
 	FILE *io_fp = NULL;
 	int fd, fd2;
 	jag_prec_t *prec = NULL;
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
-	time_t ct_pid;
+	time_t ct_pid = 0;
 #endif
-	if (no_share_data == -1) {
+
+	/* UsePSS and NoShare are only compatible with the linux plugin. */
+	if ((no_share_data == -1) &&
+	    (!xstrcasestr(slurm_conf.job_acct_gather_type, "linux"))) {
+		use_pss = 0;
+		no_share_data = 0;
+	} else if (no_share_data == -1) {
 		if (xstrcasestr(slurm_conf.job_acct_gather_params, "NoShare"))
 			no_share_data = 1;
 		else
@@ -625,6 +629,15 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 			use_pss = 1;
 		else
 			use_pss = 0;
+	}
+
+	if (disable_gpu_acct == -1) {
+		if (xstrcasestr(slurm_conf.job_acct_gather_params,
+				"DisableGPUAcct")) {
+			disable_gpu_acct = 1;
+			log_flag(JAG, "GPU accounting disabled as JobAcctGatherParams=DisableGpuAcct is set.");
+		} else
+			disable_gpu_acct = 0;
 	}
 
 	xstrfmtcat(proc_file, "/proc/%u/stat", pid);
@@ -672,13 +685,8 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 
 	fclose(stat_fp);
 
-	if (acct_gather_filesystem_g_get_data(prec->tres_data) < 0) {
-		log_flag(JAG, "problem retrieving filesystem data");
-	}
-
-	if (acct_gather_interconnect_g_get_data(prec->tres_data) < 0) {
-		log_flag(JAG, "problem retrieving interconnect data");
-	}
+	if (!disable_gpu_acct)
+		gpu_g_usage_read(pid, prec->tres_data);
 
 	/* Remove shared data from rss */
 	if (no_share_data) {
@@ -695,21 +703,23 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 		if (_get_pss(proc_file, prec) == -1)
 			goto bail_out;
 	}
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	prec->cmdline = NULL;
 	/* 
-		apptype_recongn_count marks the number of times that the apptype thread collects data related 
-		to application information. When this variable is less than or equal to 0, it means that the 
-		apptype thread has exited and the subsequent process information collection process does not 
-		need to collect cmdline information
+		apptype_thread_running is used to indicate whether the "acctg_apptype" thread has exited.
 	*/
-	if (apptype_recongn_count > 0) {
+	pthread_mutex_lock(&apptype_thread_mutex);
+	if (apptype_thread_running) {
+		pthread_mutex_unlock(&apptype_thread_mutex);
 		xfree(proc_file);
 		xstrfmtcat(proc_file, "/proc/%u/cmdline", pid);
 		if (_get_cmdline(proc_file, prec) == -1)
-			log_flag(JAG, "problem retrieving cmdline data");
-	}
+			log_flag(JAG, "The problem arises during the process of obtaining the cmdline.");
+	} else
+		pthread_mutex_unlock(&apptype_thread_mutex);
 #endif
+
 	xfree(proc_file);
 	xstrfmtcat(proc_file, "/proc/%u/io", pid);
 	if ((io_fp = fopen(proc_file, "r"))) {
@@ -722,29 +732,32 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 		}
 		fclose(io_fp);
 	}
-#ifdef __METASTACK_LOAD_ABNORMAL
+
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	if(_get_process_status_line(pid, prec) == 1) {
 		log_flag(JAG, "problem retrieving pid status data");
 	} 
 #endif
-
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
-    if (acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_TASK) && prec_list) {
-        jag_prec_t *prec_jobacct = NULL;
-        if ((prec_jobacct = list_find_first(prec_list, _find_prec, &prec->pid))) {
-            if (prec_jobacct->last_time > 0) {
-                int et = prec->now_time - prec_jobacct->last_time;
-                if (et > 1) {
-                    if(conv_units <= 0)
-                        conv_units = 100;
-                    prec->cpu_util = ((prec->usec + prec->ssec) - prec_jobacct->last_total_calc) * 
-                                                    100 /et/(double)conv_units ;
-                }
-            }
-        }
-        prec->last_time = prec->now_time;
-        prec->last_total_calc = prec->usec + prec->ssec;
-    }
+	if (acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_TASK) && prec_list) {
+		jag_prec_t *prec_jobacct = NULL;
+		if ((prec_jobacct = list_find_first(prec_list, _find_prec, &prec->pid))) {
+			if (prec_jobacct->last_time > 0) {
+				/*Calculate elapsed time between current and previous sampling (in seconds)*/
+				int et = prec->now_time - prec_jobacct->last_time;
+				if (et > 1) {
+					/*  If no unit conversion value is set, default to 100 (e.g., 100 units = 1 full CPU core-second) */
+					if(conv_units <= 0)
+						conv_units = 100;
+					prec->cpu_util = ((prec->usec + prec->ssec) - prec_jobacct->last_total_calc) * 
+					                    100 / et / (double)conv_units ;
+				}
+			}
+		}
+		/* Update current sampling time and CPU time total for the next interval */
+		prec->last_time = prec->now_time;
+		prec->last_total_calc = prec->usec + prec->ssec;
+	}
 #endif
 	destroy_jag_prec(list_remove_first(prec_list, _find_prec, &prec->pid));
 	list_append(prec_list, prec);
@@ -754,17 +767,23 @@ static void _handle_stats(pid_t pid, jag_callbacks_t *callbacks, int tres_count)
 bail_out:
 	xfree(prec->tres_data);
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
-    if (prec->command != NULL)
-		xfree(prec->command);
+	xfree(prec->command);
 #endif
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-	if (prec->cmdline != NULL)
-		xfree(prec->cmdline);
+	xfree(prec->cmdline);
 #endif
 	xfree(prec);
 	return;
 }
 
+static int _mark_as_completed(void *x, void *empty)
+{
+	jag_prec_t *prec = (jag_prec_t *) x;
+
+	prec->completed = true;
+
+	return SLURM_SUCCESS;
+}
 
 static List _get_precs(List task_list, uint64_t cont_id,
 		       jag_callbacks_t *callbacks)
@@ -776,6 +795,16 @@ static List _get_precs(List task_list, uint64_t cont_id,
 	xassert(task_list);
 
 	jobacct = list_peek(task_list);
+
+	/*
+	 * Mark all the processes as completed as if they were terminated,
+	 * even if they might still be alive. If that is the case, the next call
+	 * to _handle_stats will reset this flag for each pid which is found to
+	 * be alive. Otherwise the pid statistics will be aggregated into its
+	 * ancestor and the prec be removed from the list in order to avoid
+	 * aggregating it on each iteration.
+	 */
+	list_for_each(prec_list, _mark_as_completed, NULL);
 
 	/* get only the processes in the proctrack container */
 	proctrack_g_get_pids(cont_id, &pids, &npids);
@@ -804,10 +833,10 @@ static List _get_precs(List task_list, uint64_t cont_id,
 	return prec_list;
 }
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 {
-		enum {
+	enum {
 		/*PROFILE*/
 		FIELD_STEPCPU,
 		FIELD_STEPCPUAVE,
@@ -828,7 +857,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		FIELD_EVENTTYPE3START,
 		FIELD_EVENTTYPE1END,
 		FIELD_EVENTTYPE2END,
-		FIELD_EVENTTYPE3END,		
+		FIELD_EVENTTYPE3END,
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		/* APPTYPE */
 		FIELD_SENDFLAG,
@@ -836,7 +865,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		FIELD_APPTYPECLI,
 		FIELD_HAVERECOGN,
 		FIELD_CPUTIME,
-#endif				
+#endif
 		FIELD_CNT
 	};
 
@@ -858,6 +887,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 		char *str;
 #endif
 	} data[FIELD_CNT];
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	/* Initializing all  member*/
 	data[FIELD_CPUTHRESHOLD].d = 0;
@@ -876,6 +906,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 	data[FIELD_APPTYPECLI].str = NULL;
 	data[FIELD_CPUTIME].u64 = 0;
 #endif
+
 	char str[256];
 
 	if (profile_gid == -1)
@@ -897,6 +928,7 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 
 	if (jobacct->dataset_id < 0)
 		return;
+
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	data[FIELD_SENDFLAG].u64 = send->send_flag2;
 	if (send->send_flag2 & JOBACCT_GATHER_PROFILE_ABNORMAL) {
@@ -954,8 +986,8 @@ static void _record_profile2(struct jobacctinfo *jobacct, write_t *send)
 	}
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	if (send->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) {
-		if (data[FIELD_APPTYPESTEP].str) xfree(data[FIELD_APPTYPESTEP].str);
-		if (data[FIELD_APPTYPECLI].str) xfree(data[FIELD_APPTYPECLI].str);
+		xfree(data[FIELD_APPTYPESTEP].str);
+		xfree(data[FIELD_APPTYPECLI].str);
 	}
 #endif
 }
@@ -968,6 +1000,8 @@ static void _record_profile(struct jobacctinfo *jobacct)
 		FIELD_CPUFREQ,
 		FIELD_CPUTIME,
 		FIELD_CPUUTIL,
+		FIELD_GPUMEM,
+		FIELD_GPUUTIL,
 		FIELD_RSS,
 		FIELD_VMSIZE,
 		FIELD_PAGES,
@@ -980,6 +1014,8 @@ static void _record_profile(struct jobacctinfo *jobacct)
 		{ "CPUFrequency", PROFILE_FIELD_UINT64 },
 		{ "CPUTime", PROFILE_FIELD_DOUBLE },
 		{ "CPUUtilization", PROFILE_FIELD_DOUBLE },
+		{ "GPUMemMB", PROFILE_FIELD_UINT64 },
+		{ "GPUUtilization", PROFILE_FIELD_DOUBLE },
 		{ "RSS", PROFILE_FIELD_UINT64 },
 		{ "VMSize", PROFILE_FIELD_UINT64 },
 		{ "Pages", PROFILE_FIELD_UINT64 },
@@ -989,6 +1025,8 @@ static void _record_profile(struct jobacctinfo *jobacct)
 	};
 
 	static int64_t profile_gid = -1;
+	static int gpumem_pos = -1;
+	static int gpuutil_pos = -1;
 	double et;
 	union {
 		double d;
@@ -996,8 +1034,10 @@ static void _record_profile(struct jobacctinfo *jobacct)
 	} data[FIELD_CNT];
 	char str[256];
 
-	if (profile_gid == -1)
+	if (profile_gid == -1) {
 		profile_gid = acct_gather_profile_g_create_group("Tasks");
+		gpu_get_tres_pos(&gpumem_pos, &gpuutil_pos);
+	}
 
 	/* Create the dataset first */
 	if (jobacct->dataset_id < 0) {
@@ -1029,6 +1069,7 @@ static void _record_profile(struct jobacctinfo *jobacct)
 	if (!jobacct->last_time) {
 		data[FIELD_CPUTIME].d = 0;
 		data[FIELD_CPUUTIL].d = 0.0;
+		data[FIELD_GPUUTIL].d = 0.0;
 		data[FIELD_READ].d = 0.0;
 		data[FIELD_WRITE].d = 0.0;
 	} else {
@@ -1068,6 +1109,16 @@ static void _record_profile(struct jobacctinfo *jobacct)
 		/* Profile disk as MB */
 		data[FIELD_READ].d /= 1048576.0;
 		data[FIELD_WRITE].d /= 1048576.0;
+
+		if (gpumem_pos != -1) {
+			/* Profile gpumem as MB */
+			data[FIELD_GPUMEM].u64 =
+				jobacct->tres_usage_in_tot[gpumem_pos] /
+				1048576;
+			data[FIELD_GPUUTIL].d =
+				jobacct->tres_usage_in_tot[gpuutil_pos];
+;
+		}
 	}
 
 	log_flag(PROFILE, "PROFILE-Task: %s",
@@ -1124,7 +1175,7 @@ extern void destroy_jag_prec(void *object)
 #endif
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	xfree(prec->cmdline);
-#endif
+#endif	
 	xfree(prec->tres_data);
 	xfree(prec);
 	return;
@@ -1132,39 +1183,42 @@ extern void destroy_jag_prec(void *object)
 
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
 static void _get_son_process(List prec_list,
-                    jag_prec_t *ancestor, struct jobacctinfo *jobacct){
-    jag_prec_t *prec = NULL;
-    jag_prec_t *prec_tmp = NULL;
-    List tmp_list = NULL;
+					jag_prec_t *ancestor, struct jobacctinfo *jobacct){
+	jag_prec_t *prec = NULL;
+	jag_prec_t *prec_tmp = NULL;
+	List tmp_list = NULL;
+	list_itr_t *itr = NULL;
+	if((prec_list== NULL) ||(ancestor == NULL) || (jobacct == NULL)) {
+		return;
+	}
+	itr = list_iterator_create(prec_list);
+	while((prec = list_next(itr))){
+		prec->ppid_flag = false;
+	}
+	list_iterator_destroy(itr);
 
-    ListIterator itr = list_iterator_create(prec_list);
-    while((prec = list_next(itr))){
-        prec->ppid_flag = false;
-    }
-    list_iterator_destroy(itr);
+	prec = ancestor;
+	prec->ppid_flag = true;
 
-    prec = ancestor;
-    prec->ppid_flag = true;
+	tmp_list = list_create(NULL);
+	list_append(tmp_list, prec);
 
-    tmp_list = list_create(NULL);
-    list_append(tmp_list, prec);
-
-    jobacct->pjobs = list_create(NULL);
-    list_append(jobacct->pjobs, prec);
-
-    while ((prec_tmp = list_dequeue(tmp_list))) {
-        ListIterator itrin = list_iterator_create(prec_list);
-        while((prec = list_next(itrin))){
-            if((prec->ppid == prec_tmp->pid) && (false == prec->ppid_flag)) {
-                list_append(jobacct->pjobs, prec);
-                list_append(tmp_list, prec);
-                prec->ppid_flag = true;
-            }
-        }
-        list_iterator_destroy(itrin);
-    }
-    FREE_NULL_LIST(tmp_list);
-    return;
+	jobacct->pjobs = list_create(NULL);
+	list_append(jobacct->pjobs, prec);
+	list_itr_t *itrin = list_iterator_create(prec_list);
+	while ((prec_tmp = list_dequeue(tmp_list))) {
+		while((prec = list_next(itrin))){
+			if((prec->ppid == prec_tmp->pid) && (false == prec->ppid_flag)) {
+				list_append(jobacct->pjobs, prec);
+				list_append(tmp_list, prec);
+				prec->ppid_flag = true;
+			}
+		}
+		list_iterator_reset(itrin);
+	}
+	list_iterator_destroy(itrin);
+	FREE_NULL_LIST(tmp_list);
+	return;
 }
 #endif
 
@@ -1204,7 +1258,7 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 	if (jobacct->first_acct_time.tv_sec == 0) {
 		gettimeofday(&jobacct->first_acct_time, NULL) ;
 		jobacct->first_total_cputime = cpu_calc;
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 		jobacct->flag = 0;
 		jobacct->cpu_step_ave = 0.0;
 		jobacct->cpu_step_real = 0.0;
@@ -1241,6 +1295,8 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 		if(deta_time >= 1000) {
 			double cpu_util = (cpu_calc - jobacct->pre1_total_cputime) * 100.0 * 1000 / deta_time / CPU_TIME_ADJ;
 			jobacct->cpu_util = cpu_util;
+			if(jobacct->cpu_util < 0)
+				jobacct->cpu_util = 0;
 
 			deta_time = 0;
 			deta_time += (now_time.tv_sec - jobacct->first_acct_time.tv_sec) * 1000;
@@ -1248,6 +1304,9 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 
 			double avg_cpu_util = (cpu_calc - jobacct->first_total_cputime) *100* 1000 / deta_time / CPU_TIME_ADJ;
 			jobacct->avg_cpu_util = avg_cpu_util;
+			if(jobacct->avg_cpu_util < 0)
+				jobacct->avg_cpu_util = 0;
+
 			debug3("cpu_util:%.1f, av_cpu_util:%.1f", cpu_util, avg_cpu_util);
 			if (jobacct->cpu_util > jobacct->max_cpu_util)
 				jobacct->max_cpu_util = jobacct->cpu_util;
@@ -1261,7 +1320,152 @@ static void update_jobacct_ext( struct jobacctinfo *jobacct,
 }
 #endif
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+static int _list_find_prec_by_pid(void *x, void *key)
+{
+        jag_prec_t *j = (jag_prec_t *) x;
+        pid_t pid = *(pid_t *) key;
+
+        if (!j->visited && (j->pid == pid))
+                return 1;
+        return 0;
+}
+
+static int _list_find_prec_by_ppid(void *x, void *key)
+{
+        jag_prec_t *j = (jag_prec_t *) x;
+        pid_t pid = *(pid_t *) key;
+
+        if (!j->visited && (j->ppid == pid))
+                return 1;
+        return 0;
+}
+
+static int _reset_visited(jag_prec_t *prec, void *empty)
+{
+	prec->visited = false;
+
+	return SLURM_SUCCESS;
+}
+
+static void _aggregate_prec(jag_prec_t *prec, jag_prec_t *ancestor)
+{
+	int i;
+#if _DEBUG
+	info("pid:%u ppid:%u rss:%"PRIu64" B",
+	     prec->pid, prec->ppid,
+	     prec->tres_data[TRES_ARRAY_MEM].size_read);
+#endif
+	ancestor->usec += prec->usec;
+	ancestor->ssec += prec->ssec;
+
+	for (i = 0; i < prec->tres_count; i++) {
+		if (prec->tres_data[i].num_reads != INFINITE64) {
+			if (ancestor->tres_data[i].num_reads == INFINITE64)
+				ancestor->tres_data[i].num_reads =
+					prec->tres_data[i].num_reads;
+			else
+				ancestor->tres_data[i].num_reads +=
+					prec->tres_data[i].num_reads;
+		}
+
+		if (prec->tres_data[i].num_writes != INFINITE64) {
+			if (ancestor->tres_data[i].num_writes == INFINITE64)
+				ancestor->tres_data[i].num_writes =
+					prec->tres_data[i].num_writes;
+			else
+				ancestor->tres_data[i].num_writes +=
+					prec->tres_data[i].num_writes;
+		}
+
+		if (prec->tres_data[i].size_read != INFINITE64) {
+			if (ancestor->tres_data[i].size_read == INFINITE64)
+				ancestor->tres_data[i].size_read =
+					prec->tres_data[i].size_read;
+			else
+				ancestor->tres_data[i].size_read +=
+					prec->tres_data[i].size_read;
+		}
+
+		if (prec->tres_data[i].size_write != INFINITE64) {
+			if (ancestor->tres_data[i].size_write == INFINITE64)
+				ancestor->tres_data[i].size_write =
+					prec->tres_data[i].size_write;
+			else
+				ancestor->tres_data[i].size_write +=
+					prec->tres_data[i].size_write;
+		}
+	}
+	prec->visited = true;
+}
+
+/*
+ * _get_offspring_data() -- collect memory usage data for the offspring
+ *
+ * For each process that lists <pid> as its parent, add its memory
+ * usage data to the ancestor's <prec> record. Recurse to gather data
+ * for *all* subsequent generations.
+ *
+ * IN:	prec_list       list of prec's
+ *      ancestor	The entry in precTable[] to which the data
+ *			should be added. Even as we recurse, this will
+ *			always be the prec for the base of the family
+ *			tree.
+ *	pid		The process for which we are currently looking
+ *			for offspring.
+ * IN/OUT:
+ *      permanent_anc Pointer to the original ancestor. Changes to
+ *	              it are saved, so we can permanently save
+ *		      the values from completed processes.
+ *
+ * RETVAL:	none.
+ *
+ * THREADSAFE! Only one thread ever gets here.
+ */
+static void _get_offspring_data(List prec_list, jag_prec_t *ancestor, pid_t pid,
+				jag_prec_t *permanent_anc)
+{
+	jag_prec_t *prec = NULL;
+	jag_prec_t *prec_tmp = NULL;
+	List tmp_list = NULL;
+
+	/* reset all precs to be not visited */
+	(void)list_for_each(prec_list, (ListForF)_reset_visited, NULL);
+
+	/* See if we can find a prec from the given pid */
+	if (!(prec = list_find_first(prec_list, _list_find_prec_by_pid, &pid)))
+		return;
+
+	prec->visited = true;
+
+	tmp_list = list_create(NULL);
+	list_append(tmp_list, prec);
+
+	while ((prec_tmp = list_dequeue(tmp_list))) {
+		while ((prec = list_find_first(prec_list,
+					      _list_find_prec_by_ppid,
+					       &(prec_tmp->pid)))) {
+			_aggregate_prec(prec, ancestor);
+			/*
+			 * If the prec disappeared (pid is dead) aggregate its
+			 * statistics and remove it from the prec_list to avoid
+			 * having to agreggate it on every iteration.
+			 */
+			if (prec->completed) {
+				_aggregate_prec(prec, permanent_anc);
+				log_flag(JAG, "Removing completed process %d",
+					 prec->pid);
+				list_remove_first(prec_list, _find_prec,
+						  &prec->pid);
+			}
+			list_append(tmp_list, prec);
+		}
+	}
+	FREE_NULL_LIST(tmp_list);
+
+	return;
+}
+
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jag_callbacks_t *callbacks, bool profile, collection_t *collect, write_t *data)
 #endif
@@ -1269,7 +1473,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	/* Update the data */
 	uint64_t total_job_mem = 0, total_job_vsize = 0;
 	uint32_t last_taskid = NO_VAL;
-	ListIterator itr;
+	list_itr_t *itr;
 	jag_prec_t *prec = NULL, tmp_prec;
 	struct jobacctinfo *jobacct = NULL;
 	static int processing = 0;
@@ -1277,7 +1481,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	int energy_counted = 0;
 	time_t ct;
 	int i = 0;
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	double total_job_cpuutil = 0;
 	double total_job_cpuutil_ave = 0;
 	uint64_t pid_status = 0;
@@ -1285,10 +1489,26 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	/* just write once to the jobacct structure */
 	bool stamp = false; 
 #endif
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-	uint64_t total_job_cputime = 0;
-#endif
 	xassert(callbacks);
+
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	/*
+		1. A profile of 0 means no data is written
+		2. collect is NULL if no data will be collected
+		3. If write is not NULL, it means that the purpose of this poll_data is to send data to the influxdb cache.
+		Currently only apptype triggers this.
+	*/
+	if (!profile && collect == NULL && data != NULL) {
+		if ((data->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) && acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_APPTYPE)) {
+			jobacct = jobacctinfo_create(NULL);
+			jobacct->cur_time = time(NULL);
+			_record_profile2(jobacct, data);
+			jobacctinfo_destroy(jobacct);
+			processing = 0;
+			return;
+		}
+	}
+#endif
 
 	if (cont_id == NO_VAL64) {
 		log_flag(JAG, "cont_id hasn't been set yet not running poll");
@@ -1301,28 +1521,13 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	}
 	processing = 1;
 
+	if (!callbacks->get_offspring_data)
+		callbacks->get_offspring_data = _get_offspring_data;
+
 	if (!callbacks->get_precs)
 		callbacks->get_precs = _get_precs;
 
 	ct = time(NULL);
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-	/*
-		1. A profile of 0 means no data is written
-		2. collect is NULL if no data will be collected
-		3. If write is not NULL, it means that the purpose of this poll_data is to send data to the influxdb cache.
-		Currently only apptype triggers this.
-	*/
-	if (!profile && collect == NULL && data != NULL) {
-		if ((data->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) && acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_APPTYPE)) {
-			jobacct = jobacctinfo_create(NULL);
-			jobacct->cur_time = ct;
-			_record_profile2(jobacct, data);
-			jobacctinfo_destroy(jobacct);
-			processing = 0;
-			return;
-		}
-	}
-#endif
 
 	(void)list_for_each(prec_list, (ListForF)_init_tres, NULL);
 	(*(callbacks->get_precs))(task_list, cont_id, callbacks);
@@ -1334,7 +1539,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 	while ((jobacct = list_next(itr))) {
 		double cpu_calc;
 		double last_total_cputime;
-		jobacct->cur_time_ns = 0;
+		jag_prec_t *permanent_anc;
 		if (!(prec = list_find_first(prec_list, _find_prec,
 					     &jobacct->pid)))
 			continue;
@@ -1344,7 +1549,20 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		 * keeping around precs after they end.
 		 */
 		memcpy(&tmp_prec, prec, sizeof(*prec));
+		permanent_anc = prec;
 		prec = &tmp_prec;
+
+		if (acct_gather_filesystem_g_get_data(prec->tres_data) < 0) {
+			log_flag(JAG, "problem retrieving filesystem data");
+		}
+
+		if (acct_gather_interconnect_g_get_data(prec->tres_data) < 0) {
+			log_flag(JAG, "problem retrieving interconnect data");
+		}
+		/* find all my descendents */
+		if (callbacks->get_offspring_data)
+			(*(callbacks->get_offspring_data))
+				(prec_list, prec, prec->pid, permanent_anc);
 
 		/*
 		 * Only jobacct_gather/cgroup uses prec_extra, and we want to
@@ -1364,9 +1582,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 			}
 
 			last_taskid = jobacct->id.taskid;
-
 			(*(callbacks->prec_extra))(prec, jobacct->id.taskid);
-			_print_jag_prec(prec);
 		}
 
 		log_flag(JAG, "pid:%u ppid:%u %s:%" PRIu64 " B",
@@ -1375,10 +1591,6 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				      "UsePss") ?  "pss" : "rss"),
 			 prec->tres_data[TRES_ARRAY_MEM].size_read);
 
-		/* find all my descendents */
-		if (callbacks->get_offspring_data)
-			(*(callbacks->get_offspring_data))
-				(prec_list, prec, prec->pid);
 
 		last_total_cputime =
 			(double)jobacct->tres_usage_in_tot[TRES_ARRAY_CPU];
@@ -1415,6 +1627,8 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				 jobacct->energy.ave_watts);
 			energy_counted = 1;
 		}
+
+		_print_jag_prec(prec);
 
 		/* tally their usage */
 		for (i = 0; i < jobacct->tres_count; i++) {
@@ -1456,32 +1670,28 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 
 		total_job_mem += jobacct->tres_usage_in_tot[TRES_ARRAY_MEM];
 		total_job_vsize += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-		total_job_cputime += jobacct->tres_usage_in_tot[TRES_ARRAY_VMEM];
-#endif
-#ifdef __METASTACK_LOAD_ABNORMAL
-		if (data != NULL) {
-			if (stamp == false) {
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
+		if(data != NULL) {
+			if(stamp == false) {
 				if (data->send_flag2 & JOBACCT_GATHER_PROFILE_ABNORMAL) {
 					jobacct->node_alloc_cpu = data->node_alloc_cpu;
 					jobacct->timer = data->timer;
 					jobacct->cpu_threshold = data->cpu_threshold;
 
-					if (data->load_flag & LOAD_LOW) { 
+					if(data->load_flag & LOAD_LOW) { 
 						jobacct->cpu_start[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_start;
 						jobacct->cpu_end[jobacct->cpu_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->cpu_end;
 						jobacct->cpu_count++;
 						jobacct->flag |= data->load_flag;
 					}
-					if (data->load_flag & PROC_AB) { 
+					if(data->load_flag & PROC_AB) { 
 						jobacct->pid_start[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_start;
 						jobacct->pid_end[jobacct->pid_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->pid_end;
 						jobacct->pid_count++;
 						jobacct->flag |= data->load_flag;
 					}
 
-					if (data->load_flag & JNODE_STAT) { 
+					if(data->load_flag & JNODE_STAT) { 
 						jobacct->node_start[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_start;
 						jobacct->node_end[jobacct->node_count % JOBACCTINFO_START_END_ARRAY_SIZE] = data->node_end;
 						jobacct->node_count++;
@@ -1494,18 +1704,19 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 					jobacct->vmem_step = data->vmem_step;
 					jobacct->step_pages = data->step_pages;
 
-					jobacct->cpu_step_max = jobacct->cpu_step_max < data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_max;
-					jobacct->cpu_step_min = jobacct->cpu_step_min > data->cpu_step_real ? data->cpu_step_real : jobacct->cpu_step_min;
-					jobacct->mem_step_max = jobacct->mem_step_max < data->mem_step ? data->mem_step : jobacct->mem_step_max;
-					jobacct->mem_step_min = jobacct->mem_step_min > data->mem_step ? data->mem_step : jobacct->mem_step_min;
-					jobacct->vmem_step_max = jobacct->vmem_step_max < data->vmem_step ? data->vmem_step : jobacct->vmem_step_max;
-					jobacct->vmem_step_min = jobacct->vmem_step_min > data->vmem_step ? data->vmem_step : jobacct->vmem_step_min;				
+					jobacct->cpu_step_max  = MAX(data->cpu_step_real, jobacct->cpu_step_max);
+					jobacct->cpu_step_min  = MIN(data->cpu_step_real, jobacct->cpu_step_min);
+					jobacct->mem_step_max  = MAX( data->mem_step,  data->mem_step);
+					jobacct->mem_step_min  = MIN( data->mem_step, jobacct->mem_step_min);
+					jobacct->vmem_step_max = MAX(data->vmem_step, jobacct->vmem_step_max);
+					jobacct->vmem_step_min = MIN(data->vmem_step, jobacct->vmem_step_min);				
 					jobacct->acct_flag = 1;
-					if (data && profile && acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_STEPD)) {	
+					if(data && profile &&  acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_STEPD)) {	
 						jobacct->cur_time = ct;
 						_record_profile2(jobacct, data);
 					}
 				}
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 				if (data->send_flag2 & JOBACCT_GATHER_PROFILE_APPTYPE) {
 					/*	For incoming apptype information, there is no need to determine the profile; 
 						a special decision is made in record_profile2 whether to cache or send data */
@@ -1514,17 +1725,15 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 						_record_profile2(jobacct, data);
 					}
 				}
-				stamp = true;
 #endif
+				stamp = true;
 			}	
-	
 		}
 		total_job_cpuutil += jobacct->cpu_util;
 		total_job_cpuutil_ave += jobacct->avg_cpu_util;
 		total_job_pages += jobacct->tres_usage_in_tot[TRES_ARRAY_PAGES];
-
-		
 #endif
+
 		/* Update the cpu times */
 		jobacct->user_cpu_sec = (uint64_t)(prec->usec /
 						   (double)conv_units);
@@ -1566,7 +1775,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		    acct_gather_profile_g_is_active(ACCT_GATHER_PROFILE_TASK)) {
 			jobacct->cur_time = ct;
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE 
-		    _get_son_process(prec_list, prec, jobacct);
+			_get_son_process(prec_list, prec, jobacct);
 #endif
 			_record_profile(jobacct);
 
@@ -1585,14 +1794,14 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		}
 	}
 	list_iterator_destroy(itr);
-#ifdef __METASTACK_LOAD_ABNORMAL
-   if(collect && (collect->step)) {
-		ListIterator itr1 = NULL;
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
+	if(collect && (collect->step)) {
+		list_itr_t *itr1 = NULL;
 		jag_prec_t *prec1 = NULL;
 		itr1 = list_iterator_create(prec_list);
 
 		while ((prec1 = list_next(itr1))) {
-			if ((prec1->flag) == 1) {
+			if((prec1->flag) == 1) {
 				log_flag(JAG,"pid = %d  abnormal process status",prec1->pid);
 				pid_status = pid_status|PROC_AB;
 			} 
@@ -1604,7 +1813,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 				collect->app_rec_cnt++;
 				if (total_cpu_time >= collect->max_cpu_time) {
 					collect->max_cpu_time = total_cpu_time;
-					if (collect->max_cputime_comm) xfree(collect->max_cputime_comm);
+					xfree(collect->max_cputime_comm);
 					collect->max_cputime_comm = xstrdup(prec1->command);
 				}
 			}
@@ -1616,9 +1825,8 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		collect->mem_step = total_job_mem;
 		collect->vmem_step = total_job_vsize;
 		collect->load_flag = collect->load_flag | pid_status;
-	}
+	 }
 #endif
-
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	if(collect && collect->pids) {
 		collect->npids = 0;
@@ -1636,11 +1844,10 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 		xfree(pids);
 	} 
 #endif
-
 	if (slurm_conf.job_acct_oom_kill)
 		jobacct_gather_handle_mem_limit(total_job_mem,
 						total_job_vsize);
-						
+
 finished:
 	processing = 0;
 }

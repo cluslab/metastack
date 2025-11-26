@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Portions Copyright (C) 2010-2016 SchedMD <https://www.schedmd.com>.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov> et. al.
  *  CODE-OCEC-09-009. All rights reserved.
@@ -53,7 +53,7 @@ extern trigger_info_msg_t * trigger_get(uid_t uid, trigger_info_msg_t *msg);
 extern int trigger_set(uid_t uid, gid_t gid, trigger_info_msg_t *msg);
 extern int trigger_pull(trigger_info_msg_t *msg);
 
-/* Note the some event has occured and flag triggers as needed */
+/* Note the some event has occurred and flag triggers as needed */
 extern void trigger_block_error(void);
 extern void trigger_burst_buffer(void);
 extern void trigger_front_end_down(front_end_record_t *front_end_ptr);
@@ -62,6 +62,8 @@ extern void trigger_node_down(node_record_t *node_ptr);
 extern void trigger_node_drained(node_record_t *node_ptr);
 extern void trigger_node_failing(node_record_t *node_ptr);
 extern void trigger_node_up(node_record_t *node_ptr);
+extern void trigger_node_draining(node_record_t *node_ptr);
+extern void trigger_node_resume(node_record_t *node_ptr);
 extern void trigger_reconfig(void);
 extern void trigger_primary_ctld_fail(void);
 extern void trigger_primary_ctld_res_op(void);

@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  ref.h - Static strings reference
  *****************************************************************************
- *  Copyright (C) 2019-2020 SchedMD LLC.
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -37,6 +36,9 @@
 #ifndef _COMMON_REF_H_
 #define _COMMON_REF_H_
 
+#include "src/common/data.h"
+#include "src/interfaces/serializer.h"
+
 /*
  * any ld static data will always have 3 symbols defined (start, end, size).
  *
@@ -44,7 +46,7 @@
  * See also https://csl.name/post/embedding-binary-data/
  *
  * Warning: Do *NOT* use the symbol names directly.
- * Warning: size when complied is mangled during runtime.
+ * Warning: size when compiled is mangled during runtime.
  *
  * ld will replace any '.' with '_'.
  */
@@ -74,13 +76,14 @@
 	} while (0)
 
 /* static data to a data_t */
-#define static_ref_json_to_data_t(data, name)                              \
-	do {                                                               \
-		char *json_data_ptr;                                       \
-		static_ref_to_cstring(json_data_ptr, name);                \
-		data_g_deserialize(&data, json_data_ptr,                   \
-				   static_ref_size(name), MIME_TYPE_JSON); \
-		xfree(json_data_ptr);                                      \
+#define static_ref_json_to_data_t(data, name)                     \
+	do {                                                      \
+		char *json_data_ptr;                              \
+		static_ref_to_cstring(json_data_ptr, name);       \
+		(void) serialize_g_string_to_data(&data,          \
+			json_data_ptr,  static_ref_size(name),    \
+			MIME_TYPE_JSON);                          \
+		xfree(json_data_ptr);                             \
 	} while (0);
 
 #endif /* _COMMON_REF_H_ */

@@ -2,8 +2,7 @@
 ############################################################################
 # Purpose: Test basic functionality of backfill scheduler
 ############################################################################
-# Copyright (C) 2020 SchedMD LLC
-# Written by Albert Gil <albert.gil@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -41,6 +40,10 @@ if {[get_config_param "FrontendName"] ne "MISSING"} {
 
 if {[get_config_param "SchedulerType"] ne "sched/backfill"} {
 	skip "This test requires SchedulerType = sched/backfill"
+}
+
+if {[string first "bf_min_prio_reserve" [get_config_param "SchedulerParameters"]] != -1} {
+	skip "This test cannot work with bf_min_prio_reserve"
 }
 
 if {$nodes_avail < $nodes_min} {

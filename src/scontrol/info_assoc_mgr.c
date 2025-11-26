@@ -3,7 +3,7 @@
  *                     slurmctld functions for scontrol.
  *****************************************************************************
  *  Copyright (C) 2004 CSCS
- *  Copyright (C) 2015 SchedMD LLC
+ *  Copyright (C) SchedMD LLC.
  *  Written by Stephen Trofinoff and Danny Auble
  *
  *  This file is part of Slurm, a resource management program.
@@ -37,6 +37,7 @@
 \*****************************************************************************/
 
 #include "scontrol.h"
+#include "src/common/uid.h"
 #include "src/common/xstring.h"
 
 static uint32_t tres_cnt = 0;
@@ -115,17 +116,17 @@ static int _print_used_acct_limit(slurmdb_used_limits_t *used_limit,
 			 qos_rec->max_tres_pa_ctld,
 			 used_limit->tres, 0);
 
+	/* NEW LINE */
+	printf("%s", new_line_char);
+
+	_print_tres_line("MaxTRESRunMinsPA",
+			 qos_rec->max_tres_run_mins_pa_ctld,
+			 used_limit->tres_run_secs, 60);
+
 	if (one_liner)
 		printf("}");
 
-	/* MaxTRESRunMinsPA doesn't do anything yet, if/when it does
-	 * change the last param in the print_tres_line to 0. */
-
 	/* printf("%s", one_liner ? "" : "    "); */
-	/* _print_tres_line("MaxTRESRunMinsPA", */
-	/* 		 qos_rec->max_tres_run_mins_pa_ctld, */
-	/* 		 used_limit->tres_run_mins, 60, 1); */
-
 
 	return SLURM_SUCCESS;
 }
@@ -134,11 +135,14 @@ static int _print_used_user_limit(slurmdb_used_limits_t *used_limit,
 				  slurmdb_qos_rec_t *qos_rec)
 {
 	char *new_line_char = one_liner ? " " : "\n        ";
+	char *user_name = uid_to_string(used_limit->uid);
 
-	printf("%s%d%s",
+	printf("%s%s(%d)%s",
 	       one_liner ? " " : "\n      ",
+	       user_name,
 	       used_limit->uid,
 	       one_liner ? "={" : new_line_char);
+	xfree(user_name);
 
 	printf("MaxJobsPU=");
 	if (qos_rec->max_jobs_pu != INFINITE)
@@ -165,26 +169,28 @@ static int _print_used_user_limit(slurmdb_used_limits_t *used_limit,
 			 qos_rec->max_tres_pu_ctld,
 			 used_limit->tres, 0);
 
+	/* NEW LINE */
+	printf("%s", new_line_char);
+
+	_print_tres_line("MaxTRESRunMinsPU",
+			 qos_rec->max_tres_run_mins_pu_ctld,
+			 used_limit->tres_run_secs, 60);
+
 	if (one_liner)
 		printf("}");
 
-	/* MaxTRESRunMinsPU doesn't do anything yet, if/when it does
-	 * change the last param in the print_tres_line to 0. */
-
 	/* printf("%s", one_liner ? "" : "    "); */
-	/* _print_tres_line("MaxTRESRunMinsPU", */
-	/* 		 qos_rec->max_tres_run_mins_pu_ctld, */
-	/* 		 used_limit->tres_run_mins, 60, 1); */
 
 	return SLURM_SUCCESS;
 }
+
 #ifdef __METASTACK_OPT_RPC_USER_FIX
 static void _print_assoc_mgr_info(assoc_mgr_info_msg_t *msg, bool flags)
 #else
 static void _print_assoc_mgr_info(assoc_mgr_info_msg_t *msg)
 #endif
 {
-	ListIterator itr;
+	list_itr_t *itr;
 	slurmdb_user_rec_t *user_rec;
 	slurmdb_assoc_rec_t *assoc_rec;
 	slurmdb_qos_rec_t *qos_rec;
@@ -231,7 +237,7 @@ static void _print_assoc_mgr_info(assoc_mgr_info_msg_t *msg)
 			/* if flags is true,indicates that the slurmctld server has sorted assoc_list,
 			after acquire assoc_list, No need to repeat sorting */
 			slurmdb_sort_hierarchical_assoc_list(
-				msg->assoc_list, true);
+				msg->assoc_list);
 		}
 #endif
 		itr = list_iterator_create(msg->assoc_list);
@@ -284,8 +290,8 @@ static void _print_assoc_mgr_info(assoc_mgr_info_msg_t *msg)
 			/* rgt isn't always valid coming from the
 			 * association manager (so don't print it).
 			 */
-			printf("Lft=%u DefAssoc=%s%s",
-			       assoc_rec->lft,
+			printf("Lineage=%s DefAssoc=%s%s",
+			       assoc_rec->lineage,
 			       assoc_rec->is_def ? "Yes" : "No",
 			       new_line_char);
 
@@ -408,6 +414,11 @@ static void _print_assoc_mgr_info(assoc_mgr_info_msg_t *msg)
 				       assoc_rec->min_prio_thresh);
 			else
 				printf("MinPrioThresh=");
+
+			/* NEW LINE */
+			printf("%s", new_line_char);
+
+			printf("Comment=%s", assoc_rec->comment);
 
 			/* NEW LINE */
 			printf("\n");
@@ -614,6 +625,7 @@ static void _print_assoc_mgr_info(assoc_mgr_info_msg_t *msg)
  * from the controller
  *
  */
+
 #ifdef __METASTACK_OPT_RPC_USER_FIX
 extern void scontrol_print_assoc_mgr_info(int argc, char **argv, bool flag)
 #else
@@ -683,6 +695,7 @@ extern void scontrol_print_assoc_mgr_info(int argc, char **argv)
 		}
 	}
 
+
 	/**fix bug 103731: For slurmctld security, root user cannot perform full queries. */
 	if ((geteuid() == 0) && 
 		((!req.acct_list || !list_count(req.acct_list)) || !(req.flags & ASSOC_MGR_INFO_FLAG_ASSOC)) && 
@@ -713,9 +726,8 @@ extern void scontrol_print_assoc_mgr_info(int argc, char **argv)
 		/* print the info
 		 */
 #ifdef __METASTACK_OPT_RPC_USER_FIX
+		/* Add a flag to control whether to sort */
 		_print_assoc_mgr_info(msg, flag);
-#else
-		_print_assoc_mgr_info(msg);
 #endif
 	} else {
 		/* Hosed, crap out. */

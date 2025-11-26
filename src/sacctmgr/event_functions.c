@@ -44,6 +44,11 @@
 #include "src/common/uid.h"
 #include "src/sacctmgr/sacctmgr.h"
 
+#ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
+/* Max borrowaway nodes per single sql statement. */
+#define BORROWAWAY_NODES_PER_PASS 100
+#endif
+
 static uint32_t _decode_node_state(char *val)
 {
 	int vallen;
@@ -172,7 +177,7 @@ static int _set_cond(int *start, int argc, char **argv,
 			continue;
 		} else if (!end || (!xstrncasecmp(argv[i], "Events",
 						  MAX(command_len, 1)))) {
-			ListIterator itr = NULL;
+			list_itr_t *itr = NULL;
 			List tmp_list = list_create(xfree_ptr);
 			char *temp = NULL;
 
@@ -322,8 +327,8 @@ extern int sacctmgr_list_event(int argc, char **argv)
 	List event_list = NULL;
 	slurmdb_event_rec_t *event = NULL;
 	int i = 0;
-	ListIterator itr = NULL;
-	ListIterator itr2 = NULL;
+	list_itr_t *itr = NULL;
+	list_itr_t *itr2 = NULL;
 	int field_count = 0;
 
 	print_field_t *field = NULL;
@@ -406,6 +411,7 @@ extern int sacctmgr_list_event(int argc, char **argv)
 	while((event = list_next(itr))) {
 		int curr_inx = 1;
 		char tmp[20], *tmp_char;
+		uint64_t tmp_uint64;
 		time_t newend = event->period_end;
 
 		while((field = list_next(itr2))) {
@@ -435,19 +441,19 @@ extern int sacctmgr_list_event(int argc, char **argv)
 			case PRINT_DURATION:
 				if (!newend)
 					newend = time(NULL);
+				tmp_uint64 = newend - event->period_start;
 				field->print_routine(
 					field,
-					(uint64_t)(newend
-						   - event->period_start),
+					&tmp_uint64,
 					(curr_inx == field_count));
 				break;
 			case PRINT_TIMEEND:
 				field->print_routine(field,
-						     event->period_end,
+						     &event->period_end,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_EVENTRAW:
-				field->print_routine(field, event->event_type,
+				field->print_routine(field, &event->event_type,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_EVENT:
@@ -469,7 +475,7 @@ extern int sacctmgr_list_event(int argc, char **argv)
 				break;
 			case PRINT_TIMESTART:
 				field->print_routine(field,
-						     event->period_start,
+						     &event->period_start,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_REASON:
@@ -477,7 +483,7 @@ extern int sacctmgr_list_event(int argc, char **argv)
 						     (curr_inx == field_count));
 				break;
 			case PRINT_STATERAW:
-				field->print_routine(field, event->state,
+				field->print_routine(field, &event->state,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_STATE:
@@ -506,14 +512,16 @@ extern int sacctmgr_list_event(int argc, char **argv)
 				break;
 			case PRINT_USER:
 				if (event->reason_uid != NO_VAL) {
-					tmp_char = uid_to_string_cached(
+					tmp_char = xstrdup_printf(
+						"%s(%u)",
+						uid_to_string_cached(
+							event->reason_uid),
 						event->reason_uid);
-					snprintf(tmp, sizeof(tmp), "%s(%u)",
-						 tmp_char, event->reason_uid);
 				} else
-					memset(tmp, 0, sizeof(tmp));
-				field->print_routine(field, tmp,
+					tmp_char = NULL;
+				field->print_routine(field, tmp_char,
 						     (curr_inx == field_count));
+				xfree(tmp_char);
 				break;
 			default:
 				field->print_routine(field, NULL,
@@ -544,13 +552,15 @@ static int _set_borrow_cond(int *start, int argc, char **argv,
 	int local_cluster_flag = 0;
 	int all_time_flag = 0;
 
-	if (!borrow_cond->cluster_list)
+	if (!borrow_cond->cluster_list) {
 		borrow_cond->cluster_list = list_create(xfree_ptr);
+	}
+
 	for (i=(*start); i<argc; i++) {
 		end = parse_option_end(argv[i]);
-		if (!end)
+		if (!end) {
 			command_len=strlen(argv[i]);
-		else {
+		} else {
 			command_len=end-1;
 			if (argv[i][end] == '=') {
 				end++;
@@ -622,8 +632,9 @@ static int _set_borrow_cond(int *start, int argc, char **argv,
 	}
 	(*start) = i;
 
-	if (!local_cluster_flag && !list_count(borrow_cond->cluster_list))
+	if (!local_cluster_flag && !list_count(borrow_cond->cluster_list)) {
 		list_append(borrow_cond->cluster_list, xstrdup(slurm_conf.cluster_name));
+	}
 
 	if (!all_time_flag && !borrow_cond->period_start) {
 		borrow_cond->period_start = time(NULL);
@@ -649,6 +660,334 @@ static int _set_borrow_cond(int *start, int argc, char **argv,
 	return set;
 }
 
+/*
+ * Fix borrowaway nodes
+ * IN: nodes, a list of all the borrowaway jobs
+ * RET: SLURM_SUCCESS on success SLURM_ERROR else
+ */
+extern int slurmdb_nodes_fix_borrowaway(void *db_conn, List nodes)
+{
+	if (db_api_uid == -1)
+		db_api_uid = getuid();
+
+	return acct_storage_g_fix_borrowaway_nodes(db_conn, db_api_uid, nodes);
+}
+
+/*
+ * Remove borrowed nodes from borrow away list if it is a currently known borrow nodes to slurmctld.
+ */
+static int _purge_known_borrowed_nodes(void *x, void *key)
+{
+	partition_info_msg_t *clus_parts = (partition_info_msg_t *) key;
+	slurmdb_borrow_rec_t *borrow = (slurmdb_borrow_rec_t *) x;
+	hostlist_t *host_list = NULL;
+	char *borrowed_node = NULL;
+	
+	if (clus_parts && clus_parts->record_count > 0) {
+		partition_info_t *clus_part  = clus_parts->partition_array;
+
+		for (int i = 0; i < clus_parts->record_count; i++, clus_part++) {
+			if (!clus_part || !clus_part->borrowed_nodes ||
+			    !clus_part->borrowed_nodes[0]) {
+				continue;
+			}
+
+			if ((host_list = slurm_hostlist_create(clus_part->borrowed_nodes)) == NULL) {
+				error ("%s: hostlist_create error: %m", __func__);
+				continue;
+			}
+
+			while ((borrowed_node = hostlist_shift(host_list))) {
+				if (xstrcmp(borrowed_node, borrow->node_name) == 0) {
+					debug3("%s: matched known borrowed node: %s",
+					       __func__, borrowed_node);
+					FREE_NULL_HOSTLIST(host_list);
+					free(borrowed_node);
+					return true;
+				}
+				free(borrowed_node);
+			}
+			FREE_NULL_HOSTLIST(host_list);
+		}
+	}
+
+	return false;
+}
+
+static List _get_borrowaway_nodes(void *db_conn, slurmdb_borrow_cond_t *borrow_cond)
+{
+	List db_borrow_node_list = NULL;
+	partition_info_msg_t *clus_partitions = NULL;
+	slurmdb_cluster_cond_t cluster_cond;
+	List cluster_list = NULL;
+
+	if (!borrow_cond->cluster_list || !list_count(borrow_cond->cluster_list)) {
+		if (!borrow_cond->cluster_list)
+			borrow_cond->cluster_list = list_create(xfree_ptr);
+		slurm_addto_char_list(borrow_cond->cluster_list,
+				      slurm_conf.cluster_name);
+	}
+
+	if (list_count(borrow_cond->cluster_list) != 1) {
+		error("You can only fix borrowaway nodes on "
+		      "one cluster at a time.");
+		return NULL;
+	}
+
+	db_borrow_node_list = slurmdb_borrow_get(db_conn, borrow_cond);
+
+	if (!db_borrow_node_list) {
+		if (errno != ESLURM_ACCESS_DENIED)
+			error("No borrow node list returned");
+		goto cleanup;
+	} else if (!list_count(db_borrow_node_list))
+		return db_borrow_node_list; /* Just return now since we don't
+				      * have any run away jobs, no
+				      * reason to check the cluster.
+				      */
+	slurmdb_init_cluster_cond(&cluster_cond, 0);
+	cluster_cond.cluster_list = borrow_cond->cluster_list;
+	cluster_list = slurmdb_clusters_get(db_conn,
+					    &cluster_cond);
+	if (!cluster_list) {
+		error("No cluster list returned.");
+		goto cleanup;
+	} else if (!list_count(cluster_list)) {
+		error("Cluster %s is unknown",
+		      (char *)list_peek(cluster_cond.cluster_list));
+		goto cleanup;
+	} else if (list_count(cluster_list) != 1) {
+		error("slurmdb_clusters_get didn't return exactly one cluster (%d)!  This should never happen.",
+		      list_count(cluster_list));
+		goto cleanup;
+	}
+
+	working_cluster_rec = list_peek(cluster_list);
+	if (!working_cluster_rec->control_host ||
+	    working_cluster_rec->control_host[0] == '\0' ||
+	    !working_cluster_rec->control_port) {
+		error("Slurmctld running on cluster %s is not up, can't check borrowaway nodes",
+		      working_cluster_rec->name);
+		goto cleanup;
+	}
+	if (slurm_load_partitions((time_t)NULL, &clus_partitions, SHOW_ALL)) {
+		error("Failed to get partitions from requested clusters: %m");
+		goto cleanup;
+	}
+
+	list_delete_all(db_borrow_node_list, _purge_known_borrowed_nodes, clus_partitions);
+
+	return db_borrow_node_list;
+
+cleanup:
+	FREE_NULL_LIST(db_borrow_node_list);
+	FREE_NULL_LIST(cluster_list);
+
+	return NULL;
+}
+
+/*
+ * List and ask user if they wish to fix the borrowaway nodes
+ */
+extern int sacctmgr_list_borrowaway_nodes(int argc, char **argv)
+{
+	int rc = SLURM_SUCCESS;
+	List borrowaway_nodes = NULL, process_nodes = NULL;
+	list_itr_t *itr = NULL;
+	list_itr_t *itr2 = NULL;
+	int field_count = 0;
+	char *cluster_str = NULL;
+	slurmdb_borrow_rec_t *borrow = NULL;
+
+	slurmdb_borrow_cond_t *borrow_cond =
+		xmalloc(sizeof(slurmdb_borrow_cond_t));
+
+	char *ask_msg = "\nWould you like to fix these borrowaway nodes?\n"
+			"(This will set the end time for all node borrowing records "
+			"that are no longer in the borrowed state to their respective "
+			"start_time.)\n\n";
+
+	int i = 0;
+
+	print_field_t *field = NULL;
+
+	List format_list = NULL;
+	List print_fields_list = NULL; /* types are of print_field_t */
+
+	/* If we don't have any arguments make sure we set up the
+	   time correctly for just the past day.
+	*/
+	if (argc == 0) {
+		struct tm start_tm;
+		borrow_cond->period_start = time(NULL);
+
+		if (!localtime_r(&borrow_cond->period_start, &start_tm)) {
+			fprintf(stderr,
+				" Couldn't get localtime from %ld",
+				(long)borrow_cond->period_start);
+			exit_code = 1;
+			slurmdb_destroy_borrow_cond(borrow_cond);
+			return 0;
+		}
+		start_tm.tm_sec = 0;
+		start_tm.tm_min = 0;
+		start_tm.tm_hour = 0;
+		start_tm.tm_mday--;
+		borrow_cond->period_start = slurm_mktime(&start_tm);
+	}
+	borrow_cond->cond_flags |= SLURMDB_EVENT_COND_OPEN;
+	
+
+	format_list = list_create(xfree_ptr);
+	for (i = 0; i < argc; i++) {
+		int command_len = strlen(argv[i]);
+		if (!xstrncasecmp(argv[i], "Where", MAX(command_len, 5))
+		    || !xstrncasecmp(argv[i], "Set", MAX(command_len, 3)))
+			i++;
+		_set_borrow_cond(&i, argc, argv, borrow_cond, format_list);
+	}
+
+	if (exit_code) {
+		slurmdb_destroy_borrow_cond(borrow_cond);
+		FREE_NULL_LIST(format_list);
+		return SLURM_ERROR;
+	}
+
+
+	borrowaway_nodes = _get_borrowaway_nodes(db_conn, borrow_cond);
+	cluster_str = xstrdup(list_peek(borrow_cond->cluster_list));
+	slurmdb_destroy_borrow_cond(borrow_cond);
+
+	if (!borrowaway_nodes) {
+		rc = SLURM_ERROR;
+		goto end_it;
+	}
+
+	if (!list_count(borrowaway_nodes)) {
+		printf("Borrowaway Nodes: No borrowaway nodes found on cluster %s\n",
+		       cluster_str);
+		rc = SLURM_SUCCESS;
+		goto end_it;
+	}
+
+	if (!list_count(format_list)) {
+		slurm_addto_char_list(format_list,
+						"Cluster,NodeName,Start,"
+						"End,State,Reason,User");
+	}
+
+	print_fields_list = sacctmgr_process_format_list(format_list);
+	FREE_NULL_LIST(format_list);
+
+	itr = list_iterator_create(borrowaway_nodes);
+	itr2 = list_iterator_create(print_fields_list);
+	print_fields_header(print_fields_list);
+
+	field_count = list_count(print_fields_list);
+
+	while((borrow = list_next(itr))) {
+		int curr_inx = 1;
+		char tmp[20], *tmp_char = NULL;
+		uint64_t tmp_uint64 = 0;
+		time_t newend = borrow->period_end;
+
+		while((field = list_next(itr2))) {
+			switch(field->type) {
+			case PRINT_CLUSTER:
+				field->print_routine(field, borrow->cluster,
+						     (curr_inx == field_count));
+				break;
+			case PRINT_DURATION:
+				if (!newend) {
+					newend = time(NULL);
+				}
+				tmp_uint64 = newend - borrow->period_start;
+				field->print_routine(
+					field,
+					&tmp_uint64,
+					(curr_inx == field_count));
+				break;
+			case PRINT_TIMEEND:
+				field->print_routine(field,
+						     &borrow->period_end,
+						     (curr_inx == field_count));
+				break;
+			case PRINT_NODENAME:
+				field->print_routine(field,
+						     borrow->node_name,
+						     (curr_inx == field_count));
+				break;
+			case PRINT_TIMESTART:
+				field->print_routine(field,
+						     &borrow->period_start,
+						     (curr_inx == field_count));
+				break;
+			case PRINT_REASON:
+				field->print_routine(field, borrow->reason,
+						     (curr_inx == field_count));
+				break;
+			case PRINT_STATERAW:
+				field->print_routine(field, &borrow->state,
+						     (curr_inx == field_count));
+				break;
+			case PRINT_STATE:
+				tmp_char = node_state_string_compact(
+						borrow->state);
+
+				field->print_routine(field,
+						     tmp_char,
+						     (curr_inx == field_count));
+				break;
+			case PRINT_USER:
+				if (borrow->reason_uid != NO_VAL) {
+					tmp_char = uid_to_string_cached(
+						borrow->reason_uid);
+					snprintf(tmp, sizeof(tmp), "%s(%u)",
+						 tmp_char, borrow->reason_uid);
+				} else
+					memset(tmp, 0, sizeof(tmp));
+				field->print_routine(field, tmp,
+						     (curr_inx == field_count));
+				break;
+			default:
+				field->print_routine(field, NULL,
+						     (curr_inx == field_count));
+					break;
+			}
+			curr_inx++;
+		}
+		list_iterator_reset(itr2);
+		printf("\n");
+	}
+
+	process_nodes = list_create(slurmdb_destroy_borrow_rec);
+
+	while (!rc && list_transfer_max(process_nodes, borrowaway_nodes,
+					BORROWAWAY_NODES_PER_PASS)) {
+		rc = slurmdb_nodes_fix_borrowaway(db_conn, process_nodes);
+		list_flush(process_nodes);
+	}
+
+	if (rc == SLURM_SUCCESS) {
+		if (commit_check(ask_msg))
+			slurmdb_connection_commit(db_conn, 1);
+		else {
+			printf("Changes Discarded\n");
+			slurmdb_connection_commit(db_conn, 0);
+		}
+	} else
+		error("Failed to fix borrowaway node: %s\n",
+		      slurm_strerror(rc));
+end_it:
+	xfree(cluster_str);
+	FREE_NULL_LIST(format_list);
+	FREE_NULL_LIST(borrowaway_nodes);
+	FREE_NULL_LIST(process_nodes);
+	FREE_NULL_LIST(format_list);
+
+	return rc;
+}
+
 extern int sacctmgr_list_borrow(int argc, char **argv)
 {
 	int rc = SLURM_SUCCESS;
@@ -657,8 +996,8 @@ extern int sacctmgr_list_borrow(int argc, char **argv)
 	List borrow_list = NULL;
 	slurmdb_borrow_rec_t *borrow = NULL;
 	int i = 0;
-	ListIterator itr = NULL;
-	ListIterator itr2 = NULL;
+	list_itr_t *itr = NULL;
+	list_itr_t *itr2 = NULL;
 	int field_count = 0;
 
 	print_field_t *field = NULL;
@@ -735,7 +1074,8 @@ extern int sacctmgr_list_borrow(int argc, char **argv)
 
 	while((borrow = list_next(itr))) {
 		int curr_inx = 1;
-		char tmp[20], *tmp_char;
+		char tmp[20], *tmp_char = NULL;
+		uint64_t tmp_uint64 = 0;
 		time_t newend = borrow->period_end;
 
 		while((field = list_next(itr2))) {
@@ -745,17 +1085,18 @@ extern int sacctmgr_list_borrow(int argc, char **argv)
 						     (curr_inx == field_count));
 				break;
 			case PRINT_DURATION:
-				if (!newend)
+				if (!newend) {
 					newend = time(NULL);
+				}
+				tmp_uint64 = newend - borrow->period_start;
 				field->print_routine(
 					field,
-					(uint64_t)(newend
-						   - borrow->period_start),
+					&tmp_uint64,
 					(curr_inx == field_count));
 				break;
 			case PRINT_TIMEEND:
 				field->print_routine(field,
-						     borrow->period_end,
+						     &borrow->period_end,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_NODENAME:
@@ -765,7 +1106,7 @@ extern int sacctmgr_list_borrow(int argc, char **argv)
 				break;
 			case PRINT_TIMESTART:
 				field->print_routine(field,
-						     borrow->period_start,
+						     &borrow->period_start,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_REASON:
@@ -773,7 +1114,7 @@ extern int sacctmgr_list_borrow(int argc, char **argv)
 						     (curr_inx == field_count));
 				break;
 			case PRINT_STATERAW:
-				field->print_routine(field, borrow->state,
+				field->print_routine(field, &borrow->state,
 						     (curr_inx == field_count));
 				break;
 			case PRINT_STATE:

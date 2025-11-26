@@ -2,8 +2,7 @@
 ############################################################################
 # Purpose: Test of Slurm sacct with -s R, -S and -E options
 ############################################################################
-# Copyright (C) 2017 SchedMD LLC.
-# Written by Albert Gil <albert.gil@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.

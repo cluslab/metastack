@@ -581,6 +581,7 @@ extern int load_defaults(void)
 	uint32_t hash_val = NO_VAL;
 	int i, rc = SLURM_SUCCESS;
 	char *tmp_str;
+	uint32_t parse_flags = 0;
 
 	_init_sview_conf();
 
@@ -601,8 +602,9 @@ extern int load_defaults(void)
 	}
 
 	hashtbl = s_p_hashtbl_create(sview_conf_options);
+	parse_flags |= PARSE_FLAGS_IGNORE_NEW;
 
-	if (s_p_parse_file(hashtbl, &hash_val, pathname, true, NULL)
+	if (s_p_parse_file(hashtbl, &hash_val, pathname, parse_flags, NULL)
 	    == SLURM_ERROR)
 		error("something wrong with opening/reading conf file");
 
@@ -889,7 +891,7 @@ extern int save_defaults(bool final_save)
 		} else if (!page_opts->def_col_list
 			   && page_opts->col_list
 			   && list_count(page_opts->col_list)) {
-			ListIterator itr =
+			list_itr_t *itr =
 				list_iterator_create(page_opts->col_list);
 			char *col_name = NULL;
 			//user requested no save of page options
@@ -1105,8 +1107,6 @@ extern int configure_defaults(void)
 	gtk_widget_show_all(popup);
 	response = gtk_dialog_run (GTK_DIALOG(popup));
 	if (response == GTK_RESPONSE_OK) {
-		tmp_char_ptr = g_strdup_printf(
-			"Defaults updated successfully");
 		if (global_edit_error)
 			tmp_char_ptr = global_edit_error_msg;
 		else if (!global_send_update_msg)
@@ -1206,6 +1206,8 @@ extern int configure_defaults(void)
 			get_system_stats(main_grid_table);
 			/******************************************/
 			save_defaults(false);
+			tmp_char_ptr = g_strdup_printf(
+				"Defaults updated successfully");
 		}
 	denied_change:
 		display_edit_note(tmp_char_ptr);

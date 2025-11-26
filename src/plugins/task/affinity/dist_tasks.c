@@ -40,7 +40,7 @@
 #include "dist_tasks.h"
 #include "src/common/bitstring.h"
 #include "src/common/log.h"
-#include "src/common/slurm_cred.h"
+#include "src/interfaces/cred.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_resource_info.h"
 #include "src/common/strlcpy.h"
@@ -55,9 +55,8 @@ static char *_alloc_mask(launch_tasks_request_msg_t *req,
 			 int *whole_node_cnt, int *whole_socket_cnt,
 			 int *whole_core_cnt, int *whole_thread_cnt,
 			 int *part_socket_cnt, int *part_core_cnt);
-static bitstr_t *_get_avail_map(launch_tasks_request_msg_t *req,
-				uint16_t *hw_sockets, uint16_t *hw_cores,
-				uint16_t *hw_threads);
+static bitstr_t *_get_avail_map(slurm_cred_t *cred, uint16_t *hw_sockets,
+				uint16_t *hw_cores, uint16_t *hw_threads);
 static int _get_local_node_info(slurm_cred_arg_t *arg, int job_node_id,
 				uint16_t *sockets, uint16_t *cores);
 
@@ -167,83 +166,24 @@ static void _match_masks_to_ldom(const uint32_t maxtasks, bitstr_t **masks)
  */
 void batch_bind(batch_job_launch_msg_t *req)
 {
-	bitstr_t *req_map, *hw_map;
-	uint16_t sockets = 0, cores = 0, num_cpus;
+	bitstr_t *hw_map;
 	int task_cnt = 0;
-	int job_node_id;
-	int start;
-	slurm_cred_arg_t *arg = slurm_cred_get_args(req->cred);
-
-	job_node_id = nodelist_find(arg->job_hostlist, conf->node_name);
-	if ((job_node_id < 0) || (job_node_id > arg->job_nhosts)) {
-		error("%s: missing node %s in job credential (%s)",
-		      __func__, conf->node_name, arg->job_hostlist);
-		slurm_cred_unlock_args(req->cred);
-		return;
-	}
-
-	start = _get_local_node_info(arg, job_node_id, &sockets, &cores);
-	if ((sockets * cores) == 0) {
-		error("%s: socket and core count both zero", __func__);
-		slurm_cred_unlock_args(req->cred);
-		return;
-	}
-
-	num_cpus  = MIN((sockets * cores),
-			(conf->sockets * conf->cores));
-	req_map = (bitstr_t *) bit_alloc(num_cpus);
-	hw_map  = (bitstr_t *) bit_alloc(conf->block_map_size);
 
 #ifdef HAVE_FRONT_END
 {
 	/* Since the front-end nodes are a shared resource, we limit each job
 	 * to one CPU based upon monotonically increasing sequence number */
 	static int last_id = 0;
+	hw_map  = (bitstr_t *) bit_alloc(conf->block_map_size);
 	bit_set(hw_map, ((last_id++) % conf->block_map_size));
 	task_cnt = 1;
-
-	/*
-	 * This is here to make sure we use the 'start' variable to avoid
-	 * compiling issues.
-	 */
-	debug5("Start is %d", start);
 }
 #else
 {
-	char *str;
-	int t, p;
-
-	/* Transfer core_bitmap data to local req_map.
-	 * The MOD function handles the case where fewer processes
-	 * physically exist than are configured (slurmd is out of
-	 * sync with the slurmctld daemon). */
-	for (p = 0; p < (sockets * cores); p++) {
-		if (bit_test(arg->job_core_bitmap, start + p))
-			bit_set(req_map, (p % num_cpus));
-	}
-
-	str = (char *)bit_fmt_hexmask(req_map);
-	debug3("job %u core mask from slurmctld: %s",
-	       req->job_id, str);
-	xfree(str);
-
-	for (p = 0; p < num_cpus; p++) {
-		if (bit_test(req_map, p) == 0)
-			continue;
-		/* core_bitmap does not include threads, so we
-		 * add them here but limit them to what the job
-		 * requested */
-		for (t = 0; t < conf->threads; t++) {
-			uint16_t pos = p * conf->threads + t;
-			if (pos >= conf->block_map_size) {
-				info("more resources configured than exist");
-				p = num_cpus;
-				break;
-			}
-			bit_set(hw_map, pos);
-			task_cnt++;
-		}
-	}
+	uint16_t sockets = 0, cores = 0, threads = 0;
+	hw_map = _get_avail_map(req->cred, &sockets, &cores, &threads);
+	if (hw_map)
+		task_cnt = bit_set_count(hw_map);
 }
 #endif
 	if (task_cnt) {
@@ -270,8 +210,6 @@ void batch_bind(batch_job_launch_msg_t *req)
 		      req->job_id);
 	}
 	FREE_NULL_BITMAP(hw_map);
-	FREE_NULL_BITMAP(req_map);
-	slurm_cred_unlock_args(req->cred);
 }
 
 static int _validate_map(launch_tasks_request_msg_t *req, char *avail_mask,
@@ -282,8 +220,23 @@ static int _validate_map(launch_tasks_request_msg_t *req, char *avail_mask,
 	bool superset = true;
 	int rc = SLURM_SUCCESS;
 
+	if (!req->cpu_bind) {
+		char *err = "No list of CPU IDs provided to --cpu-bind=map_cpu:<list>";
+		error("%s", err);
+		if (err_msg)
+			xstrfmtcat(*err_msg, "%s", err);
+		return ESLURMD_CPU_BIND_ERROR;
+	}
+
 	CPU_ZERO(&avail_cpus);
-	(void) task_str_to_cpuset(&avail_cpus, avail_mask);
+	if (task_str_to_cpuset(&avail_cpus, avail_mask)) {
+		char *err = "Failed to convert avail_mask into hex for CPU bind map";
+		error("%s", err);
+		if (err_msg)
+			xstrfmtcat(*err_msg, "%s", err);
+		return ESLURMD_CPU_BIND_ERROR;
+	}
+
 	tmp_map = xstrdup(req->cpu_bind);
 	tok = strtok_r(tmp_map, ",", &save_ptr);
 	while (tok) {
@@ -304,10 +257,6 @@ static int _validate_map(launch_tasks_request_msg_t *req, char *avail_mask,
 		if (err_msg)
 			xstrfmtcat(*err_msg, "CPU binding outside of job step allocation, allocated CPUs are: %s.",
 				   avail_mask);
-		req->cpu_bind_type &= (~CPU_BIND_MAP);
-		req->cpu_bind_type |=   CPU_BIND_MASK;
-		xfree(req->cpu_bind);
-		req->cpu_bind = xstrdup(avail_mask);
 		rc = ESLURMD_CPU_BIND_ERROR;
 	}
 	return rc;
@@ -321,14 +270,36 @@ static int _validate_mask(launch_tasks_request_msg_t *req, char *avail_mask,
 	bool superset = true;
 	int rc = SLURM_SUCCESS;
 
+	if (!req->cpu_bind) {
+		char *err = "No list of CPU masks provided to --cpu-bind=mask_cpu:<list>";
+		error("%s", err);
+		if (err_msg)
+			xstrfmtcat(*err_msg, "%s", err);
+		return ESLURMD_CPU_BIND_ERROR;
+	}
+
 	CPU_ZERO(&avail_cpus);
-	(void) task_str_to_cpuset(&avail_cpus, avail_mask);
+	if (task_str_to_cpuset(&avail_cpus, avail_mask)) {
+		char *err = "Failed to convert avail_mask into hex for CPU bind mask";
+		error("%s", err);
+		if (err_msg)
+			xstrfmtcat(*err_msg, "%s", err);
+		return ESLURMD_CPU_BIND_ERROR;
+	}
+
 	tok = strtok_r(req->cpu_bind, ",", &save_ptr);
 	while (tok) {
 		int i, overlaps = 0;
-		char mask_str[1 + CPU_SETSIZE / 4];
+		char mask_str[CPU_SET_HEX_STR_SIZE];
 		CPU_ZERO(&task_cpus);
-		(void) task_str_to_cpuset(&task_cpus, tok);
+		if (task_str_to_cpuset(&task_cpus, tok)) {
+			char *err = "Failed to convert cpu bind string into hex for CPU bind mask";
+			error("%s", err);
+			if (err_msg)
+				xstrfmtcat(*err_msg, "%s", err);
+			xfree(new_mask);
+			return ESLURMD_CPU_BIND_ERROR;
+		}
 		for (i = 0; i < CPU_SETSIZE; i++) {
 			if (!CPU_ISSET(i, &task_cpus))
 				continue;
@@ -578,7 +549,7 @@ extern int lllp_distribution(launch_tasks_request_msg_t *req, uint32_t node_id,
 
 	/*
 	 * FIXME: I'm worried about core_bitmap with CPU_BIND_TO_SOCKETS &
-	 * max_cores - does select/cons_res plugin allocate whole
+	 * max_cores - does select/cons_tres plugin allocate whole
 	 * socket??? Maybe not. Check srun man page.
 	 */
 
@@ -687,7 +658,7 @@ static char *_alloc_mask(launch_tasks_request_msg_t *req,
 	*part_socket_cnt  = 0;
 	*part_core_cnt    = 0;
 
-	alloc_bitmap = _get_avail_map(req, &sockets, &cores, &threads);
+	alloc_bitmap = _get_avail_map(req->cred, &sockets, &cores, &threads);
 	if (!alloc_bitmap)
 		return NULL;
 
@@ -774,28 +745,27 @@ static char *_alloc_mask(launch_tasks_request_msg_t *req,
 
 /*
  * Given a job step request, return an equivalent local bitmap for this node
- * IN req          - The job step launch request
+ * IN cred         - The job step launch request credential
  * OUT hw_sockets  - number of actual sockets on this node
  * OUT hw_cores    - number of actual cores per socket on this node
  * OUT hw_threads  - number of actual threads per core on this node
  * RET: bitmap of processors available to this job step on this node
  *      OR NULL on error
  */
-static bitstr_t *_get_avail_map(launch_tasks_request_msg_t *req,
-				uint16_t *hw_sockets, uint16_t *hw_cores,
-				uint16_t *hw_threads)
+static bitstr_t *_get_avail_map(slurm_cred_t *cred, uint16_t *hw_sockets,
+				uint16_t *hw_cores, uint16_t *hw_threads)
 {
 	bitstr_t *req_map, *hw_map;
-	uint16_t p, t, new_p, num_cpus, sockets, cores;
+	uint16_t p, t, new_p, num_cores, sockets, cores;
 	int job_node_id;
 	int start;
 	char *str;
 	int spec_thread_cnt = 0;
-	slurm_cred_arg_t *arg = slurm_cred_get_args(req->cred);
+	slurm_cred_arg_t *arg = slurm_cred_get_args(cred);
 
-	*hw_sockets = conf->sockets;
-	*hw_cores   = conf->cores;
-	*hw_threads = conf->threads;
+	*hw_sockets = conf->actual_sockets;
+	*hw_cores   = conf->actual_cores;
+	*hw_threads = conf->actual_threads;
 
 	/* we need this node's ID in relation to the whole
 	 * job allocation, not just this jobstep */
@@ -803,15 +773,15 @@ static bitstr_t *_get_avail_map(launch_tasks_request_msg_t *req,
 	if ((job_node_id < 0) || (job_node_id > arg->job_nhosts)) {
 		error("%s: missing node %s in job credential (%s)",
 		      __func__, conf->node_name, arg->job_hostlist);
-		slurm_cred_unlock_args(req->cred);
+		slurm_cred_unlock_args(cred);
 		return NULL;
 	}
 	start = _get_local_node_info(arg, job_node_id, &sockets, &cores);
 	debug3("slurmctld s %u c %u; hw s %u c %u t %u",
 	       sockets, cores, *hw_sockets, *hw_cores, *hw_threads);
 
-	num_cpus = MIN((sockets * cores), ((*hw_sockets)*(*hw_cores)));
-	req_map = (bitstr_t *) bit_alloc(num_cpus);
+	num_cores = MIN((sockets * cores), ((*hw_sockets)*(*hw_cores)));
+	req_map = (bitstr_t *) bit_alloc(num_cores);
 	hw_map  = (bitstr_t *) bit_alloc(conf->block_map_size);
 
 	/* Transfer core_bitmap data to local req_map.
@@ -820,15 +790,15 @@ static bitstr_t *_get_avail_map(launch_tasks_request_msg_t *req,
 	 * sync with the slurmctld daemon). */
 	for (p = 0; p < (sockets * cores); p++) {
 		if (bit_test(arg->step_core_bitmap, start + p))
-			bit_set(req_map, (p % num_cpus));
+			bit_set(req_map, (p % num_cores));
 	}
 
 	str = (char *)bit_fmt_hexmask(req_map);
 	debug3("%ps core mask from slurmctld: %s",
-	       &req->step_id, str);
+	       &arg->step_id, str);
 	xfree(str);
 
-	for (p = 0; p < num_cpus; p++) {
+	for (p = 0; p < num_cores; p++) {
 		if (bit_test(req_map, p) == 0)
 			continue;
 		/* If we are pretending we have a larger system than
@@ -836,20 +806,22 @@ static bitstr_t *_get_avail_map(launch_tasks_request_msg_t *req,
 		   don't bust the bank.
 		*/
 		new_p = p % conf->block_map_size;
-		/* core_bitmap does not include threads, so we
-		 * add them here but limit them to what the job
-		 * requested */
-		for (t = 0; t < (*hw_threads); t++) {
+		/*
+		 * core_bitmap does not include threads, so we add them here.
+		 * Add all configured threads. The step will be limited to
+		 * requested threads later.
+		 */
+		for (t = 0; t < (conf->threads); t++) {
 			uint16_t bit = new_p * (*hw_threads) + t;
 			bit %= conf->block_map_size;
 			bit_set(hw_map, bit);
 		}
 	}
 
-	if ((req->job_core_spec != NO_VAL16) &&
-	    (req->job_core_spec &  CORE_SPEC_THREAD)  &&
-	    (req->job_core_spec != CORE_SPEC_THREAD)) {
-		spec_thread_cnt = req->job_core_spec & (~CORE_SPEC_THREAD);
+	if ((arg->job_core_spec != NO_VAL16) &&
+	    (arg->job_core_spec &  CORE_SPEC_THREAD)  &&
+	    (arg->job_core_spec != CORE_SPEC_THREAD)) {
+		spec_thread_cnt = arg->job_core_spec & (~CORE_SPEC_THREAD);
 	}
 	if (spec_thread_cnt) {
 		/* Skip specialized threads as needed */
@@ -876,11 +848,11 @@ static bitstr_t *_get_avail_map(launch_tasks_request_msg_t *req,
 
 	str = (char *)bit_fmt_hexmask(hw_map);
 	debug3("%ps CPU final mask for local node: %s",
-	       &req->step_id, str);
+	       &arg->step_id, str);
 	xfree(str);
 
 	FREE_NULL_BITMAP(req_map);
-	slurm_cred_unlock_args(req->cred);
+	slurm_cred_unlock_args(cred);
 	return hw_map;
 }
 
@@ -1011,7 +983,8 @@ static int _task_layout_lllp_cyclic(launch_tasks_request_msg_t *req,
 
 	info ("_task_layout_lllp_cyclic ");
 
-	avail_map = _get_avail_map(req, &hw_sockets, &hw_cores, &hw_threads);
+	avail_map = _get_avail_map(req->cred, &hw_sockets, &hw_cores,
+				   &hw_threads);
 	if (!avail_map)
 		return ESLURMD_CPU_LAYOUT_ERROR;
 
@@ -1021,20 +994,25 @@ static int _task_layout_lllp_cyclic(launch_tasks_request_msg_t *req,
 		req_threads_per_core = 1;
 
 	size = bit_set_count(avail_map);
-	if (req_threads_per_core) {
-		if (size < (req->cpus_per_task * (hw_threads /
+	/*
+	 * If configured threads > hw threads, then we are oversubscribing
+	 * threads, so don't check the number of bits set.
+	 */
+	if (req_threads_per_core && (conf->threads <= hw_threads)) {
+		if (size < (req->cpus_per_task * (conf->threads /
 						  req_threads_per_core))) {
 			error("only %d bits in avail_map, threads_per_core requires %d!",
 			      size,
-			      (req->cpus_per_task * (hw_threads /
+			      (req->cpus_per_task * (conf->threads /
 						     req_threads_per_core)));
 			FREE_NULL_BITMAP(avail_map);
 			return ESLURMD_CPU_LAYOUT_ERROR;
 		}
 	}
 	if (size < max_tasks) {
-		error("only %d bits in avail_map for %d tasks!",
-		      size, max_tasks);
+		if (!(req->flags & LAUNCH_OVERCOMMIT))
+			error("only %d bits in avail_map for %d tasks!",
+			      size, max_tasks);
 		FREE_NULL_BITMAP(avail_map);
 		return ESLURMD_CPU_LAYOUT_ERROR;
 	}
@@ -1218,7 +1196,8 @@ static int _task_layout_lllp_block(launch_tasks_request_msg_t *req,
 
 	info("_task_layout_lllp_block ");
 
-	avail_map = _get_avail_map(req, &hw_sockets, &hw_cores, &hw_threads);
+	avail_map = _get_avail_map(req->cred, &hw_sockets, &hw_cores,
+				   &hw_threads);
 	if (!avail_map) {
 		return ESLURMD_CPU_LAYOUT_ERROR;
 	}
@@ -1229,20 +1208,25 @@ static int _task_layout_lllp_block(launch_tasks_request_msg_t *req,
 		req_threads_per_core = 1;
 
 	size = bit_set_count(avail_map);
-	if (req_threads_per_core) {
-		if (size < (req->cpus_per_task * (hw_threads /
+	/*
+	 * If configured threads > hw threads, then we are oversubscribing
+	 * threads, so don't check the number of bits set.
+	 */
+	if (req_threads_per_core && (conf->threads <= hw_threads)) {
+		if (size < (req->cpus_per_task * (conf->threads /
 						  req_threads_per_core))) {
 			error("only %d bits in avail_map, threads_per_core requires %d!",
 			      size,
-			      (req->cpus_per_task * (hw_threads /
+			      (req->cpus_per_task * (conf->threads /
 						     req_threads_per_core)));
 			FREE_NULL_BITMAP(avail_map);
 			return ESLURMD_CPU_LAYOUT_ERROR;
 		}
 	}
 	if (size < max_tasks) {
-		error("only %d bits in avail_map for %d tasks!",
-		      size, max_tasks);
+		if (!(req->flags & LAUNCH_OVERCOMMIT))
+			error("only %d bits in avail_map for %d tasks!",
+			      size, max_tasks);
 		FREE_NULL_BITMAP(avail_map);
 		return ESLURMD_CPU_LAYOUT_ERROR;
 	}

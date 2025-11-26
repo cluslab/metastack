@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Copyright (C) 2010-2016 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
@@ -70,9 +70,11 @@ struct strigger_parameters {
 	bool     no_header;
 	bool     node_down;
 	bool     node_drained;
+	bool node_draining;
 	char *   node_id;
-	bool     node_fail;
 	bool     node_idle;
+	bool node_fail;
+	bool node_resume;
 	bool     node_up;
 	int      offset;
 	char *   program;

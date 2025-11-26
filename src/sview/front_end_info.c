@@ -274,11 +274,11 @@ static void _append_front_end_record(
 	_update_front_end_record(sview_front_end_info_ptr, treestore);
 }
 
-static void _update_info_front_end(List info_list, GtkTreeView *tree_view)
+static void _update_info_front_end(list_t *info_list, GtkTreeView *tree_view)
 {
 	GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
 	char *name;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	sview_front_end_info_t *sview_front_end_info = NULL;
 
 	set_for_update(model, SORTID_UPDATED);
@@ -318,14 +318,14 @@ static void _update_info_front_end(List info_list, GtkTreeView *tree_view)
 	last_model = model;
 }
 
-static List _create_front_end_info_list(
+static list_t *_create_front_end_info_list(
 	front_end_info_msg_t *front_end_info_ptr, int changed)
 {
 	char *upper = NULL;
-	char user[32], time_str[32];
-	static List info_list = NULL;
-	List last_list = NULL;
-	ListIterator last_list_itr = NULL;
+	char time_str[256];
+	static list_t *info_list = NULL;
+	list_t *last_list = NULL;
+	list_itr_t *last_list_itr = NULL;
 	int i = 0;
 	sview_front_end_info_t *sview_front_end_info_ptr = NULL;
 	front_end_info_t *front_end_ptr = NULL;
@@ -390,19 +390,16 @@ static List _create_front_end_info_list(
 
 		if (front_end_ptr->reason && front_end_ptr->reason_time &&
 		    (front_end_ptr->reason_uid != NO_VAL)) {
-			struct passwd *pw = NULL;
+			char *user;
 
-			if ((pw=getpwuid(front_end_ptr->reason_uid)))
-				snprintf(user, sizeof(user), "%s", pw->pw_name);
-			else
-				snprintf(user, sizeof(user), "Unk(%u)",
-					 front_end_ptr->reason_uid);
+			user = uid_to_string(front_end_ptr->reason_uid);
 			slurm_make_time_str(&front_end_ptr->reason_time,
 					    time_str, sizeof(time_str));
 			sview_front_end_info_ptr->reason =
 				xstrdup_printf("%s [%s@%s]",
 					       front_end_ptr->reason, user,
 					       time_str);
+			xfree(user);
 		} else {
 			sview_front_end_info_ptr->reason =
 				xstrdup(front_end_ptr->reason);
@@ -420,14 +417,14 @@ update_color:
 	return info_list;
 }
 
-static void _display_info_front_end(List info_list, popup_info_t *popup_win)
+static void _display_info_front_end(list_t *info_list, popup_info_t *popup_win)
 {
 	specific_info_t *spec_info = popup_win->spec_info;
 	char *name = (char *)spec_info->search_info->gchar_data;
 	int found = 0, j;
 	front_end_info_t *front_end_ptr = NULL;
 	GtkTreeView *treeview = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	sview_front_end_info_t *sview_fe_info = NULL;
 	int update = 0;
 
@@ -532,7 +529,7 @@ extern int get_new_info_front_end(front_end_info_msg_t **info_ptr, int force)
 		if (error_code == SLURM_SUCCESS) {
 			slurm_free_front_end_info_msg(g_front_end_info_ptr);
 			changed = 1;
-		} else if (slurm_get_errno() == SLURM_NO_CHANGE_IN_DATA) {
+		} else if (errno == SLURM_NO_CHANGE_IN_DATA) {
 			error_code = SLURM_NO_CHANGE_IN_DATA;
 			new_front_end_ptr = g_front_end_info_ptr;
 			changed = 0;
@@ -615,7 +612,7 @@ no_input:
 extern void get_info_front_end(GtkTable *table, display_data_t *display_data)
 {
 	int error_code = SLURM_SUCCESS;
-	List info_list = NULL;
+	list_t *info_list = NULL;
 	static int view = -1;
 	static front_end_info_msg_t *front_end_info_ptr = NULL;
 	char error_char[100];
@@ -623,7 +620,7 @@ extern void get_info_front_end(GtkTable *table, display_data_t *display_data)
 	GtkTreeView *tree_view = NULL;
 	static GtkWidget *display_widget = NULL;
 	int changed = 1, j;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	GtkTreePath *path = NULL;
 	static bool set_opts = false;
 
@@ -674,7 +671,7 @@ extern void get_info_front_end(GtkTable *table, display_data_t *display_data)
 			gtk_widget_destroy(display_widget);
 		view = ERROR_VIEW;
 		sprintf(error_char, "slurm_load_front_end: %s",
-			slurm_strerror(slurm_get_errno()));
+			slurm_strerror(errno));
 		label = gtk_label_new(error_char);
 		gtk_table_attach_defaults(table, label, 0, 1, 0, 1);
 		gtk_widget_show(label);
@@ -762,12 +759,11 @@ extern void specific_info_front_end(popup_info_t *popup_win)
 	char error_char[100];
 	GtkWidget *label = NULL;
 	GtkTreeView *tree_view = NULL;
-	List resv_list = NULL;
-	List send_resv_list = NULL;
+	list_t *resv_list = NULL;
+	list_t *send_resv_list = NULL;
 	int changed = 1;
 	sview_front_end_info_t *sview_front_end_info_ptr = NULL;
-	int i = -1;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 
 	if (!spec_info->display_widget) {
 		setup_popup_info(popup_win, display_data_front_end, SORTID_CNT);
@@ -792,7 +788,7 @@ extern void specific_info_front_end(popup_info_t *popup_win)
 		if (spec_info->display_widget)
 			gtk_widget_destroy(spec_info->display_widget);
 		sprintf(error_char, "get_new_info_front_end: %s",
-			slurm_strerror(slurm_get_errno()));
+			slurm_strerror(errno));
 		label = gtk_label_new(error_char);
 		gtk_table_attach_defaults(popup_win->table,
 					  label,
@@ -843,9 +839,7 @@ display_it:
 	   the list */
 	send_resv_list = list_create(NULL);
 	itr = list_iterator_create(resv_list);
-	i = -1;
 	while ((sview_front_end_info_ptr = list_next(itr))) {
-		i++;
 		front_end_ptr = sview_front_end_info_ptr->front_end_ptr;
 		switch (spec_info->type) {
 		case PART_PAGE:
@@ -895,7 +889,7 @@ extern void set_menus_front_end(void *arg, void *arg2, GtkTreePath *path,
 	GtkTreeView *tree_view = (GtkTreeView *)arg;
 	popup_info_t *popup_win = (popup_info_t *)arg;
 	GtkMenu *menu = (GtkMenu *)arg2;
-	List button_list = (List)arg2;
+	list_t *button_list = arg2;
 
 	switch (type) {
 	case TAB_CLICKED:
@@ -936,7 +930,7 @@ extern void popup_all_front_end(GtkTreeModel *model, GtkTreeIter *iter, int id)
 {
 	char *name = NULL;
 	char title[100] = {0};
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	popup_info_t *popup_win = NULL;
 	GError *error = NULL;
 
@@ -987,7 +981,7 @@ extern void popup_all_front_end(GtkTreeModel *model, GtkTreeIter *iter, int id)
 	default:
 		g_print("resv got unknown type %d\n", id);
 	}
-	if (!sview_thread_new((gpointer)popup_thr, popup_win, false, &error)) {
+	if (!sview_thread_new((gpointer)popup_thr, popup_win, &error)) {
 		g_printerr ("Failed to create resv popup thread: %s\n",
 			    error->message);
 		return;
@@ -1014,7 +1008,7 @@ extern void select_admin_front_end(GtkTreeModel *model, GtkTreeIter *iter,
 {
 	if (treeview) {
 		char *node_list;
-		hostlist_t hl = NULL;
+		hostlist_t *hl = NULL;
 		front_end_user_data_t user_data;
 
 		memset(&user_data, 0, sizeof(front_end_user_data_t));

@@ -67,7 +67,7 @@
 #include "src/common/assoc_mgr.h"
 #include "src/common/macros.h"
 #include "src/common/slurmdbd_defs.h"
-#include "src/common/slurm_auth.h"
+#include "src/interfaces/auth.h"
 #include "src/common/uid.h"
 
 #include "src/database/mysql_common.h"
@@ -141,6 +141,10 @@ extern int setup_assoc_limits(slurmdb_assoc_rec_t *assoc,
 				    char **cols, char **vals,
 				    char **extra, qos_level_t qos_level,
 				    bool for_add);
+extern int setup_assoc_limits_locked(slurmdb_assoc_rec_t *assoc,
+				     char **cols, char **vals,
+				     char **extra, qos_level_t qos_level,
+				     bool for_add);
 extern int modify_common(mysql_conn_t *mysql_conn,
 			 uint16_t type,
 			 time_t now,
@@ -170,15 +174,27 @@ extern void mod_tres_str(char **out, char *mod, char *cur,
  *
  * IN mysql_conn - mysql connection
  * IN cluster_name - name of cluster to get dimensions for
- * OUT dims - dimenions of cluster
+ * OUT dims - dimensions of cluster
  *
  * RET return SLURM_SUCCESS on success, SLURM_FAILURE otherwise.
  */
 extern int get_cluster_dims(mysql_conn_t *mysql_conn, char *cluster_name,
 			    int *dims);
 
+/*
+ * Get the version of the checked in Cluster.  This can be removed
+ * 2 versions after 23.11 as we only need it to keep track of lft/rgt until we
+ * can completely bail from them.
+ */
+extern uint32_t get_cluster_version(mysql_conn_t *mysql_conn,
+				    char *cluster_name);
+
 /*local api functions */
+#ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
+extern int acct_storage_p_commit(mysql_conn_t *mysql_conn, bool commit, bool has_registered_lock);
+#else
 extern int acct_storage_p_commit(mysql_conn_t *mysql_conn, bool commit);
+#endif
 
 extern int acct_storage_p_add_assocs(mysql_conn_t *mysql_conn,
 					   uint32_t uid,

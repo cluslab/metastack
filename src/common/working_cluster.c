@@ -39,7 +39,7 @@
 #include <string.h>
 
 #include "src/common/env.h"
-#include "src/common/select.h"
+#include "src/interfaces/select.h"
 #include "src/common/slurmdb_defs.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
@@ -69,26 +69,6 @@ extern int *slurmdb_setup_cluster_dim_size(void)
 	return NULL;
 }
 
-extern bool is_cray_system(void)
-{
-	if (working_cluster_rec)
-		return working_cluster_rec->flags & CLUSTER_FLAG_CRAY;
-
-#ifdef HAVE_NATIVE_CRAY
-	return true;
-#else
-	return false;
-#endif
-}
-
-extern uint16_t slurmdb_setup_cluster_name_dims(void)
-{
-	if (is_cray_system())
-		return 1;	/* Cray uses 1-dimensional hostlists */
-
-	return slurmdb_setup_cluster_dims();
-}
-
 extern uint32_t slurmdb_setup_cluster_flags(void)
 {
 	static uint32_t cluster_flags = NO_VAL;
@@ -105,9 +85,6 @@ extern uint32_t slurmdb_setup_cluster_flags(void)
 #ifdef HAVE_FRONT_END
 	cluster_flags |= CLUSTER_FLAG_FE;
 #endif
-#ifdef HAVE_NATIVE_CRAY
-	cluster_flags |= CLUSTER_FLAG_CRAY;
-#endif
 	return cluster_flags;
 }
 
@@ -118,9 +95,6 @@ static uint32_t _str_2_cluster_flags(char *flags_in)
 
 	if (xstrcasestr(flags_in, "MultipleSlurmd"))
 		return CLUSTER_FLAG_MULTSD;
-
-	if (xstrcasestr(flags_in, "Cray"))
-		return CLUSTER_FLAG_CRAY;
 
 	return (uint32_t) 0;
 }
@@ -159,12 +133,6 @@ extern char *slurmdb_cluster_flags_2_str(uint32_t flags_in)
 		xstrcat(cluster_flags, "MultipleSlurmd");
 	}
 
-	if (flags_in & CLUSTER_FLAG_CRAY) {
-		if (cluster_flags)
-			xstrcat(cluster_flags, ",");
-		xstrcat(cluster_flags, "Cray");
-	}
-
 	if (flags_in & CLUSTER_FLAG_EXT) {
 		if (cluster_flags)
 			xstrcat(cluster_flags, ",");
@@ -175,11 +143,6 @@ extern char *slurmdb_cluster_flags_2_str(uint32_t flags_in)
 		cluster_flags = xstrdup("None");
 
 	return cluster_flags;
-}
-
-extern uint32_t slurmdb_setup_plugin_id_select(void)
-{
-	return select_get_plugin_id();
 }
 
 extern void
@@ -195,9 +158,6 @@ slurm_setup_remote_working_cluster(resource_allocation_response_msg_t *msg)
 	working_cluster_rec = (slurmdb_cluster_rec_t *)msg->working_cluster_rec;
 	msg->working_cluster_rec = NULL;
 
-	working_cluster_rec->plugin_id_select =
-		select_get_plugin_id_pos(working_cluster_rec->plugin_id_select);
-
 	slurm_set_addr(&working_cluster_rec->control_addr,
 		       working_cluster_rec->control_port,
 		       working_cluster_rec->control_host);
@@ -205,7 +165,4 @@ slurm_setup_remote_working_cluster(resource_allocation_response_msg_t *msg)
 	if (setenvf(NULL, "SLURM_CLUSTER_NAME", "%s",
 		    working_cluster_rec->name) < 0)
 		error("unable to set SLURM_CLUSTER_NAME in environment");
-
-	if (msg->node_addr)
-		add_remote_nodes_to_conf_tbls(msg->node_list, msg->node_addr);
 }

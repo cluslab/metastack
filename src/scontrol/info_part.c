@@ -36,6 +36,8 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
+#include "src/interfaces/data_parser.h"
+
 #include "scontrol.h"
 
 /* Load current partiton table information into *part_buffer_pptr */
@@ -82,34 +84,28 @@ scontrol_load_partitions (partition_info_msg_t **part_buffer_pptr)
  * scontrol_print_part - print the specified partition's information
  * IN partition_name - NULL to print information about all partition
  */
-
-extern void
 #if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
-scontrol_print_part (char *partition_name, uint16_t meta_flags)
-#else
-scontrol_print_part (char *partition_name)
+extern void scontrol_print_part(char *partition_name, int argc, char **argv, uint16_t meta_flags)
 #endif
 {
-	int error_code, i, print_cnt = 0;
+	int error_code, print_cnt = 0;
 	partition_info_msg_t *part_info_ptr = NULL;
-	partition_info_t *part_ptr = NULL;
+	partition_info_t **parts = NULL;
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-    char *env_val = NULL;
-    if ((env_val = getenv("SCONTROL_PART_CACHE_QUERY"))){
-        if(!cache_flag && !nocache_flag){
-            if(!xstrcmp(env_val, "cache"))
-                cache_flag = true;
-            else if(!xstrcmp(env_val, "nocache"))
-                nocache_flag = true;
-        }
-    }
+	char *env_val = NULL;
+	if ((env_val = getenv("SCONTROL_PART_CACHE_QUERY"))){
+		if(!cache_flag && !nocache_flag){
+			if(!xstrcmp(env_val, "cache"))
+				cache_flag = true;
+			else if(!xstrcmp(env_val, "nocache"))
+				nocache_flag = true;
+		}
+	}
 	if(update_client_port(cache_flag, nocache_flag)){
 		return;
 	}
 #endif
-
-
 
 	error_code = scontrol_load_partitions(&part_info_ptr);
 	if (error_code) {
@@ -119,32 +115,71 @@ scontrol_print_part (char *partition_name)
 		return;
 	}
 
-	if (quiet_flag == -1) {
-		char time_str[32];
+	if (part_info_ptr->record_count) {
+		partition_info_t *part_ptr = part_info_ptr->partition_array;
+		parts = xcalloc(part_info_ptr->record_count + 1,
+				sizeof(*parts));
+
+		for (int i = 0; i < part_info_ptr->record_count; i++) {
+			if (partition_name &&
+			    xstrcmp(partition_name, part_ptr[i].name))
+				continue;
+
+			parts[print_cnt] = &part_ptr[i];
+			print_cnt++;
+
+			if (partition_name)
+				break;
+		}
+	}
+
+	if (!mime_type && (quiet_flag == -1)) {
+		char time_str[256];
 		slurm_make_time_str ((time_t *)&part_info_ptr->last_update,
 			       time_str, sizeof(time_str));
 		printf ("last_update_time=%s, records=%d\n",
 			time_str, part_info_ptr->record_count);
 	}
 
-	part_ptr = part_info_ptr->partition_array;
-	for (i = 0; i < part_info_ptr->record_count; i++) {
-		if (partition_name &&
-		    xstrcmp (partition_name, part_ptr[i].name) != 0)
-			continue;
-		print_cnt++;
+	if (mime_type) {
+		int rc;
+		partition_info_msg_t msg = {
+			.record_count = print_cnt,
+			.last_update = part_info_ptr->last_update,
+		};
+		openapi_resp_partitions_info_msg_t resp = {
+			.partitions = &msg,
+			.last_update = part_info_ptr->last_update,
+		};
+
+		if (is_data_parser_deprecated(data_parser)) {
+			DATA_DUMP_CLI_DEPRECATED(PARTITION_INFO_ARRAY, parts,
+						 "partitions", argc, argv, NULL,
+						 mime_type, rc);
+		} else {
+			msg.partition_array =
+				xcalloc(print_cnt,
+					sizeof(*msg.partition_array));
+			for (int i = 0; i < print_cnt; i++)
+				msg.partition_array[i] = *parts[i];
+
+			DATA_DUMP_CLI(OPENAPI_PARTITION_RESP, resp, argc, argv,
+				      NULL, mime_type, data_parser, rc);
+			xfree(msg.partition_array);
+		}
+
+		if (rc)
+			exit_code = SLURM_ERROR;
+	} else {
+		for (int i = 0; i < print_cnt; i++)
 #if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
-		_slurm_print_partition_info (stdout, & part_ptr[i],
-		                            one_liner, meta_flags) ;
-#else
-		slurm_print_partition_info (stdout, & part_ptr[i],
-		                            one_liner ) ;
-#endif									
-		if (partition_name)
-			break;
+			_slurm_print_partition_info(stdout, parts[i], one_liner, meta_flags) ;
+#else		
+			slurm_print_partition_info(stdout, parts[i], one_liner);
+#endif
 	}
 
-	if (print_cnt == 0) {
+	if (!mime_type && !print_cnt) {
 		if (partition_name) {
 			exit_code = 1;
 			if (quiet_flag != 1)
@@ -153,4 +188,6 @@ scontrol_print_part (char *partition_name)
 		} else if (quiet_flag != 1)
 			printf ("No partitions in the system\n");
 	}
+
+	xfree(parts);
 }

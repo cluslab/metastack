@@ -84,6 +84,8 @@ uint16_t block_map_size;
 uint16_t *block_map, *block_map_inv;
 extern slurmd_conf_t *conf;
 
+static bool refresh_hwloc = false;
+
 /*
  * get_procs - Return the count of procs on this system
  * Input: procs - buffer for the CPU count
@@ -120,6 +122,38 @@ get_procs(uint16_t *procs)
 
 	return 0;
 }
+
+#ifdef __METASTACK_OPT_NODE_SOCKET_TOPOLOGY
+/*
+ * slurm_get_slurmd_params
+ * RET char * - Value of SlurmdParameters, must be xfreed by caller
+ */
+char *slurm_get_slurmd_params(void)
+{
+	char *slurmd_params = NULL;
+	slurm_conf_t *conf  = NULL;
+
+	conf = slurm_conf_lock();
+	slurmd_params = xstrdup(conf->slurmd_params);
+	slurm_conf_unlock();
+
+	return slurmd_params;
+}
+
+/* slurm_get_sched_params
+ * RET char * - Value of SchedulerParameters, MUST be xfreed by caller */
+char *slurm_get_sched_params(void)
+{
+	char *sched_params = NULL;
+	slurm_conf_t *conf = NULL;
+
+	conf = slurm_conf_lock();
+	sched_params = xstrdup(conf->sched_params);
+	slurm_conf_unlock();
+
+	return sched_params;
+}
+#endif
 
 #ifdef HAVE_HWLOC
 
@@ -165,6 +199,68 @@ static inline int _internal_hwloc_topology_export_xml(
 #endif
 }
 
+static void _remove_ecores(hwloc_topology_t *topology)
+{
+#if HWLOC_API_VERSION > 0x00020401
+	int type_cnt;
+	hwloc_bitmap_t cpuset, cpuset_tot = NULL;
+
+	if (slurm_conf.conf_flags & CONF_FLAG_ECORE)
+		return;
+
+	if (!(type_cnt = hwloc_cpukinds_get_nr(*topology, 0)))
+		return;
+
+	/*
+	 * Handle the removal of Intel E-Cores here.
+	 *
+	 * At the time of writing this Intel Gen 12+ procs have introduced what
+	 * are known as 'P' (performance) and 'E' (efficiency) cores. The
+	 * former can have hyperthreads, where the latter are only single
+	 * threaded, thus creating a situation where we could get a
+	 * heterogeneous socket (which Slurm doesn't like). Here we can restrict
+	 * to only  "IntelCore" (P-Cores) and disregard the "IntelAtom"
+	 * (E-Cores).
+	 *
+	 * In the future, if desired, we should probably figure out a way to
+	 * handle these E-Cores through a core spec instead.
+	 *
+	 * This logic should do nothing on any other existing processor.
+	 */
+	cpuset = hwloc_bitmap_alloc();
+	for (int i = 0; i < type_cnt; i++) {
+		unsigned nr_infos = 0;
+		struct hwloc_info_s *infos;
+		if (hwloc_cpukinds_get_info(
+			    *topology, i, cpuset, NULL, &nr_infos, &infos, 0))
+			fatal("Error getting info from hwloc_cpukinds_get_info() %m");
+
+		for (int j = 0; j < nr_infos; j++) {
+			if (!xstrcasecmp(infos[j].name, "CoreType") &&
+			    !xstrcasecmp(infos[j].value, "IntelCore")) {
+				/* Restrict the node to only IntelCores */
+				if (!cpuset_tot)
+					cpuset_tot = hwloc_bitmap_alloc();
+				hwloc_bitmap_or(cpuset_tot, cpuset_tot, cpuset);
+			}
+		}
+
+		/*
+		 * If we have a cpuset_tot it means we are on a system with
+		 * IntelCore cpus. We will restrict to only those and be done
+		 * here.
+		 */
+		if (cpuset_tot) {
+			hwloc_topology_restrict(*topology, cpuset_tot, 0);
+			hwloc_bitmap_free(cpuset_tot);
+			break;
+		}
+	}
+	hwloc_bitmap_free(cpuset);
+
+#endif
+}
+
 /* read or load topology and write if needed
  * init and destroy topology must be outside this function */
 extern int xcpuinfo_hwloc_topo_load(
@@ -186,7 +282,7 @@ extern int xcpuinfo_hwloc_topo_load(
 
 	if (full && first_full) {
 		/* Always regenerate file on slurmd startup */
-		if (running_in_slurmd())
+		if (refresh_hwloc)
 			check_file = false;
 		first_full = false;
 	}
@@ -216,13 +312,8 @@ handle_write:
 
 		/* ignores cache, misc */
 #if HWLOC_API_VERSION < 0x00020000
-#ifdef __METASTACK_OPT_NODE_SOCKET_TOPOLOGY
-		/* need to preserve HWLOC_OBJ_L3CACHE for l3cache_as_socket */
-		hwloc_topology_ignore_type (*topology, HWLOC_OBJ_MISC);
-#else
 		hwloc_topology_ignore_type (*topology, HWLOC_OBJ_CACHE);
 		hwloc_topology_ignore_type (*topology, HWLOC_OBJ_MISC);
-#endif		
 #else
 		hwloc_topology_set_type_filter(*topology, HWLOC_OBJ_L1CACHE,
 					       HWLOC_TYPE_FILTER_KEEP_NONE);
@@ -244,7 +335,12 @@ handle_write:
 		/* error in load hardware topology */
 		debug("hwloc_topology_load() failed.");
 		ret = SLURM_ERROR;
-	} else if (!conf->def_config) {
+		goto end_it;
+	}
+
+	_remove_ecores(topology);
+
+	if (!conf->def_config) {
 		debug2("hwloc_topology_export_xml");
 		if (_internal_hwloc_topology_export_xml(*topology, topo_file)) {
 			/* error in export hardware topology */
@@ -252,43 +348,12 @@ handle_write:
 		}
 	}
 
+end_it:
 	if (!topology_in)
 		hwloc_topology_destroy(tmp_topo);
 
 	return ret;
 }
-
-#ifdef __METASTACK_OPT_NODE_SOCKET_TOPOLOGY
-/*
- * slurm_get_slurmd_params
- * RET char * - Value of SlurmdParameters, must be xfreed by caller
- */
-char *slurm_get_slurmd_params(void)
-{
-	char *slurmd_params = NULL;
-	slurm_conf_t *conf;
-
-	conf = slurm_conf_lock();
-	slurmd_params = xstrdup(conf->slurmd_params);
-	slurm_conf_unlock();
-
-	return slurmd_params;
-}
-
-/* slurm_get_sched_params
- * RET char * - Value of SchedulerParameters, MUST be xfreed by caller */
-char *slurm_get_sched_params(void)
-{
-	char *params = NULL;
-	slurm_conf_t *conf;
-
-	conf = slurm_conf_lock();
-	params = xstrdup(conf->sched_params);
-	slurm_conf_unlock();
-
-	return params;
-}
-#endif
 
 /*
  * xcpuinfo_hwloc_topo_get - Return detailed cpuinfo on the whole system
@@ -297,7 +362,7 @@ char *slurm_get_sched_params(void)
  *         p_sockets - number of physical processor sockets
  *         p_cores - total number of physical CPU cores
  *         p_threads - total number of hardware execution threads
- *         block_map - asbtract->physical block distribution map
+ *         block_map - abstract->physical block distribution map
  *         block_map_inv - physical->abstract block distribution map (inverse)
  *         return code - 0 if no error, otherwise errno
  * NOTE: User must xfree block_map and block_map_inv
@@ -356,55 +421,189 @@ extern int xcpuinfo_hwloc_topo_get(
 	objtype[CORE]   = HWLOC_OBJ_CORE;
 	objtype[PU]     = HWLOC_OBJ_PU;
 
-/*
- * Output node topology based on slurm.conf
- * Consider l3cache_as_socket and Ignore_NUMA
- */
 #ifdef __METASTACK_OPT_NODE_SOCKET_TOPOLOGY
-	char *sched_params = slurm_get_sched_params();
+	/*
+	* Output node topology based on slurm.conf
+	* Consider l3cache_as_socket and Ignore_NUMA
+	*/
+	bool retry_get_topo = false;
+	char *sched_params  = slurm_get_sched_params();
 	char *slurmd_params = slurm_get_slurmd_params();
-	if (xstrcasestr(sched_params, "Ignore_NUMA")) {
-		info("Ignoring NUMA nodes within a socket");
-	} else {
-		if (xstrcasestr(slurmd_params, "l3cache_as_socket")) {
-#if HWLOC_API_VERSION >= 0x00020000
-			objtype[SOCKET] = HWLOC_OBJ_L3CACHE;
-#else
-			objtype[SOCKET] = HWLOC_OBJ_CACHE;
-#endif
-			info("Considering each L3Cache as a socket");
-		} else {
-#if HWLOC_API_VERSION >= 0x00020000
-			hwloc_obj_t numa_obj = hwloc_get_next_obj_by_type(
-				topology, HWLOC_OBJ_NODE, NULL);
 
-			if (numa_obj && numa_obj->parent) {
-				objtype[SOCKET] = numa_obj->parent->type;
-				info("Considering each NUMA node as a socket");
-				if (get_log_level() >= LOG_LEVEL_DEBUG2) {
-					char tmp[128];
-					hwloc_obj_type_snprintf(tmp, sizeof(tmp),
-								numa_obj->parent, 0);
-					debug2("%s: numa_node_as_socket mapped to '%s'",
-						__func__, tmp);
-				}
-			}
+do {
+	if (retry_get_topo) {
+		/* init */
+		FREE_NULL_BITMAP(used_socket);
+		xfree(cores_per_socket);
+	}
+
+#if HWLOC_API_VERSION >= 0x00020000
+	if (xstrcasestr(sched_params, "Ignore_NUMA")) {
+		info("SchedulerParamaters=Ignore_NUMA not supported by hwloc v2");
+	}
 #else
-			if (hwloc_get_type_depth(topology, HWLOC_OBJ_NODE) >
-	    		hwloc_get_type_depth(topology, HWLOC_OBJ_SOCKET)) {
-				info("Considering each NUMA node as a socket");
-				objtype[SOCKET] = HWLOC_OBJ_NODE;
-			}
-#endif					
+	if (hwloc_get_type_depth(topology, HWLOC_OBJ_NODE) >
+	    hwloc_get_type_depth(topology, HWLOC_OBJ_SOCKET)) {
+		if (xstrcasestr(sched_params, "Ignore_NUMA")) {
+			info("Ignoring NUMA nodes within a socket");
+		} else {
+			info("Considering each NUMA node as a socket");
+			objtype[SOCKET] = HWLOC_OBJ_NODE;
 		}
 	}
+#endif
+
+	if (xstrcasestr(slurmd_params, "l3cache_as_socket")) {
+#if HWLOC_API_VERSION >= 0x00020000
+		info("Considering each l3cache as a socket");
+		objtype[SOCKET] = HWLOC_OBJ_L3CACHE;
+#else
+		error("SlurmdParameters=l3cache_as_socket requires hwloc v2");
+#endif
+	} else if (xstrcasestr(slurmd_params, "numa_node_as_socket")) {
+#if HWLOC_API_VERSION >= 0x00020000
+		info("Considering each NUMA node as a socket");
+		hwloc_obj_t numa_obj = hwloc_get_next_obj_by_type(
+			topology, HWLOC_OBJ_NODE, NULL);
+
+		if (numa_obj && numa_obj->parent) {
+			objtype[SOCKET] = numa_obj->parent->type;
+			if (get_log_level() >= LOG_LEVEL_DEBUG2) {
+				char tmp[128];
+				hwloc_obj_type_snprintf(tmp, sizeof(tmp),
+							numa_obj->parent, 0);
+				debug2("%s: numa_node_as_socket mapped to '%s'",
+				       __func__, tmp);
+			}
+		}
+#else
+		error("SlurmdParameters=numa_node_as_socket requires hwloc v2");
+#endif
+	}
+
+	/* Groups below root obj are interpreted as boards */
+	obj = hwloc_get_root_obj(topology);
+	obj = hwloc_get_next_child(topology, obj, NULL);
+	if (!hwloc_compare_types(HWLOC_OBJ_GROUP, obj->type))
+		actual_boards =
+			MAX(hwloc_get_nbobjs_by_depth(topology, obj->depth), 1);
+
+	/*
+	 * Count sockets/NUMA containing any cores.
+	 * KNL NUMA with no cores are NOT counted.
+	 */
+	nobj[SOCKET] = 0;
+	depth = hwloc_get_type_depth(topology, objtype[SOCKET]);
+	used_socket = bit_alloc(_MAX_SOCKET_INX);
+	cores_per_socket = xmalloc(sizeof(int) * _MAX_SOCKET_INX);
+	sock_cnt = hwloc_get_nbobjs_by_depth(topology, depth);
+	for (i = 0; i < sock_cnt; i++) {
+		obj = hwloc_get_obj_by_depth(topology, depth, i);
+		if (obj->type == objtype[SOCKET]) {
+			cores_per_socket[i] = _core_child_count(topology, obj);
+			if (cores_per_socket[i] > 0) {
+				nobj[SOCKET]++;
+				bit_set(used_socket, tot_socks);
+			}
+			if (++tot_socks >= _MAX_SOCKET_INX) {	/* Bitmap size */
+				fatal("Socket count exceeds %d, expand data structure size",
+				      _MAX_SOCKET_INX);
+				break;
+			}
+		}
+	}
+
+	nobj[CORE] = hwloc_get_nbobjs_by_type(topology, objtype[CORE]);
+
+	/*
+	 * Workaround for hwloc bug, in some cases the topology "children" array
+	 * does not get populated, so _core_child_count() always returns 0
+	 */
+	if (nobj[SOCKET] == 0) {
+		nobj[SOCKET] = hwloc_get_nbobjs_by_type(topology,
+							objtype[SOCKET]);
+		if (nobj[SOCKET] == 0) {
+			debug("%s: fudging nobj[SOCKET] from 0 to 1", __func__);
+			nobj[SOCKET] = 1;
+		}
+		if (nobj[SOCKET] >= _MAX_SOCKET_INX) {	/* Bitmap size */
+			fatal("Socket count exceeds %d, expand data structure size",
+			      _MAX_SOCKET_INX);
+		}
+		bit_nset(used_socket, 0, nobj[SOCKET] - 1);
+	}
+
+	/*
+	 * Workaround for hwloc
+	 * hwloc_get_nbobjs_by_type() returns 0 on some architectures.
+	 */
+	if ( nobj[CORE] == 0 ) {
+		debug("%s: fudging nobj[CORE] from 0 to 1", __func__);
+		nobj[CORE] = 1;
+	}
+
+	if (nobj[SOCKET] == -1) {
+		if (!retry_get_topo) {
+			error("%s: can not handle nobj[SOCKET] = -1", __func__);
+#if HWLOC_API_VERSION >= 0x00020000
+			if (xstrcasestr(slurmd_params, "numa_node_as_socket") || xstrcasestr(slurmd_params, "l3cache_as_socket")) {
+				xfree(sched_params);
+				xfree(slurmd_params);
+				retry_get_topo = true;
+				info("%s: retry original topology", __func__);
+				continue;
+			}
+#else
+			if (!xstrcasestr(sched_params, "Ignore_NUMA")) {
+				xfree(sched_params);
+				xfree(slurmd_params);
+				sched_params = xstrdup("Ignore_NUMA");
+				retry_get_topo = true;
+				info("%s: retry original topology", __func__);
+				continue;	
+			}
+#endif
+		} else {
+			error("%s: can not handle nobj[SOCKET] = -1", __func__);
+		}
+	}
+
+	if (nobj[CORE] == -1) {
+		if (!retry_get_topo) {
+			error("%s: can not handle nobj[CORE] = -1", __func__);
+#if HWLOC_API_VERSION >= 0x00020000
+			if (xstrcasestr(slurmd_params, "numa_node_as_socket") || xstrcasestr(slurmd_params, "l3cache_as_socket")) {
+				xfree(sched_params);
+				xfree(slurmd_params);
+				retry_get_topo = true;
+				info("%s: retry original topology", __func__);
+				continue;
+			}
+#else
+			if (!xstrcasestr(sched_params, "Ignore_NUMA")) {
+				xfree(sched_params);
+				xfree(slurmd_params);
+				sched_params = xstrdup("Ignore_NUMA");
+				retry_get_topo = true;
+				info("%s: retry original topology", __func__);
+				continue;	
+			}
+#endif
+		} else {
+			error("%s: can not handle nobj[CORE] = -1", __func__);
+		}
+	}
+
+	if (retry_get_topo) {
+		retry_get_topo = false;	
+	}
+
 	xfree(sched_params);
-	xfree(slurmd_params);	
-/*
- * Output node topology not based on slurm.conf
- * Ignore l3cache_as_socket and Ignore_NUMA
- */	
-#else		
+	xfree(slurmd_params);		
+} while (retry_get_topo);
+
+#else
+
 #if HWLOC_API_VERSION >= 0x00020000
 	if (xstrcasestr(slurm_conf.sched_params, "Ignore_NUMA")) {
 		info("SchedulerParamaters=Ignore_NUMA not supported by hwloc v2");
@@ -421,14 +620,13 @@ extern int xcpuinfo_hwloc_topo_get(
 	}
 #endif
 
-	if (xstrcasestr(slurm_conf.slurmd_params, "l3cache_as_socket")) {
+	if (slurm_conf.conf_flags & CONF_FLAG_L3CSOCK) {
 #if HWLOC_API_VERSION >= 0x00020000
 		objtype[SOCKET] = HWLOC_OBJ_L3CACHE;
 #else
 		error("SlurmdParameters=l3cache_as_socket requires hwloc v2");
 #endif
-	} else if (xstrcasestr(slurm_conf.slurmd_params,
-			       "numa_node_as_socket")) {
+	} else if (slurm_conf.conf_flags & CONF_FLAG_NNSOCK) {
 #if HWLOC_API_VERSION >= 0x00020000
 		hwloc_obj_t numa_obj = hwloc_get_next_obj_by_type(
 			topology, HWLOC_OBJ_NODE, NULL);
@@ -447,7 +645,6 @@ extern int xcpuinfo_hwloc_topo_get(
 		error("SlurmdParameters=numa_node_as_socket requires hwloc v2");
 #endif
 	}
-#endif
 
 	/* Groups below root obj are interpreted as boards */
 	obj = hwloc_get_root_obj(topology);
@@ -461,15 +658,7 @@ extern int xcpuinfo_hwloc_topo_get(
 	 * KNL NUMA with no cores are NOT counted.
 	 */
 	nobj[SOCKET] = 0;
-#ifdef __METASTACK_OPT_NODE_SOCKET_TOPOLOGY
-#if HWLOC_API_VERSION >= 0x00020000
-    depth = hwloc_get_type_depth(topology, objtype[SOCKET]);
-#else
-    depth = hwloc_get_cache_type_depth(topology, 3, objtype[SOCKET]);
-#endif
-#else
 	depth = hwloc_get_type_depth(topology, objtype[SOCKET]);
-#endif	
 	used_socket = bit_alloc(_MAX_SOCKET_INX);
 	cores_per_socket = xmalloc(sizeof(int) * _MAX_SOCKET_INX);
 	sock_cnt = hwloc_get_nbobjs_by_depth(topology, depth);
@@ -521,7 +710,15 @@ extern int xcpuinfo_hwloc_topo_get(
 		fatal("%s: can not handle nobj[SOCKET] = -1", __func__);
 	if ( nobj[CORE] == -1 )
 		fatal("%s: can not handle nobj[CORE] = -1", __func__);
+#endif
 	actual_cpus  = hwloc_get_nbobjs_by_type(topology, objtype[PU]);
+
+#ifdef __METASTACK_OPT_NODE_SOCKET_TOPOLOGY
+	if ((nobj[SOCKET] == -1) || (nobj[CORE] == -1)) {
+		nobj[SOCKET] = 1;
+		nobj[CORE]   = actual_cpus;
+	}	
+#endif	
 #if 0
 	/* Used to find workaround above */
 	info("CORE = %d SOCKET = %d actual_cpus = %d nobj[CORE] = %d",
@@ -799,8 +996,7 @@ extern int xcpuinfo_hwloc_topo_get(
 		if (cores == 0) {
 			cores = numcpu / sockets;	/* assume multi-core */
 			if (cores > 1) {
-				debug3("Warning: cpuinfo missing 'core id' or "
-				       "'cpu cores' but assuming multi-core");
+				debug3("cpuinfo missing 'core id' or 'cpu cores' but assuming multi-core");
 			}
 		}
 		if (cores == 0)
@@ -1080,6 +1276,11 @@ xcpuinfo_init(void)
 	return SLURM_SUCCESS;
 }
 
+extern void xcpuinfo_refresh_hwloc(bool refresh)
+{
+	refresh_hwloc = refresh;
+}
+
 int
 xcpuinfo_fini(void)
 {
@@ -1151,7 +1352,11 @@ int xcpuinfo_abs_to_mac(char *lrange, char **prange)
 	for (icore = 0; icore < total_cores; icore++) {
 		if (bit_test(absmap, icore)) {
 			for (ithread = 0; ithread < conf->threads; ithread++) {
-				absid = icore * conf->threads + ithread;
+				/*
+				 * Use actual hardware thread count to get the
+				 * correct offset for the CPU ID.
+				 */
+				absid = icore * conf->actual_threads + ithread;
 				absid %= total_cpus;
 
 				macid = conf->block_map[absid];
@@ -1222,7 +1427,11 @@ int xcpuinfo_mac_to_abs(char *in_range, char **out_range)
 	for (int icore = 0; icore < total_cores; icore++) {
 		for (int ithread = 0; ithread < conf->threads; ithread++) {
 			int absid, macid;
-			macid = (icore * conf->threads) + ithread;
+			/*
+			 * Use actual hardware thread count to get the
+			 * correct offset for the CPU ID.
+			 */
+			macid = (icore * conf->actual_threads) + ithread;
 			macid %= total_cpus;
 
 			/* Skip this machine CPU id if not in in_range */
@@ -1239,7 +1448,11 @@ int xcpuinfo_mac_to_abs(char *in_range, char **out_range)
 	/* condense abstract CPU bitmap into an abstract core bitmap */
 	for (int icore = 0; icore < total_cores; icore++) {
 		for (int ithread = 0; ithread < conf->threads; ithread++) {
-			int icpu = (icore * conf->threads) + ithread;
+			/*
+			 * Use actual hardware thread count to get the
+			 * correct offset for the CPU ID.
+			 */
+			int icpu = (icore * conf->actual_threads) + ithread;
 			icpu %= total_cpus;
 
 			if (bit_test(absmap, icpu)) {

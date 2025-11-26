@@ -87,12 +87,11 @@ extern void *slurmctld_state_copy(void *no_data);
 
 extern void cache_queue_init();
 extern void cache_queue_fini();
+extern void slurm_cache_date_init(slurm_cache_date_t *msg);
 
 /* shutdown the shutdown_state_copy thread */
 extern void cache_queue_shutdown();
-extern void update_all_cache_state(void);
 extern bool cache_enqueue(slurm_cache_date_t *msg);
-
 #endif
 
 #endif

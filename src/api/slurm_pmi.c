@@ -50,7 +50,7 @@
 #include "src/common/strlcpy.h"
 #include "src/common/xmalloc.h"
 #include "src/common/fd.h"
-#include "src/common/slurm_auth.h"
+#include "src/interfaces/auth.h"
 
 #define DEFAULT_PMI_TIME 500
 #define MAX_RETRIES      5
@@ -173,7 +173,7 @@ extern int slurm_pmi_send_kvs_comm_set(kvs_comm_set_t *kvs_set_ptr,
 	if (kvs_set_ptr == NULL)
 		return EINVAL;
 
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 
 	if ((rc = _get_addr()) != SLURM_SUCCESS)
 		return rc;
@@ -222,14 +222,14 @@ extern int slurm_pmi_get_kvs_comm_set(kvs_comm_set_t **kvs_set_ptr,
 	int rc, srun_fd, retries = 0, timeout = 0;
 	slurm_msg_t msg_send, msg_rcv;
 	slurm_addr_t slurm_addr, srun_reply_addr;
-	char hostname[64];
+	char hostname[HOST_NAME_MAX];
 	kvs_get_msg_t data;
 	char *env_pmi_ifhn;
 
 	if (kvs_set_ptr == NULL)
 		return EINVAL;
 
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 
 	*kvs_set_ptr = NULL;	/* initialization */
 
@@ -315,10 +315,11 @@ extern int slurm_pmi_get_kvs_comm_set(kvs_comm_set_t **kvs_set_ptr,
 		return errno;
 	}
 	if (msg_rcv.auth_cred)
-		(void) auth_g_destroy(msg_rcv.auth_cred);
+		auth_g_destroy(msg_rcv.auth_cred);
 
 	if (msg_rcv.msg_type != PMI_KVS_GET_RESP) {
-		error("slurm_get_kvs_comm_set msg_type=%d", msg_rcv.msg_type);
+		error("slurm_get_kvs_comm_set msg_type=%s",
+		      rpc_num2string(msg_rcv.msg_type));
 		close(srun_fd);
 		return SLURM_UNEXPECTED_MSG_ERROR;
 	}
@@ -388,5 +389,5 @@ void slurm_pmi_finalize(void)
 extern int slurm_pmi_kill_job_step(uint32_t job_id, uint32_t step_id,
 				   uint16_t signal)
 {
-	return slurm_kill_job_step(job_id, step_id, signal);
+	return slurm_kill_job_step(job_id, step_id, signal, 0);
 }

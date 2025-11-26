@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  crontab.c
  *****************************************************************************
- *  Copyright (C) 2020 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -49,7 +48,6 @@
 #include "src/common/xstring.h"
 
 #include "src/slurmctld/slurmctld.h"
-
 #ifdef __METASTACK_OPT_CACHE_QUERY
 #include "src/slurmctld/state_save.h"
 #endif
@@ -59,6 +57,8 @@ typedef struct {
 	uid_t uid;
 	gid_t gid;
 	char **err_msg;
+	identity_t *id;
+	char **job_submit_user_msg;
 	char **failed_lines;
 	List new_jobs;
 	uint16_t protocol_version;
@@ -67,9 +67,10 @@ typedef struct {
 
 static int _handle_job(void *x, void *y)
 {
-	job_desc_msg_t *job = (job_desc_msg_t *) x;
-	foreach_cron_job_args_t *args = (foreach_cron_job_args_t *) y;
+	job_desc_msg_t *job = x;
+	foreach_cron_job_args_t *args = y;
 	job_record_t *job_ptr = NULL;
+	char *err_msg = NULL;
 
 	dump_job_desc(job);
 
@@ -84,7 +85,7 @@ static int _handle_job(void *x, void *y)
 	 * next run. On requeue, the job will need to recalculate this to
 	 * determine the next valid interval.
 	 */
-	job->begin_time = calc_next_cron_start(job->crontab_entry);
+	job->begin_time = calc_next_cron_start(job->crontab_entry, 0);
 
 	/*
 	 * always use the authenticated values from crontab_update_request_msg_t
@@ -95,12 +96,22 @@ static int _handle_job(void *x, void *y)
 	xfree(job->alloc_node);
 	job->alloc_node = xstrdup(args->alloc_node);
 
+	FREE_NULL_IDENTITY(job->id);
+	job->id = copy_identity(args->id);
+
 	/* enforce this flag so the job submit plugin can differentiate */
 	job->bitflags |= CRON_JOB;
 
+	/* always enable requeue to allow scontrol requeue to work */
+	job->requeue = 1;
+
 	/* give job_submit a chance to play with it first */
-	args->return_code = validate_job_create_req(job, args->uid,
-						    args->err_msg);
+	args->return_code = validate_job_create_req(job, args->uid, &err_msg);
+
+	if (err_msg) {
+		xstrfmtcat(*args->job_submit_user_msg, "%s\n", err_msg);
+		xfree(err_msg);
+	}
 
 	if (args->return_code) {
 		xstrfmtcat(*args->failed_lines, "%u-%u",
@@ -145,16 +156,15 @@ static int _handle_job(void *x, void *y)
 		info("Added %pJ from crontab entry from uid=%u, next start is %lu",
 		     job_ptr, job->user_id, job->begin_time);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-		if(job_ptr && find_job_record(job_ptr->job_id)){
-			if(job_cachedup_realtime == 1){
-				_add_cache_job(job_ptr);
-			}else if(job_cachedup_realtime == 2 && cache_queue){
-				slurm_cache_date_t *cache_msg = NULL;
-				cache_msg = xmalloc(sizeof(slurm_cache_date_t));
-				cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
-				cache_msg->job_ptr = _add_job_to_queue(job_ptr);
-				cache_enqueue(cache_msg);
-			}
+		if(job_cachedup_realtime == 1 && job_ptr && find_job_record(job_ptr->job_id)){
+			_meta_add_cache_job(job_ptr);
+		}else if(job_cachedup_realtime == 2 && cache_queue && job_ptr && find_job_record(job_ptr->job_id)){
+			slurm_cache_date_t *cache_msg = NULL;
+			cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+			slurm_cache_date_init(cache_msg);
+			cache_msg->msg_type = CREATE_CACHE_JOB_RECORD;
+			cache_msg->job_ptr = _add_job_to_queue(job_ptr);
+			cache_enqueue(cache_msg);
 		}
 #endif
 	}
@@ -172,12 +182,12 @@ static int _purge_job(void *x, void *ignored)
 	}else if(job_cachedup_realtime == 2 && cache_queue){
 		slurm_cache_date_t *cache_msg = NULL;
 		cache_msg = xmalloc(sizeof(slurm_cache_date_t));
+		slurm_cache_date_init(cache_msg);
 		cache_msg->msg_type = DELETE_CACHE_JOB_RECORD;
 		cache_msg->job_id = job_ptr->job_id;
 		cache_enqueue(cache_msg);
 	}
 #endif
-
 	return 0;
 }
 
@@ -186,17 +196,17 @@ static int _purge_job(void *x, void *ignored)
  */
 static int _clear_requeue_cron(void *x, void *y)
 {
-	job_record_t *job_ptr = (job_record_t *) x;
-	uid_t *uid = (uid_t *) y;
+	job_record_t *job_ptr = x;
+	uid_t *uid = y;
 
 	if ((job_ptr->user_id == *uid) &&
 	    (job_ptr->bit_flags & CRON_JOB)) {
 		job_ptr->bit_flags &= ~CRON_JOB;
-		job_ptr->job_state &= ~JOB_REQUEUE;
+		job_state_unset_flag(job_ptr, JOB_REQUEUE);
 
 		if (!IS_JOB_RUNNING(job_ptr)) {
 			time_t now = time(NULL);
-			job_ptr->job_state = JOB_CANCELLED;
+			job_state_set(job_ptr, JOB_CANCELLED);
 			job_ptr->start_time = now;
 			job_ptr->end_time = now;
 			job_ptr->exit_code = 1;
@@ -212,8 +222,8 @@ static int _clear_requeue_cron(void *x, void *y)
 
 static int _set_requeue_cron(void *x, void *y)
 {
-	job_record_t *job_ptr = (job_record_t *) x;
-	bool *set = (bool *) y;
+	job_record_t *job_ptr = x;
+	bool *set = y;
 
 	if (*set)
 		job_ptr->bit_flags |= CRON_JOB;
@@ -225,9 +235,8 @@ static int _set_requeue_cron(void *x, void *y)
 
 static int _copy_jobids(void *x, void *y)
 {
-	job_record_t *job_ptr = (job_record_t *) x;
-	crontab_update_response_msg_t *response =
-		(crontab_update_response_msg_t *) y;
+	job_record_t *job_ptr = x;
+	crontab_update_response_msg_t *response = y;
 
 	response->jobids[response->jobids_count++] = job_ptr->job_id;
 
@@ -236,7 +245,8 @@ static int _copy_jobids(void *x, void *y)
 
 extern void crontab_submit(crontab_update_request_msg_t *request,
 			   crontab_update_response_msg_t *response,
-			   char *alloc_node, uint16_t protocol_version)
+			   char *alloc_node, identity_t *id,
+			   uint16_t protocol_version)
 {
 	foreach_cron_job_args_t args;
 	char *dir = NULL, *file = NULL;
@@ -270,6 +280,8 @@ extern void crontab_submit(crontab_update_request_msg_t *request,
 		args.uid = request->uid;
 		args.gid = request->gid;
 		args.err_msg = &response->err_msg;
+		args.id = id;
+		args.job_submit_user_msg = &response->job_submit_user_msg;
 		args.failed_lines = &response->failed_lines;
 		args.new_jobs = list_create(NULL);
 		args.protocol_version = protocol_version;
@@ -348,5 +360,4 @@ rwfail:
 	close(fd);
 	xfree(file);
 	xfree(lines);
-	return;
 }

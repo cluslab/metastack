@@ -3,7 +3,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2009 Lawrence Livermore National Security.
- *  Copyright (C) 2010-2015 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette<jette1@llnl.gov>, et. al.
  *  CODE-OCEC-09-009. All rights reserved.
@@ -49,6 +49,7 @@ typedef struct scancel_options {
 	char *sibling;		/* --sibling=<sib_name>		*/
 	bool ctld;		/* --ctld			*/
 	List clusters;          /* --cluster=cluster_name -Mcluster-name */
+	bool cron;		/* --cron */
 	bool full;		/* --full, -f			*/
 	bool hurry;		/* --hurry, -H			*/
 	bool interactive;	/* --interactive, -i		*/

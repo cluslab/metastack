@@ -2,7 +2,7 @@
  *  common.c - common functions for generating reports
  *             from accounting infrastructure.
  *****************************************************************************
- *  Portions Copyright (C) 2010-2017 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Danny Auble <da@llnl.gov>
@@ -43,26 +43,14 @@
 
 int sort_user_tres_id = TRES_CPU; /* controls sorting users (sort_user_dec) */
 
-extern void slurmdb_report_print_time(print_field_t *field, uint64_t value,
-				      uint64_t total_time, int last)
+extern char *sreport_get_time_str(uint64_t value, uint64_t total_time)
 {
-	int abs_len = abs(field->len);
+	char *output = NULL;
 
 	if (!total_time)
 		total_time = 1;
 
-	/* (value == unset)  || (value == cleared) */
-	if ((value == NO_VAL) || (value == INFINITE)) {
-		if (print_fields_parsable_print
-		   == PRINT_FIELDS_PARSABLE_NO_ENDING
-		   && last)
-			;
-		else if (print_fields_parsable_print)
-			printf("|");
-		else
-			printf("%-*s ", abs_len, " ");
-	} else {
-		char *output = NULL;
+	if (!(value == NO_VAL) || (value == INFINITE)) {
 		double percent = (double)value;
 		double temp_d = (double)value;
 
@@ -108,20 +96,8 @@ extern void slurmdb_report_print_time(print_field_t *field, uint64_t value,
 			output = xstrdup_printf("%.0lf", temp_d);
 			break;
 		}
-
-		if (print_fields_parsable_print
-		   == PRINT_FIELDS_PARSABLE_NO_ENDING
-		   && last)
-			printf("%s", output);
-		else if (print_fields_parsable_print)
-			printf("%s|", output);
-		else if (field->len == abs_len)
-			printf("%*.*s ", abs_len, abs_len, output);
-		else
-			printf("%-*.*s ", abs_len, abs_len, output);
-
-		xfree(output);
 	}
+	return output;
 }
 
 extern int parse_option_end(char *option)
@@ -188,7 +164,7 @@ extern void addto_char_list(List char_list, char *names)
 {
 	int i = 0, start = 0;
 	char *name = NULL, *tmp_char = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 
 	if (!char_list) {
 		error("No list was given to fill in");
@@ -459,7 +435,7 @@ extern void sreport_set_usage_column_width(print_field_t *usage_field,
 					   List slurmdb_report_cluster_list)
 {
 	uint64_t max_usage = 0, max_energy = 0;
-	ListIterator tres_itr, cluster_itr;
+	list_itr_t *tres_itr, *cluster_itr;
 	slurmdb_report_cluster_rec_t *slurmdb_report_cluster = NULL;
 
 	xassert(slurmdb_report_cluster_list);
@@ -566,7 +542,7 @@ extern void combine_assoc_tres(List first_assoc_list, List new_assoc_list)
 {
 	slurmdb_report_assoc_rec_t *orig_report_assoc = NULL;
 	slurmdb_report_assoc_rec_t *dup_report_assoc = NULL;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 
 	if (!first_assoc_list || !new_assoc_list)
 		return;
@@ -615,7 +591,7 @@ static int _zero_alloc_secs(void *x, void *key)
 extern void combine_tres_list(List orig_tres_list, List dup_tres_list)
 {
 	slurmdb_tres_rec_t *orig_tres, *dup_tres;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 
 	if (!orig_tres_list || !dup_tres_list)
 		return;
@@ -672,7 +648,7 @@ extern void combine_user_tres(List first_user_list, List new_user_list)
 {
 	slurmdb_report_user_rec_t *orig_report_user = NULL;
 	slurmdb_report_user_rec_t *dup_report_user = NULL;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 
 	if (!first_user_list || !new_user_list)
 		return;

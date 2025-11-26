@@ -50,7 +50,7 @@
 #include "pmixp_conn.h"
 #include "pmixp_dconn.h"
 
-#include "src/common/slurm_auth.h"
+#include "src/interfaces/auth.h"
 
 #define PMIXP_DEBUG_SERVER 1
 
@@ -119,57 +119,57 @@ buf_t *pmixp_server_buf_new(void)
 }
 
 #ifdef __METASTACK_OPT_PMIX_AGENT
-/* Send REQUEST_CANCEL_JOB_STEP to the node selected for communication */
+/* Send REQUEST_CANCEL_JOB_STEP_TO_COMM to the node selected for communication */
 void slurm_send_kill_job_step_message(void)
 {
-		/* Select node for communication */
-		uint32_t comm_distance = (uint32_t)sqrt(pmixp_info_nodes());
-		uint32_t comm_nodeid = (pmixp_info_nodeid()/comm_distance)*comm_distance;
-		char* comm_hostname = NULL;
-		
-		/* Build message */
-		slurm_msg_t msg;
-		job_step_kill_msg_t req;
+	/* Select node for communication */
+	uint32_t comm_distance = (uint32_t)sqrt(pmixp_info_nodes());
+	uint32_t comm_nodeid = (pmixp_info_nodeid()/comm_distance)*comm_distance;
+	char* comm_hostname = NULL;
 
-		slurm_msg_t_init(&msg);
-		memset(&req, 0, sizeof(job_step_kill_msg_t));
+	/* Build message */
+	slurm_msg_t msg;
+	job_step_kill_msg_t req;
 
-		req.step_id.job_id = pmixp_info_jobid();
-		req.step_id.step_id = pmixp_info_stepid();
-		req.flags	= 0;
-		msg.msg_type    = REQUEST_CANCEL_JOB_STEP;
-		msg.data        = &req;
-		slurm_msg_set_r_uid(&msg, SLURM_AUTH_UID_ANY);
+	slurm_msg_t_init(&msg);
+	memset(&req, 0, sizeof(job_step_kill_msg_t));
 
-		if(_pmixp_job_info.hostname) {
-			comm_hostname = pmixp_info_step_host(comm_nodeid);
-		}
-		
-		if ((!_pmixp_job_info.hostname) || (!comm_hostname)) {
-			goto send_to_slurmctld;
-		}
+	req.step_id.job_id = pmixp_info_jobid();
+	req.step_id.step_id = pmixp_info_stepid();
+	req.flags	= 0;
+	msg.msg_type    = REQUEST_CANCEL_JOB_STEP_TO_COMM;
+	msg.data        = &req;
+	slurm_msg_set_r_uid(&msg, SLURM_AUTH_UID_ANY);
 
-		/* Get address for communication node */
-		if (slurm_conf_get_addr(comm_hostname, &msg.address, 1) == SLURM_ERROR) {
-			PMIXP_ERROR("Can't find address for host %s, check slurm.conf", comm_hostname);
-			goto send_to_slurmctld;
-		}
+	if(_pmixp_job_info.hostname) {
+		comm_hostname = pmixp_info_step_host(comm_nodeid);
+	}
+	
+	if ((!_pmixp_job_info.hostname) || (!comm_hostname)) {
+		goto send_to_slurmctld;
+	}
 
-		/* Send message and check reply */
-		int msg_rc = 0, rc = SLURM_ERROR;
-		msg_rc = slurm_send_recv_rc_msg_only_one(&msg, &rc, 0);
-		if (!msg_rc && !rc){
-			PMIXP_DEBUG("nodes: %d, send REQUEST_CANCEL_JOB_STEP to %s succeed",
-					pmixp_info_nodes(), comm_hostname);
-			xfree(comm_hostname);				
-			return;
-		}
-		PMIXP_ERROR("nodes: %d, send REQUEST_CANCEL_JOB_STEP to %s failed, rc: %d",
-					pmixp_info_nodes(), comm_hostname, rc);
+	/* Get address for communication node */
+	if (slurm_conf_get_addr(comm_hostname, &msg.address, 1) == SLURM_ERROR) {
+		PMIXP_ERROR("Can't find address for host %s, check slurm.conf", comm_hostname);
+		goto send_to_slurmctld;
+	}
+
+	/* Send message and check reply */
+	int msg_rc = 0, rc = SLURM_ERROR;
+	msg_rc = slurm_send_recv_rc_msg_only_one(&msg, &rc, 0);
+	if (!msg_rc && !rc){
+		PMIXP_DEBUG("nodes: %d, send REQUEST_CANCEL_JOB_STEP_TO_COMM to %s succeed",
+				pmixp_info_nodes(), comm_hostname);
+		xfree(comm_hostname);				
+		return;
+	}
+	PMIXP_ERROR("nodes: %d, send REQUEST_CANCEL_JOB_STEP_TO_COMM to %s failed, rc: %d",
+				pmixp_info_nodes(), comm_hostname, rc);
 send_to_slurmctld:
-		xfree(comm_hostname);
-		PMIXP_DEBUG("send REQUEST_CANCEL_JOB_STEP to slurmctld directly");
-		slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL);
+	xfree(comm_hostname);
+	PMIXP_DEBUG("send REQUEST_CANCEL_JOB_STEP to slurmctld directly");
+	slurm_kill_job_step(pmixp_info_jobid(), pmixp_info_stepid(), SIGKILL, 0);
 }	
 #endif
 
@@ -355,10 +355,7 @@ static uint32_t _slurm_proto_msize(void *buf);
 static int _slurm_pack_hdr(pmixp_base_hdr_t *hdr, void *net);
 static int _slurm_proto_unpack_hdr(void *net, void *host);
 static void _slurm_new_msg(pmixp_conn_t *conn, void *_hdr, void *msg);
-static int _slurm_send_internal(pmixp_ep_t *ep, pmixp_base_hdr_t bhdr,
-				buf_t *buf, const char *debugid);
-#define _slurm_send(ep, bhdr, buf) \
-	_slurm_send_internal(ep, bhdr, buf, __FUNCTION__)
+static int _slurm_send(pmixp_ep_t *ep, pmixp_base_hdr_t bhdr, buf_t *buf);
 
 pmixp_p2p_data_t _slurm_proto = {
 	/* generic callbacks */
@@ -424,19 +421,15 @@ pmixp_p2p_data_t _direct_proto = {
 
 static volatile int _was_initialized = 0;
 
-int pmixp_stepd_init(const stepd_step_rec_t *job, char ***env)
+int pmixp_stepd_init(const stepd_step_rec_t *step, char ***env)
 {
 	char *path;
 	int fd, rc;
 
-
-	if (SLURM_SUCCESS != (rc = pmixp_info_set(job, env))) {
-		PMIXP_ERROR("pmixp_info_set(job, env) failed");
+	if (SLURM_SUCCESS != (rc = pmixp_info_set(step, env))) {
+		PMIXP_ERROR("pmixp_info_set(step, env) failed");
 		goto err_info;
 	}
-
-	/* Initialize lightweight profiling interface */
-	PMIXP_PROF_INIT(8);
 
 	/* Create UNIX socket for slurmd communication */
 	path = pmixp_info_nspace_usock(pmixp_info_namespace());
@@ -541,8 +534,6 @@ int pmixp_stepd_finalize(void)
 	path = pmixp_info_nspace_usock(pmixp_info_namespace());
 	unlink(path);
 	xfree(path);
-
-	PMIXP_PROF_FINI();
 
 	/* free the information */
 	pmixp_info_free();
@@ -803,7 +794,7 @@ static int _process_extended_hdr(pmixp_base_hdr_t *hdr, buf_t *buf)
 		goto unlock;
 	}
 
-	switch (pmixp_dconn_progress_type(dconn)) {
+	switch (pmixp_dconn_progress_type()) {
 	case PMIXP_DCONN_PROGRESS_SW:{
 		/* this direct connection has fd that needs to be
 		 * polled to progress, use connection interface for that
@@ -833,7 +824,7 @@ static int _process_extended_hdr(pmixp_base_hdr_t *hdr, buf_t *buf)
 	}
 	default:
 		/* Should not happen */
-		xassert(0 && pmixp_dconn_progress_type(dconn));
+		xassert(0 && pmixp_dconn_progress_type());
 		/* TODO: handle this error */
 	}
 unlock:
@@ -897,7 +888,7 @@ static void _process_server_request(pmixp_base_hdr_t *hdr, buf_t *buf)
 				    hdr->seq, nodename, hdr->nodeid, coll->seq);
 			pmixp_debug_hang(0); /* enable hang to debug this! */
 			slurm_kill_job_step(pmixp_info_jobid(),
-					    pmixp_info_stepid(), SIGKILL);
+					    pmixp_info_stepid(), SIGKILL, 0);
 			xfree(nodename);
 			break;
 		} else if (PMIXP_COLL_REQ_SKIP == rc) {
@@ -930,7 +921,7 @@ static void _process_server_request(pmixp_base_hdr_t *hdr, buf_t *buf)
 		break;
 	}
 	case PMIXP_MSG_INIT_DIRECT:
-		PMIXP_DEBUG("WIREUP: connection init from %d", hdr->nodeid);
+		PMIXP_DEBUG("Direct connection init from %d", hdr->nodeid);
 		break;
 #ifndef NDEBUG
 	case PMIXP_MSG_PINGPONG: {
@@ -1355,7 +1346,7 @@ _direct_conn_establish(pmixp_conn_t *conn, void *_hdr, void *msg)
 	if (!dconn) {
 		/* connection was refused because we already
 		 * have established connection
-		 * It seems that some sort of race condition occured
+		 * It seems that some sort of race condition occurred
 		 */
 		close(fd);
 		nodename = pmixp_info_job_host(hdr->nodeid);
@@ -1408,7 +1399,7 @@ void pmixp_server_direct_conn(int fd)
 
 static void _direct_send(pmixp_dconn_t *dconn, pmixp_ep_t *ep,
 			 pmixp_base_hdr_t bhdr, buf_t *buf,
-	     pmixp_server_sent_cb_t complete_cb, void *cb_data)
+			 pmixp_server_sent_cb_t complete_cb, void *cb_data)
 {
 	char nhdr[PMIXP_BASE_HDR_SIZE];
 	size_t dsize = 0, hsize = 0;
@@ -1433,146 +1424,66 @@ static void _direct_send(pmixp_dconn_t *dconn, pmixp_ep_t *ep,
 	}
 }
 
-/*
- * --------------------------- Early wireup -----------------------
- */
-
-/* Early wireup */
-static pthread_t _wireup_tid;
-static int _wireup_join = 0;
-typedef struct {
-	int *wireup_nids;
-	int node_count;
-} pmixp_wireup_descr_t;
-
-static void *_wireup_thread(void *args)
-{
-	pmixp_wireup_descr_t *obj = (pmixp_wireup_descr_t *)args;
-	pmixp_base_hdr_t bhdr;
-	buf_t *buf;
-	pmixp_ep_t ep = {0};
-	int rc, i;
-	hostlist_t hl = slurm_hostlist_create(NULL);
-	char *dbg_message = NULL;
-	xstrfmtcat(dbg_message, " ");
-
-
-	/* Setup addressing information in the broadcast message */
-	for(i = 0; i < obj->node_count; i++) {
-		int nodeid = obj->wireup_nids[i];
-		pmixp_dconn_t *dconn = pmixp_dconn_lock(nodeid);
-		if (PMIXP_DIRECT_INIT == dconn->state) {
-			char *host = pmixp_info_job_host(nodeid);
-			pmixp_dconn_req_sent(dconn);
-			slurm_hostlist_push_host(hl, host);
-			xstrfmtcat(dbg_message, "%d ", nodeid);
-		}
-		pmixp_dconn_unlock(dconn);
-	}
-
-	PMIXP_DEBUG("WIREUP/early: sending initiation message to %d nodes:%s",
-		    slurm_hostlist_count(hl), dbg_message);
-	if( slurm_hostlist_count(hl) ) {
-		ep.type = PMIXP_EP_HLIST;
-		ep.ep.hostlist = slurm_hostlist_ranged_string_xmalloc(hl);
-		/* Prepare message content */
-		buf = pmixp_server_buf_new();
-		PMIXP_BASE_HDR_SETUP(bhdr, PMIXP_MSG_INIT_DIRECT, /* unused */ 0, buf);
-
-
-		rc = _slurm_send(&ep, bhdr, buf);
-		FREE_NULL_BUFFER(buf);
-		if (SLURM_SUCCESS != rc) {
-			PMIXP_ERROR_STD("send init msg error");
-		}
-	}
-	slurm_hostlist_destroy(hl);
-	PMIXP_DEBUG("WIREUP/early: complete");
-	return NULL;
-}
-
-int pmixp_server_wireup_early(void)
+int pmixp_server_direct_conn_early(void)
 {
 	pmixp_coll_type_t types[] = { PMIXP_COLL_TYPE_FENCE_TREE, PMIXP_COLL_TYPE_FENCE_RING };
 	pmixp_coll_type_t type = pmixp_info_srv_fence_coll_type();
-	pmixp_coll_t *colls[PMIXP_COLL_TYPE_FENCE_MAX] = { NULL };
-	pmixp_coll_t *coll = NULL;
-	int i, count = 0;
+	pmixp_coll_t *coll[PMIXP_COLL_TYPE_FENCE_MAX] = { NULL };
+	int i, rc, count = 0;
 	pmix_proc_t proc;
-	int nodeid;
-	int *wireup_nids = xcalloc(1, sizeof(*wireup_nids));
-	int wireup_ncnt = 0;
 
-	PMIXP_DEBUG("WIREUP/early: start");
+	PMIXP_DEBUG("called");
 	proc.rank = pmixp_lib_get_wildcard();
 	strlcpy(proc.nspace, _pmixp_job_info.nspace, sizeof(proc.nspace));
 
-	if(type != PMIXP_COLL_TYPE_FENCE_MAX) {
-		coll = pmixp_state_coll_get(type, &proc, 1);
-		if (coll) {
-			colls[count++] = coll;
+	for (i=0; i < sizeof(types)/sizeof(types[0]); i++){
+		if (type != PMIXP_COLL_TYPE_FENCE_MAX && type != types[i]) {
+			continue;
 		}
-	} else {
-		for (i=0; i < sizeof(types)/sizeof(types[0]); i++){
-			coll = pmixp_state_coll_get(types[i], &proc, 1);
-			if (coll) {
-				colls[count++] = coll;
-			}
-		}
+		coll[count++] = pmixp_state_coll_get(types[i], &proc, 1);
 	}
-
+	/* use Tree algo by defaut */
+	if (!count) {
+		coll[count++] = pmixp_state_coll_get(PMIXP_COLL_TYPE_FENCE_TREE, &proc, 1);
+	}
 	for (i = 0; i < count; i++) {
-		switch (colls[i]->type) {
-		case PMIXP_COLL_TYPE_FENCE_TREE:
-			nodeid = colls[i]->state.tree.prnt_peerid;
-			if (nodeid < 0) {
-				/* this is the root node, it has no
+		if (coll[i]) {
+			pmixp_ep_t ep = {0};
+			buf_t *buf;
+
+			ep.type = PMIXP_EP_NOIDEID;
+
+			switch (coll[i]->type) {
+			case PMIXP_COLL_TYPE_FENCE_TREE:
+				ep.ep.nodeid = coll[i]->state.tree.prnt_peerid;
+				if (ep.ep.nodeid < 0) {
+					/* this is the root node, it has no
 					 * the parent node to early connect */
-				continue;
+					continue;
+				}
+				break;
+			case PMIXP_COLL_TYPE_FENCE_RING:
+				/* calculate the id of the next ring neighbor */
+				ep.ep.nodeid = (coll[i]->my_peerid + 1) %
+						coll[i]->peers_cnt;
+				break;
+			default:
+				PMIXP_ERROR("Unknown coll type");
+				return SLURM_ERROR;
 			}
-			break;
-		case PMIXP_COLL_TYPE_FENCE_RING:
-			/* calculate the id of the next ring neighbor */
-			nodeid = colls[i]->state.ring.next_peerid;
-			break;
-		default:
-			PMIXP_ERROR("Unknown coll type");
-			return SLURM_ERROR;
-		}
-		xassert(0 <= nodeid);
 
-		if (xsize(wireup_nids) <= (wireup_ncnt + 1)) {
-			size_t new_size = xsize(wireup_nids) * 2;
-			wireup_nids = xrealloc(wireup_nids, new_size);
+			buf = pmixp_server_buf_new();
+			rc = pmixp_server_send_nb(
+				&ep, PMIXP_MSG_INIT_DIRECT, coll[i]->seq,
+				buf, pmixp_server_sent_buf_cb, buf);
+
+			if (SLURM_SUCCESS != rc) {
+				PMIXP_ERROR_STD("send init msg error");
+				return SLURM_ERROR;
+			}
 		}
-		wireup_nids[wireup_ncnt++] = nodeid;
 	}
-
-	if (wireup_ncnt) {
-		pmixp_wireup_descr_t *obj = xmalloc(sizeof(*obj));
-		obj->node_count = wireup_ncnt;
-		obj->wireup_nids = wireup_nids;
-
-		if( pmixp_info_srv_wireup_threaded() ) {
-			_wireup_join = 1;
-			slurm_thread_create(&_wireup_tid, _wireup_thread, obj);
-		} else {
-			/* Call the wireup function in a blocking fashion */
-			_wireup_thread((void*)obj);
-			xfree(wireup_nids);
-		}
-	} else {
-		xfree(wireup_nids);
-	}
-
 	return SLURM_SUCCESS;
-}
-
-void pmixp_server_wireup_early_fini(void)
-{
-	if( _wireup_join ) {
-		pthread_join(_wireup_tid, NULL);
-	}
 }
 
 /*
@@ -1680,8 +1591,7 @@ static int _slurm_proto_unpack_hdr(void *net, void *host)
 	return 0;
 }
 
-static int _slurm_send_internal(pmixp_ep_t *ep, pmixp_base_hdr_t bhdr,
-		       buf_t *buf, const char *debugid)
+static int _slurm_send(pmixp_ep_t *ep, pmixp_base_hdr_t bhdr, buf_t *buf)
 {
 	const char *addr = NULL, *data = NULL, *hostlist = NULL;
 	char nhdr[PMIXP_BASE_HDR_MAX];
@@ -1692,7 +1602,7 @@ static int _slurm_send_internal(pmixp_ep_t *ep, pmixp_base_hdr_t bhdr,
 	addr = pmixp_info_srv_usock_path();
 
 	bhdr.ext_flag = 0;
-	if (pmixp_info_srv_direct_conn()) {
+	if (pmixp_info_srv_direct_conn() && PMIXP_EP_NOIDEID == ep->type) {
 		bhdr.ext_flag = 1;
 	}
 
@@ -1703,7 +1613,7 @@ static int _slurm_send_internal(pmixp_ep_t *ep, pmixp_base_hdr_t bhdr,
 	case PMIXP_EP_HLIST:
 		hostlist = ep->ep.hostlist;
 		rc = pmixp_stepd_send(ep->ep.hostlist, addr,
-				      data, dsize, 500, 7, debugid);
+				      data, dsize, 500, 7, 0);
 		break;
 	case PMIXP_EP_NOIDEID: {
 		char *nodename = pmixp_info_job_host(ep->ep.nodeid);
@@ -1712,7 +1622,7 @@ static int _slurm_send_internal(pmixp_ep_t *ep, pmixp_base_hdr_t bhdr,
 							      nodename);
 
 		rc = pmixp_p2p_send(nodename, address, data, dsize,
-				    500, 7, debugid);
+				    500, 7, 0);
 		xfree(address);
 		xfree(nodename);
 		break;

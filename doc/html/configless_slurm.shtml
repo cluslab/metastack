@@ -14,7 +14,8 @@ config files will be pulled to the node. This slurmctld can be identified by
 either an explicit option, or &mdash; preferably &mdash; through DNS SRV
 records defined within the cluster itself.</p>
 
-<p>If you have a login node you will be running client commands
+<p>If you have a <a href="quickstart_admin.html#login">login node</a> you
+will be running client commands
 from, those client commands will have to use the DNS record to get the
 configuration information from the controller when they run.
 If you expect to have a lot of traffic from a login node, this
@@ -101,6 +102,11 @@ Any additional config files will need to be shared a different way or added to
 the parent config.
 </p>
 
+<p>If <b>Prolog</b> and <b>Epilog</b> scripts are specified in slurm.conf,
+the scripts will <b>ONLY</b> be shipped if the filenames referenced have no path
+separators and the file is located adjacent to slurm.conf.
+</p>
+
 <h2 id="NOTES">Notes<a class="slurm_link" href="#NOTES"></a></h2>
 
 <p>The order of precedence for determining what configuration source to use
@@ -109,9 +115,21 @@ is as follows:</p>
 <li>The slurmd --conf-server $host[:$port] option</li>
 <li>The -f $config_file option</li>
 <li>The SLURM_CONF environment variable (if set)</li>
-<li>The default slurm config file (likely /etc/slurm.conf)</li>
+<li>A local slurm config file:
+  <ol>
+    <li>The default slurm config file (likely /etc/slurm.conf)</li>
+    <li>For user commands, a cached slurm config file
+        (run/slurm/conf/slurm.conf)</li>
+  </ol>
+</li>
 <li>The SLURM_CONF_SERVER environment variable (if set)</li>
 <li>Any DNS SRV records (from lowest priority value to highest)</li>
+  <ul>
+    <li>The TTL (Time To Live) of the SRV record does not affect the validity
+    of the obtained configuration. The nodes will have to be notified of any
+    changes to the configuration file through an
+    <span class=commandline>scontrol reconfig</span> or a slurmd restart.</li>
+  </ul>
 </ol>
 
 <p>Supported configuration files are:</p>
@@ -120,18 +138,16 @@ is as follows:</p>
 <li>acct_gather.conf</li>
 <li>cgroup.conf</li>
 <li>cli_filter.lua</li>
-<li>ext_sensors.conf</li>
 <li>gres.conf</li>
 <li>helpers.conf</li>
 <li>job_container.conf</li>
-<li>knl_cray.conf</li>
-<li>knl_generic.conf</li>
 <li>mpi.conf</li>
 <li>oci.conf</li>
 <li>plugstack.conf</li>
+<li>scrun.lua</li>
 <li>topology.conf</li>
 </ul>
 
-<p style="text-align:center;">Last modified 04 November 2022</p>
+<p style="text-align:center;">Last modified 31 October 2024</p>
 
 <!--#include virtual="footer.txt"-->

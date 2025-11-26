@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  prep_script_slurmd.c - Prolog / Epilog handling
  *****************************************************************************
- *  Copyright (C) 2020 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -44,15 +43,15 @@
 #include "src/common/fd.h"
 #include "src/common/log.h"
 #include "src/common/macros.h"
-#include "src/common/plugstack.h"
-#include "src/common/prep.h"
+#include "src/interfaces/prep.h"
 #include "src/common/run_command.h"
+#include "src/common/spank.h"
 #include "src/common/track_script.h"
 #include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 
-#include "src/slurmd/common/job_container_plugin.h"
+#include "src/interfaces/job_container.h"
 #include "src/slurmd/slurmd/req.h"
 
 #include "prep_script.h"
@@ -66,7 +65,6 @@ slurmd_conf_t *conf = NULL;
 static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 			 bool is_epilog);
 static int _run_spank_job_script(const char *mode, char **env, uint32_t job_id);
-
 
 static int _ef(const char *p, int errnum)
 {
@@ -152,15 +150,11 @@ extern int slurmd_script(job_env_t *job_env, slurm_cred_t *cred,
 			 bool is_epilog)
 {
 	char *name = is_epilog ? "epilog" : "prolog";
-	char *path = is_epilog ? slurm_conf.epilog : slurm_conf.prolog;
+	uint32_t script_cnt = is_epilog ? slurm_conf.epilog_cnt :
+					  slurm_conf.prolog_cnt;
+	char **scripts = is_epilog ? slurm_conf.epilog : slurm_conf.prolog;
 	char **env = NULL;
 	int rc = SLURM_SUCCESS;
-	uint32_t jobid = job_env->jobid;
-
-#ifdef HAVE_NATIVE_CRAY
-	if (job_env->het_job_id && (job_env->het_job_id != NO_VAL))
-		jobid = job_env->het_job_id;
-#endif
 
 	/*
 	 *  Always run both spank prolog/epilog and real prolog/epilog script,
@@ -172,17 +166,16 @@ extern int slurmd_script(job_env_t *job_env, slurm_cred_t *cred,
 	    (!is_epilog && spank_has_prolog())) {
 		if (!env)
 			env = _build_env(job_env, cred, is_epilog);
-		rc = _run_spank_job_script(name, env, jobid);
+		rc = _run_spank_job_script(name, env, job_env->jobid);
 	}
 
-	if (path) {
+	if (script_cnt) {
 		int status = 0;
 		int timeout = slurm_conf.prolog_epilog_timeout;
 		char *cmd_argv[2] = {0};
-		List path_list;
+		list_t *path_list = NULL;
 		run_command_args_t run_command_args = {
-			.container_join = job_env->container_join,
-			.job_id = jobid,
+			.job_id = job_env->jobid,
 			.script_argv = cmd_argv,
 			.script_type = name,
 			.status = &status,
@@ -198,10 +191,22 @@ extern int slurmd_script(job_env_t *job_env, slurm_cred_t *cred,
 
 		run_command_args.env = env;
 		run_command_args.max_wait = timeout;
+		for (int i = 0; i < script_cnt; i++) {
+			list_t *tmp_list = _script_list_create(scripts[i]);
 
-		if (!(path_list = _script_list_create(path)))
-			return error("%s: Unable to create list of paths [%s]",
-				     name, path);
+			if (!tmp_list) {
+				error("%s: Unable to create list of paths [%s]",
+				      name, scripts[i]);
+				return SLURM_ERROR;
+			}
+
+			if (path_list) {
+				list_transfer(path_list, tmp_list);
+				FREE_NULL_LIST(tmp_list);
+			} else {
+				path_list = tmp_list;
+			}
+		}
 		list_for_each(
 			path_list, _run_subpath_command, &run_command_args);
 		FREE_NULL_LIST(path_list);
@@ -219,7 +224,7 @@ static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 			 bool is_epilog)
 {
 	char **env = env_array_create();
-	bool user_name_set = 0;
+	bool user_set = false;
 
 	env[0] = NULL;
 	if (!valid_spank_job_env(job_env->spank_job_env,
@@ -247,19 +252,6 @@ static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 	setenvf(&env, "SLURM_JOB_UID", "%u", job_env->uid);
 	setenvf(&env, "SLURM_JOB_GID", "%u", job_env->gid);
 	setenvf(&env, "SLURM_JOB_WORK_DIR", "%s", job_env->work_dir);
-
-#ifndef HAVE_NATIVE_CRAY
-	/* uid_to_string on a cray is a heavy call, so try to avoid it */
-	if (!job_env->user_name) {
-		job_env->user_name = uid_to_string(job_env->uid);
-		user_name_set = true;
-	}
-#endif
-
-	setenvf(&env, "SLURM_JOB_USER", "%s", job_env->user_name);
-	if (user_name_set)
-		xfree(job_env->user_name);
-
 	setenvf(&env, "SLURM_JOBID", "%u", job_env->jobid);
 
 	if (job_env->het_job_id && (job_env->het_job_id != NO_VAL)) {
@@ -270,19 +262,10 @@ static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 
 	setenvf(&env, "SLURM_UID", "%u", job_env->uid);
 
-	if (job_env->node_aliases)
-		setenvf(&env, "SLURM_NODE_ALIASES", "%s",
-			job_env->node_aliases);
-
-	if (job_env->node_list)
+	if (job_env->node_list) {
 		setenvf(&env, "SLURM_NODELIST", "%s", job_env->node_list);
-
-	/*
-	 * Overridden by the credential version if available.
-	 * Remove two versions after 22.05.
-	 */
-	if (job_env->partition)
-		setenvf(&env, "SLURM_JOB_PARTITION", "%s", job_env->partition);
+		setenvf(&env, "SLURM_JOB_NODELIST", "%s", job_env->node_list);
+	}
 
 	if (is_epilog)
 		setenvf(&env, "SLURM_SCRIPT_CONTEXT", "epilog_slurmd");
@@ -309,9 +292,27 @@ static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 		if (cred_arg->job_comment)
 			setenvf(&env, "SLURM_JOB_COMMENT", "%s",
 				cred_arg->job_comment);
+		if (cred_arg->job_core_spec == NO_VAL16) {
+			setenvf(&env, "SLURM_JOB_CORE_SPEC_COUNT", "0");
+			setenvf(&env, "SLURM_JOB_CORE_SPEC_TYPE", "cores");
+		} else if (cred_arg->job_core_spec & CORE_SPEC_THREAD) {
+			setenvf(&env, "SLURM_JOB_CORE_SPEC_COUNT", "%u",
+				cred_arg->job_core_spec & (~CORE_SPEC_THREAD));
+			setenvf(&env, "SLURM_JOB_CORE_SPEC_TYPE", "threads");
+		} else {
+			setenvf(&env, "SLURM_JOB_CORE_SPEC_COUNT", "%u",
+				cred_arg->job_core_spec);
+			setenvf(&env, "SLURM_JOB_CORE_SPEC_TYPE", "cores");
+		}
 		if (cred_arg->job_constraints)
 			setenvf(&env, "SLURM_JOB_CONSTRAINTS", "%s",
 				cred_arg->job_constraints);
+		if (cred_arg->job_end_time)
+			setenvf(&env, "SLURM_JOB_END_TIME", "%lu",
+				cred_arg->job_end_time);
+		if (cred_arg->job_extra)
+			setenvf(&env, "SLURM_JOB_EXTRA", "%s",
+				cred_arg->job_extra);
 		if (cred_arg->cpu_array_count) {
 			char *tmp = uint32_compressed_to_str(
 				cred_arg->cpu_array_count,
@@ -320,12 +321,17 @@ static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 			setenvf(&env, "SLURM_JOB_CPUS_PER_NODE", "%s", tmp);
 			xfree(tmp);
 		}
+		if (cred_arg->job_licenses)
+			setenvf(&env, "SLURM_JOB_LICENSES", "%s",
+				cred_arg->job_licenses);
 		if (cred_arg->job_ntasks)
 			setenvf(&env, "SLURM_JOB_NTASKS", "%u",
 				cred_arg->job_ntasks);
 		if (cred_arg->job_nhosts)
 			setenvf(&env, "SLURM_JOB_NUM_NODES", "%u",
 				cred_arg->job_nhosts);
+		setenvf(&env, "SLURM_JOB_OVERSUBSCRIBE", "%s",
+			job_share_string(cred_arg->job_oversubscribe));
 		if (cred_arg->job_partition)
 			setenvf(&env, "SLURM_JOB_PARTITION", "%s",
 				cred_arg->job_partition);
@@ -335,6 +341,9 @@ static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 		if (cred_arg->job_restart_cnt != INFINITE16)
 			setenvf(&env, "SLURM_JOB_RESTART_COUNT", "%u",
 				cred_arg->job_restart_cnt);
+		if (cred_arg->job_start_time)
+			setenvf(&env, "SLURM_JOB_START_TIME", "%lu",
+				cred_arg->job_start_time);
 		if (cred_arg->job_std_err)
 			setenvf(&env, "SLURM_JOB_STDERR", "%s",
 				cred_arg->job_std_err);
@@ -344,8 +353,18 @@ static char **_build_env(job_env_t *job_env, slurm_cred_t *cred,
 		if (cred_arg->job_std_out)
 			setenvf(&env, "SLURM_JOB_STDOUT", "%s",
 				cred_arg->job_std_out);
-
+		if (cred_arg->id->pw_name) {
+			user_set = true;
+			setenvf(&env, "SLURM_JOB_USER", "%s",
+				cred_arg->id->pw_name);
+		}
 		slurm_cred_unlock_args(cred);
+	}
+
+	if (!user_set) {
+		char *user_name = uid_to_string(job_env->uid);
+		setenvf(&env, "SLURM_JOB_USER", "%s", user_name);
+		xfree(user_name);
 	}
 
 	return env;
@@ -378,14 +397,6 @@ static int _run_spank_job_script(const char *mode, char **env, uint32_t job_id)
 			"spank",
 			(char *) mode,
 			NULL };
-
-		/*
-		 * container_g_join() needs to be called in the child process
-		 * to avoid a race condition if this process makes a file
-		 * before we add the pid to the container in the parent.
-		 */
-		if (container_g_join(job_id, getuid()) != SLURM_SUCCESS)
-			error("container_g_join(%u): %m", job_id);
 
 		if (dup2(pfds[0], STDIN_FILENO) < 0)
 			fatal("dup2: %m");

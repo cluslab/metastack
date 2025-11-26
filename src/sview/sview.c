@@ -60,8 +60,8 @@ bool toggled = false;
 bool force_refresh = false;
 bool apply_hidden_change = true;
 bool apply_partition_check = false;
-List popup_list = NULL;
-List signal_params_list = NULL;
+list_t *popup_list = NULL;
+list_t *signal_params_list = NULL;
 int page_running = -1;
 bool global_entry_changed = 0;
 bool global_send_update_msg = 0;
@@ -83,7 +83,7 @@ GMutex *grid_mutex = NULL;
 GCond *grid_cond = NULL;
 int cluster_dims;
 uint32_t cluster_flags;
-List cluster_list = NULL;
+list_t *cluster_list = NULL;
 switch_record_bitmaps_t *g_switch_nodes_maps = NULL;
 popup_pos_t popup_pos;
 char *federation_name = NULL;
@@ -285,8 +285,7 @@ static void _page_switched(GtkNotebook     *notebook,
 		return;
 	else if (!grid_init && !started_grid_init) {
 		/* start the thread to make the grid only once */
-		if (!sview_thread_new(
-			    _grid_init_thr, notebook, false, &error)) {
+		if (!sview_thread_new(_grid_init_thr, notebook, &error)) {
 			g_printerr ("Failed to create grid init thread: %s\n",
 				    error->message);
 			return;
@@ -319,7 +318,7 @@ static void _page_switched(GtkNotebook     *notebook,
 		page_thr->page_num = i;
 		page_thr->table = table;
 
-		if (!sview_thread_new(_page_thr, page_thr, false, &error)) {
+		if (!sview_thread_new(_page_thr, page_thr, &error)) {
 			g_printerr ("Failed to create page thread: %s\n",
 				    error->message);
 			return;
@@ -484,7 +483,7 @@ static void _get_current_debug(GtkRadioAction *action)
 	if (!debug_action)
 		debug_action = gtk_action_group_get_action(
 			menu_action_group, "debug_quiet");
-	/* Since this is the inital value we don't signal anything
+	/* Since this is the initial value we don't signal anything
 	   changed so we need to make it happen here */
 	if (debug_level == 0)
 		debug_inited = 1;
@@ -1056,7 +1055,7 @@ static void _get_info_tabs(GtkTable *table, display_data_t *display_data)
 
 }
 
-extern void _change_cluster_main(GtkComboBox *combo, gpointer extra)
+static void _change_cluster_main(GtkComboBox *combo, gpointer extra)
 {
 	GtkTreeModel *model;
 	GtkTreeIter iter;
@@ -1261,17 +1260,19 @@ static GtkWidget *_create_cluster_combo(void)
 	GtkListStore *model = NULL;
 	GtkWidget *combo = NULL;
 	GtkTreeIter iter;
-	ListIterator itr;
+	list_itr_t *itr;
 	slurmdb_cluster_rec_t *cluster_rec;
 	GtkCellRenderer *renderer = NULL;
 	bool got_db = slurm_with_slurmdbd();
 	int count = 0, spot = 0;
-	List fed_list = NULL;
+	list_t *fed_list = NULL;
 
 	if (!got_db)
 		return NULL;
 
-	cluster_list = slurmdb_get_info_cluster(NULL);
+	if (slurm_get_cluster_info(&(cluster_list), NULL, 0))
+		return NULL;
+
 	if (!cluster_list || !list_count(cluster_list)) {
 		FREE_NULL_LIST(cluster_list);
 		return NULL;
@@ -1434,8 +1435,9 @@ int main(int argc, char **argv)
 
 	if (!getenv("SLURM_BITSTR_LEN"))
 		setenv("SLURM_BITSTR_LEN", "128", 1);	/* More array info */
-	slurm_conf_init(NULL);
+	slurm_init(NULL);
 	log_init(argv[0], lopts, SYSLOG_FACILITY_USER, NULL);
+
 	load_defaults();
 	cluster_flags = slurmdb_setup_cluster_flags();
 	cluster_dims = slurmdb_setup_cluster_dims();

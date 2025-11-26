@@ -51,7 +51,7 @@ static int _setup_federation_cond_limits(slurmdb_federation_cond_t *fed_cond,
 					 char **extra)
 {
 	int set = 0;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 
 	if (!fed_cond)
@@ -136,8 +136,8 @@ static int _remove_all_clusters_from_fed(kingbase_conn_t *kingbase_conn,
 	char *exception_names = NULL;
 
 	if (exceptions && list_count(exceptions)) {
-		char *tmp_name;
-		ListIterator itr;
+		char *tmp_name = NULL;
+		list_itr_t *itr;
 
 		itr = list_iterator_create(exceptions);
 		while ((tmp_name = list_next(itr)))
@@ -180,7 +180,7 @@ static int _remove_clusters_from_fed(kingbase_conn_t *kingbase_conn, List cluste
 	char *query = NULL;
 	char *name  = NULL;
 	char *names = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 
 	xassert(clusters);
 
@@ -220,7 +220,7 @@ static int _add_clusters_to_fed(kingbase_conn_t *kingbase_conn, List clusters,
 	char *name    = NULL;
 	char *names   = NULL;
 	char *indexes = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int   last_id = -1;
 
 	xassert(fed);
@@ -283,7 +283,7 @@ static int _assign_clusters_to_federation(kingbase_conn_t *kingbase_conn,
 	int  rc       = SLURM_SUCCESS;
 	List add_list = NULL;
 	List rem_list = NULL;
-	ListIterator itr    = NULL;
+	list_itr_t *itr    = NULL;
 	bool clear_clusters = false;
 	slurmdb_cluster_rec_t *tmp_cluster = NULL;
 
@@ -326,8 +326,8 @@ static int _assign_clusters_to_federation(kingbase_conn_t *kingbase_conn,
 		goto end_it;
 
 end_it:
-	list_destroy(add_list);
-	list_destroy(rem_list);
+	FREE_NULL_LIST(add_list);
+	FREE_NULL_LIST(rem_list);
 
 	return rc;
 }
@@ -335,7 +335,7 @@ end_it:
 extern int as_kingbase_add_federations(kingbase_conn_t *kingbase_conn, uint32_t uid,
 				    List federation_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int rc = SLURM_SUCCESS;
 	slurmdb_federation_rec_t *object = NULL;
 	char *cols = NULL, *vals = NULL, *extra = NULL, *query = NULL,
@@ -350,6 +350,11 @@ extern int as_kingbase_add_federations(kingbase_conn_t *kingbase_conn, uint32_t 
 
 	if (!is_user_min_admin_level(kingbase_conn, uid, SLURMDB_ADMIN_SUPER_USER))
 		return ESLURM_ACCESS_DENIED;
+
+	if (!federation_list || !list_count(federation_list)) {
+		error("%s: Trying to add empty federation list", __func__);
+		return ESLURM_EMPTY_LIST;
+	}
 
 	user_name = uid_to_string((uid_t) uid);
 
@@ -760,18 +765,8 @@ extern List as_kingbase_remove_federations(kingbase_conn_t *kingbase_conn, uint3
 
 extern int as_kingbase_add_feds_to_update_list(kingbase_conn_t *kingbase_conn)
 {
-	int rc = SLURM_ERROR;
-	List feds = as_kingbase_get_federations(kingbase_conn, 0, NULL);
-
-	/* Even if there are no feds, need to send an empty list for the case
-	 * that all feds were removed. The controller needs to know that it was
-	 * removed from a federation. */
-	if (feds &&
-	    ((rc = addto_update_list(kingbase_conn->update_list,
-				     SLURMDB_UPDATE_FEDS, feds))
-	     != SLURM_SUCCESS)) {
-			FREE_NULL_LIST(feds);
-	}
-	return rc;
+	/* Set the flag to get federation changes after commit has been made. */
+	kingbase_conn->flags |= DB_CONN_FLAG_FEDUPDATE;
+	return SLURM_SUCCESS;
 }
 

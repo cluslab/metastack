@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  federation_info.c - functions dealing with Federations in the controller.
  *****************************************************************************
- *  Copyright (C) 2016-2017 SchedMD LLC.
- *  Written by Brian Christiansen <brian@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -98,7 +97,7 @@ int _sort_clusters_by_name(void *x, void *y)
  */
 extern void slurm_print_federation(void *ptr)
 {
-	ListIterator itr;
+	list_itr_t *itr;
 	slurmdb_cluster_rec_t *cluster;
 	int left_col_size;
 	char *cluster_name = NULL;

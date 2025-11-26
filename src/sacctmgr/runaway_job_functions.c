@@ -1,8 +1,7 @@
 /*****************************************************************************\
  * runaway_jobs_functions.c - functions dealing with runaway/orphan jobs
  *****************************************************************************
- *  Copyright (C) 2016 SchedMD LLC.
- *  Written by Nathan Yee <nyee32@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -84,8 +83,8 @@ static void _print_runaway_jobs(List format_list, List jobs)
 {
 	char outbuf[FORMAT_STRING_SIZE];
 	slurmdb_job_rec_t *job = NULL;
-	ListIterator itr = NULL;
-	ListIterator field_itr = NULL;
+	list_itr_t *itr = NULL;
+	list_itr_t *field_itr = NULL;
 	List print_fields_list; /* types are of print_field_t */
 	print_field_t *field = NULL;
 	int field_count;
@@ -110,7 +109,7 @@ static void _print_runaway_jobs(List format_list, List jobs)
 			case PRINT_ID:
 				field->print_routine(
 					field,
-					job->jobid,
+					&job->jobid,
 					(curr_inx == field_count));
 				break;
 			case PRINT_NAME:
@@ -142,25 +141,25 @@ static void _print_runaway_jobs(List format_list, List jobs)
 			case PRINT_TIMESTART:
 				field->print_routine(
 					field,
-					job->start,
+					&job->start,
 					(curr_inx == field_count));
 				break;
 			case PRINT_TIMEEND:
 				field->print_routine(
 					field,
-					job->end,
+					&job->end,
 					(curr_inx == field_count));
 				break;
 			case PRINT_TIMESUBMIT:
 				field->print_routine(
 					field,
-					job->submit,
+					&job->submit,
 					(curr_inx == field_count));
 				break;
 			case PRINT_TIMEELIGIBLE:
 				field->print_routine(
 					field,
-					job->eligible,
+					&job->eligible,
 					(curr_inx == field_count));
 				break;
 			default:

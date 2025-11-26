@@ -4,8 +4,7 @@
 #          to be called from test21.30
 #          Tests if the GrpMem limit is enforced
 ############################################################################
-# Copyright (C) 2013 SchedMD LLC
-# Written by Nathan Yee <nyee32@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -27,60 +26,26 @@
 ############################################################################
 
 proc inc21_30_11 { wait_reason } {
-	global salloc srun acct bin_sleep grpmem_num number
+	global srun acct bin_sleep grpmem_num
 	global test_select_type_params
 
 	if {![param_contains [get_config_param "SelectTypeParameters"] "CR_*MEMORY"]} {
-		log_warn "Memory management not configured"
+		subskip "This test needs SelectTypeParameters including MEMORY"
 		return
 	}
 
-	log_info "Starting GrpMem test"
+	log_info "Starting $wait_reason test"
 	set job_id1 0
 	set job_id2 0
 
 	# Raise an error to abort the catch block
 	set exception_code [catch {
 
-		spawn $salloc --account=$acct -N1 --mem=$grpmem_num -t1 $srun $bin_sleep 10
-		expect {
-			-re "Granted job allocation ($number)" {
-				set job_id1 $expect_out(1,string)
-				log_debug "Job $job_id1 has been submitted"
-			}
-			-re "Pending job allocation ($number)" {
-				set job_id1 $expect_out(1,string)
-				error "Job should have run but did not"
-			}
-			-re "error" {
-				error "Job allocation should not have failed"
-			}
-			timeout {
-				error "salloc not responding"
-			}
-			eof {
-				wait
-			}
-		}
+		set job_id1 [submit_job -fail "--account=$acct -N1 --mem=$grpmem_num -t1 -o /dev/null --wrap '$srun $bin_sleep 120'"]
+		subtest {![wait_for_job $job_id1 "RUNNING"]} "Job should run $wait_reason"
 
-		spawn $salloc --account=$acct -N1 --mem=$grpmem_num -t1 $srun $bin_sleep 10
-		expect  {
-			-re "Pending job allocation ($number)" {
-				set job_id2 $expect_out(1,string)
-				log_debug "Job $job_id2 is waiting for resources. This is expected"
-			}
-			-re "Granted job allocation ($number)" {
-				error "Job should have pended, but did not"
-			}
-			timeout {
-				error "salloc not responding"
-			}
-			eof {
-				wait
-			}
-		}
-
-		subtest [check_reason $job_id2 $wait_reason] "Job should have wait reason $wait_reason"
+		set job_id2 [submit_job -fail "--account=$acct -N1 --mem=$grpmem_num -t1 -o /dev/null --wrap '$srun $bin_sleep 10'"]
+		subtest {![wait_job_reason $job_id2 "PENDING" $wait_reason]} "Job should have pending reason $wait_reason"
 
 	} message] ; # Store the error message in $message
 
@@ -90,6 +55,6 @@ proc inc21_30_11 { wait_reason } {
 
 	# Convert any errors into failures (after cleaning up)
 	if {$exception_code == 1} { ; # errors only
-		fail "Failure testing Group Memory: $message"
+		fail "Failure testing $wait_reason: $message"
 	}
 }

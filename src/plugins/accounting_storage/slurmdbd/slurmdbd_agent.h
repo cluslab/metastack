@@ -1,7 +1,7 @@
 /****************************************************************************\
  *  slurmdbd_agent.h - functions to manage the connection to the SlurmDBD
  *****************************************************************************
- *  Copyright (C) 2011-2018 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov>
@@ -43,10 +43,10 @@
 #include "dbd_conn.h"
 #include "src/common/assoc_mgr.h"
 
-extern slurm_persist_conn_t *slurmdbd_conn;
+extern persist_conn_t *slurmdbd_conn;
 
 /* Set the slurmdbd_conn we will use for the agent */
-extern void slurmdbd_agent_set_conn(slurm_persist_conn_t *pc);
+extern void slurmdbd_agent_set_conn(persist_conn_t *pc);
 /* Shut down the agent */
 extern void slurmdbd_agent_rem_conn(void);
 

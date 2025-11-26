@@ -46,11 +46,11 @@ typedef struct {
 	char *		name;		/* name associated with a license */
 	uint32_t	total;		/* total license configued */
 	uint32_t	used;		/* used licenses */
-#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
-	uint32_t 	occupied;   /* number of license occupied outside the slurm */
-#endif
 	uint32_t	reserved;	/* currently reserved licenses */
 	uint8_t         remote;	        /* non-zero if remote (from database) */
+	uint32_t last_deficit;		/* last calculated deficit */
+	uint32_t last_consumed;		/* consumed count (for remote) */
+	time_t last_update;		/* last updated timestamp (for remote) */
 } licenses_t;
 
 /*
@@ -64,8 +64,7 @@ typedef struct {
 	slurmctld_resv_t *resv_ptr;
 } bf_license_t;
 
-extern List license_list;
-extern List clus_license_list;
+extern list_t *cluster_license_list;
 extern time_t last_license_update;
 
 /* Initialize licenses on this system based upon slurm.conf */
@@ -77,11 +76,8 @@ extern int license_update(char *licenses);
 
 extern void license_add_remote(slurmdb_res_rec_t *rec);
 extern void license_update_remote(slurmdb_res_rec_t *rec);
-#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
-extern int license_update_remote2(slurm_license_info_t *rec);
-#endif
 extern void license_remove_remote(slurmdb_res_rec_t *rec);
-extern void license_sync_remote(List res_list);
+extern void license_sync_remote(list_t *res_list);
 
 /* Free memory associated with licenses on this system */
 extern void license_free(void);
@@ -94,14 +90,15 @@ extern void license_free_rec(void *x);
  * IN license_list_src - job license list to be copied
  * RET a copy of the license list
  */
-extern List license_copy(List license_list_src);
+extern list_t *license_copy(list_t *license_list_src);
 
 /*
  * license_job_get - Get the licenses required for a job
  * IN job_ptr - job identification
+ * IN restore - is this a new allocation, or are we loading state from disk
  * RET SLURM_SUCCESS or failure code
  */
-extern int license_job_get(job_record_t *job_ptr);
+extern int license_job_get(job_record_t *job_ptr, bool restore);
 
 /*
  * license_job_merge - The licenses from one job have just been merged into
@@ -116,7 +113,26 @@ extern void license_job_merge(job_record_t *job_ptr);
  * IN job_ptr - job identification
  * RET SLURM_SUCCESS or failure code
  */
+extern int license_job_return_to_list(job_record_t *job_ptr,
+				      list_t *license_list);
+
+/*
+ * license_job_return - Return the licenses allocated to a job
+ * IN job_ptr - job identification
+ * RET SLURM_SUCCESS or failure code
+ */
 extern int license_job_return(job_record_t *job_ptr);
+
+/*
+ * license_job_test_with_list - Test if the licenses required for a job are
+ *	available in provided list
+ * IN job_ptr - job identification
+ * IN when    - time to check
+ * IN reboot    - true if node reboot required to start job
+ * RET: SLURM_SUCCESS, EAGAIN (not available now), SLURM_ERROR (never runnable)
+ */
+extern int license_job_test_with_list(job_record_t *job_ptr, time_t when,
+				      bool reboot, list_t *license_list);
 
 /*
  * license_job_test - Test if the licenses required for a job are available
@@ -130,14 +146,14 @@ extern int license_job_test(job_record_t *job_ptr, time_t when,
 
 #ifdef __METASTACK_OPT_MAIN_SCHED_LICENSE
 /*
- * sched_license_job_test - Test if the licenses required for a job are available
+ * sched_license_job_test_with_list - Test if the licenses required for a job are available
  * IN job_ptr - job identification
  * IN when    - time to check
  * IN reboot    - true if node reboot required to start job
  * RET: SLURM_SUCCESS, EAGAIN (not available now), SLURM_ERROR (never runnable)
  */
-extern int sched_license_job_test(job_record_t *job_ptr, time_t when,
-			    bool reboot);
+extern int sched_license_job_test_with_list(job_record_t *job_ptr, time_t when,
+				      bool reboot, list_t *license_list);
 
 /*
  * license_queue_modify_dic - Job request license is removed before job start
@@ -145,7 +161,7 @@ extern int sched_license_job_test(job_record_t *job_ptr, time_t when,
  * IN queue_license_list - queue license feature list
  * RET: SLURM_SUCCESS
  */
-extern int license_queue_modify_dic(job_record_t *job_ptr, List queue_license_list);
+extern int license_queue_modify_dic(job_record_t *job_ptr, list_t *queue_license_list);
 
 
 #endif
@@ -162,15 +178,15 @@ extern int license_queue_modify_dic(job_record_t *job_ptr, List queue_license_li
  *             are configured (though not necessarily available now)
  * RET license_list, must be destroyed by caller
  */
-extern List license_validate(char *licenses, bool validate_configured,
-			     bool validate_existing,
-			     uint64_t *tres_req_cnt, bool *valid);
+extern list_t *license_validate(char *licenses, bool validate_configured,
+				bool validate_existing,
+				uint64_t *tres_req_cnt, bool *valid);
 
 /*
  * license_list_overlap - test if there is any overlap in licenses
  *	names found in the two lists
  */
-extern bool license_list_overlap(List list_1, List list_2);
+extern bool license_list_overlap(list_t *list_1, list_t *list_2);
 
 /*
  * Given a list of license_t records, return a license string.
@@ -182,18 +198,14 @@ extern bool license_list_overlap(List list_1, List list_2);
  *
  * RET string representation of licenses. Must be destroyed by caller.
  */
-extern char *license_list_to_string(List license_list);
+extern char *license_list_to_string(list_t *license_list);
 
 /* pack_all_licenses()
  *
  * Get the licenses and the usage counters in the io buffer
  * to be sent out to the library
  */
-extern void
-get_all_license_info(char **buffer_ptr,
-                     int *buffer_size,
-                     uid_t uid,
-                     uint16_t protocol_version);
+extern buf_t *get_all_license_info(uint16_t protocol_version);
 
 /*
  * get_total_license_cnt - give me the total count of a given license name.
@@ -204,14 +216,14 @@ extern uint32_t get_total_license_cnt(char *name);
 /* node_read should be locked before coming in here
  * returns tres_str of the license_list.
  */
-extern char *licenses_2_tres_str(List license_list);
+extern char *licenses_2_tres_str(list_t *license_list);
 
 
 /* node_read should be locked before coming in here
  * fills in tres_cnt of the license_list.
  * locked if assoc_mgr tres read lock is locked or not.
  */
-extern void license_set_job_tres_cnt(List license_list,
+extern void license_set_job_tres_cnt(list_t *license_list,
 				     uint64_t *tres_cnt,
 				     bool locked);
 

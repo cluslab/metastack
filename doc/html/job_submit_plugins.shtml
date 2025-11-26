@@ -36,7 +36,11 @@ be located in the default configuration directory (typically the subdirectory
 "etc" of the installation directory). Slurmctld will fatal on startup if the
 configured lua script is invalid. Slurm will try to load the script for each
 job submission. If the script is broken or removed while slurmctld is running,
-Slurm will fallback to the previous working version of the script.</li>
+Slurm will fallback to the previous working version of the script.
+<b>Warning</b>: slurmctld runs this script while holding internal locks, and
+only a single copy of this script can run at a time. This blocks most
+concurrency in slurmctld. Therefore, this script should run to completion as
+quickly as possible.</li>
 <li><b>partition</b> &mdash; Sets a job's default partition based upon job
 submission parameters and available partitions.</li>
 <li><b>pbs</b> &mdash; Translate PBS job submission options to Slurm equivalent
@@ -89,7 +93,8 @@ The system <span class="commandline">_init()</span> is called before the Slurm
 int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char **error_msg)
 <p style="margin-left:.2in"><b>Description</b>:<br>
 This function is called by the slurmctld daemon with the job submission
-parameters supplied by the salloc, sbatch or srun command. Only explicitly
+parameters supplied by the user regardless of the command used (e.g.
+salloc, sbatch, slurmrestd). Only explicitly
 defined values will be represented. For values not defined at submit time
 <span class="commandline">slurm.NO_VAL/16/64</span> or
 <span class="commandline">nil</span> will be set. It can be used to log and/or
@@ -115,7 +120,8 @@ propagated to the caller, no matter the return code.<br>
 int job_modify(struct job_descriptor *job_desc, job_record_t *job_ptr, uint32_t modify_uid)
 <p style="margin-left:.2in"><b>Description</b>:<br>
 This function is called by the slurmctld daemon with job modification parameters
-supplied by the scontrol or sview command. It can be used to log and/or
+supplied by the user regardless of the command used (e.g. scontrol, sview,
+slurmrestd). It can be used to log and/or
 modify the job parameters supplied by the user as desired. Note that this
 function has access to the slurmctld's global data structures, for example to
 examine the available partitions, reservations, etc.
@@ -166,7 +172,8 @@ int slurm_job_submit(job_desc_msg_t *job_desc, List part_list, uint32_t
 submit_uid)
 <p style="margin-left:.2in"><b>Description</b>:<br>
 This function is called by the slurmctld daemon with the job submission
-parameters supplied by the salloc, sbatch or srun command. Only explicitly
+parameters supplied by the user regardless of the command used (e.g.
+salloc, sbatch, slurmrestd). Only explicitly
 defined values will be represented. For values not defined at submit time
 <span class="commandline">slurm.NO_VAL/16/64</span> or
 <span class="commandline">nil</span> will be set. It can be used to log and/or
@@ -187,23 +194,12 @@ Job submission accepted by plugin.<br>
 Job submission rejected due to error (Deprecated in 19.05).<br>
 <span class="commandline">slurm.ERROR</span> &mdash;
 Job submission rejected due to error.<br>
-<span class="commandline">slurm.ESLURM_ACCESS_DENIED</span> &mdash;
-Job submission rejected due to access denied.<br>
-<span class="commandline">slurm.ESLURM_ACCOUNTING_POLICY</span> &mdash;
-Job submission rejected due to accounting policy.<br>
-<span class="commandline">slurm.ESLURM_INVALID_ACCOUNT</span> &mdash;
-Job submission rejected due to invalid account.<br>
-<span class="commandline">slurm.ESLURM_INVALID_LICENSES</span> &mdash;
-Job submission rejected due to access licenses.<br>
-<span class="commandline">slurm.ESLURM_INVALID_TIME_LIMIT</span> &mdash;
-Job submission rejected due to invalid time limit.<br>
-<span class="commandline">slurm.ESLURM_JOB_MISSING_SIZE_SPECIFICATION</span> &mdash;
-Job submission rejected due to missing size specification.<br>
-<span class="commandline">slurm.ESLURM_MISSING_TIME_LIMIT</span> &mdash;
-Job submission rejected due to missing time limit.<br>
+<span class="commandline">slurm.ESLURM_*</span> &mdash;
+Job submission rejected due to error as defined by
+<i>slurm/slurm_errno.h</i> and <i>src/common/slurm_errno.c</i>.<br>
 
 <p><b>NOTE</b>: As <span class="commandline">job_desc</span> contains only
-user-specified values, undefinded values can be recognized (before defaults
+user-specified values, undefined values can be recognized (before defaults
 are set) by either checking for <span class="commandline">nil</span> or for
 the corresponding <span class="commandline">slurm.NO_VAL/16/64</span>. This
 allows sites to apply policies, such as requiring users to define the number
@@ -222,7 +218,8 @@ int slurm_job_modify(job_desc_msg_t *job_desc, job_record_t *job_ptr,
 List part_list, int modify_uid)
 <p style="margin-left:.2in"><b>Description</b>:<br>
 This function is called by the slurmctld daemon with job modification parameters
-supplied by the scontrol or sview command. It can be used to log and/or
+supplied by the user regardless of the command used (e.g. scontrol, sview,
+slurmrestd). It can be used to log and/or
 modify the job parameters supplied by the user as desired. Note that this
 function has access to the slurmctld's global data structures, for example to
 examine the available partitions, reservations, etc.
@@ -243,12 +240,12 @@ be modified.<br>
 <p>The available job attributes change occasionally with different versions of
 Slurm. To find the job attributes that are available for the version of Slurm
 you're using, go to the <a href="https://github.com/SchedMD/slurm"> SchedMD
-github page</a>, and navigate to
-<b>src/plugins/job_submit/lua/job_submit_lua.c</b>.
-<b>_job_rec_field()</b> contains the list of attributes available for the
-job_record (e.g. current record in Slurm). <b>_get_job_req_field()</b> contains
-the list of attributes available for the job_descriptor (e.g. submission or
-modification request).
+github page</a>. Navigate to <b>src/lua/slurm_lua.c</b> and look for function
+<b>slurm_lua_job_record_field()</b>, which contains the list
+of attributes available for the job_record (e.g. current record in Slurm).
+Navigate to <b>src/plugins/job_submit/lua/job_submit_lua.c</b> and look for
+function <b>_get_job_req_field()</b>, which contains the list of attributes
+available for the job_descriptor (e.g. submission or modification request).
 </p>
 
 <h2 id="building">Building<a class="slurm_link" href="#building"></a></h2>
@@ -332,6 +329,6 @@ cp job_submit_mine.so file \
    /usr/local/lib/slurm/job_submit_mine.so
 </pre>
 
-<p style="text-align:center;">Last modified 18 October 2022</p>
+<p style="text-align:center;">Last modified 30 October 2024</p>
 
 <!--#include virtual="footer.txt"-->

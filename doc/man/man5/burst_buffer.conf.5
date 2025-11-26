@@ -62,7 +62,7 @@ By default all users are permitted to use burst buffers.
 .TP
 \fBDirective\fR
 The string that must be used by a job to request a burst buffer. This string
-must be immediately preceeded by a single '#' character. This is currently only
+must be immediately preceded by a single '#' character. This is currently only
 used by the lua plugin. For the lua plugin, the default value is "BB_LUA".
 See burst_buffer.html for more details.
 .IP
@@ -77,7 +77,7 @@ Supported options include:
 .TP
 \fBDisablePersistent\fR
 Prevents regular users from being able to create and destroy persistent burst buffers.
-This is the default behaviour, only privileged users (Slurm operators and
+This is the default behavior, only privileged users (Slurm operators and
 administrators) can create or destroy persistent burst buffers.
 .IP
 
@@ -146,6 +146,14 @@ For the lua plugin, the maximum timeout value is 2073600 seconds (24 days).
 .IP
 
 .TP
+\fBPollInterval\fR
+This option only applies to the lua plugin.
+If the test_data_{in|out} hooks return success and "BUSY", then they will be
+called again after waiting for the specified number of seconds. The default
+value is 15 seconds.
+.IP
+
+.TP
 \fBPrivateData\fR
 If set to "true" then users will only be able to view burst buffers they can
 use.
@@ -195,7 +203,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "SEE ALSO"

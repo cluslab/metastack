@@ -29,11 +29,9 @@ There are several important configuration parameters relating to preemption:
 </P>
 <UL>
 <LI>
-<B>SelectType</B>: Slurm job preemption logic supports
-nodes allocated by the <I>select/linear</I> plugin,
-socket/core/CPU resources allocated by the <I>select/cons_res</I> and
-<I>select/cons_tres</I>  plugins, or <I>select/cray_aries</I> for Cray XC
-systems without ALPS.
+<B>SelectType</B>: Slurm job preemption logic supports nodes allocated by the
+<I>select/linear</I> plugin, socket/core/CPU resources allocated by the
+<I>select/cons_tres</I> plugin.
 </LI>
 <LI>
 <B>SelectTypeParameter</B>: Since resources may be getting over-allocated
@@ -42,10 +40,10 @@ plugin should be configured to track the amount of memory used by each job to
 ensure that memory page swapping does not occur.
 When <I>select/linear</I> is chosen, we recommend setting
 <I>SelectTypeParameter=CR_Memory</I>.
-When <I>select/cons_res</I> or <I>select/cons_tres</I> are chosen, we recommend
+When <I>select/cons_tres</I> is chosen, we recommend
 including Memory as a resource (e.g. <I>SelectTypeParameter=CR_Core_Memory</I>).
 <BR>
-<B>NOTE:</B> Unless <I>PreemptMode=SUSPEND,GANG</I> these memory management
+<b>NOTE</b>: Unless <i>PreemptMode=SUSPEND,GANG</i> these memory management
 parameters are not critical.
 </LI>
 <LI>
@@ -58,21 +56,26 @@ It may also be desirable to configure
 <I>MaxMemPerNode</I> (maximum memory per allocated node) in <I>slurm.conf</I>.
 Users can use the <I>--mem</I> or <I>--mem-per-cpu</I> option
 at job submission time to specify their memory requirements.
-<BR><B>NOTE:</B> Unless <I>PreemptMode=SUSPEND,GANG</I> these memory management
+<br><b>NOTE</b>: Unless <i>PreemptMode=SUSPEND,GANG</i> these memory management
 parameters are not critical.
 </LI>
 <LI>
 <B>GraceTime</B>: Specifies a time period for a job to execute after
 it is selected to be preempted. This option can be specified by partition or
-QOS using the <I>slurm.conf</I> file or database respectively. This option is
-only honored if <I>PreemptMode=CANCEL</I>. The <I>GraceTime</I> is specified in
+QOS using the <I>slurm.conf</I> file or database respectively.
+The <I>GraceTime</I> is specified in
 seconds and the default value is zero, which results in no preemption delay.
 Once a job has been selected for preemption, its end time is set to the
 current time plus <I>GraceTime</I>. The job is immediately sent SIGCONT and
 SIGTERM signals in order to provide notification of its imminent termination.
 This is followed by the SIGCONT, SIGTERM and SIGKILL signal sequence upon
 reaching its new end time.
+<br><b>NOTE</b>: This parameter is not used when <i>PreemptMode=SUSPEND</i>
+is configured or when suspending jobs with <i>scontrol suspend</i>. For
+setting the preemption grace time in these cases, see
+<a href="slurm.conf.html#OPT_suspend_grace_time">suspend_grace_time</a>.
 </LI>
+
 <LI>
 <B>JobAcctGatherType and JobAcctGatherFrequency</B>: The "maximum data segment
 size" and "maximum virtual memory size" system limits will be configured for
@@ -82,7 +85,7 @@ accounting with the <I>JobAcctGatherType</I> and <I>JobAcctGatherFrequency</I>
 parameters. When accounting is enabled and a job exceeds its configured memory
 limits, it will be canceled in order to prevent it from adversely affecting
 other jobs sharing the same resources.
-<BR><B>NOTE:</B> Unless <I>PreemptMode=SUSPEND,GANG</I> these memory management
+<br><b>NOTE</b>: Unless <i>PreemptMode=SUSPEND,GANG</i> these memory management
 parameters are not critical.
 </LI>
 <LI>
@@ -111,7 +114,8 @@ scheduling. It is only compatible with <I>PreemptType=preempt/none</I>.
 </LI>
 <LI>
 <I>GANG</I>: Enables gang scheduling (time slicing) of jobs in the same
-partition, and allows the resuming of suspended jobs.
+partition, and allows the resuming of suspended jobs. In order to use gang
+scheduling, the <b>GANG</b> option must be specified at the cluster level.
 <BR>
 <B>NOTE</B>: Gang scheduling is performed independently for each partition, so
 if you only want time-slicing by <I>OverSubscribe</I>, without any preemption,
@@ -158,11 +162,12 @@ preempted in order to start a pending job.
 from lower PriorityTier partitions. This is not compatible with
 <I>PreemptMode=OFF</I>.</LI>
 <LI><I>preempt/qos</I>: Job preemption rules are specified by Quality Of
-Service (QOS) specifications in the Slurm database. This option is not
-compatible with <I>PreemptMode=OFF</I>. A configuration of
-<I>PreemptMode=SUSPEND</I> is only supported by the
-<I>SelectType=select/cons_res</I> and <I>SelectType=select/cons_tres</I>
-plugins.
+Service (QOS) specifications in the Slurm database. In the case of
+<I>PreemptMode=SUSPEND</I>, a preempting job needs to be submitted to a
+partition with a higher PriorityTier or to the same partition.
+This option is not compatible with <I>PreemptMode=OFF</I>.
+A configuration of <I>PreemptMode=SUSPEND</I> is only supported by the
+<I>SelectType=select/cons_tres</I> plugin.
 See the <a href="sacctmgr.html">sacctmgr man page</a> to configure the options
 of <I>preempt/qos</I>.</LI>
 </UL>
@@ -174,13 +179,12 @@ is set to <i>REQUEUE</i> or <i>CANCEL</i>. It is specified as a time string:
 A time of -1 disables the option, equivalent to 0. Acceptable time formats
 include "minutes", "minutes:seconds", "hours:minutes:seconds", "days\-hours",
 "days\-hours:minutes", and "days\-hours:minutes:seconds".
-PreemptEligibleTime is shown in the output of "scontrol show job &ltjob id&gt"
+PreemptEligibleTime is shown in the output of "scontrol show job &lt;job id&gt;"
 </LI>
 <LI>
 <B>PriorityTier</B>: Configure the partition's <I>PriorityTier</I> setting
 relative to other partitions to control the preemptive behavior when
 <I>PreemptType=preempt/partition_prio</I>.
-This option is not relevant if <I>PreemptType=preempt/qos</I>.
 If two jobs from two
 different partitions are allocated to the same resources, the job in the
 partition with the greater <I>PriorityTier</I> value will preempt the job in the
@@ -205,13 +209,28 @@ default the max_share value is 4. In order to preempt jobs (and not gang
 schedule them), always set max_share to 1. To allow up to 2 jobs from this
 partition to be allocated to a common resource (and gang scheduled), set
 <I>OverSubscribe=FORCE:2</I>.
-<BR><B>NOTE:</B> <I>PreemptType=preempt/qos</I> will permit one additional job
+<br><b>NOTE</b>: <i>PreemptType=preempt/qos</i> will permit one additional job
 to be run on the partition if started due to job preemption. For example, a
 configuration of <I>OverSubscribe=FORCE:1</I> will only permit one job per
 resource normally, but a second job can be started if done so through
 preemption based upon QOS.
 </LI>
+<LI>
+<B>ExclusiveUser</B>: In partitions with <I>ExclusiveUser=YES</I>, jobs will be
+prevented from preempting or being preempted by any job from any other user.
+The one exception is that these ExclusiveUser jobs will be able to preempt
+(but not be preempted by) fully "--exclusive" jobs from other users.
+This is for the same reason that "--exclusive=user" blocks preemption, but this
+partition-level setting can only be overridden by making a job fully exclusive.
+</LI>
+<LI>
+<b>MCSParameters</b>: If <a href="mcs.html">MCS</a> labels are set on jobs,
+preemption will be restricted to other jobs with the same MCS label. If this
+parameter is configured to use <code>enforced,select</code>, MCS labels will
+be set by default on jobs, causing this restriction to be universal.
+</LI>
 </UL>
+
 <P>
 To enable preemption after making the configuration changes described above,
 restart Slurm if it is already running. Any change to the plugin settings in
@@ -223,10 +242,13 @@ Slurm requires a full restart of the daemons. If you just change the partition
 <P>
 If a job request restricts Slurm's ability to run jobs from multiple users or
 accounts on a node by using the "--exclusive=user" or "--exclusive=mcs" job
-options, that may prevent preemption of jobs to start jobs with preempting
-privileges. If preemption is used, it is generally advisable to disable the
-"--exclusive=user" and "--exclusive=mcs" job options by using a job_submit
-plugin (set the value of "shared" to "NO_VAL16").
+options, the job will be prevented from preempting or being preempted by any job
+that does not match the user or MCS. The one exception is that these
+exclusive=user jobs will be able to preempt (but not be preempted by)
+fully "--exclusive" jobs from other users. If preemption is used, it is
+generally advisable to disable the "--exclusive=user" and "--exclusive=mcs"
+job options by using a job_submit plugin (set the value of "job_desc.shared"
+to "NO_VAL16").
 </P>
 
 <P>
@@ -237,6 +259,13 @@ the first identified component of the job with the highest order PreemptMode
 used to set the PreemptMode for all components. The <I>GraceTime</I> and user
 warning signal for each component of the heterogeneous job remain unique.
 </P>
+
+<p>
+Because licenses are not freed when jobs are suspended, jobs using licenses
+requested by higher priority jobs will only be prempted when PreemptMode is
+either <i>REQUEUE</i> or <i>CANCEL</i> and
+<i>PreemptParameters=reclaim_licenses</i> is set.
+</p>
 
 <h2 id="operation">Preemption Design and Operation
 <a class="slurm_link" href="#operation"></a>
@@ -259,7 +288,7 @@ This list is sorted by either:
 <ol>
 <li>QOS priority,</li>
 <li>Partition priority and job size (to favor preempting smaller jobs), or</li>
-<li>Job start time (with <I>SchedulerParameters=preempt_youngest_first</I>).</li>
+<li>Job start time (with <I>PreemptParameters=youngest_first</I>).</li>
 </ol>
 <P>
 The select plugin will determine if the pending job can start without preempting
@@ -284,9 +313,8 @@ The process of simulating the preemption of each job in the priority ordered
 list will then be repeated for the final decision of which jobs to preempt.
 This two stage process may preempt jobs which are not strictly in preemption
 priority order, but fewer jobs will be preempted than otherwise required.
-See the SchedulerParameters configuration parameter options of
-<I>preempt_reorder_count</I> and <I>preempt_strict_order</I> for preemption
-tuning parameters.
+See the PreemptParameters configuration parameter options of <I>reorder_count</I>
+and <I>strict_order</I> for preemption tuning parameters.
 </P>
 <P>
 When enabled, the gang scheduling logic (which is also supports job
@@ -524,6 +552,6 @@ order to support ideal placements such as this, which can quickly complicate
 the design. Any and all help is welcome here!
 </P>
 
-<p style="text-align:center;">Last modified 18 February 2022</p>
+<p style="text-align:center;">Last modified 21 May 2024</p>
 
 <!--#include virtual="footer.txt"-->

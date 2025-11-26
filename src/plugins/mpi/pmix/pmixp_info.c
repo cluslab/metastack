@@ -49,22 +49,19 @@
 /* Server communication */
 static char *_srv_usock_path = NULL;
 static int _srv_usock_fd = -1;
-static bool _direct_conn = true;
-static bool _wireup_early = true;
-static bool _threaded_wireup = true;
-
+static bool _srv_use_direct_conn = true;
+static bool _srv_use_direct_conn_early = false;
 static bool _srv_same_arch = true;
 #ifdef HAVE_UCX
-static bool _direct_conn_ucx = true;
+static bool _srv_use_direct_conn_ucx = true;
 #endif
 static int _srv_fence_coll_type = PMIXP_COLL_TYPE_FENCE_MAX;
 static bool _srv_fence_coll_barrier = false;
-static size_t _delayed_profile_bufsize = 0;
 
 pmix_jobinfo_t _pmixp_job_info;
 
 static int _resources_set(char ***env);
-static int _env_set(char ***env);
+static int _env_set(const stepd_step_rec_t *step, char ***env);
 
 /* stepd global UNIX socket contact information */
 void pmixp_info_srv_usock_set(char *path, int fd)
@@ -93,33 +90,29 @@ bool pmixp_info_same_arch(void){
 
 
 bool pmixp_info_srv_direct_conn(void){
-	return _direct_conn;
+	return _srv_use_direct_conn;
 }
 
-bool pmixp_info_srv_wireup_early(void){
-	return _wireup_early && _direct_conn;
-}
-
-bool pmixp_info_srv_wireup_threaded(void){
-	return _threaded_wireup && _direct_conn;
+bool pmixp_info_srv_direct_conn_early(void){
+	return _srv_use_direct_conn_early && _srv_use_direct_conn;
 }
 #ifdef HAVE_UCX
 bool pmixp_info_srv_direct_conn_ucx(void){
-	return _direct_conn_ucx && _direct_conn;
+	return _srv_use_direct_conn_ucx && _srv_use_direct_conn;
 }
 #endif
 
 int pmixp_info_srv_fence_coll_type(void)
 {
-	if (!_direct_conn) {
+	if (!_srv_use_direct_conn) {
 		static bool printed = false;
-		if (!printed && PMIXP_COLL_TYPE_FENCE_RING == _srv_fence_coll_type) {
+		if (!printed && PMIXP_COLL_CPERF_RING == _srv_fence_coll_type) {
 			PMIXP_ERROR("Ring collective algorithm cannot be used "
 				    "with Slurm RPC's communication subsystem. "
 				    "Tree-based collective will be used instead.");
 			printed = true;
 		}
-		return PMIXP_COLL_TYPE_FENCE_TREE;
+		return PMIXP_COLL_CPERF_TREE;
 	}
 	return _srv_fence_coll_type;
 }
@@ -129,19 +122,8 @@ bool pmixp_info_srv_fence_coll_barrier(void)
 	return _srv_fence_coll_barrier;
 }
 
-/* Profiling setting */
-bool pmixp_info_prof_delayed(void)
-{
-	return !!(_delayed_profile_bufsize);
-}
-size_t pmixp_info_prof_bufsize(void)
-{
-	return _delayed_profile_bufsize;
-}
-
-
 /* Job information */
-int pmixp_info_set(const stepd_step_rec_t *job, char ***env)
+int pmixp_info_set(const stepd_step_rec_t *step, char ***env)
 {
 	int i, rc;
 	size_t msize;
@@ -150,36 +132,36 @@ int pmixp_info_set(const stepd_step_rec_t *job, char ***env)
 	_pmixp_job_info.magic = PMIXP_INFO_MAGIC;
 #endif
 	/* security info */
-	_pmixp_job_info.uid = job->uid;
-	_pmixp_job_info.gid = job->gid;
+	_pmixp_job_info.uid = step->uid;
+	_pmixp_job_info.gid = step->gid;
 
-	memcpy(&_pmixp_job_info.step_id, &job->step_id,
+	memcpy(&_pmixp_job_info.step_id, &step->step_id,
 	       sizeof(_pmixp_job_info.step_id));
 
-	if (job->het_job_id && (job->het_job_id != NO_VAL))
-		_pmixp_job_info.step_id.job_id = job->het_job_id;
+	if (step->het_job_id && (step->het_job_id != NO_VAL))
+		_pmixp_job_info.step_id.job_id = step->het_job_id;
 
-	if (job->het_job_offset != NO_VAL) {
-		_pmixp_job_info.node_id = job->nodeid +
-					  job->het_job_node_offset;
-		_pmixp_job_info.node_tasks = job->node_tasks;
-		_pmixp_job_info.ntasks = job->het_job_ntasks;
-		_pmixp_job_info.nnodes = job->het_job_nnodes;
+	if (step->het_job_offset != NO_VAL) {
+		_pmixp_job_info.node_id = step->nodeid +
+					  step->het_job_node_offset;
+		_pmixp_job_info.node_tasks = step->node_tasks;
+		_pmixp_job_info.ntasks = step->het_job_ntasks;
+		_pmixp_job_info.nnodes = step->het_job_nnodes;
 		msize = _pmixp_job_info.nnodes * sizeof(uint32_t);
 		_pmixp_job_info.task_cnts = xmalloc(msize);
 		for (i = 0; i < _pmixp_job_info.nnodes; i++)
 			_pmixp_job_info.task_cnts[i] =
-						job->het_job_task_cnts[i];
+						step->het_job_task_cnts[i];
 
 		msize = _pmixp_job_info.node_tasks * sizeof(uint32_t);
 		_pmixp_job_info.gtids = xmalloc(msize);
-		for (i = 0; i < job->node_tasks; i++) {
-			_pmixp_job_info.gtids[i] = job->task[i]->gtid +
-						   job->het_job_task_offset;
+		for (i = 0; i < step->node_tasks; i++) {
+			_pmixp_job_info.gtids[i] = step->task[i]->gtid +
+						   step->het_job_task_offset;
 		}
 #ifdef __METASTACK_BUG_HETJOB_SUPPORT
         for (i = 0; i < _pmixp_job_info.nnodes; i++) {
-            if(_pmixp_job_info.gtids[0] == job->het_job_tids[i][0])
+            if(_pmixp_job_info.gtids[0] == step->het_job_tids[i][0])
                  _pmixp_job_info.node_id = i;
         }
 /*
@@ -216,22 +198,22 @@ int pmixp_info_set(const stepd_step_rec_t *job, char ***env)
 */
 #endif
 	} else {
-		_pmixp_job_info.node_id = job->nodeid;
-		_pmixp_job_info.node_tasks = job->node_tasks;
-		_pmixp_job_info.ntasks = job->ntasks;
-		_pmixp_job_info.nnodes = job->nnodes;
+		_pmixp_job_info.node_id = step->nodeid;
+		_pmixp_job_info.node_tasks = step->node_tasks;
+		_pmixp_job_info.ntasks = step->ntasks;
+		_pmixp_job_info.nnodes = step->nnodes;
 		msize = _pmixp_job_info.nnodes * sizeof(uint32_t);
 		_pmixp_job_info.task_cnts = xmalloc(msize);
 		for (i = 0; i < _pmixp_job_info.nnodes; i++)
-			_pmixp_job_info.task_cnts[i] = job->task_cnts[i];
+			_pmixp_job_info.task_cnts[i] = step->task_cnts[i];
 
 		msize = _pmixp_job_info.node_tasks * sizeof(uint32_t);
 		_pmixp_job_info.gtids = xmalloc(msize);
-		for (i = 0; i < job->node_tasks; i++)
-			_pmixp_job_info.gtids[i] = job->task[i]->gtid;
+		for (i = 0; i < step->node_tasks; i++)
+			_pmixp_job_info.gtids[i] = step->task[i]->gtid;
 	}
 #if 0
-	if ((job->het_job_id != 0) && (job->het_job_id != NO_VAL))
+	if ((step->het_job_id != 0) && (step->het_job_id != NO_VAL))
 		info("HET_JOB_ID:%u", _pmixp_job_info.step_id.job_id);
 	info("%ps", &_pmixp_job_info.step_id);
 	info("NODEID:%u", _pmixp_job_info.node_id);
@@ -240,16 +222,18 @@ int pmixp_info_set(const stepd_step_rec_t *job, char ***env)
 	info("NNODES:%u", _pmixp_job_info.nnodes);
 	for (i = 0; i < _pmixp_job_info.nnodes; i++)
 		info("TASK_CNT[%d]:%u", i,_pmixp_job_info.task_cnts[i]);
-	for (i = 0; i < job->node_tasks; i++)
+	for (i = 0; i < step->node_tasks; i++)
 		info("GTIDS[%d]:%u", i, _pmixp_job_info.gtids[i]);
 #endif
 
-	/* Setup hostnames and job-wide info */
+	_pmixp_job_info.hostname = xstrdup(step->node_name);
+
+	/* Setup job-wide info */
 	if ((rc = _resources_set(env))) {
 		return rc;
 	}
 
-	if ((rc = _env_set(env))) {
+	if ((rc = _env_set(step, env))) {
 		return rc;
 	}
 
@@ -301,7 +285,7 @@ eio_handle_t *pmixp_info_io(void)
  */
 
 /*
- * Derived from src/srun/libsrun/opt.c
+ * Derived from src/srun/opt.c
  * _get_task_count()
  *
  * FIXME: original _get_task_count has some additinal ckeck
@@ -371,12 +355,12 @@ static int _resources_set(char ***env)
 	else
 		_pmixp_job_info.abort_agent_port = -1;
 
-	/* Initialize all memory pointers that would be allocated to NULL
+	/*
+	 * Initialize all memory pointers
 	 * So in case of error exit we will know what to xfree
 	 */
 	_pmixp_job_info.job_hl = hostlist_create("");
 	_pmixp_job_info.step_hl = hostlist_create("");
-	_pmixp_job_info.hostname = NULL;
 
 	/* Save step host list */
 	p = getenvp(*env, PMIXP_STEP_NODES_ENV);
@@ -386,11 +370,6 @@ static int _resources_set(char ***env)
 		goto err_exit;
 	}
 	hostlist_push(_pmixp_job_info.step_hl, p);
-
-	/* Extract our node name */
-	p = hostlist_nth(_pmixp_job_info.step_hl, _pmixp_job_info.node_id);
-	_pmixp_job_info.hostname = xstrdup(p);
-	free(p);
 
 	/* Determine job-wide node id and job-wide node count */
 	p = getenvp(*env, PMIXP_JOB_NODES_ENV);
@@ -475,7 +454,7 @@ static void _parse_pmix_conf_env(char ***env, char *pmix_conf_env)
 	xfree(tmp);
 }
 
-static int _env_set(char ***env)
+static int _env_set(const stepd_step_rec_t *step, char ***env)
 {
 	char *p = NULL;
 
@@ -488,12 +467,23 @@ static int _env_set(char ***env)
 	 */
 	_parse_pmix_conf_env(env, slurm_pmix_conf.env);
 
-	_pmixp_job_info.server_addr_unfmt =
-		xstrdup(slurm_conf.slurmd_spooldir);
+	if (step->container) {
+		_pmixp_job_info.server_addr_unfmt =
+			xstrdup(step->container->spool_dir);
+		_pmixp_job_info.client_lib_tmpdir =
+			xstrdup(step->container->mount_spool_dir);
+	} else {
+		_pmixp_job_info.server_addr_unfmt =
+			xstrdup(slurm_conf.slurmd_spooldir);
+	}
 
-	_pmixp_job_info.lib_tmpdir = slurm_conf_expand_slurmd_path(
-				_pmixp_job_info.server_addr_unfmt,
-				_pmixp_job_info.hostname, NULL);
+	debug2("set _pmixp_job_info.server_addr_unfmt = %s",
+	       _pmixp_job_info.server_addr_unfmt);
+
+	if (!_pmixp_job_info.lib_tmpdir)
+		_pmixp_job_info.lib_tmpdir = slurm_conf_expand_slurmd_path(
+			_pmixp_job_info.server_addr_unfmt,
+			_pmixp_job_info.hostname, NULL);
 
 	xstrfmtcat(_pmixp_job_info.server_addr_unfmt,
 		   "/stepd.slurm.pmix.%d.%d",
@@ -513,6 +503,9 @@ static int _env_set(char ***env)
 
 	if (p){
 		_pmixp_job_info.cli_tmpdir_base = xstrdup(p);
+	} else if (step->container) {
+		_pmixp_job_info.cli_tmpdir_base = xstrdup(
+			step->container->spool_dir);
 	} else if (slurm_pmix_conf.cli_tmpdir_base)
 		_pmixp_job_info.cli_tmpdir_base =
 			xstrdup(slurm_pmix_conf.cli_tmpdir_base);
@@ -578,36 +571,25 @@ static int _env_set(char ***env)
 	if (p) {
 		if (!xstrcmp("1",p) || !xstrcasecmp("true", p) ||
 		    !xstrcasecmp("yes", p)) {
-			_direct_conn = true;
+			_srv_use_direct_conn = true;
 		} else if (!xstrcmp("0",p) || !xstrcasecmp("false", p) ||
 			   !xstrcasecmp("no", p)) {
-			_direct_conn = false;
+			_srv_use_direct_conn = false;
 		}
 	} else
-		_direct_conn = slurm_pmix_conf.direct_conn;
+		_srv_use_direct_conn = slurm_pmix_conf.direct_conn;
 
 	p = getenvp(*env, PMIXP_DIRECT_CONN_EARLY);
 	if (p) {
 		if (!xstrcmp("1", p) || !xstrcasecmp("true", p) ||
 		    !xstrcasecmp("yes", p)) {
-			_wireup_early = true;
+			_srv_use_direct_conn_early = true;
 		} else if (!xstrcmp("0", p) || !xstrcasecmp("false", p) ||
 			   !xstrcasecmp("no", p)) {
-			_wireup_early = false;
+			_srv_use_direct_conn_early = false;
 		}
 	} else
-		_wireup_early = slurm_pmix_conf.direct_conn_early;
-
-	p = getenvp(*env, PMIXP_DIRECT_CONN_EARLY_THREAD);
-	if (p) {
-		if (!xstrcmp("1", p) || !xstrcasecmp("true", p) ||
-				!xstrcasecmp("yes", p)) {
-			_threaded_wireup = true;
-		} else if (!xstrcmp("0", p) || !xstrcasecmp("false", p) ||
-			   !xstrcasecmp("no", p)) {
-			_threaded_wireup = false;
-		}
-	}
+		_srv_use_direct_conn_early = slurm_pmix_conf.direct_conn_early;
 
 	/*------------- Fence coll type setting ----------*/
 	p = getenvp(*env, PMIXP_COLL_FENCE);
@@ -615,11 +597,11 @@ static int _env_set(char ***env)
 		p = slurm_pmix_conf.coll_fence;
 	if (p) {
 		if (!xstrcmp("mixed", p)) {
-			_srv_fence_coll_type = PMIXP_COLL_TYPE_FENCE_MAX;
+			_srv_fence_coll_type = PMIXP_COLL_CPERF_MIXED;
 		} else if (!xstrcmp("tree", p)) {
-			_srv_fence_coll_type = PMIXP_COLL_TYPE_FENCE_TREE;
+			_srv_fence_coll_type = PMIXP_COLL_CPERF_TREE;
 		} else if (!xstrcmp("ring", p)) {
-			_srv_fence_coll_type = PMIXP_COLL_TYPE_FENCE_RING;
+			_srv_fence_coll_type = PMIXP_COLL_CPERF_RING;
 		}
 	}
 
@@ -640,13 +622,13 @@ static int _env_set(char ***env)
 	if (p) {
 		if (!xstrcmp("1",p) || !xstrcasecmp("true", p) ||
 		    !xstrcasecmp("yes", p)) {
-			_direct_conn_ucx = true;
+			_srv_use_direct_conn_ucx = true;
 		} else if (!xstrcmp("0",p) || !xstrcasecmp("false", p) ||
 			   !xstrcasecmp("no", p)) {
-			_direct_conn_ucx = false;
+			_srv_use_direct_conn_ucx = false;
 		}
 	} else
-		_direct_conn_ucx = slurm_pmix_conf.direct_conn_ucx;
+		_srv_use_direct_conn_ucx = slurm_pmix_conf.direct_conn_ucx;
 
 	/* Propagate UCX env */
 	p = getenvp(*env, "UCX_NET_DEVICES");
@@ -663,25 +645,12 @@ static int _env_set(char ***env)
 
 #ifdef __METASTACK_OPT_ENV_UCX_IB_ADDR_TYPE
 	p = getenvp(*env, "UCX_IB_ADDR_TYPE");
-    if (p) {
-        setenv("UCX_IB_ADDR_TYPE", p, 1);
-    }
-#endif
-
-#endif
-
-	/* Profiling, only work with *this* daemon's environment! */
-	p = getenv(PMIXP_PROF_DELAYED);
 	if (p) {
-		_delayed_profile_bufsize = atoi(p);
-		if(_delayed_profile_bufsize < 0) {
-			_delayed_profile_bufsize = 0;
-		}
-		if( _delayed_profile_bufsize > PMIXP_DELAYED_PROF_MAX) {
-			PMIXP_ERROR("ERROR: Reduce the delayed profiling buffer size to %du, see PMIXP_DELAYED_PROF_MAX for the max limitation",
-				    PMIXP_DELAYED_PROF_MAX)
-			_delayed_profile_bufsize = PMIXP_DELAYED_PROF_MAX;
-		}
+		setenv("UCX_IB_ADDR_TYPE", p, 1);
 	}
+#endif
+
+#endif
+
 	return SLURM_SUCCESS;
 }

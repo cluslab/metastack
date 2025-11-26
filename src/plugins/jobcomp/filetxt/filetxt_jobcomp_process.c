@@ -44,7 +44,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
-#include "src/common/slurm_jobcomp.h"
+#include "src/interfaces/jobcomp.h"
 #include "src/common/xmalloc.h"
 #include "src/common/parse_time.h"
 #include "filetxt_jobcomp_process.h"
@@ -89,7 +89,7 @@ static FILE *_open_log_file(char *logfile)
 
 static jobcomp_job_rec_t *_parse_line(List job_info_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	filetxt_jobcomp_info_t *jobcomp_info = NULL;
 	jobcomp_job_rec_t *job = xmalloc(sizeof(jobcomp_job_rec_t));
 	char *temp = NULL;
@@ -165,16 +165,20 @@ static jobcomp_job_rec_t *_parse_line(List job_info_list)
 		} else if (!xstrcasecmp("ExitCode", jobcomp_info->name)) {
 			job->exit_code = xstrdup(jobcomp_info->val);
 		} else {
-		#ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
+#ifdef __METASTACK_OPT_ACCOUNTING_ENHANCE
 		// With this macro, some newly added params are not processed,
 		// so ignore the error message
-		#else
+#else
 			error("Unknown type %s: %s", jobcomp_info->name,
 			      jobcomp_info->val);
-		#endif
+#endif
 		}
 	}
-	job->elapsed_time = end_time - start_time;
+
+	if (end_time && start_time && start_time < end_time)
+		job->elapsed_time = end_time - start_time;
+	else
+		job->elapsed_time = 0;
 	list_iterator_destroy(itr);
 
 	return job;
@@ -187,11 +191,10 @@ extern List filetxt_jobcomp_process_get_jobs(slurmdb_job_cond_t *job_cond)
 	int jobid = 0;
 	char *partition = NULL;
 	FILE *fd = NULL;
-	int lc = 0;
 	jobcomp_job_rec_t *job = NULL;
 	slurm_selected_step_t *selected_step = NULL;
 	char *selected_part = NULL;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	List job_info_list = NULL;
 	filetxt_jobcomp_info_t *jobcomp_info = NULL;
 	List job_list = list_create(jobcomp_destroy_job);
@@ -199,7 +202,6 @@ extern List filetxt_jobcomp_process_get_jobs(slurmdb_job_cond_t *job_cond)
 	fd = _open_log_file(slurm_conf.job_comp_loc);
 
 	while (fgets(line, BUFFER_SIZE, fd)) {
-		lc++;
 		fptr = line;	/* break the record into NULL-
 				   terminated strings */
 		FREE_NULL_LIST(job_info_list);

@@ -50,6 +50,7 @@
 #include "slurm/slurm_errno.h"
 
 #include "src/common/macros.h"
+#include "src/common/slurm_protocol_defs.h"
 #include "src/common/timers.h"
 #include "src/common/uid.h"
 #include "src/common/xmalloc.h"
@@ -135,7 +136,7 @@ int uid_from_string(const char *name, uid_t *uidp)
 	   || (name == p)
 	   || (*p != '\0')
 	   || (l < 0)
-	   || (l > INT_MAX))
+	   || (l > UINT32_MAX))
 		return -1;
 
 	/*
@@ -171,25 +172,14 @@ char *uid_to_string_or_null(uid_t uid)
 	return ustring;
 }
 
-/*
- * Convert a uid to an xmalloc'd string.
- * Always returns a string - "nobody" is sent back on error.
- */
-char *uid_to_string(uid_t uid)
+extern char *uid_to_string(uid_t uid)
 {
 	char *result = uid_to_string_or_null(uid);
 
 	if (!result)
-		result = xstrdup("nobody");
+		result = xstrdup_printf("%u", uid);
 
 	return result;
-}
-
-static int _uid_compare(const void *a, const void *b)
-{
-	uid_t ua = *(const uid_t *)a;
-	uid_t ub = *(const uid_t *)b;
-	return ua - ub;
 }
 
 extern void uid_cache_clear(void)
@@ -210,8 +200,12 @@ extern char *uid_to_string_cached(uid_t uid)
 	uid_cache_entry_t target = {uid, NULL};
 
 	slurm_mutex_lock(&uid_lock);
+	/* 
+	 * bsearch and qsort depend on the first field of uid_cache_entry
+	 * being a 16 bit integer uid
+	 */
 	entry = bsearch(&target, uid_cache, uid_cache_used,
-			sizeof(uid_cache_entry_t), _uid_compare);
+			sizeof(uid_cache_entry_t), slurm_sort_uint16_list_asc);
 	if (entry == NULL) {
 		uid_cache_entry_t new_entry = {uid, uid_to_string(uid)};
 		uid_cache_used++;
@@ -219,12 +213,40 @@ extern char *uid_to_string_cached(uid_t uid)
 				     sizeof(uid_cache_entry_t)*uid_cache_used);
 		uid_cache[uid_cache_used-1] = new_entry;
 		qsort(uid_cache, uid_cache_used, sizeof(uid_cache_entry_t),
-		      _uid_compare);
+		      slurm_sort_uint16_list_asc);
 		slurm_mutex_unlock(&uid_lock);
 		return new_entry.username;
 	}
 	slurm_mutex_unlock(&uid_lock);
 	return entry->username;
+}
+
+extern char *uid_to_dir(uid_t uid)
+{
+	struct passwd pwd, *result;
+	char buffer[PW_BUF_SIZE];
+	char *dir = NULL;
+	int rc;
+
+	rc = slurm_getpwuid_r(uid, &pwd, buffer, PW_BUF_SIZE, &result);
+	if (result && (rc == 0))
+		dir = xstrdup(result->pw_dir);
+
+	return dir;
+}
+
+extern char *uid_to_shell(uid_t uid)
+{
+	struct passwd pwd, *result;
+	char buffer[PW_BUF_SIZE];
+	char *shell = NULL;
+	int rc;
+
+	rc = slurm_getpwuid_r(uid, &pwd, buffer, PW_BUF_SIZE, &result);
+	if (result && (rc == 0))
+		shell = xstrdup(result->pw_shell);
+
+	return shell;
 }
 
 gid_t
@@ -266,32 +288,15 @@ static int _getgrnam_r (const char *name, struct group *grp, char *buf,
 	return (rc);
 }
 
-static int _getgrgid_r (gid_t gid, struct group *grp, char *buf,
-		size_t bufsiz, struct group **result)
-{
-	DEF_TIMERS;
-	int rc;
-
-	START_TIMER;
-
-	while (1) {
-		rc = getgrgid_r (gid, grp, buf, bufsiz, result);
-		if (rc == EINTR)
-			continue;
-		if (rc != 0)
-			*result = NULL;
-		break;
-	}
-
-	END_TIMER2(__func__);
-
-	return rc;
-}
-
 int gid_from_string(const char *name, gid_t *gidp)
 {
+	DEF_TIMERS;
 	struct group grp, *result;
-	char buffer[PW_BUF_SIZE], *p = NULL;
+	char buf_stack[PW_BUF_SIZE];
+	char *buf_malloc = NULL;
+	char *curr_buf = buf_stack;
+	size_t bufsize = PW_BUF_SIZE;
+	char *p = NULL;
 	long l;
 
 	if (!name)
@@ -300,7 +305,7 @@ int gid_from_string(const char *name, gid_t *gidp)
 	/*
 	 *  Check for valid group name first.
 	 */
-	if ((_getgrnam_r (name, &grp, buffer, PW_BUF_SIZE, &result) == 0)
+	if ((_getgrnam_r(name, &grp, buf_stack, bufsize, &result) == 0)
 	    && result != NULL) {
 		*gidp = result->gr_gid;
 		return 0;
@@ -321,20 +326,39 @@ int gid_from_string(const char *name, gid_t *gidp)
 	/*
 	 *  Now ensure the supplied uid is in the user database
 	 */
-	if ((_getgrgid_r (l, &grp, buffer, PW_BUF_SIZE, &result) != 0)
-	    || result == NULL)
+	START_TIMER;
+	while (true) {
+		int rc = getgrgid_r(l, &grp, curr_buf, bufsize, &result);
+		if (rc == EINTR) {
+			continue;
+		} else if (rc == ERANGE) {
+			bufsize *= 2;
+			curr_buf = xrealloc(buf_malloc, bufsize);
+			continue;
+		} else if (rc)
+			result = NULL;
+		break;
+	}
+	END_TIMER2("getgrgid_r");
+
+	xfree(buf_malloc);
+	/*
+	 * Warning - result is now a pointer to invalid memory.
+	 * Do not dereference it, but checking that it is non-NULL is safe.
+	 */
+	if (!result)
 		return -1;
 
 	*gidp = (gid_t) l;
 	return 0;
 }
 
-char *gid_to_string(gid_t gid)
+extern char *gid_to_string(gid_t gid)
 {
 	char *result = gid_to_string_or_null(gid);
 
 	if (!result)
-		return xstrdup("nobody");
+		return xstrdup_printf("%u", gid);
 
 	return result;
 }
@@ -345,13 +369,33 @@ char *gid_to_string(gid_t gid)
  */
 char *gid_to_string_or_null(gid_t gid)
 {
+	DEF_TIMERS;
 	struct group grp, *result;
-	char buffer[PW_BUF_SIZE];
-	int rc;
+	char buf_stack[PW_BUF_SIZE];
+	char *buf_malloc = NULL;
+	size_t bufsize = PW_BUF_SIZE;
+	char *curr_buf = buf_stack;
+	char *name = NULL;
 
-	rc = _getgrgid_r(gid, &grp, buffer, PW_BUF_SIZE, &result);
-	if (rc == 0 && result)
-		return xstrdup(result->gr_name);
+	START_TIMER;
+	while (true) {
+		int rc = getgrgid_r(gid, &grp, curr_buf, bufsize, &result);
+		if (rc == EINTR) {
+			continue;
+		} else if (rc == ERANGE) {
+			bufsize *= 2;
+			curr_buf = xrealloc(buf_malloc, bufsize);
+			continue;
+		} else if (rc)
+			result = NULL;
+		break;
+	}
+	END_TIMER2("getgrgid_r");
 
-	return NULL;
+	if (result)
+		name = xstrdup(result->gr_name);
+
+	xfree(buf_malloc);
+
+	return name;
 }

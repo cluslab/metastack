@@ -51,13 +51,14 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "src/common/data.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 #include "src/common/list.h"
 #include "src/common/hostlist.h"
-#include "src/common/slurm_jobacct_gather.h"
-#include "src/common/slurm_accounting_storage.h"
-#include "src/common/slurm_jobcomp.h"
+#include "src/interfaces/jobacct_gather.h"
+#include "src/interfaces/accounting_storage.h"
+#include "src/interfaces/jobcomp.h"
 #include "src/common/print_fields.h"
 
 #define ERROR 2
@@ -66,13 +67,13 @@
 #define BRIEF_COMP_FIELDS "jobid,uid,state"
 #define DEFAULT_FIELDS "jobid,jobname,partition,account,alloccpus,state,exitcode"
 #define DEFAULT_COMP_FIELDS "jobid,uid,jobname,partition,nnodes,nodelist,state,end"
-
 //NOTE: add /command/stdout/stderr to long-fileld formats while ALL addon fields enabled
 //#ifdef __METASTACK_OPT_RESC_NODEDETAIL
 #if (defined __METASTACK_OPT_RESC_NODEDETAIL) && (defined __METASTACK_OPT_SACCT_COMMAND) && (defined __METASTACK_OPT_SACCT_OUTPUT)
 #define LONG_FIELDS "jobid,jobidraw,jobname,partition,maxvmsize,maxvmsizenode,maxvmsizetask,avevmsize,maxrss,maxrssnode,maxrsstask,averss,maxpages,maxpagesnode,maxpagestask,avepages,mincpu,mincpunode,mincputask,avecpu,ntasks,alloccpus,elapsed,state,exitcode,avecpufreq,reqcpufreqmin,reqcpufreqmax,reqcpufreqgov,reqmem,consumedenergy,maxdiskread,maxdiskreadnode,maxdiskreadtask,avediskread,maxdiskwrite,maxdiskwritenode,maxdiskwritetask,avediskwrite,reqtres,alloctres,tresusageinave,tresusageinmax,tresusageinmaxn,tresusageinmaxt,tresusageinmin,tresusageinminn,tresusageinmint,tresusageintot,tresusageoutmax,tresusageoutmaxn,tresusageoutmaxt,tresusageoutave,tresusageouttot,resourcenodedetail,command,stdout,stderr"
 #else
 #define LONG_FIELDS "jobid,jobidraw,jobname,partition,maxvmsize,maxvmsizenode,maxvmsizetask,avevmsize,maxrss,maxrssnode,maxrsstask,averss,maxpages,maxpagesnode,maxpagestask,avepages,mincpu,mincpunode,mincputask,avecpu,ntasks,alloccpus,elapsed,state,exitcode,avecpufreq,reqcpufreqmin,reqcpufreqmax,reqcpufreqgov,reqmem,consumedenergy,maxdiskread,maxdiskreadnode,maxdiskreadtask,avediskread,maxdiskwrite,maxdiskwritenode,maxdiskwritetask,avediskwrite,reqtres,alloctres,tresusageinave,tresusageinmax,tresusageinmaxn,tresusageinmaxt,tresusageinmin,tresusageinminn,tresusageinmint,tresusageintot,tresusageoutmax,tresusageoutmaxn,tresusageoutmaxt,tresusageoutave,tresusageouttot"
+
 #endif
 
 #define LONG_COMP_FIELDS "jobid,uid,jobname,partition,nnodes,nodelist,state,start,end,timelimit"
@@ -124,6 +125,8 @@ typedef enum {
 		PRINT_ELIGIBLE,
 		PRINT_END,
 		PRINT_EXITCODE,
+		PRINT_EXTRA,
+		PRINT_FAILED_NODE,
 		PRINT_FLAGS,
 		PRINT_GID,
 		PRINT_GROUP,
@@ -131,6 +134,7 @@ typedef enum {
 		PRINT_JOBIDRAW,
 		PRINT_JOBNAME,
 		PRINT_LAYOUT,
+		PRINT_LICENSES,
 		PRINT_MAXDISKREAD,
 		PRINT_MAXDISKREADNODE,
 		PRINT_MAXDISKREADTASK,
@@ -154,6 +158,9 @@ typedef enum {
 		PRINT_NODELIST,
 		PRINT_NTASKS,
 		PRINT_PARTITION,
+		PRINT_PLANNED,
+		PRINT_PLANNED_CPU,
+		PRINT_PLANNED_CPU_RAW,
 		PRINT_PRIO,
 		PRINT_QOS,
 		PRINT_QOSRAW,
@@ -166,11 +173,11 @@ typedef enum {
 		PRINT_REQ_NODES,
 		PRINT_RESERVATION,
 		PRINT_RESERVATION_ID,
-		PRINT_RESV,
-		PRINT_RESV_CPU,
-		PRINT_RESV_CPU_RAW,
 		PRINT_START,
 		PRINT_STATE,
+		PRINT_STDERR,
+		PRINT_STDIN,
+		PRINT_STDOUT,
 		PRINT_SUBMIT,
 		PRINT_SUBMIT_LINE,
 		PRINT_SUSPENDED,
@@ -205,10 +212,6 @@ typedef enum {
 #ifdef __METASTACK_OPT_SACCT_COMMAND
 		PRINT_COMMAND,
 #endif
-#ifdef __METASTACK_OPT_SACCT_OUTPUT
-		PRINT_STDOUT,
-		PRINT_STDERR,
-#endif
 		PRINT_WCKEYID,
 		PRINT_WORK_DIR
 } sacct_print_types_t;
@@ -217,17 +220,20 @@ typedef struct {
 	char *cluster_name;	/* Set if in federated cluster */
 	uint32_t convert_flags;	/* --noconvert */
 	slurmdb_job_cond_t *job_cond;
+	bool opt_array;		/* --array */
 	int opt_completion;	/* --completion */
+	bool expand_patterns;	/* substitute stdin/err/out patterns */
 	bool opt_federation;	/* --federation */
 	char *opt_field_list;	/* --fields= */
-	int opt_gid;		/* running persons gid */
+	gid_t opt_gid;		/* running persons gid */
 	int opt_help;		/* --help */
 	bool opt_local;		/* --local */
 	int opt_noheader;	/* can only be cleared */
-	int opt_uid;		/* running persons uid */
+	uid_t opt_uid;		/* running persons uid */
 	int units;		/* --units*/
 	bool use_local_uid;	/* --use-local-uid */
 	char *mimetype;         /* --yaml or --json */
+	char *data_parser;      /* data_parser args */
 } sacct_parameters_t;
 
 extern print_field_t fields[];
@@ -235,7 +241,7 @@ extern sacct_parameters_t params;
 
 extern List jobs;
 extern List print_fields_list;
-extern ListIterator print_fields_itr;
+extern list_itr_t *print_fields_itr;
 extern int field_count;
 extern List g_qos_list;
 extern List g_tres_list;
@@ -250,10 +256,9 @@ void print_fields(type_t type, void *object);
 int  get_data(void);
 void parse_command_line(int argc, char **argv);
 void do_help(void);
-void do_list(void);
+void do_list(int argc, char **argv);
 void do_list_completion(void);
 void sacct_init(void);
 void sacct_fini(void);
-extern void dump_data(int argc, char **argv);
 
 #endif /* !_SACCT_H */

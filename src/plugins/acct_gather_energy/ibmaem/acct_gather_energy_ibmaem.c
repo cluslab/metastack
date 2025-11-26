@@ -39,7 +39,7 @@
 /* acct_gather_energy_ibmaem */
 
 #include "src/common/slurm_xlator.h"
-#include "src/common/slurm_acct_gather_energy.h"
+#include "src/interfaces/acct_gather_energy.h"
 
 /*
  * These variables are required by the generic plugin interface.  If they
@@ -75,7 +75,7 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 #define IBMAEM_SYSFS_POWER_FILENAME "power1_average"
 
 static acct_gather_energy_t *local_energy = NULL;
-static stepd_step_rec_t *job = NULL;
+static stepd_step_rec_t *step = NULL;
 
 enum {
 	GET_ENERGY,
@@ -239,11 +239,18 @@ extern int init(void)
 
 extern int fini(void)
 {
-	if (!running_in_slurmd_stepd())
-		return SLURM_SUCCESS;
+	/*
+	 * We don't really want to destroy the the state, so those values
+	 * persist a reconfig. And if the process dies, this will be lost
+	 * anyway. So not freeing this variable is not really a leak.
+	 *
+	 * if (!running_in_slurmd_stepd())
+	 * 	return SLURM_SUCCESS;
+	 *
+	 * acct_gather_energy_destroy(local_energy);
+	 * local_energy = NULL;
+	 */
 
-	acct_gather_energy_destroy(local_energy);
-	local_energy = NULL;
 	return SLURM_SUCCESS;
 }
 
@@ -300,7 +307,7 @@ extern int acct_gather_energy_p_set_data(enum acct_energy_type data_type,
 		break;
 	case ENERGY_DATA_STEP_PTR:
 		/* set global job if needed later */
-		job = (stepd_step_rec_t *)data;
+		step = (stepd_step_rec_t *)data;
 		break;
 	default:
 		error("acct_gather_energy_p_set_data: unknown enum %d",

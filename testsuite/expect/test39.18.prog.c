@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  Test gres.conf and system GPU normalization and merging logic.
  *****************************************************************************
- *  Copyright (C) 2018 SchedMD LLC
- *  Written by Michael Hinton
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -35,9 +34,9 @@
 \*****************************************************************************/
 
 #include <sys/stat.h>
-#include "src/common/gres.h"
+#include "src/interfaces/gres.h"
 #include "src/common/read_config.h"
-#include "src/common/select.h"
+#include "src/interfaces/select.h"
 #include "src/common/xstring.h"
 
 /*
@@ -133,13 +132,11 @@ int main(int argc, char *argv[])
 
 	slurm_init(NULL);
 
-	// Initialize GRES info (from slurm.conf)
-	rc = gres_init_node_config(slurm_conf_gres_str, &gres_list);
-	if (rc != SLURM_SUCCESS) {
-		slurm_perror("FAILURE: gres_init_node_config");
-		exit(1);
-	}
+	if (select_g_init(1) != SLURM_SUCCESS)
+		fatal("failed to initialize node selection plugin");
 
+	// Initialize GRES info (from slurm.conf)
+	gres_init_node_config(slurm_conf_gres_str, &gres_list);
 	rc = gres_g_node_config_load(4, node_name, gres_list, NULL, NULL);
 	FREE_NULL_LIST(gres_list);
 	if (rc != SLURM_SUCCESS) {

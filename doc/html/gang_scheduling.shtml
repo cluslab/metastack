@@ -34,7 +34,7 @@ resources for a <I>SchedulerTimeslice</I> interval.
 This will continue until one of the jobs terminates.
 </P>
 <P>
-NOTE: Heterogeneous jobs are excluded from gang scheduling operations.
+<b>NOTE</b>: Heterogeneous jobs are excluded from gang scheduling operations.
 </P>
 
 <h2 id="config">Configuration<a class="slurm_link" href="#config"></a></h2>
@@ -45,11 +45,9 @@ gang scheduling:
 </P>
 <UL>
 <LI>
-<B>SelectType</B>: The Slurm gang scheduler supports
-nodes allocated by the <I>select/linear</I> plugin,
-socket/core/CPU resources allocated by the <I>select/cons_res</I> and
-<I>select/cons_tres</I> plugins, or <I>select/cray_aries</I> for Cray XC
-systems without ALPS.
+<B>SelectType</B>: The Slurm gang scheduler supports nodes allocated by the
+<I>select/linear</I> plugin, socket/core/CPU resources allocated by the
+<I>select/cons_tres</I> plugin.
 </LI>
 <LI>
 <B>SelectTypeParameters</B>: Since resources will be getting overallocated
@@ -58,7 +56,7 @@ should be configured to track the amount of memory used by each job to ensure
 that memory page swapping does not occur.
 When <I>select/linear</I> is chosen, we recommend setting
 <I>SelectTypeParameters=CR_Memory</I>.
-When <I>select/cons_res</I> or <I>select/cons_tres</I> are chosen, we recommend
+When <I>select/cons_tres</I> is chosen, we recommend
 including Memory as a resource
 (e.g. <I>SelectTypeParameters=CR_Core_Memory</I>).
 </LI>
@@ -88,8 +86,10 @@ adversely affecting other jobs sharing the same resources.
 <B>PreemptMode</B>: set the <I>GANG</I> option.
 See the <I>slurm.conf</I> manpage for other options that may be specified to
 enable job <a href="preempt.html">preemption</a> in addition to GANG.
+In order to use gang scheduling, the <b>GANG</b> option must be specified at
+the cluster level.
 <BR>
-NOTE: Gang scheduling is performed independently for each partition, so
+<b>NOTE</b>: Gang scheduling is performed independently for each partition, so
 if you only want time-slicing by <I>OverSubscribe</I>, without any preemption,
 then configuring partitions with overlapping nodes is not recommended.
 On the other hand, if you want to use <I>PreemptType=preempt/partition_prio</I>
@@ -305,7 +305,7 @@ JOBID PARTITION    NAME  USER ST  TIME NODES NODELIST
    10    active  myload  user  R  1:13     2 n[15-16]
    11    active  myload  user  S  0:30     3 n[12-14]
 </PRE>
-</P>
+
 <P>
 The next example displays "local backfilling":
 </P>
@@ -347,7 +347,7 @@ Normal backfill algorithms check <U>all</U> jobs in the wait queue.
 <P>
 The following two examples illustrate the primary difference between
 <I>CR_CPU</I> and <I>CR_Core</I> when consumable resource selection is enabled
-(<I>select/cons_res</I>).
+(<I>select/cons_tres</I>).
 </P>
 <P>
 When <I>CR_CPU</I> (or <I>CR_CPU_Memory</I>) is configured then the selector
@@ -378,7 +378,7 @@ PARTITION AVAIL  TIMELIMIT NODES  STATE NODELIST
 active*      up   infinite     5   idle n[12-16]
 
 [user@n16 load]$ <B>scontrol show config | grep Select</B>
-SelectType              = select/cons_res
+SelectType              = select/cons_tres
 SelectTypeParameters    = CR_CORE_MEMORY
 
 [user@n16 load]$ <B>sinfo -o "%20N %5D %5c %5z"</B>
@@ -446,7 +446,7 @@ PARTITION AVAIL  TIMELIMIT NODES  STATE NODELIST
 active*      up   infinite     5   idle n[12-16]
 
 [user@n16 load]$ <B>scontrol show config | grep Select</B>
-SelectType              = select/cons_res
+SelectType              = select/cons_tres
 SelectTypeParameters    = CR_CPU_MEMORY
 
 [user@n16 load]$ <B>sinfo -o "%20N %5D %5c %5z"</B>
@@ -529,6 +529,6 @@ Use of the scancel command to send SIGSTOP and SIGCONT signals would stop a
 job without releasing its CPUs for allocation to other jobs and would be a
 preferable mechanism in many cases.</P>
 
-<p style="text-align:center;">Last modified 9 June 2021</p>
+<p style="text-align:center;">Last modified 29 January 2024</p>
 
 <!--#include virtual="footer.txt"-->

@@ -45,6 +45,9 @@
 
 #define STEPD_MESSAGE_COMP_WAIT 3 /* seconds */
 
+extern pthread_mutex_t stepmgr_mutex;
+
+extern job_record_t *job_step_ptr;
 extern int slurmstepd_blocked_signals[];
 
 typedef struct {
@@ -53,7 +56,7 @@ typedef struct {
 	int rank;
 	int depth;
 	int parent_rank;
-	slurm_addr_t parent_addr;
+	char *parent_name;
 	int children;
 	int max_depth;
 	bool wait_children;
@@ -66,14 +69,13 @@ extern step_complete_t step_complete;
 
 extern slurmd_conf_t *conf;
 
-extern int stepd_cleanup(slurm_msg_t *msg, stepd_step_rec_t *job,
-			 slurm_addr_t *cli, slurm_addr_t *self,
-			 int rc, bool only_mem);
-extern int stepd_drain_node(char *reason);
-extern int stepd_send_pending_exit_msgs(stepd_step_rec_t *job);
-extern void stepd_send_step_complete_msgs(stepd_step_rec_t *job);
-extern void stepd_wait_for_children_slurmstepd(stepd_step_rec_t *job);
+extern int stepd_cleanup(slurm_msg_t *msg, stepd_step_rec_t *step,
+			 slurm_addr_t *cli, int rc, bool only_mem);
+extern void stepd_drain_node(char *reason);
+extern int stepd_send_pending_exit_msgs(stepd_step_rec_t *step);
+extern void stepd_send_step_complete_msgs(stepd_step_rec_t *step);
+extern void stepd_wait_for_children_slurmstepd(stepd_step_rec_t *step);
 
-extern void close_slurmd_conn(void);
+extern void close_slurmd_conn(int rc);
 
 #endif /* !_SLURMSTEPD_H */

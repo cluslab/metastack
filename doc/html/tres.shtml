@@ -48,13 +48,12 @@ Current TRES Types are:
   FS/Disk, Pages and VMem are tracked. These default TRES cannot be disabled,
   but only appended to. The following example:
 </p>
-  <pre>AccountingStorageTRES=gres/craynetwork,license/iop1,bb/cray</pre>
+  <pre>AccountingStorageTRES=gres/gpu,license/iop1</pre>
 <p>
   will track billing, cpu, energy, memory, nodes, fs/disk, pages and vmem along
-  with a GRES called craynetwork as well as a license called iop1. It will
-  also track usage on a Cray burst buffer. Whenever these resources are used on
-  the cluster they are recorded. TRES are automatically set up in the database
-  on the start of the slurmctld.
+  with a GRES called gpu, as well as a license called iop1. Whenever these
+  resources are used on the cluster they are recorded. TRES are automatically
+  set up in the database on the start of the slurmctld.
 </p>
 
 <p> The TRES that require associated names are BB, GRES, and
@@ -72,6 +71,10 @@ we would also include gres/gpu for accounting gpus in requests like
 </p>
 <pre>AccountingStorageTRES=gres/gpu,gres/gpu:tesla</pre>
 </li>
+
+<p><b>NOTE</b>: Setting gres/gpu will also set gres/gpumem and gres/gpuutil.
+gres/gpumem and gres/gpuutil can be set individually when gres/gpu is not set.
+</p>
 
 <li><b>PriorityWeightTRES</b>
 <p>A comma separated list of TRES Types and weights that sets the
@@ -115,39 +118,39 @@ of "mem=.25G" on the same job will be billed 2 (8192MB * (.25/1024)) units.
 with:
 </p>
 
-<pre>TRESBillingWeights="CPU=1.0,Mem=0.25G,GRES/gpu=2.0"</pre>
+<pre>TRESBillingWeights="CPU=1.0,Mem=0.25G,GRES/gpu=2.0,license/licA=1.5"</pre>
 
 <p>the billable TRES will be:
 </p>
-<pre>(1*1.0) + (8*0.25) + (0*2.0) = 3.0</pre>
+<pre>(1*1.0) + (8*0.25) + (0*2.0) + (0*1.5) = 3.0</pre>
 
 <p>If <i>PriorityFlags=MAX_TRES</i> is configured, the billable TRES is
-  calculated as the MAX of individual TRES' on a node (e.g. cpus, mem,
-  gres) plus the sum of all global TRES' (e.g. licenses). Using the
+  calculated as the MAX of individual TRESs on a node (e.g. cpus, mem,
+  gres) plus the sum of all global TRESs (e.g. licenses). Using the
   same example above, the billable TRES will be:
 </p>
-<pre>MAX(1*1.0, 8*0.25) + (0*2.0) = 2.0</pre>
+<pre>MAX(1*1.0, 8*0.25, 0*2.0) + (0*1.5) = 2.0</pre>
 
 <p>If TRESBillingWeights is not defined then the job is billed against the total
 number of allocated CPUs.
 </p>
 
-<p><b>NOTE:</b> TRESBillingWeights is only used when calculating fairshare and
+<p><b>NOTE</b>: TRESBillingWeights is only used when calculating fairshare and
 doesn't affect job priority directly as it is currently not used for the size of
-the job. If you want TRES' to play a role in the job's priority then refer to
+the job. If you want TRESs to play a role in the job's priority then refer to
 the PriorityWeightTRES option.
 </p>
 
-<p><b>NOTE:</b> As with PriorityWeightTRES only TRES defined in
+<p><b>NOTE</b>: As with PriorityWeightTRES only TRES defined in
   AccountingStorageTRES are available for TRESBillingWeights.
 </p>
 
-<p><b>NOTE:</b> Jobs can be limited based off of the calculated TRES billing
+<p><b>NOTE</b>: Jobs can be limited based off of the calculated TRES billing
 value. See <a href="resource_limits.html">Resource Limits</a> documentation for
 more information.
 </p>
 
-<p><b>NOTE:</b> If a Billing TRES is defined as a weight, it is ignored.</p>
+<p><b>NOTE</b>: If a Billing TRES is defined as a weight, it is ignored.</p>
 </li>
 
 </ul>
@@ -176,6 +179,6 @@ more information.
   If TRESBillingWeights is not defined on any partition for a node then the
   Billing TRES will be equal to the number of CPUs on the node.
 </p>
-<p style="text-align:center;">Last modified 1 May 2018</p>
+<p style="text-align:center;">Last modified 16 August 2024</p>
 
 <!--#include virtual="footer.txt"-->

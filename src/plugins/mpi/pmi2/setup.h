@@ -47,12 +47,13 @@
 
 #include "src/common/slurm_xlator.h"
 #include "src/common/pack.h"
+#include "src/common/read_config.h"
 #include "src/common/slurm_opt.h"
-#include "src/common/slurm_mpi.h"
+#include "src/interfaces/mpi.h"
 #include "src/common/xstring.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
-#include "src/srun/libsrun/debugger.h"
-#include "src/srun/libsrun/opt.h"
+#include "src/srun/debugger.h"
+#include "src/srun/opt.h"
 
 #include "tree.h"
 
@@ -100,8 +101,8 @@ extern int *task_socks;
 #define TASK_PMI_SOCK(lrank) task_socks[lrank * 2 + 1]
 
 extern bool in_stepd(void);
-extern int  pmi2_setup_stepd(const stepd_step_rec_t *job, char ***env);
-extern int  pmi2_setup_srun(const mpi_plugin_client_info_t *job, char ***env);
+extern int  pmi2_setup_stepd(const stepd_step_rec_t *step, char ***env);
+extern int  pmi2_setup_srun(const mpi_step_info_t *mpi_step, char ***env);
 extern void pmi2_cleanup_stepd(void);
 
 #endif	/* _SETUP_H */

@@ -43,12 +43,13 @@
 \*****************************************************************************/
 
 #include <errno.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include "src/common/slurm_xlator.h"
-#include "src/common/slurm_protocol_interface.h"
 #include "src/common/slurm_protocol_api.h"
+#include "src/common/slurm_protocol_socket.h"
 #include "src/common/xmalloc.h"
 
 #include "kvs.h"
@@ -151,7 +152,7 @@ static int _handle_kvs_fence(int fd, buf_t *buf)
 			/* cancel the step to avoid tasks hang */
 			slurm_kill_job_step(job_info.step_id.job_id,
 					    job_info.step_id.step_id,
-					    SIGKILL);
+					    SIGKILL, 0);
 		} else {
 			if (in_stepd())
 				waiting_kvs_resp = 1;
@@ -212,7 +213,7 @@ resp:
 	send_kvs_fence_resp_to_clients(rc, errmsg);
 	if (rc != SLURM_SUCCESS) {
 		slurm_kill_job_step(job_info.step_id.job_id,
-				    job_info.step_id.step_id, SIGKILL);
+				    job_info.step_id.step_id, SIGKILL, 0);
 	}
 	return rc;
 
@@ -426,7 +427,7 @@ out:
 	pack32((uint32_t) rc, resp_buf);
 	rc = slurm_msg_sendto(fd, get_buf_data(resp_buf),
 			      get_buf_offset(resp_buf));
-	free_buf(resp_buf);
+	FREE_NULL_BUFFER(resp_buf);
 
 	debug3("mpi/pmi2: out _handle_name_publish");
 	return rc;
@@ -457,7 +458,7 @@ out:
 	pack32((uint32_t) rc, resp_buf);
 	rc = slurm_msg_sendto(fd, get_buf_data(resp_buf),
 			      get_buf_offset(resp_buf));
-	free_buf(resp_buf);
+	FREE_NULL_BUFFER(resp_buf);
 
 	debug3("mpi/pmi2: out _handle_name_unpublish");
 	return rc;
@@ -488,7 +489,7 @@ out:
 	rc2 = slurm_msg_sendto(fd, get_buf_data(resp_buf),
 			       get_buf_offset(resp_buf));
 	rc = MAX(rc, rc2);
-	free_buf(resp_buf);
+	FREE_NULL_BUFFER(resp_buf);
 	xfree(name);
 	xfree(port);
 
@@ -613,7 +614,7 @@ handle_tree_cmd(int fd)
 
 	debug3("mpi/pmi2: got tree cmd: %hu(%s)", cmd, tree_cmd_names[cmd]);
 	rc = tree_cmd_handlers[cmd](fd, buf);
-	free_buf (buf);
+	FREE_NULL_BUFFER(buf);
 	debug3("mpi/pmi2: out handle_tree_cmd");
 	return rc;
 

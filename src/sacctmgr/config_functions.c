@@ -46,6 +46,8 @@
 #include "src/sacctmgr/sacctmgr.h"
 #include "src/common/slurm_time.h"
 
+#include "src/interfaces/data_parser.h"
+
 static uint16_t track_wckey;
 
 static List dbd_config_list = NULL;
@@ -58,7 +60,7 @@ static void _load_dbd_config(void)
 
 static void _print_dbd_config(void)
 {
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 	config_key_pair_t *key_pair;
 
 	if (!dbd_config_list)
@@ -92,7 +94,7 @@ static void _free_slurm_config(void)
 static void _print_slurm_config(void)
 {
 	time_t now = time(NULL);
-	char tmp_str[128], *user_name = NULL;
+	char tmp_str[256], *user_name = NULL;
 
 	slurm_make_time_str(&now, tmp_str, sizeof(tmp_str));
 	printf("Configuration data as of %s\n", tmp_str);
@@ -245,9 +247,25 @@ extern int sacctmgr_list_stats(int argc, char **argv)
 	time_t now = time(NULL);
 	int type;
 
+	notice_thread_init();
 	error_code = slurmdb_get_stats(db_conn, &stats_rec);
+	notice_thread_fini();
 	if (error_code != SLURM_SUCCESS)
 		return error_code;
+
+	if (mime_type) {
+		int rc;
+		if (is_data_parser_deprecated(data_parser))
+			DATA_DUMP_CLI_DEPRECATED(STATS_REC_PTR, stats_rec,
+						 "statistics", argc, argv,
+						 db_conn, mime_type, rc);
+		else
+			DATA_DUMP_CLI_SINGLE(OPENAPI_SLURMDBD_STATS_RESP,
+					     stats_rec, argc, argv, db_conn,
+					     mime_type, data_parser, rc);
+		slurmdb_destroy_stats_rec(stats_rec);
+		return rc;
+	}
 
 	rollup_stats = stats_rec->dbd_rollup_stats;
 	printf("*******************************************************************\n");
@@ -271,7 +289,7 @@ extern int sacctmgr_list_stats(int argc, char **argv)
 	}
 
 	if (stats_rec->rollup_stats && list_count(stats_rec->rollup_stats)) {
-		ListIterator itr =
+		list_itr_t *itr =
 			list_iterator_create(stats_rec->rollup_stats);
 		while ((rollup_stats = list_next(itr))) {
 			bool first = true;

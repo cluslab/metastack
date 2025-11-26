@@ -15,8 +15,7 @@
 #          fedr/fed3/...
 #          3. controllers are up and running.
 ############################################################################
-# Copyright (C) 2020 SchedMD LLC.
-# Written by Marshall Garey <marshall@schedmd.com>
+# Copyright (C) SchedMD LLC.
 #
 # This file is part of Slurm, a resource management program.
 # For details, see <https://slurm.schedmd.com/>.
@@ -1014,7 +1013,7 @@ if {[get_config_param "AccountingStorageType"] ne "accounting_storage/slurmdbd"}
 }
 
 if {[check_federation_setup]} {
-	if {![check_all_up]} {
+	if {![check_federation_up]} {
 		skip "All of the clusters in the federation must be up"
 	}
 

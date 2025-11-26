@@ -102,6 +102,7 @@
 #define	bit_fmt_binmask		slurm_bit_fmt_binmask
 #define bit_unfmt_binmask	slurm_bit_unfmt_binmask
 #define	bit_fls			slurm_bit_fls
+#define	bit_fls_from_bit	slurm_bit_fls_from_bit
 #define	bit_fill_gaps		slurm_bit_fill_gaps
 #define	bit_super_set		slurm_bit_super_set
 #define	bit_overlap		slurm_bit_overlap
@@ -114,7 +115,6 @@
 #define bit_nffs		slurm_bit_nffs
 #define bit_copybits		slurm_bit_copybits
 #define	bit_get_bit_num		slurm_bit_get_bit_num
-#define	bit_get_pos_num		slurm_bit_get_pos_num
 
 /* fd.[ch] functions */
 #define closeall		slurm_closeall
@@ -123,6 +123,7 @@
 #define fd_get_socket_error	slurm_fd_get_socket_error
 #define send_fd_over_pipe	slurm_send_fd_over_pipe
 #define receive_fd_over_pipe	slurm_receive_fd_over_pipe
+#define rmdir_recursive		slurm_rmdir_recursive
 
 /* hostlist.[ch] functions */
 #define	hostlist_create_dims	slurm_hostlist_create_dims
@@ -135,8 +136,6 @@
 #define	hostlist_deranged_string_dims \
 				slurm_hostlist_deranged_string_dims
 #define	hostlist_deranged_string slurm_hostlist_deranged_string
-#define	hostlist_deranged_string_malloc \
-				slurm_hostlist_deranged_string_malloc
 #define	hostlist_deranged_string_xmalloc_dims \
 				slurm_hostlist_deranged_string_xmalloc_dims
 #define	hostlist_deranged_string_xmalloc \
@@ -147,10 +146,8 @@
 #define	hostlist_iterator_destroy slurm_hostlist_iterator_destroy
 #define	hostlist_iterator_reset	slurm_hostlist_iterator_reset
 #define	hostlist_next		slurm_hostlist_next
-#define	hostlist_next_range	slurm_hostlist_next_range
 #define	hostlist_nth		slurm_hostlist_nth
 #define	hostlist_pop            slurm_hostlist_pop
-#define	hostlist_pop_range      slurm_hostlist_pop_range
 #define	hostlist_push		slurm_hostlist_push
 #define	hostlist_push_host_dims	slurm_hostlist_push_host_dims
 #define	hostlist_push_host	slurm_hostlist_push_host
@@ -158,8 +155,6 @@
 #define hostlist_ranged_string_dims \
 				slurm_hostlist_ranged_string_dims
 #define	hostlist_ranged_string	slurm_hostlist_ranged_string
-#define	hostlist_ranged_string_malloc \
-				slurm_hostlist_ranged_string_malloc
 #define	hostlist_ranged_string_xmalloc_dims \
 				slurm_hostlist_ranged_string_xmalloc_dims
 #define	hostlist_ranged_string_xmalloc \
@@ -167,11 +162,9 @@
 #define	hostlist_remove		slurm_hostlist_remove
 #define	hostlist_shift		slurm_hostlist_shift
 #define	hostlist_shift_dims	slurm_hostlist_shift_dims
-#define	hostlist_shift_range	slurm_hostlist_shift_range
 #define	hostlist_sort		slurm_hostlist_sort
 #define	hostlist_cmp_first	slurm_hostlist_cmp_first
 #define	hostlist_uniq		slurm_hostlist_uniq
-#define	hostset_copy		slurm_hostset_copy
 #define	hostset_count		slurm_hostset_count
 #define	hostset_create		slurm_hostset_create
 #define	hostset_delete		slurm_hostset_delete
@@ -183,12 +176,12 @@
 #define hostset_ranged_string_xmalloc \
 				slurm_hostset_ranged_string_xmalloc
 #define	hostset_shift		slurm_hostset_shift
-#define	hostset_shift_range	slurm_hostset_shift_range
 #define	hostset_within		slurm_hostset_within
 #define	hostset_nth		slurm_hostset_nth
 
 /* gres.[ch] functions */
 #define gres_find_id		slurm_gres_find_id
+#define gres_find_job_by_key_exact_type slurm_gres_find_job_by_key_exact_type
 #define gres_find_sock_by_job_state slurm_gres_find_sock_by_job_state
 #define gres_get_node_used	slurm_gres_get_node_used
 #define gres_get_system_cnt	slurm_gres_get_system_cnt
@@ -234,6 +227,7 @@
 #define	list_insert		slurm_list_insert
 #define	list_find		slurm_list_find
 #define	list_remove		slurm_list_remove
+#define	list_remove_first	slurm_list_remove_first
 #define	list_delete_item	slurm_list_delete_item
 #define list_flush		slurm_list_flush
 #define list_flush_max		slurm_list_flush_max
@@ -246,7 +240,7 @@
 #define	log_fini		slurm_log_fini
 #define	log_alter		slurm_log_alter
 #define	log_alter_with_fp	slurm_log_alter_with_fp
-#define	log_set_fpfx		slurm_log_set_fpfx
+#define	log_set_prefix		slurm_log_set_prefix
 #define	log_fp			slurm_log_fp
 #define	log_oom			slurm_log_oom
 #define	log_has_data		slurm_log_has_data
@@ -272,6 +266,8 @@
 #define build_all_nodeline_info slurm_build_all_nodeline_info
 #define rehash_node		slurm_rehash_node
 #define hostlist2bitmap		slurm_hostlist2bitmap
+#define bitmap2node_name	slurm_bitmap2node_name
+#define find_node_record	slurm_find_node_record
 
 /* pack.[ch] functions */
 #define	create_buf		slurm_create_buf
@@ -305,7 +301,7 @@
 #define	packmem			slurm_packmem
 #define	unpackmem_ptr		slurm_unpackmem_ptr
 #define	unpackmem_xmalloc	slurm_unpackmem_xmalloc
-#define	unpackmem_malloc	slurm_unpackmem_malloc
+#define	unpackstr_xmalloc	slurm_unpackstr_xmalloc
 #define	unpackstr_xmalloc_escaped slurm_unpackstr_xmalloc_escaped
 #define	unpackstr_xmalloc_chooser slurm_unpackstr_xmalloc_chooser
 #define	packstr_array		slurm_packstr_array
@@ -319,7 +315,6 @@
 #define time_str2secs           slurm_time_str2secs
 #define secs2time_str           slurm_secs2time_str
 #define mins2time_str           slurm_mins2time_str
-#define mon_abbr                slurm_mon_abbr
 
 /* env.[ch] functions */
 #define	setenvf 		slurm_setenvpf
@@ -342,10 +337,15 @@
 #define destroy_config_key_pair	slurm_destroy_config_key_pair
 #define get_extra_conf_path	slurm_get_extra_conf_path
 #define sort_key_pairs		slurm_sort_key_pairs
+#define conf_get_opt_str	slurm_conf_get_opt_str
+#define add_key_pair		slurm_add_key_pair
+#define add_key_pair_bool	slurm_add_key_pair_bool
+#define add_key_pair_own	slurm_add_key_pair_own
 
 /* run_in_daemon.[ch] functions */
 #define run_in_daemon           slurm_run_in_daemon
 #define running_in_daemon	slurm_running_in_daemon
+#define running_in_sackd        slurm_running_in_sackd
 #define running_in_slurmctld    slurm_running_in_slurmctld
 #define running_in_slurmd       slurm_running_in_slurmd
 #define running_in_slurmdbd     slurm_running_in_slurmdbd
@@ -394,6 +394,7 @@
 #define	_xmemcat		slurm_xmemcat
 #define	xstrdup			slurm_xstrdup
 #define	xstrdup_printf		slurm_xstrdup_printf
+#define _xstrdup_vprintf	slurm_xstrdup_vprintf
 #define	xstrndup		slurm_xstrndup
 #define	xbasename		slurm_xbasename
 #define	xdirname		slurm_xdirname
@@ -409,6 +410,7 @@
 #define xstrncasecmp		slurm_xstrncasecmp
 #define	xstrstr			slurm_xstrstr
 #define xstrcasestr		slurm_xstrcasestr
+#define xbase64_from_base64url	slurm_xbase64_from_base64url
 
 /* slurm_protocol_api.[ch] functions */
 #define convert_num_unit2       slurm_convert_num_unit2
@@ -420,8 +422,6 @@
 /* slurm_protocol_defs.[ch] functions */
 #define preempt_mode_string	slurm_preempt_mode_string
 #define preempt_mode_num	slurm_preempt_mode_num
-#define job_reason_string	slurm_job_reason_string
-#define job_reason_num		slurm_job_reason_num
 #define job_share_string	slurm_job_share_string
 #define job_state_string	slurm_job_state_string
 #define job_state_string_compact slurm_job_state_string_compact
@@ -437,7 +437,6 @@
 				slurm_node_state_string_complete
 #define private_data_string	slurm_private_data_string
 #define accounting_enforce_string slurm_accounting_enforce_string
-#define cray_nodelist2nids	slurm_cray_nodelist2nids
 #define reservation_flags_string slurm_reservation_flags_string
 #define print_multi_line_string slurm_print_multi_line_string
 
@@ -455,7 +454,6 @@
 /* plugin.[ch] functions */
 #define plugin_get_syms         slurm_plugin_get_syms
 #define plugin_load_and_link    slurm_plugin_load_and_link
-#define plugin_strerror         slurm_plugin_strerror
 #define plugin_unload           slurm_plugin_unload
 
 /* plugrack.[ch] functions */
@@ -534,33 +532,21 @@
 #define cgroup_conf_init		slurm_cgroup_conf_init
 #define cgroup_conf_destroy		slurm_cgroup_conf_destroy
 #define autodetect_cgroup_version       slurm_autodetect_cgroup_version
-#endif /* USE_ALIAS */
 
-/* Include the function definitions after redefining their names. */
-#include "src/common/bitstring.h"
-#include "src/common/callerid.h"
-#include "src/common/cgroup.h"
-#include "src/common/eio.h"
-#include "src/common/env.h"
-#include "src/common/hostlist.h"
-#include "src/common/list.h"
-#include "src/common/log.h"
-#include "src/common/macros.h"
-#include "src/common/pack.h"
-#include "src/common/parse_config.h"
-#include "src/common/read_config.h"
-#include "src/common/select.h"
-#include "src/common/slurm_auth.h"
-#include "src/common/slurm_jobacct_gather.h"
-#include "src/common/slurm_route.h"
-#include "src/common/slurm_step_layout.h"
-#include "src/common/strlcpy.h"
-#include "src/common/stepd_api.h"
-#include "src/common/switch.h"
-#include "src/common/working_cluster.h"
-#include "src/common/xassert.h"
-#include "src/common/xmalloc.h"
-#include "src/common/xsignal.h"
-#include "src/common/xstring.h"
+/* topology.[ch] functions */
+#define topology_g_build_config slurm_topology_g_build_config
+
+/* job_state_reason.[ch] functions */
+#define job_state_reason_string	slurm_job_state_reason_string
+#define job_state_reason_num slurm_job_state_reason_num
+#define job_state_reason_check slurm_job_state_reason_check
+
+/* serializer.[ch] functions */
+#define serializer_g_init slurm_serializer_g_init
+#define serialize_g_data_to_string slurm_serialize_g_data_to_string
+#define serialize_g_string_to_data slurm_serialize_g_string_to_data
+#define serializer_g_fini slurm_serializer_g_fini
+
+#endif /* USE_ALIAS */
 
 #endif /*__SLURM_XLATOR_H__*/

@@ -2,8 +2,7 @@
  *  x11_util.h - x11 forwarding support functions
  *		 also see src/slurmd/slurmstepd/x11_forwarding.[ch]
  *****************************************************************************
- *  Copyright (C) 2017 SchedMD LLC.
- *  Written by Tim Wickberg <tim@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.

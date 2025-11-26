@@ -1,10 +1,9 @@
 /*****************************************************************************\
  *  test7.12.prog.c - Test of slurm_job_step_stat() API call.
  *****************************************************************************
- *  Portions Copyright (C) 2014 SchedMD LLC
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2010 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- *  Written by Morris Jette <jette@schedmd.com>
  *  CODE-OCEC-09-009. All rights reserved.
  *
  *  This file is part of Slurm, a resource management program.
@@ -35,7 +34,7 @@ int main(int argc, char **argv)
 	int i, rc = 0;
 	job_step_stat_response_msg_t *resp = NULL;
 	job_step_stat_t *step_stat = NULL;
-	ListIterator itr;
+	list_itr_t *itr;
 	job_info_msg_t *job_info_msg;
 	slurm_job_info_t *job_ptr;
 	slurm_step_id_t step_id;
@@ -49,6 +48,7 @@ int main(int argc, char **argv)
 	step_id.step_het_comp = NO_VAL;
 	printf("job_id:%u step_id:%u\n", step_id.job_id, step_id.step_id);
 
+	slurm_init(NULL);
 
 	rc = slurm_job_step_stat(&step_id, NULL, NO_VAL16, &resp);
 	if (rc != SLURM_SUCCESS) {

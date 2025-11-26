@@ -44,7 +44,7 @@
 #include "slurm/slurm_errno.h"
 #include "src/common/slurm_xlator.h"
 #include "src/common/xstring.h"
-#include "src/common/cgroup.h"
+#include "src/interfaces/cgroup.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
 #include "src/slurmd/slurmd/slurmd.h"
 #include "task_cgroup.h"
@@ -64,6 +64,12 @@ extern int init(void)
 {
 	int rc = SLURM_SUCCESS;
 
+	/* Sanity check for incompatible plugins */
+	if (!xstrcmp(slurm_cgroup_conf.cgroup_plugin, "disabled")) {
+		fatal("%s: CgroupPlugin=disabled in cgroup.conf is not compatible with task/cgroup.",
+		      __func__);
+	}
+
 	if (slurm_cgroup_conf.constrain_swap_space &&
 	    !cgroup_g_has_feature(CG_MEMCG_SWAP)) {
 		error("ConstrainSwapSpace is enabled but there is no support for swap in the memory cgroup controller.");
@@ -75,8 +81,9 @@ extern int init(void)
 
 	if (slurm_cgroup_conf.constrain_cores)
 		use_cpuset = true;
-	if (slurm_cgroup_conf.constrain_ram_space ||
-	    slurm_cgroup_conf.constrain_swap_space)
+	if ((slurm_conf.select_type_param & CR_MEMORY) &&
+	    (slurm_cgroup_conf.constrain_ram_space ||
+	     slurm_cgroup_conf.constrain_swap_space))
 		use_memory = true;
 	if (slurm_cgroup_conf.constrain_devices)
 		use_devices = true;
@@ -156,68 +163,52 @@ extern int task_p_slurmd_resume_job(uint32_t job_id)
  * launch his jobs. Use this to create the cgroup hierarchy and set the owner
  * appropriately.
  */
-extern int task_p_pre_setuid(stepd_step_rec_t *job)
+extern int task_p_pre_setuid(stepd_step_rec_t *step)
 {
 	int rc = SLURM_SUCCESS;
 
-	if (use_cpuset && (task_cgroup_cpuset_create(job) != SLURM_SUCCESS))
+	if (use_cpuset && (task_cgroup_cpuset_create(step) != SLURM_SUCCESS))
 		rc = SLURM_ERROR;
 
-	if (use_memory && (task_cgroup_memory_create(job) != SLURM_SUCCESS))
+	if (use_memory && (task_cgroup_memory_create(step) != SLURM_SUCCESS))
 		rc = SLURM_ERROR;
 
-	if (use_devices && (task_cgroup_devices_create(job) != SLURM_SUCCESS))
+	if (use_devices && (task_cgroup_devices_create(step) != SLURM_SUCCESS))
 		rc = SLURM_ERROR;
 
 	return rc;
 }
 
 /*
- * task_p_pre_set_affinity() is called prior to exec of application task.
+ * task_p_pre_launch_priv() is called prior to exec of application task.
  * Runs in privileged mode.
  */
-extern int task_p_pre_set_affinity(stepd_step_rec_t *job, uint32_t node_tid)
+extern int task_p_pre_launch_priv(stepd_step_rec_t *step, uint32_t node_tid,
+				  uint32_t global_tid)
 {
 	int rc = SLURM_SUCCESS;
 
 	if (use_cpuset &&
 	    (task_cgroup_cpuset_add_pid(
-		    job->task[node_tid]->pid) != SLURM_SUCCESS))
+		    step->task[node_tid]->pid) != SLURM_SUCCESS))
 		rc = SLURM_ERROR;
 
 	if (use_memory &&
-	    (task_cgroup_memory_add_pid(job, job->task[node_tid]->pid,
-					node_tid) != SLURM_SUCCESS))
+	    (task_cgroup_memory_add_pid(step, step->task[node_tid]->pid,
+					global_tid) != SLURM_SUCCESS))
 		rc = SLURM_ERROR;
 
 	if (use_devices &&
-	    (task_cgroup_devices_add_pid(job, job->task[node_tid]->pid,
-					 node_tid) != SLURM_SUCCESS))
+	    (task_cgroup_devices_add_pid(step, step->task[node_tid]->pid,
+					 global_tid) != SLURM_SUCCESS))
+		rc = SLURM_ERROR;
+
+	if (use_devices &&
+	    (task_cgroup_devices_constrain(step, node_tid, global_tid) !=
+	     SLURM_SUCCESS))
 		rc = SLURM_ERROR;
 
 	return rc;
-}
-
-/*
- * task_p_set_affinity() is called prior to exec of application task.
- * Runs in privileged mode.
- */
-extern int task_p_set_affinity(stepd_step_rec_t *job, uint32_t node_tid)
-{
-	return SLURM_SUCCESS;
-}
-
-/*
- * task_p_post_set_affinity is called prior to exec of application task.
- * Runs in privileged mode.
- */
-extern int task_p_post_set_affinity(stepd_step_rec_t *job, uint32_t node_tid)
-{
-	if (use_devices)
-		return task_cgroup_devices_constrain(job,
-						     job->task[node_tid]->pid,
-						     node_tid);
-	return SLURM_SUCCESS;
 }
 
 /*
@@ -225,7 +216,7 @@ extern int task_p_post_set_affinity(stepd_step_rec_t *job, uint32_t node_tid)
  * It is followed by TaskProlog program (from slurm.conf) and --task-prolog
  * (from srun command line).
  */
-extern int task_p_pre_launch(stepd_step_rec_t *job)
+extern int task_p_pre_launch(stepd_step_rec_t *step)
 {
 	return SLURM_SUCCESS;
 }
@@ -235,7 +226,7 @@ extern int task_p_pre_launch(stepd_step_rec_t *job)
  * It is preceded by --task-epilog (from srun command line) fllowed by
  * TaskEpilog program (from slurm.conf).
  */
-extern int task_p_post_term(stepd_step_rec_t *job, stepd_step_task_info_t *task)
+extern int task_p_post_term(stepd_step_rec_t *step, stepd_step_task_info_t *task)
 {
 	static bool ran = false;
 	int rc = SLURM_SUCCESS;
@@ -245,14 +236,14 @@ extern int task_p_post_term(stepd_step_rec_t *job, stepd_step_task_info_t *task)
 	 * every task on the node.
 	 */
 	if (use_memory && !ran) {
-		rc = task_cgroup_memory_check_oom(job);
+		rc = task_cgroup_memory_check_oom(step);
 		ran = true;
 	}
 	return rc;
 }
 
 /* task_p_post_step() is called after termination of the step (all the task). */
-extern int task_p_post_step(stepd_step_rec_t *job)
+extern int task_p_post_step(stepd_step_rec_t *step)
 {
 	return fini();
 }

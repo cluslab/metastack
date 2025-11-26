@@ -80,7 +80,7 @@ typedef enum {
 	REQUEST_GETGR,
 	REQUEST_GET_NS_FD,
 	REQUEST_GETHOST,
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	REQUEST_STEP_AGGREGATE,
 #endif
 } step_msg_t;
@@ -89,6 +89,7 @@ typedef enum {
 	SLURMSTEPD_NOT_RUNNING = 0,
 	SLURMSTEPD_STEP_STARTING,
 	SLURMSTEPD_STEP_RUNNING,
+	SLURMSTEPD_STEP_CANCELLED,
 	SLURMSTEPD_STEP_ENDING
 } slurmstepd_state_t;
 
@@ -184,9 +185,9 @@ int stepd_signal_container(int fd, uint16_t protocol_version, int signal,
  *         probably be moved into a more generic stepd_api call so that
  *         this header does not need to include slurm_protocol_defs.h.
  */
-int stepd_attach(int fd, uint16_t protocol_version, slurm_addr_t *ioaddr,
-		 slurm_addr_t *respaddr, void *job_cred_sig, uint32_t sig_len,
-		 uid_t uid, reattach_tasks_response_msg_t *resp);
+extern int stepd_attach(int fd, uint16_t protocol_version, slurm_addr_t *ioaddr,
+			slurm_addr_t *respaddr, char *io_key, uid_t uid,
+			reattach_tasks_response_msg_t *resp);
 
 /*
  * Scan for available running slurm step daemons by checking
@@ -277,15 +278,17 @@ extern int stepd_resume(int fd, uint16_t protocol_version,
 			suspend_int_msg_t *susp_req, int phase);
 
 /*
- * Reconfigure the job step (Primarily to allow the stepd to refresh
- * it's log file pointer.
+ * Reconfigure the job step.
+ * Allows the stepd to refresh it's log file pointer.
+ * If reconf is not NULL, update the controller addresses.
  *
  * Returns SLURM_SUCCESS if successful.  On error returns SLURM_ERROR
  * and sets errno.
  */
-int stepd_reconfig(int fd, uint16_t protocol_version);
+extern int stepd_reconfig(int fd, uint16_t protocol_version, buf_t *reconf);
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 /*
  *Aggregate resource consumption information of other nodes
  *
@@ -294,7 +297,6 @@ int stepd_reconfig(int fd, uint16_t protocol_version);
  */
 int stepd_aggregate(int fd, uint16_t protocol_version, step_gather_msg_t *sent);
 #endif
-
 /*
  *
  * Returns SLURM_SUCCESS if successful.  On error returns SLURM_ERROR
@@ -346,4 +348,10 @@ extern uint32_t stepd_get_nodeid(int fd, uint16_t protocol_version);
  * On error returns -1.
  */
 extern int stepd_get_namespace_fd(int fd, uint16_t protocol_version);
+
+/*
+ * Relay message to stepd.
+ */
+extern int stepd_relay_msg(int fd, slurm_msg_t *msg, uint16_t protocol_version);
+
 #endif /* _STEPD_API_H */

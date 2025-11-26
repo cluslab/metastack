@@ -132,7 +132,7 @@ static int _preemption_loop(mysql_conn_t *mysql_conn, int begin_qosid,
 static int _setup_qos_cond_limits(slurmdb_qos_cond_t *qos_cond, char **extra)
 {
 	int set = 0;
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	char *object = NULL;
 
 	xassert(extra);
@@ -451,7 +451,7 @@ static int _setup_qos_limits(slurmdb_qos_rec_t *qos,
 		char *preempt_val = NULL;
 		char *tmp_char = NULL, *last_preempt = NULL;
 		bool adding_straight = 0;
-		ListIterator preempt_itr =
+		list_itr_t *preempt_itr =
 			list_iterator_create(qos->preempt_list);
 
 		xstrcat(*cols, ", preempt");
@@ -720,7 +720,7 @@ end_modify:
 extern int as_mysql_add_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 			    List qos_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	int rc = SLURM_SUCCESS;
 	slurmdb_qos_rec_t *object = NULL;
 	char *cols = NULL, *extra = NULL, *vals = NULL, *query = NULL,
@@ -739,6 +739,11 @@ extern int as_mysql_add_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 
 	if (!is_user_min_admin_level(mysql_conn, uid, SLURMDB_ADMIN_SUPER_USER))
 		return ESLURM_ACCESS_DENIED;
+
+	if (!qos_list || !list_count(qos_list)) {
+		error("%s: Trying to add empty qos list", __func__);
+		return ESLURM_EMPTY_LIST;
+	}
 
 	assoc_mgr_lock(&locks);
 	qos_cnt = g_qos_count;
@@ -966,7 +971,7 @@ extern List as_mysql_modify_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 			     qos->max_tres_mins_pj, row[MQOS_MTMPJ],
 			     NULL, "max_tres_mins_pj", &vals, qos_rec->id, 0);
 		mod_tres_str(&qos_rec->max_tres_run_mins_pa,
-			     qos->max_tres_run_mins_pa, row[MQOS_MTRM],
+			     qos->max_tres_run_mins_pa, row[MQOS_MTRMA],
 			     NULL, "max_tres_run_mins_pa", &vals,
 			     qos_rec->id, 0);
 		mod_tres_str(&qos_rec->max_tres_run_mins_pu,
@@ -991,7 +996,7 @@ extern List as_mysql_modify_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 		qos_rec->priority = qos->priority;
 
 		if (qos->preempt_list) {
-			ListIterator new_preempt_itr =
+			list_itr_t *new_preempt_itr =
 				list_iterator_create(qos->preempt_list);
 			char *new_preempt = NULL;
 			bool cleared = 0;
@@ -1009,13 +1014,13 @@ extern List as_mysql_modify_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 				} else if (new_preempt[0] == '+') {
 					bit_set(qos_rec->preempt_bitstr,
 						atol(new_preempt+1));
+				} else if (new_preempt[0] == '\0') {
+					bit_clear_all(qos_rec->preempt_bitstr);
 				} else {
 					if (!cleared) {
 						cleared = 1;
-						bit_nclear(
-							qos_rec->preempt_bitstr,
-							0,
-							qos_cnt-1);
+						bit_clear_all(
+							qos_rec->preempt_bitstr);
 					}
 
 					bit_set(qos_rec->preempt_bitstr,
@@ -1079,7 +1084,7 @@ extern List as_mysql_modify_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 extern List as_mysql_remove_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 				slurmdb_qos_cond_t *qos_cond)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	List ret_list = NULL;
 	int rc = SLURM_SUCCESS;
 	char *object = NULL;
@@ -1137,10 +1142,10 @@ extern List as_mysql_remove_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 		else
 			xstrfmtcat(assoc_char, " || id_qos='%s'", row[0]);
 		xstrfmtcat(extra,
-			   ", qos=replace(qos, ',%s,', '')"
-			   ", delta_qos=replace(delta_qos, ',+%s,', '')"
-			   ", delta_qos=replace(delta_qos, ',-%s,', '')",
-			   row[0], row[0], row[0]);
+			   ", qos=replace(qos, ',%s,', if(qos=',%s,', '', ','))"
+			   ", delta_qos=replace(delta_qos, ',+%s,', if(delta_qos=',+%s,', '', ','))"
+			   ", delta_qos=replace(delta_qos, ',-%s,', if(delta_qos=',-%s,', '', ','))",
+			   row[0], row[0], row[0], row[0], row[0], row[0]);
 
 		qos_rec = xmalloc(sizeof(slurmdb_qos_rec_t));
 		/* we only need id when removing no real need to init */
@@ -1166,11 +1171,14 @@ extern List as_mysql_remove_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 	slurm_rwlock_rdlock(&as_mysql_cluster_list_lock);
 	cluster_list_tmp = list_shallow_copy(as_mysql_cluster_list);
 	if (list_count(cluster_list_tmp)) {
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-		slurm_mutex_lock(&assoc_lock);
-#endif
 		itr = list_iterator_create(cluster_list_tmp);
 		while ((object = list_next(itr))) {
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+			uint32_t rpc_version = get_cluster_version(mysql_conn, object);
+			if (rpc_version < SLURM_23_11_PROTOCOL_VERSION) {
+				slurm_mutex_lock(&assoc_lock);
+			}
+#endif
 			/*
 			 * remove this qos from all the associations
 			 * that have it
@@ -1184,20 +1192,29 @@ extern List as_mysql_remove_qos(mysql_conn_t *mysql_conn, uint32_t uid,
 
 			if (rc != SLURM_SUCCESS) {
 				reset_mysql_conn(mysql_conn);
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+				if (rpc_version < SLURM_23_11_PROTOCOL_VERSION) {
+					slurm_mutex_unlock(&assoc_lock);
+				}
+#endif
 				break;
 			}
-
-			if ((rc = remove_common(mysql_conn, DBD_REMOVE_QOS, now,
+			
+#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
+			rc = remove_common(mysql_conn, DBD_REMOVE_QOS, now,
 						user_name, qos_table, name_char,
 						assoc_char, object, NULL, NULL,
-						NULL))
-			    != SLURM_SUCCESS)
+						NULL);
+
+			if (rpc_version < SLURM_23_11_PROTOCOL_VERSION) {
+				slurm_mutex_unlock(&assoc_lock);
+			}
+			if (rc != SLURM_SUCCESS){
 				break;
+			}
+#endif				
 		}
 		list_iterator_destroy(itr);
-#ifdef __METASTACK_OPT_SACCTMGR_ADD_USER
-		slurm_mutex_unlock(&assoc_lock);
-#endif
 	} else
 		rc = remove_common(mysql_conn, DBD_REMOVE_QOS, now,
 				   user_name, qos_table, name_char,

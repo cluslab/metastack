@@ -10,7 +10,8 @@ may be found in the <a href="https://slurm.schedmd.com/archive/">archive</a>.
 <p>Also see <a href="tutorials.html">Tutorials</a> and
 <a href="publications.html">Publications and Presentations</a>.</p>
 
-<h2>Slurm Users</h2>
+<h2 id="users">Slurm Users
+<a class="slurm_link" href="#users"></a></h2>
 <ul>
 <li><a href="quickstart.html">Quick Start User Guide</a></li>
 <li><a href="pdfs/summary.pdf">Command/option Summary (two pages)</a></li>
@@ -23,22 +24,25 @@ may be found in the <a href="https://slurm.schedmd.com/archive/">archive</a>.
 <li><a href="mc_support.html">Support for Multi-core/Multi-threaded Architectures</a></li>
 <li><a href="multi_cluster.html">Multi-Cluster Operation</a></li>
 <li><a href="hdf5_profile_user_guide.html">Profiling Using HDF5 User Guide</a></li>
-<li><a href="nonstop.html">Failure Management Support</a></li>
+<li><a href="job_reason_codes.html">Job Reason Codes</a></li>
+<li><a href="job_state_codes.html">Job State Codes</a></li>
 <li><a href="job_exit_code.html">Job Exit Codes</a></li>
 <li><a href="resource_binding.html">Resource Binding</a></li>
 <li>Specific Systems
 <ul>
-<li><a href="cray.html">Cray User and Administrator Guide with Native Slurm</a></li>
 <li><a href="intel_knl.html">Intel Knights Landing (KNL) User and Administrator Guide</a></li>
 </ul>
 </li>
 </ul>
 
-<h2>Slurm Administrators</h2>
+<h2 id="administrators">Slurm Administrators
+<a class="slurm_link" href="#administrators"></a></h2>
 <ul>
 <li><a href="quickstart_admin.html">Quick Start Administrator Guide</a></li>
+<li><a href="upgrades.html">Upgrade Guide</a></li>
 <li><a href="accounting.html">Accounting</a></li>
 <li><a href="reservations.html">Advanced Resource Reservation Guide</a></li>
+<li><a href="authentication.html">Authentication Plugins</a></li>
 <li><a href="burst_buffer.html">Burst Buffer Guide</a></li>
 <li><a href="cgroups.html">Cgroups Guide</a></li>
 <li><a href="configless_slurm.html">"Configless" Slurm Operation</a></li>
@@ -48,22 +52,28 @@ may be found in the <a href="https://slurm.schedmd.com/archive/">archive</a>.
 <li><a href="cpu_management.html">CPU Management User and Administrator Guide</a></li>
 <li><a href="dynamic_nodes.html">Dynamic Nodes</a></li>
 <li><a href="elasticsearch.html">Elasticsearch Guide</a></li>
+<li><a href="jobcomp_kafka.html">Job Completion Kafka plugin Guide</a></li>
 <li><a href="job_container_tmpfs.html">job_container/tmpfs - Job Specific Temporary File Management</a></li>
 <li><a href="jwt.html">JSON Web Tokens Authentication</a></li>
-<li><a href="nonstop.html">Failure Management Support</a></li>
 <li><a href="federation.html">Federated Scheduling Guide</a></li>
 <li><a href="pam_slurm_adopt.html">Job Containment (SSH Session Control) with pam_slurm_adopt</a></li>
+<li><a href="kubernetes.html">Kubernetes Guide</a></li>
 <li><a href="big_sys.html">Large Cluster Administration Guide</a></li>
 <li><a href="licenses.html">License Management</a></li>
 <li><a href="mcs.html">Multi-Category Security (MCS) Guide</a></li>
 <li><a href="nss_slurm.html">Name Service Caching Through NSS Slurm</a></li>
 <li><a href="network.html">Network Configuration Guide</a></li>
 <li><a href="openapi_release_notes.html">OpenAPI Plugin Release Notes</a></li>
-<li><a href="power_mgmt.html">Power Management Guide (power capping)</a></li>
 <li><a href="power_save.html">Power Saving Guide (power down idle nodes)</a></li>
 <li><a href="prolog_epilog.html">Prolog and Epilog Guide</a></li>
-<li><a href="rest.html">Slurm REST API</a></li>
-<li><a href="rest_api.html">Slurm REST API Reference</a></li>
+<li>Slurm REST API
+<ul>
+<li><a href="rest_quickstart.html">Quick Start Guide</a></li>
+<li><a href="rest.html">API Reference</a></li>
+<li><a href="rest_api.html">API Implementation Details</a></li>
+<li><a href="rest_clients.html">Client Guide</a></li>
+</ul>
+</li>
 <li><a href="selinux.html">Slurm SELinux Context Management</a></li>
 <li><a href="troubleshoot.html">Troubleshooting Guide</a></li>
 <li><a href="user_permissions.html">User Permissions</a></li>
@@ -79,7 +89,7 @@ may be found in the <a href="https://slurm.schedmd.com/archive/">archive</a>.
 <li>Slurm Scheduling
 <ul>
 <li><a href="sched_config.html">Scheduling Configuration Guide</a></li>
-<li><a href="cons_res.html">Consumable Resources Guide</a></li>
+<li><a href="cons_tres.html">Consumable Resources Guide</a></li>
 <li><a href="core_spec.html">Core Specialization</a></li>
 <li><a href="gang_scheduling.html">Gang Scheduling</a></li>
 <li><a href="gres.html">Generic Resource (GRES) Scheduling</a></li>
@@ -88,19 +98,14 @@ may be found in the <a href="https://slurm.schedmd.com/archive/">archive</a>.
 <li><a href="qos.html">Quality of Service (QOS)</a></li>
 <li><a href="resource_limits.html">Resource Limits</a></li>
 <li><a href="reservations.html">Resource Reservation Guide</a></li>
-<li><a href="cons_res_share.html">Sharing Consumable Resources</a></li>
+<li><a href="cons_tres_share.html">Sharing Consumable Resources</a></li>
 <li><a href="topology.html">Topology</a></li>
 <li><a href="tres.html">Trackable Resources (TRES)</a></li>
 </ul>
 </li>
-<li>Specific Systems
-<ul>
-<li><a href="cray.html">Cray User and Administrator Guide with Native Slurm</a></li>
-</ul>
-</li>
 <li>Cloud
 <ul>
-<li><a href="elastic_computing.html">Cloud Scheduling Guide</a></li>
+<li><a href="power_save.html">Cloud Scheduling Guide</a></li>
 <li><a href="https://github.com/schedmd/slurm-gcp">Slurm on Google Cloud Platform</a></li>
 <li><a href="https://www.schedmd.com/downloads/extras/Slurm_ParallelCluster_AWS.pdf">Deploying Slurm with ParallelCluster on Your AWS Cluster</a></li>
 <li><a href="https://github.com/Azure/cyclecloud-slurm">Slurm on Microsoft Azure and CycleCloud</a></li>
@@ -108,7 +113,8 @@ may be found in the <a href="https://slurm.schedmd.com/archive/">archive</a>.
 </li>
 </ul>
 
-<h2>Slurm Developers</h2>
+<h2 id="developers">Slurm Developers
+<a class="slurm_link" href="#developers"></a></h2>
 <ul>
 <li><a href="contributor.html">Contributor Agreement</a></li>
 <li><a href="programmer_guide.html">Programmer Guide</a></li>
@@ -132,6 +138,6 @@ may be found in the <a href="https://slurm.schedmd.com/archive/">archive</a>.
 </li>
 </ul>
 
-<p style="text-align:center;">Last modified 5 October 2022</p>
+<p style="text-align:center;">Last modified 22 August 2024</p>
 
 <!--#include virtual="footer.txt"-->

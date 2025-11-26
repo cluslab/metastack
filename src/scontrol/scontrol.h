@@ -65,7 +65,7 @@
 #include "src/common/log.h"
 #include "src/common/parse_time.h"
 #include "src/common/read_config.h"
-#include "src/common/select.h"
+#include "src/interfaces/select.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
@@ -75,6 +75,7 @@
 
 extern char *command_name;
 extern List clusters;
+extern char *cluster_names;
 extern int all_flag;	/* display even hidden partitions */
 #ifdef __METASTACK_OPT_CACHE_QUERY
 extern bool cache_flag;  /*display cache data information*/
@@ -97,6 +98,15 @@ extern int quiet_flag;	/* quiet=1, verbose=-1, normal=0 */
 extern int sibling_flag; /* show sibling jobs (if any fed job). */
 extern uint32_t cluster_flags; /* what type of cluster are we talking to */
 extern uint32_t euid; /* send request to the slurmctld in behave of this user */
+extern const char *mime_type; /* user requested JSON or YAML */
+extern const char *data_parser; /* data_parser args */
+
+extern front_end_info_msg_t *old_front_end_info_ptr;
+extern job_info_msg_t *old_job_info_ptr;
+extern node_info_msg_t *old_node_info_ptr;
+extern partition_info_msg_t *old_part_info_ptr;
+extern reserve_info_msg_t *old_res_info_ptr;
+extern slurm_ctl_conf_info_msg_t *old_slurm_ctl_conf_ptr;
 
 #ifdef __METASTACK_OPT_SCONTROL_JOBUSER
 struct sctl_params{
@@ -108,21 +118,14 @@ struct sctl_params{
 extern struct sctl_params params;
 #endif
 
-extern front_end_info_msg_t *old_front_end_info_ptr;
-extern job_info_msg_t *old_job_info_ptr;
-extern node_info_msg_t *old_node_info_ptr;
-extern partition_info_msg_t *old_part_info_ptr;
-extern reserve_info_msg_t *old_res_info_ptr;
-extern slurm_ctl_conf_info_msg_t *old_slurm_ctl_conf_ptr;
-
 extern int	parse_requeue_flags(char *s, uint32_t *flags);
 extern int	scontrol_batch_script(int argc, char **argv);
 extern int	scontrol_callerid(int argc, char **argv);
 extern int	scontrol_create_part(int argc, char **argv);
 extern int	scontrol_create_res(int argc, char **argv);
 extern int	scontrol_encode_hostlist(char *hostlist, bool sorted);
+extern void	scontrol_getaddrs(char *node_list);
 extern void	scontrol_gethost(const char *stepd_node, const char *node_name);
-extern uint16_t	scontrol_get_job_state(uint32_t job_id);
 extern int	scontrol_hold(char *op, char *job_id_str);
 extern int	scontrol_job_notify(int argc, char **argv);
 extern int	scontrol_job_ready(char *job_id_str);
@@ -154,20 +157,21 @@ extern void	scontrol_print_front_end_list(char *node_list);
 extern void	scontrol_print_front_end(char *node_name,
 					 front_end_info_msg_t  *
 					 front_end_buffer_ptr);
-extern void	scontrol_print_job (char * job_id_str);
+extern void scontrol_print_job(char *job_id_str, int argc, char **argv);
 extern void	scontrol_print_hosts (char * node_list);
-extern void	scontrol_print_licenses(const char *feature);
+extern void scontrol_print_licenses(const char *name, int argc, char **argv);
 extern void	scontrol_print_node (char *node_name,
 				     node_info_msg_t *node_info_ptr);
-extern void	scontrol_print_node_list (char *node_list);
+extern void scontrol_print_node_list(char *node_list, int argc, char **argv);
+//extern void scontrol_print_part(char *partition_name, int argc, char **argv);
 #if defined(__METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES) || defined(__METASTACK_PART_PRIORITY_WEIGHT)
-extern void	scontrol_print_part (char *partition_name, uint16_t meta_flags);
-#else
-extern void	scontrol_print_part (char *partition_name);
+extern void scontrol_print_part(char *partition_name, int argc, char **argv, uint16_t meta_flags);
 #endif
-extern void	scontrol_print_res (char *reservation_name);
-extern void	scontrol_print_step (char *job_step_id_str);
+extern void scontrol_print_res(char *reservation_name, int argc, char **argv);
+extern void scontrol_print_step(char *job_step_id_str, int argc, char **argv);
 extern void	scontrol_print_topo (char *node_list);
+extern char *scontrol_process_plus_minus(char plus_or_minus, char *src,
+					 bool nodestr);
 extern void	scontrol_requeue(uint32_t flags, char *job_str);
 extern void	scontrol_requeue_hold(uint32_t flags, char *job_str);
 extern void	scontrol_suspend(char *op, char *job_id_str);
@@ -179,9 +183,10 @@ extern int	scontrol_update_node (int argc, char **argv);
 extern int	scontrol_update_part (int argc, char **argv);
 extern int	scontrol_update_res (int argc, char **argv);
 extern int	scontrol_update_step (int argc, char **argv);
-#ifdef __METASTACK_NEW_LICENSE_OCCUPIED
-extern int	scontrol_update_license (int argc, char **argv);
-#endif
+
+/* power_node.c */
+extern int scontrol_power_nodes(char *node_list, bool power_up, bool asap,
+				bool force);
 
 /* reboot_node.c */
 extern int      scontrol_cancel_reboot(char *nodes);

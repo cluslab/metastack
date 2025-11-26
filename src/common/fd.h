@@ -49,12 +49,8 @@
 /* close all FDs >= a specified value */
 extern void closeall(int fd);
 
-#ifdef __METASTACK_BUG_FORKSTEPD_FD_LEAK
-void set_open_fd_close_on_exec(int fd);
-/*
- *  Sets all open file descriptors starting from fd to be closed on exec().
- */
-#endif
+/* Close a specific file descriptor and replace it with -1 */
+extern void fd_close(int *fd);
 
 void fd_set_close_on_exec(int fd);
 /*
@@ -102,6 +98,9 @@ pid_t fd_is_read_lock_blocked(int fd);
  *    returns the pid of the process holding the lock; o/w, returns 0.
  */
 
+/* return true if fd is writable right now */
+extern bool fd_is_writable(int fd);
+
 extern int wait_fd_readable(int fd, int time_limit);
 /* Wait for a file descriptor to be readable (up to time_limit seconds).
  * Return 0 when readable or -1 on error */
@@ -122,15 +121,15 @@ int fd_get_socket_error(int fd, int *err);
 /*
  * Expand symlink for the specified file descriptor from /proc/self/fd/
  *
- * References to /./, /../ and extra characters are resolved and a
- * null-terminated string is produced pointing to an absolute pathname up to a
- * maximum of PATH_MAX bytes.
+ * A NULL-terminated string with the contents of the symlink is produced,
+ * with a maximum of PATH_MAX + 1 bytes. For a socket/pipe it will contain the
+ * name. For regular files or fds it will contain a path.
  *
  * The caller should deallocate the returned string using xfree().
  *
  * IN fd - file descriptor to resolve symlink from
- * RET ptr to a string to an absolute path, without any symbolic link, /./ or
- * /../ components. NULL if path cannot be resolved.
+ * RET ptr to a string with the contents of the symlink. NULL if fd path cannot
+ * be resolved.
  *
  */
 extern char *fd_resolve_path(int fd);
@@ -162,5 +161,41 @@ extern char *poll_revents_to_str(const short revents);
  */
 extern void send_fd_over_pipe(int socket, int fd);
 extern int receive_fd_over_pipe(int socket);
+
+/*
+ * Make full directory path.
+ *
+ * Will not error if directories already exist.
+ * Warning: directory creation is a not an atomic operation.
+ * This function iteratively builds the path until complete, or an error
+ * occurs.
+ *
+ * IN is_dir:
+ *   true: last path component is a directory, and should be created
+ *   false: last path component is a filename, do not create
+ *
+ * RET SLURM_SUCCESS or error.
+ */
+extern int mkdirpath(const char *pathname, mode_t mode, bool is_dir);
+
+/*
+ * Recursively remove a directory and all contents.
+ * Takes care not to follow any symlinks outside the target directory.
+ *
+ * Returns the number of files/directories it failed to remove,
+ * or 0 on success.
+ */
+extern int rmdir_recursive(const char *path, bool remove_top);
+
+/*
+ * Use ioctl(FIONREAD) to get number of bytes in buffer waiting for read().
+ * IN fd - file descriptor to query
+ * IN/OUT readable_ptr - Pointer to populate if ioctl() is able to query
+ *	successfully. Only changed if RET=SLURM_SUCCESS.
+ * IN con_name - descriptive name for fd connection (for logging)
+ * RET SLURM_SUCCESS or error
+ */
+extern int fd_get_readable_bytes(int fd, int *readable_ptr,
+				 const char *con_name);
 
 #endif /* !_FD_H */

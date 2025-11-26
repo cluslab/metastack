@@ -15,11 +15,11 @@ sreport_SOURCES =	\
 	resv_reports.c resv_reports.h	\
 	common.c
 
-sreport_LDADD =  $(LIB_SLURM) $(DL_LIBS) $(READLINE_LIBS)
+sreport_LDADD =  $(LIB_SLURM) $(READLINE_LIBS)
 sreport_DEPENDENCIES = $(LIB_SLURM_BUILD)
 
-sreport_LDFLAGS = -export-dynamic $(CMD_LDFLAGS)
+sreport_LDFLAGS = $(CMD_LDFLAGS)
 
 force:
-$(sreport_LDADD) : force
+$(sreport_DEPENDENCIES) : force
 	@cd `dirname $@` && $(MAKE) `basename $@`

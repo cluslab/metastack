@@ -4,7 +4,7 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Copyright (C) 2010-2016 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov> et. al.
  *  CODE-OCEC-09-009. All rights reserved.
@@ -48,6 +48,7 @@
 #include <time.h>
 
 #include "src/common/bitstring.h"
+#include "src/common/extra_constraints.h"
 #include "src/common/hostlist.h"
 #include "src/common/list.h"
 #include "src/common/read_config.h"
@@ -71,6 +72,8 @@ typedef struct {
 	bitstr_t *node_bitmap;	/* bitmap of nodes with this configuration */
 	char *nodes;		/* name of nodes with this configuration */
 	uint64_t real_memory;	/* MB real memory on the node */
+	uint16_t res_cores_per_gpu; /* number of cores per GPU to allow
+				     * to only GPU jobs */
 	uint16_t threads;	/* number of threads per core */
 	uint32_t tmp_disk;	/* MB total storage in TMP_FS file system */
 	uint16_t tot_sockets;	/* number of sockets per node */
@@ -105,8 +108,8 @@ struct node_record {
 	uint16_t cpus_efctv;		/* count of effective cpus on the node.
 					   i.e. cpus minus specialized cpus*/
 	acct_gather_energy_t *energy;	/* power consumption data */
-	ext_sensors_data_t *ext_sensors; /* external sensor data */
 	char *extra;			/* arbitrary string */
+	data_t *extra_data;		/* Data serialized from extra */
 	char *features;			/* node's available features, used only
 					 * for state save/restore, DO NOT
 					 * use for scheduling purposes */
@@ -115,12 +118,17 @@ struct node_record {
 					 * use for scheduling purposes */
 	uint64_t free_mem;		/* Free memory in MiB */
 	time_t free_mem_time;		/* Time when free_mem last set */
+	char *gpu_spec;                 /* node's cores reserved for GPU jobs */
+	bitstr_t *gpu_spec_bitmap;	/* node gpu core specialization
+					 * bitmap */
 	char *gres;			/* node's generic resources, used only
 					 * for state save/restore, DO NOT
 					 * use for scheduling purposes */
 	List gres_list;			/* list of gres state info managed by
 					 * plugins */
 	uint32_t index;			/* Index into node_record_table_ptr */
+	char *instance_id;		/* cloud instance id */
+	char *instance_type;		/* cloud instance type */
 	time_t last_busy;		/* time node was last busy (no jobs) */
 	time_t last_response;		/* last response from the node */
 	uint32_t magic;			/* magic cookie for data integrity */
@@ -154,7 +162,6 @@ struct node_record {
 							 * status will be displayed as planned */
 #endif
 	uint16_t port;			/* TCP port number of the slurmd */
-	power_mgmt_data_t *power;	/* power management data */
 	time_t power_save_req_time;	/* Time of power_save request */
 	uint16_t protocol_version;	/* Slurm version number */
 	uint64_t real_memory;		/* MB real memory on the node */
@@ -163,8 +170,14 @@ struct node_record {
 					 * set, ignore if no reason is set. */
 	uint32_t reason_uid;		/* User that set the reason, ignore if
 					 * no reason is set. */
+	uint16_t res_cores_per_gpu;	/* number of cores per GPU to allow to
+					 * only GPU jobs */
+	time_t resume_after;		/* automatically resume DOWN or DRAINED
+					 * node at this point in time */
 	uint16_t resume_timeout; 	/* time required in order to perform a
 					 * node resume operation */
+	char *resv_name;                /* If node is in a reservation this is
+					 * the name of the reservation */
 	uint16_t run_job_cnt;		/* count of jobs running on node */
 	uint64_t sched_weight;		/* Node's weight for scheduling
 					 * purposes. For cons_tres use */
@@ -197,7 +210,7 @@ struct node_record {
 #ifdef __METASTACK_NEW_AUTO_SUPPLEMENT_AVAIL_NODES
 	char *orig_parts;		/*  Comma separated list of partitions containing
 				 * this node before be borrowed */
-#endif					
+#endif
 };
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -214,12 +227,13 @@ extern int cache_last_node_index;		/* index of last node in cache tabe */
 extern int copy_node_record_table_size;
 extern int cache_node_record_table_size;
 extern bool borrow_cache_nodes;
-
 #endif
 
-					 
 extern node_record_t **node_record_table_ptr;  /* ptr to node records */
-extern int node_record_count;		/* count in node_record_table_ptr */
+extern int node_record_count;		/* number of node slots
+					 * node_record_table_ptr */
+extern int active_node_record_count;	/* non-null node count in
+					 * node_record_table_ptr */
 extern xhash_t* node_hash_table;	/* hash table for node records */
 extern time_t last_node_update;		/* time of last node record update */
 
@@ -255,7 +269,7 @@ char * bitmap2node_name (bitstr_t *bitmap);
  * globals: node_record_table_ptr - pointer to node table
  * NOTE: the caller must xfree the memory at node_list when no longer required
  */
-hostlist_t bitmap2hostlist (bitstr_t *bitmap);
+hostlist_t *bitmap2hostlist(bitstr_t *bitmap);
 
 /*
  * build_all_nodeline_info - get a array of slurm_conf_node_t structures
@@ -274,16 +288,22 @@ extern void build_all_nodeline_info(bool set_bitmap, int tres_cnt);
 extern void build_all_frontend_info (bool is_slurmd_context);
 
 /*
+ * Build a node's node_spec_bitmap and core_spec_cnt from it's cpu_spec_list.
+ */
+extern int build_node_spec_bitmap(node_record_t *node_ptr);
+
+/*
  * Expand a nodeline's node names, host names, addrs, ports into separate nodes.
  */
-extern void expand_nodeline_info(slurm_conf_node_t *node_ptr,
-				 config_record_t *config_ptr,
-				 void (*_callback) (
-				       char *alias, char *hostname,
-				       char *address, char *bcast_addr,
-				       uint16_t port, int state_val,
-				       slurm_conf_node_t *node_ptr,
-				       config_record_t *config_ptr));
+extern int expand_nodeline_info(slurm_conf_node_t *node_ptr,
+				config_record_t *config_ptr,
+				char **err_msg,
+				int (*_callback) (
+					char *alias, char *hostname,
+					char *address, char *bcast_addr,
+					uint16_t port, int state_val,
+					slurm_conf_node_t *node_ptr,
+					config_record_t *config_ptr));
 
 /*
  * create_config_record - create a config_record entry and set is values to
@@ -309,67 +329,65 @@ extern config_record_t *config_record_from_conf_node(
 /*
  * Grow the node_record_table_ptr.
  */
-extern void grow_node_record_table_ptr();
+extern void grow_node_record_table_ptr(void);
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
-
 extern void init_node_record_table_ptr();
 
 /*
- * find_cache_node_record - find a record for node with specified name
- * IN: name - name of the desired node
- * RET: pointer to node record or NULL if not found
- * NOTE: Logs an error if the node name is NOT found
- */
+* find_cache_node_record - find a record for node with specified name
+* IN: name - name of the desired node
+* RET: pointer to node record or NULL if not found
+* NOTE: Logs an error if the node name is NOT found
+*/
 extern node_record_t *find_cache_node_record(char *name);
 /*
- * Delete node from node_record_table_ptr.
- *
- * IN node_ptr - node_ptr to delete
- */
+* Delete node from node_record_table_ptr.
+*
+* IN node_ptr - node_ptr to delete
+*/
 extern void delete_cache_node_record(node_record_t *node_ptr);
 
 extern void delete_cache_one_node_record(node_record_t *node_ptr);
 
 /*
- * Return the next non-null node_record_t * in the node_record_table_ptr.
- *
- * IN/OUT index - index to start iterating node_record_table_ptr from.
- *                Should be used in the following form so that i will increment
- *                to the next slot and i == node_ptr->index.
- *                e.g.
- *                for (int i = 0; (node_ptr = next_node(&i); i++)
- * RET - next non-null node_record_t * or NULL if finished iterating.
- */
+* Return the next non-null node_record_t * in the node_record_table_ptr.
+*
+* IN/OUT index - index to start iterating node_record_table_ptr from.
+*                Should be used in the following form so that i will increment
+*                to the next slot and i == node_ptr->index.
+*                e.g.
+*                for (int i = 0; (node_ptr = next_node(&i); i++)
+* RET - next non-null node_record_t * or NULL if finished iterating.
+*/
 extern node_record_t *next_cache_node(int *index, int node_record_count, node_record_t **node_record_table_ptr);
 
 typedef struct {
 	char *name;			/* name of the node. NULL==defunct */
 	bool only_state;
 	uint32_t node_state;		/* enum node_states, ORed with
-					 * NODE_STATE_NO_RESPOND if not
-					 * responding */
+					* NODE_STATE_NO_RESPOND if not
+					* responding */
 //	dynamic_plugin_data_t *select_nodeinfo; /* opaque data structure,
 //						 * use select_g_get_nodeinfo()
 //						 * to access contents */
 	time_t reason_time; 	/* Time stamp when reason was
-						 * set, ignore if no reason is set. */
+						* set, ignore if no reason is set. */
 	uint32_t reason_uid;		/* User that set the reason, ignore if
-					 * no reason is set. */
+					* no reason is set. */
 	uint16_t resume_timeout;	/* time required in order to perform a
-					 * node resume operation */
+					* node resume operation */
 	char *reason;
-    char *arch;
-    char *os;
-    uint32_t cpu_load;      /* CPU load * 100 */
-    char *features;
-    char *features_act;
-    char *gres;
+	char *arch;
+	char *os;
+	uint32_t cpu_load;      /* CPU load * 100 */
+	char *features;
+	char *features_act;
+	char *gres;
 	uint16_t cpus_efctv;
 	uint16_t part_cnt;
 	void **part_pptr;
 }node_state_record_t;
-
 
 extern int _del_cache_node(char *node_name);
 extern void rehash_cache_node(void);
@@ -380,21 +398,19 @@ extern void _list_delete_copy_config (config_record_t *config_ptr);
 extern void purge_cache_node_rec(node_record_t *node_ptr);
 extern void del_cache_node_state_record(node_state_record_t *src_node_ptr);
 extern void del_cache_node_info_record(dynamic_plugin_data_t **select_nodeinfo, int node_record_count);
-
-
 #endif
-
 
 /*
  * create_node_record - create a node record and set its values to defaults
  * IN config_ptr - pointer to node's configuration information
  * IN node_name - name of the node
- * RET pointer to the record or NULL if error
+ * OUT node_ptr - node_record_t** with created node on SUCESS, NULL otherwise.
+ * RET SUCESS, or error code
  * NOTE: grows node_record_table_ptr if needed and appends a new node_record_t *
  *       to node_record_table_ptr and increases node_record_count.
  */
-extern node_record_t *create_node_record(config_record_t *config_ptr,
-					 char *node_name);
+extern int create_node_record(config_record_t *config_ptr, char *node_name,
+			      node_record_t **node_ptr);
 
 /*
  * Create a new node_record_t * at the specified index.
@@ -416,18 +432,19 @@ extern node_record_t *create_node_record_at(int index, char *node_name,
  *
  * IN alias - name of node.
  * IN config_ptr - config_record_t* to initialize node with.
- * RET node_record_t* on SUCESS, NULL otherwise.
+ * OUT node_ptr - node_record_t** with added node on SUCESS, NULL otherwise.
+ * RET SUCESS, or error code
  */
-extern node_record_t *add_node_record(char *alias, config_record_t *config_ptr);
+extern int add_node_record(char *alias, config_record_t *config_ptr,
+			   node_record_t **node_ptr);
 
 /*
- * Add existing record to node_record_table_ptr
+ * Add existing record to node_record_table_ptr at specific index
  *
- * e.g. Preserving dynamic nodes after a reconfig.
  * Node must fit in currently allocated node_record_count/MaxNodeCount.
  * node_ptr->config_ptr is added to the the global config_list.
  */
-extern void insert_node_record(node_record_t *node_ptr);
+extern void insert_node_record_at(node_record_t *node_ptr, int index);
 
 /*
  * Delete node from node_record_table_ptr.
@@ -468,7 +485,7 @@ extern node_record_t *find_node_record_no_alias(char *name);
  * OUT bitmap     - set to bitmap, may not have all bits set on error
  * RET 0 if no error, otherwise EINVAL
  */
-extern int hostlist2bitmap (hostlist_t hl, bool best_effort, bitstr_t **bitmap);
+extern int hostlist2bitmap(hostlist_t *hl, bool best_effort, bitstr_t **bitmap);
 
 /*
  * init_node_conf - initialize the node configuration tables and values.
@@ -498,7 +515,7 @@ extern int node_name2bitmap (char *node_names, bool best_effort,
 			     bitstr_t **bitmap);
 
 /* Purge the contents of a node record */
-extern void purge_node_rec(node_record_t *node_ptr);
+extern void purge_node_rec(void *in);
 
 /*
  * rehash_node - build a hash table of the node_record entries.
@@ -516,10 +533,6 @@ extern void cr_fini_global_core_data(void);
 
 /*return the coremap index to the first core of the given node */
 extern uint32_t cr_get_coremap_offset(uint32_t node_index);
-
-/* Return a bitmap the size of the machine in cores. On a Bluegene
- * system it will return a bitmap in cnodes. */
-extern bitstr_t *cr_create_cluster_core_bitmap(int core_mult);
 
 /*
  * Determine maximum number of CPUs on this node usable by a job
@@ -555,6 +568,17 @@ extern char *find_hostname(uint32_t pos, char *hosts);
 extern node_record_t *next_node(int *index);
 
 /*
+ * Return the next non-null node_record_t * in the node_record_table_ptr that
+ * is set in the given bitmap.
+ *
+ * IN bitmap - bitmap of available nodes in node_record_table_ptr. The bitmap
+ *	       must match size of node_record_table_ptr.
+ * IN/OUT index - index to start iterating node_record_table_ptr from.
+ * RET - next non-null node_record_t * or NULL if finished iterating.
+ */
+extern node_record_t *next_node_bitmap(bitstr_t *bitmap, int *index);
+
+/*
  * Return bitmap with all active nodes set.
  *
  * node_record_table_ptr may have NULL slots in it, so return a bitmap with only
@@ -571,5 +595,34 @@ extern bitstr_t *node_conf_get_active_bitmap(void);
  * bits.
  */
 extern void node_conf_set_all_active_bits(bitstr_t *b);
+
+/*
+ * Tokenize node string on comma not followed by a digit. Return pointer to next
+ * token or NULL if there are no more.
+ *
+ * Commas followed by a digit are assumed to be within brackets.
+ * ex. string h[1,5],h[8,9] tokens are h[1,5] and h[8,9]
+ *
+ * IN s - pointer to string
+ * IN save_ptr - maintains context between successive calls that parse the same
+ * string (similar to strtok_r())
+ *
+ * NOTE: Like strtok_r() characters in s may be modified.
+ */
+extern char *node_conf_nodestr_tokenize(char *s, char **save_ptr);
+
+/*
+ * Make a bitmap the size of the full cluster.
+ * IN/OUT core_bitmap - If *core_bitmap noop, otherwise create a bitstr_t the
+ *                      size of the cluster.
+ */
+extern void node_conf_create_cluster_core_bitmap(bitstr_t **core_bitmap);
+
+extern void node_record_pack(void *in,
+			     uint16_t protocol_version,
+			     buf_t *buffer);
+extern int node_record_unpack(void **out,
+			      uint16_t protocol_version,
+			      buf_t *buffer);
 
 #endif /* !_HAVE_NODE_CONF_H */

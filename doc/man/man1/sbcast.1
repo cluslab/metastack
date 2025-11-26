@@ -1,4 +1,4 @@
-.TH sbcast "1" "Slurm Commands" "August 2022" "Slurm Commands"
+.TH sbcast "1" "Slurm Commands" "February 2024" "Slurm Commands"
 
 .SH "NAME"
 sbcast \- transmit a file to the nodes allocated to a Slurm job.
@@ -45,19 +45,14 @@ it. See also \fB\-\-send\-libs\fR.
 .IP
 
 .TP
-\fB\-F\fR, \fB\-\-fanout\fR=<\fInumber\fR>
-Specify the fanout of messages used for file transfer.
-Maximum value is currently eight.
-.IP
-
-.TP
 \fB\-f\fR, \fB\-\-force\fR
-If the destination file already exists, replace it.
+If the destination file (and the destination library directory when using
+\fB\-\-send\-libs\fR) already exists, replace it.
 .IP
 
 .TP
 \fB\-j\fR, \fB\-\-jobid\fR=<\fIjobID\fR[.\fIstepID\fR]>
-Specify the job ID to use with optional step ID.  If run inside an allocation
+Specify the job ID to use with optional step ID. If run inside an allocation
 this is unneeded as the job ID will read from the environment.
 .IP
 
@@ -94,6 +89,12 @@ The default value is \fIMessageTimeout\fR as reported by
 "scontrol show config".
 Setting a higher value may be necessitated by relatively slow
 I/O performance on the compute node disks.
+.IP
+
+.TP
+\fB\-F\fR, \fB\-\-treewidth\fR=<\fInumber\fR>
+Specify the treewidth of messages used for file transfer.
+Maximum value is currently 64. A value of "off" disables the fanout.
 .IP
 
 .TP
@@ -214,7 +215,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "SEE ALSO"

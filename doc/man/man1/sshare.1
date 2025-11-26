@@ -7,12 +7,12 @@ sshare \- Tool for listing the shares of associations to a cluster.
 \fBsshare\fR [\fIOPTIONS\fR...]
 
 .SH "DESCRIPTION"
-\fBsshare\fR is used to view Slurm share information.  This command is
+\fBsshare\fR is used to view Slurm share information. This command is
 only viable when running with the priority/multifactor plugin.
 The sshare information is derived from a database with the interface
 being provided by \fBslurmdbd\fR (Slurm Database daemon) which is
 read in from the slurmctld and used to process the shares available
-to a given association.  sshare provides Slurm share information of
+to a given association. sshare provides Slurm share information of
 Account, User, Raw Shares, Normalized Shares, Raw Usage, Normalized
 Usage, Effective Usage, the Fair\-share factor, the GrpTRESMins limit,
 Partitions and accumulated currently running TRES\-minutes for each association.
@@ -33,7 +33,8 @@ Display information for all users.
 .TP
 \fB\-M\fR, \fB\-\-clusters\fR=<\fIstring\fR>
 Clusters to issue commands to.
-Note that the SlurmDBD must be up for this option to work properly.
+Note that the \fBslurmdbd\fR must be up for this option to work properly, unless
+running in a federation with \fBFederationParameters=fed_display\fR configured.
 .IP
 
 .TP
@@ -50,6 +51,12 @@ Display a description of sshare options and commands.
 .TP
 \fB\-l\fR, \fB\-\-long\fR
 Long listing \- includes the normalized usage information.
+.IP
+
+.TP
+\f3\-\-json\fP, \f3\-\-json\fP=\fIlist\fR, \f3\-\-json\fP=<\fIdata_parser\fR>
+Dump information as JSON using the default data_parser plugin or explicit
+data_parser with parameters. Sorting and formatting arguments will be ignored.
 .IP
 
 .TP
@@ -97,6 +104,12 @@ Display more information about the specified options.
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Display the version number of sshare.
+.IP
+
+.TP
+\f3\-\-yaml\fP, \f3\-\-yaml\fP=\fIlist\fR, \f3\-\-yaml\fP=<\fIdata_parser\fR>
+Dump information as YAML using the default data_parser plugin or explicit
+data_parser with parameters. Sorting and formatting arguments will be ignored.
 .IP
 
 .SH "SSHARE OUTPUT FIELDS"
@@ -230,18 +243,6 @@ Specify debug flags for sshare to use. See DebugFlags in the
 variable takes precedence over the setting in the slurm.conf.
 .IP
 
-.TP
-\fBSHARE_EXTEND\fR
-The import format for the SHARE_EXTEND environment variable is as follows:
-export SHARE_EXTEND=field:[.][-]number,field:[.][-]number. '.' represents the print format, 
-where '.' indicates left indentation and no '.' indicates right indentation.
-The '-' sign after the colon represents left alignment.
-The number represents the length of the print format. 
-
-The supported fields for left and right indentation are as follows, 
-Account, Cluster, GrpTRESMins, GrpTRESRaw, Partition, TRESRunMins, User.
-.IP
-
 .SH "EXAMPLES"
 
 .TP
@@ -274,7 +275,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "SEE ALSO"

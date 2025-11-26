@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  serializer_url_encoded.c - Serializer for url-encoded.
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC.
- *  Written by Nathan Rini <nate@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -45,6 +44,9 @@
 #include "src/common/xassert.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+#include "src/interfaces/serializer.h"
+
+#include "src/interfaces/serializer.h"
 
 /*
  * These variables are required by the generic plugin interface.  If they
@@ -86,38 +88,66 @@ static bool _is_char_hex(char buffer)
 	       (buffer >= 'A' && buffer <= 'F');
 }
 
-extern int serializer_p_serialize(char **dest, const data_t *data,
-				  data_serializer_flags_t flags)
+extern int serialize_p_data_to_string(char **dest, size_t *length,
+				      const data_t *src,
+				      serializer_flags_t flags)
 {
 	return ESLURM_NOT_SUPPORTED;
 }
 
-static int _handle_new_key_char(data_t *d, char **key, char **buffer,
-				bool convert_types)
+static data_t *_on_key(data_t *dst, const char *key)
+{
+	data_t *c = data_key_get(dst, key);
+
+	if (!c)
+		return data_key_set(dst, key);
+
+	if (data_get_type(c) != DATA_TYPE_LIST) {
+		/*
+		 * Multiple values for the same key requires conversion to a
+		 * list of each value. Extract out the prior value and convert
+		 * to a list with the prior value as the first entry.
+		 */
+		data_t *k = data_new();
+		data_move(k, c);
+		data_set_list(c);
+		data_move(data_list_append(c), k);
+		FREE_NULL_DATA(k);
+	}
+
+	return data_list_append(c);
+}
+
+static int _handle_new_key_char(data_t *d, char **key, char **buffer)
 {
 	if (*key == NULL && *buffer == NULL) {
 		/* example: &test=value */
 	} else if (*key == NULL && *buffer != NULL) {
 		/*
-		 * example: test&test=value
-		 * existing buffer, assume null value.
+		 * example: test1&test2=value
+		 * only buffer given but not key value. Assume that the buffer
+		 * is instead the key and this is the user providing a flag
+		 * input which will be parsed as being true.
+		 *
+		 * The behavior is not yet standardised by OpenAPI:
+		 *  https://github.com/OAI/OpenAPI-Specification/issues/1782
+		 *
+		 * RFC3986 provides an example of "key=value" but leaves
+		 * the flag values ambiguous.
 		 */
-		data_t *c = data_key_set(d, *buffer);
-		data_set_null(c);
+		data_t *c = _on_key(d, *buffer);
+		data_set_bool(c, true);
 		xfree(*buffer);
 		*buffer = NULL;
 	} else if (*key != NULL && *buffer == NULL) {
 		/* example: &test1=&=value */
-		data_t *c = data_key_set(d, *key);
+		data_t *c = _on_key(d, *key);
 		data_set_null(c);
 		xfree(*key);
 		*key = NULL;
 	} else if (*key != NULL && *buffer != NULL) {
-		data_t *c = data_key_set(d, *key);
+		data_t *c = _on_key(d, *key);
 		data_set_string(c, *buffer);
-
-		if (convert_types)
-			(void) data_convert_type(c, DATA_TYPE_NONE);
 
 		xfree(*key);
 		xfree(*buffer);
@@ -183,11 +213,10 @@ static unsigned char _decode_seq(const char *ptr)
  * 	breaks key=value&key2=value2&...
  * 	into a data_t dictionary
  * 	dup keys will override existing keys
- * IN len - not used
  * RET SLURM_SUCCESS or error
  */
-extern int serializer_p_deserialize(data_t **dest, const char *src,
-				    size_t len)
+extern int serialize_p_string_to_data(data_t **dest, const char *src,
+				      size_t length)
 {
 	int rc = SLURM_SUCCESS;
 	data_t *d = data_set_dict(data_new());
@@ -223,7 +252,7 @@ extern int serializer_p_deserialize(data_t **dest, const char *src,
 			break;
 		case ';': /* rfc1866 requests ';' treated like '&' */
 		case '&': /* rfc1866 only */
-			rc = _handle_new_key_char(d, &key, &buffer, true);
+			rc = _handle_new_key_char(d, &key, &buffer);
 			break;
 		case '=': /* rfc1866 only */
 			if (key == NULL && buffer == NULL) {
@@ -254,10 +283,10 @@ extern int serializer_p_deserialize(data_t **dest, const char *src,
 
 	/* account for last entry */
 	if (!rc)
-		rc = _handle_new_key_char(d, &key, &buffer, true);
+		rc = _handle_new_key_char(d, &key, &buffer);
 	if (!rc && buffer)
 		/* account for last entry not having a value */
-		rc = _handle_new_key_char(d, &key, &buffer, true);
+		rc = _handle_new_key_char(d, &key, &buffer);
 
 	xassert(rc || !buffer);
 	xassert(rc || !key);

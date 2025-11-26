@@ -2,7 +2,7 @@
  *  job_reports.c - functions for generating job reports
  *                  from accounting infrastructure.
  *****************************************************************************
- *  Copyright (C) 2010-2017 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *  Copyright (C) 2008 Lawrence Livermore National Security.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Danny Auble <da@llnl.gov>
@@ -333,7 +333,7 @@ static int _set_cond(int *start, int argc, char **argv,
 
 static int _setup_print_fields_list(List format_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	print_field_t *field = NULL;
 	char *object = NULL;
 
@@ -419,7 +419,7 @@ static int _setup_print_fields_list(List format_list)
 			xfree(field);
 			continue;
 		}
- #ifdef __METASTACK_OPT_PRINT_COMMAND
+#ifdef __METASTACK_OPT_PRINT_COMMAND
 		char *env_sacctmgr = NULL;
 		char *format =NULL;
 		if ((env_sacctmgr = getenv("SREPORT_EXTEND"))) {
@@ -441,7 +441,7 @@ static int _setup_print_fields_list(List format_list)
 
 static int _setup_grouping_print_fields_list(List grouping_list)
 {
-	ListIterator itr = NULL;
+	list_itr_t *itr = NULL;
 	print_field_t *field = NULL;
 	char *object = NULL;
 	char *last_object = NULL;
@@ -487,7 +487,7 @@ static int _setup_grouping_print_fields_list(List grouping_list)
 		if (print_job_count)
 			field->print_routine = print_fields_uint;
 		else
-			field->print_routine = slurmdb_report_print_time;
+			field->print_routine = print_fields_str;
 		last_size = size;
 		last_object = object;
 		if ((tmp_char = strstr(object, "\%"))) {
@@ -516,7 +516,7 @@ static int _setup_grouping_print_fields_list(List grouping_list)
 		if (print_job_count)
 			field->print_routine = print_fields_uint;
 		else
-			field->print_routine = slurmdb_report_print_time;
+			field->print_routine = print_fields_str;
 		if ((tmp_char = strstr(last_object, "\%"))) {
 			int newlen = atoi(tmp_char+1);
 			if (newlen)
@@ -559,7 +559,7 @@ static void _combine_job_groups(List first_job_list, List new_job_list)
 {
 	slurmdb_report_job_grouping_t *orig_job_group = NULL;
 	slurmdb_report_job_grouping_t *dup_job_group = NULL;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 
 	if (!first_job_list || !new_job_list)
 		return;
@@ -612,7 +612,7 @@ static void _combine_acct_groups(List first_acct_list, List new_acct_list)
 {
 	slurmdb_report_acct_grouping_t *orig_report_acct = NULL;
 	slurmdb_report_acct_grouping_t *dup_report_acct = NULL;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 
 	if (!first_acct_list || !new_acct_list)
 		return;
@@ -640,7 +640,7 @@ static void _combine_acct_groups(List first_acct_list, List new_acct_list)
 static void _merge_cluster_groups(List slurmdb_report_cluster_grouping_list)
 {
 	slurmdb_report_cluster_grouping_t *group = NULL, *first_group = NULL;
-	ListIterator iter = NULL;
+	list_itr_t *iter = NULL;
 
 	if (list_count(slurmdb_report_cluster_grouping_list) < 2)
 		return;
@@ -678,11 +678,11 @@ static int _run_report(int type, int argc, char **argv)
 	int i = 0, tres_cnt = 0;
 	slurmdb_tres_rec_t *tres;
 	uint64_t count1, count2;
-	ListIterator itr = NULL;
-	ListIterator itr2 = NULL;
-	ListIterator cluster_itr = NULL;
-	ListIterator local_itr = NULL;
-	ListIterator acct_itr = NULL;
+	list_itr_t *itr = NULL;
+	list_itr_t *itr2 = NULL;
+	list_itr_t *cluster_itr = NULL;
+	list_itr_t *local_itr = NULL;
+	list_itr_t *acct_itr = NULL;
 	slurmdb_report_cluster_grouping_t *cluster_group = NULL;
 	slurmdb_report_acct_grouping_t *acct_group = NULL;
 	slurmdb_report_job_grouping_t *job_group = NULL;
@@ -694,7 +694,7 @@ static int _run_report(int type, int argc, char **argv)
 	List format_list = list_create(xfree_ptr);
 	List grouping_list = list_create(xfree_ptr);
 	List header_list = NULL;
-	char *object_str = "";
+	char *object_str = "", *tmp_char;
 
 	/* init memory before chance of going to end_it before being init'ed. */
 	memset(&total_field, 0, sizeof(print_field_t));
@@ -739,11 +739,11 @@ static int _run_report(int type, int argc, char **argv)
 		if (!list_count(format_list))
 #ifdef __METASTACK_OPT_PRINT_COMMAND
 		{
-			if (getenv("SREPORT_EXTEND"))
-			{
+			if (getenv("SREPORT_EXTEND")) {
 				slurm_addto_char_list(format_list, "Cl,a");
-			} else
+			} else {
 				slurm_addto_char_list(format_list, "Cl,a%-20");
+			}
 		}
 #else
 			slurm_addto_char_list(format_list, "Cl,a%-20");
@@ -780,8 +780,8 @@ static int _run_report(int type, int argc, char **argv)
 		goto end_it;
 
 	if (print_fields_have_header) {
-		char start_char[20];
-		char end_char[20];
+		char start_char[256];
+		char end_char[256];
 		time_t my_start = job_cond->usage_start;
 		time_t my_end = job_cond->usage_end - 1;
 
@@ -809,7 +809,7 @@ static int _run_report(int type, int argc, char **argv)
 	total_field.type = PRINT_JOB_SIZE;
 	total_field.name = xstrdup("% of cluster");
 	total_field.len = 12;
-	total_field.print_routine = slurmdb_report_print_time;
+	total_field.print_routine = print_fields_str;
 	list_append(header_list, &total_field);
 
 	print_fields_header(header_list);
@@ -883,16 +883,19 @@ static int _run_report(int type, int argc, char **argv)
 				field = list_next(itr2);
 				switch (field->type) {
 				case PRINT_JOB_SIZE:
+					tmp_char = sreport_get_time_str(
+							job_cpu_alloc_secs,
+							acct_tres_alloc_secs);
 					field->print_routine(
 						field,
-						job_cpu_alloc_secs,
-						acct_tres_alloc_secs,
+						tmp_char,
 						0);
+					xfree(tmp_char);
 					break;
 				case PRINT_JOB_COUNT:
 					field->print_routine(
 						field,
-						job_group->count,
+						&job_group->count,
 						0);
 					break;
 				default:
@@ -914,8 +917,9 @@ static int _run_report(int type, int argc, char **argv)
 				count1 = acct_group->count;
 				count2 = cluster_group->count;
 			}
-			total_field.print_routine(&total_field,
-						  count1, count2, 1);
+			tmp_char = sreport_get_time_str(count1, count2);
+			total_field.print_routine(&total_field, tmp_char, 1);
+			xfree(tmp_char);
 			time_format = temp_format;
 			printf("\n");
 		}

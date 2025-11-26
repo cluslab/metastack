@@ -1,4 +1,4 @@
-.TH "acct_gather.conf" "5" "Slurm Configuration File" "April 2022" "Slurm Configuration File"
+.TH "acct_gather.conf" "5" "Slurm Configuration File" "December 2023" "Slurm Configuration File"
 
 .SH "NAME"
 \fBacct_gather.conf\fR \- Slurm configuration file for the acct_gather plugins
@@ -36,8 +36,21 @@ specified in the \fBslurm.conf\fR under the following configuration entries:
 
 .LP
 If the respective plugin for an option is not loaded then that option will
-appear to be unknown by Slurm and silently ignored. If you decide to change
-plugin types you may also have to change the related options.
+be unknown to Slurm, causing the daemon to fatal on initialization.
+If you decide to change plugin types in \fBslurm.conf\fR, also make sure to
+change the related options in \fBacct_gather.conf\fR.
+
+.SH acct_gather_energy/gpu
+Required entry in slurm.conf:
+.RS
+.nf
+AcctGatherEnergyType=acct_gather_energy/gpu
+.fi
+.RE
+This plugin doesn't read any options from \fBacct_gather.conf\fR.
+.br
+Dataset provided by the plugin is: Energy.
+.IP
 
 .SH acct_gather_energy/IPMI
 Required entry in slurm.conf:
@@ -74,10 +87,10 @@ The key "Node" is mandatory and is used to know the consumed energy for nodes
 Other keys are optional and are named by administrator.
 These keys are useful only when profile is activated for energy to store power
 (in watt) of each key.
-<values> are integers, multiple values can be set with "," separators.
-The sum of the listed sensors is used for each key.
-EnergyIPMIPowerSensors is optional, default value is "Node=number" where
-"number" is the id of the first power sensor returned by ipmi\-sensors.
+<values> are integers except when using DCMI. Multiple values can be set with
+"," separators. The sum of the listed sensors is used for each key.
+EnergyIPMIPowerSensors is optional, default value is "Node=<value>" where
+"<value>" is the id of the first power sensor returned by ipmi\-sensors.
 .br
 i.e.
 .br
@@ -88,6 +101,20 @@ EnergyIPMIPowerSensors=Node=16,19,23,26;Socket0=16,23;Socket1=19,26;SSUP=23,26;K
 EnergyIPMIPowerSensors=Node=29,32;SSUP0=29;SSUP1=32
 .br
 EnergyIPMIPowerSensors=Node=1280
+
+Data Center Manageability Interface - acct_gather_energy/ipmi supports gathering
+power data through DCMI IPMI extension commands. When configured, the ipmi
+plugin will query the DCMI using the "System Power mode" or the
+"Enhanced System Power Statistics mode" flags depending on the configuration.
+
+To configure one or the other, the special sensor values DCMI or DCMI_ENHANCED
+can be used, for example:
+.br
+.na
+EnergyIPMIPowerSensors=Node=DCMI
+.ad
+.br
+EnergyIPMIPowerSensors=Node=DCMI_ENHANCED
 
 .LP
 The following \fBacct_gather.conf\fR parameters are defined to control the
@@ -104,6 +131,14 @@ Specify BMC Password.
 .RE
 Datasets provided by the plugin have name: <IPMI_SENSOR_LABEL>Power.
 .IP
+
+.SS
+NOTES:
+.LP
+This plugin requires the freeipmi development files to be installed and linkable
+at configure time. The plugin will not build otherwise. When building the RPM,
+\fIrpmbuild ... --with freeipmi\fR can be specified to explicitly check for
+these dependencies.
 
 .SH acct_gather_energy/rapl
 Required entry in slurm.conf:
@@ -266,11 +301,6 @@ Network (InfiniBand) data is collected.
 .IP
 
 .TP
-\fBTask\fR
-Task (I/O, Memory, ...) data is collected.
-.IP
-
-.TP
 \fBapptype\fR
 Job application type data is collected.
 .IP
@@ -279,6 +309,11 @@ Job application type data is collected.
 \fBJobmonitor\fR
 The jobmonitor parameter is used to control whether the abnormal event and the corresponding data collection are put
 into the library.
+.IP
+
+.TP
+\fBTask\fR
+Task (I/O, Memory, ...) data is collected.
 .RE
 .IP
 
@@ -331,6 +366,15 @@ in ProfileInfluxDBDatabase. Required in v2.x and optional in v1.x InfluxDB.
 This is only needed if InfluxDB v1.x is configured with authentication enabled
 in the [http] config section and a user has been granted at least WRITE access
 to the database. See also \fBProfileInfluxDBPass\fR.
+.IP
+
+.TP
+\fBProfileInfluxDBTimeout\fR=<seconds>
+The maximum time in seconds that an HTTP query to the InfluxDB server can take.
+After this timeout the data is discarded. Be aware that a long timeout can drain
+your nodes if the InfluxDB server is unresponsive and, when terminating the job,
+the last dataset takes more than UnkillableStepTimeout to be sent. Internally,
+that option sets CURLOPT_TIMEOUT library option. Default is 10 seconds.
 .IP
 
 .TP
@@ -484,7 +528,7 @@ any later version.
 .LP
 Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
 .SH "SEE ALSO"

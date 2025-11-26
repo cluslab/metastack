@@ -6,7 +6,7 @@
  *  When the node is restored to normal operation, another script will be
  *  executed. Many parameters are available to control this mode of operation.
  *****************************************************************************
- *  Copyright (C) 2016 SchedMD LLC
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -44,19 +44,16 @@
 #define _HAVE_POWER_SAVE_H
 
 /* Global Variables */
-extern bool cloud_reg_addrs;
 extern List resume_job_list;
 
 /*
  * config_power_mgr - Read power management configuration
  */
 extern void config_power_mgr(void);
+extern void config_power_mgr_fini(void);
 
-/* start_power_mgr - Start power management thread as needed. The thread
- *	terminates automatically at slurmctld shutdown time.
- * IN thread_id - pointer to thread ID of the started pthread.
- */
-extern void start_power_mgr(pthread_t *thread_id);
+extern void power_save_init(void);
+extern void power_save_fini(void);
 
 /* Report if node power saving is enabled */
 extern bool power_save_test(void);
@@ -71,8 +68,13 @@ extern bool power_save_test(void);
 extern int power_job_reboot(bitstr_t *node_bitmap, job_record_t *job_ptr,
 			    char *features);
 
-/* Free module's allocated memory */
-extern void power_save_fini(void);
+/*
+ * Parse settings for excluding nodes, partitions and states from being
+ * suspended.
+ *
+ * This creates node bitmaps. Must be done again when node bitmaps change.
+ */
+extern void power_save_exc_setup(void);
 
 /*
  * Set node power times based on global and per-partition settings.

@@ -23,7 +23,7 @@ pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
 	int target_fd = -1;
 	int oom_score_fd = -1;
 	pid_t pid;
-	char *argv_str;
+	char *argv_str = NULL;
 
 	argv_str = join_strings(argv, " ");
 	if (argv_str != NULL) {
@@ -137,7 +137,7 @@ void enroot_print_log(int log_fd, bool error)
 {
 	int ret;
 	FILE *fp;
-	char *line;
+	char *line = NULL;
 
 	ret = lseek(log_fd, 0, SEEK_SET);
 	if (ret < 0) {

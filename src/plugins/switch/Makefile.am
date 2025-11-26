@@ -1,9 +1,9 @@
 # Makefile for switch plugins
 
-SUBDIRS = none
+SUBDIRS =
 
-if WITH_SWITCH_CRAY_ARIES
-SUBDIRS += cray_aries
+if LINUX_BUILD
+SUBDIRS += nvidia_imex
 endif
 
 if WITH_SWITCH_HPE_SLINGSHOT

@@ -53,11 +53,7 @@
  *  Maximum message size. Messages larger than this value (in bytes)
  *  will not be received.
  */
-#ifdef __METASTACK_BUG_MSGSIZE_FIX
-#define MAX_MSG_SIZE (1024 * 1024 * 1024 * 2U)
-#else
 #define MAX_MSG_SIZE (1024 * 1024 * 1024)
-#endif
 
 #define BUF_MAGIC 0x42554545
 #define BUF_SIZE (16 * 1024)
@@ -75,6 +71,7 @@ typedef struct {
 	uint32_t size;
 	uint32_t processed;
 	bool mmaped;
+	bool shadow;
 } buf_t;
 
 #define get_buf_data(__buf)		(__buf->head)
@@ -91,10 +88,40 @@ typedef struct {
 
 extern buf_t *create_buf(char *data, uint32_t size);
 extern buf_t *create_mmap_buf(const char *file);
+extern buf_t *create_shadow_buf(char *data, uint32_t size);
 extern void free_buf(buf_t *my_buf);
 extern buf_t *init_buf(uint32_t size);
+/*
+ * Try to create buffer by given number of bytes.
+ * IN size - number of bytes in buffer
+ * RET ptr to buffer or NULL on error
+ */
+extern buf_t *try_init_buf(uint32_t size);
 extern void grow_buf(buf_t *my_buf, uint32_t size);
+/*
+ * Try to grow buffer by given number of bytes.
+ * Buffer's head pointer may be resized or replaced.
+ * IN my_buf - pointer to buffer
+ * IN size - number of bytes to grow buffer by
+ * RET SLURM_SUCCESS or error
+ */
+extern int try_grow_buf(buf_t *buffer, uint32_t size);
+/*
+ * Ensure buffer has enough remaining bytes
+ * Note: Buffer's head pointer may be resized or replaced.
+ * IN my_buf - pointer to buffer
+ * IN size - number of bytes to grow buffer by
+ * RET SLURM_SUCCESS or error
+ */
+extern int try_grow_buf_remaining(buf_t *buffer, uint32_t size);
 extern void *xfer_buf_data(buf_t *my_buf);
+/*
+ * Swap data between two buffers
+ * IN x - pointer to buffer to swap
+ * IN y - pointer to buffer to swap
+ * RET SLURM_SUCCESS or error
+ */
+extern int swap_buf_data(buf_t *x, buf_t *y);
 
 extern void pack_time(time_t val, buf_t *buffer);
 extern int unpack_time(time_t *valp, buf_t *buffer);
@@ -145,8 +172,8 @@ extern void packbuf(buf_t *source, buf_t *buffer);
 extern void packmem(void *valp, uint32_t size_val, buf_t *buffer);
 extern int unpackmem_ptr(char **valp, uint32_t *size_valp, buf_t *buffer);
 extern int unpackmem_xmalloc(char **valp, uint32_t *size_valp, buf_t *buffer);
-extern int unpackmem_malloc(char **valp, uint32_t *size_valp, buf_t *buffer);
 
+extern int unpackstr_xmalloc(char **valp, uint32_t *size_valp, buf_t *buffer);
 extern int unpackstr_xmalloc_escaped(char **valp, uint32_t *size_valp,
 				     buf_t *buffer);
 extern int unpackstr_xmalloc_chooser(char **valp, uint32_t *size_valp,
@@ -270,13 +297,6 @@ extern int unpackmem_array(char *valp, uint32_t size_valp, buf_t *buffer);
 		goto unpack_error;			\
 } while (0)
 
-#define safe_unpackmem_malloc(valp,size_valp,buf) do {	\
-	xassert(sizeof(*size_valp) == sizeof(uint32_t));\
-	xassert(buf->magic == BUF_MAGIC);		\
-	if (unpackmem_malloc(valp,size_valp,buf))	\
-		goto unpack_error;			\
-} while (0)
-
 #define packstr(str,buf) do {				\
 	uint32_t _size = 0;				\
 	if((char *)str != NULL)				\
@@ -339,14 +359,22 @@ extern int unpackmem_array(char *valp, uint32_t size_valp, buf_t *buffer);
 	FREE_NULL_BITMAP(b);				\
 } while (0)
 
-#define unpackstr_malloc	                        \
-        unpackmem_malloc
+#define unpack_bit_str_hex_as_fmt_str(str, buf) do {	\
+	bitstr_t *b = NULL;				\
+	unpack_bit_str_hex(&b, buf);			\
+	if (b)						\
+		*str = bit_fmt_full(b);			\
+	FREE_NULL_BITMAP(b);				\
+} while (0)
 
-#define unpackstr_xmalloc	                        \
-        unpackmem_xmalloc
-
-#define safe_unpackstr_malloc	                        \
-        safe_unpackmem_malloc
+#define safe_skipstr(buf) do {					\
+	char *valp = NULL;					\
+	uint32_t size_valp;					\
+	xassert(buf->magic == BUF_MAGIC);			\
+	if (unpackstr_xmalloc_chooser(&valp, &size_valp, buf))	\
+		goto unpack_error;				\
+	xfree(valp);						\
+} while (0)
 
 #define safe_unpackstr(valp, buf) do {				\
 	uint32_t size_valp;					\

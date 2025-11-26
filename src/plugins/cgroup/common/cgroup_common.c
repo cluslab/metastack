@@ -1,8 +1,7 @@
 /*****************************************************************************\
  *  cgroup_common.c - Cgroup plugin common functions
  *****************************************************************************
- *  Copyright (C) 2021 SchedMD LLC
- *  Written by Felip Moll <felip.moll@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -35,6 +34,13 @@
 \*****************************************************************************/
 
 #include "cgroup_common.h"
+#include <poll.h>
+
+/* Testing read() on cgroup interfaces returns 4092 bytes at most. */
+#define CGROUP_READ_COUNT 4092
+
+/* How much to wait for a pid to be removed from one cgroup. */
+#define MAX_MOVE_WAIT 1000 /* Miliseconds */
 
 /* These are defined here so when we link with something other than
  * the slurmctld we will have these symbols defined.  They will get
@@ -122,147 +128,104 @@ static bool _is_empty_dir(const char *dirpath)
 	return empty;
 }
 
-extern size_t common_file_getsize(int fd)
+/*
+ * Read a cgroup file interface in chunks of CGROUP_READ_COUNT. If the read is
+ * atomic, we should have a correct snapshot of the data. If multiple read()
+ * have been needed, the file might have been changed in between calls.
+ *
+ * IN: file_path - file path
+ * IN/OUT: out - pointer to file contents
+ *
+ * RET: -1 on error, accumulated number of read bytes otherwise
+ */
+static ssize_t _read_cg_file(char *file_path, char **out)
 {
-	int rc;
-	size_t fsize;
-	off_t offset;
-	char c;
-
-	/* store current position and rewind */
-	offset = lseek(fd, 0, SEEK_CUR);
-	if (offset < 0)
-		return -1;
-	if (lseek(fd, 0, SEEK_SET) < 0)
-		error("%s: lseek(0): %m", __func__);
-
-	/* get file size */
-	fsize = 0;
-	do {
-		rc = read(fd, (void*)&c, 1);
-		if (rc > 0)
-			fsize++;
-	} while ((rc < 0 && errno == EINTR) || rc > 0);
-
-	/* restore position */
-	if (lseek(fd, offset, SEEK_SET) < 0)
-		error("%s: lseek(): %m", __func__);
-
-	if (rc < 0)
-		return -1;
-	else
-		return fsize;
-}
-
-extern int common_file_write_uint64s(char *file_path, uint64_t *values, int nb)
-{
-	int fstatus;
-	int rc;
-	int fd;
-	char tstr[256];
-	uint64_t value;
-	int i;
-
-	/* open file for writing */
-	fd = open(file_path, O_WRONLY, 0700);
-	if (fd < 0) {
-		log_flag(CGROUP, "unable to open '%s' for writing : %m",
-			 file_path);
-		return SLURM_ERROR;
-	}
-
-	/* add one value per line */
-	fstatus = SLURM_SUCCESS;
-	for (i = 0; i < nb ; i++) {
-
-		value = values[i];
-
-		rc = snprintf(tstr, sizeof(tstr), "%"PRIu64"", value);
-		if (rc < 0) {
-			log_flag(CGROUP, "unable to build %"PRIu64" string value, skipping",
-				 value);
-			fstatus = SLURM_ERROR;
-			continue;
-		}
-
-		do {
-			rc = write(fd, tstr, strlen(tstr)+1);
-		} while (rc < 0 && errno == EINTR);
-
-		if (rc < 1) {
-			log_flag(CGROUP, "unable to add value '%s' to file '%s' : %m",
-				 tstr, file_path);
-			if (errno != ESRCH)
-				fstatus = SLURM_ERROR;
-		}
-
-	}
-
-	/* close file */
-	close(fd);
-
-	return fstatus;
-}
-
-extern int common_file_read_uint64s(char *file_path, uint64_t **pvalues,
-				    int *pnb)
-{
-	int rc;
-	int fd;
-
-	size_t fsize;
+	int fd, nr_reads = 0;
+	size_t count = CGROUP_READ_COUNT;
+	ssize_t rc, read_bytes = 0;
 	char *buf;
-	char *p;
 
-	uint64_t *pa=NULL;
-	int i;
-
-	/* check input pointers */
-	if (pvalues == NULL || pnb == NULL)
-		return SLURM_ERROR;
+	xassert(!*out);
 
 	/* open file for reading */
 	fd = open(file_path, O_RDONLY, 0700);
 	if (fd < 0) {
-		log_flag(CGROUP, "unable to open '%s' for reading : %m", file_path);
-		return SLURM_ERROR;
-	}
-
-	/* get file size */
-	fsize = common_file_getsize(fd);
-	if (fsize == -1) {
-		close(fd);
+		error("unable to open '%s' for reading : %m", file_path);
 		return SLURM_ERROR;
 	}
 
 	/* read file contents */
-	buf = xmalloc(fsize + 1);
-	do {
-		rc = read(fd, buf, fsize);
-	} while (rc < 0 && errno == EINTR);
-	close(fd);
-	buf[fsize]='\0';
-
-	/* count values (splitted by \n) */
-	i=0;
-	if (rc > 0) {
-		p = buf;
-		while (xstrchr(p, '\n') != NULL) {
-			i++;
-			p = xstrchr(p, '\n') + 1;
+	buf = xmalloc(count);
+	while ((rc = read(fd, buf + read_bytes, count))) {
+		if (rc < 0) {
+			if (errno == EINTR)
+				continue;
+			error("unable to read '%s': %m", file_path);
+			xfree(buf);
+			break;
 		}
+		read_bytes += rc;
+		xrealloc(buf, (read_bytes + count));
+		nr_reads++;
 	}
 
-	/* build uint64_t list */
-	if (i > 0) {
-		pa = xcalloc(i, sizeof(uint64_t));
-		p = buf;
-		i = 0;
-		while (xstrchr(p, '\n') != NULL) {
-			long long unsigned int ll_tmp;
-			sscanf(p, "%llu", &ll_tmp);
-			pa[i++] = ll_tmp;
+	if (nr_reads > 1)
+		log_flag(CGROUP, "%s: Read %zd bytes after %d read() syscalls. File may have changed between syscalls.",
+			 file_path, read_bytes, nr_reads);
+
+	close(fd);
+	*out = buf;
+	return (rc == -1) ? rc : read_bytes;
+}
+
+extern int common_file_read_uints(char *file_path, void **values, int *nb,
+				  int base)
+{
+	int i;
+	ssize_t fsize;
+	char *buf = NULL, *p;
+	uint32_t *values32 = NULL;
+	uint64_t *values64 = NULL;
+	long long unsigned int ll_tmp;
+
+	/* check input pointers */
+	if (values == NULL || nb == NULL)
+		return SLURM_ERROR;
+
+	if ((fsize = _read_cg_file(file_path, &buf)) < 0)
+		return SLURM_ERROR;
+
+	/* count values (splitted by \n) */
+	i = 0;
+	p = buf;
+	while (xstrchr(p, '\n') != NULL) {
+		i++;
+		p = xstrchr(p, '\n') + 1;
+	}
+
+	if (base == 32) {
+		/* build uint32_t list */
+		if (i > 0) {
+			values32 = xcalloc(i, sizeof(uint32_t));
+			p = buf;
+			i = 0;
+			while (xstrchr(p, '\n') != NULL) {
+				sscanf(p, "%u", (values32 + i));
+				p = xstrchr(p, '\n') + 1;
+				i++;
+			}
+		}
+	} else if (base == 64) {
+		/* build uint64_t list */
+		if (i > 0) {
+			values64 = xcalloc(i, sizeof(uint64_t));
+			p = buf;
+			i = 0;
+			while (xstrchr(p, '\n') != NULL) {
+				sscanf(p, "%llu", &ll_tmp);
+				values64[i++] = ll_tmp;
 			p = xstrchr(p, '\n') + 1;
+			}
 		}
 	}
 
@@ -270,17 +233,24 @@ extern int common_file_read_uint64s(char *file_path, uint64_t **pvalues,
 	xfree(buf);
 
 	/* set output values */
-	*pvalues = pa;
-	*pnb = i;
+	if (base == 32)
+		*values = values32;
+	else if (base == 64)
+		*values = values64;
+
+	*nb = i;
 
 	return SLURM_SUCCESS;
 }
 
-extern int common_file_write_uint32s(char *file_path, uint32_t *values, int nb)
+extern int common_file_write_uints(char *file_path, void *values, int nb,
+				   int base)
 {
 	int rc;
 	int fd;
 	char tstr[256];
+	uint32_t *values32 = NULL;
+	uint64_t *values64 = NULL;
 
 	/* open file for writing */
 	if ((fd = open(file_path, O_WRONLY, 0700)) < 0) {
@@ -289,13 +259,36 @@ extern int common_file_write_uint32s(char *file_path, uint32_t *values, int nb)
 		return SLURM_ERROR;
 	}
 
+	if (base == 32)
+		values32 = (uint32_t *) values;
+	else if (base == 64)
+		values64 = (uint64_t *) values;
+
 	/* add one value per line */
 	for (int i = 0; i < nb; i++) {
-		uint32_t value = values[i];
-
-		if (snprintf(tstr, sizeof(tstr), "%u", value) < 0)
-			fatal("%s: unable to build %u string value",
-			      __func__, value);
+		if (base == 32) {
+			uint32_t value = values32[i];
+			if (snprintf(tstr, sizeof(tstr), "%u", value) < 0) {
+				error("%s: unable to build %u string value: %m",
+				      __func__, value);
+				close(fd);
+				return SLURM_ERROR;
+			}
+		} else if (base == 64) {
+			uint64_t value = values64[i];
+			if (snprintf(tstr, sizeof(tstr),
+				     "%"PRIu64"", value) <0) {
+				error("%s: unable to build %"PRIu64" string value: %m",
+				      __func__, value);
+				close(fd);
+				return SLURM_ERROR;
+			}
+		} else {
+			error("%s: unexpected base %d. Unable to write to %s",
+			      __func__, base, file_path);
+			close(fd);
+			return SLURM_ERROR;
+		}
 
 		/* write terminating NUL byte */
 		safe_write(fd, tstr, strlen(tstr) + 1);
@@ -304,85 +297,12 @@ extern int common_file_write_uint32s(char *file_path, uint32_t *values, int nb)
 	/* close file */
 	close(fd);
 	return SLURM_SUCCESS;
-
 rwfail:
 	rc = errno;
-	error("%s: write pid %s to %s failed: %m",
+	error("%s: write value '%s' to '%s' failed: %m",
 	      __func__, tstr, file_path);
 	close(fd);
-	return rc;;
-}
-
-extern int common_file_read_uint32s(char *file_path, uint32_t **pvalues,
-				    int *pnb)
-{
-	int rc;
-	int fd;
-
-	size_t fsize;
-	char *buf;
-	char *p;
-
-	uint32_t *pa=NULL;
-	int i;
-
-	/* check input pointers */
-	if (pvalues == NULL || pnb == NULL)
-		return SLURM_ERROR;
-
-	/* open file for reading */
-	fd = open(file_path, O_RDONLY, 0700);
-	if (fd < 0) {
-		log_flag(CGROUP, "unable to open '%s' for reading : %m",
-			 file_path);
-		return SLURM_ERROR;
-	}
-
-	/* get file size */
-	fsize = common_file_getsize(fd);
-	if (fsize == -1) {
-		close(fd);
-		return SLURM_ERROR;
-	}
-
-	/* read file contents */
-	buf = xmalloc(fsize + 1);
-	do {
-		rc = read(fd, buf, fsize);
-	} while (rc < 0 && errno == EINTR);
-	close(fd);
-	buf[fsize]='\0';
-
-	/* count values (splitted by \n) */
-	i=0;
-	if (rc > 0) {
-		p = buf;
-		while (xstrchr(p, '\n') != NULL) {
-			i++;
-			p = xstrchr(p, '\n') + 1;
-		}
-	}
-
-	/* build uint32_t list */
-	if (i > 0) {
-		pa = xcalloc(i, sizeof(uint32_t));
-		p = buf;
-		i = 0;
-		while (xstrchr(p, '\n') != NULL) {
-			sscanf(p, "%u", pa+i);
-			p = xstrchr(p, '\n') + 1;
-			i++;
-		}
-	}
-
-	/* free buffer */
-	xfree(buf);
-
-	/* set output values */
-	*pvalues = pa;
-	*pnb = i;
-
-	return SLURM_SUCCESS;
+	return rc;
 }
 
 extern int common_file_write_content(char *file_path, char *content,
@@ -413,52 +333,21 @@ rwfail:
 extern int common_file_read_content(char *file_path, char **content,
 				    size_t *csize)
 {
-	int fstatus;
-	int rc;
-	int fd;
-	size_t fsize;
-	char *buf;
-
-	fstatus = SLURM_ERROR;
+	ssize_t fsize;
+	char *buf = NULL;
 
 	/* check input pointers */
 	if (content == NULL || csize == NULL)
-		return fstatus;
+		return SLURM_ERROR;
 
-	/* open file for reading */
-	fd = open(file_path, O_RDONLY, 0700);
-	if (fd < 0) {
-		log_flag(CGROUP, "unable to open '%s' for reading : %m", file_path);
-		return fstatus;
-	}
-
-	/* get file size */
-	fsize=common_file_getsize(fd);
-	if (fsize == -1) {
-		close(fd);
-		return fstatus;
-	}
-
-	/* read file contents */
-	buf = xmalloc(fsize + 1);
-	buf[fsize]='\0';
-	do {
-		rc = read(fd, buf, fsize);
-	} while (rc < 0 && errno == EINTR);
+	if ((fsize = _read_cg_file(file_path, &buf)) < 0)
+		return SLURM_ERROR;
 
 	/* set output values */
-	if (rc >= 0) {
-		*content = buf;
-		*csize = rc;
-		fstatus = SLURM_SUCCESS;
-	} else {
-		xfree(buf);
-	}
+	*content = buf;
+	*csize = fsize;
 
-	/* close file */
-	close(fd);
-
-	return fstatus;
+	return SLURM_SUCCESS;
 }
 
 extern int common_cgroup_instantiate(xcgroup_t *cg)
@@ -468,13 +357,9 @@ extern int common_cgroup_instantiate(xcgroup_t *cg)
 	mode_t omask;
 
 	char *file_path;
-	uid_t uid;
-	gid_t gid;
 
 	/* init variables based on input cgroup */
 	file_path = cg->path;
-	uid = cg->uid;
-	gid = cg->gid;
 
 	/* save current mask and apply working one */
 	cmask = S_IWGRP | S_IWOTH;
@@ -490,13 +375,6 @@ extern int common_cgroup_instantiate(xcgroup_t *cg)
 		}
 	}
 	umask(omask);
-
-	/* change cgroup ownership as requested */
-	if (chown(file_path, uid, gid)) {
-		error("%s: unable to chown %d:%d cgroup '%s' : %m",
-		      __func__, uid, gid, file_path);
-		return fstatus;
-	}
 
 	/* following operations failure might not result in a general
 	 * failure so set output status to success */
@@ -535,7 +413,7 @@ extern int common_cgroup_move_process(xcgroup_t *cg, pid_t pid)
 
 	/*
 	 * First we check permissions to see if we will be able to move the pid.
-	 * The path is a path to cgroup.procs and writting there will instruct
+	 * The path is a path to cgroup.procs and writing there will instruct
 	 * the cgroup subsystem to move the process and all its threads there.
 	 */
 	path = _cgroup_procs_writable_path(cg);
@@ -609,10 +487,13 @@ extern int common_cgroup_delete(xcgroup_t *cg)
 	}
 
 	/*
-	 * Do 5 retries if we receive an EBUSY and there are no pids, because we
-	 * may be trying to remove the directory when the kernel hasn't yet
-	 * drained the cgroup internal references (css_online), even if
-	 * cgroup.procs is already empty.
+	 * Do 5 retries and wait 1000 milis on each if we receive an EBUSY and
+	 * there are no pids, because we may be trying to remove the directory
+	 * when the kernel hasn't yet drained the cgroup internal references
+	 * (css_online), even if cgroup.procs is already empty.
+	 *
+	 * This workaround tries to mitigate a bug on kernels < 3.18 as per
+	 * commit 41c25707d21716826e3c1f60967f5550610ec1c9 in the linux kernel.
 	 */
 	while ((rmdir(cg->path) < 0) && (errno != ENOENT)) {
 		if (errno == EBUSY) {
@@ -640,7 +521,9 @@ extern int common_cgroup_delete(xcgroup_t *cg)
 				}
 			}
 
+			/* This should happen usually only on kernels < 3.18 */
 			if (retries < 5) {
+				poll(NULL, 0, 1000);
 				retries++;
 				continue;
 			}
@@ -773,4 +656,55 @@ extern int common_cgroup_unlock(xcgroup_t *cg)
 
 	close(cg->fd);
 	return fstatus;
+}
+
+extern bool common_cgroup_wait_pid_moved(xcgroup_t *cg, pid_t pid,
+					 const char *cg_name)
+{
+	pid_t *pids = NULL;
+	int npids = 0;
+	int cnt = 0;
+	int i = 0;
+	bool found;
+
+	/*
+	 * There is a delay in the cgroup system when moving the pid from one
+	 * cgroup to another. This is usually short, but we need to wait to make
+	 * sure the pid is out of the step cgroup or we will occur an error
+	 * leaving the cgroup unable to be removed.
+	 *
+	 * The way it is implemented of checking whether the pid is in the
+	 * cgroup or not is not 100% reliable. In slow cgroup subsystems there
+	 * is the possibility that the internal kernel references are not
+	 * cleaned up even if the pid is not in the cgroup.procs anymore, in
+	 * that case we will receive an -EBUSY when trying to delete later the
+	 * cgroup. This is explained here:
+	 * https://bugs.schedmd.com/show_bug.cgi?id=8911#c18
+	 *
+	 * So try to mitigate this issue in a best-effort by waiting
+	 * MAX_MOVE_WAIT/10 milis when we find the pid, and retry 10 times.
+	 */
+	do {
+		cnt++;
+		common_cgroup_get_pids(cg, &pids, &npids);
+		found = false;
+		for (i = 0; i < npids; i++) {
+			if (pids[i] == pid) {
+				found = true;
+				poll(NULL, 0, MAX_MOVE_WAIT/10);
+				break;
+			}
+		}
+		xfree(pids);
+	}  while (found && (cnt < 10));
+
+	if (!found)
+		log_flag(CGROUP, "Took %d checks before pid %d was removed from the %s cgroup.",
+			 cnt, pid, cg_name);
+	else {
+		error("Pid %d is still in the %s cgroup after %d tries and %d ms.",
+		      pid, cg_name, cnt, MAX_MOVE_WAIT);
+		return false;
+	}
+	return true;
 }

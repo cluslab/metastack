@@ -10,7 +10,7 @@
  *  Portions Copyright (C) 2013 Bull S. A. S.
  *		Bull, Rue Jean Jaures, B.P.68, 78340, Les Clayes-sous-Bois.
  *
- *  Portions Copyright (C) 2013 SchedMD LLC.
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <http://www.schedmd.com/slurmdocs/>.
@@ -63,14 +63,15 @@
 #include "src/plugins/jobacct_gather/common/common_jag.h"
 #endif
 #include "src/common/macros.h"
-#include "src/common/slurm_acct_gather_profile.h"
+#include "src/interfaces/acct_gather_profile.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/slurm_time.h"
 #include "src/common/timers.h"
 #include "src/common/xstring.h"
-#include "src/slurmd/common/proctrack.h"
+#include "src/interfaces/proctrack.h"
 
+#define DEFAULT_INFLUXDB_TIMEOUT 10
 
 /*
  * These variables are required by the generic plugin interface.  If they
@@ -107,8 +108,9 @@ typedef struct {
 	uint32_t def;
 	char *password;
 	char *rt_policy;
+	uint32_t timeout;
 	char *username;
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	char* workdir;
 #endif	
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
@@ -136,25 +138,19 @@ union data_t{
 	char *str;
 #endif
 };
-
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-typedef enum {
-    EVENT_CPU = 0,
-    EVENT_PROCESS,
-    EVENT_NODE,
-    EVENT_COUNT 
-} EventType;
-
 typedef struct {
-    uint64_t flag;
-    const char* name;
-} EventConfig;
+	uint64_t flag;
+	const char* name;
+} event_config_t;
 
-static const EventConfig EVENT_CONFIGS[] = {
-    {0x0000000000000001, "cpu"},
-    {0x0000000000000010, "process"},
-    {0x0000000000000100, "node"}
+static const event_config_t event_configs[] = {
+	{LOAD_LOW, "cpu"},
+	{PROC_AB, "process"},
+	{JNODE_STAT, "node"}
 };
+
+#define EVENT_COUNT (sizeof(event_configs) / sizeof(event_configs[0]))
 #endif
 
 static slurm_influxdb_conf_t influxdb_conf;
@@ -169,15 +165,14 @@ static size_t tables_max_len = 0;
 static size_t tables_cur_len = 0;
 
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-static char *stepd_datastr = NULL;  /* Save the data to send to the stepd retention policy */
-static char *event_datastr = NULL;	/* Save the data to send to the event retention policy */
-static char *buffer_file_stepd = NULL;
-static char *buffer_file_event = NULL;
+static char *stepd_datastr = NULL;  /* Save the data to send to the Stepd retention policy */
+static char *event_datastr = NULL;	/* Save the data to send to the Event retention policy */
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-static char *apptype_datastr = NULL;
+static char *apptype_datastr = NULL; /* Save the data to send to the Apptype retention policy */
 static char *buffer_file_apptype = NULL;
 #endif
-#define MAX_POLICY_NAME_LENGTH 256	/* Set the maximum length of the reservation policy name */
+static char *buffer_file_stepd = NULL;
+static char *buffer_file_event = NULL;
 typedef enum {
 	NATIVERP,
 	STEPDRP,
@@ -186,15 +181,16 @@ typedef enum {
 	APPTYPERP,
 #endif
 	RPCNT
-} RPType;
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-static const char *RPTypeNames[] = {
+} retention_policy_t;
+static const char *retention_policy_keys[] = {
 	"NATIVERP",
-    "STEPDRP",
-    "EVENTRP",
-    "APPTYPERP",
-};
+	"STEPDRP",
+	"EVENTRP",
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	"APPTYPERP",
 #endif
+};
+
 /**
  * @brief Parses the runtime policy string and extracts the policy value matching the specified type.
  *
@@ -217,67 +213,65 @@ static const char *RPTypeNames[] = {
  *         - If the input is NULL or empty, returns "autogen".
  *         - If at least one key is found but the requested type is missing, returns "autogen".
  */
-static char* _parse_rt_policy(const char *rt_policy, RPType type) {
-    int i = 0;
-    if (rt_policy == NULL || rt_policy[0] == '\0') {
-        return xstrdup("autogen");
-    }
+static char* _parse_rt_policy(const char *rt_policy, retention_policy_t type) {
+	int i = 0;
+	if (rt_policy == NULL || rt_policy[0] == '\0') {
+		return xstrdup("autogen");
+	}
 
-    // If rt_policy does not contain ',' or '=', return it directly
-    if (strchr(rt_policy, ',') == NULL && strchr(rt_policy, '=') == NULL) {
-        return xstrdup(rt_policy);
-    }
+	// If rt_policy does not contain ',' or '=', return it directly
+	if (strchr(rt_policy, ',') == NULL && strchr(rt_policy, '=') == NULL) {
+		return xstrdup(rt_policy);
+	}
 
-    int found_any_keyword = 0;
-    char *default_value = NULL; 
-    char *policy_copy = xstrdup(rt_policy);
-    if (!policy_copy) {
-        return xstrdup("autogen");
-    }
+	int found_any_keyword = 0;
+	char *default_value = NULL; 
+	char *policy_copy = xstrdup(rt_policy);
 
-    char *saveptr = NULL;
-    char *token = strtok_r(policy_copy, ",", &saveptr);
+	char *saveptr = NULL;
+	char *token = strtok_r(policy_copy, ",", &saveptr);
 
-    while (token) {
-        char *value = xstrchr(token, '=');
-        if (value) {
-            *value = '\0';  
-            value++;        
+	while (token) {
+		char *value = xstrchr(token, '=');
+		if (value) {
+			*value = '\0';  
+			value++;        
 
-            for (i = 0; i < RPCNT; i++) {
-                if (strcmp(token, RPTypeNames[i]) == 0) {
-                    found_any_keyword = 1;
-                    if (i == (int)type) {
-                        char *result = xstrdup(value);
-                        xfree(default_value);
-                        xfree(policy_copy);
-                        return result;
-                    }
-                }
-            }
-        } else {
-            // If no '=' is found, treat it as the default value
-            xfree(default_value);
-            default_value = xstrdup(token);
-        }
-        token = strtok_r(NULL, ",", &saveptr);
-    }
+			for (i = 0; i < RPCNT; i++) {
+				if (strcmp(token, retention_policy_keys[i]) == 0) {
+					found_any_keyword = 1;
+					if (i == (int)type) {
+						char *result = xstrdup(value);
+						xfree(default_value);
+						xfree(policy_copy);
+						return result;
+					}
+				}
+			}
+		} else {
+			// If no '=' is found, treat it as the default value
+			xfree(default_value);
+			default_value = xstrdup(token);
+		}
+		token = strtok_r(NULL, ",", &saveptr);
+	}
 
-    xfree(policy_copy);
+	xfree(policy_copy);
 
-    // Return the default value if no match is found
-    if (default_value) {
-        return default_value;
-    }
+	// Return the default value if no match is found
+	if (default_value) {
+		return default_value;
+	}
 
-    // If a key is found but no match for type, return "autogen"
-    if (found_any_keyword) {
-        return xstrdup("autogen");
-    }
+	// If a key is found but no match for type, return "autogen"
+	if (found_any_keyword) {
+		return xstrdup("autogen");
+	}
 
-    // If no key-value structure is found, return the original string
-    return xstrdup(rt_policy);
+	// If no key-value structure is found, return the original string
+	return xstrdup(rt_policy);
 }
+
 #endif
 
 static void _free_tables(void)
@@ -335,8 +329,8 @@ static size_t _write_callback(void *contents, size_t size, size_t nmemb,
 	return realsize;
 }
 
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
-static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType type)
+#if defined(__METASTACK_NEW_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
+static int _send_data2(const char *data, int send_jobid ,int send_stepid, retention_policy_t type)
 {
 	CURL *curl_handle = NULL;
 	CURLcode res;
@@ -346,9 +340,7 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType
 	static int error_cnt = 0;
 	char *url = NULL;
 	//size_t length;
-	char *rt_policy = NULL;
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-	char *tmp_datastr = NULL;
+	char *rt_policy = NULL, *tmp_datastr = NULL;
 	switch (type) {
 		case EVENTRP:
 			tmp_datastr = event_datastr;
@@ -356,14 +348,15 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType
 		case STEPDRP:
 			tmp_datastr = stepd_datastr;
 			break;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		case APPTYPERP:
 			tmp_datastr = apptype_datastr;
 			break;
+#endif
 		default:
 			error("Unknown Retention Policy");
 			break;
 	}
-#endif
 
 	debug3("%s %s called", plugin_type, __func__);
 
@@ -372,18 +365,15 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType
 	 * different connection to the influxdb server. The data will not be 
 	 * cached and will be sent in real time at the head node of the job.
 	 */
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	if (send_jobid != 0 && data)
 		xstrcat(tmp_datastr, data);
-#endif
 	DEF_TIMERS;
 	START_TIMER;
-	// if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
-	// 	error("%s %s: curl_global_init: %m", plugin_type, __func__);
-	// 	rc = SLURM_ERROR;
-	// 	goto cleanup_global_init;
-	// } else 
-	if ((curl_handle = curl_easy_init()) == NULL) {
+	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
+		error("%s %s: curl_global_init: %m", plugin_type, __func__);
+		rc = SLURM_ERROR;
+		goto cleanup_global_init;
+	} else if ((curl_handle = curl_easy_init()) == NULL) {
 		error("%s %s: curl_easy_init: %m", plugin_type, __func__);
 		rc = SLURM_ERROR;
 		goto cleanup_easy_init;
@@ -392,7 +382,6 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, RPType
 	xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=s", influxdb_conf.host,
 		   influxdb_conf.database, rt_policy);
 	if(rt_policy) xfree(rt_policy);
-
 
 	chunk.message = xmalloc(1);
 	chunk.size = 0;
@@ -455,10 +444,10 @@ cleanup:
 	xfree(url);
 cleanup_easy_init:
 	curl_easy_cleanup(curl_handle);
-// cleanup_global_init:
-// 	curl_global_cleanup();
+cleanup_global_init:
+	curl_global_cleanup();
 	END_TIMER;
-	log_flag(PROFILE, "%s %s: took %s to send data ",
+	log_flag(PROFILE, "%s %s: took %s to send data",
 		 plugin_type, __func__, TIME_STR);
 	struct stat st_tmp;
 	bool influx_dir = true;
@@ -481,20 +470,25 @@ cleanup_easy_init:
 	if((send_jobid > 0) && (rc == SLURM_ERROR) && influx_dir) {
 		char *influxdb_file = NULL;
 		FILE *sys_file = NULL;
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 		switch (type) {
 			case EVENTRP:
 				xstrfmtcat(influxdb_file,"%s/job%d.%d.%s", influxdb_conf.workdir, send_jobid, send_stepid, "event");
-				if (buffer_file_event == NULL) buffer_file_event = xstrdup(influxdb_file);
+				if (buffer_file_event == NULL) 
+					buffer_file_event = xstrdup(influxdb_file);
 				break;
 			case STEPDRP:
 				xstrfmtcat(influxdb_file,"%s/job%d.%d.%s", influxdb_conf.workdir, send_jobid, send_stepid, "stepd");
-				if (buffer_file_stepd == NULL) buffer_file_stepd = xstrdup(influxdb_file);
+				if (buffer_file_stepd == NULL) 
+					buffer_file_stepd = xstrdup(influxdb_file);
 				break;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 			case APPTYPERP:
 				xstrfmtcat(influxdb_file,"%s/job%d.%d.%s", influxdb_conf.workdir, send_jobid, send_stepid, "apptype");
-				if (buffer_file_apptype == NULL) buffer_file_apptype = xstrdup(influxdb_file);
+				if (buffer_file_apptype == NULL) 
+					buffer_file_apptype = xstrdup(influxdb_file);
 				break;
+#endif
 			default:
 				error("Unknown Retention Policy");
 				break;
@@ -503,7 +497,7 @@ cleanup_easy_init:
 		struct stat st;
 		if (stat(influxdb_conf.workdir, &st) == -1) {
  			if(mkdir(influxdb_conf.workdir, 0700)==-1) {
-				error("can't create directory influxdb_conf.workdir(%s)", influxdb_file);
+				error("can't create directory influxdb_conf.workdir");
 			}
 		}
 
@@ -513,12 +507,12 @@ cleanup_easy_init:
 			fprintf(sys_file, tmp_datastr);
 			fclose(sys_file);
 		} else {
-			debug("Failed to write %s file. The file content is %s",influxdb_file ,tmp_datastr);
+			debug("Failed to write %s file. The file content is %s",influxdb_file, tmp_datastr);
 		}
 			
 		//slurm_mutex_unlock(&file_lock);
 
-		if(influxdb_file)
+		if (influxdb_file)
 			xfree(influxdb_file);
 	}
 	if (data) {
@@ -528,17 +522,17 @@ cleanup_easy_init:
 }
 #endif
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 /*Get the total number of lines in a file*/
 static int count_file_row(char *path)
 {    
- int count = 0;
-    char c;
-    FILE *file;
-    file = fopen(path, "r");
-    if (file == NULL) {
-        debug("Error opening file!");
-    } else {
+	int count = 0;
+	char c;
+	FILE *file;
+	file = fopen(path, "r");
+	if (file == NULL) {
+		debug("Error opening file!");
+	} else {
 		while ((c = getc(file)) != EOF) {
 			if (c == '\n') {
 				count++;
@@ -551,21 +545,21 @@ static int count_file_row(char *path)
 }
 #endif
 
+#if defined(__METASTACK_NEW_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 /*At the end of the job, 
  *check whether the influxdb cache file is generated,and if so, 
  *try to send it again.*/
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
-static int _last_resend(const char *data, RPType type)
+static int _last_resend(const char *data, retention_policy_t type)
 {
 	struct stat st;
     int rc = SLURM_SUCCESS;
 	int rc2 = SLURM_SUCCESS;
 	bool send_buffer = false;
-	char tmp_str[256] = {'0'};
+	char tmp_str[300] = {'0'};
 	int all_row = 0;
 	char *tmp_copy = NULL;  /* send_data2 clears the data if it fails to send, so it needs to be saved before it is sent */
 	bool send_flag = false; /* Used to mark whether to save failed data to temporary file */
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+
 	char *tmp_datastr = NULL;
 	char *buffer_file = NULL;
 	switch (type) {
@@ -577,8 +571,8 @@ static int _last_resend(const char *data, RPType type)
 			tmp_datastr = stepd_datastr;
 			buffer_file = buffer_file_stepd;
 			break;
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		case APPTYPERP:
-			apptype_recongn_count = 0;
 			tmp_datastr = apptype_datastr;
 			/*
 				The difference between apptype and event data and stepd data is
@@ -598,11 +592,12 @@ static int _last_resend(const char *data, RPType type)
 			}
 			buffer_file = buffer_file_apptype;
 			break;
+#endif
 		default:
 			error("Retention Policy Count");
 			break;
 	}
-#endif  
+  
 	if (data || (!buffer_file) || (strlen(buffer_file) <= 0)) {
 		return rc;
 	}
@@ -610,16 +605,18 @@ static int _last_resend(const char *data, RPType type)
 	if ((buffer_file != NULL) && (stat(buffer_file, &st) != -1)) {
        
 	    all_row = count_file_row(buffer_file);
-		if(all_row <= 0) {
+		if (all_row <= 0) {
 			remove(buffer_file);
 			return rc;
 		}
 			
-		FILE *fp = NULL;
-		FILE *fp2 = NULL;
+		FILE *fp = NULL, *fp2 = NULL;
 		char *path_tmp = NULL;
-		/* Temporary files are used to hold the data in the cache files that failed to be sent */
+
 	    xstrfmtcat(path_tmp, "%s.tmp", buffer_file);
+
+		//slurm_mutex_lock(&file_lock);
+		/* There is a plug-in lock on the outermost layer, which is no longer locked here.*/
 		fp = fopen(buffer_file, "r");
 		if (fp == NULL) {
 			rc = SLURM_ERROR;
@@ -665,7 +662,7 @@ static int _last_resend(const char *data, RPType type)
 			xfree(tmp_copy);
 			tmp_copy = xstrdup(tmp_datastr);
 			rc = _send_data2(tmp_datastr, 0, 0, type);
-			if(rc != SLURM_SUCCESS && fp2 != NULL){
+			if (rc != SLURM_SUCCESS && fp2 != NULL) {
 				fputs(tmp_copy, fp2);
 				send_flag = true;
 			}
@@ -693,7 +690,7 @@ static int _last_resend(const char *data, RPType type)
 #endif
 	}
 
-	if(((rc == SLURM_ERROR) && (rc2 == SLURM_ERROR)) || send_flag) {
+	if (((rc == SLURM_ERROR) && (rc2 == SLURM_ERROR)) || send_flag) {
 		debug("Resend failed, file saved in %s",buffer_file);
 	}
 	return rc;
@@ -702,8 +699,8 @@ static int _last_resend(const char *data, RPType type)
 #endif
 
 /* Try to send data to influxdb */
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
-static int _send_data(const char *data, RPType type)
+#if defined(__METASTACK_NEW_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
+static int _send_data(const char *data, retention_policy_t type)
 #endif
 {
 	CURL *curl_handle = NULL;
@@ -717,7 +714,6 @@ static int _send_data(const char *data, RPType type)
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	char* rt_policy = NULL;
 #endif
-
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	if(data == NULL && datastr && strlen(datastr) <= 0)
 		return rc;
@@ -744,28 +740,18 @@ static int _send_data(const char *data, RPType type)
 	DEF_TIMERS;
 	START_TIMER;
 
-#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	if ((curl_handle = curl_easy_init()) == NULL) {
 		error("%s %s: curl_easy_init: %m", plugin_type, __func__);
 		rc = SLURM_ERROR;
 		goto cleanup_easy_init;
 	}
-#else
-	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
-		error("%s %s: curl_global_init: %m", plugin_type, __func__);
-		rc = SLURM_ERROR;
-		goto cleanup_global_init;
-	} else if ((curl_handle = curl_easy_init()) == NULL) {
-		error("%s %s: curl_easy_init: %m", plugin_type, __func__);
-		rc = SLURM_ERROR;
-		goto cleanup_easy_init;
-	}
-#endif
 
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	rt_policy = _parse_rt_policy(influxdb_conf.rt_policy, type);
-	/* If open ProfileInfluxDBSeriesReduce, need to increase the time accuracy in order to avoid data overwrite */
-	if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
+	/* 
+		If open ProfileInfluxDBSeriesReduce, need to increase the time accuracy in order to avoid data overwrite 
+	*/
+	if (xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
 		xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=ns", influxdb_conf.host,
 		   influxdb_conf.database, rt_policy);
 	} else {
@@ -790,6 +776,7 @@ static int _send_data(const char *data, RPType type)
 				 influxdb_conf.username);
 	curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, _write_callback);
 	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *) &chunk);
+	curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, influxdb_conf.timeout);
 
 	if ((res = curl_easy_perform(curl_handle)) != CURLE_OK) {
 		if ((error_cnt++ % 100) == 0)
@@ -835,16 +822,13 @@ cleanup:
 	xfree(url);
 cleanup_easy_init:
 	curl_easy_cleanup(curl_handle);
-#ifdef 	__METASTACK_LOAD_ABNORMAL
-// cleanup_global_init:
-// 	curl_global_cleanup();
-#endif
+
 	END_TIMER;
 	log_flag(PROFILE, "%s %s: took %s to send data",
 		 plugin_type, __func__, TIME_STR);
 
 	if (data) {
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 		xfree(datastr);
 #endif
 		datastr = xstrdup(data);
@@ -868,15 +852,13 @@ extern int init(void)
 	if (!running_in_slurmstepd())
 		return SLURM_SUCCESS;
 
-#ifdef __METASTACK_LOAD_ABNORMAL
 	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
 		error("%s %s: curl_global_init: %m", plugin_type, __func__);
 		return SLURM_ERROR;
 	}
-#endif
 
 	datastr = xmalloc(BUF_SIZE);
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	stepd_datastr = xmalloc(BUF_SIZE);
 	event_datastr = xmalloc(BUF_SIZE);
 #endif
@@ -893,9 +875,9 @@ extern int init(void)
 extern int fini(void)
 {
 	debug3("%s %s called", plugin_type, __func__);
-#ifdef __METASTACK_LOAD_ABNORMAL
+
 	curl_global_cleanup();
-#endif
+
 	_free_tables();
 	xfree(datastr);
 	xfree(influxdb_conf.host);
@@ -903,8 +885,10 @@ extern int fini(void)
 	xfree(influxdb_conf.password);
 	xfree(influxdb_conf.rt_policy);
 	xfree(influxdb_conf.username);
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 	xfree(influxdb_conf.workdir);
+#endif
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	xfree(influxdb_conf.series_reduce);
 	xfree(stepd_datastr);
 	xfree(event_datastr);
@@ -915,6 +899,7 @@ extern int fini(void)
 	xfree(buffer_file_stepd);
 	xfree(buffer_file_event);
 #endif
+
 	return SLURM_SUCCESS;
 }
 
@@ -929,8 +914,9 @@ extern void acct_gather_profile_p_conf_options(s_p_options_t **full_options,
 		{"ProfileInfluxDBDefault", S_P_STRING},
 		{"ProfileInfluxDBPass", S_P_STRING},
 		{"ProfileInfluxDBRTPolicy", S_P_STRING},
+		{"ProfileInfluxDBTimeout", S_P_UINT32},
 		{"ProfileInfluxDBUser", S_P_STRING},
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 		{"ProfileInfluxDBWorkdir", S_P_STRING},
 #endif	
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
@@ -965,11 +951,14 @@ extern void acct_gather_profile_p_conf_set(s_p_hashtbl_t *tbl)
 			       "ProfileInfluxDBPass", tbl);
 		s_p_get_string(&influxdb_conf.rt_policy,
 			       "ProfileInfluxDBRTPolicy", tbl);
+		if (!s_p_get_uint32(&influxdb_conf.timeout,
+				    "ProfileInfluxDBTimeout", tbl))
+			influxdb_conf.timeout = DEFAULT_INFLUXDB_TIMEOUT;
 		s_p_get_string(&influxdb_conf.username,
 			       "ProfileInfluxDBUser", tbl);
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 		s_p_get_string(&influxdb_conf.workdir,
-			       "ProfileInfluxDBWorkdir", tbl);
+					"ProfileInfluxDBWorkdir", tbl);
 #endif
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 		s_p_get_string(&influxdb_conf.series_reduce,
@@ -1074,8 +1063,7 @@ extern int acct_gather_profile_p_task_start(uint32_t taskid)
 extern int acct_gather_profile_p_task_end(pid_t taskpid)
 {
 	debug3("%s %s called", plugin_type, __func__);
-#if defined(__METASTACK_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+#if defined(__METASTACK_NEW_LOAD_ABNORMAL) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
 	/*
 		Starting from 1, skip NATIVERP
 	*/
@@ -1083,6 +1071,7 @@ extern int acct_gather_profile_p_task_end(pid_t taskpid)
 		_last_resend(NULL, i);
 	}
 #endif
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	_send_data(NULL, NATIVERP);
 #endif
 	return SLURM_SUCCESS;
@@ -1154,12 +1143,22 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 	time_t ct = 0, ct_ns = 0;
 	struct timespec now;
+
+	if (xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
+		clock_gettime(CLOCK_REALTIME, &now);
+		ct_ns = now.tv_nsec;
+		ct = now.tv_sec;
+		sample_time = (uint64_t)(ct * NSEC_IN_SEC + ct_ns);
+	}
 #endif
+
 #ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
 	enum {
 		FIELD_CPUFREQ,
 		FIELD_CPUTIME,
 		FIELD_CPUUTIL,
+		FIELD_GPUMEM,
+		FIELD_GPUUTIL,
 		FIELD_RSS,
 		FIELD_VMSIZE,
 		FIELD_PAGES,
@@ -1172,14 +1171,6 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 			List process;
 	};
 	struct data_pack * pdata = (struct data_pack*)data;
-#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-	if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
-		clock_gettime(CLOCK_REALTIME, &now);
-		ct_ns = now.tv_nsec;
-		ct = now.tv_sec;
-		sample_time = (uint64_t)(ct * 1000000000 + ct_ns);
-	}
-#endif
 #endif
 
 	debug3("%s %s called", plugin_type, __func__);
@@ -1188,28 +1179,28 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 		switch (table->types[i]) {
 		case PROFILE_FIELD_UINT64:
 #if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
-			if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
+			if (xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
 				xstrfmtcat(str, "%s,host=%s,username=%s"
-					" job=%d,step=%d,task=%s,value=%"PRIu64" "
-					"%"PRIu64"\n", table->names[i], g_job->node_name, g_job->user_name,
-					g_job->step_id.job_id, g_job->step_id.step_id,
-					table->name, 
-					((union data_t*)(pdata->data))[i].u,
-					(uint64_t)sample_time);
-			}else{
+				   " job=%d,step=%d,task=%s,value=%"PRIu64" "
+				   "%"PRIu64"\n", table->names[i], g_job->node_name, g_job->user_name,
+				   g_job->step_id.job_id, g_job->step_id.step_id,
+				   table->name, 
+				   ((union data_t*)(pdata->data))[i].u,
+				   (uint64_t)sample_time);
+			} else {
 				xstrfmtcat(str, "%s,job=%d,step=%d,task=%s,"
-					"host=%s,username=%s value=%"PRIu64" "
-					"%"PRIu64"\n", table->names[i],
-					g_job->step_id.job_id, g_job->step_id.step_id,
-					table->name, g_job->node_name, g_job->user_name,
-					((union data_t*)(pdata->data))[i].u,
-					(uint64_t)sample_time);
+				   "host=%s,username=%s value=%"PRIu64" "
+				   "%"PRIu64"\n", table->names[i],
+				   g_job->step_id.job_id, g_job->step_id.step_id,
+				   table->name, g_job->node_name, g_job->user_name,
+				   ((union data_t*)(pdata->data))[i].u,
+				   (uint64_t)sample_time);
 			}
 #endif
 			break;
 		case PROFILE_FIELD_DOUBLE:
 #if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
-			if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
+			if (xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
 				xstrfmtcat(str, "%s,host=%s,username=%s "
 				   " job=%d,step=%d,task=%s,value=%.2f %"PRIu64""
 				   "\n", table->names[i],g_job->node_name, g_job->user_name,
@@ -1217,7 +1208,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 				   table->name, 
 				   ((union data_t*)(pdata->data))[i].d,
 				   (uint64_t)sample_time);
-			}else{
+			} else {
 				xstrfmtcat(str, "%s,job=%d,step=%d,task=%s,"
 				   "host=%s,username=%s value=%.2f %"PRIu64""
 				   "\n", table->names[i],
@@ -1233,32 +1224,33 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 		}
 	}
 #if defined(__METASTACK_OPT_INFLUXDB_ENFORCE) && defined(__METASTACK_OPT_INFLUXDB_PERFORMANCE)
-	if(pdata->process != NULL  ) {
-		ListIterator itr = list_iterator_create(pdata->process);
+	if (pdata->process != NULL  ) {
+		list_itr_t *itr = NULL;
+		itr = list_iterator_create(pdata->process);
 		jag_prec_t *prec;
 		int i = 0;
-		while((prec = list_next(itr))) {
-			if(xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0){
+		while ((prec = list_next(itr))) {
+			if (xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
 				xstrfmtcat(str, "Command,host=%s,username=%s "
-					"job=%d,step=%d,task=%s,pid=%d,ppid=%d,command=\"%s\","
-					"rss=%"PRIu64",vmsize=%"PRIu64",value=%.2f %"PRIu64"\n",
-					g_job->node_name,g_job->user_name,
-					g_job->step_id.job_id, g_job->step_id.step_id,
-					table->name,prec->pid, prec->ppid, prec->command, 
-					((union data_t*)(pdata->data))[FIELD_RSS].u,
-					((union data_t*)(pdata->data))[FIELD_VMSIZE].u,prec->cpu_util,
-					(uint64_t)sample_time + i);
+				   "job=%d,step=%d,task=%s,pid=%d,ppid=%d,command=\"%s\","
+				   "rss=%"PRIu64",vmsize=%"PRIu64",value=%.2f %"PRIu64"\n",
+				   g_job->node_name,g_job->user_name,
+				   g_job->step_id.job_id, g_job->step_id.step_id,
+				   table->name,prec->pid, prec->ppid, prec->command, 
+				   ((union data_t*)(pdata->data))[FIELD_RSS].u,
+				   ((union data_t*)(pdata->data))[FIELD_VMSIZE].u,prec->cpu_util,
+				   (uint64_t)sample_time + i);
 				i++;
-			}else{
+			} else {
 				xstrfmtcat(str, "Command,job=%d,step=%d,username=%s,task=%s,"
-					"host=%s,pid=%d,ppid=%d command=\"%s\","
-					"rss=%"PRIu64",vmsize=%"PRIu64",value=%.2f %"PRIu64"\n",
-					g_job->step_id.job_id, g_job->step_id.step_id,g_job->user_name,
-					table->name, g_job->node_name,
-					prec->pid, prec->ppid, prec->command,
-					((union data_t*)(pdata->data))[FIELD_RSS].u,
-					((union data_t*)(pdata->data))[FIELD_VMSIZE].u,prec->cpu_util,
-					(uint64_t)sample_time);
+				   "host=%s,pid=%d,ppid=%d command=\"%s\","
+				   "rss=%"PRIu64",vmsize=%"PRIu64",value=%.2f %"PRIu64"\n",
+				   g_job->step_id.job_id, g_job->step_id.step_id,g_job->user_name,
+				   table->name, g_job->node_name,
+				   prec->pid, prec->ppid, prec->command,
+				   ((union data_t*)(pdata->data))[FIELD_RSS].u,
+				   ((union data_t*)(pdata->data))[FIELD_VMSIZE].u,prec->cpu_util,
+				   (uint64_t)sample_time);
 			}
 		}
 		list_iterator_destroy(itr);
@@ -1270,7 +1262,7 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 	return SLURM_SUCCESS;
 }
 
-#ifdef __METASTACK_LOAD_ABNORMAL
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
 extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* data,
 						 time_t sample_time)
 {
@@ -1279,7 +1271,6 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	char *str2 = NULL;
 #endif
-
 	enum {
 		/*PROFILE*/
 		FIELD_STEPCPU,
@@ -1301,7 +1292,7 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 		FIELD_EVENTTYPE3START,
 		FIELD_EVENTTYPE1END,
 		FIELD_EVENTTYPE2END,
-		FIELD_EVENTTYPE3END,					
+		FIELD_EVENTTYPE3END,	
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		/* APPTYPE */
 		FIELD_SENDFLAG,
@@ -1309,28 +1300,31 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 		FIELD_APPTYPECLI,
 		FIELD_HAVERECOGN,
 		FIELD_CPUTIME,
-#endif
+#endif					
 		FIELD_CNT
 	};
 	
 	debug3("%s %s called", plugin_type, __func__);
-	for (int i= 1; i <= 3; i++) {
-		enum {
-			SLUR_SEND_STEPD_TYPE = 1,
-			SLUR_SEND_EVENT_TYPE = 2,
-			SLUR_SEND_APPTYPE_TYPE = 3,
-		};
+	enum {
+		SLUR_SEND_STEPD_TYPE = 1,
+		SLUR_SEND_EVENT_TYPE = 2,
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		SLUR_SEND_APPTYPE_TYPE = 3,
+#endif
+		SLUR_SEND_COUNT
+	};
+	for(int i = 1; i < SLUR_SEND_COUNT; i++) {
 		switch (i) {
-			case SLUR_SEND_STEPD_TYPE:
+			case SLUR_SEND_STEPD_TYPE:	
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 				if (!(((union data_t*)data)[FIELD_SENDFLAG].u & JOBACCT_GATHER_PROFILE_ABNORMAL)) 
 					break;
-#endif
+#endif	
 				xstrfmtcat(str1,"Stepd,username=%s,jobid=%d,step=%d stepcpu=%.2f,"
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 				"stepcpuave=%.2f,stepmem=%.2f,stepvmem=%.2f,interval_time=%"PRIu64","
 #endif
-				"steppages=%"PRIu64" %"PRIu64"\n", 
+				"steppages=%"PRIu64"  %"PRIu64"\n", 
 				g_job->user_name,
 				g_job->step_id.job_id, 
 				g_job->step_id.step_id,
@@ -1343,11 +1337,10 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 				(uint64_t)sample_time);
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 				_send_data2(str1, g_job->step_id.job_id, g_job->step_id.step_id, STEPDRP);
-#endif
-				if (str1)
-					xfree(str1);
+#endif				
+				xfree(str1);
 				break;
-			case SLUR_SEND_EVENT_TYPE:
+			case SLUR_SEND_EVENT_TYPE:	
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 				if (((union data_t*)data)[FIELD_FLAG].u == 0 || 
@@ -1355,14 +1348,14 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 					break;	
 #endif
 				for (int i = 0; i < EVENT_COUNT; i++) {
-					if (((union data_t*)data)[FIELD_FLAG].u & EVENT_CONFIGS[i].flag) {
+					if (((union data_t*)data)[FIELD_FLAG].u & event_configs[i].flag) {
 						xstrfmtcat(str, "Event,username=%s,jobid=%d,step=%d,type=%s "
 										"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,"
 										"stepvmem=%.2f,steppages=%"PRIu64",start=%"PRIu64",end=%"PRIu64" %"PRIu64"\n",
 								g_job->user_name,
 								g_job->step_id.job_id,
 								g_job->step_id.step_id,
-								EVENT_CONFIGS[i].name,
+								event_configs[i].name,
 								((union data_t*)data)[FIELD_CPUTHRESHOLD].d,
 								((union data_t*)data)[FIELD_STEPCPU].d,
 								((union data_t*)data)[FIELD_STEPMEM].d,
@@ -1375,8 +1368,7 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 				}
 				_send_data2(str, g_job->step_id.job_id, g_job->step_id.step_id, EVENTRP);
 #endif
-				if (str)
-					xfree(str);
+				xfree(str);
 				break;
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 			case SLUR_SEND_APPTYPE_TYPE:
@@ -1404,7 +1396,6 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 				} else {
 					if (apptype_datastr) 
 						apptype_datastr[0] = '\0';
-					apptype_recongn_count = 0;
 					_send_data2(str2, g_job->step_id.job_id, g_job->step_id.step_id, APPTYPERP);
 				}
 				if (str2)
@@ -1412,14 +1403,11 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 				break;
 #endif
 		}
-
 	}
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 	if ((((union data_t*)data)[FIELD_SENDFLAG].u & JOBACCT_GATHER_PROFILE_APPTYPE)) {
-		if (((union data_t*)data)[FIELD_APPTYPESTEP].str) 
-			xfree(((union data_t*)data)[FIELD_APPTYPESTEP].str);
-		if (((union data_t*)data)[FIELD_APPTYPECLI].str) 
-			xfree(((union data_t*)data)[FIELD_APPTYPECLI].str);
+		xfree(((union data_t*)data)[FIELD_APPTYPESTEP].str);
+		xfree(((union data_t*)data)[FIELD_APPTYPECLI].str);
 	}
 #endif
 	return SLURM_SUCCESS;
@@ -1428,57 +1416,31 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 
 extern void acct_gather_profile_p_conf_values(List *data)
 {
-	config_key_pair_t *key_pair;
+	add_key_pair(*data, "ProfileInfluxDBHost", "%s",
+		     influxdb_conf.host);
 
-	debug3("%s %s called", plugin_type, __func__);
+	add_key_pair(*data, "ProfileInfluxDBDatabase", "%s",
+		     influxdb_conf.database);
 
-	xassert(*data);
+	add_key_pair(*data, "ProfileInfluxDBDefault", "%s",
+		     acct_gather_profile_to_string(influxdb_conf.def));
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBHost");
-	key_pair->value = xstrdup(influxdb_conf.host);
-	list_append(*data, key_pair);
+	/* skip over ProfileInfluxDBPass for security reasons */
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBDatabase");
-	key_pair->value = xstrdup(influxdb_conf.database);
-	list_append(*data, key_pair);
+	add_key_pair(*data, "ProfileInfluxDBRTPolicy", "%s",
+		     influxdb_conf.rt_policy);
 
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBDefault");
-	key_pair->value =
-		xstrdup(acct_gather_profile_to_string(influxdb_conf.def));
-	list_append(*data, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBPass");
-	key_pair->value = xstrdup(influxdb_conf.password);
-	list_append(*data, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBRTPolicy");
-	key_pair->value = xstrdup(influxdb_conf.rt_policy);
-	list_append(*data, key_pair);
-
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBUser");
-	key_pair->value = xstrdup(influxdb_conf.username);
-	list_append(*data, key_pair);
-
-#ifdef __METASTACK_LOAD_ABNORMAL
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBWorkdir");
-	key_pair->value = xstrdup(influxdb_conf.workdir);
-	list_append(*data, key_pair);
+	add_key_pair(*data, "ProfileInfluxDBTimeout", "%u",
+		     influxdb_conf.timeout);
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
+	add_key_pair(*data, "ProfileInfluxDBWorkdir", "%s",
+			 influxdb_conf.workdir);
 #endif
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ProfileInfluxDBSeriesReduce");
-	key_pair->value = xstrdup(influxdb_conf.series_reduce);
-	list_append(*data, key_pair);
+	add_key_pair(*data, "ProfileInfluxDBSeriesReduce", "%s",
+			 influxdb_conf.series_reduce);
 #endif
-	return;
-
+	/* skip over ProfileInfluxDBUser for security reasons */
 }
 
 extern bool acct_gather_profile_p_is_active(uint32_t type)

@@ -2,8 +2,7 @@
  *  as_mysql_convert.c - functions dealing with converting from tables in
  *                    slurm <= 17.02.
  *****************************************************************************
- *  Copyright (C) 2015 SchedMD LLC.
- *  Written by Danny Auble <da@schedmd.com>
+ *  Copyright (C) SchedMD LLC.
  *
  *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
@@ -37,16 +36,21 @@
 
 #include "as_mysql_convert.h"
 #include "as_mysql_tres.h"
-#include "src/common/slurm_jobacct_gather.h"
+#include "src/interfaces/jobacct_gather.h"
 
 /*
  * Any time you have to add to an existing convert update this number.
- * NOTE: 9 was the first version of 20.11.
- * NOTE: 10 was the first version of 21.08.
- * NOTE: 11 was the first version of 22.05.
- * NOTE: 12 was the second version of 22.05.
+ * NOTE: 13 was the first version of 23.02.
+ * NOTE: 14 was the first version of 23.11.
+ * NOTE: 15 was the second version of 23.11.
  */
-#define CONVERT_VERSION 12
+#define CONVERT_VERSION 15
+
+#ifdef __META_PROTOCOL
+#define MIN_CONVERT_VERSION 11
+#else
+#define MIN_CONVERT_VERSION 13
+#endif
 
 #define JOB_CONVERT_LIMIT_CNT 1000
 
@@ -62,339 +66,95 @@ typedef struct {
 
 static uint32_t db_curr_ver = NO_VAL;
 
-static int _convert_step_table_post(
-	mysql_conn_t *mysql_conn, char *cluster_name)
-{
-	int rc = SLURM_SUCCESS;
-	char *query = NULL;
-
-	if (db_curr_ver < 9) {
-		/*
-		 * Change the names pack_job_id and pack_job_offset to be het_*
-		 */
-		query = xstrdup_printf(
-			"update \"%s_%s\" set id_step = %d where id_step = -2;"
-			"update \"%s_%s\" set id_step = %d where id_step = -1;",
-			cluster_name, step_table, SLURM_BATCH_SCRIPT,
-			cluster_name, step_table, SLURM_EXTERN_CONT);
-	}
-
-	if (query) {
-		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-
-		rc = mysql_db_query(mysql_conn, query);
-		xfree(query);
-		if (rc != SLURM_SUCCESS)
-			error("%s: Can't convert %s_%s info: %m",
-			      __func__, cluster_name, step_table);
-	}
-
-	return rc;
-}
-
-static int _rename_usage_columns(mysql_conn_t *mysql_conn, char *table)
+static int _rename_clus_res_columns(mysql_conn_t *mysql_conn)
 {
 	char *query = NULL;
 	int rc = SLURM_SUCCESS;
-
 
 	/*
-	 * Change the names pack_job_id and pack_job_offset to be het_*
+	 * Change the name 'percent_allowed' to be 'allowed'
 	 */
 	query = xstrdup_printf(
-		"alter table %s change resv_secs plan_secs bigint "
-		"unsigned default 0 not null;",
-		table);
+		"alter table %s change percent_allowed allowed "
+		"int unsigned default 0;",
+		clus_res_table);
 
 	DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
 	if ((rc = as_mysql_convert_alter_query(mysql_conn, query)) !=
 	    SLURM_SUCCESS)
-		error("Can't update %s %m", table);
+		error("Can't update %s %m", clus_res_table);
 	xfree(query);
 
 	return rc;
 }
 
-static int _convert_usage_table_pre(mysql_conn_t *mysql_conn,
-				    char *cluster_name)
+static int _convert_clus_res_table_pre(mysql_conn_t *mysql_conn)
 {
 	int rc = SLURM_SUCCESS;
 
-	if (db_curr_ver < 10) {
-		char table[200];
-
-		snprintf(table, sizeof(table), "\"%s_%s\"",
-			 cluster_name, cluster_day_table);
-		if ((rc = _rename_usage_columns(mysql_conn, table))
-		    != SLURM_SUCCESS)
-			return rc;
-
-		snprintf(table, sizeof(table), "\"%s_%s\"",
-			 cluster_name, cluster_hour_table);
-		if ((rc = _rename_usage_columns(mysql_conn, table))
-		    != SLURM_SUCCESS)
-			return rc;
-
-		snprintf(table, sizeof(table), "\"%s_%s\"",
-			 cluster_name, cluster_month_table);
-		if ((rc = _rename_usage_columns(mysql_conn, table))
-		    != SLURM_SUCCESS)
+	if (db_curr_ver < 13) {
+		if ((rc = _rename_clus_res_columns(mysql_conn)) !=
+		    SLURM_SUCCESS)
 			return rc;
 	}
 
 	return rc;
 }
 
-static int _insert_into_hash_table(mysql_conn_t *mysql_conn, char *cluster_name,
-				   move_large_type_t type)
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+extern char *cp_mysql_db_name;
+static int _rename_job_table_columns(mysql_conn_t *mysql_conn, char *cluster_name)
 {
-	char *query, *hash_inx_col;
-	char *hash_col = NULL, *type_col = NULL, *type_table = NULL;
-	int rc;
+	char *query = NULL;
+	int rc = SLURM_SUCCESS;
+	MYSQL_RES *result = NULL;
 
-	switch (type) {
-	case MOVE_ENV:
-		hash_col = "env_hash";
-		hash_inx_col = "env_hash_inx";
-		type_col = "env_vars";
-		type_table = job_env_table;
-		break;
-	case MOVE_BATCH:
-		hash_col = "script_hash";
-		hash_inx_col = "script_hash_inx";
-		type_col = "batch_script";
-		type_table = job_script_table;
-		break;
-	default:
+	query = xstrdup_printf(
+	"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s_%s' AND COLUMN_NAME IN ('stdout', 'stderr');",
+	cp_mysql_db_name, cluster_name, job_table);
+	DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
+	if (!(result = mysql_db_query_ret(mysql_conn, query, 0))) {
+		xfree(query);
+		error("couldn't query the database");
 		return SLURM_ERROR;
-		break;
 	}
-
-	info("Starting insert from job_table into %s", type_table);
-	/*
-	 * Do the transfer inside MySQL.  This results in a much quicker
-	 * transfer instead of doing a select then an insert after the fact.
-	 */
-	query = xstrdup_printf(
-		"insert into \"%s_%s\" (%s, %s) "
-		"select distinct %s, %s from \"%s_%s\" "
-		"where %s is not NULL && "
-		"(id_array_job=id_job || !id_array_job) "
-		"on duplicate key update last_used=UNIX_TIMESTAMP();",
-		cluster_name, type_table,
-		hash_col, type_col,
-		hash_col, type_col,
-		cluster_name, job_table,
-		type_col);
-	DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-	rc = mysql_db_query(mysql_conn, query);
 	xfree(query);
-
-	if (rc != SLURM_SUCCESS)
+	if (!mysql_num_rows(result)) {
+		mysql_free_result(result);
 		return rc;
+	}
+	mysql_free_result(result);
 
+	/*
+	 * Change the name 'percent_allowed' to be 'allowed'
+	 */
+	debug("alter table %s_%s, change column stdout to std_out, change column stderr to std_err", cluster_name, job_table);
 	query = xstrdup_printf(
-		"update \"%s_%s\" as jobs inner join \"%s_%s\" as hash "
-		"on jobs.%s = hash.%s set jobs.%s = hash.hash_inx;",
-		cluster_name, job_table,
-		cluster_name, type_table,
-		hash_col, hash_col,
-		hash_inx_col);
+		"alter table \"%s_%s\" change column stderr std_err TEXT NOT NULL after work_dir;"
+		"alter table \"%s_%s\" change column stdout std_out TEXT NOT NULL after std_err;",
+		cluster_name, job_table, cluster_name, job_table);
+
 	DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-	rc = mysql_db_query(mysql_conn, query);
+	if ((rc = as_mysql_convert_alter_query(mysql_conn, query)) !=
+	    SLURM_SUCCESS)
+		error("Can't update %s_%s %m", cluster_name, job_table);
 	xfree(query);
 
-	info("Done");
 	return rc;
 }
-
+#endif
 
 static int _convert_job_table_pre(mysql_conn_t *mysql_conn, char *cluster_name)
 {
 	int rc = SLURM_SUCCESS;
-	storage_field_t job_table_fields_21_08[] = {
-		{ "job_db_inx", "bigint unsigned not null auto_increment" },
-		{ "mod_time", "bigint unsigned default 0 not null" },
-		{ "deleted", "tinyint default 0 not null" },
-		{ "account", "tinytext" },
-		{ "admin_comment", "text" },
-		{ "array_task_str", "text" },
-		{ "array_max_tasks", "int unsigned default 0 not null" },
-		{ "array_task_pending", "int unsigned default 0 not null" },
-		{ "batch_script", "longtext" },
-		{ "constraints", "text default ''" },
-		{ "container", "text" },
-		{ "cpus_req", "int unsigned not null" },
-		{ "derived_ec", "int unsigned default 0 not null" },
-		{ "derived_es", "text" },
-		{ "env_vars", "longtext" },
-		{ "env_hash", "text" },
-		{ "env_hash_inx", "bigint unsigned default 0 not null" },
-		{ "exit_code", "int unsigned default 0 not null" },
-		{ "flags", "int unsigned default 0 not null" },
-		{ "job_name", "tinytext not null" },
-		{ "id_assoc", "int unsigned not null" },
-		{ "id_array_job", "int unsigned default 0 not null" },
-		{ "id_array_task", "int unsigned default 0xfffffffe not null" },
-		{ "id_block", "tinytext" },
-		{ "id_job", "int unsigned not null" },
-		{ "id_qos", "int unsigned default 0 not null" },
-		{ "id_resv", "int unsigned not null" },
-		{ "id_wckey", "int unsigned not null" },
-		{ "id_user", "int unsigned not null" },
-		{ "id_group", "int unsigned not null" },
-		{ "het_job_id", "int unsigned not null" },
-		{ "het_job_offset", "int unsigned not null" },
-		{ "kill_requid", "int default null" },
-		{ "state_reason_prev", "int unsigned not null" },
-		{ "mcs_label", "tinytext default ''" },
-		{ "mem_req", "bigint unsigned default 0 not null" },
-		{ "nodelist", "text" },
-		{ "nodes_alloc", "int unsigned not null" },
-		{ "node_inx", "text" },
-		{ "partition", "tinytext not null" },
-		{ "priority", "int unsigned not null" },
-		{ "script_hash", "text" },
-		{ "script_hash_inx", "bigint unsigned default 0 not null" },
-		{ "state", "int unsigned not null" },
-		{ "timelimit", "int unsigned default 0 not null" },
-		{ "time_submit", "bigint unsigned default 0 not null" },
-		{ "time_eligible", "bigint unsigned default 0 not null" },
-		{ "time_start", "bigint unsigned default 0 not null" },
-		{ "time_end", "bigint unsigned default 0 not null" },
-		{ "time_suspended", "bigint unsigned default 0 not null" },
-		{ "gres_used", "text not null default ''" },
-		{ "wckey", "tinytext not null default ''" },
-		{ "work_dir", "text not null default ''" },
-		{ "submit_line", "text" },
-		{ "system_comment", "text" },
-		{ "track_steps", "tinyint not null" },
-		{ "tres_alloc", "text not null default ''" },
-		{ "tres_req", "text not null default ''" },
-		{ NULL, NULL}
-	};
 
-	storage_field_t job_env_table_fields[] = {
-		{ "hash_inx", "bigint unsigned not null auto_increment" },
-		{ "last_used", "timestamp DEFAULT CURRENT_TIMESTAMP not null" },
-		{ "env_hash", "text not null" },
-		{ "env_vars", "longtext" },
-		{ NULL, NULL}
-	};
-
-	storage_field_t job_script_table_fields[] = {
-		{ "hash_inx", "bigint unsigned not null auto_increment" },
-		{ "last_used", "timestamp DEFAULT CURRENT_TIMESTAMP not null" },
-		{ "script_hash", "text not null" },
-		{ "batch_script", "longtext" },
-		{ NULL, NULL}
-	};
-
-	if (db_curr_ver == 10) {
-		/* This only needs to happen for 21.08 databases */
-		char table_name[200];
-		char *query;
-
-		snprintf(table_name, sizeof(table_name), "\"%s_%s\"",
-			 cluster_name, job_table);
-
-		if (mysql_db_create_table(
-			    mysql_conn, table_name, job_table_fields_21_08,
-			    ", primary key (job_db_inx), "
-			    "unique index (id_job, time_submit), "
-			    "key old_tuple (id_job, "
-			    "id_assoc, time_submit), "
-			    "key rollup (time_eligible, time_end), "
-			    "key rollup2 (time_end, time_eligible), "
-			    "key nodes_alloc (nodes_alloc), "
-			    "key wckey (id_wckey), "
-			    "key qos (id_qos), "
-			    "key association (id_assoc), "
-			    "key array_job (id_array_job), "
-			    "key het_job (het_job_id), "
-			    "key reserv (id_resv), "
-			    "key sacct_def (id_user, time_start, "
-			    "time_end), "
-			    "key sacct_def2 (id_user, time_end, "
-			    "time_eligible), "
-			    "key env_hash_inx (env_hash_inx), "
-			    "key script_hash_inx (script_hash_inx))")
-		    == SLURM_ERROR)
-			return SLURM_ERROR;
-
-
-		snprintf(table_name, sizeof(table_name), "\"%s_%s\"",
-			 cluster_name, job_env_table);
-		if (mysql_db_create_table(mysql_conn, table_name,
-					  job_env_table_fields,
-					  ", primary key (hash_inx), "
-					  "unique index env_hash_inx "
-					  "(env_hash(66)))")
-		    == SLURM_ERROR)
-			return SLURM_ERROR;
-
-		snprintf(table_name, sizeof(table_name), "\"%s_%s\"",
-			 cluster_name, job_script_table);
-		if (mysql_db_create_table(mysql_conn, table_name,
-					  job_script_table_fields,
-					  ", primary key (hash_inx), "
-					  "unique index script_hash_inx "
-					  "(script_hash(66)))")
-		    == SLURM_ERROR)
-			return SLURM_ERROR;
-
-		/*
-		 * Using SHA256 here inside MySQL as it will make the conversion
-		 * dramatically faster.  This will cause these tables to
-		 * potentially be 2x in size as all future things will be K12,
-		 * but in theory that shouldn't be as big a deal as this
-		 * conversion should save much room more than that.
-		 */
-		info("Creating env and batch script hashes in the job_table");
-		query = xstrdup_printf(
-			"update \"%s_%s\" set "
-			"env_hash = concat('%d:', SHA2(env_vars, 256)), "
-			"script_hash = concat('%d:', SHA2(batch_script, 256));",
-			cluster_name, job_table,
-			HASH_PLUGIN_SHA256, HASH_PLUGIN_SHA256);
-		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-		rc = mysql_db_query(mysql_conn, query);
-		xfree(query);
-		info("Done");
-
-		if ((rc = _insert_into_hash_table(
-			     mysql_conn, cluster_name,
-			     MOVE_ENV)) != SLURM_SUCCESS)
-			return rc;
-
-		if ((rc = _insert_into_hash_table(
-			     mysql_conn, cluster_name,
-			     MOVE_BATCH)) != SLURM_SUCCESS)
+#ifdef __METASTACK_OPT_SACCT_OUTPUT
+	if (db_curr_ver < 13) {
+		if ((rc = _rename_job_table_columns(mysql_conn, cluster_name)) !=
+		    SLURM_SUCCESS)
 			return rc;
 	}
-
-	if (db_curr_ver < 12) {
-		char *table_name;
-		char *query;
-
-		table_name = xstrdup_printf("\"%s_%s\"",
-					    cluster_name, job_table);
-		/* Update kill_requid to NULL instead of -1 for not set */
-		query = xstrdup_printf("alter table %s modify kill_requid "
-				       "int default null;", table_name);
-		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-		if ((rc = mysql_db_query(mysql_conn, query)) != SLURM_SUCCESS) {
-			xfree(query);
-			return rc;
-		}
-		xfree(query);
-		query = xstrdup_printf("update %s set kill_requid=null where "
-				       "kill_requid=-1;", table_name);
-		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-		rc = mysql_db_query(mysql_conn, query);
-		xfree(query);
-		xfree(table_name);
-	}
+#endif
 
 	return rc;
 }
@@ -402,30 +162,6 @@ static int _convert_job_table_pre(mysql_conn_t *mysql_conn, char *cluster_name)
 static int _convert_step_table_pre(mysql_conn_t *mysql_conn, char *cluster_name)
 {
 	int rc = SLURM_SUCCESS;
-
-	if (db_curr_ver < 12) {
-		char *table_name;
-		char *query;
-
-		table_name = xstrdup_printf("\"%s_%s\"",
-					    cluster_name, step_table);
-		/* temporarily "not null" from req_uid */
-		query = xstrdup_printf("alter table %s modify kill_requid "
-				       "int default null;", table_name);
-		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-		if ((rc = mysql_db_query(mysql_conn, query)) != SLURM_SUCCESS) {
-			xfree(query);
-			return rc;
-		}
-		xfree(query);
-		/* update kill_requid = -1 to NULL */
-		query = xstrdup_printf("update %s set kill_requid=null where "
-				       "kill_requid=-1;", table_name);
-		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
-		rc = mysql_db_query(mysql_conn, query);
-		xfree(query);
-		xfree(table_name);
-	}
 
 	return rc;
 }
@@ -440,8 +176,7 @@ static int _set_db_curr_ver(mysql_conn_t *mysql_conn)
 		return SLURM_SUCCESS;
 
 	query = xstrdup_printf("select version from %s", convert_version_table);
-	debug4("%d(%s:%d) query\n%s", mysql_conn->conn,
-	       THIS_FILE, __LINE__, query);
+	DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
 	if (!(result = mysql_db_query_ret(mysql_conn, query, 0))) {
 		xfree(query);
 		return SLURM_ERROR;
@@ -453,17 +188,12 @@ static int _set_db_curr_ver(mysql_conn_t *mysql_conn)
 		db_curr_ver = slurm_atoul(row[0]);
 		mysql_free_result(result);
 	} else {
-		int tmp_ver = 0;
+		int tmp_ver = CONVERT_VERSION;
 		mysql_free_result(result);
-
-		/* no valid clusters, just return */
-		if (as_mysql_total_cluster_list &&
-		    !list_count(as_mysql_total_cluster_list))
-			tmp_ver = CONVERT_VERSION;
 
 		query = xstrdup_printf("insert into %s (version) values (%d);",
 				       convert_version_table, tmp_ver);
-		debug4("(%s:%d) query\n%s", THIS_FILE, __LINE__, query);
+		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
 		rc = mysql_db_query(mysql_conn, query);
 		xfree(query);
 		if (rc != SLURM_SUCCESS)
@@ -474,10 +204,55 @@ static int _set_db_curr_ver(mysql_conn_t *mysql_conn)
 	return rc;
 }
 
+extern void as_mysql_convert_possible(mysql_conn_t *mysql_conn)
+{
+	(void) _set_db_curr_ver(mysql_conn);
+
+	/*
+	 * Check to see if conversion is possible.
+	 */
+	if (db_curr_ver == NO_VAL) {
+		/*
+		 * Check if the cluster_table exists before deciding if this is
+		 * a new database or a database that predates the
+		 * convert_version_table.
+		 */
+		MYSQL_RES *result = NULL;
+		char *query = xstrdup_printf("select name from %s limit 1",
+					     cluster_table);
+		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
+		if ((result = mysql_db_query_ret(mysql_conn, query, 0))) {
+			/*
+			 * knowing that the table exists is enough to say this
+			 * is an old database.
+			 */
+			xfree(query);
+			mysql_free_result(result);
+			fatal("Database schema is too old for this version of Slurm to upgrade.");
+		}
+		xfree(query);
+		debug4("Database is new, conversion is not required");
+	} else if (db_curr_ver < MIN_CONVERT_VERSION) {
+		fatal("Database schema is too old for this version of Slurm to upgrade.");
+	} else if (db_curr_ver > CONVERT_VERSION) {
+		char *err_msg = "Database schema is from a newer version of Slurm, downgrading is not possible.";
+		/*
+		 * If we are configured --enable-debug only make this a
+		 * debug statement instead of fatal to allow developers
+		 * easier bisects.
+		 */
+#ifdef NDEBUG
+		fatal("%s", err_msg);
+#else
+		debug("%s", err_msg);
+#endif
+	}
+}
+
 extern int as_mysql_convert_tables_pre_create(mysql_conn_t *mysql_conn)
 {
 	int rc = SLURM_SUCCESS;
-	ListIterator itr;
+	list_itr_t *itr;
 	char *cluster_name;
 
 	xassert(as_mysql_total_cluster_list);
@@ -486,7 +261,7 @@ extern int as_mysql_convert_tables_pre_create(mysql_conn_t *mysql_conn)
 		return rc;
 
 	if (db_curr_ver == CONVERT_VERSION) {
-		debug4("%s: No conversion needed, Horray!", __func__);
+		debug4("No conversion needed, Horray!");
 		return SLURM_SUCCESS;
 	} else if (backup_dbd) {
 		/*
@@ -501,6 +276,19 @@ extern int as_mysql_convert_tables_pre_create(mysql_conn_t *mysql_conn)
 		fatal("Backup DBD can not convert database, please start the primary DBD before starting the backup.");
 		return SLURM_ERROR;
 	}
+
+	/*
+	 * At this point, its clear an upgrade is being performed.
+	 * Setup the galera cluster specific options if applicable.
+	 *
+	 * If this fails for whatever reason, it does not mean that the upgrade
+	 * will fail, but it might.
+	 */
+	mysql_db_enable_streaming_replication(mysql_conn);
+
+	info("pre-converting cluster resource table");
+	if ((rc = _convert_clus_res_table_pre(mysql_conn)) != SLURM_SUCCESS)
+		return rc;
 
 	/* make it up to date */
 	itr = list_iterator_create(as_mysql_total_cluster_list);
@@ -510,17 +298,13 @@ extern int as_mysql_convert_tables_pre_create(mysql_conn_t *mysql_conn)
 		 * as_mysql_convert_alter_query instead of mysql_db_query to be
 		 * able to detect a previous failed conversion.
 		 */
-		info("pre-converting usage table for %s", cluster_name);
-		if ((rc = _convert_usage_table_pre(mysql_conn, cluster_name)
-		     != SLURM_SUCCESS))
-			break;
 		info("pre-converting job table for %s", cluster_name);
-		if ((rc = _convert_job_table_pre(mysql_conn, cluster_name)
-		     != SLURM_SUCCESS))
+		if ((rc = _convert_job_table_pre(mysql_conn, cluster_name))
+		     != SLURM_SUCCESS)
 			break;
 		info("pre-converting step table for %s", cluster_name);
-		if ((rc = _convert_step_table_pre(mysql_conn, cluster_name)
-		     != SLURM_SUCCESS))
+		if ((rc = _convert_step_table_pre(mysql_conn, cluster_name))
+		     != SLURM_SUCCESS)
 			break;
 	}
 	list_iterator_destroy(itr);
@@ -528,11 +312,141 @@ extern int as_mysql_convert_tables_pre_create(mysql_conn_t *mysql_conn)
 	return rc;
 }
 
+static int _foreach_set_lineage(void *x, void *arg)
+{
+	char *query = x;
+	mysql_conn_t *mysql_conn = arg;
+
+	DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
+	if (mysql_db_query(mysql_conn, query) != SLURM_SUCCESS)
+		return -1; /* Abort list_for_each */
+
+	return 0; /* Continue list_for_each */
+}
+
+static int _convert_assoc_table_post(mysql_conn_t *mysql_conn,
+				     char *cluster_name)
+{
+	int rc = SLURM_SUCCESS;
+
+	if (db_curr_ver < 14) {
+		MYSQL_ROW row;
+		MYSQL_RES *result = NULL;
+		char *insert_pos = NULL;
+		uint64_t max_query_size = 0;
+		char *table_name = xstrdup_printf("\"%s_%s\"",
+						  cluster_name, assoc_table);;
+		list_t *query_list = list_create(xfree_ptr);
+		/* fill in the id_parent */
+		char *query = xstrdup_printf(
+			"update %s as t1 inner join %s as t2 on t1.acct=t2.acct and t1.user!='' and t1.id_assoc!=t2.id_assoc set t1.id_parent=t2.id_assoc;",
+			table_name, table_name);
+		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
+		if ((rc = mysql_db_query(mysql_conn, query)) != SLURM_SUCCESS)
+			goto endit;
+		xfree(query);
+		query = xstrdup_printf(
+			"update %s as t1 inner join %s as t2 on t1.parent_acct=t2.acct and t1.parent_acct!='' and t2.user='' set t1.id_parent=t2.id_assoc;",
+			table_name, table_name);
+		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
+		if ((rc = mysql_db_query(mysql_conn, query)) != SLURM_SUCCESS)
+			goto endit;
+		xfree(query);
+
+		/*
+		 * Determine max query size to avoid possibly generating
+		 * something too long for the sql server to process.
+		 *
+		 * This is primarily to support older MySQL servers, but also
+		 * supports very large association tables.
+		 */
+		if (mysql_db_get_var_u64(mysql_conn, "max_allowed_packet",
+					 &max_query_size))
+			max_query_size = 1024 * 1024;
+		/*
+		 * Safety margin of 10% of the possible size.  A single set
+		 * lineage call should not exceeed 1KiB.
+		 */
+		max_query_size = (max_query_size * 0.9);
+
+		/*
+		 * Now set the lineage for the associations.
+		 * It would be nice to be able to call a function here to do the
+		 * set, but MySQL/MariaDB does not allow dynamic SQL. Since the
+		 * update would require the cluster name to set set the table
+		 * correctly we can do this in a function.
+		 *
+		 * I also though about having a different function per cluster
+		 * and just call that instead, but the problem there is you
+		 * can't have a '-' in a function name which makes clusters like
+		 * 'smd-server' not able to create a valid function name
+		 * (get_lineage_smd-server() is not valid).
+		 *
+		 * So this is the best I could figure out at the moment.
+		 */
+		query = xstrdup_printf("select id_assoc, acct, user, `partition` from %s",
+				       table_name);
+		if (!(result = mysql_db_query_ret(mysql_conn, query, 1))) {
+			xfree(query);
+			rc = SLURM_ERROR;
+			goto endit;
+		}
+		xfree(query);
+		while ((row = mysql_fetch_row(result))) {
+			xstrfmtcatat(query, &insert_pos,
+				     "call set_lineage(%s, '%s', '%s', '%s', '%s');",
+				     row[0], row[1], row[2], row[3],
+				     table_name);
+			if ((insert_pos - query) > max_query_size) {
+				list_append(query_list, query);
+				query = NULL;
+				insert_pos = NULL;
+			}
+		}
+		if (query) {
+			list_append(query_list, query);
+			query = NULL;
+		}
+		mysql_free_result(result);
+		if (list_for_each(query_list, _foreach_set_lineage,
+				  mysql_conn) < 0)
+			rc = SLURM_ERROR;
+	endit:
+		FREE_NULL_LIST(query_list);
+		xfree(table_name);
+	} else if (db_curr_ver < 15) {
+		/*
+		 * There was a bug in version 14 that didn't add the partition
+		 * to the lineage. This fixes that.
+		 */
+		char *query = xstrdup_printf(
+			"update \"%s_%s\" set lineage=concat(lineage, `partition`, '/') where `partition`!='' and (`partition` is not null) and (lineage not like concat('%%/', `partition`, '/'));",
+			cluster_name, assoc_table);
+		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
+		rc = mysql_db_query(mysql_conn, query);
+		xfree(query);
+	}
+
+	return rc;
+}
+
+static int _foreach_post_create(void *x, void *arg)
+{
+	char *cluster_name = x;
+	mysql_conn_t *mysql_conn = arg;
+	int rc;
+
+	info("post-converting assoc table for %s", cluster_name);
+	if ((rc = _convert_assoc_table_post(mysql_conn, cluster_name)) !=
+	     SLURM_SUCCESS)
+		return rc;
+
+	return SLURM_SUCCESS;
+}
+
 extern int as_mysql_convert_tables_post_create(mysql_conn_t *mysql_conn)
 {
 	int rc = SLURM_SUCCESS;
-	ListIterator itr;
-	char *cluster_name;
 
 	xassert(as_mysql_total_cluster_list);
 
@@ -540,7 +454,7 @@ extern int as_mysql_convert_tables_post_create(mysql_conn_t *mysql_conn)
 		return rc;
 
 	if (db_curr_ver == CONVERT_VERSION) {
-		debug4("%s: No conversion needed, Horray!", __func__);
+		debug4("No conversion needed, Horray!");
 		return SLURM_SUCCESS;
 	} else if (backup_dbd) {
 		/*
@@ -557,16 +471,11 @@ extern int as_mysql_convert_tables_post_create(mysql_conn_t *mysql_conn)
 	}
 
 	/* make it up to date */
-	itr = list_iterator_create(as_mysql_total_cluster_list);
-	while ((cluster_name = list_next(itr))) {
-		info("post-converting step table for %s", cluster_name);
-		if ((rc = _convert_step_table_post(mysql_conn, cluster_name)
-		     != SLURM_SUCCESS))
-			break;
-	}
-	list_iterator_destroy(itr);
+	if (list_for_each_ro(as_mysql_total_cluster_list,
+			     _foreach_post_create, mysql_conn) < 0)
+		return SLURM_ERROR;
 
-	return rc;
+	return SLURM_SUCCESS;
 }
 
 extern int as_mysql_convert_non_cluster_tables_post_create(
@@ -578,7 +487,7 @@ extern int as_mysql_convert_non_cluster_tables_post_create(
 		return rc;
 
 	if (db_curr_ver == CONVERT_VERSION) {
-		debug4("%s: No conversion needed, Horray!", __func__);
+		debug4("No conversion needed, Horray!");
 		return SLURM_SUCCESS;
 	}
 
@@ -589,7 +498,7 @@ extern int as_mysql_convert_non_cluster_tables_post_create(
 
 		info("Conversion done: success!");
 
-		debug4("(%s:%d) query\n%s", THIS_FILE, __LINE__, query);
+		DB_DEBUG(DB_QUERY, mysql_conn->conn, "query\n%s", query);
 		rc = mysql_db_query(mysql_conn, query);
 		xfree(query);
 	}
