@@ -44,7 +44,9 @@
 #include "src/common/pack.h"
 #include "slurm/slurm.h"
 #include "slurm/slurmdb.h"
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+#include "src/interfaces/cred.h" 
+#endif
 /* Interval, in seconds, for purging orphan bb_alloc_t records and timing out
  * staging */
 #define AGENT_INTERVAL	30
@@ -86,7 +88,43 @@ typedef struct bb_config {
 	char    *stop_stage_in;
 	char    *stop_stage_out;
 	uint32_t validate_timeout;
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	uint32_t max_groups;
+	uint32_t used_groups;
+	uint32_t free_groups;
+
+	uint32_t max_datasets;
+	uint32_t used_datasets;
+	uint32_t free_datasets;
+	uint32_t max_clients_join;
+	uint32_t max_clients_per_job;
+	// uint32_t max_node_per_groups;
+	// uint32_t used_node_per_groups;
+	// uint32_t free_node_per_groups;
+	uint32_t file_system_count;      // 支持的存储系统数量，现在上线是2
+	uint32_t max_acc_dir_len;        // 单个作业支持的最大目录长度
+	uint32_t max_acc_dirs_per_job;   // 单个作业支持的最大加速目录长度
+	char    *file_system_fir;        // 文件系统名称
+	char    *file_system_mount_fir;  // 文件系统挂载点
+
+	char    *para_stor_addr;	/* IP address */
+	uint32_t para_stor_port;	/* port number */
+	char    *para_stor_user_name;	/* user name */
+	char    *para_stor_password;	/* password */
+	char    *token;	/* password */
+#endif
 } bb_config_t;
+
+#ifdef __METASTACK_NEW_BURSTBUFFER	
+typedef struct bb_minimal_config {
+	char    *para_stor_addr;	/* IP address */
+	uint32_t para_stor_port;	/* port number */
+	char    *para_stor_user_name;	/* user name */
+	char    *para_stor_password;	/* password */
+	char    *token;	/* password */
+	uint32_t other_timeout;
+} bb_minimal_config_t;
+#endif
 
 /* Current burst buffer allocations (instances). Some of these will be job
  * specific (job_id != 0) and others persistent */
@@ -117,6 +155,29 @@ typedef struct bb_alloc {
 	time_t state_time;	/* Time of last state change */
 	time_t use_time;	/* Expected time when use will begin */
 	uint32_t user_id;
+#ifdef __METASTACK_NEW_BURSTBUFFER	
+	//uint64_t bb_group_id; //缓存组id
+	int type;			 //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
+	bool  cache_tmp;
+	// uint64_t total_space; //缓存组总空间容量大小。
+	// uint64_t free_space;  //剩余可用的缓存组数量
+	// uint64_t used_space;  //缓存组已用总空间容量大小。
+
+	uint32_t bb_task;     //当前缓存组最大并行的任务数
+	uint32_t groups_nodes; //当前缓存组包含的节点数
+	uint64_t req_space;		//当前作业请求的空间
+	int access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	char *pfs;          //后端存储路径,可能有多个
+	uint32_t pfs_cnt;          //后端存储路径个数
+	bool metadata_acceleration; //是否开启元数据加速
+	// char	*default_workdir; 	/* default work directory */
+	int *bb_group_ids; /* 作业中包含的缓存组id */
+	int *bb_dataset_ids; /*  作业中包含的数据集id  */
+	int *bb_task_ids; /* 作业中包含的任务id */
+	int index_groups; /* 作业中包含的缓存组个数 */
+	int index_datasets; /* 作业中包含的数据集个数 */
+	int index_tasks; /* 作业中包含的数据集个数 */
+#endif
 } bb_alloc_t;
 
 /* User's storage use, needed to enforce per-user limits without TRES */
@@ -130,6 +191,9 @@ typedef struct bb_user {
 
 #define BB_FLAG_BB_OP		1	/* Requested using #BB prefix */
 #define BB_FLAG_DW_OP		2	/* Requested using #DW prefix */
+#ifdef __METASTACK_NEW_BURSTBUFFER
+#define BB_FLAG_PB_OP		3	/* Requested using #DW prefix */
+#endif
 
 /* Burst buffer creation records with state */
 typedef struct {
@@ -177,6 +241,31 @@ typedef struct bb_job {
 	bool       use_job_buf;	/* True if uses job buffer,
 				 * false if uses persistent buffer only */
 	uint32_t   user_id;	/* user the job runs as */
+#ifdef __METASTACK_NEW_BURSTBUFFER	
+	//uint64_t bb_group_id; //缓存组id
+	int  type; //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
+	bool  enforce_bb_flag; //是否强制加速
+	bool  cache_tmp;
+	// uint64_t total_space; //缓存组总空间容量大小。
+	// uint64_t free_space;  //剩余可用的缓存组数量
+	// uint64_t used_space;  //缓存组已用总空间容量大小。
+
+	uint32_t bb_task;     //当前缓存组最大并行的任务数
+	uint32_t groups_nodes; //当前缓存组包含的节点数
+	uint64_t req_space;		//当前作业请求的空间
+	int access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	char *pfs;          //后端存储路径,可能有多个
+	uint32_t pfs_cnt;          //后端存储路径个数
+	bool metadata_acceleration; //是否开启元数据加速
+	// char	*default_workdir; 	/* default work directory */
+	int *bb_group_ids; /* 作业中包含的缓存组id */
+	int *bb_dataset_ids; /*  作业中包含的数据集id  */
+	int *bb_task_ids; /* 作业中包含的任务id */
+	int index_groups; /* 作业中包含的缓存组个数 */
+	int index_datasets; /* 作业中包含的数据集个数 */
+	int index_tasks; /* 作业中包含的任务个数 */
+	int parastor_inx; /* 使用的存储系统代号 ,1第一套存储系统，2 第二套存储系统 */
+#endif
 } bb_job_t;
 
 /* Used for building queue of jobs records for various purposes */
@@ -194,6 +283,112 @@ struct preempt_bb_recs {
 	time_t   use_time;
 	uint32_t user_id;
 };
+
+#ifdef __METASTACK_NEW_BURSTBUFFER  
+/* 定义缓存组结构体 bb_cache_group */
+typedef struct {
+    int id;                    // 缓存组ID
+    int client_num;            // 客户端数量
+    int *client_ids;           // 客户端ID数组指针
+    int del_delay_time;        // 删除延迟时间
+    int fault_delay_time;      // 故障延迟时间
+    double hit_bytes_rate;     // 命中字节率
+    double hit_io_num_rate;    // 命中IO数量率
+    double meta_hit_io_num_rate; // 元数据命中IO数量率
+} bb_attribute_group;
+
+/* response info of datasets */
+typedef struct {
+    char *burstBufferDataSetCacheMode;
+    char *burstBufferDataSetCacheType;
+    char *burstBufferMetaDataSetCacheMode;
+    int64_t create_time;
+    bool dataOpen;
+    char *data_cache_mode;
+    char *data_cache_type;
+    int fs_id;
+    int group_id;
+    int id;
+    char *idesc;
+    int key;
+    int64_t last_submit_task_time;
+    char *last_submit_task_type;
+    bool lock_flag;
+    char *meta_data_cache_mode;
+    char *path;
+    int path_version;
+    char *state;
+    bool use_data;
+    bool use_meta_data;
+    int version;
+} bb_attribute_dataset;
+
+/* ip info of bb_attribute_client */
+typedef struct {
+   int id;       // 客户端ID,对应client_id
+   char *hostname;
+   char *ip;
+   long long total_size;/* bytes */
+   long long used_size; /* bytes */
+   int version;
+   int ips_count;
+   int devices_count;
+   int groups_count; // 节点当前加入缓存组数量
+   int *groups_ids;;
+   char *cap_dev_name;
+} bb_attribute_client;
+
+typedef struct {
+    int task_id;
+    int dataset_id;
+    int group_id;
+    char *task_state;
+    char *task_type; 
+    long long begin_time;
+    long long end_time;
+    long long completed_bytes;
+    int total_node_num;
+    int completed_node_num;
+    int canceled_node_num;
+    char *error_action_type;
+    int failed_node_num;
+    char **failed_node_infos;
+    int exit_code;
+} bb_attribute_task;
+/* top response */
+typedef struct {
+    int err_no;
+    int sync;
+    long time_stamp;
+    long time_zone_offset;
+    char* trace_id;
+    char* err_msg;
+    char* detail_err_msg;
+
+    int group_count;      // 存储当前缓存组数量
+    int dataset_count;    // 存储当前数据集规则数量
+    int client_count;
+    int task_count;
+
+
+	
+	int client_join_groups_counts;
+
+    // List list_groups;     // bb cache group list
+    // List list_datasets;   // bb cache datasets list
+    // List list_clients;   // bb cache client list
+    // List list_tasks; // bb task list
+
+    int group_id;
+    int dataset_id; 
+    int task_id;
+	int last_client_id;  // Record the IDs of the current node.
+	bb_attribute_group   *bb_group;
+	bb_attribute_client  *bb_client;
+	bb_attribute_dataset *bb_dataset;
+	bb_attribute_task    *bb_task;
+} bb_response;
+#endif
 
 /* Current plugin state information */
 typedef struct bb_state {
@@ -218,6 +413,13 @@ typedef struct bb_state {
 	uint64_t	used_space;	/* Allocated space, in bytes */
 	uint64_t	unfree_space;	/* Includes alloc_space (above) plus
 					 * drained, units are bytes */
+#ifdef __METASTACK_NEW_BURSTBUFFER	
+	// bb_response *resp_out;	//ParaStor BB信息
+    List list_groups;     // bb cache group list
+    List list_datasets;   // bb cache datasets list
+    List list_clients;   // bb cache client list
+    List list_tasks; // bb task list
+#endif
 } bb_state_t;
 
 /* Return codes for bb_test_size_limit */
@@ -237,6 +439,12 @@ extern bb_alloc_t *bb_alloc_job_rec(bb_state_t *state_ptr,
 				    job_record_t *job_ptr,
 				    bb_job_t *bb_job);
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/* Update a per-job burst buffer record for a specific job.
+ * Return a pointer to that record.
+ * Use bb_free_alloc_buf() to purge the returned record. */	 
+extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool update);
+#endif
 /* Allocate a burst buffer record for a job and increase the job priority
  * if so configured.
  * Use bb_free_alloc_buf() to purge the returned record. */
@@ -336,6 +544,10 @@ char *bb_handle_job_script(job_record_t *job_ptr, bb_job_t *bb_job);
 /* Load and process configuration parameters */
 extern void bb_load_config(bb_state_t *state_ptr, char *plugin_type);
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/* Load and process configuration parameters */
+extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type);
+#endif
 /*
  * Open the state save file, or the backup if necessary.
  * IN file_name - the name of the state save file to open
@@ -351,7 +563,15 @@ extern int bb_pack_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 /* Pack state and configuration parameters into a buffer */
 extern void bb_pack_state(bb_state_t *state_ptr, buf_t *buffer,
 			  uint16_t protocol_version);
+#ifdef __METASTACK_NEW_BURSTBUFFER
 
+/* Pack individual burst buffer job records into a buffer */
+extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
+			uint16_t protocol_version);
+/* Pack state and configuration parameters into a buffer */
+extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
+			  uint16_t protocol_version);
+#endif
 /* Pack individual burst buffer usage records into a buffer (used for limits) */
 extern int bb_pack_usage(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 			 uint16_t protocol_version);
@@ -424,6 +644,13 @@ extern void bb_update_system_comment(job_record_t *job_ptr, char *operation,
 
 /* Determine if the specified pool name is valid on this system */
 extern bool bb_valid_pool_test(bb_state_t *state_ptr, char *pool_name);
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/* Determine if the specified pool name is valid on this system */
+extern bool bb_valid_groups_test(uint64_t tmp_cnt);
+
+extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr);
+#endif
 
 /* Write an arbitrary string to an arbitrary file name */
 extern int bb_write_file(char *file_name, char *buf);

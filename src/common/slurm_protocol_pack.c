@@ -16805,6 +16805,103 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burst_buffer_info, buf_t *buffer,
+	uint16_t protocol_version)
+{
+	int i = 0, j = 0;
+	uint32_t tmp32 = 0;
+	burst_buffer_info_msg_t *bb_msg_ptr = NULL;
+	burst_buffer_info_t *bb_info_ptr; //
+	burst_buffer_resv_t *bb_resv_ptr; // 
+	burst_buffer_use_t  *bb_use_ptr;
+
+	bb_msg_ptr = xmalloc(sizeof(burst_buffer_info_msg_t));
+	safe_unpack32(&bb_msg_ptr->record_count, buffer);
+	if (bb_msg_ptr->record_count >= NO_VAL)
+		goto unpack_error;
+	safe_xcalloc(bb_msg_ptr->burst_buffer_array, bb_msg_ptr->record_count,
+		     sizeof(burst_buffer_info_t));
+	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
+		for (i = 0, bb_info_ptr = bb_msg_ptr->burst_buffer_array;
+			i < bb_msg_ptr->record_count; i++, bb_info_ptr++) {
+			safe_unpackstr(&bb_info_ptr->name,            buffer);
+
+			safe_unpackstr(&bb_info_ptr->allow_users,     buffer);
+			safe_unpackstr(&bb_info_ptr->deny_users,      buffer);
+			// safe_unpackstr(&bb_info_ptr->get_sys_state,   buffer);
+			// safe_unpackstr(&bb_info_ptr->get_sys_status,  buffer);
+
+			safe_unpack32(&bb_info_ptr->other_timeout,    buffer);
+			safe_unpack32(&bb_info_ptr->stage_in_timeout, buffer);
+			safe_unpack32(&bb_info_ptr->stage_out_timeout,buffer);
+			safe_unpack32(&bb_info_ptr->validate_timeout, buffer);
+			//资源剩余统计
+			safe_unpack32(&bb_info_ptr->max_groups,       buffer);
+			safe_unpack32(&bb_info_ptr->used_groups,      buffer);
+			safe_unpack32(&bb_info_ptr->free_groups,      buffer);
+
+			safe_unpack32(&bb_info_ptr->max_datasets,     buffer);
+			safe_unpack32(&bb_info_ptr->used_datasets,    buffer);
+			safe_unpack32(&bb_info_ptr->free_datasets,    buffer);
+
+			safe_unpack32(&bb_info_ptr->max_clients_join, buffer);
+			safe_unpack32(&bb_info_ptr->max_clients_per_job, buffer);
+			safe_unpack32(&bb_info_ptr->buffer_count,     buffer);
+
+			if (bb_info_ptr->buffer_count >= NO_VAL)
+					goto unpack_error;
+			safe_xcalloc(bb_info_ptr->burst_buffer_resv_ptr,
+						bb_info_ptr->buffer_count,
+						sizeof(burst_buffer_resv_t)); // job list
+
+			for (j = 0, bb_resv_ptr = bb_info_ptr->burst_buffer_resv_ptr;
+			     j < bb_info_ptr->buffer_count; j++, bb_resv_ptr++) {
+				safe_unpackstr(&bb_resv_ptr->account,             buffer);
+				safe_unpack32(&bb_resv_ptr->array_job_id,         buffer);
+				safe_unpack32(&bb_resv_ptr->array_task_id,        buffer);
+				unpack_time(&bb_resv_ptr->create_time,            buffer);
+				safe_unpack32(&bb_resv_ptr->job_id,               buffer);
+				safe_unpackstr(&bb_resv_ptr->name,                buffer);
+				safe_unpackstr(&bb_resv_ptr->partition,           buffer);
+			    //safe_unpackstr(&bb_resv_ptr->qos,                 buffer);
+				safe_unpack64(&bb_resv_ptr->size, 				  buffer);
+				safe_unpack16(&bb_resv_ptr->state,                buffer);
+				safe_unpack32(&bb_resv_ptr->user_id,              buffer);
+				safe_unpack32(&bb_resv_ptr->type,                 buffer);		
+				safe_unpack32(&bb_resv_ptr->access_mode,          buffer);	
+			    safe_unpackstr(&bb_resv_ptr->pfs,                 buffer);	
+				safe_unpack32(&bb_resv_ptr->pfs_cnt,              buffer);	
+				safe_unpack32(&bb_resv_ptr->index_groups,         buffer);		
+
+				if (bb_resv_ptr->index_groups > 0) {
+					safe_unpack32_array(&bb_resv_ptr->bb_group_ids,  &bb_resv_ptr->index_groups, buffer);
+				} else
+					xfree(bb_resv_ptr->bb_group_ids);
+
+				safe_unpack32(&bb_resv_ptr->index_datasets,        buffer);	
+				if(bb_resv_ptr->index_datasets> 0) {
+					safe_unpack32_array(&bb_resv_ptr->bb_dataset_ids, &bb_resv_ptr->index_datasets, buffer);
+				} else
+					xfree(bb_resv_ptr->bb_dataset_ids);	
+					
+				safe_unpack32(&bb_resv_ptr->index_tasks,           buffer);
+				if(bb_resv_ptr->index_tasks > 0)   {
+					safe_unpack32_array(&bb_resv_ptr->bb_task_ids, &bb_resv_ptr->index_tasks, buffer);	
+				} else 
+					xfree(bb_resv_ptr->bb_task_ids);	
+			}	
+		}
+	}
+	*burst_buffer_info = bb_msg_ptr;
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurm_free_burst_buffer_info_msg(bb_msg_ptr);
+	*burst_buffer_info = NULL;
+	return SLURM_ERROR;
+}
+#endif
 static int _unpack_burst_buffer_info_msg(
 	burst_buffer_info_msg_t **burst_buffer_info, buf_t *buffer,
 	uint16_t protocol_version)
@@ -21037,6 +21134,11 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 	}
 
 	switch (msg->msg_type) {
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	case RESPONSE_BURST_BUFFER_PARASTOR_INFO:
+	_pack_buf_msg(msg, buffer);
+	break;
+#endif	
 	case RESPONSE_ASSOC_MGR_INFO:
 	case RESPONSE_BURST_BUFFER_INFO:
 	case RESPONSE_FRONT_END_INFO:
@@ -21168,6 +21270,9 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 	case ACCOUNTING_REGISTER_CTLD:
 	case REQUEST_TOPO_INFO:
 	case REQUEST_BURST_BUFFER_INFO:
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	case REQUEST_BURST_BUFFER_PARASTOR_INFO:
+#endif
 	case REQUEST_FED_INFO:
 	case SRUN_PING:
 	case REQUEST_CONTAINER_START:
@@ -21877,6 +21982,9 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 	case ACCOUNTING_REGISTER_CTLD:
 	case REQUEST_TOPO_INFO:
 	case REQUEST_BURST_BUFFER_INFO:
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	case REQUEST_BURST_BUFFER_PARASTOR_INFO:
+#endif
 	case REQUEST_FED_INFO:
 	case SRUN_PING:
 	case REQUEST_CONTAINER_START:
@@ -22283,6 +22391,13 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 			(burst_buffer_info_msg_t **) &(msg->data), buffer,
 			msg->protocol_version);
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER
+		case RESPONSE_BURST_BUFFER_PARASTOR_INFO:
+		rc = _unpack_burst_buffer_parastor_info_msg(
+			(burst_buffer_info_msg_t **) &(msg->data), buffer,
+			msg->protocol_version);
+		break;
+#endif
 	case REQUEST_FILE_BCAST:
 		rc = _unpack_file_bcast( (file_bcast_msg_t **)
 					 & msg->data, buffer,

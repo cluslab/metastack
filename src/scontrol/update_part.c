@@ -317,6 +317,24 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			}
 			(*update_cnt_ptr)++;
 		}
+#ifdef __METASTACK_NEW_BURSTBUFFER
+		/* BurstBuffer=enable|disable 解析 */
+		else if (xstrncasecmp(tag, "BurstBuffer", MAX(taglen, 2)) == 0) {
+			if (xstrncasecmp(val, "disable", MAX(vallen, 1)) == 0 ||
+				xstrncasecmp(val, "no", MAX(vallen, 1)) == 0) {
+				part_msg_ptr->flags |= PART_FLAG_BURSTBUFFER_CLR;
+			} else if (xstrncasecmp(val, "enable", MAX(vallen, 1)) == 0 ||
+				xstrncasecmp(val, "yes", MAX(vallen, 1)) == 0) {
+				part_msg_ptr->flags |= PART_FLAG_BURSTBUFFER;
+			} else {
+				exit_code = 1;
+				error("Invalid input: %s", argv[i]);
+				error("Acceptable BurstBuffer values are enable|disable or yes|no");
+				return SLURM_ERROR;
+			}
+			(*update_cnt_ptr)++;
+		}
+#endif
 		else if (!xstrncasecmp(tag, "OverSubscribe", MAX(taglen, 5)) ||
 			 !xstrncasecmp(tag, "Shared", MAX(taglen, 2))) {
 			char *colon_pos = strchr(val, ':');

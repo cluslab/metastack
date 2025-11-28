@@ -2645,10 +2645,15 @@ extern int bb_p_reconfig(void)
  *
  * Returns a Slurm errno.
  */
-extern int bb_p_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version)
+#ifdef __METASTACK_NEW_BURSTBUFFER
+extern int bb_p_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version, bool parastor)
 {
+#endif
 	uint32_t rec_count = 0;
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	if(parastor)
+		return SLURM_SUCCESS;
+#endif
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	packstr(bb_state.name, buffer);
 	bb_pack_state(&bb_state, buffer, protocol_version);

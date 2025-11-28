@@ -3602,6 +3602,18 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		     part_desc->name);
 		part_ptr->flags &= (~PART_FLAG_LLN);
 	}
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	/* 新增：BurstBuffer 标志处理 */
+	if (part_desc->flags & PART_FLAG_BURSTBUFFER) {
+		info("%s: setting BurstBuffer for partition %s", __func__,
+			part_desc->name);
+		part_ptr->flags |= PART_FLAG_BURSTBUFFER;
+	} else if (part_desc->flags & PART_FLAG_BURSTBUFFER_CLR) {
+		info("%s: clearing BurstBuffer for partition %s", __func__,
+			part_desc->name);
+		part_ptr->flags &= (~PART_FLAG_BURSTBUFFER);
+	}
+#endif
 
 #ifdef __METASTACK_NEW_PART_RBN
 	if (part_desc->meta_flags & PART_METAFLAG_RBN) {

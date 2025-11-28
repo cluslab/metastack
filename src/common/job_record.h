@@ -544,6 +544,12 @@ struct job_record {
 #ifdef __METASTACK_NEW_PENDING_ORDER
 	uint32_t pending_order;
 #endif
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	// int bb_group_counts; /* Number of burst buffer groups */
+	// //int *bb_group_ids; /* Sizes of each burst buffer group */
+	// int bb_dataset_counts; /* Number of burst buffer datasets */
+	// int bb_task_counts; /*  Number of burst buffer tasks */
+#endif
 };
 
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED

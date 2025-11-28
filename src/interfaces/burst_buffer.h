@@ -88,8 +88,9 @@ extern char *bb_g_get_status(uint32_t argc, char **argv, uint32_t uid,
  *
  * Returns a Slurm errno.
  */
-extern int bb_g_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+extern int bb_g_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version, bool parastor_enabled);
+#endif
 /*
  * Note configuration may have changed. Handle changes in BurstBufferParameters.
  *

@@ -75,13 +75,23 @@
 #include "src/slurmctld/slurmctld.h"
 
 #include "burst_buffer_common.h"
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+#include <stdio.h>
+#include <limits.h>
+#endif
 /* Maximum poll wait time for child processes, in milliseconds */
 #define MAX_POLL_WAIT 500
 
 static void	_bb_job_del2(bb_job_t *bb_job);
 static uid_t *	_parse_users(char *buf);
 static char *	_print_users(uid_t *buf);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+static bool is_parent_path(const char *parent, const char *child);
+static int _is_the_dir_nested(const char *path_arry, int dir_number);
+static char *_dir_remove_spaces(char *s);
+static char ** split_paths(const char *input, int *count_out);
+static char *convert_paths_str(const char *dirs, const char *mount_point, const char *mount_system);
+#endif
 
 /* Translate comma delimitted list of users into a UID array,
  * Return value must be xfreed */
@@ -211,6 +221,11 @@ extern void bb_clear_config(bb_config_t *config_ptr, bool fini)
 	xfree(config_ptr->deny_users_str);
 	xfree(config_ptr->destroy_buffer);
 	xfree(config_ptr->directive_str);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+ 	xfree(config_ptr->para_stor_addr);
+	xfree(config_ptr->para_stor_user_name);
+	xfree(config_ptr->para_stor_password);
+#endif
 	config_ptr->flags = 0;
 	xfree(config_ptr->get_sys_state);
 	xfree(config_ptr->get_sys_status);
@@ -503,6 +518,242 @@ extern void bb_set_tres_pos(bb_state_t *state_ptr)
 		state_ptr->tres_id  = assoc_mgr_tres_array[inx]->id;
 	}
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+
+/* Load and process configuration parameters */
+extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
+{
+	s_p_hashtbl_t *bb_hashtbl = NULL;
+	char *bb_conf, *tmp = NULL, *value;
+	char *colon, *save_ptr = NULL, *tok;
+	uint32_t pool_cnt;
+	int fd, i;
+	static s_p_options_t bb_options[] = {
+		{"AllowUsers", S_P_STRING},
+		{"DenyUsers", S_P_STRING},
+		{"Directive", S_P_STRING},
+		{"Flags", S_P_STRING},
+		{"GetSysState", S_P_STRING},
+		{"GetSysStatus", S_P_STRING},
+		{"OtherTimeout", S_P_UINT32},
+		{"PollInterval", S_P_UINT32},
+		{"StageInTimeout", S_P_UINT32},
+		{"StageOutTimeout", S_P_UINT32},
+		{"StartStageIn", S_P_STRING},
+		{"StartStageOut", S_P_STRING},
+		{"StopStageIn", S_P_STRING},
+		{"StopStageOut", S_P_STRING},
+		{"ValidateTimeout", S_P_UINT32},
+		{"MaxGroups", S_P_UINT32},	
+		{"MaxDatasets", S_P_UINT32},	
+		//{"MaxNodePerGroups", S_P_UINT32},	
+		{"MaxGroupsPerClients", S_P_UINT32},
+		{"MaxClientsPerJob", S_P_UINT32},
+
+		{"MaxAccDirsPerJob", S_P_UINT32},
+		{"MaxAccDirLen", S_P_UINT32},
+		{"FileSystemCount", S_P_UINT32},
+		{"FileSystemFir", S_P_STRING},
+		{"FileSystemMountFir", S_P_STRING},
+
+		{"ParaStorAddr", S_P_STRING},	
+		{"ParaStorAddrPort", S_P_UINT32},	
+		{"ParaStorUserName", S_P_STRING},
+		{"ParaStorUserPasswd", S_P_STRING},	
+		
+		// {"ParaStorAddr", S_P_STRING},	
+		// {"ParaStorAddrPort", S_P_UINT32},	
+		// {"ParaStorUserName", S_P_STRING},
+		// {"ParaStorUserPasswd", S_P_STRING},	
+		{NULL}
+	};
+
+	xfree(state_ptr->name);
+	if (plugin_type) {
+		tmp = strchr(plugin_type, '/');
+		if (tmp)
+			tmp++;
+		else
+			tmp = plugin_type;
+		state_ptr->name = xstrdup(tmp);
+	}
+
+	/* Set default configuration */
+	bb_clear_config(&state_ptr->bb_config, false);
+	state_ptr->bb_config.flags |= BB_FLAG_DISABLE_PERSISTENT;
+	state_ptr->bb_config.poll_interval = DEFAULT_BB_POLL_INTERVAL;
+	state_ptr->bb_config.other_timeout = DEFAULT_OTHER_TIMEOUT;
+	state_ptr->bb_config.stage_in_timeout = DEFAULT_STATE_IN_TIMEOUT;
+	state_ptr->bb_config.stage_out_timeout = DEFAULT_STATE_OUT_TIMEOUT;
+	state_ptr->bb_config.validate_timeout = DEFAULT_VALIDATE_TIMEOUT;
+
+	/* First look for "burst_buffer.conf" then with "type" field,
+	 * for example "burst_buffer_datawarp.conf" */
+	bb_conf = get_extra_conf_path("burst_buffer.conf");
+	fd = open(bb_conf, 0);
+	if (fd >= 0) {
+		close(fd);
+	} else {
+		char *new_path = NULL;
+		xfree(bb_conf);
+		xstrfmtcat(new_path, "burst_buffer_%s.conf", state_ptr->name);
+		bb_conf = get_extra_conf_path(new_path);
+		fd = open(bb_conf, 0);
+		if (fd < 0) {
+			info("Unable to find configuration file %s or "
+			     "burst_buffer.conf", new_path);
+			xfree(bb_conf);
+			xfree(new_path);
+			return;
+		}
+		close(fd);
+		xfree(new_path);
+	}
+
+	bb_hashtbl = s_p_hashtbl_create(bb_options);
+	if (s_p_parse_file(bb_hashtbl, NULL, bb_conf, 0, NULL)
+	    == SLURM_ERROR) {
+		fatal("%s: something wrong with opening/reading %s: %m",
+		      __func__, bb_conf);
+	}
+	if (s_p_get_string(&state_ptr->bb_config.allow_users_str, "AllowUsers",
+			   bb_hashtbl)) {
+		state_ptr->bb_config.allow_users = _parse_users(
+					state_ptr->bb_config.allow_users_str);
+	}
+	s_p_get_string(&state_ptr->bb_config.directive_str, "Directive",
+		       bb_hashtbl);
+	if (s_p_get_string(&state_ptr->bb_config.deny_users_str, "DenyUsers",
+			   bb_hashtbl)) {
+		state_ptr->bb_config.deny_users = _parse_users(
+					state_ptr->bb_config.deny_users_str);
+	}
+
+
+
+	if (s_p_get_string(&tmp, "Flags", bb_hashtbl)) {
+		state_ptr->bb_config.flags = slurm_bb_str2flags(tmp);
+		xfree(tmp);
+	}
+	/* By default, disable persistent buffer creation by normal users */
+	if (state_ptr->bb_config.flags & BB_FLAG_ENABLE_PERSISTENT)
+		state_ptr->bb_config.flags &= (~BB_FLAG_DISABLE_PERSISTENT);
+
+	s_p_get_string(&state_ptr->bb_config.get_sys_state, "GetSysState",
+		       bb_hashtbl);
+
+	(void) s_p_get_uint32(&state_ptr->bb_config.poll_interval,
+			     "PollInterval", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.other_timeout,
+			     "OtherTimeout", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.stage_in_timeout,
+			    "StageInTimeout", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.stage_out_timeout,
+			    "StageOutTimeout", bb_hashtbl);
+	s_p_get_string(&state_ptr->bb_config.start_stage_in, "StartStageIn",
+		       bb_hashtbl);
+	s_p_get_string(&state_ptr->bb_config.start_stage_out, "StartStageOut",
+			    bb_hashtbl);
+	s_p_get_string(&state_ptr->bb_config.stop_stage_in, "StopStageIn",
+		       bb_hashtbl);
+	s_p_get_string(&state_ptr->bb_config.stop_stage_out, "StopStageOut",
+		       bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.validate_timeout,
+			     "ValidateTimeout", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_groups,
+			     "MaxGroups", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_datasets,
+			     "MaxDatasets", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_join,
+			     "MaxGroupsPerClients", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_per_job,
+			     "MaxClientsPerJob", bb_hashtbl);
+	(void) s_p_get_string(&state_ptr->bb_config.para_stor_addr,
+			     "ParaStorAddr", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.para_stor_port,
+			     "ParaStorAddrPort", bb_hashtbl);
+	(void) s_p_get_string(&state_ptr->bb_config.para_stor_user_name,
+			     "ParaStorUserName", bb_hashtbl);
+	(void) s_p_get_string(&state_ptr->bb_config.para_stor_password,
+			     "ParaStorUserPasswd", bb_hashtbl);
+
+	(void) s_p_get_uint32(&state_ptr->bb_config.file_system_count,
+			     "FileSystemCount", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
+			     "MaxAccDirsPerJob", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
+			     "MaxAccDirLen", bb_hashtbl);
+
+	(void) s_p_get_string(&state_ptr->bb_config.file_system_fir,
+			     "FileSystemFir", bb_hashtbl);
+	(void) s_p_get_string(&state_ptr->bb_config.file_system_mount_fir,
+			     "FileSystemMountFir", bb_hashtbl);				 
+
+	s_p_hashtbl_destroy(bb_hashtbl);
+	xfree(bb_conf);
+
+	if (slurm_conf.debug_flags & DEBUG_FLAG_BURST_BUF) {
+		value = _print_users(state_ptr->bb_config.allow_users);
+		info("AllowUsers:%s",  value);
+		xfree(value);
+		value = _print_users(state_ptr->bb_config.deny_users);
+		info("DenyUsers:%s",  value);
+		xfree(value);
+		info("Directive:%s",
+		     state_ptr->bb_config.directive_str);
+		info("Flags:%s",
+		     slurm_bb_flags2str(state_ptr->bb_config.flags));
+		info("GetSysState:%s",
+		     state_ptr->bb_config.get_sys_state);
+		info("GetSysStatus:%s",
+		     state_ptr->bb_config.get_sys_status);
+		info("PollInterval:%u",
+		     state_ptr->bb_config.poll_interval);
+		info("OtherTimeout:%u",
+		     state_ptr->bb_config.other_timeout);
+		info("StageInTimeout:%u",
+		     state_ptr->bb_config.stage_in_timeout);
+		info("StageOutTimeout:%u",
+		     state_ptr->bb_config.stage_out_timeout);
+		info("StartStageIn:%s",
+		     state_ptr->bb_config.start_stage_in);
+		info("StartStageOut:%s",
+		     state_ptr->bb_config.start_stage_out);
+		info("StopStageIn:%s",
+		     state_ptr->bb_config.stop_stage_in);
+		info("StopStageOut:%s",
+		     state_ptr->bb_config.stop_stage_out);
+		info("ValidateTimeout:%u",
+		     state_ptr->bb_config.validate_timeout);
+		info("MaxGroups:%u",
+		     state_ptr->bb_config.max_groups);
+		info("MaxDatasets:%u",
+		     state_ptr->bb_config.max_datasets);
+		info("MaxGroupsPerClients:%u",
+		     state_ptr->bb_config.max_clients_join);
+		info("MaxClientsPerJob:%u",
+			 state_ptr->bb_config.max_clients_per_job);
+		info("ParaStorAddr:%s",
+		     state_ptr->bb_config.para_stor_addr);
+		info("ParaStorAddrPort:%u",
+		     state_ptr->bb_config.para_stor_port);
+
+		info("FileSystem:%s",
+		     state_ptr->bb_config.file_system_fir);
+		info("FileSystemMount:%s",
+		     state_ptr->bb_config.file_system_mount_fir);
+		info("MaxAccDirsPerJob:%d",
+		     state_ptr->bb_config.max_acc_dirs_per_job);
+		info("MaxAccDirLen:%d",
+		     state_ptr->bb_config.max_acc_dir_len);
+		// info("FileSystemCount:%d",
+		//      state_ptr->bb_config.file_system_count);
+		// info("ParaStorUserPasswd:%s",d
+		//      state_ptr->bb_config.para_stor_password);
+	}
+}
+#endif
 
 /* Load and process configuration parameters */
 extern void bb_load_config(bb_state_t *state_ptr, char *plugin_type)
@@ -817,6 +1068,121 @@ extern int bb_pack_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 	return rec_count;
 }
 
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+static void _pack_job_alloc(struct bb_alloc *bb_alloc, buf_t *buffer,
+			uint16_t protocol_version)
+{
+	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+		packstr(bb_alloc->account,      buffer);
+		pack32(bb_alloc->array_job_id,  buffer);
+		pack32(bb_alloc->array_task_id, buffer);
+		pack_time(bb_alloc->create_time, buffer);
+		pack32(bb_alloc->job_id,        buffer);
+		packstr(bb_alloc->name,         buffer);
+		packstr(bb_alloc->partition,    buffer);
+		//packstr(bb_alloc->pool,   	buffer);
+		//packstr(bb_alloc->qos,          buffer);
+		pack64(bb_alloc->size,          buffer);
+		pack16(bb_alloc->state,         buffer);
+		pack32(bb_alloc->user_id,       buffer);
+        ////////////////
+		pack32(bb_alloc->type,          buffer);
+		pack32(bb_alloc->access_mode,   buffer);
+		if(bb_alloc->pfs)
+			packstr(bb_alloc->pfs,      buffer);
+		else
+			packstr("",           buffer);
+		pack32(bb_alloc->pfs_cnt,       buffer);	
+
+		
+		pack32(bb_alloc->index_groups,   buffer);
+		if(bb_alloc->index_groups > 0)
+			pack32_array(bb_alloc->bb_group_ids, bb_alloc->index_groups, buffer);
+		pack32(bb_alloc->index_datasets, buffer);
+		if(bb_alloc->index_datasets > 0)
+			pack32_array(bb_alloc->bb_dataset_ids, bb_alloc->index_datasets, buffer);
+		pack32(bb_alloc->index_tasks, buffer);
+		if(bb_alloc->index_tasks > 0)
+			pack32_array(bb_alloc->bb_task_ids, bb_alloc->index_tasks, buffer);		
+	}
+}
+
+/* Pack individual burst buffer records into a buffer */
+extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
+			uint16_t protocol_version)
+{
+	int i, rec_count = 0;
+	bb_alloc_t *bb_alloc;
+	int eof, offset;
+
+	xassert(state_ptr);
+	offset = get_buf_offset(buffer);
+	pack32(rec_count,  buffer);
+	if (!state_ptr->bb_ahash)
+		return rec_count;
+
+	for (i = 0; i < BB_HASH_SIZE; i++) {
+		bb_alloc = state_ptr->bb_ahash[i];
+		while (bb_alloc) {
+			if ((uid == 0) || (uid == bb_alloc->user_id)) {
+#ifdef __METASTACK_NEW_BURSTBUFFER
+				/* 当前只在在打包前同步更新 bb_alloc->state */
+				if (bb_alloc->job_id > 0) {
+					bb_job_t *bb_job = bb_job_find(state_ptr, bb_alloc->job_id);
+					if (bb_job && (bb_job->state != (int)bb_alloc->state)) {
+						bb_alloc->state = (uint16_t)bb_job->state;
+						bb_alloc->state_time = time(NULL);
+					}
+				}
+#endif
+				_pack_job_alloc(bb_alloc, buffer, protocol_version);
+				rec_count++;
+			}
+			bb_alloc = bb_alloc->next;
+		}
+	}
+	if (rec_count != 0) {
+		eof = get_buf_offset(buffer);
+		set_buf_offset(buffer, offset);
+		pack32(rec_count, buffer);
+		set_buf_offset(buffer, eof);
+	}
+
+	return rec_count;
+}
+/* Pack state and configuration parameters into a buffer */
+extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
+			  uint16_t protocol_version) {
+	bb_config_t *config_ptr = &state_ptr->bb_config;
+	//int i;
+	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
+		packstr(config_ptr->allow_users_str, buffer);
+		packstr(config_ptr->deny_users_str,  buffer);
+		// packstr(config_ptr->get_sys_state,   buffer); //用于存放parastor系统的状态
+		// packstr(config_ptr->get_sys_status,  buffer);
+		pack32(config_ptr->other_timeout,    buffer);
+		pack32(config_ptr->stage_in_timeout, buffer);
+		pack32(config_ptr->stage_out_timeout,buffer);
+
+		pack32(config_ptr->validate_timeout, buffer);
+
+		pack32(config_ptr->max_groups,       buffer);
+		pack32(config_ptr->used_groups,      buffer);
+		pack32(config_ptr->free_groups,      buffer);
+
+		pack32(config_ptr->max_datasets,     buffer);
+		pack32(config_ptr->used_datasets,    buffer);
+		pack32(config_ptr->free_datasets,    buffer);
+
+		pack32(config_ptr->max_clients_join, buffer);
+		pack32(config_ptr->max_clients_per_job, buffer);
+		//pack32(config_ptr->pool_cnt,         buffer);// bb job list size
+	}
+}
+#endif
+	
+
 /* Pack state and configuration parameters into a buffer */
 extern void bb_pack_state(bb_state_t *state_ptr, buf_t *buffer,
 			  uint16_t protocol_version)
@@ -824,8 +1190,7 @@ extern void bb_pack_state(bb_state_t *state_ptr, buf_t *buffer,
 	bb_config_t *config_ptr = &state_ptr->bb_config;
 	int i;
 
-
-	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
+	 if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {	
 		packstr(config_ptr->allow_users_str, buffer);
 		packstr(config_ptr->create_buffer,   buffer);
 		packstr(config_ptr->default_pool,    buffer);
@@ -922,6 +1287,52 @@ extern int bb_pack_usage(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 
 	return rec_count;
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/* Translate a burst buffer size specification in string form to numeric form,
+ * recognizing various (case insensitive) sufficies:
+ * K/KiB, M/MiB, G/GiB, T/TiB, P/PiB for powers of 1024
+ * KB, MB, GB, TB, PB for powers of 1000
+ * N/Node/Nodes will consider the size in nodes
+ * Default units are bytes. */
+extern uint64_t bb_get_size_num2(char *tok, uint64_t granularity)
+{
+	char *tmp = NULL, *unit;
+	uint64_t bb_size_i, mult;
+	uint64_t bb_size_u = 0;
+
+	errno = 0;
+	bb_size_i = (uint64_t) strtoull(tok, &tmp, 10);
+	if ((errno == ERANGE) || !bb_size_i || (tok == tmp)) {
+		/*
+		 * Either the value in tok was too big, zero was specified, or
+		 * there were no numbers in tok.
+		 */
+		return 0;
+	}
+	bb_size_u = bb_size_i;
+	if (tmp && !isspace(tmp[0])) {
+		unit = xstrdup(tmp);
+		strtok(unit, " ");
+		if (!xstrcasecmp(unit, "n") ||
+		    !xstrcasecmp(unit, "node") ||
+		    !xstrcasecmp(unit, "nodes")) {
+			bb_size_u |= BB_SIZE_IN_NODES;
+			granularity = 1;
+		} else if ((mult = suffix_mult(unit)) != NO_VAL64) {
+			bb_size_u *= mult;
+		}
+		xfree(unit);
+	}
+
+	if (granularity > 1) {
+		bb_size_u = ((bb_size_u + granularity - 1) / granularity) *
+			    granularity;
+	}
+
+	return bb_size_u;
+}
+#endif
 
 /* Translate a burst buffer size specification in string form to numeric form,
  * recognizing various (case insensitive) sufficies:
@@ -1166,6 +1577,56 @@ extern bb_alloc_t *bb_alloc_name_rec(bb_state_t *state_ptr, char *name,
 
 	return bb_alloc;
 }
+#ifdef __METASTACK_NEW_BURSTBUFFER	 
+extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool update)
+{
+	
+	bb_alloc->type 					= bb_job->type; //缓存类型，可以支持持久及临时。temporary|persistent
+	bb_alloc->cache_tmp 			= bb_job->cache_tmp;
+	bb_alloc->bb_task 				= bb_job->bb_task;     //当前缓存组最大并行的任务数
+	bb_alloc->req_space 			= bb_job->req_space;		//当前作业请求的空间
+	bb_alloc->access_mode 			= bb_job->access_mode;      //存储类型，本地共享
+	if (bb_job->pfs) {
+		bb_alloc->pfs = xstrdup(bb_job->pfs);     //后端存储路径,可能有多个
+	} else {
+		xfree(bb_alloc->pfs);
+		bb_alloc->pfs = NULL;
+	}
+
+	bb_alloc->pfs_cnt		        = bb_job->pfs_cnt;          //后端存储路径个数
+	bb_alloc->state 				= (uint16_t)bb_job->state;  // 从 bb_job 获取 state
+	if(update) {
+		// xfree(bb_alloc->bb_state);
+		// bb_alloc->bb_state 			 	= xstrdup(bb_job->bb_state);         //缓存组状态，启用，禁用,失败成功
+		bb_alloc->metadata_acceleration = bb_job->metadata_acceleration; //是否开启元数据加速
+		bb_alloc->index_groups 			= bb_job->index_groups; /* 作业中包含的缓存组个数 */
+		bb_alloc->index_datasets 		= bb_job->index_datasets; /* 作业中包含的数据集个数 */
+		bb_alloc->index_tasks 			= bb_job->index_tasks; /* 作业中包含的数据集个数 */
+		bb_alloc->groups_nodes 			= bb_job->groups_nodes; //当前缓存组包含的节点数
+		xfree(bb_alloc->bb_group_ids);
+		if (bb_job->bb_group_ids && bb_job->index_groups > 0) { /* 作业中包含的缓存组id */
+			bb_alloc->bb_group_ids = xmalloc(sizeof(int) * bb_job->index_groups);
+			memcpy(bb_alloc->bb_group_ids, bb_job->bb_group_ids, sizeof(int) * bb_job->index_groups);
+		} else {
+			bb_alloc->bb_group_ids = NULL;
+		}
+		xfree(bb_alloc->bb_dataset_ids);
+		if (bb_job->bb_dataset_ids && bb_job->index_datasets > 0) { /*  作业中包含的数据集id  */
+			bb_alloc->bb_dataset_ids = xmalloc(sizeof(int) * bb_job->index_datasets);
+			memcpy(bb_alloc->bb_dataset_ids, bb_job->bb_dataset_ids, sizeof(int) * bb_job->index_datasets);
+		} else {
+			bb_alloc->bb_dataset_ids = NULL;
+		}
+		xfree(bb_alloc->bb_task_ids);
+		if (bb_job->bb_task_ids && bb_job->index_tasks > 0) { /* 作业中包含的任务id */
+			bb_alloc->bb_task_ids = xmalloc(sizeof(int) * bb_job->index_tasks);
+			memcpy(bb_alloc->bb_task_ids, bb_job->bb_task_ids, sizeof(int) * bb_job->index_tasks);
+		} else {
+			bb_alloc->bb_task_ids = NULL;
+		}
+	}
+}
+#endif 
 
 /* Allocate a per-job burst buffer record for a specific job.
  * Return a pointer to that record.
@@ -1200,7 +1661,10 @@ extern bb_alloc_t *bb_alloc_job_rec(bb_state_t *state_ptr,
 	bb_alloc->seen_time = time(NULL);
 	bb_alloc->user_id = job_ptr->user_id;
 	bb_alloc->group_id = job_ptr->group_id;
-
+#ifdef __METASTACK_NEW_BURSTBUFFER	 
+	bb_alloc->create_time = time(NULL);	
+	alter_bb_alloc_job_rec(bb_alloc, bb_job, false);
+#endif
 	return bb_alloc;
 }
 
@@ -1289,6 +1753,13 @@ extern void bb_free_alloc_buf(bb_alloc_t *bb_alloc)
 		xfree(bb_alloc->partition);
 		xfree(bb_alloc->pool);
 		xfree(bb_alloc->qos);
+#ifdef __METASTACK_NEW_BURSTBUFFER	 
+		xfree(bb_alloc->pfs);
+		// xfree(bb_alloc->bb_state);
+		xfree(bb_alloc->bb_group_ids);
+		xfree(bb_alloc->bb_dataset_ids);
+		xfree(bb_alloc->bb_task_ids);
+#endif
 		xfree(bb_alloc);
 	}
 }
@@ -2095,6 +2566,175 @@ extern bool bb_valid_pool_test(bb_state_t *state_ptr, char *pool_name)
 	return false;
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+
+// 定义一个上下文结构体，避免使用全局变量
+
+static int find_longest_dir_recursive(const char *base_path, max_path_info *info, int length) {
+    int rc = SLURM_ERROR;
+	DIR *dir = opendir(base_path);
+    if (!dir) {
+        return SLURM_ERROR;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // 1. 基础过滤
+        if (xstrcmp(entry->d_name, ".") == 0 || xstrcmp(entry->d_name, "..") == 0)
+            continue;
+
+        // 在堆(Heap)上申请内存，而不是在栈(Stack)上
+        char *current_path = (char *)xmalloc(length);
+        if (current_path == NULL) {
+            error("Memory allocation failed");
+			rc = SLURM_ERROR
+            break;
+        }
+
+        // 2. 路径构建
+        int written = snprintf(current_path, length, "%s/%s", base_path, entry->d_name);
+
+        // 检查截断
+        if (written >= length) {
+            debug("警告: 路径过长被忽略: %s/...", base_path);
+            xfree(current_path); // 必须释放
+            rc = SLURM_ERROR
+            break;
+        }
+
+        // 3. 获取文件状态
+        struct stat st;
+        if (lstat(current_path, &st) == -1) {
+            xfree(current_path); // 失败也要释放
+            rc = SLURM_ERROR
+            break;
+        }
+
+        // 4. 只处理目录
+        if (S_ISDIR(st.st_mode)) {
+            size_t current_len = strlen(current_path);
+
+            // 更新最大值
+            // info->path 已经在 main 中分配了内存，这里可以直接 copy
+            if (current_len > info->len) {
+                info->len = current_len;
+                // 使用 strcpy 即可，因为我们在 main 里保证了 info->path 有 MAX_PATH 大小
+                xassert(info->path, current_path);
+            }
+
+            // 递归
+            find_longest_dir_recursive(current_path, info);
+        }
+
+        // 【关键改进 2】当前层处理完后，必须释放内存
+        xfree(current_path);
+    }
+
+    closedir(dir);
+}
+
+
+/* Determine if the specified pool name is valid on this system */
+extern bool bb_valid_groups_test(uint64_t tmp_cnt)
+{
+	int i = 0;
+	debug("burst buffer tmp_cnt =%ld",tmp_cnt);
+	//groups_assoc->req_space = tmp_cnt;
+	// if (tmp_cnt == 0) {
+	// 	rc =ESLURM_INVALID_BURST_BUFFER_REQUEST;
+	// 	return false;
+	// }
+
+	return true;
+}
+
+
+extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
+{
+	if( !bb_job || !state_ptr) {
+		return false;
+	}
+
+	char *str_split,*save_ptr = NULL;
+	char *pfs_copy = xstrdup(bb_job->pfs);
+	str_split = strtok_r(pfs_copy,",",&save_ptr);
+	int count = 0;
+	struct stat buf;
+
+	while (str_split) {
+		count++;
+		/* TODO：后续恢复检查 */
+		if (stat(str_split, &buf) != 0 || !S_ISDIR(buf.st_mode) || S_ISLNK(buf.st_mode)) {
+			error("No %s path or not a directory, the acceleration process may fail", bb_job->pfs);
+			str_split = strtok(NULL,",");
+			bb_job->pfs_cnt = count;
+			return false;
+		} 
+
+		if (access(str_split, R_OK) < 0) {
+			error("%s: %s can not be read: %m", __func__, str_split);
+			bb_job->pfs_cnt = count;
+			return false;
+		} 
+
+
+		str_split = strtok_r(NULL,",",&save_ptr);
+	}
+	bb_job->pfs_cnt = count;
+
+	/* Check if the directory has nesting */
+	int rc = _is_the_dir_nested(pfs_copy, bb_job->pfs_cnt);
+	if (rc != 0) {
+		if (rc = 1) {
+			error("pfs dir has nesting ");
+			return false;
+		} else if (rc = -1) {
+			error("params is error");
+			return false;
+		} else {
+			return false;
+		}
+	}
+
+	xfree(pfs_copy);
+
+	if(bb_job->pfs_cnt > state_ptr->bb_config.max_acc_dirs_per_job) {
+		error("Exceeded the maximum number of directories supported for a single job. "
+			  "The configuration allows %d, but your job specifies %d accelerated directories.",
+			  state_ptr->bb_config.max_acc_dirs_per_job, bb_job->pfs_cnt);
+		return false;
+	} 
+
+	if(xstrcasecmp(bb_job->type,"temporary") == 0) {
+		bb_job->cache_tmp = true;
+		bb_job->use_job_buf = true;
+	} else if(xstrcasecmp(bb_job->type,"persistent") ) {
+	    bb_job->cache_tmp = false;
+	} else {
+		bb_job->cache_tmp = false;
+		error("Invalid type %d", bb_job->type);
+		return false;
+	}
+	log_flag(BURST_BUF,"The number of backends to accelerate passed in is %d", count);
+
+	if(bb_job->req_space <= 0) {
+		error("Invalid req_size %ld", bb_job->req_space);
+		//return false;
+	}
+
+	/* Convert the PFS path to a BB interface path */
+	char *conver_pfs = convert_paths_str(bb_job->pfs, state_ptr->bb_config.file_system_mount_fir, state_ptr->bb_config.file_system_fir);
+	if (!conver_pfs){
+		error("conver path failed or no convertible path");
+		return false;
+	}
+	xfree(bb_job->pfs);
+	bb_job->pfs = conver_pfs;
+	
+	return true;
+}
+#endif
+
 extern int bb_write_file(char *file_name, char *buf)
 {
 	int fd, nwrite;
@@ -2247,3 +2887,203 @@ extern void bb_write_state_file(char* old_file, char *reg_file, char *new_file,
 		(void) unlink(new_file);
 	}
 }
+#ifdef __METASTACK_NEW_BURSTBUFFER
+static bool is_parent_path(const char *parent, const char *child)
+{
+    size_t p_len = strlen(parent);
+    // child must longer than parent 
+    if (strlen(child) < p_len)
+        return false;
+    // pref must same 
+    if (strncmp(parent, child, p_len) != 0)
+        return false;
+    // Completely identical also refers to the parent path
+    if (strlen(child) == p_len)
+        return true;
+    // child next char is  '/'
+    return child[p_len] == '/';
+}
+
+
+static char *_dir_remove_spaces(char *s)
+{
+    while (*s == ' ' || *s == '\t')
+        s++;
+
+    char *end = s + strlen(s) - 1;
+    while (end >= s && (*end == ' ' || *end == '\t')) {
+        *end = '\0';
+        end--;
+    }
+    return s;
+}
+
+
+/**
+ * Parse the directory string into an array of strings
+ *
+ * @param input        dir string，like "/root,/home,/var"
+ * @param count_out    output: when success split paths, output the number of dir
+ *
+ */
+static char ** split_paths(const char *input, int *count_out)
+{
+    if (!input || !count_out)
+        return NULL;
+
+    //Calculate Quantity
+    int count = 0;
+    char *tmp = strdup(input);
+	char *save_ptr = NULL;
+    char *token = strtok_r(tmp, ",", &save_ptr);
+    while (token) {
+        count++;
+        token = strtok_r(NULL, "," , &save_ptr);
+    }
+    free(tmp);
+    if (count == 0) {
+        *count_out = 0;
+        return NULL;
+    }
+
+	char *copy = xstrdup(input);
+	if (!copy)
+		return NULL;
+
+    char **list = malloc(count * sizeof(char *));
+    if (!list) {
+        xfree(copy);
+        return NULL;
+    }
+
+    int idx = 0;
+    token = strtok_r(copy, ",",  &save_ptr);
+    while (token) {
+        char *t = _dir_remove_spaces(token); //remove spaces
+        list[idx] = strdup(t);
+        if (!list[idx]) {
+            for (int i = 0; i < idx; i++)
+                free(list[i]);
+            xfree(list);
+            xfree(copy);
+            return NULL;
+        }
+        idx++;
+        token = strtok_r(NULL, ",",  &save_ptr);
+    }
+
+    *count_out = count;
+
+    xfree(copy);
+    return list;
+}
+
+
+/**
+ * Determine whether the directories have a nested relationship
+ * 
+ * @param dir_list,   dir char arry
+ * @param dir_number, number of dir in dir_list
+ * @return 0 : not nested;   1 : nested;     -1 : params error
+ * 
+ */
+static int _is_the_dir_nested(const char *path_arry, int dir_number)
+{
+
+
+	if (!path_arry || dir_number < 1) {
+		error("error params");
+		return -1;
+	}
+
+	
+	int *tmp_path_cnt = xmalloc(sizeof(int));
+	char **dir_list = split_paths(path_arry, tmp_path_cnt);
+	if (*tmp_path_cnt != dir_number){
+		error("number of path in pfs is error");
+		return -1;
+	}
+	xfree(tmp_path_cnt);
+
+	bool has_nested = false;
+	for (int i = 0; i < dir_number; i++) {
+		for (int j = 0; j < dir_number; j++) {
+			if (i != j && is_parent_path(dir_list[i], dir_list[j])) {
+				has_nested = true;
+				break;
+			}
+		}
+	}
+	if (has_nested == true)
+		return 1;
+	else
+		return 0;
+}
+
+/**
+ * Convert absolute path to BB interface path
+ * @param dirs: pfs
+ * @param mount_point : mount point 
+ * @param mount_system : BB interfece path pref
+ * @return BB interfece path string. Returns NULL when there is an error or if the directory cannot be converted.
+ *  
+ */ 
+ 
+static char *convert_paths_str(const char *dirs, const char *mount_point, const char *mount_system) {
+	if (!dirs || !mount_point || !mount_system) {
+		error("params error");
+		return NULL;
+	}
+
+
+	char *dirs_copy = xstrdup(dirs);
+	if (!dirs_copy) {
+		error("strdup error");
+		return NULL;
+	}
+
+    size_t result_size = strlen(dirs) + 1;
+    char *result = (char *)xmalloc(result_size);
+    if (!result) {
+        free(dirs_copy);
+        return NULL;
+    }
+	char *save_ptr = NULL;
+    char *token = strtok_r(dirs_copy, ",", &save_ptr);
+    bool first = true;
+
+    while (token) {
+        if (!is_parent_path(mount_point, token)) {
+            free(result);
+            free(dirs_copy);
+            return NULL; // 有一个不匹配就返回 NULL
+        }
+
+        size_t remain_len = strlen(token) - strlen(mount_point);
+        size_t new_len = strlen(mount_system) + 1 + remain_len + 1; // system + ':' + remain + '\0'
+        char *new_token = (char *)malloc(new_len);
+        if (!new_token) {
+            free(result);
+            free(dirs_copy);
+            return NULL;
+        }
+
+        snprintf(new_token, new_len, "%s:%s", mount_system, token + strlen(mount_point));
+
+        if (!first) {
+            xstrcat(result, ",");
+			
+        }
+        xstrcat(result, new_token);
+        free(new_token);
+
+        first = false;
+        token = strtok_r(NULL, ",", &save_ptr);
+    }
+
+    free(dirs_copy);
+    return result;
+}
+
+
+#endif

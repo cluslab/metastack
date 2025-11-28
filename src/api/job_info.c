@@ -596,6 +596,10 @@ slurm_sprint_job_info ( job_info_t * job_ptr, int one_liner )
 	/****** Line 11 ******/
 	xstrfmtcat(out, "Partition=%s AllocNode:Sid=%s:%u",
 		   job_ptr->partition, job_ptr->alloc_node, job_ptr->alloc_sid);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	if (job_ptr->bitflags & JOB_FLAG_PART_BURSTBUFFER)
+		xstrfmtcat(out, " PartBurstBuffer=enable");
+#endif		
 	xstrcat(out, line_end);
 
 	/****** Line 12 ******/

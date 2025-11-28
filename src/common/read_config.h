@@ -372,6 +372,9 @@ typedef struct slurm_conf_partition {
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 	bool     hetpart_flag;	/* 1 if heterogeneous partition */
 #endif
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	bool     burstbuffer_enable;	/* 1 if burstbuffer is enabled */
+#endif
 } slurm_conf_partition_t;
 
 typedef struct slurm_conf_downnodes {

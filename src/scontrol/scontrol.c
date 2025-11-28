@@ -2118,6 +2118,10 @@ static void _show_it(int argc, char **argv)
 		scontrol_print_bbstat(argc - 2, argv + 2);
 	} else if (xstrncasecmp(tag, "burstbuffer", MAX(tag_len, 2)) == 0) {
 		scontrol_print_burst_buffer ();
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	} else if (xstrncasecmp(tag, "parastorbb", MAX(tag_len, 2)) == 0) {
+		scontrol_print_parastorbb ();
+#endif
 	} else if (!xstrncasecmp(tag, "assoc_mgr", MAX(tag_len, 2)) ||
 		   !xstrncasecmp(tag, "cache", MAX(tag_len, 2))) {
 #ifdef __METASTACK_OPT_RPC_USER_FIX

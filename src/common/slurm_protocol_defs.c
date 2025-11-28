@@ -4598,6 +4598,64 @@ extern void slurm_free_topo_info_msg(topo_info_response_msg_t *msg)
 	}
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+extern void slurm_free_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t *msg)
+{
+	int i, j;
+	burst_buffer_info_t *bb_info_ptr;
+	burst_buffer_resv_t *bb_resv_ptr;
+	burst_buffer_pool_t *bb_pool_ptr;
+
+	if (!msg)
+		return;
+
+	for (i = 0, bb_info_ptr = msg->burst_buffer_array;
+		((i < msg->record_count) && bb_info_ptr); i++, bb_info_ptr++) {
+		xfree(bb_info_ptr->allow_users);
+		xfree(bb_info_ptr->default_pool);
+		xfree(bb_info_ptr->create_buffer);
+		xfree(bb_info_ptr->deny_users);
+		xfree(bb_info_ptr->destroy_buffer);
+		xfree(bb_info_ptr->get_sys_state);
+		xfree(bb_info_ptr->get_sys_status);
+		xfree(bb_info_ptr->name);
+		for (j = 0, bb_pool_ptr = bb_info_ptr->pool_ptr;
+			((j < bb_info_ptr->pool_cnt) && bb_pool_ptr);
+			j++, bb_pool_ptr++) {
+			xfree(bb_pool_ptr->name);
+		}
+		xfree(bb_info_ptr->pool_ptr);
+		xfree(bb_info_ptr->start_stage_in);
+		xfree(bb_info_ptr->start_stage_out);
+		xfree(bb_info_ptr->stop_stage_in);
+		xfree(bb_info_ptr->stop_stage_out);
+		for (j = 0, bb_resv_ptr = bb_info_ptr->burst_buffer_resv_ptr;
+			((j < bb_info_ptr->buffer_count) && bb_resv_ptr);
+			j++, bb_resv_ptr++) {
+			xfree(bb_resv_ptr->account);
+			xfree(bb_resv_ptr->name);
+			xfree(bb_resv_ptr->partition);
+			xfree(bb_resv_ptr->pool);
+			xfree(bb_resv_ptr->qos);
+			xfree(bb_resv_ptr->pfs);
+			xfree(bb_resv_ptr->bb_group_ids);
+			xfree(bb_resv_ptr->bb_dataset_ids);
+			xfree(bb_resv_ptr->bb_task_ids);
+		}
+		xfree(bb_info_ptr->burst_buffer_resv_ptr);
+		xfree(bb_info_ptr->burst_buffer_use_ptr);
+		xfree(bb_info_ptr->para_stor_addr);
+		xfree(bb_info_ptr->para_stor_user_name);
+		xfree(bb_info_ptr->para_stor_password);
+		xfree(bb_info_ptr->token);
+	}
+	xfree(msg->burst_buffer_array);
+	xfree(msg);
+
+}
+#endif
+
+
 /*
  * slurm_free_burst_buffer_info_msg - free buffer returned by
  *	slurm_load_burst_buffer
@@ -5322,6 +5380,9 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case ACCOUNTING_FIRST_REG:
 	case REQUEST_TOPO_INFO:
 	case REQUEST_BURST_BUFFER_INFO:
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	case REQUEST_BURST_BUFFER_PARASTOR_INFO:
+#endif
 	case ACCOUNTING_REGISTER_CTLD:
 	case REQUEST_FED_INFO:
 		/* No body to free */
@@ -5366,6 +5427,11 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case RESPONSE_BURST_BUFFER_INFO:
 		slurm_free_burst_buffer_info_msg(data);
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	case RESPONSE_BURST_BUFFER_PARASTOR_INFO:
+		slurm_free_burst_buffer_parastor_info_msg(data);
+	break;
+#endif
 	case REQUEST_TRIGGER_GET:
 	case RESPONSE_TRIGGER_GET:
 	case REQUEST_TRIGGER_SET:

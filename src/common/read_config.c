@@ -2068,6 +2068,9 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 		{"SuspendTime", S_P_STRING},
 		{"SuspendTimeout", S_P_UINT16},
 		{"TRESBillingWeights", S_P_STRING},
+#ifdef __METASTACK_NEW_BURSTBUFFER
+		{"BurstBuffer", S_P_STRING}, /* BurstBuffer, enable or disable */
+#endif
 		{NULL}
 	};
 
@@ -2511,7 +2514,28 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			}
 			xfree(tmp);
 		}
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+		/* 解析BurstBuffer=enable|disable */
+		if (s_p_get_string(&tmp, "BurstBuffer", tbl) ||
+			s_p_get_string(&tmp, "BurstBuffer", dflt)) {
+			if (!xstrcasecmp(tmp, "enable")) {
+				p->burstbuffer_enable = true;
+			} else if (!xstrcasecmp(tmp, "disable")) {
+				p->burstbuffer_enable = false;
+			} else if (!xstrcasecmp(tmp, "yes")) {
+				p->burstbuffer_enable = true;
+			} else if (!xstrcasecmp(tmp, "no")) {
+				p->burstbuffer_enable = false;
+			} else {
+				error("Bad value \"%s\" for BurstBuffer (expected enable|disable|yes|no)", tmp);
+				_destroy_partitionname(p);
+				s_p_hashtbl_destroy(tbl);
+				xfree(tmp);
+				return -1;
+			}
+			xfree(tmp);
+		}
+#endif
 		s_p_hashtbl_destroy(tbl);
 
 		*dest = (void *)p;
@@ -2562,6 +2586,10 @@ static void _init_conf_part(slurm_conf_partition_t *conf_part)
 	conf_part->priority_weight_part  = NO_VAL;
 	conf_part->priority_weight_qos   = NO_VAL;
 	conf_part->priority_weight_tres  = NULL;
+#endif
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	/* 默认关闭burstbuffer */
+	conf_part->burstbuffer_enable = false;
 #endif
 #ifdef __METASTACK_NEW_PART_LLS
 	conf_part->lls_flag = false;

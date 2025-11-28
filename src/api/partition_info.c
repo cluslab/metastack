@@ -225,6 +225,14 @@ char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
 
 	xstrcat(out, line_end);
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	/* 分区级 BurstBuffer 状态 */
+	if (part_ptr->flags & PART_FLAG_BURSTBUFFER)
+		xstrcat(out, "BurstBuffer=enable");
+	else
+		xstrcat(out, "BurstBuffer=disable");
+	xstrcat(out, line_end);
+#endif
 	/****** Line 6 ******/
 
 	if (part_ptr->max_nodes == INFINITE)
@@ -686,7 +694,13 @@ char *slurm_sprint_partition_info ( partition_info_t * part_ptr,
 		xstrcat(out, " Hidden=NO");
 
 	xstrcat(out, line_end);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	/* Add：Partition BurstBuffer Status */
+	if (part_ptr->flags & PART_FLAG_BURSTBUFFER)
+		xstrcat(out, "BurstBuffer=ENABLE");
+	else
+		xstrcat(out, "BurstBuffer=DISABLE");
+#endif
 	/****** Line 6 ******/
 
 	if (part_ptr->max_nodes == INFINITE)

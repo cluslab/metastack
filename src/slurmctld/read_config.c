@@ -1366,6 +1366,12 @@ static int _build_single_partitionline_info(slurm_conf_partition_t *part)
 		part_ptr->flags |= PART_FLAG_REQ_RESV;
 	if (part->lln_flag)
 		part_ptr->flags |= PART_FLAG_LLN;
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	if (part->burstbuffer_enable)
+		part_ptr->flags |= PART_FLAG_BURSTBUFFER;
+	else
+		part_ptr->flags &= (~PART_FLAG_BURSTBUFFER);
+#endif
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 	if (part->hetpart_flag)
 		part_ptr->meta_flags |= PART_METAFLAG_HETPART;

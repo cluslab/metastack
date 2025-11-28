@@ -5659,7 +5659,9 @@ static void _slurm_rpc_burst_buffer_info(slurm_msg_t *msg)
 	buffer = init_buf(BUF_SIZE);
 	if (validate_super_user(msg->auth_uid))
 		uid = 0;
-	error_code = bb_g_state_pack(uid, buffer, msg->protocol_version);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	error_code = bb_g_state_pack(uid, buffer, msg->protocol_version, false);
+#endif
 	END_TIMER2(__func__);
 
 	if (error_code) {
@@ -5675,6 +5677,38 @@ static void _slurm_rpc_burst_buffer_info(slurm_msg_t *msg)
 		FREE_NULL_BUFFER(buffer);
 	}
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/* get node select info plugin */
+static void _slurm_rpc_burst_buffer_parastor_info(slurm_msg_t *msg)
+{
+	int error_code = SLURM_SUCCESS;
+	buf_t *buffer;
+	uid_t uid = msg->auth_uid;
+	DEF_TIMERS;
+
+	START_TIMER;
+	buffer = init_buf(BUF_SIZE);
+	if (validate_super_user(msg->auth_uid))
+		uid = 0;
+	error_code = bb_g_state_pack(uid, buffer, msg->protocol_version, true);
+	END_TIMER2(__func__);
+
+	if (error_code) {
+		debug("%s: %s", __func__, slurm_strerror(error_code));
+		slurm_send_rc_msg(msg, error_code);
+	} else {
+		slurm_msg_t response_msg;
+
+		response_init(&response_msg, msg, RESPONSE_BURST_BUFFER_PARASTOR_INFO,
+			      buffer);
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+
+		FREE_NULL_BUFFER(buffer);
+	}
+}
+
+#endif
 
 static void _slurm_rpc_suspend(slurm_msg_t *msg)
 {
@@ -7909,7 +7943,11 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 	},{
 		.msg_type = REQUEST_BURST_BUFFER_INFO,
 		.func = _slurm_rpc_burst_buffer_info,
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	},{
+		.msg_type = REQUEST_BURST_BUFFER_PARASTOR_INFO,
+		.func = _slurm_rpc_burst_buffer_parastor_info,
+#endif
 		.msg_type = REQUEST_STEP_BY_CONTAINER_ID,
 		.func = _slurm_rpc_step_by_container_id,
 	},{

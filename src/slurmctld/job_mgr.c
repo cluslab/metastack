@@ -7783,6 +7783,11 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	job_ptr = *job_pptr;
 	job_ptr->start_protocol_ver = protocol_version;
 	job_ptr->part_ptr = part_ptr;
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	if (part_ptr->flags & PART_FLAG_BURSTBUFFER) {   /* add partition burstbuffer flags to job flags */
+		job_ptr->bit_flags |= JOB_FLAG_PART_BURSTBUFFER;
+	}
+#endif
 	job_ptr->part_ptr_list = part_ptr_list;
 	job_ptr->bit_flags |= JOB_DEPENDENT;
 	job_ptr->last_sched_eval = time(NULL);

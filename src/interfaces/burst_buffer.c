@@ -65,6 +65,10 @@ typedef struct slurm_bb_ops {
 					 uint32_t uid, uint32_t gid);
 	int		(*state_pack)	(uid_t uid, buf_t *buffer,
 					 uint16_t protocol_version);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	int		(*state_pack)	(uid_t uid, buf_t *buffer,
+					 uint16_t protocol_version, bool parastor);
+#endif
 	int		(*reconfig)	(void);
 	int		(*job_validate)	(job_desc_msg_t *job_desc,
 					 uid_t submit_uid, char **err_msg);
@@ -287,7 +291,9 @@ extern char *bb_g_get_status(uint32_t argc, char **argv, uint32_t uid,
  *
  * Returns a Slurm errno.
  */
-extern int bb_g_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version)
+#ifdef __METASTACK_NEW_BURSTBUFFER
+extern int bb_g_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version, bool parastor_enabled)
+#endif
 {
 	DEF_TIMERS;
 	int i, rc = SLURM_SUCCESS, rc2;
@@ -301,7 +307,9 @@ extern int bb_g_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version)
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
 		last_offset = get_buf_offset(buffer);
-		rc2 = (*(ops[i].state_pack))(uid, buffer, protocol_version);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+		rc2 = (*(ops[i].state_pack))(uid, buffer, protocol_version, parastor_enabled);
+#endif
 		if (last_offset != get_buf_offset(buffer))
 			rec_count++;
 		rc = MAX(rc, rc2);

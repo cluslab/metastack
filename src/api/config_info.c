@@ -340,7 +340,12 @@ void slurm_write_ctl_conf ( slurm_ctl_conf_info_msg_t * slurm_ctl_conf_ptr,
 
 		if (p[i].flags & PART_FLAG_LLN)
 	                fprintf(fp, " LLN=YES");
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+		if (p[i].flags & PART_FLAG_BURSTBUFFER)
+			fprintf(fp, " BurstBuffer=enable");
+		else
+			fprintf(fp, " BurstBuffer=disable");
+#endif
 #ifdef __METASTACK_NEW_PART_LLS
 		if (p[i].meta_flags & PART_METAFLAG_LLS)
 	                fprintf(fp, " LLS=YES");

@@ -149,6 +149,9 @@ extern void	scontrol_print_assoc_mgr_info(int argc, char **argv);
 #endif
 extern void	scontrol_print_bbstat(int argc, char **argv);
 extern void	scontrol_print_burst_buffer(void);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+extern void scontrol_print_parastorbb(void);
+#endif
 extern void	scontrol_print_completing (void);
 extern void	scontrol_print_completing_job(job_info_t *job_ptr,
 					      node_info_msg_t *node_info_msg);

@@ -193,6 +193,51 @@ extern int slurm_load_burst_buffer_info(burst_buffer_info_msg_t **
 
 	return SLURM_SUCCESS;
 }
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/*
+ * slurm_load_burst_buffer_info - issue RPC to get slurm all burst buffer plugin
+ *	information
+ * OUT burst_buffer_info_msg_pptr - place to store a burst buffer configuration
+ *	pointer
+ * RET 0 or a slurm error code
+ * NOTE: free the response using slurm_free_burst_buffer_info_msg
+ */
+extern int slurm_load_burst_buffer_info_paratorbb(burst_buffer_info_msg_t **
+					burst_buffer_info_msg_pptr)
+{
+	int rc;
+	slurm_msg_t req_msg;
+	slurm_msg_t resp_msg;
+
+	slurm_msg_t_init(&req_msg);
+	slurm_msg_t_init(&resp_msg);
+	req_msg.msg_type = REQUEST_BURST_BUFFER_PARASTOR_INFO;
+	req_msg.data     = NULL;
+
+	if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
+					   working_cluster_rec) < 0)
+		return SLURM_ERROR;
+
+	switch (resp_msg.msg_type) {
+	case RESPONSE_BURST_BUFFER_PARASTOR_INFO:
+		*burst_buffer_info_msg_pptr = (burst_buffer_info_msg_t *)
+					      resp_msg.data;
+		break;
+	case RESPONSE_SLURM_RC:
+		rc = ((return_code_msg_t *) resp_msg.data)->return_code;
+		slurm_free_return_code_msg(resp_msg.data);
+		if (rc)
+			slurm_seterrno_ret(rc);
+		*burst_buffer_info_msg_pptr = NULL;
+		break;
+	default:
+		slurm_seterrno_ret(SLURM_UNEXPECTED_MSG_ERROR);
+		break;
+	}
+
+	return SLURM_SUCCESS;
+}
+#endif
 
 /*
  * slurm_print_burst_buffer_info_msg - output information about burst buffers
@@ -288,6 +333,171 @@ static void _print_burst_buffer_use(FILE *out,
 	fprintf(out, "%s", out_buf);
 	xfree(out_buf);
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+extern void slurm_print_burst_buffer_parastor_record(FILE *out,
+		burst_buffer_info_t *burst_buffer_ptr, int one_liner,
+		int verbose)
+{
+	char *out_buf = NULL;
+	char *line_end = (one_liner) ? " " : "\n  ";
+	burst_buffer_resv_t *bb_resv_ptr;
+	int i, j;
+	char sz_buf[32], time_buf[256];
+	char *user_name;
+
+	/****** Line - Basic Info ******/
+	xstrfmtcat(out_buf, "Name=%s",
+		burst_buffer_ptr->name ? burst_buffer_ptr->name : "N/A");
+
+	/****** Line - Timeouts ******/
+	xstrcat(out_buf, line_end);
+	xstrfmtcat(out_buf, "StageInTimeout=%u StageOutTimeout=%u ValidateTimeout=%u OtherTimeout=%u",
+		burst_buffer_ptr->stage_in_timeout,
+		burst_buffer_ptr->stage_out_timeout,
+		burst_buffer_ptr->validate_timeout,
+		burst_buffer_ptr->other_timeout);
+
+	/****** Line - Resource Statistics ******/
+	xstrcat(out_buf, line_end);
+	xstrfmtcat(out_buf, "MaxGroups=%u UsedGroups=%u FreeGroups=%u",
+		burst_buffer_ptr->max_groups,
+		burst_buffer_ptr->used_groups,
+		burst_buffer_ptr->free_groups);
+
+	xstrcat(out_buf, line_end);
+	xstrfmtcat(out_buf, "MaxDatasets=%u UsedDatasets=%u FreeDatasets=%u",
+		burst_buffer_ptr->max_datasets,
+		burst_buffer_ptr->used_datasets,
+		burst_buffer_ptr->free_datasets);
+
+	xstrcat(out_buf, line_end);
+	xstrfmtcat(out_buf, "MaxClientsJoin=%u MaxClientsPerJob=%u",
+		burst_buffer_ptr->max_clients_join,
+		burst_buffer_ptr->max_clients_per_job);
+
+	/****** Line - User Access Control ******/
+	if (burst_buffer_ptr->allow_users) {
+		xstrcat(out_buf, line_end);
+		xstrfmtcat(out_buf, "AllowUsers=%s",
+			burst_buffer_ptr->allow_users);
+	}
+	if (burst_buffer_ptr->deny_users) {
+		xstrfmtcat(out_buf, " DenyUsers=%s",
+			burst_buffer_ptr->deny_users);
+	}
+
+	xstrcat(out_buf, "\n");
+	fprintf(out, "%s", out_buf);
+	xfree(out_buf);
+
+	/****** Lines - Allocated Buffers ******/
+	if (burst_buffer_ptr->buffer_count)
+		fprintf(out, "\n");
+		fprintf(out, "Allocated Buffers:\n");
+	if (burst_buffer_ptr->buffer_count == 0)
+		fprintf(out, "  No burstbuffer job\n");
+	for (i = 0, bb_resv_ptr = burst_buffer_ptr->burst_buffer_resv_ptr;
+		i < burst_buffer_ptr->buffer_count; i++, bb_resv_ptr++) {
+		out_buf = NULL;
+
+		/****** Line 1 - Basic Job Info ******/
+		if (bb_resv_ptr->job_id &&
+			(bb_resv_ptr->array_task_id == NO_VAL)) {
+			xstrfmtcat(out_buf, "  JobID=%u ", bb_resv_ptr->job_id);
+		} else if (bb_resv_ptr->job_id) {
+			xstrfmtcat(out_buf, "  JobID=%u_%u(%u) ",
+				bb_resv_ptr->array_job_id,
+				bb_resv_ptr->array_task_id,
+				bb_resv_ptr->job_id);
+		} else {
+			xstrfmtcat(out_buf, "  Name=%s ",
+				bb_resv_ptr->name ? bb_resv_ptr->name : "N/A");
+		}
+		/****** Line 2 - Parastor Specific Info ******/
+		xstrcat(out_buf, "\n");
+		_get_size_str(sz_buf, sizeof(sz_buf), bb_resv_ptr->size);
+		if (bb_resv_ptr->create_time) {
+			slurm_make_time_str(&bb_resv_ptr->create_time, time_buf,
+				sizeof(time_buf));
+		} else {
+			time_t now = time(NULL);
+			slurm_make_time_str(&now, time_buf, sizeof(time_buf));
+		}
+
+		user_name = uid_to_string(bb_resv_ptr->user_id);
+		xstrfmtcat(out_buf, "    Account=%s CreateTime=%s Partition=%s Size=%s State=%s UserID=%s(%u)",
+			bb_resv_ptr->account ? bb_resv_ptr->account : "N/A",
+			time_buf,
+			bb_resv_ptr->partition ? bb_resv_ptr->partition : "N/A",
+			sz_buf,
+			bb_state_string(bb_resv_ptr->state),
+			user_name, bb_resv_ptr->user_id);
+		xfree(user_name);
+
+		xstrcat(out_buf, "\n    ");
+		if (bb_resv_ptr->type == 0)
+			xstrfmtcat(out_buf, "CacheType=%s ","temporary");
+		else if (bb_resv_ptr->type == 1)
+			xstrfmtcat(out_buf, "CacheType=%s ","persistent");
+		else 
+			xstrfmtcat(out_buf, "CacheType=unknow ");
+
+		if (bb_resv_ptr->access_mode == 0)
+			xstrfmtcat(out_buf, "AccessMode=%s ", "striped");
+		else if (bb_resv_ptr->access_mode == 1)
+			xstrfmtcat(out_buf, "AccessMode=%s ", "private");
+		else
+			xstrfmtcat(out_buf, "AccessMode=unknow ");
+
+		xstrcat(out_buf, "\n    ");
+		if (bb_resv_ptr->pfs) {
+			xstrfmtcat(out_buf, "PFS_Count=%u PFS=%s ", bb_resv_ptr->pfs_cnt, bb_resv_ptr->pfs);
+		}
+
+		/****** Line 3 - Groups, Datasets, Tasks ******/
+		if (bb_resv_ptr->index_groups > 0 && bb_resv_ptr->bb_group_ids) {
+			xstrfmtcat(out_buf, "\n    CacheGroups=");
+			for (j = 0; j < bb_resv_ptr->index_groups; j++) {
+				if (j > 0)
+					xstrcat(out_buf, ",");
+				xstrfmtcat(out_buf, "%d", bb_resv_ptr->bb_group_ids[j]);
+			}
+		}else {
+			xstrcat(out_buf, "\n    CacheGroups=N/A");
+		}
+
+		if (bb_resv_ptr->index_datasets > 0 && bb_resv_ptr->bb_dataset_ids) {
+			xstrfmtcat(out_buf, " Datasets=");
+			for (j = 0; j < bb_resv_ptr->index_datasets; j++) {
+				if (j > 0)
+					xstrcat(out_buf, ",");
+				xstrfmtcat(out_buf, "%d", bb_resv_ptr->bb_dataset_ids[j]);
+			}
+		}else {
+			xstrcat(out_buf, " Datasets=N/A");
+		}
+
+		if (bb_resv_ptr->index_tasks > 0 && bb_resv_ptr->bb_task_ids) {
+			xstrfmtcat(out_buf, " BBTasks=");
+			for (j = 0; j < bb_resv_ptr->index_tasks; j++) {
+				if (j > 0)
+					xstrcat(out_buf, ",");
+				xstrfmtcat(out_buf, "%d", bb_resv_ptr->bb_task_ids[j]);
+			}
+		}else {
+			xstrcat(out_buf, " BBTasks=N/A");
+		}
+
+
+		xstrcat(out_buf, "\n \n");
+		fprintf(out, "%s", out_buf);
+		xfree(out_buf);
+	}
+
+}
+
+#endif
 
 /*
  * slurm_print_burst_buffer_record - output information about a specific Slurm

@@ -450,6 +450,9 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define HOST_NAME_MAX 64
 #endif
 
+#ifndef __METASTACK_NEW_BURSTBUFFER
+#define __METASTACK_NEW_BURSTBUFFER
+#endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
 \*****************************************************************************/
@@ -1575,6 +1578,9 @@ enum node_states {
 #define GRES_ALLOW_TASK_SHARING SLURM_BIT(40) /* Allow tasks to share gres */
 #define STEPMGR_ENABLED SLURM_BIT(41) /* enable(d) stepmgr or not */
 
+#ifdef __METASTACK_NEW_BURSTBUFFER 
+#define JOB_FLAG_PART_BURSTBUFFER  SLURM_BIT(42) /* the partition of job whether enable parastor burst buffer */
+#endif
 /* These bits are set in the x11 field of job_desc_msg_t */
 #define X11_FORWARD_ALL		0x0001	/* all nodes should setup forward */
 #define X11_FORWARD_BATCH	0x0002  /* only the batch node */
@@ -1945,6 +1951,25 @@ typedef struct {
 } slurm_node_alias_addrs_t;
 
 #define CORE_SPEC_THREAD 0x8000	/* If set, this is a thread count not core count */
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/* Description of each group entry */
+typedef struct bb_groups {
+	//uint64_t bb_group_id; //缓存组id
+	char *flags; //缓存类型，可以支持持久及临时。DisablePersistent，Persistent
+	uint64_t total_space; //缓存组总空间容量大小。
+	uint64_t free_space;  //剩余可用的缓存组数量
+	uint64_t used_space;  //缓存组已用总空间容量大小。
+	uint32_t bb_task;     //当前缓存组最大并行的任务数
+	uint32_t groups_nodes; //当前缓存组包含的节点数
+	uint32_t nodes_clients; //当前缓存组中节点及每个节点加入的缓存组数量。
+	uint64_t req_space;		//当前作业请求的空间
+
+	char *access_mode;      //存储类型，本地共享
+	char *pfs;          //后端存储路径,可能有多个
+	char *state;         //缓存组状态，启用，禁用,失败成功
+} bb_groups_job_t;
+#endif
 
 /*
  * Update:
@@ -2895,6 +2920,12 @@ typedef struct job_defaults {
 
 #define PART_FLAG_EXCLUSIVE_TOPO SLURM_BIT(16)/* Set if Topo allocated exclusively */
 #define PART_FLAG_EXC_TOPO_CLR SLURM_BIT(17) /* Clear EXCLUSIVE_TOPO flag */
+
+/* add BurstBuffer partition flag */
+#ifdef __METASTACK_NEW_BURSTBUFFER
+#define PART_FLAG_BURSTBUFFER 	SLURM_BIT(18)
+#define PART_FLAG_BURSTBUFFER_CLR	SLURM_BIT(19)
+#endif
 
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 #define PART_METAFLAG_HETPART		0x0001	/* Set if Heterogeneous partition */
@@ -5732,6 +5763,30 @@ typedef struct {
 	uint64_t size;		/* In bytes by default */
 	uint16_t state;		/* See BB_STATE_* */
 	uint32_t user_id;
+#ifdef __METASTACK_NEW_BURSTBUFFER	
+	//uint64_t bb_group_id; //缓存组id
+	int type; //缓存类型，可以支持持久及临时。temporary|persistent
+	// bool  cache_tmp;
+	// uint64_t total_space; //缓存组总空间容量大小。
+	// uint64_t free_space;  //剩余可用的缓存组数量
+	// uint64_t used_space;  //缓存组已用总空间容量大小。
+
+	uint32_t bb_task;     //当前缓存组最大并行的任务数
+	uint32_t groups_nodes; //当前缓存组包含的节点数
+	uint64_t req_space;		//当前作业请求的空间
+	int access_mode;      //存储类型，本地共享
+	char *pfs;          //后端存储路径,可能有多个
+	uint32_t pfs_cnt;          //后端存储路径个数
+	int bb_state;         //缓存组状态，启用，禁用,失败成功
+	bool metadata_acceleration; //是否开启元数据加速
+	// char	*default_workdir; 	/* default work directory */
+	int *bb_group_ids; /* 作业中包含的缓存组id */
+	int *bb_dataset_ids; /*  作业中包含的数据集id  */
+	int *bb_task_ids; /* 作业中包含的任务id */
+	int index_groups; /* 作业中包含的缓存组个数 */
+	int index_datasets; /* 作业中包含的数据集个数 */
+	int index_tasks; /* 作业中包含的数据集个数 */
+#endif
 } burst_buffer_resv_t;
 
 typedef struct {
@@ -5770,6 +5825,27 @@ typedef struct {
 
 	uint32_t  use_count;
 	burst_buffer_use_t *burst_buffer_use_ptr;
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	uint32_t max_groups;
+	uint32_t used_groups;
+	uint32_t free_groups;
+
+	uint32_t max_datasets;
+	uint32_t used_datasets;
+	uint32_t free_datasets;
+	uint32_t max_clients_join;
+	// uint32_t max_node_per_groups;
+	// uint32_t used_node_per_groups;
+	// uint32_t free_node_per_groups;
+	uint32_t max_clients_per_job; //每个作业客户端分组粒度
+
+	char    *para_stor_addr;	/* IP address */
+	uint32_t para_stor_port;	/* port number */
+	char    *para_stor_user_name;	/* user name */
+	char    *para_stor_password;	/* password */
+	char    *token;	/* password */
+	
+#endif
 } burst_buffer_info_t;
 
 typedef struct {
@@ -5802,6 +5878,19 @@ extern int slurm_load_burst_buffer_stat(int argc, char **argv,
  * NOTE: free the response using slurm_free_burst_buffer_info_msg
  */
 extern int slurm_load_burst_buffer_info(burst_buffer_info_msg_t **burst_buffer_info_msg_pptr);
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/*
+ * slurm_load_burst_buffer_info - issue RPC to get slurm all burst buffer plugin
+ *	information
+ * OUT burst_buffer_info_msg_pptr - place to store a burst buffer configuration
+ *	pointer
+ * RET 0 or a slurm error code
+ * NOTE: free the response using slurm_free_burst_buffer_info_msg
+ */
+extern int slurm_load_burst_buffer_info_paratorbb(burst_buffer_info_msg_t **burst_buffer_info_msg_pptr);
+extern void slurm_free_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t *msg);
+#endif
 
 /*
  * slurm_free_burst_buffer_info_msg - free buffer returned by
@@ -5839,7 +5928,23 @@ extern void slurm_print_burst_buffer_record(FILE *out,
 					    burst_buffer_info_t *burst_buffer_ptr,
 			 		    int one_liner,
 					    int verbose);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/*
+ * slurm_print_burst_buffer_parastor_record - output information about a specific Slurm
+ *	burst_buffer record based upon message as loaded using
+ *	slurm_load_burst_buffer_info()
+ * IN out - file to write to
+ * IN burst_buffer_ptr - an individual burst buffer record pointer
+ * IN one_liner - print as a single line if not zero
+ * IN verbose - higher values to log additional details
+ * RET out - char * containing formatted output (must be freed after call)
+ *	   NULL is returned on failure.
+ */
+extern void slurm_print_burst_buffer_parastor_record(FILE *out,
+						burst_buffer_info_t *burst_buffer_ptr, 
+						int one_liner,
+						int verbose);
+#endif
 /*
  * slurm_network_callerid - issue RPC to get the job id of a job from a remote
  * slurmd based upon network socket information.

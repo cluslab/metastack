@@ -82,3 +82,30 @@ extern void scontrol_print_burst_buffer(void)
 
 	slurm_free_burst_buffer_info_msg(burst_buffer_info_ptr);
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER
+extern void scontrol_print_parastorbb(void)
+{
+	int error_code, i, verbosity = 0;
+	burst_buffer_info_msg_t *burst_buffer_info_ptr = NULL;
+	burst_buffer_info_t *burst_buffer_ptr = NULL;
+
+	error_code = slurm_load_burst_buffer_info_paratorbb(&burst_buffer_info_ptr);
+	if (error_code) {
+		exit_code = 1;
+		if (quiet_flag != 1)
+			slurm_perror ("slurm_load_burst_buffer_info error");
+		return;
+	}
+
+	if (quiet_flag == -1)
+		verbosity = 1;
+	burst_buffer_ptr = burst_buffer_info_ptr->burst_buffer_array;
+	for (i = 0; i < burst_buffer_info_ptr->record_count; i++) {
+		slurm_print_burst_buffer_parastor_record(stdout, &burst_buffer_ptr[i],
+						one_liner, verbosity);
+	}
+
+	slurm_free_burst_buffer_info_msg(burst_buffer_info_ptr);
+}
+#endif
