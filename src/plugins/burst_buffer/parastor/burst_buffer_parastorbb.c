@@ -3153,7 +3153,7 @@ static void *_start_pre_run(void *x)
 		/* pre_run failure */
 		trigger_burst_buffer();
 		error("pre_run failed for JobId=%u", pre_run_args->job_id);
-		bb_update_system_comment(job_ptr, "pre_run", resp_msg, 0);
+		bb_update_system_comment(job_ptr, "pre_run", "pre_run failed for JobId", 0);
 		if (job_ptr && bb_job) {
 			if (IS_JOB_RUNNING(job_ptr))
 				run_kill_job = true;
