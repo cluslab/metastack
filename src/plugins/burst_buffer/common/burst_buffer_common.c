@@ -2664,19 +2664,31 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 	while (str_split) {
 		count++;
 		/* TODO：后续恢复检查 */
+		if(strlen(str_split) > state_ptr->bb_config.max_acc_dir_len) {
+			error("The length of the directory name exceeds the maximum length allowed. "
+				  "The configuration allows %d, but your job specifies %d.",
+				  state_ptr->bb_config.max_acc_dir_len, strlen(str_split));
+			xfree(pfs_copy);
+			return false;
+		}
+
 		if (stat(str_split, &buf) != 0 || !S_ISDIR(buf.st_mode) || S_ISLNK(buf.st_mode)) {
 			error("No %s path or not a directory, the acceleration process may fail", bb_job->pfs);
 			str_split = strtok(NULL,",");
 			bb_job->pfs_cnt = count;
+			xfree(pfs_copy);
 			return false;
 		} 
 
 		if (access(str_split, R_OK) < 0) {
 			error("%s: %s can not be read: %m", __func__, str_split);
 			bb_job->pfs_cnt = count;
+			xfree(pfs_copy);
 			return false;
 		} 
-
+		if (access(str_split, W_OK) < 0) {
+		    
+		}
 
 		str_split = strtok_r(NULL,",",&save_ptr);
 	}
@@ -2687,11 +2699,14 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 	if (rc != 0) {
 		if (rc = 1) {
 			error("pfs dir has nesting ");
+			xfree(pfs_copy);
 			return false;
 		} else if (rc = -1) {
 			error("params is error");
+			xfree(pfs_copy);
 			return false;
 		} else {
+			xfree(pfs_copy);
 			return false;
 		}
 	}
