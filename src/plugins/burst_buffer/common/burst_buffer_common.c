@@ -554,8 +554,8 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		{"MaxAccDirsPerJob", S_P_UINT32},
 		{"MaxAccDirLen", S_P_UINT32},
 		{"FileSystemCount", S_P_UINT32},
-		{"FileSystemFir", S_P_STRING},
-		{"FileSystemMountFir", S_P_STRING},
+		{"FileSystem", S_P_STRING},
+		{"FileSystemMount", S_P_STRING},
 
 		{"ParaStorAddr", S_P_STRING},	
 		{"ParaStorAddrPort", S_P_UINT32},	
