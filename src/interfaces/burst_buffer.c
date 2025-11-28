@@ -63,8 +63,6 @@ typedef struct slurm_bb_ops {
 	int		(*load_state)	(bool init_config);
 	char *		(*get_status)	(uint32_t argc, char **argv,
 					 uint32_t uid, uint32_t gid);
-	int		(*state_pack)	(uid_t uid, buf_t *buffer,
-					 uint16_t protocol_version);
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	int		(*state_pack)	(uid_t uid, buf_t *buffer,
 					 uint16_t protocol_version, bool parastor);
