@@ -1176,6 +1176,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				if ((sub_tok = strstr(tok, "enforce_bb=no"))) {
 					bb_job->enforce_bb_flag = false;
 				} else {
+					/* 默认强制加速（资源不足等待资源） */
 					bb_job->enforce_bb_flag = true;
 				}
 
@@ -3257,19 +3258,37 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	}
     bb_node_cnt = (GROUP_SIZE + bb_node_cnt - 1)  / GROUP_SIZE; 
     log_flag(BURST_BUF, "required number of cache groups %d", bb_node_cnt);
-    log_flag(BURST_BUF, "required number of datasets %ld", (bb_node_cnt * bb_job->pfs_cnt));
-    if(bb_node_cnt > bb_state.bb_config.free_groups || 
-            ((bb_node_cnt * bb_job->pfs_cnt) > bb_state.bb_config.free_datasets)) {
-        xfree(job_ptr->state_desc);
-        job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
-        job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
-        _queue_teardown(bb_job);
-        slurm_mutex_unlock(&bb_state.bb_mutex);
+	log_flag(BURST_BUF, "required number of datasets %ld", (bb_node_cnt * bb_job->pfs_cnt));
+	if (bb_node_cnt > bb_state.bb_config.free_groups || ((bb_node_cnt * bb_job->pfs_cnt) > bb_state.bb_config.free_datasets)) {
+
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
-        _add_job_state_to_queue(job_ptr);
+		_add_job_state_to_queue(job_ptr);
 #endif
-        return SLURM_ERROR;
-    } 
+		if (bb_job->enforce_bb_flag == true) {
+			/* enforce_bb_flag=true: 资源不足时不运行作业 */
+			xfree(job_ptr->state_desc);
+			job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
+			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+			_queue_teardown(bb_job);
+			slurm_mutex_unlock(&bb_state.bb_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+			return SLURM_ERROR;
+		} else {
+			/* enforce_bb_flag=false: 资源不足作业不用BB资源直接运行 */
+			xfree(job_ptr->state_desc);
+			job_ptr->state_desc = xstrdup("enforce_bb_flag=false:The job runs without using BB resources");
+			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+			_queue_teardown(bb_job);
+			slurm_mutex_unlock(&bb_state.bb_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+			return SLURM_SUCCESS;
+		}
+	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
 	pre_run_args->args    = NULL;
