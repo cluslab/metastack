@@ -7944,10 +7944,11 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 		.msg_type = REQUEST_BURST_BUFFER_INFO,
 		.func = _slurm_rpc_burst_buffer_info,
 #ifdef __METASTACK_NEW_BURSTBUFFER
-	},{
+	}, {
 		.msg_type = REQUEST_BURST_BUFFER_PARASTOR_INFO,
 		.func = _slurm_rpc_burst_buffer_parastor_info,
 #endif
+	}, {
 		.msg_type = REQUEST_STEP_BY_CONTAINER_ID,
 		.func = _slurm_rpc_step_by_container_id,
 	},{

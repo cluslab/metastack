@@ -1151,6 +1151,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 			if (!xstrncmp(tok, "jobpara", 7)) {
 
 				if (sub_tok = strstr(tok, "capacity=")) {
+					// TODO: 没做字符串解析
 					bb_job->req_space = bb_get_size_num(sub_tok + 9, 1);
 				} 
 
