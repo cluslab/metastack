@@ -305,7 +305,8 @@ static void _save_bb_state(void)
 					pack16(bb_alloc->state,		buffer);
 					//pack64(bb_alloc->bb_group_id, buffer);
 					pack32(bb_alloc->type, buffer);
-					packbool(bb_alloc->cache_tmp, buffer);
+					//packbool(bb_alloc->cache_tmp, buffer);
+					packbool(bb_alloc->enforce_bb_flag, buffer);
 					pack32(bb_alloc->bb_task, buffer);
 					pack32(bb_alloc->groups_nodes, buffer);
 					pack64(bb_alloc->req_space, buffer);
@@ -459,7 +460,8 @@ static void _recover_bb_state(void)
 		uint16_t state = 0;
 		//uint64_t bb_group_id = 0;
 		uint32_t type = 0;
-		bool cache_tmp = false;
+		//bool cache_tmp = false;
+		bool enforce_bb_flag = true;
 		uint32_t bb_task = 0;
 		uint32_t groups_nodes = 0;
 		uint64_t req_space = 0;
@@ -476,7 +478,8 @@ static void _recover_bb_state(void)
 		safe_unpack16(&state, buffer);
 		//safe_unpack64(&bb_group_id, buffer);
 		safe_unpack32(&type, buffer);
-		safe_unpackbool(&cache_tmp, buffer);
+		//safe_unpackbool(&cache_tmp, buffer);
+		safe_unpackbool(&enforce_bb_flag, buffer);
 		safe_unpack32(&bb_task, buffer);
 		safe_unpack32(&groups_nodes, buffer);
 		safe_unpack64(&req_space, buffer);
@@ -534,7 +537,8 @@ static void _recover_bb_state(void)
 		bb_alloc->state = state; 
 		//bb_alloc->bb_group_id = bb_group_id;
 		bb_alloc->type = type;
-		bb_alloc->cache_tmp = cache_tmp;
+		//bb_alloc->cache_tmp = cache_tmp;
+		bb_alloc->enforce_bb_flag = enforce_bb_flag;
 		bb_alloc->bb_task = bb_task;
 		bb_alloc->groups_nodes = groups_nodes;
 		bb_alloc->req_space = req_space;
@@ -1634,7 +1638,8 @@ static void _restore_bb_job_from_alloc(bb_job_t *bb_job, bb_alloc_t *bb_alloc,
 	/* Restore other fields */
 	bb_job->req_space = bb_alloc->req_space;
 	bb_job->type = bb_alloc->type;
-	bb_job->cache_tmp = bb_alloc->cache_tmp;
+	//bb_job->cache_tmp = bb_alloc->cache_tmp;
+	bb_job->enforce_bb_flag = bb_alloc->enforce_bb_flag;
 	bb_job->bb_task = bb_alloc->bb_task;
 	bb_job->groups_nodes = bb_alloc->groups_nodes;
 	bb_job->access_mode = bb_alloc->access_mode;

@@ -1089,11 +1089,13 @@ static void _pack_job_alloc(struct bb_alloc *bb_alloc, buf_t *buffer,
         ////////////////
 		pack32(bb_alloc->type,          buffer);
 		pack32(bb_alloc->access_mode,   buffer);
+		packbool(bb_alloc->enforce_bb_flag, buffer);
 		if(bb_alloc->pfs)
 			packstr(bb_alloc->pfs,      buffer);
 		else
 			packstr("",           buffer);
-		pack32(bb_alloc->pfs_cnt,       buffer);	
+		pack32(bb_alloc->pfs_cnt,       buffer);
+		packbool(bb_alloc->metadata_acceleration, buffer);	
 
 		
 		pack32(bb_alloc->index_groups,   buffer);
@@ -1582,7 +1584,9 @@ extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool 
 {
 	
 	bb_alloc->type 					= bb_job->type; //缓存类型，可以支持持久及临时。temporary|persistent
-	bb_alloc->cache_tmp 			= bb_job->cache_tmp;
+	//bb_alloc->cache_tmp 			= bb_job->cache_tmp;
+	bb_alloc->enforce_bb_flag 		 = bb_job->enforce_bb_flag;
+	bb_alloc->metadata_acceleration = bb_job->metadata_acceleration;
 	bb_alloc->bb_task 				= bb_job->bb_task;     //当前缓存组最大并行的任务数
 	bb_alloc->req_space 			= bb_job->req_space;		//当前作业请求的空间
 	bb_alloc->access_mode 			= bb_job->access_mode;      //存储类型，本地共享
@@ -2655,12 +2659,12 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 	} 
 
 	if(xstrcasecmp(bb_job->type,"temporary") == 0) {
-		bb_job->cache_tmp = true;
+		bb_job->type = true;
 		bb_job->use_job_buf = true;
 	} else if(xstrcasecmp(bb_job->type,"persistent") ) {
-	    bb_job->cache_tmp = false;
+	    bb_job->type = false;
 	} else {
-		bb_job->cache_tmp = false;
+		bb_job->type = false;
 		error("Invalid type %d", bb_job->type);
 		return false;
 	}
