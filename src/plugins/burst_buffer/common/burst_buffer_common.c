@@ -692,9 +692,9 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 	}
 
 	(void) s_p_get_string(&state_ptr->bb_config.file_system_fir,
-			     "FileSystemFir", bb_hashtbl);
+			     "FileSystem", bb_hashtbl);
 	(void) s_p_get_string(&state_ptr->bb_config.file_system_mount_fir,
-			     "FileSystemMountFir", bb_hashtbl);				 
+			     "FileSystemMount", bb_hashtbl);				 
 
 	s_p_hashtbl_destroy(bb_hashtbl);
 	xfree(bb_conf);
