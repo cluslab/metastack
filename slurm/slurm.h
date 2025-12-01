@@ -5767,6 +5767,7 @@ typedef struct {
 	//uint64_t bb_group_id; //缓存组id
 	int type; //缓存类型，可以支持持久及临时。temporary|persistent
 	// bool  cache_tmp;
+	bool enforce_bb_flag; //是否强制使用缓存
 	// uint64_t total_space; //缓存组总空间容量大小。
 	// uint64_t free_space;  //剩余可用的缓存组数量
 	// uint64_t used_space;  //缓存组已用总空间容量大小。

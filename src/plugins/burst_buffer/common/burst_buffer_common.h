@@ -158,7 +158,8 @@ typedef struct bb_alloc {
 #ifdef __METASTACK_NEW_BURSTBUFFER	
 	//uint64_t bb_group_id; //缓存组id
 	int type;			 //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
-	bool  cache_tmp;
+	//bool  cache_tmp;
+	bool  enforce_bb_flag; //是否强制加速
 	// uint64_t total_space; //缓存组总空间容量大小。
 	// uint64_t free_space;  //剩余可用的缓存组数量
 	// uint64_t used_space;  //缓存组已用总空间容量大小。
@@ -245,7 +246,7 @@ typedef struct bb_job {
 	//uint64_t bb_group_id; //缓存组id
 	int  type; //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
 	bool  enforce_bb_flag; //是否强制加速
-	bool  cache_tmp;
+	//bool  cache_tmp;
 	// uint64_t total_space; //缓存组总空间容量大小。
 	// uint64_t free_space;  //剩余可用的缓存组数量
 	// uint64_t used_space;  //缓存组已用总空间容量大小。

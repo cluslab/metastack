@@ -305,7 +305,8 @@ static void _save_bb_state(void)
 					pack16(bb_alloc->state,		buffer);
 					//pack64(bb_alloc->bb_group_id, buffer);
 					pack32(bb_alloc->type, buffer);
-					packbool(bb_alloc->cache_tmp, buffer);
+					//packbool(bb_alloc->cache_tmp, buffer);
+					packbool(bb_alloc->enforce_bb_flag, buffer);
 					pack32(bb_alloc->bb_task, buffer);
 					pack32(bb_alloc->groups_nodes, buffer);
 					pack64(bb_alloc->req_space, buffer);
@@ -459,7 +460,8 @@ static void _recover_bb_state(void)
 		uint16_t state = 0;
 		//uint64_t bb_group_id = 0;
 		uint32_t type = 0;
-		bool cache_tmp = false;
+		//bool cache_tmp = false;
+		bool enforce_bb_flag = true;
 		uint32_t bb_task = 0;
 		uint32_t groups_nodes = 0;
 		uint64_t req_space = 0;
@@ -476,7 +478,8 @@ static void _recover_bb_state(void)
 		safe_unpack16(&state, buffer);
 		//safe_unpack64(&bb_group_id, buffer);
 		safe_unpack32(&type, buffer);
-		safe_unpackbool(&cache_tmp, buffer);
+		//safe_unpackbool(&cache_tmp, buffer);
+		safe_unpackbool(&enforce_bb_flag, buffer);
 		safe_unpack32(&bb_task, buffer);
 		safe_unpack32(&groups_nodes, buffer);
 		safe_unpack64(&req_space, buffer);
@@ -534,7 +537,8 @@ static void _recover_bb_state(void)
 		bb_alloc->state = state; 
 		//bb_alloc->bb_group_id = bb_group_id;
 		bb_alloc->type = type;
-		bb_alloc->cache_tmp = cache_tmp;
+		//bb_alloc->cache_tmp = cache_tmp;
+		bb_alloc->enforce_bb_flag = enforce_bb_flag;
 		bb_alloc->bb_task = bb_task;
 		bb_alloc->groups_nodes = groups_nodes;
 		bb_alloc->req_space = req_space;
@@ -1147,6 +1151,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 			if (!xstrncmp(tok, "jobpara", 7)) {
 
 				if (sub_tok = strstr(tok, "capacity=")) {
+					// TODO: 没做字符串解析
 					bb_job->req_space = bb_get_size_num(sub_tok + 9, 1);
 				} 
 
@@ -1176,6 +1181,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				if ((sub_tok = strstr(tok, "enforce_bb=no"))) {
 					bb_job->enforce_bb_flag = false;
 				} else {
+					/* 默认强制加速（资源不足等待资源） */
 					bb_job->enforce_bb_flag = true;
 				}
 
@@ -1633,7 +1639,8 @@ static void _restore_bb_job_from_alloc(bb_job_t *bb_job, bb_alloc_t *bb_alloc,
 	/* Restore other fields */
 	bb_job->req_space = bb_alloc->req_space;
 	bb_job->type = bb_alloc->type;
-	bb_job->cache_tmp = bb_alloc->cache_tmp;
+	//bb_job->cache_tmp = bb_alloc->cache_tmp;
+	bb_job->enforce_bb_flag = bb_alloc->enforce_bb_flag;
 	bb_job->bb_task = bb_alloc->bb_task;
 	bb_job->groups_nodes = bb_alloc->groups_nodes;
 	bb_job->access_mode = bb_alloc->access_mode;
@@ -3257,19 +3264,37 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	}
     bb_node_cnt = (GROUP_SIZE + bb_node_cnt - 1)  / GROUP_SIZE; 
     log_flag(BURST_BUF, "required number of cache groups %d", bb_node_cnt);
-    log_flag(BURST_BUF, "required number of datasets %ld", (bb_node_cnt * bb_job->pfs_cnt));
-    if(bb_node_cnt > bb_state.bb_config.free_groups || 
-            ((bb_node_cnt * bb_job->pfs_cnt) > bb_state.bb_config.free_datasets)) {
-        xfree(job_ptr->state_desc);
-        job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
-        job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
-        _queue_teardown(bb_job);
-        slurm_mutex_unlock(&bb_state.bb_mutex);
+	log_flag(BURST_BUF, "required number of datasets %ld", (bb_node_cnt * bb_job->pfs_cnt));
+	if (bb_node_cnt > bb_state.bb_config.free_groups || ((bb_node_cnt * bb_job->pfs_cnt) > bb_state.bb_config.free_datasets)) {
+
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
-        _add_job_state_to_queue(job_ptr);
+		_add_job_state_to_queue(job_ptr);
 #endif
-        return SLURM_ERROR;
-    } 
+		if (bb_job->enforce_bb_flag == true) {
+			/* enforce_bb_flag=true: 资源不足时不运行作业 */
+			xfree(job_ptr->state_desc);
+			job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
+			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+			_queue_teardown(bb_job);
+			slurm_mutex_unlock(&bb_state.bb_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+			return SLURM_ERROR;
+		} else {
+			/* enforce_bb_flag=false: 资源不足作业不用BB资源直接运行 */
+			xfree(job_ptr->state_desc);
+			job_ptr->state_desc = xstrdup("enforce_bb_flag=false:The job runs without using BB resources");
+			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+			_queue_teardown(bb_job);
+			slurm_mutex_unlock(&bb_state.bb_mutex);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+			return SLURM_SUCCESS;
+		}
+	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
 	pre_run_args->args    = NULL;

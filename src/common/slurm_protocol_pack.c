@@ -16857,22 +16857,24 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 
 			for (j = 0, bb_resv_ptr = bb_info_ptr->burst_buffer_resv_ptr;
 			     j < bb_info_ptr->buffer_count; j++, bb_resv_ptr++) {
-				safe_unpackstr(&bb_resv_ptr->account,             buffer);
-				safe_unpack32(&bb_resv_ptr->array_job_id,         buffer);
-				safe_unpack32(&bb_resv_ptr->array_task_id,        buffer);
-				unpack_time(&bb_resv_ptr->create_time,            buffer);
-				safe_unpack32(&bb_resv_ptr->job_id,               buffer);
-				safe_unpackstr(&bb_resv_ptr->name,                buffer);
-				safe_unpackstr(&bb_resv_ptr->partition,           buffer);
-			    //safe_unpackstr(&bb_resv_ptr->qos,                 buffer);
-				safe_unpack64(&bb_resv_ptr->size, 				  buffer);
-				safe_unpack16(&bb_resv_ptr->state,                buffer);
-				safe_unpack32(&bb_resv_ptr->user_id,              buffer);
-				safe_unpack32(&bb_resv_ptr->type,                 buffer);		
-				safe_unpack32(&bb_resv_ptr->access_mode,          buffer);	
-			    safe_unpackstr(&bb_resv_ptr->pfs,                 buffer);	
-				safe_unpack32(&bb_resv_ptr->pfs_cnt,              buffer);	
-				safe_unpack32(&bb_resv_ptr->index_groups,         buffer);		
+				safe_unpackstr(&bb_resv_ptr->account,           	 buffer);
+				safe_unpack32(&bb_resv_ptr->array_job_id,       	 buffer);
+				safe_unpack32(&bb_resv_ptr->array_task_id,      	 buffer);
+				unpack_time(&bb_resv_ptr->create_time,          	 buffer);
+				safe_unpack32(&bb_resv_ptr->job_id,             	 buffer);
+				safe_unpackstr(&bb_resv_ptr->name,               	 buffer);
+				safe_unpackstr(&bb_resv_ptr->partition,          	 buffer);
+			    //safe_unpackstr(&bb_resv_ptr->qos,                  buffer);
+				safe_unpack64(&bb_resv_ptr->size, 					 buffer);
+				safe_unpack16(&bb_resv_ptr->state,              	 buffer);
+				safe_unpack32(&bb_resv_ptr->user_id,            	 buffer);
+				safe_unpack32(&bb_resv_ptr->type,                	 buffer);		
+				safe_unpack32(&bb_resv_ptr->access_mode,         	 buffer);
+				safe_unpackbool(&bb_resv_ptr->enforce_bb_flag,    	  buffer);	
+			    safe_unpackstr(&bb_resv_ptr->pfs,                	 buffer);	
+				safe_unpack32(&bb_resv_ptr->pfs_cnt,             	 buffer);
+				safe_unpackbool(&bb_resv_ptr->metadata_acceleration, buffer);	
+				safe_unpack32(&bb_resv_ptr->index_groups,         	 buffer);		
 
 				if (bb_resv_ptr->index_groups > 0) {
 					safe_unpack32_array(&bb_resv_ptr->bb_group_ids,  &bb_resv_ptr->index_groups, buffer);

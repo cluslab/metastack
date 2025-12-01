@@ -450,6 +450,9 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 		else
 			xstrfmtcat(out_buf, "AccessMode=unknow ");
 
+		xstrfmtcat(out_buf, "EnforceBB=%s ", bb_resv_ptr->enforce_bb_flag ? "yes" : "no");
+		xstrfmtcat(out_buf, "MetadataAcceleration=%s ", bb_resv_ptr->metadata_acceleration ? "yes" : "no");
+
 		xstrcat(out_buf, "\n    ");
 		if (bb_resv_ptr->pfs) {
 			xstrfmtcat(out_buf, "PFS_Count=%u PFS=%s ", bb_resv_ptr->pfs_cnt, bb_resv_ptr->pfs);

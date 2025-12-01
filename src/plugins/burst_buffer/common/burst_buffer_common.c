@@ -87,9 +87,9 @@ static uid_t *	_parse_users(char *buf);
 static char *	_print_users(uid_t *buf);
 #ifdef __METASTACK_NEW_BURSTBUFFER
 static bool is_parent_path(const char *parent, const char *child);
-static int _is_the_dir_nested(const char *path_arry, int dir_number);
+static int _is_the_dir_nested(const char *path_arry, uint32_t dir_number);
 static char *_dir_remove_spaces(char *s);
-static char ** split_paths(const char *input, int *count_out);
+static char ** split_paths(const char *input, uint32_t path_count);
 static char *convert_paths_str(const char *dirs, const char *mount_point, const char *mount_system);
 #endif
 
@@ -682,8 +682,14 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 			     "FileSystemCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
+	if ( &state_ptr->bb_config.max_acc_dirs_per_job == 0) {
+		state_ptr->bb_config.max_acc_dirs_per_job = 8;
+	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
 			     "MaxAccDirLen", bb_hashtbl);
+	if ( &state_ptr->bb_config.max_acc_dir_len == 0) {
+		state_ptr->bb_config.max_acc_dir_len = 512;
+	}
 
 	(void) s_p_get_string(&state_ptr->bb_config.file_system_fir,
 			     "FileSystemFir", bb_hashtbl);
@@ -1089,11 +1095,13 @@ static void _pack_job_alloc(struct bb_alloc *bb_alloc, buf_t *buffer,
         ////////////////
 		pack32(bb_alloc->type,          buffer);
 		pack32(bb_alloc->access_mode,   buffer);
+		packbool(bb_alloc->enforce_bb_flag, buffer);
 		if(bb_alloc->pfs)
 			packstr(bb_alloc->pfs,      buffer);
 		else
 			packstr("",           buffer);
-		pack32(bb_alloc->pfs_cnt,       buffer);	
+		pack32(bb_alloc->pfs_cnt,       buffer);
+		packbool(bb_alloc->metadata_acceleration, buffer);	
 
 		
 		pack32(bb_alloc->index_groups,   buffer);
@@ -1582,7 +1590,9 @@ extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool 
 {
 	
 	bb_alloc->type 					= bb_job->type; //缓存类型，可以支持持久及临时。temporary|persistent
-	bb_alloc->cache_tmp 			= bb_job->cache_tmp;
+	//bb_alloc->cache_tmp 			= bb_job->cache_tmp;
+	bb_alloc->enforce_bb_flag 		 = bb_job->enforce_bb_flag;
+	bb_alloc->metadata_acceleration = bb_job->metadata_acceleration;
 	bb_alloc->bb_task 				= bb_job->bb_task;     //当前缓存组最大并行的任务数
 	bb_alloc->req_space 			= bb_job->req_space;		//当前作业请求的空间
 	bb_alloc->access_mode 			= bb_job->access_mode;      //存储类型，本地共享
@@ -2598,6 +2608,8 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 	while (str_split) {
 		count++;
 		/* TODO：后续恢复检查 */
+		int len = strlen(str_split);
+		debug("xxxxx: pfs dir is %s, len=%d", str_split, len);
 		if(strlen(str_split) > state_ptr->bb_config.max_acc_dir_len) {
 			error("The length of the directory name exceeds the maximum length allowed. "
 				  "The configuration allows %d, but your job specifies %d.",
@@ -2608,44 +2620,52 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 
 		if (stat(str_split, &buf) != 0 || !S_ISDIR(buf.st_mode) || S_ISLNK(buf.st_mode)) {
 			error("No %s path or not a directory, the acceleration process may fail", bb_job->pfs);
-			str_split = strtok(NULL,",");
+			//str_split = strtok(NULL,",");
 			bb_job->pfs_cnt = count;
 			xfree(pfs_copy);
 			return false;
 		} 
 
+		int access_ret = access(str_split, R_OK);
+		debug("xxxxx: access ret r is %d", access_ret);
 		if (access(str_split, R_OK) < 0) {
 			error("%s: %s can not be read: %m", __func__, str_split);
 			bb_job->pfs_cnt = count;
 			xfree(pfs_copy);
 			return false;
 		} 
+		int access_ret_w = access(str_split, W_OK);
+		debug("xxxxx: access ret w is %d", access_ret_w);
 		if (access(str_split, W_OK) < 0) {
-		    
+			error("%s: %s can not be written: %m", __func__, str_split);
+			bb_job->pfs_cnt = count;
+			xfree(pfs_copy);
+			return false;
 		}
 
 		str_split = strtok_r(NULL,",",&save_ptr);
 	}
 	bb_job->pfs_cnt = count;
+	xfree(pfs_copy);
 
 	/* Check if the directory has nesting */
-	int rc = _is_the_dir_nested(pfs_copy, bb_job->pfs_cnt);
+	int rc = _is_the_dir_nested(bb_job->pfs, bb_job->pfs_cnt);
+	debug("xxxxx:the pfs is %s", bb_job->pfs);
+	debug("xxxxx: _is_the_dir_nested ret is %d", rc);
 	if (rc != 0) {
-		if (rc = 1) {
-			error("pfs dir has nesting ");
-			xfree(pfs_copy);
+		if (rc == 1) {
+			error("pfs dir has nesting ");	
 			return false;
-		} else if (rc = -1) {
-			error("params is error");
-			xfree(pfs_copy);
+		} else if (rc == -1) {
+			error("params is error");	
 			return false;
 		} else {
-			xfree(pfs_copy);
+			error("other error in _is_the_dir_nested");
 			return false;
 		}
 	}
 
-	xfree(pfs_copy);
+
 
 	if(bb_job->pfs_cnt > state_ptr->bb_config.max_acc_dirs_per_job) {
 		error("Exceeded the maximum number of directories supported for a single job. "
@@ -2654,25 +2674,32 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 		return false;
 	} 
 
-	if(xstrcasecmp(bb_job->type,"temporary") == 0) {
-		bb_job->cache_tmp = true;
-		bb_job->use_job_buf = true;
-	} else if(xstrcasecmp(bb_job->type,"persistent") ) {
-	    bb_job->cache_tmp = false;
-	} else {
-		bb_job->cache_tmp = false;
-		error("Invalid type %d", bb_job->type);
-		return false;
-	}
-	log_flag(BURST_BUF,"The number of backends to accelerate passed in is %d", count);
+	// if(xstrcasecmp(bb_job->type,"temporary") == 0) {
+	// 	bb_job->type = true;
+	// 	bb_job->use_job_buf = true;
+	// } else if(xstrcasecmp(bb_job->type,"persistent") ) {
+	//     bb_job->type = false;
+	// } else {
+	// 	bb_job->type = false;
+	// 	error("Invalid type %d", bb_job->type);
+	// 	return false;
+	// }
+	// log_flag(BURST_BUF,"The number of backends to accelerate passed in is %d", count);
 
-	if(bb_job->req_space <= 0) {
-		error("Invalid req_size %ld", bb_job->req_space);
-		//return false;
-	}
+
+	// if(bb_job->req_space <= 0) {
+	// 	error("Invalid req_size %ld", bb_job->req_space);
+	// 	return false;
+	// }
 
 	/* Convert the PFS path to a BB interface path */
+	debug("xxxxx: file system name:%s, mount: %s", state_ptr->bb_config.file_system_fir, state_ptr->bb_config.file_system_mount_fir);
+	if (!state_ptr->bb_config.file_system_mount_fir || !state_ptr->bb_config.file_system_fir) {
+		error("file system is NULL, cannot convert pfs path");
+		return false;
+	}
 	char *conver_pfs = convert_paths_str(bb_job->pfs, state_ptr->bb_config.file_system_mount_fir, state_ptr->bb_config.file_system_fir);
+	debug("xxxxx: new path is %s", conver_pfs);
 	if (!conver_pfs){
 		error("conver path failed or no convertible path");
 		return false;
@@ -2774,7 +2801,7 @@ extern int bb_write_nid_file(char *file_name, char *node_list,
 		hostlist_t *hl = hostlist_create(node_list);
 		while ((tok = hostlist_shift(hl))) {
 			xstrfmtcat(buf, "%s\n", tok);
-			free(tok);
+			xfree(tok);
 		}
 		hostlist_destroy(hl);
 		rc = bb_write_file(file_name, buf);
@@ -2875,44 +2902,45 @@ static char *_dir_remove_spaces(char *s)
  * @param count_out    output: when success split paths, output the number of dir
  *
  */
-static char ** split_paths(const char *input, int *count_out)
+static char ** split_paths(const char *input, uint32_t path_count)
 {
-    if (!input || !count_out)
+    if (!input)
         return NULL;
 
     //Calculate Quantity
-    int count = 0;
-    char *tmp = strdup(input);
-	char *save_ptr = NULL;
-    char *token = strtok_r(tmp, ",", &save_ptr);
-    while (token) {
-        count++;
-        token = strtok_r(NULL, "," , &save_ptr);
-    }
-    free(tmp);
-    if (count == 0) {
-        *count_out = 0;
-        return NULL;
-    }
+    // int count = 0;
+    // char *tmp = xstrdup(input);
+
+    // char *token = strtok_r(tmp, ",", &save_ptr);
+    // while (token) {
+    //     count++;
+    //     token = strtok_r(NULL, "," , &save_ptr);
+    // }
+    // xfree(tmp);
+    // if (count == 0) {
+    //     *count_out = 0;
+    //     return NULL;
+    // }
 
 	char *copy = xstrdup(input);
 	if (!copy)
 		return NULL;
 
-    char **list = malloc(count * sizeof(char *));
+    char **list = xmalloc(path_count * sizeof(char *));
     if (!list) {
         xfree(copy);
         return NULL;
     }
 
     int idx = 0;
-    token = strtok_r(copy, ",",  &save_ptr);
+	char *save_ptr = NULL;
+    char *token = strtok_r(copy, ",",  &save_ptr);
     while (token) {
         char *t = _dir_remove_spaces(token); //remove spaces
-        list[idx] = strdup(t);
+        list[idx] = xstrdup(t);
         if (!list[idx]) {
             for (int i = 0; i < idx; i++)
-                free(list[i]);
+                xfree(list[i]);
             xfree(list);
             xfree(copy);
             return NULL;
@@ -2920,9 +2948,6 @@ static char ** split_paths(const char *input, int *count_out)
         idx++;
         token = strtok_r(NULL, ",",  &save_ptr);
     }
-
-    *count_out = count;
-
     xfree(copy);
     return list;
 }
@@ -2936,33 +2961,48 @@ static char ** split_paths(const char *input, int *count_out)
  * @return 0 : not nested;   1 : nested;     -1 : params error
  * 
  */
-static int _is_the_dir_nested(const char *path_arry, int dir_number)
+static int _is_the_dir_nested(const char *path_arry, uint32_t dir_number)
 {
-
-
 	if (!path_arry || dir_number < 1) {
 		error("error params");
 		return -1;
 	}
+	// int *tmp_path_cnt = xmalloc(sizeof(int));
+	char **dir_list = split_paths(path_arry, dir_number);
 
-	
-	int *tmp_path_cnt = xmalloc(sizeof(int));
-	char **dir_list = split_paths(path_arry, tmp_path_cnt);
-	if (*tmp_path_cnt != dir_number){
-		error("number of path in pfs is error");
+	if (!dir_list) {
+		error("split_paths failed");
+		// xfree(tmp_path_cnt);
 		return -1;
 	}
-	xfree(tmp_path_cnt);
+	// if (*tmp_path_cnt != dir_number) {
+	// 	error("number of path in pfs is error");
+	// 	// 释放 dir_list 及其内部字符串
+	// 	for (int i = 0; i < *tmp_path_cnt; i++) {
+	// 		xfree(dir_list[i]);
+	// 	}
+	// 	xfree(dir_list); 
+	// 	xfree(tmp_path_cnt);
+	// 	return -1;
+	// }
+	// xfree(tmp_path_cnt);
 
 	bool has_nested = false;
 	for (int i = 0; i < dir_number; i++) {
 		for (int j = 0; j < dir_number; j++) {
 			if (i != j && is_parent_path(dir_list[i], dir_list[j])) {
+				error("xxxx---FPS path can't be nested:  %s is parent path of dir %s", dir_list[i], dir_list[j]);
 				has_nested = true;
 				break;
 			}
 		}
 	}
+
+	for (int i = 0; i < dir_number; i++) {
+		xfree(dir_list[i]);
+	}
+	xfree(dir_list);
+
 	if (has_nested == true)
 		return 1;
 	else
@@ -2994,7 +3034,7 @@ static char *convert_paths_str(const char *dirs, const char *mount_point, const 
     size_t result_size = strlen(dirs) + 1;
     char *result = (char *)xmalloc(result_size);
     if (!result) {
-        free(dirs_copy);
+        xfree(dirs_copy);
         return NULL;
     }
 	char *save_ptr = NULL;
@@ -3003,17 +3043,17 @@ static char *convert_paths_str(const char *dirs, const char *mount_point, const 
 
     while (token) {
         if (!is_parent_path(mount_point, token)) {
-            free(result);
-            free(dirs_copy);
+            xfree(result);
+            xfree(dirs_copy);
             return NULL; // 有一个不匹配就返回 NULL
         }
 
         size_t remain_len = strlen(token) - strlen(mount_point);
         size_t new_len = strlen(mount_system) + 1 + remain_len + 1; // system + ':' + remain + '\0'
-        char *new_token = (char *)malloc(new_len);
+        char *new_token = (char *)xmalloc(new_len);
         if (!new_token) {
-            free(result);
-            free(dirs_copy);
+            xfree(result);
+            xfree(dirs_copy);
             return NULL;
         }
 
@@ -3024,13 +3064,13 @@ static char *convert_paths_str(const char *dirs, const char *mount_point, const 
 			
         }
         xstrcat(result, new_token);
-        free(new_token);
+        xfree(new_token);
 
         first = false;
         token = strtok_r(NULL, ",", &save_ptr);
     }
 
-    free(dirs_copy);
+    xfree(dirs_copy);
     return result;
 }
 
