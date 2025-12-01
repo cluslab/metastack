@@ -1178,7 +1178,10 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					xfree(tmp_type);
 				} 
 			
-				if ((sub_tok = strstr(tok, "enforce_bb=no"))) {
+				if ((sub_tok = strstr(tok, "enforce_bb=no")) || 
+					(sub_tok = strstr(tok, "enforce_bb=NO")) || 
+					(sub_tok = strstr(tok, "enforce_bb=false")) || 
+					(sub_tok = strstr(tok, "enforce_bb=FALSE"))) {
 					bb_job->enforce_bb_flag = false;
 				} else {
 					/* 默认强制加速（资源不足等待资源） */
@@ -1345,30 +1348,30 @@ static int _bb_get_parastors_state(void) {
 	int rc = SLURM_SUCCESS;
 
 	//slurm_mutex_unlock(&bb_state.bb_mutex);
-	query_params_request *params    = xmalloc(sizeof(query_params_request));
-	bb_response *resp_out           =  xmalloc(sizeof(bb_response));
-	bb_response *resp_out1          =  xmalloc(sizeof(bb_response));
+	query_params_request *params  = xmalloc(sizeof(query_params_request));
+	bb_response *resp_out_group   =  xmalloc(sizeof(bb_response));
+	bb_response *resp_out_dataset =  xmalloc(sizeof(bb_response));
 	memset(params, 0, sizeof(query_params_request));
 	params->start =   0;
 	params->limit = 100;
 
 	//缓存组
-	List tmp_list_groups = get_groups_burst_buffer(params, bb_min_config, resp_out);
-	if (!resp_out || resp_out->err_no != 0) { //不能用tmp_list_groups为NULL判断，因为可能没有缓存组
+	List tmp_list_groups = get_groups_burst_buffer(params, bb_min_config, resp_out_group);
+	if (!resp_out_group || resp_out_group->err_no != 0) { //不能用tmp_list_groups为NULL判断，因为可能没有缓存组
 		error("get groups returned error, the detail message is %s",
-			resp_out->detail_err_msg ? resp_out->detail_err_msg : "unknown");
+			resp_out_group->detail_err_msg ? resp_out_group->detail_err_msg : "unknown");
 		return SLURM_ERROR;
 	}
-	debug("burst group_count=%d , list_count(tmp_list_groups)=%d", resp_out->group_count, list_count(tmp_list_groups));
+	debug("burst group_count=%d , list_count(tmp_list_groups)=%d", resp_out_group->group_count, list_count(tmp_list_groups));
 
 	// 数据集
-	List tmp_list_datasets = get_datasets_burst_buffer(params, bb_min_config, resp_out1);
-	if (!resp_out || resp_out->err_no != 0) { //不能用tmp_list_datasets为NULL判断，因为可能没有数据集
+	List tmp_list_datasets = get_datasets_burst_buffer(params, bb_min_config, resp_out_dataset);
+	if (!resp_out_dataset || resp_out_dataset->err_no != 0) { //不能用tmp_list_datasets为NULL判断，因为可能没有数据集
 		error("get datasets returned error, the detail message is %s",
-			resp_out->detail_err_msg ? resp_out->detail_err_msg : "unknown");
+			resp_out_dataset->detail_err_msg ? resp_out_dataset->detail_err_msg : "unknown");
 		return SLURM_ERROR;
 	}
-	debug("burst datasets=%d , list_count(datasets)=%d", resp_out->dataset_count, list_count(tmp_list_datasets));
+	debug("burst datasets=%d , list_count(datasets)=%d", resp_out_dataset->dataset_count, list_count(tmp_list_datasets));
 
 	xfree(params);
 
@@ -1390,16 +1393,25 @@ static int _bb_get_parastors_state(void) {
 
 	
 	bb_state.bb_config.used_groups = list_count(bb_state.list_groups);
-	bb_state.bb_config.free_groups = bb_state.bb_config.max_groups - resp_out->group_count;
+	if (bb_state.bb_config.max_groups >= resp_out_group->group_count) {
+		bb_state.bb_config.free_groups = bb_state.bb_config.max_groups - bb_state.bb_config.used_groups;
+	} else {
+		bb_state.bb_config.free_groups = 0;
+	}
 
-	bb_state.bb_config.used_datasets = resp_out1->dataset_count;
-	bb_state.bb_config.free_datasets = bb_state.bb_config.max_datasets - resp_out1->dataset_count;
+	bb_state.bb_config.used_datasets = list_count(bb_state.list_datasets);
+	if (bb_state.bb_config.max_datasets >= resp_out_dataset->dataset_count) {
+		bb_state.bb_config.free_datasets = bb_state.bb_config.max_datasets - bb_state.bb_config.used_datasets;
+	} else {
+		bb_state.bb_config.free_datasets = 0;
+	}
+	
 	debug("the current system has total groups count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_groups,
 			bb_state.bb_config.used_groups, bb_state.bb_config.free_groups );
 	debug("the current system has total datasets count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_datasets,
 			bb_state.bb_config.used_datasets, bb_state.bb_config.free_datasets );
-	bb_response_free(resp_out);
-	bb_response_free(resp_out1);
+	bb_response_free(resp_out_group);
+	bb_response_free(resp_out_dataset);
 	_bb_min_config_free(bb_min_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
@@ -2952,7 +2964,7 @@ static void *_start_pre_run(void *x)
 				return NULL;
 			}
 			last_client_ids[index++] = resp_out->last_client_id;
-			debug(" The host %s clients’ IDs is %d of the current node. index is %d", host, resp_out->last_client_id, index);
+			debug(" The host %s clients' IDs is %d of the current node. index is %d", host, resp_out->last_client_id, index);
 			xfree(params.host_name);
 			bb_response_free(resp_out);
 			slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -2971,16 +2983,15 @@ static void *_start_pre_run(void *x)
 	
 	group_ids = xmalloc(sizeof(int) * (tmp_groups_count));
 
-
 	bb_response *resp_out1 = xmalloc(sizeof(bb_response));	
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_state.bb_config.free_groups    -= (tmp_groups_count );
-	bb_state.bb_config.free_datasets  -= bb_job->pfs_cnt * (tmp_groups_count );
-	bb_state.bb_config.used_groups += (tmp_groups_count);
-	bb_state.bb_config.used_datasets += bb_job->pfs_cnt * (tmp_groups_count);
-	bb_job->index_groups               = (tmp_groups_count);
-	bb_job->index_datasets             = bb_job->pfs_cnt * (tmp_groups_count);
-	int tmp_datasets_counts = bb_job->index_groups * bb_job->pfs_cnt;
+	// bb_state.bb_config.free_groups    -= tmp_groups_count;
+	// bb_state.bb_config.free_datasets  -= bb_job->pfs_cnt * tmp_groups_count;
+	// bb_state.bb_config.used_groups    += tmp_groups_count;
+	// bb_state.bb_config.used_datasets  += bb_job->pfs_cnt * tmp_groups_count;
+	bb_job->index_groups              = tmp_groups_count;
+	bb_job->index_datasets            = bb_job->pfs_cnt * tmp_groups_count;
+	int tmp_datasets_counts           = bb_job->index_groups * bb_job->pfs_cnt;
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	if(tmp_groups_count > 1) {
@@ -3262,50 +3273,66 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	if (bb_state.bb_config.max_clients_per_job > 0) {
 		GROUP_SIZE = bb_state.bb_config.max_clients_per_job;
 	}
-    bb_node_cnt = (GROUP_SIZE + bb_node_cnt - 1)  / GROUP_SIZE; 
-    log_flag(BURST_BUF, "required number of cache groups %d", bb_node_cnt);
-	log_flag(BURST_BUF, "required number of datasets %ld", (bb_node_cnt * bb_job->pfs_cnt));
-	if (bb_node_cnt > bb_state.bb_config.free_groups || ((bb_node_cnt * bb_job->pfs_cnt) > bb_state.bb_config.free_datasets)) {
 
+	/* Check the number of requests */
+	int tmp_groups_count = bb_node_cnt / GROUP_SIZE;
+	if (bb_node_cnt % GROUP_SIZE > 0) {
+		tmp_groups_count += 1;
+	}
+	int tmp_datasets_count = tmp_groups_count * bb_job->pfs_cnt;
+    log_flag(BURST_BUF, "required number of cache groups %d", tmp_groups_count);
+	log_flag(BURST_BUF, "required number of datasets %d", tmp_datasets_count);
+	if (tmp_groups_count > bb_state.bb_config.free_groups || tmp_datasets_count > bb_state.bb_config.free_datasets ) {
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+		debug("free groups or datasets is not enough,requie groups count:%d, free groups count:%d, require datasets count:%d, free datasets count:%d",tmp_groups_count, bb_state.bb_config.free_groups, tmp_datasets_count, bb_state.bb_config.free_datasets);
+		return SLURM_ERROR;
+	}
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
+	/* Check whether the task is forced to run */
+	if (bb_job->enforce_bb_flag == true) {
+		/* enforce_bb_flag=true: 资源不足时不运行作业 */
+		xfree(job_ptr->state_desc);
+		job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
+		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+		_queue_teardown(bb_job);
+		slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
 #endif
-		if (bb_job->enforce_bb_flag == true) {
-			/* enforce_bb_flag=true: 资源不足时不运行作业 */
-			xfree(job_ptr->state_desc);
-			job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
-			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
-			_queue_teardown(bb_job);
-			slurm_mutex_unlock(&bb_state.bb_mutex);
+		return SLURM_ERROR;
+	} else {
+		/* enforce_bb_flag=false: 资源不足作业不用BB资源直接运行 */
+		xfree(job_ptr->state_desc);
+		job_ptr->state_desc = xstrdup("enforce_bb_flag=false:The job runs without using BB resources");
+		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+		_queue_teardown(bb_job);
+		slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
+		_add_job_state_to_queue(job_ptr);
 #endif
-			return SLURM_ERROR;
-		} else {
-			/* enforce_bb_flag=false: 资源不足作业不用BB资源直接运行 */
-			xfree(job_ptr->state_desc);
-			job_ptr->state_desc = xstrdup("enforce_bb_flag=false:The job runs without using BB resources");
-			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
-			_queue_teardown(bb_job);
-			slurm_mutex_unlock(&bb_state.bb_mutex);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
-#endif
-			return SLURM_SUCCESS;
-		}
+		return SLURM_SUCCESS;
 	}
+
+	/* Handle count before creating cache */
+	bb_state.bb_config.free_groups    -= tmp_groups_count;
+	bb_state.bb_config.free_datasets  -= bb_job->pfs_cnt * tmp_groups_count;
+	bb_state.bb_config.used_groups    += tmp_groups_count;
+	bb_state.bb_config.used_datasets  += bb_job->pfs_cnt * tmp_groups_count;
+	
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
-	pre_run_args->args    = NULL;
-	pre_run_args->job_id  = job_ptr->job_id;
+	pre_run_args->args = NULL;
+	pre_run_args->job_id = job_ptr->job_id;
 	pre_run_args->timeout = bb_state.bb_config.other_timeout * 1000;
 	pre_run_args->user_id = job_ptr->user_id;
 	pre_run_args->bb_node_cnt = bb_node_cnt;
 
 	slurm_thread_create_detached(_start_pre_run, pre_run_args);
 
-    return SLURM_SUCCESS;
+	return SLURM_SUCCESS;
 }
 
 /* Revoke allocation, but do not release resources.
