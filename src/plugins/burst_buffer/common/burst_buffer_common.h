@@ -157,7 +157,7 @@ typedef struct bb_alloc {
 	uint32_t user_id;
 #ifdef __METASTACK_NEW_BURSTBUFFER	
 	//uint64_t bb_group_id; //缓存组id
-	int type;			 //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
+	uint32_t type;			 //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
 	//bool  cache_tmp;
 	bool  enforce_bb_flag; //是否强制加速
 	// uint64_t total_space; //缓存组总空间容量大小。
@@ -167,17 +167,17 @@ typedef struct bb_alloc {
 	uint32_t bb_task;     //当前缓存组最大并行的任务数
 	uint32_t groups_nodes; //当前缓存组包含的节点数
 	uint64_t req_space;		//当前作业请求的空间
-	int access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	uint32_t access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
 	char *pfs;          //后端存储路径,可能有多个
 	uint32_t pfs_cnt;          //后端存储路径个数
 	bool metadata_acceleration; //是否开启元数据加速
 	// char	*default_workdir; 	/* default work directory */
-	int *bb_group_ids; /* 作业中包含的缓存组id */
-	int *bb_dataset_ids; /*  作业中包含的数据集id  */
-	int *bb_task_ids; /* 作业中包含的任务id */
-	int index_groups; /* 作业中包含的缓存组个数 */
-	int index_datasets; /* 作业中包含的数据集个数 */
-	int index_tasks; /* 作业中包含的数据集个数 */
+	uint32_t *bb_group_ids; /* 作业中包含的缓存组id */
+	uint32_t *bb_dataset_ids; /*  作业中包含的数据集id  */
+	uint32_t *bb_task_ids; /* 作业中包含的任务id */
+	uint32_t index_groups; /* 作业中包含的缓存组个数 */
+	uint32_t index_datasets; /* 作业中包含的数据集个数 */
+	uint32_t index_tasks; /* 作业中包含的数据集个数 */
 #endif
 } bb_alloc_t;
 
@@ -244,7 +244,7 @@ typedef struct bb_job {
 	uint32_t   user_id;	/* user the job runs as */
 #ifdef __METASTACK_NEW_BURSTBUFFER	
 	//uint64_t bb_group_id; //缓存组id
-	int  type; //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
+	uint32_t  type; //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
 	bool  enforce_bb_flag; //是否强制加速
 	//bool  cache_tmp;
 	// uint64_t total_space; //缓存组总空间容量大小。
@@ -254,18 +254,18 @@ typedef struct bb_job {
 	uint32_t bb_task;     //当前缓存组最大并行的任务数
 	uint32_t groups_nodes; //当前缓存组包含的节点数
 	uint64_t req_space;		//当前作业请求的空间
-	int access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	uint32_t access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
 	char *pfs;          //后端存储路径,可能有多个
 	uint32_t pfs_cnt;          //后端存储路径个数
 	bool metadata_acceleration; //是否开启元数据加速
 	// char	*default_workdir; 	/* default work directory */
-	int *bb_group_ids; /* 作业中包含的缓存组id */
-	int *bb_dataset_ids; /*  作业中包含的数据集id  */
-	int *bb_task_ids; /* 作业中包含的任务id */
-	int index_groups; /* 作业中包含的缓存组个数 */
-	int index_datasets; /* 作业中包含的数据集个数 */
-	int index_tasks; /* 作业中包含的任务个数 */
-	int parastor_inx; /* 使用的存储系统代号 ,1第一套存储系统，2 第二套存储系统 */
+	uint32_t *bb_group_ids; /* 作业中包含的缓存组id */
+	uint32_t *bb_dataset_ids; /*  作业中包含的数据集id  */
+	uint32_t *bb_task_ids; /* 作业中包含的任务id */
+	uint32_t index_groups; /* 作业中包含的缓存组个数 */
+	uint32_t index_datasets; /* 作业中包含的数据集个数 */
+	uint32_t index_tasks; /* 作业中包含的任务个数 */
+	uint32_t parastor_inx; /* 使用的存储系统代号 ,1第一套存储系统，2 第二套存储系统 */
 #endif
 } bb_job_t;
 
