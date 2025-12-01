@@ -723,10 +723,13 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 
 	(void) s_p_get_string(&state_ptr->bb_config.file_system,
 			     "FileSystem", bb_hashtbl);
+<<<<<<< HEAD
 	if (!state_ptr->bb_config.file_system) {
 		error("FileSystem is not configured in burst_buffer.conf");
 		fatal("%s: FileSystem is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
 	}
+=======
+>>>>>>> d700e46 (fix(bb): update file system configuration variable names for clarity)
 	(void) s_p_get_string(&state_ptr->bb_config.file_system_mount,
 			     "FileSystemMount", bb_hashtbl);				 
 	if (!state_ptr->bb_config.file_system_mount) {
