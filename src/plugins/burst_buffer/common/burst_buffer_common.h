@@ -97,7 +97,7 @@ typedef struct bb_config {
 	uint32_t used_datasets;
 	uint32_t free_datasets;
 	uint32_t max_clients_join;
-	uint32_t max_clients_per_job;
+	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
 	// uint32_t max_node_per_groups;
 	// uint32_t used_node_per_groups;
 	// uint32_t free_node_per_groups;
