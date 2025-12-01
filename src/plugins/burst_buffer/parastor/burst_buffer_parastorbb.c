@@ -2254,18 +2254,18 @@ static void *_start_teardown(void *x)
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
 	uint32_t tmp_job_id = bb_job->job_id;
-	int tmp_index_tasks = bb_job->index_tasks;
-	int *tmp_task_arr = xmalloc(sizeof(int) * tmp_index_tasks);
+	uint32_t tmp_index_tasks = bb_job->index_tasks;
+	int *tmp_task_arr = xmalloc(sizeof(uint32_t) * tmp_index_tasks);
 	if (bb_job->bb_task_ids)
-		memcpy(tmp_task_arr, bb_job->bb_task_ids, sizeof(int) * tmp_index_tasks);
-	int tmp_index_datasets = bb_job->index_datasets;
-	int *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
+		memcpy(tmp_task_arr, bb_job->bb_task_ids, sizeof(uint32_t) * tmp_index_tasks);
+	uint32_t tmp_index_datasets = bb_job->index_datasets;
+	uint32_t *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
 	if (bb_job->bb_dataset_ids)
-		memcpy(tmp_dataset_arr, bb_job->bb_dataset_ids, sizeof(int) * tmp_index_datasets);
-	int tmp_index_groups = bb_job->index_groups;
-	int *tmp_group_arr = xmalloc(sizeof(int) * tmp_index_groups);
+		memcpy(tmp_dataset_arr, bb_job->bb_dataset_ids, sizeof(uint32_t) * tmp_index_datasets);
+	uint32_t tmp_index_groups = bb_job->index_groups;
+	uint32_t *tmp_group_arr = xmalloc(sizeof(uint32_t) * tmp_index_groups);
 	if (bb_job->bb_group_ids)
-		memcpy(tmp_group_arr, bb_job->bb_group_ids, sizeof(int) * tmp_index_groups);
+		memcpy(tmp_group_arr, bb_job->bb_group_ids, sizeof(uint32_t) * tmp_index_groups);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	if (bb_min_config == NULL) {
@@ -2822,13 +2822,13 @@ static void *_start_pre_run(void *x)
     int bb_node_cnt = 0;
     //int dividend = 10; 
 	int *last_client_ids  = NULL;
-	int index = 0;
-	int tmp_groups_count = 0;
-	int *group_ids = NULL;
-	int index_groups = 0;
+	uint32_t index = 0;
+	uint32_t tmp_groups_count = 0;
+	uint32_t *group_ids = NULL;
+	uint32_t index_groups = 0;
 	char *pfs_copy = NULL, *save_ptr = NULL;;
 	char *str_split = NULL;
-	int *dataset_ids = NULL;
+	uint32_t *dataset_ids = NULL;
 	size_t index_datasets = 0;
 	int ret = SLURM_SUCCESS;
 	bool run_kill_job = false;
@@ -2964,7 +2964,7 @@ static void *_start_pre_run(void *x)
 	}
 	
 	tmp_groups_count  = index / (GROUP_SIZE);
-	int dvi = index % (GROUP_SIZE);
+	uint32_t dvi = index % (GROUP_SIZE);
 	if( dvi > 0) {
 		tmp_groups_count += 1;
 	}
