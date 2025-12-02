@@ -158,8 +158,8 @@ static int parse_json_dataset_result(json_t *dataset_obj, bb_attribute_dataset *
     dataset->last_submit_task_type           = xstrdup(json_string_value(json_object_get(dataset_obj, "last_submit_task_type")));
     dataset->lock_flag                       = json_is_true(json_object_get(dataset_obj, "lock_flag"));
     dataset->meta_data_cache_mode            = xstrdup(json_string_value(json_object_get(dataset_obj, "meta_data_cache_mode")));
-    dataset->path                            = xstrdup(json_object_get(dataset_obj, "path"));
-    dataset->path_version                    = json_integer_value(json_object_get(dataset_obj, "path"));
+    dataset->path                            = xstrdup(json_string_value(json_object_get(dataset_obj, "path")));
+    dataset->path_version                    = json_integer_value(json_object_get(dataset_obj, "path_version"));
     dataset->state                           = xstrdup(json_string_value(json_object_get(dataset_obj, "state")));
     dataset->use_data                        = json_is_true(json_object_get(dataset_obj, "use_data"));
     dataset->use_meta_data                   = json_is_true(json_object_get(dataset_obj, "use_meta_data"));
@@ -1142,16 +1142,18 @@ static char *concatenate_task_strings(bb_minimal_config_t *bb_config, void *para
     } //switch end        
 }
 
-extern void slurm_free_group(bb_attribute_group * result)
+extern void slurm_free_group(void *object)
 {
+    bb_attribute_group *result = (bb_attribute_group *)object;
 	if (result) {
 		xfree(result->client_ids);
 		xfree(result);
 	}
 }
 
-extern void slurm_free_dataset(bb_attribute_dataset * result)
+extern void slurm_free_dataset(void *object)
 {
+    bb_attribute_dataset *result = (bb_attribute_dataset *)object;
 	if (result) {
 		xfree(result->burstBufferDataSetCacheMode);
 		xfree(result->burstBufferDataSetCacheType);
@@ -1166,8 +1168,9 @@ extern void slurm_free_dataset(bb_attribute_dataset * result)
 		xfree(result);
 	}
 }
-extern void slurm_free_client(bb_attribute_client * result)
+extern void slurm_free_client(void *object)
 {
+    bb_attribute_client *result = (bb_attribute_client *)object;
 	if (result) {
 		xfree(result->hostname);
 		xfree(result->ip);
@@ -1177,8 +1180,9 @@ extern void slurm_free_client(bb_attribute_client * result)
 	}
 }
 
-extern void slurm_free_task(bb_attribute_task *result)
+extern void slurm_free_task(void *object)
 {
+    bb_attribute_task *result = (bb_attribute_task *)object;
     if (result) {
         xfree(result->error_action_type);
         xfree(result->task_type);
@@ -1244,12 +1248,13 @@ extern List get_groups_burst_buffer(query_params_request* query_params,  bb_mini
 {
     if (query_params == NULL || resp_out == NULL ) {
         debug("Invalid parameters to get_groups_burst_buffer");
-        return SLURM_ERROR;
+        return NULL;
     }
   
     int  ret                = NULL;
     char *json_string       = NULL;
-    List init_list_groups   = list_create(slurm_free_group);
+    List init_list_groups   = NULL;
+    init_list_groups   =  list_create(slurm_free_group);
    
     /* init page status */
     // resp_out->dataset_count = 0;
@@ -1267,7 +1272,7 @@ extern List get_groups_burst_buffer(query_params_request* query_params,  bb_mini
 
         if (json_string == NULL || ret == SLURM_ERROR) {
             debug("failed to concatenate strings");
-            return SLURM_ERROR;
+            return NULL;
         }
         /* retrieve query results */
         ret = json_group_get_response(json_string, query_params, init_list_groups, resp_out);

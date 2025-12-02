@@ -2612,7 +2612,7 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 		debug("xxxxx: pfs dir is %s, len=%d", str_split, len);
 		if(strlen(str_split) > state_ptr->bb_config.max_acc_dir_len) {
 			error("The length of the directory name exceeds the maximum length allowed. "
-				  "The configuration allows %d, but your job specifies %d.",
+				  "The configuration allows %d, but your job specifies %zu.",
 				  state_ptr->bb_config.max_acc_dir_len, strlen(str_split));
 			xfree(pfs_copy);
 			return false;
