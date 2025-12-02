@@ -236,13 +236,13 @@ extern int unlock_burst_buffer_dataset();
 
 extern void bb_response_free(bb_response *resp);
 /* 释放缓存组 */
-extern void slurm_free_group(bb_attribute_group * result);
+extern void slurm_free_group(void *object);
 /* 释放数据集机 */
-extern void slurm_free_dataset(bb_attribute_dataset * result);
+extern void slurm_free_dataset(void *object);
 /* 释放客户端 */
-extern void slurm_free_client(bb_attribute_client * result);
+extern void slurm_free_client(void *object);
 /* 释放任务 */
-extern void slurm_free_task(bb_attribute_task * result);
+extern void slurm_free_task(void *object);
 /* list_find_first 查找函数 */
 extern int _find_client_key(void *x, void *key);
 
