@@ -214,11 +214,11 @@ extern int create_burst_buffer_dataset(create_params_request *create_params,bb_m
 extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
 
 /* Submit bb task, include prefetch and recycle*/
-extern int submit_burst_buffer_task(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out);
+extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
 
 
 /* Cancel a task by task_id */
-extern int cancel_burst_buffer_task(bb_config_t *bb_config, delete_params_request *delete_params, bb_response *resp_out);
+extern int cancel_burst_buffer_task(bb_minimal_config_t *bb_config, delete_params_request *delete_params, bb_response *resp_out);
 
 /* Not yet implemented: POSIX BB cache group immediate adjustment mapping */
 extern int remap_burst_buffer_group();
