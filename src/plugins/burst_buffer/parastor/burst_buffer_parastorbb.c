@@ -227,14 +227,14 @@ pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bb_job_t *_get_bb_job(job_record_t *job_ptr);
 static void _queue_teardown(bb_job_t *bb_job);
 // static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
-static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
+// static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
 static int _bb_get_parastors_state(void);
 static void *_start_stage_out(void *x);
 static void *_start_teardown(void *x);
 static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_tasks, bb_minimal_config_t *bb_min_config);
 static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config);
 static void _bb_min_config_free(bb_minimal_config_t * config);
-static void _cleanup_bb_resources_from_alloc(void *x);
+static void *_cleanup_bb_resources_from_alloc(void *x);
 static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc);
 static int _get_parastor_thread_cnt(void)
 {
@@ -610,23 +610,23 @@ static void _set_assoc_mgr_ptrs(bb_alloc_t *bb_alloc)
 }
 
 
-static int _run_post_run(stage_args_t *stage_args, init_argv_f_t init_argv,
-			 const char *op, uint32_t job_id, uint32_t timeout,
-			 char **resp_msg)
-{
+// static int _run_post_run(stage_args_t *stage_args, init_argv_f_t init_argv,
+// 			 const char *op, uint32_t job_id, uint32_t timeout,
+// 			 char **resp_msg)
+// {
 
 
-	return SLURM_SUCCESS;
-}
+// 	return SLURM_SUCCESS;
+// }
 
-static int _run_test_data_inout(stage_args_t *stage_args,
-				init_argv_f_t init_argv, const char *op,
-				uint32_t job_id, uint32_t timeout,
-				char **resp_msg)
-{
+// static int _run_test_data_inout(stage_args_t *stage_args,
+// 				init_argv_f_t init_argv, const char *op,
+// 				uint32_t job_id, uint32_t timeout,
+// 				char **resp_msg)
+// {
 
-	return SLURM_SUCCESS;
-}
+// 	return SLURM_SUCCESS;
+// }
 // TODO:待命中率进一步处理
 /*  打印缓存组命中率（注意：必须在删除缓存组前(teardown)打印，否则查询不到） */
 static void *_start_stage_out(void *x)
@@ -643,7 +643,7 @@ static void *_start_stage_out(void *x)
 	if (!bb_job->bb_group_ids || bb_job->index_groups < 1) {
 		error("BB-----Job %u has no cache groups to query hit rate ", bb_job->job_id);
 		slurm_mutex_lock(&bb_state.bb_mutex);
-		return SLURM_ERROR;
+		return NULL;
 	}
 	uint32_t tmp_job_id = bb_job->job_id;
 	int tmp_index_groups = bb_job->index_groups;
@@ -739,7 +739,7 @@ static void *_start_stage_out(void *x)
 	return NULL;
 }
 
-static void _queue_stage_out(job_record_t *job_ptr, bb_job_t *bb_job)
+static int _queue_stage_out(job_record_t *job_ptr, bb_job_t *bb_job)
 {
 	if (!bb_job) {
 		debug("bb_job为空");
@@ -767,7 +767,7 @@ static void _load_state(bool init_config)
 	uint32_t timeout;
 
 	timeout = bb_state.bb_config.other_timeout;
-
+	debug("BB-----load_state timeout=%u", timeout);
 	// 不涉及pool概念
 	// if (_load_pools(timeout) != SLURM_SUCCESS)
 	// 	return;
@@ -1007,11 +1007,11 @@ static int _xlate_batch(job_desc_msg_t *job_desc)
  *            to free
  * OUT size - return the number specified after "capacity="
  */
-static int _parse_capacity(char *tok, char *capacity_ptr, char **pool,
-			   uint64_t *size)
-{
-	return SLURM_SUCCESS;
-}
+// static int _parse_capacity(char *tok, char *capacity_ptr, char **pool,
+// 			   uint64_t *size)
+// {
+// 	return SLURM_SUCCESS;
+// }
 
 /* Perform basic burst_buffer option validation */
 static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
@@ -1023,14 +1023,15 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 	char *bb_name = NULL, *bb_pool, *capacity;
 	char *end_ptr = NULL, *sub_tok, *tok;
 	uint64_t tmp_cnt, swap_cnt = 0;
-	bool enable_persist = false, have_bb = false, have_stage_out = false;
+	//bool enable_persist = false;
+	bool have_bb = false, have_stage_out = false;
 
 	xassert(bb_size);
 	*bb_size = 0;
 
-	if (validate_operator(submit_uid) ||
-	    (bb_state.bb_config.flags & BB_FLAG_ENABLE_PERSISTENT))
-		enable_persist = true;
+	// if (validate_operator(submit_uid) ||
+	//     (bb_state.bb_config.flags & BB_FLAG_ENABLE_PERSISTENT))
+	// 	enable_persist = true;
 
 	if (job_desc->script)
 		rc = _xlate_batch(job_desc);
@@ -1070,7 +1071,7 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 					tmp_cnt = bb_get_size_num(sub_tok + 9, 1);
 				}
 				//slurm_mutex_lock(&bb_state.bb_mutex);
-				if (!bb_valid_groups_test(&tmp_cnt))
+				if (!bb_valid_groups_test(tmp_cnt))
 					rc = ESLURM_INVALID_BURST_BUFFER_REQUEST;
 				//slurm_mutex_unlock(&bb_state.bb_mutex);
 			   
@@ -1150,7 +1151,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		if (bb_flag == BB_FLAG_PB_OP) {
 			if (!xstrncmp(tok, "jobpara", 7)) {
 
-				if (sub_tok = strstr(tok, "capacity=")) {
+				if ((sub_tok = strstr(tok, "capacity="))) {
 					// TODO: 没做字符串解析
 					bb_job->req_space = bb_get_size_num(sub_tok + 9, 1);
 				} 
@@ -1198,7 +1199,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				//tmp_cnt = _set_granularity(tmp_cnt, bb_pool);
 				bb_job->buf_ptr[inx].size = bb_job->req_space;
 				bb_job->buf_ptr[inx].state = BB_STATE_PENDING;
-				bb_job->buf_ptr[inx].type = bb_type;
+				// bb_job->buf_ptr[inx].type = bb_type;
 				//bb_job->buf_ptr[inx].use = false;
 				//bb_job->persist_add += tmp_cnt;
 				/* 校验请求的条件是否满足，如果满足，先将缓存组和数据集进行减减操作 */
@@ -1496,7 +1497,7 @@ static void _free_orphan_alloc_rec(void *x)
 	(void) bb_free_alloc_rec(&bb_state, rec);
 
 }
-static void _cleanup_bb_resources_from_alloc(void *x)
+static void *_cleanup_bb_resources_from_alloc(void *x)
 {
 	bb_alloc_t *bb_alloc = (bb_alloc_t *)x;
 
@@ -1586,7 +1587,7 @@ static void _cleanup_bb_resources_from_alloc(void *x)
 	xfree(tmp_task_arr);
 	xfree(tmp_dataset_arr);
 	xfree(tmp_group_arr);
-	_bb_min_config_free(bb_min_config);
+	return NULL;
 }
 
 static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc)
@@ -2027,7 +2028,7 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 	char *dw_cli_path;
 	int fd = -1, hash_inx, rc = SLURM_SUCCESS, status = 0;
 	bb_job_t *bb_job;
-	uint32_t timeout;
+	//uint32_t timeout;
 	stage_args_t *pre_run_args;
 	bool using_master_script = false;
 	DEF_TIMERS;
@@ -2066,7 +2067,7 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 	}
 
 	log_flag(BURST_BUF, "%pJ", job_ptr);
-	timeout = bb_state.bb_config.validate_timeout * 1000;
+	//timeout = bb_state.bb_config.validate_timeout * 1000;
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	/* Standard file location for job arrays */
@@ -2389,19 +2390,19 @@ static void _queue_teardown(bb_job_t *bb_job)
 	slurm_thread_create_detached(_start_teardown, bb_job);
 }
 
-static int _run_real_size(stage_args_t *stage_args, init_argv_f_t init_argv,
-			  const char *op, uint32_t job_id, uint32_t timeout,
-			  char **resp_msg)
-{
+// static int _run_real_size(stage_args_t *stage_args, init_argv_f_t init_argv,
+// 			  const char *op, uint32_t job_id, uint32_t timeout,
+// 			  char **resp_msg)
+// {
 	
-	return SLURM_SUCCESS;
-}
+// 	return SLURM_SUCCESS;
+// }
 
 
 static void *_start_stage_in(void *x)
 {
 	stage_args_t *stage_in_args = x;
-	uint64_t real_size = 0;
+	//uint64_t real_size = 0;
 	uint64_t orig_real_size = stage_in_args->bb_size;
 	job_record_t *job_ptr;
 	slurmctld_lock_t job_write_lock = { .job = WRITE_LOCK };
@@ -2437,7 +2438,7 @@ static void *_start_stage_in(void *x)
 	// if (_run_stage_ops(stage_in_ops, ARRAY_SIZE(stage_in_ops),
 	// 		   stage_in_args) != SLURM_SUCCESS)
 	// 	goto fini;
-	real_size = stage_in_args->bb_size; /* Updated by _run_real_size */
+	//real_size = stage_in_args->bb_size; /* Updated by _run_real_size */
 
 	lock_slurmctld(job_write_lock);
 	slurm_mutex_lock(&bb_state.bb_mutex);
@@ -2493,7 +2494,7 @@ static void *_start_stage_in(void *x)
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	unlock_slurmctld(job_write_lock);
 
-fini:
+//fini:
 	xfree(stage_in_args->job_script);
 	xfree(stage_in_args->pool);
 	xfree(stage_in_args);
@@ -2567,7 +2568,7 @@ static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_ta
 {
 	if (bb_min_config == NULL) {
 		error("failed to get bb minimal config for JobId=%u", job_id);
-		return NULL;
+		return SLURM_ERROR;
 	}
 	bb_response *resp_out = xmalloc(sizeof(bb_response));
 	for (int i = 0; i < index_tasks; i++) {
@@ -2624,20 +2625,20 @@ static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_ta
 
 // 	return rc;
 // }
-static void _job_queue_del(void *x)
-{
-	bb_job_queue_rec_t *job_rec = (bb_job_queue_rec_t *) x;
-	if (job_rec) {
-		xfree(job_rec);
-	}
-}
+// static void _job_queue_del(void *x)
+// {
+// 	bb_job_queue_rec_t *job_rec = (bb_job_queue_rec_t *) x;
+// 	if (job_rec) {
+// 		xfree(job_rec);
+// 	}
+// }
 /*
  * Attempt to allocate resources and begin file staging for pending jobs.
  */
 extern int bb_p_job_try_stage_in(List job_queue)
 {
 	bb_job_queue_rec_t *job_rec;
-	List job_candidates;
+	//List job_candidates;
 	list_itr_t *job_iter;
 	job_record_t *job_ptr;
 	bb_job_t *bb_job;
@@ -2712,7 +2713,7 @@ extern int bb_p_job_try_stage_in(List job_queue)
 
 
 	// slurm_mutex_unlock(&bb_state.bb_mutex);
-	FREE_NULL_LIST(job_candidates);
+	//FREE_NULL_LIST(job_candidates);
 
 	return SLURM_SUCCESS;
 }
@@ -2787,10 +2788,10 @@ fini:
 }
 
 /* Add key=value pairs from file_path to the job's environment */
-static void _update_job_env(job_record_t *job_ptr, char *file_path)
-{
+// static void _update_job_env(job_record_t *job_ptr, char *file_path)
+// {
 
-}
+// }
 
 /* Kill job from CONFIGURING state */
 static void _kill_job(job_record_t *job_ptr, bool hold_job)
@@ -2829,7 +2830,7 @@ static void *_start_pre_run(void *x)
 	char *pfs_copy = NULL, *save_ptr = NULL;;
 	char *str_split = NULL;
 	uint32_t *dataset_ids = NULL;
-	size_t index_datasets = 0;
+	uint32_t  index_datasets = 0;
 	int ret = SLURM_SUCCESS;
 	bool run_kill_job = false;
 	bool hold_job = false;
@@ -3052,9 +3053,9 @@ static void *_start_pre_run(void *x)
 			create_params.path = xstrdup(str_split);
 
 			if ( bb_job->type == DATASET_TYPE_PRIVATE )
-				create_params.task_type == LOCAL_CACHE;
+				create_params.task_type = LOCAL_CACHE;
 			else
-				create_params.task_type == SHARE_CACHE;	
+				create_params.task_type = SHARE_CACHE;	
 			ret = create_burst_buffer_dataset(&create_params, bb_min_config, resp_out3);
 			slurm_mutex_lock(&bb_state.bb_mutex);
 			if (ret == SLURM_ERROR) {
@@ -3089,11 +3090,11 @@ static void *_start_pre_run(void *x)
 	bb_job->bb_group_ids = group_ids;
 	bb_job->bb_dataset_ids = dataset_ids;
 	bb_job->index_datasets = index_datasets;
-	int tmp_index_datasets = bb_job->index_datasets;
-	int *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
+	uint32_t tmp_index_datasets = bb_job->index_datasets;
+	uint32_t *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
 	if (bb_job->bb_dataset_ids)
 		memcpy(tmp_dataset_arr, bb_job->bb_dataset_ids, sizeof(int) * tmp_index_datasets);
-	int *task_ids = xmalloc(sizeof(int) * tmp_index_datasets); /* 最多每个数据集一个task */
+	uint32_t *task_ids = xmalloc(sizeof(int) * tmp_index_datasets); /* 最多每个数据集一个task */
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	for (size_t i = 0; i < tmp_index_datasets; i++) {
@@ -3204,7 +3205,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 {
     bb_job_t *bb_job = NULL;
 	pre_run_bb_args_t *pre_run_args;
-    int bb_node_cnt = 0;
+    uint32_t bb_node_cnt = 0;
 	int ret = SLURM_SUCCESS;
 
 	if ((job_ptr->burst_buffer == NULL) || (job_ptr->burst_buffer[0] == '\0')){
@@ -3264,7 +3265,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	}
     bb_node_cnt = (GROUP_SIZE + bb_node_cnt - 1)  / GROUP_SIZE; 
     log_flag(BURST_BUF, "required number of cache groups %d", bb_node_cnt);
-	log_flag(BURST_BUF, "required number of datasets %ld", (bb_node_cnt * bb_job->pfs_cnt));
+	log_flag(BURST_BUF, "required number of datasets %d", (bb_node_cnt * bb_job->pfs_cnt));
 	if (bb_node_cnt > bb_state.bb_config.free_groups || ((bb_node_cnt * bb_job->pfs_cnt) > bb_state.bb_config.free_datasets)) {
 
 

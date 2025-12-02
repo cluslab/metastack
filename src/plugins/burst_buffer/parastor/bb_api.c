@@ -13,8 +13,8 @@ static int parse_json_tasks_result(json_t *task_obj, bb_attribute_task *task);
 /* Declaration Helper Function */
 static int json_string_set_response(const char* json_str, bb_response* resp_out, result_type type);
 static int task_json_string_get_response(const char* json_str, bb_response* resp_out, bb_attribute_task *bb_task);
-/* get temporary token */
-static char *_get_token_from_header(const char *ip, int port, const char *user, const char *password);
+///* get temporary token */
+//static char *_get_token_from_header(const char *ip, int port, const char *user, const char *password);
 /* get permanent token */
 static char *_get_permanent_token_from_header(const char *ip, int port, const char *user, const char *password);   
 /* encode password for calling permanent token */
@@ -1579,7 +1579,7 @@ extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_
     return ret;
 }
 /* 预热数据集 */
-extern int submit_burst_buffer_task(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out){
+extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out){
     if (bb_config == NULL || resp_out == NULL || create_params == NULL) {
         debug("Invalid parameters to submit_burst_buffer_task\n");
         return -1;
@@ -1607,7 +1607,7 @@ extern int submit_burst_buffer_task(create_params_request *create_params, bb_con
 
 
 /* Cancel a task by task_id */
-extern int cancel_burst_buffer_task(bb_config_t *bb_config, delete_params_request *delete_params, bb_response *resp_out)
+extern int cancel_burst_buffer_task(bb_minimal_config_t *bb_config, delete_params_request *delete_params, bb_response *resp_out)
 {
     if (bb_config == NULL || resp_out == NULL || delete_params == NULL) {
         debug("invalid parametes to delete task");
@@ -1635,27 +1635,27 @@ extern int cancel_burst_buffer_task(bb_config_t *bb_config, delete_params_reques
 /* Not yet implemented: POSIX BB cache group immediate adjustment mapping */
 extern int remap_burst_buffer_group()
 {
-
+    return SLURM_SUCCESS;
 };
 /* Not yet implemented: Add client to the cache group */
 extern int add_burst_buffer_client_to_group()
 {
-    
+    return SLURM_SUCCESS;
 };
 /* Not yet implemented: Remove client from the cache group */
 extern int remove_burst_buffer_client_from_group()
 {
-    
+    return SLURM_SUCCESS;
 };
 /* Not yet implemented: Locking the dataset will not trigger the automatic recycling mechanism. */
 extern int lock_burst_buffer_dataset()
 {
-    
+    return SLURM_SUCCESS;
 };
 /* Not yet implemented: Unlock dataset */
 extern int unlock_burst_buffer_dataset()
 {
-    
+    return SLURM_SUCCESS;
 };
 
 /* Get permanent token */
@@ -1677,27 +1677,27 @@ extern int get_permanent_token(bb_config_t *bb_config)
 }
 
 
-/* get token from header */
-static char *_get_token_from_header(const char *ip, int port,
-    const char *user, const char *password)
-{
-    if (!ip || !user || !password) {
-        debug("Invalid parameters to get_token_from_header");
-        return NULL;
-    }
-    char url_token[URL_MAX_LEN];
-    char* token = (char*)xmalloc(TOKEN_MAX_LEN);
-    snprintf(url_token, sizeof(url_token), "https://%s:%d/restLogin", ip, port);
+// /* get token from header */
+// static char *_get_token_from_header(const char *ip, int port,
+//                                 const char *user, const char *password)
+// {
+//     if (!ip || !user || !password) {
+//         debug("Invalid parameters to get_token_from_header");
+//         return NULL;
+//     }
+//     char url_token[URL_MAX_LEN];
+//     char* token = (char*)xmalloc(TOKEN_MAX_LEN);
+//     snprintf(url_token, sizeof(url_token), "https://%s:%d/restLogin", ip, port);
 
-    if (rest_login(url_token, user, password, token) != 0) {
-        debug("Login failed");     
-        xfree(token);
-        return NULL;
-    }
-    token[TOKEN_MAX_LEN - 1] = '\0';
-    /*   DONT FOEGET FREE */
-    return token;
-}
+//     if (rest_login(url_token, user, password, token) != 0) {
+//         debug("Login failed");     
+//         xfree(token);
+//         return NULL;
+//     }
+//     token[TOKEN_MAX_LEN - 1] = '\0';
+//     /*   DONT FOEGET FREE */
+//     return token;
+// }
 
 /* get permanent token from header */
 static char *_get_permanent_token_from_header(const char *ip, int port,
