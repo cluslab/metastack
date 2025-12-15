@@ -1099,7 +1099,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 {
 	char *bb_specs, *bb_hurry, *pfs_list, *bb_type, *bb_access, *bb_pool;
 	char *end_ptr = NULL, *save_ptr = NULL, *sub_tok, *tok;
-	bool have_bb = false;
+	bool have_bb = false , have_status = false;
 	uint64_t tmp_cnt;
 	int inx;
 	bb_job_t *bb_job;
@@ -1172,9 +1172,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						sub_tok[0] = '\0';
 					if (xstrcmp(tmp_type, "persistent") == 0)
 						bb_job->type = GROUP_TYPE_PERSISTENT;
-					else {
+					else if(xstrcmp(tmp_type, "temporary")){
 						/* 默认类型为temporary临时类型 */
 						bb_job->type = GROUP_TYPE_TEMPORARY;
+					} else {
+						have_status = true;
 					}
 					xfree(tmp_type);
 				} 
@@ -1190,18 +1192,10 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				bb_job->buf_ptr = xrealloc(bb_job->buf_ptr,
 							   sizeof(bb_buf_t) *
 							   bb_job->buf_cnt);
-				//bb_job->buf_ptr[inx].access = bb_access;
-				//bb_job->buf_ptr[inx].create = true;
+
 				bb_job->buf_ptr[inx].flags = bb_flag;
-				//bb_job->buf_ptr[inx].hurry = false;
-				// bb_job->buf_ptr[inx].name = bb_name;
-				// bb_job->buf_ptr[inx].pool = bb_pool;
-				//tmp_cnt = _set_granularity(tmp_cnt, bb_pool);
 				bb_job->buf_ptr[inx].size = bb_job->req_space;
 				bb_job->buf_ptr[inx].state = BB_STATE_PENDING;
-				// bb_job->buf_ptr[inx].type = bb_type;
-				//bb_job->buf_ptr[inx].use = false;
-				//bb_job->persist_add += tmp_cnt;
 				/* 校验请求的条件是否满足，如果满足，先将缓存组和数据集进行减减操作 */
 				have_bb = bb_valid_groups_test_2(bb_job, &bb_state);
 			}
@@ -1240,6 +1234,22 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		bb_job_del(&bb_state, job_ptr->job_id);
 		return NULL;
 	}
+	if (have_status) {
+		xfree(job_ptr->state_desc);
+		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
+		xstrfmtcat(job_ptr->state_desc,
+			   "%s: Invalid burst buffer spec (%s)",
+			   plugin_type, job_ptr->burst_buffer);
+		job_ptr->priority = 0;
+		info("Invalid burst buffer spec for %pJ (%s)",
+		     job_ptr, job_ptr->burst_buffer);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
+		bb_job_del(&bb_state, job_ptr->job_id);
+		return NULL;
+	}
+
 	if (!bb_job->job_pool)
 		bb_job->job_pool = xstrdup(bb_state.bb_config.default_pool);
 	if (slurm_conf.debug_flags & DEBUG_FLAG_BURST_BUF)

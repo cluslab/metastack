@@ -5846,6 +5846,11 @@ typedef struct {
 	char    *para_stor_password;	/* password */
 	char    *token;	/* password */
 	
+	uint32_t file_system_count;      // 支持的存储系统数量，现在上线是2
+	uint32_t max_acc_dir_len;        // 单个作业支持的最大目录长度
+	uint32_t max_acc_dirs_per_job;   // 单个作业支持的最大加载目录数量
+	char    *file_system_fir;        // 文件系统名称
+	char    *file_system_mount_fir;  // 文件系统挂载点	
 #endif
 } burst_buffer_info_t;
 

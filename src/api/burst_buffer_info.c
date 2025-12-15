@@ -375,7 +375,14 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 	xstrfmtcat(out_buf, "MaxClientsJoin=%u MaxClientsPerJob=%u",
 		burst_buffer_ptr->max_clients_join,
 		burst_buffer_ptr->max_clients_per_job);
-
+	xstrcat(out_buf, line_end);
+	xstrfmtcat(out_buf, "MaxAccDirLen=%u MaxAccDirsPerJob=%u",
+		burst_buffer_ptr->max_acc_dir_len,
+		burst_buffer_ptr->max_acc_dirs_per_job);
+	xstrcat(out_buf, line_end);
+	xstrfmtcat(out_buf, "FileSystem=%u FileSystemMount=%u",
+		burst_buffer_ptr->file_system_fir,
+		burst_buffer_ptr->file_system_mount_fir);
 	/****** Line - User Access Control ******/
 	if (burst_buffer_ptr->allow_users) {
 		xstrcat(out_buf, line_end);
@@ -386,6 +393,17 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 		xstrfmtcat(out_buf, " DenyUsers=%s",
 			burst_buffer_ptr->deny_users);
 	}
+
+	if (burst_buffer_ptr->file_system_count) {
+		xstrcat(out_buf, line_end);
+		xstrfmtcat(out_buf, "AllowUsers=%s",
+			burst_buffer_ptr->file_system_count);
+	}
+	if (burst_buffer_ptr->deny_users) {
+		xstrfmtcat(out_buf, " DenyUsers=%s",
+			burst_buffer_ptr->deny_users);
+	}
+
 
 	xstrcat(out_buf, "\n");
 	fprintf(out, "%s", out_buf);

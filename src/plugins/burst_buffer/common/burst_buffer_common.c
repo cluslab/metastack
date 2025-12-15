@@ -678,11 +678,13 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 	(void) s_p_get_string(&state_ptr->bb_config.para_stor_password,
 			     "ParaStorUserPasswd", bb_hashtbl);
 
-	(void) s_p_get_uint32(&state_ptr->bb_config.file_system_count,
-			     "FileSystemCount", bb_hashtbl);
+	// (void) s_p_get_uint32(&state_ptr->bb_config.file_system_count,
+	// 		     "FileSystemCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
-	if ( &state_ptr->bb_config.max_acc_dirs_per_job == 0) {
+	if (state_ptr->bb_config.max_acc_dirs_per_job == 0 ) {
+		state_ptr->bb_config.max_acc_dirs_per_job = 4;
+	} else if(state_ptr->bb_config.max_acc_dirs_per_job > 8 ) {
 		state_ptr->bb_config.max_acc_dirs_per_job = 8;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
@@ -1186,6 +1188,10 @@ extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
 		pack32(config_ptr->max_clients_join, buffer);
 		pack32(config_ptr->max_clients_per_job, buffer);
 		//pack32(config_ptr->pool_cnt,         buffer);// bb job list size
+		pack32(config_ptr->max_acc_dir_len,        buffer);
+		pack32(config_ptr->max_acc_dirs_per_job,   buffer);
+		packstr(config_ptr->file_system_fir,       buffer);
+		packstr(config_ptr->file_system_mount_fir, buffer);
 	}
 }
 #endif
