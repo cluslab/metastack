@@ -663,28 +663,56 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 			     "ValidateTimeout", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_groups,
 			     "MaxGroups", bb_hashtbl);
+	if (state_ptr->bb_config.max_groups == 0) {
+		state_ptr->bb_config.max_groups = 2048;
+	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_datasets,
 			     "MaxDatasets", bb_hashtbl);
+	if (state_ptr->bb_config.max_datasets == 0) {
+		state_ptr->bb_config.max_datasets = 8192;
+	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_join,
 			     "MaxGroupsPerClients", bb_hashtbl);
+	if (state_ptr->bb_config.max_clients_join == 0) {
+		state_ptr->bb_config.max_clients_join = 4;
+	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_per_job,
 			     "MaxClientsPerJob", bb_hashtbl);
+	if (state_ptr->bb_config.max_clients_per_job == 0) {
+		state_ptr->bb_config.max_clients_per_job = 4;
+	}
 	(void) s_p_get_string(&state_ptr->bb_config.para_stor_addr,
 			     "ParaStorAddr", bb_hashtbl);
+	if (!state_ptr->bb_config.para_stor_addr) {
+		error("ParaStorAddr is not configured in burst_buffer.conf");
+		fatal("%s: ParaStorAddr is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
+	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.para_stor_port,
 			     "ParaStorAddrPort", bb_hashtbl);
+	if (state_ptr->bb_config.para_stor_port == 0) {
+		error("ParaStorAddrPort is not configured in burst_buffer.conf");
+		fatal("%s: ParaStorAddrPort is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
+	}
 	(void) s_p_get_string(&state_ptr->bb_config.para_stor_user_name,
 			     "ParaStorUserName", bb_hashtbl);
+	if (!state_ptr->bb_config.para_stor_user_name) {
+		error("ParaStorUserName is not configured in burst_buffer.conf");
+		fatal("%s: ParaStorUserName is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
+	}
 	(void) s_p_get_string(&state_ptr->bb_config.para_stor_password,
 			     "ParaStorUserPasswd", bb_hashtbl);
-
-	// (void) s_p_get_uint32(&state_ptr->bb_config.file_system_count,
-	// 		     "FileSystemCount", bb_hashtbl);
+	if (!state_ptr->bb_config.para_stor_password) {
+		error("ParaStorUserPasswd is not configured in burst_buffer.conf");
+		fatal("%s: ParaStorUserPasswd is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
+	}
+	(void) s_p_get_uint32(&state_ptr->bb_config.file_system_count,
+			     "FileSystemCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
-	if (state_ptr->bb_config.max_acc_dirs_per_job == 0 ) {
+	if ( &state_ptr->bb_config.max_acc_dirs_per_job == 0) {
 		state_ptr->bb_config.max_acc_dirs_per_job = 4;
-	} else if(state_ptr->bb_config.max_acc_dirs_per_job > 8 ) {
+	}
+	if ( &state_ptr->bb_config.max_acc_dirs_per_job > 8) {
 		state_ptr->bb_config.max_acc_dirs_per_job = 8;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
@@ -693,11 +721,19 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		state_ptr->bb_config.max_acc_dir_len = 512;
 	}
 
-	(void) s_p_get_string(&state_ptr->bb_config.file_system_fir,
+	(void) s_p_get_string(&state_ptr->bb_config.file_system,
 			     "FileSystem", bb_hashtbl);
-	(void) s_p_get_string(&state_ptr->bb_config.file_system_mount_fir,
+	if (!state_ptr->bb_config.file_system) {
+		error("FileSystem is not configured in burst_buffer.conf");
+		fatal("%s: FileSystem is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
+	}
+	
+	(void) s_p_get_string(&state_ptr->bb_config.file_system_mount,
 			     "FileSystemMount", bb_hashtbl);				 
-
+	if (!state_ptr->bb_config.file_system_mount) {
+		error("FileSystemMount is not configured in burst_buffer.conf");
+		fatal("%s: FileSystemMount is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
+	}
 	s_p_hashtbl_destroy(bb_hashtbl);
 	xfree(bb_conf);
 
@@ -748,9 +784,9 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		     state_ptr->bb_config.para_stor_port);
 
 		info("FileSystem:%s",
-		     state_ptr->bb_config.file_system_fir);
+		     state_ptr->bb_config.file_system);
 		info("FileSystemMount:%s",
-		     state_ptr->bb_config.file_system_mount_fir);
+		     state_ptr->bb_config.file_system_mount);
 		info("MaxAccDirsPerJob:%d",
 		     state_ptr->bb_config.max_acc_dirs_per_job);
 		info("MaxAccDirLen:%d",
@@ -2680,31 +2716,18 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 		return false;
 	} 
 
-	// if(xstrcasecmp(bb_job->type,"temporary") == 0) {
-	// 	bb_job->type = true;
-	// 	bb_job->use_job_buf = true;
-	// } else if(xstrcasecmp(bb_job->type,"persistent") ) {
-	//     bb_job->type = false;
-	// } else {
-	// 	bb_job->type = false;
-	// 	error("Invalid type %d", bb_job->type);
-	// 	return false;
-	// }
-	// log_flag(BURST_BUF,"The number of backends to accelerate passed in is %d", count);
-
-
-	// if(bb_job->req_space <= 0) {
-	// 	error("Invalid req_size %ld", bb_job->req_space);
-	// 	return false;
-	// }
+	if(bb_job->req_space <= 0) {
+		error("Invalid req_size %ld", bb_job->req_space);
+		return false;
+	}
 
 	/* Convert the PFS path to a BB interface path */
-	debug("xxxxx: file system name:%s, mount: %s", state_ptr->bb_config.file_system_fir, state_ptr->bb_config.file_system_mount_fir);
-	if (!state_ptr->bb_config.file_system_mount_fir || !state_ptr->bb_config.file_system_fir) {
+	debug("xxxxx: file system name:%s, mount: %s", state_ptr->bb_config.file_system, state_ptr->bb_config.file_system_mount);
+	if (!state_ptr->bb_config.file_system_mount || !state_ptr->bb_config.file_system) {
 		error("file system is NULL, cannot convert pfs path");
 		return false;
 	}
-	char *conver_pfs = convert_paths_str(bb_job->pfs, state_ptr->bb_config.file_system_mount_fir, state_ptr->bb_config.file_system_fir);
+	char *conver_pfs = convert_paths_str(bb_job->pfs, state_ptr->bb_config.file_system_mount, state_ptr->bb_config.file_system);
 	debug("xxxxx: new path is %s", conver_pfs);
 	if (!conver_pfs){
 		error("conver path failed or no convertible path");

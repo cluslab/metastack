@@ -97,15 +97,15 @@ typedef struct bb_config {
 	uint32_t used_datasets;
 	uint32_t free_datasets;
 	uint32_t max_clients_join;
-	uint32_t max_clients_per_job;
+	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
 	// uint32_t max_node_per_groups;
 	// uint32_t used_node_per_groups;
 	// uint32_t free_node_per_groups;
 	uint32_t file_system_count;      // 支持的存储系统数量，现在上线是2
 	uint32_t max_acc_dir_len;        // 单个作业支持的最大目录长度
 	uint32_t max_acc_dirs_per_job;   // 单个作业支持的最大加载目录数量
-	char    *file_system_fir;        // 文件系统名称
-	char    *file_system_mount_fir;  // 文件系统挂载点
+	char    *file_system;        // 文件系统名称
+	char    *file_system_mount;  // 文件系统挂载点
 
 	char    *para_stor_addr;	/* IP address */
 	uint32_t para_stor_port;	/* port number */
