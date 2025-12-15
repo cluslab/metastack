@@ -1226,8 +1226,8 @@ extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
 		//pack32(config_ptr->pool_cnt,         buffer);// bb job list size
 		pack32(config_ptr->max_acc_dir_len,        buffer);
 		pack32(config_ptr->max_acc_dirs_per_job,   buffer);
-		packstr(config_ptr->file_system_fir,       buffer);
-		packstr(config_ptr->file_system_mount_fir, buffer);
+		packstr(config_ptr->file_system,       buffer);
+		packstr(config_ptr->file_system_mount, buffer);
 	}
 }
 #endif
@@ -2692,8 +2692,6 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 
 	/* Check if the directory has nesting */
 	int rc = _is_the_dir_nested(bb_job->pfs, bb_job->pfs_cnt);
-	debug("xxxxx:the pfs is %s", bb_job->pfs);
-	debug("xxxxx: _is_the_dir_nested ret is %d", rc);
 	if (rc != 0) {
 		if (rc == 1) {
 			error("pfs dir has nesting ");	
@@ -2706,8 +2704,6 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 			return false;
 		}
 	}
-
-
 
 	if(bb_job->pfs_cnt > state_ptr->bb_config.max_acc_dirs_per_job) {
 		error("Exceeded the maximum number of directories supported for a single job. "
