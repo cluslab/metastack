@@ -16822,7 +16822,7 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 		goto unpack_error;
 	safe_xcalloc(bb_msg_ptr->burst_buffer_array, bb_msg_ptr->record_count,
 		     sizeof(burst_buffer_info_t));
-	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
+	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) { //需要改版本号
 		for (i = 0, bb_info_ptr = bb_msg_ptr->burst_buffer_array;
 			i < bb_msg_ptr->record_count; i++, bb_info_ptr++) {
 			safe_unpackstr(&bb_info_ptr->name,            buffer);
@@ -16846,8 +16846,14 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 			safe_unpack32(&bb_info_ptr->free_datasets,    buffer);
 
 			safe_unpack32(&bb_info_ptr->max_clients_join, buffer);
-			safe_unpack32(&bb_info_ptr->max_clients_per_job, buffer);
-			safe_unpack32(&bb_info_ptr->buffer_count,     buffer);
+			safe_unpack32(&bb_info_ptr->max_clients_per_job,  buffer);
+			///////////
+			//safe_unpack32(&bb_info_ptr->file_system_count,    buffer);
+			safe_unpack32(&bb_info_ptr->max_acc_dir_len,      buffer);
+			safe_unpack32(&bb_info_ptr->max_acc_dirs_per_job, buffer);
+
+			safe_unpackstr(&bb_info_ptr->file_system_fir,      buffer);
+			safe_unpackstr(&bb_info_ptr->file_system_mount_fir,buffer);
 
 			if (bb_info_ptr->buffer_count >= NO_VAL)
 					goto unpack_error;

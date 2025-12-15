@@ -1224,6 +1224,10 @@ extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
 		pack32(config_ptr->max_clients_join, buffer);
 		pack32(config_ptr->max_clients_per_job, buffer);
 		//pack32(config_ptr->pool_cnt,         buffer);// bb job list size
+		pack32(config_ptr->max_acc_dir_len,        buffer);
+		pack32(config_ptr->max_acc_dirs_per_job,   buffer);
+		packstr(config_ptr->file_system_fir,       buffer);
+		packstr(config_ptr->file_system_mount_fir, buffer);
 	}
 }
 #endif

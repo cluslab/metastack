@@ -1244,7 +1244,7 @@ static int _run_prolog_epilog(stepd_step_rec_t *step, bool is_epilog)
 	job_env.work_dir = step->cwd;
 	job_env.uid = step->uid;
 	job_env.gid = step->gid;
-
+	
 	if (!is_epilog)
 		rc = run_prolog(&job_env, step->msg->cred);
 	else
