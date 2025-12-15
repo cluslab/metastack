@@ -1251,7 +1251,7 @@ extern List get_groups_burst_buffer(query_params_request* query_params,  bb_mini
         return NULL;
     }
   
-    int  ret                = NULL;
+    int  ret                = 0;
     char *json_string       = NULL;
     List init_list_groups   = NULL;
     init_list_groups   =  list_create(slurm_free_group);

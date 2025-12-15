@@ -824,7 +824,7 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 	// 	return ESLURM_INVALID_BURST_BUFFER_REQUEST;
 	// }
 
-
+	bb_copy = xstrdup(job_desc->burst_buffer);
 	if ((tok = strstr(bb_copy, "capacity="))) {
 		buf_size = bb_get_size_num(tok + 9, 1);
 		if (buf_size == 0) {
