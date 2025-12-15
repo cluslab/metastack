@@ -3577,7 +3577,9 @@ extern void launch_prolog(job_record_t *job_ptr)
 #endif
 
 	prolog_msg_ptr = xmalloc(sizeof(prolog_launch_msg_t));
-
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	
+#endif
 	/* Locks: Write job */
 	if ((slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) &&
 	    !(slurm_conf.prolog_flags & PROLOG_FLAG_NOHOLD)) {

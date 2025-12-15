@@ -549,6 +549,9 @@ struct job_record {
 	// //int *bb_group_ids; /* Sizes of each burst buffer group */
 	// int bb_dataset_counts; /* Number of burst buffer datasets */
 	// int bb_task_counts; /*  Number of burst buffer tasks */
+	uint32_t used_groups; 
+	uint32_t used_databases;
+
 #endif
 };
 

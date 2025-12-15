@@ -3302,6 +3302,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	_add_job_state_to_queue(job_ptr);
 #endif
+
 	/* Check whether the task is forced to run */
 	if (bb_job->enforce_bb_flag == true) {
 		/* enforce_bb_flag=true: 资源不足时不运行作业 */
@@ -3332,16 +3333,18 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	bb_state.bb_config.free_datasets  -= bb_job->pfs_cnt * tmp_groups_count;
 	bb_state.bb_config.used_groups    += tmp_groups_count;
 	bb_state.bb_config.used_datasets  += bb_job->pfs_cnt * tmp_groups_count;
-	
-	slurm_mutex_unlock(&bb_state.bb_mutex);
-	pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
-	pre_run_args->args = NULL;
-	pre_run_args->job_id = job_ptr->job_id;
-	pre_run_args->timeout = bb_state.bb_config.other_timeout * 1000;
-	pre_run_args->user_id = job_ptr->user_id;
-	pre_run_args->bb_node_cnt = bb_node_cnt;
+	job_ptr->used_groups =  tmp_groups_count;
+	bb_job->pfs_cnt * tmp_groups_count
 
-	slurm_thread_create_detached(_start_pre_run, pre_run_args);
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+	// pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
+	// pre_run_args->args = NULL;
+	// pre_run_args->job_id = job_ptr->job_id;
+	// pre_run_args->timeout = bb_state.bb_config.other_timeout * 1000;
+	// pre_run_args->user_id = job_ptr->user_id;
+	// pre_run_args->bb_node_cnt = bb_node_cnt;
+
+	// slurm_thread_create_detached(_start_pre_run, pre_run_args);
 
 	return SLURM_SUCCESS;
 }
