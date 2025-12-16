@@ -3333,9 +3333,14 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	bb_state.bb_config.free_datasets  -= bb_job->pfs_cnt * tmp_groups_count;
 	bb_state.bb_config.used_groups    += tmp_groups_count;
 	bb_state.bb_config.used_datasets  += bb_job->pfs_cnt * tmp_groups_count;
-	job_ptr->used_groups =  tmp_groups_count;
-	bb_job->pfs_cnt * tmp_groups_count
-
+	
+	job_ptr->used_groups               = tmp_groups_count;
+	job_ptr->used_databases            = bb_job->pfs_cnt * tmp_groups_count;
+	job_ptr->req_space                 = bb_job->req_space;
+	job_ptr->access_mode 	   		   = bb_job->access_mode;
+	job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
+	job_ptr->pfs					   = xstrdup(bb_job->pfs);
+	job_ptr->max_clients_per_job	   = bb_job->max_clients_per_job;
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	// pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
 	// pre_run_args->args = NULL;
