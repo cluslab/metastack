@@ -15921,7 +15921,61 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 	prolog_launch_msg_t *msg = smsg->data;
 	xassert(msg);
 #ifdef __META_PROTOCOL
-	if (smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
+	if (smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		gres_prep_pack(msg->job_gres_prep, buffer,
+				smsg->protocol_version);
+		pack32(msg->job_id, buffer);
+		pack32(msg->het_job_id, buffer);
+		pack32(msg->uid, buffer);
+		pack32(msg->gid, buffer);
+
+		/* Remove alias_list 2 versions after 23.11 */
+		packnull(buffer);
+
+		packstr(msg->nodes, buffer);
+		packstr(msg->work_dir, buffer);
+
+		pack16(msg->x11, buffer);
+		packstr(msg->x11_alloc_host, buffer);
+		pack16(msg->x11_alloc_port, buffer);
+		packstr(msg->x11_magic_cookie, buffer);
+		packstr(msg->x11_target, buffer);
+		pack16(msg->x11_target_port, buffer);
+
+		packstr_array(msg->spank_job_env, msg->spank_job_env_size,
+				buffer);
+		slurm_cred_pack(msg->cred, buffer, smsg->protocol_version);
+
+		if (msg->job_ptr_buf) {
+			packbool(true, buffer);
+			packbuf(msg->job_ptr_buf, buffer);
+			packbuf(msg->job_node_array_buf, buffer);
+			packbuf(msg->part_ptr_buf, buffer);
+		} else {
+			packbool(false, buffer);
+		}
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		packstr(msg->watch_dog, buffer);
+		packstr(msg->watch_dog_script, buffer);
+		pack32(msg->init_time, buffer);
+		pack32(msg->period, buffer);
+		packbool(msg->enable_all_nodes, buffer);
+		packbool(msg->enable_all_stepds, buffer);
+		pack32(msg->style_step, buffer);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		packstr(msg->apptype, buffer);
+#endif
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+		pack32(msg->used_groups,             buffer);
+		pack32(msg->used_databases,          buffer);
+		pack64(msg->req_space,               buffer);
+		pack32(msg->access_mode,             buffer);
+		packstr(msg->pfs,                    buffer);
+		packbool(msg->metadata_acceleration, buffer);
+		pack32(msg->max_clients_per_job,     buffer);
+#endif
+	} else if (smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		gres_prep_pack(msg->job_gres_prep, buffer,
 				smsg->protocol_version);
 		pack32(msg->job_id, buffer);
@@ -16095,7 +16149,69 @@ static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 	prolog_launch_msg_t *msg = xmalloc(sizeof(*msg));
 	smsg->data = msg;
 #ifdef __META_PROTOCOL
-	if(smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
+	if(smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		if (gres_prep_unpack(&msg->job_gres_prep, buffer,
+			smsg->protocol_version))
+			goto unpack_error;
+		safe_unpack32(&msg->job_id, buffer);
+		safe_unpack32(&msg->het_job_id, buffer);
+		safe_unpack32(&msg->uid, buffer);
+		safe_unpack32(&msg->gid, buffer);
+
+		safe_unpackstr(&msg->alias_list, buffer);
+		safe_unpackstr(&msg->nodes, buffer);
+		safe_unpackstr(&msg->work_dir, buffer);
+
+		safe_unpack16(&msg->x11, buffer);
+		safe_unpackstr(&msg->x11_alloc_host, buffer);
+		safe_unpack16(&msg->x11_alloc_port, buffer);
+		safe_unpackstr(&msg->x11_magic_cookie, buffer);
+		safe_unpackstr(&msg->x11_target, buffer);
+		safe_unpack16(&msg->x11_target_port, buffer);
+
+		safe_unpackstr_array(&msg->spank_job_env,
+						&msg->spank_job_env_size,
+						buffer);
+		if (!(msg->cred = slurm_cred_unpack(buffer,
+							smsg->protocol_version)))
+			goto unpack_error;
+
+		safe_unpackbool(&tmp_bool, buffer);
+		if (tmp_bool) {
+			if (job_record_unpack(&msg->job_ptr, 0, buffer,
+							smsg->protocol_version))
+				goto unpack_error;
+			if (slurm_unpack_list(&msg->job_node_array,
+							node_record_unpack,
+							purge_node_rec, buffer,
+							smsg->protocol_version))
+				goto unpack_error;
+			if (part_record_unpack(&msg->part_ptr, buffer,
+							smsg->protocol_version))
+				goto unpack_error;
+		}
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		safe_unpackstr(&msg->watch_dog, buffer);
+		safe_unpackstr(&msg->watch_dog_script, buffer);
+		safe_unpack32(&msg->init_time, buffer);
+		safe_unpack32(&msg->period, buffer);
+		safe_unpackbool(&msg->enable_all_nodes, buffer);
+		safe_unpackbool(&msg->enable_all_stepds, buffer);
+		safe_unpack32(&msg->style_step, buffer);
+#endif
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+		safe_unpackstr(&msg->apptype, buffer);
+#endif
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+		safe_unpack32(&msg->used_groups,				buffer);
+		safe_unpack32(&msg->used_databases,				buffer);
+		safe_unpack64(&msg->req_space,					buffer);
+		safe_unpack32(&msg->pfs, 						buffer);
+		safe_unpackbool(&msg->metadata_acceleration,	buffer);
+		safe_unpackstr(&msg->pfs, 						buffer);
+		safe_unpack32(&msg->max_clients_per_job, 		buffer);
+#endif
+	} else if(smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		if (gres_prep_unpack(&msg->job_gres_prep, buffer,
 			smsg->protocol_version))
 			goto unpack_error;

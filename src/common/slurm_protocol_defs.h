@@ -917,6 +917,19 @@ typedef struct prolog_launch_msg {
 	bool enable_all_stepds;   
 	uint32_t style_step;      /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/  
 #endif
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	// int bb_group_counts; /* Number of burst buffer groups */
+	// //int *bb_group_ids; /* Sizes of each burst buffer group */
+	// int bb_dataset_counts; /* Number of burst buffer datasets */
+	// int bb_task_counts; /*  Number of burst buffer tasks */
+	uint32_t used_groups; 
+	uint32_t used_databases;
+	uint64_t req_space;		   //当前作业请求的空间
+	uint32_t access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	char     *pfs;             //后端存储路径,可能有多个
+	bool     metadata_acceleration; //是否开启元数据加速
+	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
+#endif
 } prolog_launch_msg_t;
 
 typedef struct batch_job_launch_msg {

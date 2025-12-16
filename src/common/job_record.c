@@ -251,6 +251,9 @@ extern void job_record_delete(void *job_entry)
 	xfree(job_ptr->batch_features);
 	xfree(job_ptr->batch_host);
 	xfree(job_ptr->burst_buffer);
+#ifdef  __METASTACK_NEW_BURSTBUFFER
+	xfree(job_ptr->pfs);	
+#endif
 	xfree(job_ptr->burst_buffer_state);
 	xfree(job_ptr->comment);
 	xfree(job_ptr->container);
