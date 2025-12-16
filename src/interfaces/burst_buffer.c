@@ -89,10 +89,6 @@ typedef struct slurm_bb_ops {
 				       job_info_msg_t *job_info,
 				       char **resp_msg);
 	char *		(*xlate_bb_2_tres_str) (char *burst_buffer);
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-	xxxxxxx
-#endif
-
 } slurm_bb_ops_t;
 
 /*
@@ -119,10 +115,6 @@ static const char *syms[] = {
 	"bb_p_job_cancel",
 	"bb_p_run_script",
 	"bb_p_xlate_bb_2_tres_str"
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-	"bb_p_job_create_group"
-	 xxxx
-#endif
 };
 
 static int g_context_cnt = -1;
@@ -813,33 +805,3 @@ extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer)
 
 	return tmp;
 }
-
-
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-
-extern char *bb_g_job_create_group()
-{
-
-}
-extern char *bb_g_job_create_dataset()
-{
-
-}
-extern char *bb_g_job_prefetch()
-{
-
-}
-
-extern char *bb_g_job_recycle()
-{
-
-}
-extern char *bb_g_job_delete_dataset()
-{
-
-}
-extern char *bb_g_job_delete_group()
-{
-
-}
-#endif
