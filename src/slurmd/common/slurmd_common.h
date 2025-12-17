@@ -66,7 +66,7 @@ extern bool pause_for_job_completion(uint32_t job_id, int max_time,
  */
 extern int terminate_all_steps(uint32_t jobid, bool batch, bool extern_step);
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
-extern int run_burst_buffer_create(job_env_t *job_env);
+extern int run_burst_buffer_create(prolog_launch_msg_t *req);
 extern int run_burst_buffer_release(job_env_t *job_env);
 #endif
 

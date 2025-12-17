@@ -3238,6 +3238,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	tmp_job = job_array_post_sched(job_ptr);
 	if (tmp_job && (tmp_job != job_ptr) && (orig_resv_port_cnt == NO_VAL16))
 		tmp_job->resv_port_cnt = orig_resv_port_cnt;
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	job_ptr->bb_enable_pb = false;	
+#endif
 
 	if (bb_g_job_begin(job_ptr) != SLURM_SUCCESS) {
 		/* Leave job queued, something is hosed */
@@ -3578,11 +3581,16 @@ extern void launch_prolog(job_record_t *job_ptr)
 
 	prolog_msg_ptr = xmalloc(sizeof(prolog_launch_msg_t));
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
-	prolog_msg_ptr->used_groups          = job_ptr->used_groups;
-	prolog_msg_ptr->used_databases       = job_ptr->used_databases;
-	prolog_msg_ptr->max_clients_per_job  = job_ptr->max_clients_per_job;
-	prolog_msg_ptr->metadata_acceleration= job_ptr->used_groups;
-	prolog_msg_ptr->pfs  			     =  xstrdup(job_ptr->pfs);
+	if (job_ptr->bb_enable_pb == true) 
+		prolog_msg_ptr->used_groups          = job_ptr->used_groups;
+		prolog_msg_ptr->used_databases       = job_ptr->used_databases;
+		prolog_msg_ptr->max_clients_per_job  = job_ptr->max_clients_per_job;
+		prolog_msg_ptr->metadata_acceleration= job_ptr->used_groups;
+		prolog_msg_ptr->pfs  			     =  xstrdup(job_ptr->pfs);
+		prolog_msg_ptr->bb_enable_pb		 = true;
+	} else {
+		prolog_msg_ptr->bb_enable_pb		 = false;
+	}
 #endif
 	/* Locks: Write job */
 	if ((slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) &&

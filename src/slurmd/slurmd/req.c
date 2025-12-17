@@ -2675,8 +2675,10 @@ static void _rpc_prolog(slurm_msg_t *msg)
 		job_env.gid = req->gid;
 
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
-		if (req->burst_buffer) {
-		    rc = run_burst_buffer_create(&job_en);
+		if (req->bb_enable_pb) {
+			debug("start create burst buffer");
+		    rc = run_burst_buffer_create(req);
+			debug("end create burst buffer");
 		}
 #endif
 		rc = run_prolog(&job_env, req->cred);

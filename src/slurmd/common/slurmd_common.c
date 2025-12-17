@@ -356,7 +356,7 @@ static void *_prolog_timer(void *x)
 
 
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
-extern int run_burst_buffer_create(job_env_t *job_env) {
+extern int run_burst_buffer_create(prolog_launch_msg_t *req) {
 	int rc = SLURM_SUCCESS;
 	bb_g_job_create_group();
 	bb_g_job_create_dataset();
