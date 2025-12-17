@@ -1,5 +1,5 @@
 /*****************************************************************************\
- *  burst_buffer.c - driver for burst buffer infrastructure and plugin
+ *  burst_buffer_slurmd.c - driver for bb_api library plugin interface
  *****************************************************************************
  *  Copyright (C) SchedMD LLC.
  *
@@ -52,210 +52,235 @@
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
-#include "src/slurmctld/agent.h"
-#include "src/slurmctld/slurmctld.h"
-#include "src/slurmctld/reservation.h"
-
-typedef struct slurm_bb_ops {
-	char * 		(*build_het_job_script) (char *script,
-						 uint32_t het_job_offset);
-
-} slurm_bb_ops_t;
 
 /*
- * Must be synchronized with slurm_bb_ops_t above.
+ * ============================================================================
+ * 配置 bb_api 库的插件路径
+ * 可以通过修改 BB_API_PLUGIN_TYPE 和 BB_API_PLUGIN_NAME 来指定不同的库
+ * ============================================================================
  */
-static const char *syms[] = {
-	"bb_p_build_het_job_script",
+#define BB_API_PLUGIN_TYPE "burst_buffer"
+#define BB_API_PLUGIN_NAME "parastor/bb_api"
+
+/*
+ * ============================================================================
+ * 操作结构体：定义 bb_api 库中所有函数的函数指针
+ * 
+ * 添加新函数步骤：
+ * 1. 在 slurm_bb_api_ops_t 结构体中添加函数指针
+ * 2. 在 bb_api_syms 数组中添加对应的符号名称（必须与库中函数名完全一致）
+ * 3. 在文件末尾添加对应的包装函数
+ * ============================================================================
+ */
+typedef struct slurm_bb_api_ops {
+	/* 示例函数：获取 groups 列表 */
+	List (*get_groups_burst_buffer) (void *query_params, void *bb_min_config, void *resp_out);
+	
+	/* 
+	 * 在这里添加更多函数指针，例如：
+	 * List (*get_datasets_burst_buffer) (void *query_params, void *bb_min_config, void *resp_out);
+	 * int (*create_burst_buffer_group) (void *create_params, void *bb_min_config, void *resp_out);
+	 * ... 等等
+	 */
+} slurm_bb_api_ops_t;
+
+/*
+ * 符号表：必须与 slurm_bb_api_ops_t 结构体中的函数指针顺序完全一致
+ * 每个符号名称必须与 bb_api 库中导出的函数名完全一致
+ */
+static const char *bb_api_syms[] = {
+	"get_groups_burst_buffer",
+	/* 
+	 * 添加新函数时，在这里添加对应的符号名称，例如：
+	 * "get_datasets_burst_buffer",
+	 * "create_burst_buffer_group",
+	 * ... 等等
+	 */
 };
 
-static int g_context_cnt = -1;
-static slurm_bb_ops_t *ops = NULL;
-static plugin_context_t **g_context = NULL;
-static char *bb_plugin_list = NULL;
-static pthread_mutex_t g_context_lock = PTHREAD_MUTEX_INITIALIZER;
+/* bb_api 插件上下文 */
+static int g_bb_api_context_cnt = -1;
+static slurm_bb_api_ops_t *bb_api_ops = NULL;
+static plugin_context_t *g_bb_api_context = NULL;
+static pthread_mutex_t g_bb_api_context_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
- * Initialize the burst buffer infrastructure.
+ * ============================================================================
+ * 初始化 bb_api 库插件
+ * 
+ * Returns a Slurm errno.
+ * ============================================================================
+ */
+static int bb_api_init(void)
+{
+	int rc = SLURM_SUCCESS;
+	char *plugin_type = BB_API_PLUGIN_TYPE;
+	char *type = BB_API_PLUGIN_NAME;
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (g_bb_api_context_cnt >= 0)
+		goto fini;
+
+	g_bb_api_context_cnt = 0;
+	bb_api_ops = xmalloc(sizeof(slurm_bb_api_ops_t));
+	
+	g_bb_api_context = plugin_context_create(
+		plugin_type, type, (void **)bb_api_ops,
+		bb_api_syms, sizeof(bb_api_syms));
+	
+	if (!g_bb_api_context) {
+		error("cannot create %s context for %s",
+		      plugin_type, type);
+		xfree(bb_api_ops);
+		bb_api_ops = NULL;
+		g_bb_api_context_cnt = -1;
+		rc = SLURM_ERROR;
+		goto fini;
+	}
+
+	g_bb_api_context_cnt = 1;
+
+fini:
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+	return rc;
+}
+
+/*
+ * ============================================================================
+ * 清理 bb_api 库插件
+ * 
+ * Returns a Slurm errno.
+ * ============================================================================
+ */
+static int bb_api_fini(void)
+{
+	int rc = SLURM_SUCCESS;
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (g_bb_api_context_cnt < 0)
+		goto fini;
+
+	if (g_bb_api_context) {
+		rc = plugin_context_destroy(g_bb_api_context);
+		g_bb_api_context = NULL;
+	}
+	xfree(bb_api_ops);
+	bb_api_ops = NULL;
+	g_bb_api_context_cnt = -1;
+
+fini:
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+	return rc;
+}
+
+/*
+ * ============================================================================
+ * 公共接口函数
+ * ============================================================================
+ */
+
+/*
+ * Initialize the bb_api library infrastructure.
  *
  * Returns a Slurm errno.
  */
 extern int bb_g_init(void)
 {
-	int rc = SLURM_SUCCESS;
-	char *last = NULL, *names;
-	char *plugin_type = "burst_buffer";
-	char *type;
-
-	slurm_mutex_lock(&g_context_lock);
-	if (g_context_cnt >= 0)
-		goto fini;
-
-	bb_plugin_list = xstrdup(slurm_conf.bb_type);
-	g_context_cnt = 0;
-	if ((bb_plugin_list == NULL) || (bb_plugin_list[0] == '\0'))
-		goto fini;
-
-	names = bb_plugin_list;
-	while ((type = strtok_r(names, ",", &last))) {
-		xrecalloc(ops, g_context_cnt + 1, sizeof(slurm_bb_ops_t));
-		xrecalloc(g_context, g_context_cnt + 1,
-			  sizeof(plugin_context_t *));
-		if (xstrncmp(type, "burst_buffer/", 13) == 0)
-			type += 13; /* backward compatibility */
-		type = xstrdup_printf("burst_buffer/%s", type);
-		g_context[g_context_cnt] = plugin_context_create(
-			plugin_type, type, (void **)&ops[g_context_cnt],
-			syms, sizeof(syms));
-		if (!g_context[g_context_cnt]) {
-			error("cannot create %s context for %s",
-			      plugin_type, type);
-			rc = SLURM_ERROR;
-			xfree(type);
-			break;
-		}
-
-		xfree(type);
-		g_context_cnt++;
-		names = NULL; /* for next iteration */
-	}
-
-	/*
-	 * Although the burst buffer plugin interface was designed to support
-	 * multiple burst buffer plugins, this currently does not work. For
-	 * now, do not allow multiple burst buffer plugins to be configured.
-	 */
-	if (g_context_cnt > 1) {
-		error("%d burst buffer plugins configured; can not run with more than one burst buffer plugin",
-		      g_context_cnt);
-		rc = SLURM_ERROR;
-	}
-
-fini:
-	slurm_mutex_unlock(&g_context_lock);
-
-	if (rc != SLURM_SUCCESS)
-		bb_g_fini();
-
-	return rc;
+	return bb_api_init();
 }
 
 /*
- * Terminate the burst buffer infrastructure. Free memory.
+ * Terminate the bb_api library infrastructure. Free memory.
  *
  * Returns a Slurm errno.
  */
 extern int bb_g_fini(void)
 {
-	int i, j, rc = SLURM_SUCCESS;
+	return bb_api_fini();
+}
 
-	slurm_mutex_lock(&g_context_lock);
-	if (g_context_cnt < 0)
-		goto fini;
+/*
+ * ============================================================================
+ * bb_api 库函数包装器
+ * 
+ * 每个包装函数遵循相同的模式：
+ * 1. 检查插件是否已初始化，如果没有则初始化
+ * 2. 使用互斥锁保护
+ * 3. 通过函数指针调用库中的函数
+ * 4. 返回结果
+ * ============================================================================
+ */
 
-	for (i = 0; i < g_context_cnt; i++) {
-		if (g_context[i]) {
-			j = plugin_context_destroy(g_context[i]);
-			if (j != SLURM_SUCCESS)
-				rc = j;
+/*
+ * 示例函数：获取 groups 列表
+ * 
+ * query_params IN - 查询参数
+ * bb_min_config IN - 最小配置
+ * resp_out OUT - 响应输出
+ * RET groups 列表，失败返回 NULL
+ */
+extern List bb_g_get_groups_burst_buffer(void *query_params, void *bb_min_config, void *resp_out)
+{
+	List result = NULL;
+
+	/* 自动初始化插件（如果尚未初始化） */
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return NULL;
 		}
 	}
-	xfree(ops);
-	xfree(g_context);
-	xfree(bb_plugin_list);
-	g_context_cnt = -1;
 
-fini:	slurm_mutex_unlock(&g_context_lock);
-	return rc;
-}
-
-/*
- **************************************************************************
- *                          P L U G I N   C A L L S                       *
- **************************************************************************
- */
-
-/*
- * Load the current burst buffer state (e.g. how much space is available now).
- * Run at the beginning of each scheduling cycle in order to recognize external
- * changes to the burst buffer state (e.g. capacity is added, removed, fails,
- * etc.).
- *
- * init_config IN - true if called as part of slurmctld initialization
- * Returns a Slurm errno.
- */
-extern int bb_g_load_state(bool init_config)
-{
-	DEF_TIMERS;
-	int i, rc = SLURM_SUCCESS, rc2;
-
-	START_TIMER;
-	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; ((i < g_context_cnt) && (rc == SLURM_SUCCESS)); i++) {
-		rc2 = (*(ops[i].load_state))(init_config);
-		rc = MAX(rc, rc2);
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->get_groups_burst_buffer) {
+		result = (*(bb_api_ops->get_groups_burst_buffer))(query_params, bb_min_config, resp_out);
+	} else {
+		error("%s: get_groups_burst_buffer function not available", __func__);
 	}
-	slurm_mutex_unlock(&g_context_lock);
-	END_TIMER2(__func__);
+	slurm_mutex_unlock(&g_bb_api_context_lock);
 
-	return rc;
+	return result;
 }
 
 /*
- * Return string containing current burst buffer status
- * argc IN - count of status command arguments
- * argv IN - status command arguments
- * uid - authenticated UID
- * gid - authenticated GID
- * RET status string, release memory using xfree()
+ * ============================================================================
+ * 如何添加新的 bb_api 库函数调用：
+ * 
+ * 假设你要添加一个新函数：get_datasets_burst_buffer
+ * 
+ * 步骤 1: 在 slurm_bb_api_ops_t 结构体中添加函数指针
+ *   List (*get_datasets_burst_buffer) (void *query_params, void *bb_min_config, void *resp_out);
+ * 
+ * 步骤 2: 在 bb_api_syms 数组中添加符号名称（必须与库中函数名完全一致）
+ *   "get_datasets_burst_buffer",
+ * 
+ * 步骤 3: 在文件末尾添加包装函数（复制下面的模板并修改）：
+ * 
+ * extern List bb_g_get_datasets_burst_buffer(void *query_params, void *bb_min_config, void *resp_out)
+ * {
+ *     List result = NULL;
+ * 
+ *     if (g_bb_api_context_cnt < 0) {
+ *         if (bb_api_init() != SLURM_SUCCESS) {
+ *             error("%s: failed to initialize bb_api plugin", __func__);
+ *             return NULL;
+ *         }
+ *     }
+ * 
+ *     slurm_mutex_lock(&g_bb_api_context_lock);
+ *     if (bb_api_ops && bb_api_ops->get_datasets_burst_buffer) {
+ *         result = (*(bb_api_ops->get_datasets_burst_buffer))(query_params, bb_min_config, resp_out);
+ *     } else {
+ *         error("%s: get_datasets_burst_buffer function not available", __func__);
+ *     }
+ *     slurm_mutex_unlock(&g_bb_api_context_lock);
+ * 
+ *     return result;
+ * }
+ * 
+ * 注意：
+ * - 函数指针类型必须与 bb_api 库中的函数签名完全匹配
+ * - 符号名称必须与库中导出的函数名完全一致
+ * - 包装函数名通常以 bb_g_ 开头，后面跟库中的函数名
+ * ============================================================================
  */
-extern char *bb_g_get_status(uint32_t argc, char **argv, uint32_t uid,
-			     uint32_t gid)
-{
-	DEF_TIMERS;
-	int i;
-	char *status = NULL, *tmp;
-
-	START_TIMER;
-	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
-		tmp = (*(ops[i].get_status))(argc, argv, uid, gid);
-		if (status) {
-			xstrcat(status, tmp);
-			xfree(tmp);
-		} else {
-			status = tmp;
-		}
-	}
-	slurm_mutex_unlock(&g_context_lock);
-	END_TIMER2(__func__);
-
-	return status;
-}
-extern char *bb_g_job_create_group()
-{
-
-}
-extern char *bb_g_job_create_dataset()
-{
-
-}
-extern char *bb_g_job_prefetch()
-{
-
-}
-
-extern char *bb_g_job_recycle()
-{
-
-}
-extern char *bb_g_job_delete_dataset()
-{
-
-}
-extern char *bb_g_job_delete_group()
-{
-
-}

@@ -358,18 +358,19 @@ static void *_prolog_timer(void *x)
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
 extern int run_burst_buffer_create(job_env_t *job_env) {
 	int rc = SLURM_SUCCESS;
-	bb_g_job_create_group();
-	bb_g_job_create_dataset();
-	bb_g_job_prefetch();
+	bb_g_get_groups_burst_buffer();
+	// bb_g_job_create_group();
+	// bb_g_job_create_dataset();
+	// bb_g_job_prefetch();
 	return rc;
 }
 
 
 extern int run_burst_buffer_release(job_env_t *job_env) {
 	int rc = SLURM_SUCCESS;
-	bb_g_job_recycle();
-	bb_g_job_delete_dataset();
-	bb_g_job_delete_group();
+	// bb_g_job_recycle();
+	// bb_g_job_delete_dataset();
+	// bb_g_job_delete_group();
 	return rc;	
 }
 #endif

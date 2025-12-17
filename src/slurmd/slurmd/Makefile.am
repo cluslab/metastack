@@ -6,6 +6,10 @@ CLEANFILES = core.*
 
 sbin_PROGRAMS = slurmd
 
+# SLURMD_INTERFACES contains libslurmd_interfaces.la which includes:
+# - burst_buffer_slurmd.c/h (bb_api library wrapper functions)
+# - job_container.c/h, proctrack.c/h, task.c/h
+# This allows req.c and slurmd_common.c to call functions from burst_buffer_slurmd.h
 depend_libs = \
 	$(top_builddir)/src/bcast/libfile_bcast.la \
 	../common/libslurmd_common.o \

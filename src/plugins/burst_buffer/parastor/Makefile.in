@@ -181,17 +181,25 @@ am__uninstall_files_from_dir = { \
   }
 am__installdirs = "$(DESTDIR)$(pkglibdir)"
 LTLIBRARIES = $(pkglib_LTLIBRARIES)
-burst_buffer_parastorbb_la_LIBADD = ../common/libburst_buffer_common.la \
-			     -lcurl \
-				 -ljansson 
-am_burst_buffer_parastorbb_la_OBJECTS = bb_api.lo \
-	bb_curl_wrapper.lo \
-	burst_buffer_parastorbb.lo
+libbb_api_la_LIBADD = ../common/libburst_buffer_common.la \
+		       -lcurl \
+		       -ljansson
+am_libbb_api_la_OBJECTS = bb_api.lo bb_curl_wrapper.lo
+libbb_api_la_OBJECTS = $(am_libbb_api_la_OBJECTS)
+burst_buffer_parastorbb_la_LIBADD = libbb_api.la \
+				    ../common/libburst_buffer_common.la \
+			            -lcurl \
+				    -ljansson 
+am_burst_buffer_parastorbb_la_OBJECTS = burst_buffer_parastorbb.lo
 burst_buffer_parastorbb_la_OBJECTS = $(am_burst_buffer_parastorbb_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+libbb_api_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(AM_CFLAGS) $(CFLAGS) $(libbb_api_la_LDFLAGS) \
+	$(LDFLAGS) -o $@
 burst_buffer_parastorbb_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(AM_CFLAGS) $(CFLAGS) $(burst_buffer_parastorbb_la_LDFLAGS) \
@@ -211,8 +219,8 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir) -I$(top_builddir)/slurm
 depcomp = $(SHELL) $(top_srcdir)/auxdir/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/bb_api.Plo ./$(DEPDIR)/burst_buffer_parastorbb.Plo \
-	./$(DEPDIR)/bb_curl_wrapper.Plo 
+am__depfiles_remade = ./$(DEPDIR)/bb_api.Plo ./$(DEPDIR)/bb_curl_wrapper.Plo \
+	./$(DEPDIR)/burst_buffer_parastorbb.Plo 
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -232,7 +240,7 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(burst_buffer_parastorbb_la_SOURCES)
+SOURCES = $(libbb_api_la_SOURCES) $(burst_buffer_parastorbb_la_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -514,16 +522,30 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
 PLUGIN_FLAGS = -module -avoid-version --export-dynamic
-AM_CPPFLAGS = -DSLURM_PLUGIN_DEBUG -I$(top_srcdir) -I$(top_srcdir)/src/common
-pkglib_LTLIBRARIES = burst_buffer_parastorbb.la
+AM_CPPFLAGS = -DSLURM_PLUGIN_DEBUG -I$(top_srcdir) -I$(top_srcdir)/src/common -I$(top_srcdir)/src/plugins/burst_buffer/common
+
+# Create libbb_api.la as a shared library that can be loaded as a plugin
+# and also linked by other libraries
+pkglib_LTLIBRARIES = libbb_api.la burst_buffer_parastorbb.la
+
+libbb_api_la_SOURCES = \
+	bb_api.c bb_api.h \
+	bb_curl_wrapper.c bb_curl_wrapper.h
+
+libbb_api_la_LDFLAGS = $(PLUGIN_FLAGS)
+libbb_api_la_LIBADD = ../common/libburst_buffer_common.la \
+		       -lcurl \
+		       -ljansson
 
 # Trackable RESources selection plugin.
 burst_buffer_parastorbb_la_SOURCES = \
-	bb_api.c bb_api.h \
-	bb_curl_wrapper.c bb_curl_wrapper.h \
 	burst_buffer_parastorbb.c 
 
 burst_buffer_parastorbb_la_LDFLAGS = $(PLUGIN_FLAGS)
+burst_buffer_parastorbb_la_LIBADD = libbb_api.la \
+				    ../common/libburst_buffer_common.la \
+			            -lcurl \
+				    -ljansson
 all: all-am
 
 .SUFFIXES:
@@ -592,6 +614,9 @@ clean-pkglibLTLIBRARIES:
 	  echo rm -f $${locs}; \
 	  rm -f $${locs}; \
 	}
+
+libbb_api.la: $(libbb_api_la_OBJECTS) $(libbb_api_la_DEPENDENCIES) $(EXTRA_libbb_api_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(libbb_api_la_LINK) -rpath $(pkglibdir) $(libbb_api_la_OBJECTS) $(libbb_api_la_LIBADD) $(LIBS)
 
 burst_buffer_parastorbb.la: $(burst_buffer_parastorbb_la_OBJECTS) $(burst_buffer_parastorbb_la_DEPENDENCIES) $(EXTRA_burst_buffer_parastorbb_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(burst_buffer_parastorbb_la_LINK) -rpath $(pkglibdir) $(burst_buffer_parastorbb_la_OBJECTS) $(burst_buffer_parastorbb_la_LIBADD) $(LIBS)
