@@ -929,6 +929,7 @@ typedef struct prolog_launch_msg {
 	char     *pfs;             //后端存储路径,可能有多个
 	bool     metadata_acceleration; //是否开启元数据加速
 	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
+	bool     bb_enable_pb;      //是否是parabuffer
 #endif
 } prolog_launch_msg_t;
 
