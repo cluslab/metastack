@@ -1099,14 +1099,15 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 {
 	char *bb_specs, *bb_hurry, *pfs_list, *bb_type, *bb_access, *bb_pool;
 	char *end_ptr = NULL, *save_ptr = NULL, *sub_tok, *tok;
-	bool have_bb = false , have_status = false;
+	bool have_bb = false, have_status = false;
+	char *error_param = NULL;  /* 记录出错的参数名 */
 	uint64_t tmp_cnt;
 	int inx;
 	bb_job_t *bb_job;
 	uint16_t new_bb_state;
 
 	if ((job_ptr->burst_buffer == NULL) ||
-	    (job_ptr->burst_buffer[0] == '\0'))
+		(job_ptr->burst_buffer[0] == '\0'))
 		return NULL;
 
 	if ((bb_job = bb_job_find(&bb_state, job_ptr->job_id)))
@@ -1150,42 +1151,126 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 
 		if (bb_flag == BB_FLAG_PB_OP) {
 			if (!xstrncmp(tok, "jobpara", 7)) {
-
+				/* 解析 capacity= 参数 */
 				if ((sub_tok = strstr(tok, "capacity="))) {
-					// TODO: 没做字符串解析
-					bb_job->req_space = bb_get_size_num(sub_tok + 9, 1);
-				} 
-
-				if ((sub_tok = strstr(tok, "pfslist="))) {
-					bb_job->pfs = xstrdup(sub_tok + 8);
-					if ((sub_tok = strchr(bb_job->pfs, ' ')))
-						sub_tok[0] = '\0';
-				} else {
-					/* 需要获取作业的默认目录 */
-					bb_job->pfs = xstrdup(job_ptr->command);
+					char *capacity_val = sub_tok + 9;
+					/* 检查 capacity= 后面是否有值 */
+					if (capacity_val[0] == '\0' || isspace(capacity_val[0])) {
+						error_param = "capacity";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					bb_job->req_space = bb_get_size_num(capacity_val, 1);
+					/* 验证 capacity 解析是否成功 */
+					if (bb_job->req_space == 0) {
+						error_param = "capacity";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
 				}
+				//暂时不做容量必须设置的校验 
+				// else {
+				// 	error_param = "capacity";
+				// 	have_status = true;
+				// 	tok = strtok_r(NULL, "\n", &save_ptr);
+				// 	continue;
+				// }
 
+				/* 解析 pfslist= 参数 */
+				if ((sub_tok = strstr(tok, "pfslist="))) {
+					char *pfs_val = sub_tok + 8;
+					/* 检查 pfslist= 后面是否有值 */
+					if (pfs_val[0] == '\0' || isspace(pfs_val[0])) {
+						error_param = "pfslist";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					/* 先复制到临时变量进行处理 */
+					char *tmp_pfs = xstrdup(pfs_val);
+					/* 移除空格后的内容 */
+					sub_tok = strchr(tmp_pfs, ' ');
+					if (sub_tok)
+						sub_tok[0] = '\0';
+					/* 验证路径不为空 */
+					if (tmp_pfs[0] == '\0') {
+						xfree(tmp_pfs);
+						error_param = "pfslist";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					/* 验证通过后，再赋值给 bb_job->pfs */
+					bb_job->pfs = tmp_pfs;  /* 直接赋值，不需要再次 xstrdup */
+				}
+				/* 解析 type= 参数 */
 				if ((sub_tok = strstr(tok, "type="))) {
-					char *tmp_type = xstrdup(sub_tok + 5);
+					char *type_val = sub_tok + 5;
+					/* 检查 type= 后面是否有值 */
+					if (type_val[0] == '\0' || isspace(type_val[0])) {
+						error_param = "type";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					char *tmp_type = xstrdup(type_val);
 					sub_tok = xstrchr(tmp_type, ' ');
 					if (sub_tok)
 						sub_tok[0] = '\0';
-					if (xstrcmp(tmp_type, "persistent") == 0)
+					if (xstrcmp(tmp_type, "persistent") == 0) {
 						bb_job->type = GROUP_TYPE_PERSISTENT;
-					else if(xstrcmp(tmp_type, "temporary")){
-						/* 默认类型为temporary临时类型 */
+					} else if (xstrcmp(tmp_type, "temporary") == 0) {
 						bb_job->type = GROUP_TYPE_TEMPORARY;
 					} else {
+						/* 无效的类型值 */
+						error_param = "type";
 						have_status = true;
+						xfree(tmp_type);
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
 					}
 					xfree(tmp_type);
-				} 
-			
-				if ((sub_tok = strstr(tok, "enforce_bb=no")) || 
-					(sub_tok = strstr(tok, "enforce_bb=NO")) || 
-					(sub_tok = strstr(tok, "enforce_bb=false")) || 
-					(sub_tok = strstr(tok, "enforce_bb=FALSE"))) {
-					bb_job->enforce_bb_flag = false;
+				} else {
+					/* 默认类型为temporary临时类型 */
+					bb_job->type = GROUP_TYPE_TEMPORARY;
+				}
+
+				/* 解析 enforce_bb= 参数 */
+				if ((sub_tok = strstr(tok, "enforce_bb="))) {
+					char *enforce_val = sub_tok + 11;
+					/* 检查 enforce_bb= 后面是否有值 */
+					if (enforce_val[0] == '\0' || isspace(enforce_val[0])) {
+						error_param = "enforce_bb";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					char *tmp_enforce = xstrdup(enforce_val);
+					sub_tok = xstrchr(tmp_enforce, ' ');
+					if (sub_tok)
+						sub_tok[0] = '\0';
+					/* 转换为小写进行比较 */
+					for (char *p = tmp_enforce; *p; p++)
+						*p = tolower(*p);
+					if (xstrcmp(tmp_enforce, "no") == 0 ||
+						xstrcmp(tmp_enforce, "false") == 0 ||
+						xstrcmp(tmp_enforce, "0") == 0) {
+						bb_job->enforce_bb_flag = false;
+					} else if (xstrcmp(tmp_enforce, "yes") == 0 ||
+						xstrcmp(tmp_enforce, "true") == 0 ||
+						xstrcmp(tmp_enforce, "1") == 0) {
+						bb_job->enforce_bb_flag = true;
+					} else {
+						/* 无效的 enforce_bb 值 */
+						error_param = "enforce_bb";
+						have_status = true;
+						xfree(tmp_enforce);
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					xfree(tmp_enforce);
 				} else {
 					/* 默认强制加速（资源不足等待资源） */
 					bb_job->enforce_bb_flag = true;
@@ -1193,8 +1278,8 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 
 				inx = bb_job->buf_cnt++;
 				bb_job->buf_ptr = xrealloc(bb_job->buf_ptr,
-							   sizeof(bb_buf_t) *
-							   bb_job->buf_cnt);
+					sizeof(bb_buf_t) *
+					bb_job->buf_cnt);
 
 				bb_job->buf_ptr[inx].flags = bb_flag;
 				bb_job->buf_ptr[inx].size = bb_job->req_space;
@@ -1203,20 +1288,81 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				have_bb = bb_valid_groups_test_2(bb_job, &bb_state);
 			}
 			if (!xstrncmp(tok, "pstage_in", 9)) {
-				/* 设置数据集缓存加速类型，如果没有匹配到字符串则默认使用共享方式 */
-				if (strstr(tok, "access_mode=private") || strstr(tok, "access_mode=PRIVATE")) {
-					bb_job->access_mode = DATASET_TYPE_PRIVATE;
-				} else if (strstr(tok, "access_mode=striped") || strstr(tok, "access_mode=striped")) {
-					bb_job->access_mode = DATASET_TYPE_STRIPED;
+				/* 解析 access_mode= 参数 */
+				if ((sub_tok = strstr(tok, "access_mode="))) {
+					char *access_val = sub_tok + 12;
+					/* 检查 access_mode= 后面是否有值 */
+					if (access_val[0] == '\0' || isspace(access_val[0])) {
+						error_param = "access_mode";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					char *tmp_access = xstrdup(access_val);
+					sub_tok = xstrchr(tmp_access, ' ');
+					if (sub_tok)
+						sub_tok[0] = '\0';
+					/* 转换为小写进行比较 */
+					for (char *p = tmp_access; *p; p++)
+						*p = tolower(*p);
+					if (xstrcmp(tmp_access, "private") == 0) {
+						bb_job->access_mode = DATASET_TYPE_PRIVATE;
+					} else if (xstrcmp(tmp_access, "striped") == 0) {
+						bb_job->access_mode = DATASET_TYPE_STRIPED;
+					} else {
+						/* 无效的 access_mode 值 */
+						error_param = "access_mode";
+						have_status = true;
+						xfree(tmp_access);
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					xfree(tmp_access);
 				} else {
+					/* 默认使用 striped 方式 */
 					bb_job->access_mode = DATASET_TYPE_STRIPED;
 				}
-				if (strstr(tok, "metadata_acceleration=enable") || strstr(tok, "metadata_acceleration=yes")) {
-					bb_job->metadata_acceleration = true;
+
+				/* 解析 metadata_acceleration= 参数 */
+				if ((sub_tok = strstr(tok, "metadata_acceleration="))) {
+					char *meta_val = sub_tok + 22;
+					/* 检查 metadata_acceleration= 后面是否有值 */
+					if (meta_val[0] == '\0' || isspace(meta_val[0])) {
+						error_param = "metadata_acceleration";
+						have_status = true;
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					char *tmp_meta = xstrdup(meta_val);
+					sub_tok = xstrchr(tmp_meta, ' ');
+					if (sub_tok)
+						sub_tok[0] = '\0';
+					/* 转换为小写进行比较 */
+					for (char *p = tmp_meta; *p; p++)
+						*p = tolower(*p);
+					if (xstrcmp(tmp_meta, "enable") == 0 ||
+						xstrcmp(tmp_meta, "yes") == 0 ||
+						xstrcmp(tmp_meta, "true") == 0 ||
+						xstrcmp(tmp_meta, "1") == 0) {
+						bb_job->metadata_acceleration = true;
+					} else if (xstrcmp(tmp_meta, "disable") == 0 ||
+						xstrcmp(tmp_meta, "no") == 0 ||
+						xstrcmp(tmp_meta, "false") == 0 ||
+						xstrcmp(tmp_meta, "0") == 0) {
+						bb_job->metadata_acceleration = false;
+					} else {
+						/* 无效的 metadata_acceleration 值 */
+						error_param = "metadata_acceleration";
+						have_status = true;
+						xfree(tmp_meta);
+						tok = strtok_r(NULL, "\n", &save_ptr);
+						continue;
+					}
+					xfree(tmp_meta);
 				} else {
 					bb_job->metadata_acceleration = false;
 				}
-			} 
+			}
 		}
 		tok = strtok_r(NULL, "\n", &save_ptr);
 	}
@@ -1225,12 +1371,20 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	if (!have_bb) {
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-		xstrfmtcat(job_ptr->state_desc,
-			   "%s: Invalid burst buffer spec (%s)",
-			   plugin_type, job_ptr->burst_buffer);
+		if (error_param) {
+			xstrfmtcat(job_ptr->state_desc,
+				"%s: Invalid burst buffer parameter '%s' in spec (%s)",
+				plugin_type, error_param, job_ptr->burst_buffer);
+			info("Invalid burst buffer parameter '%s' for %pJ (%s)",
+				error_param, job_ptr, job_ptr->burst_buffer);
+		} else {
+			xstrfmtcat(job_ptr->state_desc,
+				"%s: Invalid burst buffer spec - missing required 'jobpara' command (%s)",
+				plugin_type, job_ptr->burst_buffer);
+			info("Invalid burst buffer spec for %pJ - missing required 'jobpara' command (%s)",
+				job_ptr, job_ptr->burst_buffer);
+		}
 		job_ptr->priority = 0;
-		info("Invalid burst buffer spec for %pJ (%s)",
-		     job_ptr, job_ptr->burst_buffer);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
 #endif
@@ -1240,12 +1394,20 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	if (have_status) {
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-		xstrfmtcat(job_ptr->state_desc,
-			   "%s: Invalid burst buffer spec (%s)",
-			   plugin_type, job_ptr->burst_buffer);
+		if (error_param) {
+			xstrfmtcat(job_ptr->state_desc,
+				"%s: Invalid burst buffer parameter '%s' value in spec (%s)",
+				plugin_type, error_param, job_ptr->burst_buffer);
+			info("Invalid burst buffer parameter '%s' value for %pJ (%s)",
+				error_param, job_ptr, job_ptr->burst_buffer);
+		} else {
+			xstrfmtcat(job_ptr->state_desc,
+				"%s: Invalid burst buffer spec (%s)",
+				plugin_type, job_ptr->burst_buffer);
+			info("Invalid burst buffer spec for %pJ (%s)",
+				job_ptr, job_ptr->burst_buffer);
+		}
 		job_ptr->priority = 0;
-		info("Invalid burst buffer spec for %pJ (%s)",
-		     job_ptr, job_ptr->burst_buffer);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
 #endif

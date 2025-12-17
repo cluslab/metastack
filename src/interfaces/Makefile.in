@@ -178,7 +178,7 @@ am_libslurmctld_interfaces_la_OBJECTS = burst_buffer.lo job_submit.lo \
 libslurmctld_interfaces_la_OBJECTS =  \
 	$(am_libslurmctld_interfaces_la_OBJECTS)
 libslurmd_interfaces_la_LIBADD =
-am_libslurmd_interfaces_la_OBJECTS = job_container.lo proctrack.lo \
+am_libslurmd_interfaces_la_OBJECTS = burst_buffer_slurmd.lo job_container.lo proctrack.lo \
 	task.lo
 libslurmd_interfaces_la_OBJECTS =  \
 	$(am_libslurmd_interfaces_la_OBJECTS)
@@ -208,6 +208,7 @@ DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir) -I$(top_builddir)/slurm
 depcomp = $(SHELL) $(top_srcdir)/auxdir/depcomp
 am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/accounting_storage.Plo \
+	./$(DEPDIR)/burst_buffer_slurmd.Plo \
 	./$(DEPDIR)/acct_gather.Plo ./$(DEPDIR)/acct_gather_energy.Plo \
 	./$(DEPDIR)/acct_gather_filesystem.Plo \
 	./$(DEPDIR)/acct_gather_interconnect.Plo \
@@ -605,6 +606,8 @@ libslurmctld_interfaces_la_SOURCES = \
 	sched_plugin.h
 
 libslurmd_interfaces_la_SOURCES = \
+	burst_buffer_slurmd.c \
+	burst_buffer_slurmd.h \
 	job_container.c \
 	job_container.h \
 	proctrack.c \
@@ -701,6 +704,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/acct_gather_profile.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/auth.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/burst_buffer.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/burst_buffer_slurmd.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cgroup.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cli_filter.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cred.Plo@am__quote@ # am--include-marker
@@ -861,6 +865,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/acct_gather_profile.Plo
 	-rm -f ./$(DEPDIR)/auth.Plo
 	-rm -f ./$(DEPDIR)/burst_buffer.Plo
+	-rm -f ./$(DEPDIR)/burst_buffer_slurmd.Plo
 	-rm -f ./$(DEPDIR)/cgroup.Plo
 	-rm -f ./$(DEPDIR)/cli_filter.Plo
 	-rm -f ./$(DEPDIR)/cred.Plo
@@ -940,6 +945,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/acct_gather_profile.Plo
 	-rm -f ./$(DEPDIR)/auth.Plo
 	-rm -f ./$(DEPDIR)/burst_buffer.Plo
+	-rm -f ./$(DEPDIR)/burst_buffer_slurmd.Plo
 	-rm -f ./$(DEPDIR)/cgroup.Plo
 	-rm -f ./$(DEPDIR)/cli_filter.Plo
 	-rm -f ./$(DEPDIR)/cred.Plo

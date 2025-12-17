@@ -38,15 +38,18 @@
 
 #include "slurm/slurm.h"
 
+/* Forward declaration */
+typedef struct xlist *List;
+
 /*
- * Initialize the burst buffer infrastructure.
+ * Initialize the bb_api library infrastructure.
  *
  * Returns a Slurm errno.
  */
 extern int bb_g_init(void);
 
 /*
- * Terminate the burst buffer infrastructure. Free memory.
+ * Terminate the bb_api library infrastructure. Free memory.
  *
  * Returns a Slurm errno.
  */
@@ -54,38 +57,18 @@ extern int bb_g_fini(void);
 
 /*
  **************************************************************************
- *                          P L U G I N   C A L L S                       *
+ *                    B B   A P I   W R A P P E R   F U N C T I O N S    *
  **************************************************************************
  */
-/*
- * Load the current burst buffer state (e.g. how much space is available now).
- * Run at the beginning of each scheduling cycle in order to recognize external
- * changes to the burst buffer state (e.g. capacity is added, removed, fails,
- * etc.)
- *
- * init_config IN - true if called as part of slurmctld initialization
- * Returns a Slurm errno.
- */
-extern int bb_g_load_state(bool init_config);
 
 /*
- * Return string containing current burst buffer status
- * argc IN - count of status command arguments
- * argv IN - status command arguments
- * uid - authenticated UID
- * gid - authenticated GID
- * RET status string, release memory using xfree()
+ * Get groups list from bb_api library
+ * 
+ * query_params IN - query parameters
+ * bb_min_config IN - minimal burst buffer configuration
+ * resp_out OUT - response output
+ * RET list of groups, or NULL on error
  */
-extern char *bb_g_get_status(uint32_t argc, char **argv, uint32_t uid,
-			     uint32_t gid);
-
-/*
- * Pack current burst buffer state information for network transmission to
- * user (e.g. "scontrol show burst")
- *
- * Returns a Slurm errno.
- */
-
-extern int bb_g_reconfig(void);
+extern List bb_g_get_groups_burst_buffer(void *query_params, void *bb_min_config, void *resp_out);
 
 #endif

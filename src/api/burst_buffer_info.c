@@ -381,8 +381,8 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 		burst_buffer_ptr->max_acc_dirs_per_job);
 	xstrcat(out_buf, line_end);
 	xstrfmtcat(out_buf, "FileSystem=%u FileSystemMount=%u",
-		burst_buffer_ptr->file_system_fir,
-		burst_buffer_ptr->file_system_mount_fir);
+		burst_buffer_ptr->file_system,
+		burst_buffer_ptr->file_system_mount);
 	/****** Line - User Access Control ******/
 	if (burst_buffer_ptr->allow_users) {
 		xstrcat(out_buf, line_end);
