@@ -525,10 +525,8 @@ extern void bb_set_tres_pos(bb_state_t *state_ptr)
 extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 {
 	s_p_hashtbl_t *bb_hashtbl = NULL;
-	char *bb_conf, *tmp = NULL, *value;
-	char *colon, *save_ptr = NULL, *tok;
-	uint32_t pool_cnt;
-	int fd, i;
+	char *bb_conf, *tmp = NULL, *value = NULL;
+	int fd;
 	static s_p_options_t bb_options[] = {
 		{"AllowUsers", S_P_STRING},
 		{"DenyUsers", S_P_STRING},
@@ -709,10 +707,10 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 			     "FileSystemCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
-	if ( &state_ptr->bb_config.max_acc_dirs_per_job == 0) {
+	if (state_ptr->bb_config.max_acc_dirs_per_job == 0) {
 		state_ptr->bb_config.max_acc_dirs_per_job = 4;
 	}
-	if ( &state_ptr->bb_config.max_acc_dirs_per_job > 8) {
+	if (state_ptr->bb_config.max_acc_dirs_per_job > 8) {
 		state_ptr->bb_config.max_acc_dirs_per_job = 8;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
@@ -2623,7 +2621,6 @@ extern bool bb_valid_pool_test(bb_state_t *state_ptr, char *pool_name)
 /* Determine if the specified pool name is valid on this system */
 extern bool bb_valid_groups_test(uint64_t tmp_cnt)
 {
-	int i = 0;
 	debug("burst buffer tmp_cnt =%ld",tmp_cnt);
 	//groups_assoc->req_space = tmp_cnt;
 	// if (tmp_cnt == 0) {

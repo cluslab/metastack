@@ -16211,9 +16211,9 @@ static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 			safe_unpack32(&msg->used_groups,				buffer);
 			safe_unpack32(&msg->used_databases,				buffer);
 			safe_unpack64(&msg->req_space,					buffer);
-			safe_unpack32(&msg->pfs, 						buffer);
-			safe_unpackbool(&msg->metadata_acceleration,	buffer);
+			safe_unpack32(&msg->access_mode, 				buffer);
 			safe_unpackstr(&msg->pfs, 						buffer);
+			safe_unpackbool(&msg->metadata_acceleration,	buffer);
 			safe_unpack32(&msg->max_clients_per_job, 		buffer);
 		}
 #endif
@@ -16932,11 +16932,11 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 	uint16_t protocol_version)
 {
 	int i = 0, j = 0;
-	uint32_t tmp32 = 0;
+	//uint32_t tmp32 = 0;
 	burst_buffer_info_msg_t *bb_msg_ptr = NULL;
 	burst_buffer_info_t *bb_info_ptr; //
 	burst_buffer_resv_t *bb_resv_ptr; // 
-	burst_buffer_use_t  *bb_use_ptr;
+	//burst_buffer_use_t  *bb_use_ptr;
 
 	bb_msg_ptr = xmalloc(sizeof(burst_buffer_info_msg_t));
 	safe_unpack32(&bb_msg_ptr->record_count, buffer);

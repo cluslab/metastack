@@ -366,43 +366,43 @@ static void *_prolog_timer(void *x)
 
 
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
-static void *_bb_timer(void *x)
-{
-	int delay_time, rc = SLURM_SUCCESS;
-	struct timespec ts;
-	struct timeval now;
-	slurm_msg_t msg;
-	job_notify_msg_t notify_req;
-	char srun_msg[128];
-	bb_timer_struct_t *bb_timer_struct = (bb_timer_struct_t *) x;
+// static void *_bb_timer(void *x)
+// {
+// 	int delay_time, rc = SLURM_SUCCESS;
+// 	struct timespec ts;
+// 	struct timeval now;
+// 	slurm_msg_t msg;
+// 	job_notify_msg_t notify_req;
+// 	char srun_msg[128];
+// 	bb_timer_struct_t *bb_timer_struct = (bb_timer_struct_t *) x;
 
-	delay_time = MAX(2, (bb_timer_struct->bb_msg_timeout - 2));
-	gettimeofday(&now, NULL);
-	ts.tv_sec = now.tv_sec + delay_time;
-	ts.tv_nsec = now.tv_usec * 1000;
-	slurm_mutex_lock(bb_timer_struct->bb_timer_mutex);
-	if (!(*bb_timer_struct->bb_fini)) {
-		rc = pthread_cond_timedwait(bb_timer_struct->bb_timer_cond,
-					    bb_timer_struct->bb_timer_mutex, &ts);
-	}
-	slurm_mutex_unlock(bb_timer_struct->bb_timer_mutex);
+// 	delay_time = MAX(2, (bb_timer_struct->bb_msg_timeout - 2));
+// 	gettimeofday(&now, NULL);
+// 	ts.tv_sec = now.tv_sec + delay_time;
+// 	ts.tv_nsec = now.tv_usec * 1000;
+// 	slurm_mutex_lock(bb_timer_struct->bb_timer_mutex);
+// 	if (!(*bb_timer_struct->bb_fini)) {
+// 		rc = pthread_cond_timedwait(bb_timer_struct->bb_timer_cond,
+// 					    bb_timer_struct->bb_timer_mutex, &ts);
+// 	}
+// 	slurm_mutex_unlock(bb_timer_struct->bb_timer_mutex);
 
-	if (rc != ETIMEDOUT)
-		return NULL;
+// 	if (rc != ETIMEDOUT)
+// 		return NULL;
 
-	slurm_msg_t_init(&msg);
-	snprintf(srun_msg, sizeof(srun_msg), "bb create hung on node %s",
-		 conf->node_name);
-	memset(&notify_req, 0, sizeof(notify_req));
-	notify_req.step_id.job_id	= bb_timer_struct->job_id;
-	notify_req.step_id.step_id = NO_VAL;
-	notify_req.step_id.step_het_comp = NO_VAL;
-	notify_req.message	= srun_msg;
-	msg.msg_type	= REQUEST_JOB_NOTIFY;
-	msg.data	= &notify_req;
-	slurm_send_only_controller_msg(&msg, working_cluster_rec);
-	return NULL;
-}
+// 	slurm_msg_t_init(&msg);
+// 	snprintf(srun_msg, sizeof(srun_msg), "bb create hung on node %s",
+// 		 conf->node_name);
+// 	memset(&notify_req, 0, sizeof(notify_req));
+// 	notify_req.step_id.job_id	= bb_timer_struct->job_id;
+// 	notify_req.step_id.step_id = NO_VAL;
+// 	notify_req.step_id.step_het_comp = NO_VAL;
+// 	notify_req.message	= srun_msg;
+// 	msg.msg_type	= REQUEST_JOB_NOTIFY;
+// 	msg.data	= &notify_req;
+// 	slurm_send_only_controller_msg(&msg, working_cluster_rec);
+// 	return NULL;
+// }
 
 extern int run_burst_buffer_create(prolog_launch_msg_t *req) {
 	int rc = SLURM_SUCCESS;
