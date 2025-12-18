@@ -1,43 +1,10 @@
-/*****************************************************************************\
- *  burst_buffer_slurmd.c - driver for bb_api library plugin interface
- *****************************************************************************
- *  Copyright (C) SchedMD LLC.
- *
- *  This file is part of Slurm, a resource management program.
- *  For details, see <https://slurm.schedmd.com/>.
- *  Please also read the included file: DISCLAIMER.
- *
- *  Slurm is free software; you can redistribute it and/or modify it under
- *  the terms of the GNU General Public License as published by the Free
- *  Software Foundation; either version 2 of the License, or (at your option)
- *  any later version.
- *
- *  In addition, as a special exception, the copyright holders give permission
- *  to link the code of portions of this program with the OpenSSL library under
- *  certain conditions as described in each individual source file, and
- *  distribute linked combinations including the two. You must obey the GNU
- *  General Public License in all respects for all of the code used other than
- *  OpenSSL. If you modify file(s) with this exception, you may extend this
- *  exception to your version of the file(s), but you are not obligated to do
- *  so. If you do not wish to do so, delete this exception statement from your
- *  version.  If you delete this exception statement from all source files in
- *  the program, then also delete it here.
- *
- *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
- *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- *  details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with Slurm; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
-\*****************************************************************************/
 
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 #include "slurm/slurm.h"
 #include "slurm/slurm_errno.h"
@@ -48,19 +15,18 @@
 #include "src/common/macros.h"
 #include "src/common/pack.h"
 #include "src/common/plugin.h"
-#include "src/common/plugrack.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+#include "src/common/read_config.h" 
 
 /*
  * ============================================================================
- * 配置 bb_api 库的插件路径
- * 可以通过修改 BB_API_PLUGIN_TYPE 和 BB_API_PLUGIN_NAME 来指定不同的库
+ * 配置 bb_api 库路径（普通共享库）
+ * 直接从 slurm_conf.plugindir 加载 "libbb_api.so"
  * ============================================================================
  */
-#define BB_API_PLUGIN_TYPE "burst_buffer"
-#define BB_API_PLUGIN_NAME "parastor/bb_api"
+#define BB_API_LIB_NAME "libbb_api.so"
 
 /*
  * ============================================================================
@@ -73,15 +39,11 @@
  * ============================================================================
  */
 typedef struct slurm_bb_api_ops {
+	/* 测试函数：验证库是否正确加载 */
+	int (*bb_api_test_function) (void);
 	/* 示例函数：获取 groups 列表 */
 	List (*get_groups_burst_buffer) (void *query_params, void *bb_min_config, void *resp_out);
 	
-	/* 
-	 * 在这里添加更多函数指针，例如：
-	 * List (*get_datasets_burst_buffer) (void *query_params, void *bb_min_config, void *resp_out);
-	 * int (*create_burst_buffer_group) (void *create_params, void *bb_min_config, void *resp_out);
-	 * ... 等等
-	 */
 } slurm_bb_api_ops_t;
 
 /*
@@ -89,6 +51,7 @@ typedef struct slurm_bb_api_ops {
  * 每个符号名称必须与 bb_api 库中导出的函数名完全一致
  */
 static const char *bb_api_syms[] = {
+	"bb_api_test_function",
 	"get_groups_burst_buffer",
 	/* 
 	 * 添加新函数时，在这里添加对应的符号名称，例如：
@@ -98,24 +61,20 @@ static const char *bb_api_syms[] = {
 	 */
 };
 
-/* bb_api 插件上下文 */
+/* bb_api 库句柄和操作结构 */
 static int g_bb_api_context_cnt = -1;
 static slurm_bb_api_ops_t *bb_api_ops = NULL;
-static plugin_context_t *g_bb_api_context = NULL;
+static plugin_handle_t g_bb_api_handle = PLUGIN_INVALID_HANDLE;
 static pthread_mutex_t g_bb_api_context_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/*
- * ============================================================================
- * 初始化 bb_api 库插件
- * 
- * Returns a Slurm errno.
- * ============================================================================
- */
+
 static int bb_api_init(void)
 {
 	int rc = SLURM_SUCCESS;
-	char *plugin_type = BB_API_PLUGIN_TYPE;
-	char *type = BB_API_PLUGIN_NAME;
+	char *plugin_dir = NULL;
+	char *lib_path = NULL;
+	int n_syms;
+	int i;
 
 	slurm_mutex_lock(&g_bb_api_context_lock);
 	if (g_bb_api_context_cnt >= 0)
@@ -123,35 +82,60 @@ static int bb_api_init(void)
 
 	g_bb_api_context_cnt = 0;
 	bb_api_ops = xmalloc(sizeof(slurm_bb_api_ops_t));
-	
-	g_bb_api_context = plugin_context_create(
-		plugin_type, type, (void **)bb_api_ops,
-		bb_api_syms, sizeof(bb_api_syms));
-	
-	if (!g_bb_api_context) {
-		error("cannot create %s context for %s",
-		      plugin_type, type);
-		xfree(bb_api_ops);
-		bb_api_ops = NULL;
-		g_bb_api_context_cnt = -1;
+
+	/* 获取插件目录并构建库路径 */
+	if (!(plugin_dir = xstrdup(slurm_conf.plugindir))) {
+		error("%s: No plugin dir configured", __func__);
 		rc = SLURM_ERROR;
-		goto fini;
+		goto fail;
+	}
+
+	xstrfmtcat(lib_path, "%s/%s", plugin_dir, BB_API_LIB_NAME);
+
+	/* 通过 dlopen 加载普通共享库 */
+	(void) dlerror();
+	g_bb_api_handle = dlopen(lib_path, RTLD_LAZY | RTLD_GLOBAL);
+	if (!g_bb_api_handle) {
+		error("%s: cannot load bb_api library %s: %s",
+		      __func__, lib_path, dlerror());
+		rc = SLURM_ERROR;
+		goto fail;
+	}
+
+	/* 使用 plugin_get_syms 解析符号到 ops 结构体 */
+	n_syms = sizeof(bb_api_syms) / sizeof(char *);
+	if (plugin_get_syms(g_bb_api_handle, n_syms,
+			    bb_api_syms, (void **)bb_api_ops) < n_syms) {
+		error("%s: cannot get all required symbols from %s",
+		      __func__, lib_path);
+		error("Missing symbols:");
+		for (i = 0; i < n_syms; i++) {
+			if (!((void **)bb_api_ops)[i])
+				error("  - %s", bb_api_syms[i]);
+		}
+		rc = SLURM_ERROR;
+		goto fail;
 	}
 
 	g_bb_api_context_cnt = 1;
+	goto fini;
+
+fail:
+	if (g_bb_api_handle != PLUGIN_INVALID_HANDLE) {
+		plugin_unload(g_bb_api_handle);
+		g_bb_api_handle = PLUGIN_INVALID_HANDLE;
+	}
+	xfree(bb_api_ops);
+	bb_api_ops = NULL;
+	g_bb_api_context_cnt = -1;
 
 fini:
+	xfree(lib_path);
+	xfree(plugin_dir);
 	slurm_mutex_unlock(&g_bb_api_context_lock);
 	return rc;
 }
 
-/*
- * ============================================================================
- * 清理 bb_api 库插件
- * 
- * Returns a Slurm errno.
- * ============================================================================
- */
 static int bb_api_fini(void)
 {
 	int rc = SLURM_SUCCESS;
@@ -160,9 +144,9 @@ static int bb_api_fini(void)
 	if (g_bb_api_context_cnt < 0)
 		goto fini;
 
-	if (g_bb_api_context) {
-		rc = plugin_context_destroy(g_bb_api_context);
-		g_bb_api_context = NULL;
+	if (g_bb_api_handle != PLUGIN_INVALID_HANDLE) {
+		plugin_unload(g_bb_api_handle);
+		g_bb_api_handle = PLUGIN_INVALID_HANDLE;
 	}
 	xfree(bb_api_ops);
 	bb_api_ops = NULL;
@@ -189,11 +173,6 @@ extern int bb_g_init(void)
 	return bb_api_init();
 }
 
-/*
- * Terminate the bb_api library infrastructure. Free memory.
- *
- * Returns a Slurm errno.
- */
 extern int bb_g_fini(void)
 {
 	return bb_api_fini();
@@ -212,75 +191,29 @@ extern int bb_g_fini(void)
  */
 
 /*
- * 示例函数：获取 groups 列表
+ * 测试函数：验证 bb_api 库是否正确加载
  * 
- * query_params IN - 查询参数
- * bb_min_config IN - 最小配置
- * resp_out OUT - 响应输出
- * RET groups 列表，失败返回 NULL
+ * RET: 0 on success, SLURM_ERROR on failure
  */
-extern List bb_g_get_groups_burst_buffer(void *query_params, void *bb_min_config, void *resp_out)
+extern int bb_g_bb_api_test_function(void)
 {
-	List result = NULL;
+	int rc = SLURM_ERROR;
 
 	/* 自动初始化插件（如果尚未初始化） */
 	if (g_bb_api_context_cnt < 0) {
 		if (bb_api_init() != SLURM_SUCCESS) {
 			error("%s: failed to initialize bb_api plugin", __func__);
-			return NULL;
+			return SLURM_ERROR;
 		}
 	}
 
 	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->get_groups_burst_buffer) {
-		result = (*(bb_api_ops->get_groups_burst_buffer))(query_params, bb_min_config, resp_out);
+	if (bb_api_ops && bb_api_ops->bb_api_test_function) {
+		rc = (*(bb_api_ops->bb_api_test_function))();
 	} else {
-		error("%s: get_groups_burst_buffer function not available", __func__);
+		error("%s: bb_api_test_function not available", __func__);
 	}
 	slurm_mutex_unlock(&g_bb_api_context_lock);
 
-	return result;
+	return rc;
 }
-
-/*
- * ============================================================================
- * 如何添加新的 bb_api 库函数调用：
- * 
- * 假设你要添加一个新函数：get_datasets_burst_buffer
- * 
- * 步骤 1: 在 slurm_bb_api_ops_t 结构体中添加函数指针
- *   List (*get_datasets_burst_buffer) (void *query_params, void *bb_min_config, void *resp_out);
- * 
- * 步骤 2: 在 bb_api_syms 数组中添加符号名称（必须与库中函数名完全一致）
- *   "get_datasets_burst_buffer",
- * 
- * 步骤 3: 在文件末尾添加包装函数（复制下面的模板并修改）：
- * 
- * extern List bb_g_get_datasets_burst_buffer(void *query_params, void *bb_min_config, void *resp_out)
- * {
- *     List result = NULL;
- * 
- *     if (g_bb_api_context_cnt < 0) {
- *         if (bb_api_init() != SLURM_SUCCESS) {
- *             error("%s: failed to initialize bb_api plugin", __func__);
- *             return NULL;
- *         }
- *     }
- * 
- *     slurm_mutex_lock(&g_bb_api_context_lock);
- *     if (bb_api_ops && bb_api_ops->get_datasets_burst_buffer) {
- *         result = (*(bb_api_ops->get_datasets_burst_buffer))(query_params, bb_min_config, resp_out);
- *     } else {
- *         error("%s: get_datasets_burst_buffer function not available", __func__);
- *     }
- *     slurm_mutex_unlock(&g_bb_api_context_lock);
- * 
- *     return result;
- * }
- * 
- * 注意：
- * - 函数指针类型必须与 bb_api 库中的函数签名完全匹配
- * - 符号名称必须与库中导出的函数名完全一致
- * - 包装函数名通常以 bb_g_ 开头，后面跟库中的函数名
- * ============================================================================
- */

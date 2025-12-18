@@ -250,4 +250,7 @@ extern int _find_group_key(void *x, void *key);
 
 extern int _find_dataset_key(void *x, void *key);
 
+/* Test function to verify bb_api library loading */
+extern int bb_api_test_function(void);
+
 #endif

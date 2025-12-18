@@ -3502,7 +3502,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	job_ptr->access_mode 	   		   = bb_job->access_mode;
 	job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
 	job_ptr->pfs					   = xstrdup(bb_job->pfs);
-	job_ptr->max_clients_per_job	   = bb_job->max_clients_per_job;
+	job_ptr->max_clients_per_job	   = bb_state.bb_config->max_clients_per_job;
 	job_ptr->bb_enable_pb			   = true;	
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	// pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
