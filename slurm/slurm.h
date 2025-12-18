@@ -3736,6 +3736,9 @@ typedef struct {
 	uint16_t cache_query; /*High Performance Query Switch*/
 	uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
 #endif
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	uint16_t bb_msg_timeout;	/* burst buffer message timeout */
+#endif
 } slurm_conf_t;
 
 typedef struct slurmd_status_msg {

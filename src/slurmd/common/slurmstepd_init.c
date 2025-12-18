@@ -359,6 +359,9 @@ extern void pack_slurm_conf_lite(buf_t *buffer)
 	pack16(slurm_conf.vsize_factor, buffer);
 	pack16(slurm_conf.wait_time, buffer);
 	packstr(slurm_conf.x11_params, buffer);
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	pack16(slurm_conf.bb_msg_timeout, buffer);
+#endif
 }
 
 extern int unpack_slurm_conf_lite_no_alloc(buf_t *buffer)
@@ -593,7 +596,9 @@ extern int unpack_slurm_conf_lite_no_alloc(buf_t *buffer)
 	safe_unpack16(&slurm_conf.vsize_factor, buffer);
 	safe_unpack16(&slurm_conf.wait_time, buffer);
 	safe_unpackstr(&slurm_conf.x11_params, buffer);
-
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	safe_unpack16(&slurm_conf.bb_msg_timeout, buffer);
+#endif
 	return SLURM_SUCCESS;
 unpack_error:
 	error("unpack_error in %s: %m", __func__);
