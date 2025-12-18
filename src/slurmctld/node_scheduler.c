@@ -3581,7 +3581,7 @@ extern void launch_prolog(job_record_t *job_ptr)
 
 	prolog_msg_ptr = xmalloc(sizeof(prolog_launch_msg_t));
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
-	if (job_ptr->bb_enable_pb == true) 
+	if (job_ptr->bb_enable_pb == true){ 
 		prolog_msg_ptr->used_groups          = job_ptr->used_groups;
 		prolog_msg_ptr->used_databases       = job_ptr->used_databases;
 		prolog_msg_ptr->max_clients_per_job  = job_ptr->max_clients_per_job;

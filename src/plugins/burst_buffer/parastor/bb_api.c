@@ -4,6 +4,27 @@
 #include "src/common/xstring.h"
 #include "src/common/list.h"
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
+#include "slurm/slurm_version.h"
+
+/*
+ * 为兼容 burst_buffer 公共代码中对 plugin_type 的引用，
+ * 在 libbb_api.so 中提供一套 Slurm 插件识别符号。
+ * 同时避免 dlopen 时出现 undefined symbol: plugin_type。
+ */
+const char plugin_name[]    = "bb_api library for parastor burst buffer";
+const char plugin_type[]    = "burst_buffer/parastor/bb_api";
+const uint32_t plugin_version = SLURM_VERSION_NUMBER;
+
+/* 
+ * 在 slurmd 侧使用 libbb_api.so 时，并不存在真正的数据库连接，
+ * 但 burst_buffer 公共代码中有对 acct_db_conn 的引用。
+ * 这里提供一个空指针定义，避免 dlopen libbb_api.so 时出现
+ * undefined symbol: acct_db_conn。
+ *
+ * 在 slurmctld 进程中有真正的 acct_db_conn 定义，而 slurmd 只加载
+ * libbb_api.so，不会与 slurmctld 的定义冲突。
+ */
+void *acct_db_conn = NULL;
 
 static int parse_json_dataset_result(json_t *dataset_obj, bb_attribute_dataset *dataset);
 static int parse_json_groups_result(json_t *group_obj, bb_attribute_group *group);
@@ -1786,4 +1807,18 @@ static char *_encode_password(const char *password)
     char *out = _base64_encode((unsigned char *)tmp, strlen(tmp));
     xfree(tmp);
     return out;
+}
+
+/*
+ * ============================================================================
+ * 测试函数：用于验证 bb_api 库是否正确加载和调用
+ * 
+ * Returns: 0 on success, -1 on error
+ * ============================================================================
+ */
+extern int bb_api_test_function(void)
+{
+	debug("xxxxxxxxx-bb_api_test_function: bb_api library is successfully loaded and called!");
+	debug("xxxxxxxxx-bb_api_test_function: This is a test function to verify library loading");
+	return 0;
 }

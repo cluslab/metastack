@@ -42,7 +42,7 @@
 #include "src/slurmd/common/slurmd_common.h"
 #include "src/slurmd/slurmd/slurmd.h"
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
-#include "src/interfaces/burst_buffer.h"
+#include "src/interfaces/burst_buffer_slurmd.h"
 #endif
 
 
@@ -358,7 +358,7 @@ static void *_prolog_timer(void *x)
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
 extern int run_burst_buffer_create(prolog_launch_msg_t *req) {
 	int rc = SLURM_SUCCESS;
-	bb_g_get_groups_burst_buffer();
+	bb_g_bb_api_test_function();
 	// bb_g_job_create_group();
 	// bb_g_job_create_dataset();
 	// bb_g_job_prefetch();
