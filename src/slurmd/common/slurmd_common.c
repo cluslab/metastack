@@ -54,6 +54,16 @@ typedef struct {
 	pthread_mutex_t *timer_mutex;
 } timer_struct_t;
 
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+typedef struct {
+	uint32_t job_id;
+	uint16_t bb_msg_timeout;
+	bool *bb_fini;
+	pthread_cond_t *bb_timer_cond;
+	pthread_mutex_t *bb_timer_mutex;
+} bb_timer_struct_t;
+#endif
+
 static pthread_mutex_t prolog_serial_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*
@@ -356,9 +366,73 @@ static void *_prolog_timer(void *x)
 
 
 #ifdef  __METASTACK_NEW_BURSTBUFFER1
+static void *_bb_timer(void *x)
+{
+	int delay_time, rc = SLURM_SUCCESS;
+	struct timespec ts;
+	struct timeval now;
+	slurm_msg_t msg;
+	job_notify_msg_t notify_req;
+	char srun_msg[128];
+	bb_timer_struct_t *bb_timer_struct = (bb_timer_struct_t *) x;
+
+	delay_time = MAX(2, (bb_timer_struct->bb_msg_timeout - 2));
+	gettimeofday(&now, NULL);
+	ts.tv_sec = now.tv_sec + delay_time;
+	ts.tv_nsec = now.tv_usec * 1000;
+	slurm_mutex_lock(bb_timer_struct->bb_timer_mutex);
+	if (!(*bb_timer_struct->bb_fini)) {
+		rc = pthread_cond_timedwait(bb_timer_struct->bb_timer_cond,
+					    bb_timer_struct->bb_timer_mutex, &ts);
+	}
+	slurm_mutex_unlock(bb_timer_struct->bb_timer_mutex);
+
+	if (rc != ETIMEDOUT)
+		return NULL;
+
+	slurm_msg_t_init(&msg);
+	snprintf(srun_msg, sizeof(srun_msg), "bb create hung on node %s",
+		 conf->node_name);
+	memset(&notify_req, 0, sizeof(notify_req));
+	notify_req.step_id.job_id	= timer_struct->job_id;
+	notify_req.step_id.step_id = NO_VAL;
+	notify_req.step_id.step_het_comp = NO_VAL;
+	notify_req.message	= srun_msg;
+	msg.msg_type	= REQUEST_JOB_NOTIFY;
+	msg.data	= &notify_req;
+	slurm_send_only_controller_msg(&msg, working_cluster_rec);
+	return NULL;
+}
+
 extern int run_burst_buffer_create(prolog_launch_msg_t *req) {
 	int rc = SLURM_SUCCESS;
-	bb_g_bb_api_test_function();
+	int diff_time, rc;
+	time_t start_time = time(NULL);
+	bool bb_fini = false;
+	pthread_t       bb_timer_id;
+	pthread_cond_t  bb_timer_cond  = PTHREAD_COND_INITIALIZER;
+	pthread_mutex_t bb_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
+	timer_struct.job_id      = req->job_id;
+	timer_struct.msg_timeout = slurm_conf.bb_msg_timeout;
+	timer_struct.prolog_fini = &bb_fini;
+	timer_struct.timer_cond  = &bb_timer_cond;
+	timer_struct.timer_mutex = &bb_timer_mutex;
+	slurm_thread_create(&bb_timer_id, _bb_timer, &timer_struct);
+
+	bb_g_get_groups_burst_buffer();
+	slurm_mutex_lock(&bb_timer_mutex);
+	bb_fini = true;
+	slurm_cond_broadcast(&bb_timer_cond);
+	slurm_mutex_unlock(&bb_timer_mutex);
+
+	diff_time = difftime(time(NULL), start_time);
+	if (diff_time >= (slurm_conf.msg_timeout / 2)) {
+		info("prolog for job %u ran for %d seconds",
+		     job_env->jobid, diff_time);
+	}
+
+	slurm_thread_join(timer_id);
+	if (script_lock)
 	// bb_g_job_create_group();
 	// bb_g_job_create_dataset();
 	// bb_g_job_prefetch();

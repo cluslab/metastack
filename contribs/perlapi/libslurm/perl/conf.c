@@ -195,6 +195,9 @@ int slurm_ctl_conf_to_hv(slurm_conf_t *conf, HV *hv)
 
 	STORE_FIELD(hv, conf, msg_timeout, uint16_t);
 
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+		STORE_FIELD(hv, conf, bb_msg_timeout, uint16_t);
+#endif
 	STORE_FIELD(hv, conf, next_job_id, uint32_t);
 
 	if (conf->node_prefix)
@@ -515,6 +518,9 @@ int hv_to_slurm_ctl_conf(HV *hv, slurm_conf_t *conf)
 	FETCH_FIELD(hv, conf, mpi_default, charp, FALSE);
 	FETCH_FIELD(hv, conf, mpi_params, charp, FALSE);
 	FETCH_FIELD(hv, conf, msg_timeout, uint16_t, TRUE);
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	FETCH_FIELD(hv, conf, bb_msg_timeout, uint16_t, TRUE);
+#endif
 	FETCH_FIELD(hv, conf, next_job_id, uint32_t, TRUE);
 
 	FETCH_FIELD(hv, conf, node_prefix, charp, FALSE);

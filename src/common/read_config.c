@@ -536,7 +536,10 @@ s_p_options_t slurm_conf_options[] = {
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	 {"WatchDogName", S_P_ARRAY, _parse_watch_dog_name,
 	  _destroy_watch_dog},
- #endif
+#endif
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	{"BBMessageTimeout", S_P_UINT16},	
+#endif
 	{NULL}
 };
 
@@ -3982,6 +3985,9 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	xfree (ctl_conf_ptr->mpi_default);
 	xfree (ctl_conf_ptr->mpi_params);
 	ctl_conf_ptr->msg_timeout		= NO_VAL16;
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	ctl_conf_ptr->bb_msg_timeout		= NO_VAL16;
+#endif
 	ctl_conf_ptr->next_job_id		= NO_VAL;
 	xfree(ctl_conf_ptr->node_features_plugins);
 	xfree (ctl_conf_ptr->node_prefix);
@@ -5550,7 +5556,12 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 		conf->msg_timeout = DEFAULT_MSG_TIMEOUT;
 	else if (conf->msg_timeout > 100)
 		error_in_daemon("MessageTimeout is too high for effective fault-tolerance");
-
+#ifdef  __METASTACK_NEW_BURSTBUFFER1
+	if (!s_p_get_uint16(&conf->bb_msg_timeout, "BBMessageTimeout", hashtbl))
+		conf->bb_msg_timeout = DEFAULT_MSG_TIMEOUT * 600;
+	else if (conf->bb_msg_timeout > 65534)
+		error_in_daemon("BBMessageTimeout is too high for effective fault-tolerance");
+#endif
 	if (!s_p_get_uint32(&conf->min_job_age, "MinJobAge", hashtbl))
 		conf->min_job_age = DEFAULT_MIN_JOB_AGE;
 	else if (conf->min_job_age < 2) {

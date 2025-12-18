@@ -49,6 +49,8 @@ typedef struct slurm_bb_api_ops {
 /*
  * 符号表：必须与 slurm_bb_api_ops_t 结构体中的函数指针顺序完全一致
  * 每个符号名称必须与 bb_api 库中导出的函数名完全一致
+ * 符号表：必须与 slurm_bb_api_ops_t 结构体中的函数指针顺序完全一致
+ * 每个符号名称必须与 bb_api 库中导出的函数名完全一致
  */
 static const char *bb_api_syms[] = {
 	"bb_api_test_function",
@@ -76,6 +78,8 @@ static int bb_api_init(void)
 	int n_syms;
 	int i;
 
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (g_bb_api_context_cnt >= 0)
 	slurm_mutex_lock(&g_bb_api_context_lock);
 	if (g_bb_api_context_cnt >= 0)
 		goto fini;
@@ -129,6 +133,20 @@ fail:
 	bb_api_ops = NULL;
 	g_bb_api_context_cnt = -1;
 
+	g_bb_api_context_cnt = 1;
+	goto fini;
+
+fail:
+	if (g_bb_api_handle != PLUGIN_INVALID_HANDLE) {
+		plugin_unload(g_bb_api_handle);
+		g_bb_api_handle = PLUGIN_INVALID_HANDLE;
+	}
+	xfree(bb_api_ops);
+	bb_api_ops = NULL;
+	g_bb_api_context_cnt = -1;
+
+	g_bb_api_context_cnt = 1;
+
 fini:
 	xfree(lib_path);
 	xfree(plugin_dir);
@@ -139,7 +157,10 @@ fini:
 static int bb_api_fini(void)
 {
 	int rc = SLURM_SUCCESS;
+	int rc = SLURM_SUCCESS;
 
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (g_bb_api_context_cnt < 0)
 	slurm_mutex_lock(&g_bb_api_context_lock);
 	if (g_bb_api_context_cnt < 0)
 		goto fini;
@@ -151,7 +172,12 @@ static int bb_api_fini(void)
 	xfree(bb_api_ops);
 	bb_api_ops = NULL;
 	g_bb_api_context_cnt = -1;
+	xfree(bb_api_ops);
+	bb_api_ops = NULL;
+	g_bb_api_context_cnt = -1;
 
+fini:
+	slurm_mutex_unlock(&g_bb_api_context_lock);
 fini:
 	slurm_mutex_unlock(&g_bb_api_context_lock);
 	return rc;
@@ -161,59 +187,89 @@ fini:
  * ============================================================================
  * 公共接口函数
  * ============================================================================
+ * ============================================================================
+ * 公共接口函数
+ * ============================================================================
  */
 
 /*
+ * Initialize the bb_api library infrastructure.
  * Initialize the bb_api library infrastructure.
  *
  * Returns a Slurm errno.
  */
 extern int bb_g_init(void)
 {
-	return bb_api_init();
-}
+	DEF_TIMERS;
+	int i, rc = SLURM_SUCCESS, rc2;
 
-extern int bb_g_fini(void)
-{
-	return bb_api_fini();
-}
-
-/*
- * ============================================================================
- * bb_api 库函数包装器
- * 
- * 每个包装函数遵循相同的模式：
- * 1. 检查插件是否已初始化，如果没有则初始化
- * 2. 使用互斥锁保护
- * 3. 通过函数指针调用库中的函数
- * 4. 返回结果
- * ============================================================================
- */
-
-/*
- * 测试函数：验证 bb_api 库是否正确加载
- * 
- * RET: 0 on success, SLURM_ERROR on failure
- */
-extern int bb_g_bb_api_test_function(void)
-{
-	int rc = SLURM_ERROR;
-
-	/* 自动初始化插件（如果尚未初始化） */
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
+	START_TIMER;
+	xassert(g_context_cnt >= 0);
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; ((i < g_context_cnt) && (rc == SLURM_SUCCESS)); i++) {
+		rc2 = (*(ops[i].load_state))(init_config);
+		rc = MAX(rc, rc2);
 	}
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->bb_api_test_function) {
-		rc = (*(bb_api_ops->bb_api_test_function))();
-	} else {
-		error("%s: bb_api_test_function not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
 
 	return rc;
+}
+
+/*
+ * Return string containing current burst buffer status
+ * argc IN - count of status command arguments
+ * argv IN - status command arguments
+ * uid - authenticated UID
+ * gid - authenticated GID
+ * RET status string, release memory using xfree()
+ */
+extern char *bb_g_get_status(uint32_t argc, char **argv, uint32_t uid,
+			     uint32_t gid)
+{
+	DEF_TIMERS;
+	int i;
+	char *status = NULL, *tmp;
+
+	START_TIMER;
+	xassert(g_context_cnt >= 0);
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++) {
+		tmp = (*(ops[i].get_status))(argc, argv, uid, gid);
+		if (status) {
+			xstrcat(status, tmp);
+			xfree(tmp);
+		} else {
+			status = tmp;
+		}
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return status;
+}
+extern char *bb_g_job_create_group()
+{
+
+}
+extern char *bb_g_job_create_dataset()
+{
+
+}
+extern char *bb_g_job_prefetch()
+{
+
+}
+
+extern char *bb_g_job_recycle()
+{
+
+}
+extern char *bb_g_job_delete_dataset()
+{
+
+}
+extern char *bb_g_job_delete_group()
+{
+
 }
