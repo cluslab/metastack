@@ -341,6 +341,9 @@ dnl Check for compilation of Slurm with CURL support:
 dnl
 LIBCURL_CHECK_CONFIG
 
+dnl Check for parastor burst buffer plugin
+X_AC_PARASTOR
+
 dnl Check word size so we can deprecate 32-bit systems
 AC_CHECK_SIZEOF([void *], 8)
 
@@ -416,6 +419,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/burst_buffer/common/Makefile
 		 src/plugins/burst_buffer/datawarp/Makefile
 		 src/plugins/burst_buffer/lua/Makefile
+		 src/plugins/burst_buffer/parastor/Makefile
 		 src/plugins/cgroup/Makefile
 		 src/plugins/cgroup/common/Makefile
 		 src/plugins/cgroup/v1/Makefile

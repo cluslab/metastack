@@ -687,8 +687,12 @@ lua_LIBS
 lua_CFLAGS
 HAVE_PARASTOR_FALSE
 HAVE_PARASTOR_TRUE
+WITH_PARASTOR_FALSE
+WITH_PARASTOR_TRUE
 parastor_LIBS
 parastor_CFLAGS
+PARASTOR_LDFLAGS
+PARASTOR_CPPFLAGS
 SLURMRESTD_PORT
 WITH_SLURMRESTD_FALSE
 WITH_SLURMRESTD_TRUE
@@ -27001,6 +27005,8 @@ printf "%s\n" "#define SLURMRESTD_PORT $slurmrestdport" >>confdefs.h
 
 # Check whether --with-parastor was given.
 
+x_ac_have_parastor="no"
+
 	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to enable parastor plugin support" >&5
 printf %s "checking whether to enable parastor plugin support... " >&6; }
 
@@ -27008,19 +27014,21 @@ printf %s "checking whether to enable parastor plugin support... " >&6; }
 if test ${with_parastor+y}
 then :
   withval=$with_parastor;  case "$withval" in
-			yes|"") x_ac_parastor=yes ;;
+			yes) x_ac_parastor=yes ;;
+			"") x_ac_parastor=yes ;;
 			 no) x_ac_parastor=no ;;
-			  *) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: doh!" >&5
-printf "%s\n" "doh!" >&6; }
-			     as_fn_error $? "bad value \"$withval\" for --with-parastor" "$LINENO" 5 ;;
+			  *) x_ac_parastor=yes
+			     _x_ac_parastor_dirs="$withval" ;;
 			esac
 else $as_nop
-  x_ac_parastor=yes
+  x_ac_parastor=no
+  with_parastor=""
 fi
 
-# with-parastor=no,dont check for libcurl & jansson
+# Only check for libcurl & jansson if --with-parastor=yes or --with-parastor=PATH is explicitly specified
 
-if test "x$with_parastor" = "xno"; then
+if test "x$x_ac_parastor" = "xno"; then
+	x_ac_have_parastor="no"
 	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
 printf "%s\n" "no" >&6; }
 	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: parastor (libcurl) support is disabled" >&5
@@ -27141,79 +27149,78 @@ then :
 printf "%s\n" "$as_me: WARNING: unable to locate libcurl package (parastor)" >&2;}
 else $as_nop
   as_fn_error $? "unable to locate libcurl package (parastor)" "$LINENO" 5
-fi
 	fi
-fi
+	fi
 
-# check jansson
+# check jansson (only if x_ac_parastor is yes)
 
-x_ac_parastor_pkg_name="jansson"
+	if test "x$x_ac_parastor" = "xyes"; then
+		x_ac_parastor_pkg_name="jansson"
 
-	pkg_failed=no
-	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for ${x_ac_parastor_pkg_name}" >&5
+		pkg_failed=no
+		{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for ${x_ac_parastor_pkg_name}" >&5
 printf %s "checking for ${x_ac_parastor_pkg_name}... " >&6; }
 
-	if test -n "$parastor_CFLAGS"; then
-	    pkg_cv_parastor_CFLAGS="$parastor_CFLAGS"
-	 elif test -n "$PKG_CONFIG"; then
-	    if test -n "$PKG_CONFIG" && \
-	    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"${x_ac_parastor_pkg_name}\""; } >&5
-	  ($PKG_CONFIG --exists --print-errors "${x_ac_parastor_pkg_name}") 2>&5
-	  ac_status=$?
-	  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-	  test $ac_status = 0; }; then
-	  pkg_cv_parastor_CFLAGS=`$PKG_CONFIG --cflags "${x_ac_parastor_pkg_name}" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
-	else
-	  pkg_failed=yes
-	fi
-	 else
-	    pkg_failed=untried
-	fi
-geshi
-	if test -n "$parastor_LIBS"; then
-	    pkg_cv_parastor_LIBS="$parastor_LIBS"
-	 elif test -n "$PKG_CONFIG"; then
-	    if test -n "$PKG_CONFIG" && \
-	    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"${x_ac_parastor_pkg_name}\""; } >&5
-	  ($PKG_CONFIG --exists --print-errors "${x_ac_parastor_pkg_name}") 2>&5
-	  ac_status=$?
-	  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-	  test $ac_status = 0; }; then
-	  pkg_cv_parastor_LIBS=`$PKG_CONFIG --libs "${x_ac_parastor_pkg_name}" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
-	else
-	  pkg_failed=yes
-	fi
-	 else
-	    pkg_failed=untried
-	fi
+		if test -n "$parastor_CFLAGS"; then
+		    pkg_cv_parastor_CFLAGS="$parastor_CFLAGS"
+		 elif test -n "$PKG_CONFIG"; then
+		    if test -n "$PKG_CONFIG" && \
+		    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"${x_ac_parastor_pkg_name}\""; } >&5
+		  ($PKG_CONFIG --exists --print-errors "${x_ac_parastor_pkg_name}") 2>&5
+		  ac_status=$?
+		  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+		  test $ac_status = 0; }; then
+		  pkg_cv_parastor_CFLAGS=`$PKG_CONFIG --cflags "${x_ac_parastor_pkg_name}" 2>/dev/null`
+			      test "x$?" != "x0" && pkg_failed=yes
+		else
+		  pkg_failed=yes
+		fi
+		 else
+		    pkg_failed=untried
+		fi
+		if test -n "$parastor_LIBS"; then
+		    pkg_cv_parastor_LIBS="$parastor_LIBS"
+		 elif test -n "$PKG_CONFIG"; then
+		    if test -n "$PKG_CONFIG" && \
+		    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"${x_ac_parastor_pkg_name}\""; } >&5
+		  ($PKG_CONFIG --exists --print-errors "${x_ac_parastor_pkg_name}") 2>&5
+		  ac_status=$?
+		  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+		  test $ac_status = 0; }; then
+		  pkg_cv_parastor_LIBS=`$PKG_CONFIG --libs "${x_ac_parastor_pkg_name}" 2>/dev/null`
+			      test "x$?" != "x0" && pkg_failed=yes
+		else
+		  pkg_failed=yes
+		fi
+		 else
+		    pkg_failed=untried
+		fi
 
-	if test $pkg_failed = yes; then
-	        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+		if test $pkg_failed = yes; then
+		        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
 printf "%s\n" "no" >&6; }
-	        x_ac_have_parastor="no"
-	elif test $pkg_failed = untried; then
-	        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+		        x_ac_have_parastor="no"
+		elif test $pkg_failed = untried; then
+		        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
 printf "%s\n" "no" >&6; }
-	        x_ac_have_parastor="no"
-	else
-	        PARASTOR_CFLAGS=$pkg_cv_parastor_CFLAGS
-	        PARASTOR_LIBS=$pkg_cv_parastor_LIBS
-	        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+		        x_ac_have_parastor="no"
+		else
+		        PARASTOR_CFLAGS=$pkg_cv_parastor_CFLAGS
+		        PARASTOR_LIBS=$pkg_cv_parastor_LIBS
+		        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 printf "%s\n" "yes" >&6; }
-	        x_ac_have_parastor="yes"
-	fi
+		        x_ac_have_parastor="yes"
+		fi
 
-	if test "x$x_ac_have_parastor" = "xyes"; then
-	  saved_CFLAGS="$CFLAGS"
-	  saved_LIBS="$LIBS"
-	  CFLAGS="$CFLAGS $PARASTOR_CFLAGS"
-	  LIBS="$LIBS $PARASTOR_LIBS"
+		if test "x$x_ac_have_parastor" = "xyes"; then
+		  saved_CFLAGS="$CFLAGS"
+		  saved_LIBS="$LIBS"
+		  CFLAGS="$CFLAGS $PARASTOR_CFLAGS"
+		  LIBS="$LIBS $PARASTOR_LIBS"
 
-	  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for whether we can link to jansson (parastor)" >&5
+		  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for whether we can link to jansson (parastor)" >&5
 printf %s "checking for whether we can link to jansson (parastor)... " >&6; }
-	  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+		  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 #include <jansson.h>
 
@@ -27235,43 +27242,53 @@ fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam \
     conftest$ac_exeext conftest.$ac_ext
 
-	  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $x_ac_have_parastor $x_ac_parastor_pkg_name" >&5
+		  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $x_ac_have_parastor $x_ac_parastor_pkg_name" >&5
 printf "%s\n" "$x_ac_have_parastor $x_ac_parastor_pkg_name" >&6; }
-	  if test "x$x_ac_have_parastor" = "xno"; then
-	    if test -z "$with_parastor"
+		  if test "x$x_ac_have_parastor" = "xno"; then
+		    if test -z "$with_parastor"
 then :
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: unable to link against jansson (parastor)" >&5
 printf "%s\n" "$as_me: WARNING: unable to link against jansson (parastor)" >&2;}
 else $as_nop
   as_fn_error $? "unable to link against jansson (parastor)" "$LINENO" 5
 fi
-	  else
+		  else
 printf "%s\n" "#define HAVE_PARASTOR 1" >>confdefs.h
-	  fi
-	  CFLAGS="$saved_CFLAGS"
-	  LIBS="$saved_LIBS"
-	else
-	  if test -z "$with_parastor"
+		  fi
+		  CFLAGS="$saved_CFLAGS"
+		  LIBS="$saved_LIBS"
+		else
+		  if test -z "$with_parastor"
 then :
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: unable to locate jansson package (parastor)" >&5
 printf "%s\n" "$as_me: WARNING: unable to locate jansson package (parastor)" >&2;}
-else 
-  $as_nop
+else $as_nop
   as_fn_error $? "unable to locate jansson package (parastor)" "$LINENO" 5
 fi
-
-fi
-
-
+		fi
 
 # jansson end
+fi
+fi
 
 if test "x$x_ac_have_parastor" = "xyes"; then
   HAVE_PARASTOR_TRUE=
   HAVE_PARASTOR_FALSE='#'
+  PARASTOR_CPPFLAGS="$PARASTOR_CFLAGS"
+  PARASTOR_LDFLAGS="$PARASTOR_LIBS"
 else
   HAVE_PARASTOR_TRUE='#'
   HAVE_PARASTOR_FALSE=
+  PARASTOR_CPPFLAGS=""
+  PARASTOR_LDFLAGS=""
+fi
+
+if test "x$x_ac_have_parastor" = "xyes"; then
+  WITH_PARASTOR_TRUE=
+  WITH_PARASTOR_FALSE='#'
+else
+  WITH_PARASTOR_TRUE='#'
+  WITH_PARASTOR_FALSE=
 fi
 ##############################
 
@@ -28637,6 +28654,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${WITH_YAML_TRUE}" && test -z "${WITH_YAML_FALSE}"; then
   as_fn_error $? "conditional \"WITH_YAML\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${WITH_PARASTOR_TRUE}" && test -z "${WITH_PARASTOR_FALSE}"; then
+  as_fn_error $? "conditional \"WITH_PARASTOR\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${BUILD_OFED_TRUE}" && test -z "${BUILD_OFED_FALSE}"; then
