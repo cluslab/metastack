@@ -3088,10 +3088,14 @@ skip_start:
 				   job_ptr, job_ptr->nodes,
 				   job_ptr->total_cpus,
 				   job_ptr->part_ptr->name);
-			if (job_ptr->batch_flag == 0)
-				srun_allocate(job_ptr);
-			else if (!IS_JOB_CONFIGURING(job_ptr))
-				launch_job(job_ptr);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+			if(!IS_JOB_STAGING(job_ptr)) {
+				if (job_ptr->batch_flag == 0)
+					srun_allocate(job_ptr);
+				else if (!IS_JOB_CONFIGURING(job_ptr))
+					launch_job(job_ptr);
+			}
+#endif
 			rebuild_job_part_list(job_ptr);
 			job_cnt++;
 #ifdef __METASTACK_NEW_PENDING_ORDER
@@ -6152,10 +6156,18 @@ extern void prolog_running_decr(job_record_t *job_ptr)
 		info("%s: Configuration for %pJ is complete",
 		     __func__, job_ptr);
 		job_config_fini(job_ptr);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
 		if (job_ptr->batch_flag &&
-		    (IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr))) {
+		    (IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr)) && !(IS_JOB_STAGING(job_ptr))) {
 			launch_job(job_ptr);
 		}
+#else
+		if (job_ptr->batch_flag &&
+			(IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr))) {
+			launch_job(job_ptr);
+		}
+#endif
+
 	}
 }
 

@@ -15966,18 +15966,19 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		packstr(msg->apptype, buffer);
 #endif
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-		packbool(msg->bb_enable_pb, buffer);
-		if(msg->bb_enable_pb) {
-			pack32(msg->used_groups,             buffer);
-			pack32(msg->used_databases,          buffer);
-			pack64(msg->req_space,               buffer);
-			pack32(msg->access_mode,             buffer);
-			packstr(msg->pfs,                    buffer);
-			packbool(msg->metadata_acceleration, buffer);
-			pack32(msg->max_clients_per_job,     buffer);
-		}
-#endif
+// #ifdef  __METASTACK_NEW_BURSTBUFFER2
+// 		packbool(msg->bb_enable_pb, buffer);
+// 		if(msg->bb_enable_pb) {
+// 			pack32(msg->used_groups,             buffer);
+// 			pack32(msg->used_databases,          buffer);
+// 			pack64(msg->req_space,               buffer);
+// 			pack32(msg->access_mode,             buffer);
+// 			packstr(msg->pfs,                    buffer);
+// 			packbool(msg->metadata_acceleration, buffer);
+// 			pack32(msg->max_clients_per_job,     buffer);
+// 			packbool(msg->bb_enable_pb,          buffer);
+// 		}
+// #endif
 	} else if (smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		gres_prep_pack(msg->job_gres_prep, buffer,
 				smsg->protocol_version);
@@ -16205,18 +16206,18 @@ static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		safe_unpackstr(&msg->apptype, buffer);
 #endif
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-		safe_unpackbool(&msg->bb_enable_pb, buffer); 
-		if(msg->bb_enable_pb) {
-			safe_unpack32(&msg->used_groups,				buffer);
-			safe_unpack32(&msg->used_databases,				buffer);
-			safe_unpack64(&msg->req_space,					buffer);
-			safe_unpack32(&msg->access_mode, 				buffer);
-			safe_unpackstr(&msg->pfs, 						buffer);
-			safe_unpackbool(&msg->metadata_acceleration,	buffer);
-			safe_unpack32(&msg->max_clients_per_job, 		buffer);
-		}
-#endif
+// #ifdef  __METASTACK_NEW_BURSTBUFFER1
+// 		safe_unpackbool(&msg->bb_enable_pb, buffer); 
+// 		if(msg->bb_enable_pb) {
+// 			safe_unpack32(&msg->used_groups,				buffer);
+// 			safe_unpack32(&msg->used_databases,				buffer);
+// 			safe_unpack64(&msg->req_space,					buffer);
+// 			safe_unpack32(&msg->access_mode, 				buffer);
+// 			safe_unpackstr(&msg->pfs, 						buffer);
+// 			safe_unpackbool(&msg->metadata_acceleration,	buffer);
+// 			safe_unpack32(&msg->max_clients_per_job, 		buffer);
+// 		}
+// #endif
 	} else if(smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		if (gres_prep_unpack(&msg->job_gres_prep, buffer,
 			smsg->protocol_version))

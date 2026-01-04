@@ -102,6 +102,13 @@
 	(_X->job_state & JOB_POWER_UP_NODE)
 
 /* Derived job states */
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+#define IS_JOB_STAGING(_X)		\
+	(_X->job_state & JOB_BURSTBUFFER_STAGING)
+	#define IS_JOB_STAGE(_X)		\
+	(_X->job_state & JOB_BURSTBUFFER_STAGE)
+#endif
+
 #define IS_JOB_COMPLETING(_X)		\
 	(_X->job_state & JOB_COMPLETING)
 #define IS_JOB_CONFIGURING(_X)		\

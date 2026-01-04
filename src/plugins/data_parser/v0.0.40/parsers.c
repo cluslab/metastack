@@ -8637,6 +8637,9 @@ static const flag_bit_t PARSER_FLAG_ARRAY(JOB_STATE)[] = {
 	add_flag(JOB_SPECIAL_EXIT, JOB_STATE_FLAGS, "SPECIAL_EXIT", false, "Requeue an exit job in hold"),
 	add_flag(JOB_RESIZING, JOB_STATE_FLAGS, "RESIZING", false, "Size of job about to change, flag set before calling accounting functions immediately before job changes size"),
 	add_flag(JOB_CONFIGURING, JOB_STATE_FLAGS, "CONFIGURING", false, "Allocated nodes booting"),
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	add_flag(JOB_BURSTBUFFER_STAGING, JOB_STATE_FLAGS, "STAGING", false, "Creating  burst buffer"),
+#endif
 	add_flag(JOB_COMPLETING, JOB_STATE_FLAGS, "COMPLETING", false, "Waiting for epilog completion"),
 	add_flag(JOB_STOPPED, JOB_STATE_FLAGS, "STOPPED", false, "Job is stopped state (holding resources, but sent SIGSTOP)"),
 	add_flag(JOB_RECONFIG_FAIL, JOB_STATE_FLAGS, "RECONFIG_FAIL", false, "Node configuration for job failed, not job state, just job requeue flag"),

@@ -445,9 +445,9 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->mpi_default         = xstrdup(conf->mpi_default);
 	conf_ptr->mpi_params          = xstrdup(conf->mpi_params);
 	conf_ptr->msg_timeout         = conf->msg_timeout;
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-	conf_ptr->bb_msg_timeout      = conf->bb_msg_timeout;
-#endif
+// #ifdef  __METASTACK_NEW_BURSTBUFFER1
+// 	conf_ptr->bb_msg_timeout      = conf->bb_msg_timeout;
+// #endif
 
 	conf_ptr->next_job_id         = next_job_id;
 	conf_ptr->node_features_conf  = node_features_g_get_config();

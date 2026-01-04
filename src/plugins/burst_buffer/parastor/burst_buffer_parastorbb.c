@@ -2226,9 +2226,10 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 	    (job_ptr->burst_buffer[0] == '\0')) {
 		if (job_ptr->details->min_nodes == 0)
 			rc = ESLURM_INVALID_NODE_COUNT;
+			job_ptr->bb_enable_pb = false;	
 		return rc;
 	}
-
+	job_ptr->bb_enable_pb = true;	
 	/* Initialization */
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	if (bb_state.last_load_time == 0) {
@@ -3503,7 +3504,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
 	job_ptr->pfs					   = xstrdup(bb_job->pfs);
 	job_ptr->max_clients_per_job	   = bb_state.bb_config.max_clients_per_job;
-	job_ptr->bb_enable_pb			   = true;	
+	//job_ptr->bb_enable_pb			   = true;	
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	// pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
 	// pre_run_args->args = NULL;
@@ -3511,7 +3512,13 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	// pre_run_args->timeout = bb_state.bb_config.other_timeout * 1000;
 	// pre_run_args->user_id = job_ptr->user_id;
 	// pre_run_args->bb_node_cnt = bb_node_cnt;
-
+	if (job_ptr->details) { /* Defer launch until completion */
+		job_ptr->details->prolog_running++;
+		job_state_set_flag(job_ptr, JOB_CONFIGURING);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
+	}
 	// slurm_thread_create_detached(_start_pre_run, pre_run_args);
 
 	return SLURM_SUCCESS;

@@ -3238,9 +3238,6 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	tmp_job = job_array_post_sched(job_ptr);
 	if (tmp_job && (tmp_job != job_ptr) && (orig_resv_port_cnt == NO_VAL16))
 		tmp_job->resv_port_cnt = orig_resv_port_cnt;
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-	job_ptr->bb_enable_pb = false;	
-#endif
 
 	if (bb_g_job_begin(job_ptr) != SLURM_SUCCESS) {
 		/* Leave job queued, something is hosed */
@@ -3384,6 +3381,20 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	}
 #endif
 
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	/*
+	 * Request asynchronous launch of a prolog for a
+	 * non-batch job as long as the node is not configuring for
+	 * a reboot first.  Job state could be changed above so we need to
+	 * recheck its state to see if it's currently configuring.
+	 * PROLOG_FLAG_CONTAIN also turns on PROLOG_FLAG_ALLOC.
+	 */
+	if(job_ptr)
+	if (!IS_JOB_CONFIGURING(job_ptr)) {
+		if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC)
+			launch_prolog(job_ptr);
+	}
+#else
 	/*
 	 * Request asynchronous launch of a prolog for a
 	 * non-batch job as long as the node is not configuring for
@@ -3395,7 +3406,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 		if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC)
 			launch_prolog(job_ptr);
 	}
-
+#endif
 cleanup:
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -3580,18 +3591,18 @@ extern void launch_prolog(job_record_t *job_ptr)
 #endif
 
 	prolog_msg_ptr = xmalloc(sizeof(prolog_launch_msg_t));
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-	if (job_ptr->bb_enable_pb == true){ 
-		prolog_msg_ptr->used_groups          = job_ptr->used_groups;
-		prolog_msg_ptr->used_databases       = job_ptr->used_databases;
-		prolog_msg_ptr->max_clients_per_job  = job_ptr->max_clients_per_job;
-		prolog_msg_ptr->metadata_acceleration= job_ptr->used_groups;
-		prolog_msg_ptr->pfs  			     =  xstrdup(job_ptr->pfs);
-		prolog_msg_ptr->bb_enable_pb		 = true;
-	} else {
-		prolog_msg_ptr->bb_enable_pb		 = false;
-	}
-#endif
+// #ifdef  __METASTACK_NEW_BURSTBUFFER1
+// 	if (job_ptr->bb_enable_pb == true){ 
+// 		prolog_msg_ptr->used_groups          = job_ptr->used_groups;
+// 		prolog_msg_ptr->used_databases       = job_ptr->used_databases;
+// 		prolog_msg_ptr->max_clients_per_job  = job_ptr->max_clients_per_job;
+// 		prolog_msg_ptr->metadata_acceleration= job_ptr->used_groups;
+// 		prolog_msg_ptr->pfs  			     =  xstrdup(job_ptr->pfs);
+// 		prolog_msg_ptr->bb_enable_pb		 = true;
+// 	} else {
+// 		prolog_msg_ptr->bb_enable_pb		 = false;
+// 	}
+// #endif
 	/* Locks: Write job */
 	if ((slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) &&
 	    !(slurm_conf.prolog_flags & PROLOG_FLAG_NOHOLD)) {

@@ -9546,9 +9546,27 @@ void job_time_limit(void)
 		    test_job_nodes_ready(job_ptr)) {
 			info("%s: Configuration for %pJ complete",
 			     __func__, job_ptr);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+			if(job_ptr->bb_enable_pb == false) {
+					job_config_fini(job_ptr);
+				if (job_ptr->batch_flag)
+					launch_job(job_ptr);
+			} else {
+				job_config_fini(job_ptr);
+				if(job_ptr->bb_ready) {
+					launch_job(job_ptr);
+				}
+			}
+
+			if(job_ptr->bb_ready) {
+					launch_job(job_ptr);
+			}
+
+#else
 			job_config_fini(job_ptr);
 			if (job_ptr->batch_flag)
 				launch_job(job_ptr);
+#endif
 		}
 
 		/*
@@ -18042,7 +18060,9 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 		/* Remove configuring state just to make sure it isn't there
 		 * since it will throw off displays of the job. */
 		job_state_unset_flag(job_ptr, JOB_CONFIGURING);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+#endif
 		/* make sure all parts of the job are notified
 		 * Fed Jobs: only signal the srun from where the job is running
 		 * or from the origin if the job wasn't running. */

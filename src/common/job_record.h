@@ -544,7 +544,7 @@ struct job_record {
 #ifdef __METASTACK_NEW_PENDING_ORDER
 	uint32_t pending_order;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER
+#ifdef __METASTACK_NEW_BURSTBUFFER2
 	// int bb_group_counts; /* Number of burst buffer groups */
 	// //int *bb_group_ids; /* Sizes of each burst buffer group */
 	// int bb_dataset_counts; /* Number of burst buffer datasets */
@@ -557,6 +557,7 @@ struct job_record {
 	bool     metadata_acceleration; //是否开启元数据加速
 	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
 	bool	 bb_enable_pb; //是否开启pb
+	bool     bb_ready;     //计算节点的burstbuffer是否已经准备好
 #endif
 };
 

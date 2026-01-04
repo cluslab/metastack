@@ -2725,6 +2725,10 @@ extern char *job_state_string(uint32_t inx)
 		return "STAGE_OUT";
 	if (inx & JOB_CONFIGURING)
 		return "CONFIGURING";
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (inx & JOB_BURSTBUFFER_STAGING)
+		return "STAGE_IN";
+#endif
 	if (inx & JOB_RESIZING)
 		return "RESIZING";
 	if (inx & JOB_REQUEUE)
@@ -2782,6 +2786,10 @@ extern char *job_state_string_compact(uint32_t inx)
 		return "CG";
 	if (inx & JOB_STAGE_OUT)
 		return "SO";
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (inx & JOB_BURSTBUFFER_STAGING)
+		return "SI_BB";
+#endif
 	if (inx & JOB_CONFIGURING)
 		return "CF";
 	if (inx & JOB_RESIZING)
@@ -2898,6 +2906,10 @@ extern char *job_state_string_complete(uint32_t state)
 		xstrcat(state_str, ",COMPLETING");
 	if (state & JOB_CONFIGURING)
 		xstrcat(state_str, ",CONFIGURING");
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (state & JOB_BURSTBUFFER_STAGING)
+		xstrcat(state_str, ",STAGING");
+#endif
 	if (state & JOB_POWER_UP_NODE)
 		xstrcat(state_str, ",POWER_UP_NODE");
 	if (state & JOB_RECONFIG_FAIL)
@@ -2948,6 +2960,10 @@ extern uint32_t job_state_num(const char *state_name)
 		return JOB_COMPLETING;
 	if (_job_name_test(JOB_CONFIGURING, state_name))
 		return JOB_CONFIGURING;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (_job_name_test(JOB_BURSTBUFFER_STAGING, state_name))
+		return JOB_BURSTBUFFER_STAGING;
+#endif
 	if (_job_name_test(JOB_RESIZING, state_name))
 		return JOB_RESIZING;
 	if (_job_name_test(JOB_RESV_DEL_HOLD, state_name))
