@@ -241,7 +241,11 @@ extern __thread bool drop_priv;
 #  define __job_record_t_defined
 typedef struct job_record job_record_t;
 #endif
-
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+#define  LAUNCH_JOB_BIT    0x0001
+#define  LAUNCH_PROLOG_BIT 0x0010
+#define  SRUN_ALLOCATE_BIT 0x0100
+#endif
 /*****************************************************************************\
  * core api configuration struct
 \*****************************************************************************/
@@ -499,6 +503,19 @@ typedef struct complete_prolog {
 	char *node_name;
 	uint32_t prolog_rc;
 } complete_prolog_msg_t;
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+typedef struct complete_create_bb {
+	uint32_t job_id;
+	char *node_name;
+	uint32_t used_groups; 
+	uint32_t used_databases;
+	uint32_t *groups_id;
+	uint32_t *databases_id;
+
+	uint32_t bb_rc;
+} complete_create_bb_msg_t;
+#endif
 
 typedef struct step_complete_msg {
 	uint32_t range_first;	/* First node rank within job step's alloc */
@@ -924,11 +941,15 @@ typedef struct prolog_launch_msg {
 	bool enable_all_stepds;   
 	uint32_t style_step;      /*which stepd, 0x001 is sbatch submit, 0x010 is srun submit, 0x100 is salloc submit*/  
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER
-	// int bb_group_counts; /* Number of burst buffer groups */
-	// //int *bb_group_ids; /* Sizes of each burst buffer group */
-	// int bb_dataset_counts; /* Number of burst buffer datasets */
-	// int bb_task_counts; /*  Number of burst buffer tasks */
+} prolog_launch_msg_t;
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+typedef struct burst_buffer_launch_msg {
+	char *nodes;			/* list of nodes allocated to job */
+	uint32_t job_id;		/* job ID */
+	uint32_t user_id;		/* user the job runs as */	
+	uint32_t group_id;		/* group submitted under */
+
 	uint32_t used_groups; 
 	uint32_t used_databases;
 	uint64_t req_space;		   //当前作业请求的空间
@@ -936,9 +957,15 @@ typedef struct prolog_launch_msg {
 	char     *pfs;             //后端存储路径,可能有多个
 	bool     metadata_acceleration; //是否开启元数据加速
 	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
-	bool     bb_enable_pb;      //是否是parabuffer
+	bool	 bb_enable_pb; //是否开启pb
+	bool     bb_ready;     //计算节点的burstbuffer是否已经准备好
+	uint32_t flag;       //3:launch_prolog 2:launch_job(job_ptr) 1: srun_allocate
+	char	 *first_sn;
+	char	 *last_sn;
+	time_t   bb_launch_time;	/* When the prolog was launched from the
+					 * controller -- PrologFlags=alloc */
+} burst_buffer_launch_msg_t;
 #endif
-} prolog_launch_msg_t;
 
 typedef struct batch_job_launch_msg {
 	char *account;          /* account under which the job is running */

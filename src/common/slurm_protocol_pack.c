@@ -15916,6 +15916,45 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *buffer,
+				      uint16_t protocol_version)
+{
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号
+		pack32(msg->job_id, buffer);
+		packstr(msg->node_name, buffer);
+		pack32(msg->bb_rc, buffer);
+	}
+}
+
+
+static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
+{
+	burst_buffer_launch_msg_t *msg = smsg->data;
+	xassert(msg);
+	#ifdef __META_PROTOCOL
+	if (smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		packstr(msg->nodes, 				buffer);
+		pack32(msg->job_id, 				buffer);
+		pack32(msg->user_id, 				buffer);
+		pack32(msg->group_id, 				buffer);
+		pack32(msg->used_groups, 			buffer);
+		pack32(msg->used_databases, 		buffer);
+		pack64(msg->req_space, 				buffer);
+		pack32(msg->access_mode, 			buffer);	
+		packstr(msg->pfs, 					buffer);
+		packbool(msg->metadata_acceleration,buffer);
+		pack32(msg->max_clients_per_job, 	buffer);	
+		pack32(msg->max_clients_per_job, 	buffer);	
+		packbool(msg->bb_enable_pb,			buffer);
+		pack32(msg->flag, 					buffer);	
+		packstr(msg->first_sn, 				buffer);
+	}
+
+}
+#endif
+
+
 static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 {
 	prolog_launch_msg_t *msg = smsg->data;
@@ -16146,6 +16185,60 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 	}
 #endif
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+static int_unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_ptr,
+				       buf_t *buffer, uint16_t protocol_version)
+{
+	complete_create_bb_msg_t *msg = xmalloc(sizeof(*msg));
+	*msg_ptr = msg;
+
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号
+		safe_unpack32(&msg->job_id, buffer);
+		safe_unpackstr(&msg->node_name, buffer);
+		safe_unpack32(&msg->bb_rc, buffer);
+	}
+
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurm_free_complete_prolog_msg(msg);
+	*msg_ptr = NULL;
+	return SLURM_ERROR;
+}
+
+static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
+{
+	burst_buffer_launch_msg_t *msg = xmalloc(sizeof(*msg));
+	smsg->data = msg;
+	if(smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		safe_unpackstr(&msg->nodes, 				buffer);
+		safe_unpack32(&msg->job_id, 				buffer);
+		safe_unpack32(&msg->user_id, 				buffer);
+		safe_unpack32(&msg->group_id, 				buffer);
+		safe_unpack32(&msg->used_groups, 			buffer);
+		safe_unpack32(&msg->used_databases, 		buffer);
+		safe_unpack64(&msg->req_space, 				buffer);
+		safe_unpack32(&msg->access_mode, 			buffer);	
+		safe_unpackstr(&msg->pfs, 					buffer);
+		safe_unpackbool(&msg->metadata_acceleration,buffer);
+		safe_unpack32(&msg->max_clients_per_job, 	buffer);	
+		safe_unpack32(&msg->max_clients_per_job, 	buffer);	
+		safe_unpackbool(&msg->bb_enable_pb,			buffer);
+		safe_unpack32(&msg->flag, 					buffer);	
+		safe_unpackstr(&msg->first_sn, 				buffer);	
+	} else {
+		goto unpack_error;
+	} 
+
+	return SLURM_SUCCESS;
+unpack_error:
+	slurm_free_create_bb_launch_msg(msg);
+	smsg->data = NULL;
+	return SLURM_ERROR;
+}
+#endif
+
 
 static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 {
@@ -21644,6 +21737,17 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 	case REQUEST_LAUNCH_PROLOG:
 		_pack_prolog_launch_msg(msg, buffer);
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	case REQUEST_CREATE_BB_JOB_LAUNCH:
+		_pack_create_bb_launch_msg(msg, buffer);
+		break;
+	case REQUEST_COMPLETE_CREATE_BB:
+		_pack_complete_create_bb_msg(
+			(complete_create_bb_msg_t *)msg->data, buffer,
+			msg->protocol_version);
+		break;
+#endif
+	
 	case RESPONSE_CONTAINER_PTY:
 	case RESPONSE_CONTAINER_KILL:
 	case RESPONSE_CONTAINER_DELETE:
@@ -22375,6 +22479,16 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 	case REQUEST_LAUNCH_PROLOG:
 		rc = _unpack_prolog_launch_msg(msg, buffer);
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	case REQUEST_CREATE_BB_JOB_LAUNCH:
+		rc = _unpack_create_bb_launch_msg(msg, buffer);
+		break;
+	case REQUEST_COMPLETE_CREATE_BB:
+		rc = _unpack_complete_create_bb_launch_msg(
+			(complete_create_bb_msg_t **)&msg->data, buffer,
+			msg->protocol_version);
+		break;
+#endif
 	case RESPONSE_CONTAINER_PTY:
 	case RESPONSE_CONTAINER_KILL:
 	case RESPONSE_CONTAINER_DELETE:

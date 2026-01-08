@@ -502,6 +502,12 @@ slurmd_req(slurm_msg_t *msg)
 		_rpc_prolog(msg);
 		last_slurmctld_msg = time(NULL);
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	case REQUEST_CREATE_BB_JOB_LAUNCH:
+		_rpc_create_bb(msg);
+		last_slurmctld_msg = time(NULL);
+		break;
+#endif
 	case REQUEST_BATCH_JOB_LAUNCH:
 		_rpc_batch_job(msg);
 		last_slurmctld_msg = time(NULL);
@@ -2600,6 +2606,65 @@ static void _notify_result_rpc_prolog(prolog_launch_msg_t *req, int rc)
 		}
 	}
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+static int _notify_slurmctld_create_bb_fini(
+	uint32_t job_id, uint32_t bb_return_code)
+{
+	int rc, ret_c;
+	slurm_msg_t req_msg;
+	complete_create_bb_msg_t req;
+
+	slurm_msg_t_init(&req_msg);
+	memset(&req, 0, sizeof(req));
+	req.job_id		    = job_id;
+	req.node_name		= conf->node_name;
+	req.bb_rc			= bb_return_code;
+	
+	req_msg.msg_type    = REQUEST_COMPLETE_CREATE_BB;
+	req_msg.data	    = &req;
+
+	/*
+	 * Here we only care about the return code of
+	 * slurm_send_recv_controller_rc_msg since it means there was a
+	 * communication failure and we may need to try again.
+	 */
+	if ((ret_c = slurm_send_recv_controller_rc_msg(
+		     &req_msg, &rc, working_cluster_rec)))
+		error("Error sending prolog completion notification: %m");
+
+	return ret_c;
+}
+
+static void _rpc_create_bb(slurm_msg_t *msg)
+{
+	int rc = SLURM_SUCCESS;
+	burst_buffer_launch_msg_t *req = msg->data;
+	if (req == NULL)
+		return;
+	if (!_slurm_authorized_user(msg->auth_uid)) {
+		error("REQUEST_LAUNCH_PROLOG request from uid %u",
+		      msg->auth_uid);
+		return;
+	}
+		/*
+	 * Send message back to the slurmctld so it knows we got the rpc.  A
+	 * bb  could easily run way longer than a MessageTimeout or we would
+	 * just wait.
+	 */
+	if (slurm_send_rc_msg(msg, rc) < 0) {
+		error("%s: Error talking to slurmctld: %m", __func__);
+	}
+
+	//缓存组、数据集创建、数据集预热等操作
+	
+
+
+}
+
+
+#endif
+
 
 static void _rpc_prolog(slurm_msg_t *msg)
 {

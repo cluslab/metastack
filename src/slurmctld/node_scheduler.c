@@ -3389,10 +3389,14 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	 * recheck its state to see if it's currently configuring.
 	 * PROLOG_FLAG_CONTAIN also turns on PROLOG_FLAG_ALLOC.
 	 */
-	if(job_ptr)
-	if (!IS_JOB_CONFIGURING(job_ptr)) {
+
+	if (!IS_JOB_CONFIGURING(job_ptr) && !(job_ptr->bb_enable_pb)) {
 		if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC)
 			launch_prolog(job_ptr);
+	}  else if(!IS_JOB_CONFIGURING(job_ptr) && (job_ptr->bb_enable_pb)) {
+		uint32_t launch_flag	 = 3;
+		job_ptr->create_step 	|= LAUNCH_PROLOG_BIT;
+		create_bb_job(job_ptr, launch_flag);
 	}
 #else
 	/*

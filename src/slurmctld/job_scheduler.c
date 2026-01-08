@@ -3094,7 +3094,24 @@ skip_start:
 					srun_allocate(job_ptr);
 				else if (!IS_JOB_CONFIGURING(job_ptr))
 					launch_job(job_ptr);
+			} else {
+				if (job_ptr->batch_flag == 0){
+					uint32_t srun_flag = 1;
+					job_ptr->create_step |= SRUN_ALLOCATE_BIT;
+					create_bb_job(job_ptr, srun_flag);
+					//srun_allocate(job_ptr);
+				} else if (!IS_JOB_CONFIGURING(job_ptr)) {
+					uint32_t luanch_flag = 2;
+					job_ptr->create_step |= LAUNCH_JOB_BIT;
+					create_bb_job(job_ptr, luanch_flag);
+					//launch_job(job_ptr);
+				}		
 			}
+#else
+			if (job_ptr->batch_flag == 0)
+				srun_allocate(job_ptr);
+			else if (!IS_JOB_CONFIGURING(job_ptr))
+				launch_job(job_ptr);
 #endif
 			rebuild_job_part_list(job_ptr);
 			job_cnt++;
@@ -4095,7 +4112,89 @@ static void _set_het_job_env(job_record_t *het_job_leader,
 		;
 	launch_msg_ptr->envc = i;
 }
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
+{
+	burst_buffer_launch_msg_t *burst_buffer_msg_ptr = NULL;
+	uint16_t protocol_version 				        = job_ptr->start_protocol_ver;
+	uint16_t msg_flags 								= 0;
+	agent_arg_t *agent_arg_ptr 						= NULL;
+	job_resources_t *job_resrcs_ptr					= NULL;
+	slurm_cred_arg_t cred_arg;
+#ifndef HAVE_FRONT_END
+	node_record_t *node_ptr 						= NULL;
+#endif
+	if(launch_flag != 3 || !job_ptr || !job_ptr->nodes) {
+		return;
+	} 
+	xassert(job_ptr);
 
+#ifdef HAVE_FRONT_END
+	/* For a batch job the prolog will be
+	 * started synchroniously by slurmd.
+	 */
+	if (job_ptr->batch_flag)
+		return;
+
+	xassert(job_ptr->front_end_ptr);
+	if (protocol_version > job_ptr->front_end_ptr->protocol_version)
+		protocol_version = job_ptr->front_end_ptr->protocol_version;
+#else
+	for (int i = 0; (node_ptr = next_node_bitmap(job_ptr->node_bitmap, &i));
+	     i++) {
+		if (protocol_version > node_ptr->protocol_version)
+			protocol_version = node_ptr->protocol_version;
+		if (PACK_FANOUT_ADDRS(node_ptr))
+			msg_flags |= SLURM_PACK_ADDRS;
+	}
+#endif
+
+	burst_buffer_msg_ptr = xmalloc(sizeof(burst_buffer_launch_msg_t));
+
+	/* Locks: Write job */
+	// if ((slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) &&
+	//     !(slurm_conf.prolog_flags & PROLOG_FLAG_NOHOLD)) {
+	// 	job_ptr->state_reason = WAIT_PROLOG;
+#ifndef HAVE_FRONT_END
+		FREE_NULL_BITMAP(job_ptr->node_bitmap_pr);
+		job_ptr->node_bitmap_pr = bit_copy(job_ptr->node_bitmap);
+#endif
+	}
+	//burst_buffer_msg_ptr-> = ;
+	xassert(job_ptr->nodes);
+	burst_buffer_msg_ptr->nodes                  = xstrdup(job_ptr->nodes);
+	burst_buffer_msg_ptr->job_id                 = job_ptr->job_id;
+	burst_buffer_msg_ptr->uid                    = job_ptr->user_id;
+	burst_buffer_msg_ptr->gid                    = job_ptr->group_id;
+	burst_buffer_msg_ptr->used_groups            = job_ptr->used_groups;
+	burst_buffer_msg_ptr->used_databases         = job_ptr->used_databases;
+	burst_buffer_msg_ptr->req_space              = job_ptr->req_space;
+	burst_buffer_msg_ptr->access_mode            = job_ptr->access_mode;
+	burst_buffer_msg_ptr->pfs			         = xstrdup(job_ptr->pfs);
+	burst_buffer_msg_ptr->metadata_acceleration  = job_ptr->metadata_acceleration;
+	burst_buffer_msg_ptr->max_clients_per_job    = job_ptr->max_clients_per_job;
+	burst_buffer_msg_ptr->flag					 = flag;
+	xstrfmtcat(burst_buffer_msg_ptr->first_sn, "g%d+1", job_ptr->job_id);
+ 	burst_buffer_msg_ptr->bb_launch_time         = time(NULL);
+
+	agent_arg_ptr 								= xmalloc(sizeof(agent_arg_t));
+	agent_arg_ptr->protocol_version 			= protocol_version;
+	agent_arg_ptr->node_count 					= 1;
+	agent_arg_ptr->retry 						= 5;
+	
+	agent_arg_ptr->hostlist 					= hostlist_create(job_ptr->nodes);
+	hostlist_sort(agent_arg_ptr->hostlist);
+	agent_arg_ptr->hostlist                     = hostlist_nth(hl, 0);
+	agent_arg_ptr->msg_type 					= REQUEST_CREATE_BB_JOB_LAUNCH;
+	agent_arg_ptr->msg_args 					= (void *) burst_buffer_msg_ptr;
+	set_agent_arg_r_uid(agent_arg_ptr, SLURM_AUTH_UID_ANY);
+	/* Launch the RPC via agent */
+	agent_queue_request(agent_arg_ptr);
+	/* Launch the RPC via agent */
+	set_agent_arg_r_uid(burst_buffer_msg_ptr, SLURM_AUTH_UID_ANY);
+	agent_queue_request(burst_buffer_msg_ptr);
+}
+#endif
 /*
  * launch_job - send an RPC to a slurmd to initiate a batch job
  * IN job_ptr - pointer to job that will be initiated
@@ -6157,10 +6256,21 @@ extern void prolog_running_decr(job_record_t *job_ptr)
 		     __func__, job_ptr);
 		job_config_fini(job_ptr);
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-		if (job_ptr->batch_flag &&
-		    (IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr)) && !(IS_JOB_STAGING(job_ptr))) {
-			launch_job(job_ptr);
+		if(!(IS_JOB_STAGING(job_ptr))) {
+			if (job_ptr->batch_flag && 
+				(IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr))) {
+				int launch_flag = 2;
+				job_ptr->create_step |= LAUNCH_JOB_BIT;
+				create_bb_job(job_ptr, launch_flag);
+				//launch_job(job_ptr);
+			} 
+		} else {
+			if (job_ptr->batch_flag &&
+				(IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr))) {
+				launch_job(job_ptr);
+			} 
 		}
+
 #else
 		if (job_ptr->batch_flag &&
 			(IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr))) {

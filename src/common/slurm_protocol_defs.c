@@ -1711,6 +1711,29 @@ extern void slurm_free_dep_update_origin_msg(dep_update_origin_msg_t *msg)
 	}
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg)
+{
+	if(msg) {
+		xfree(msg->nodes);
+		xfree(msg->first_sn);
+		xfree(msg->last_sn);
+		xfree(msg->pfs);
+		xfree(msg);
+	}
+}
+
+extern void slurm_free_complete_create_bb_launch_msg(complete_create_bb_msg_t * msg)
+{
+	if(msg) {
+		xfree(msg->node_name);
+		xfree(msg->groups_id);
+		xfree(msg->databases_id);
+		xfree(msg);
+	}
+}
+#endif
+
 extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 {
 	int i;
@@ -1742,9 +1765,6 @@ extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 		xfree(msg->watch_dog);
 		xfree(msg->watch_dog_script);
 #endif
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-		xfree(msg->pfs);
-#endif 
 		FREE_NULL_LIST(msg->job_node_array);
 
 		FREE_NULL_BUFFER(msg->job_ptr_buf);
@@ -5167,6 +5187,15 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case REQUEST_LAUNCH_PROLOG:
 		slurm_free_prolog_launch_msg(data);
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	case REQUEST_CREATE_BB_JOB_LAUNCH:
+		slurm_free_create_bb_launch_msg(data);
+		break;
+	case REQUEST_COMPLETE_CREATE_BB:
+		slurm_free_complete_create_bb_launch_msg(data);
+		break;
+#endif
+
 	case REQUEST_RESOURCE_ALLOCATION:
 	case REQUEST_JOB_WILL_RUN:
 	case REQUEST_SUBMIT_BATCH_JOB:
@@ -6573,6 +6602,10 @@ extern void purge_agent_args(agent_arg_t *agent_arg_ptr)
 			slurm_free_nhc_info_msg(*(node_rec_state_array_split_t **)agent_arg_ptr->msg_args);
 			xfree(agent_arg_ptr->msg_args);
 		}
+#endif
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		else if (agent_arg_ptr->msg_type == REQUEST_CREATE_BB_JOB_LAUNCH)
+			slurm_free_create_bb_launch_msg(agent_arg_ptr->msg_args);
 #endif
 		else
 			xfree(agent_arg_ptr->msg_args);
