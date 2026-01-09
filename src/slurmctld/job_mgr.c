@@ -9497,7 +9497,7 @@ extern void job_config_fini(job_record_t *job_ptr)
 	if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) {
 		if(IS_JOB_STAGING(job_ptr)){
 			uint32_t launch_flag = 3;
-			create_bb_job(job_ptr, launch_flag)
+			create_bb_job(job_ptr, launch_flag);
 		} else {
 			launch_prolog(job_ptr);
 		}
@@ -9665,10 +9665,9 @@ void job_time_limit(void)
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		if(job_ptr->bb_ready) {
 			debug3("JobId=%u has created burstbuffer job", job_ptr->job_id);
-			if(JOB_BURSTBUFFER_STAGING(job_ptr)){
+			if(IS_JOB_STAGING(job_ptr)){
 				job_create_fini(job_ptr);
 			}
-
 			if(job_ptr->create_step & LAUNCH_PROLOG_BIT) {
 				job_ptr->create_step &= ~LAUNCH_PROLOG_BIT;
 				launch_prolog(job_ptr);

@@ -166,6 +166,9 @@ static int  _step_limits_match(void *x, void *key);
 static void _rpc_launch_tasks(slurm_msg_t *);
 static void _rpc_abort_job(slurm_msg_t *);
 static void _rpc_batch_job(slurm_msg_t *msg);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+static void _rpc_create_bb(slurm_msg_t *msg);
+#endif
 static void _rpc_prolog(slurm_msg_t *msg);
 static void _rpc_job_notify(slurm_msg_t *);
 static void _rpc_signal_tasks(slurm_msg_t *);
@@ -2620,7 +2623,7 @@ static int _notify_slurmctld_create_bb_fini(
 	req.job_id		    = job_id;
 	req.node_name		= conf->node_name;
 	req.bb_rc			= bb_return_code;
-	
+
 	req_msg.msg_type    = REQUEST_COMPLETE_CREATE_BB;
 	req_msg.data	    = &req;
 
@@ -2657,7 +2660,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	}
 
 	//缓存组、数据集创建、数据集预热等操作
-	
+	_notify_slurmctld_create_bb_fini(req->job_id, rc);
 
 
 }

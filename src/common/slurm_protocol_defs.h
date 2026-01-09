@@ -1657,6 +1657,10 @@ extern void slurm_free_complete_batch_script_msg(
 		complete_batch_script_msg_t * msg);
 extern void slurm_free_complete_prolog_msg(
 		complete_prolog_msg_t * msg);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg);
+extern void slurm_free_complete_create_bb_launch_msg(complete_create_bb_msg_t * msg);
+#endif
 extern void slurm_free_launch_tasks_request_msg(
 		launch_tasks_request_msg_t * msg);
 extern void slurm_free_launch_tasks_response_msg(

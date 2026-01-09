@@ -15950,6 +15950,7 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 		pack32(msg->flag, 					buffer);	
 		packstr(msg->first_sn, 				buffer);
 	}
+	#endif
 
 }
 #endif
@@ -16187,7 +16188,7 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 }
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-static int_unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_ptr,
+static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_ptr,
 				       buf_t *buffer, uint16_t protocol_version)
 {
 	complete_create_bb_msg_t *msg = xmalloc(sizeof(*msg));
@@ -16202,7 +16203,7 @@ static int_unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_p
 	return SLURM_SUCCESS;
 
 unpack_error:
-	slurm_free_complete_prolog_msg(msg);
+	slurm_free_complete_create_bb_launch_msg(msg);
 	*msg_ptr = NULL;
 	return SLURM_ERROR;
 }

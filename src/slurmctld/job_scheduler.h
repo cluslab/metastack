@@ -183,7 +183,7 @@ extern int job_start_data(job_record_t *job_ptr,
  * cache group.
  */
 
-extern void create_bb_job(job_record_t *job_ptr, int flag);
+extern void create_bb_job(job_record_t *job_ptr, uint32_t flag);
 #endif
 
 /*

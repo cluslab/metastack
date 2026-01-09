@@ -4115,7 +4115,7 @@ static void _set_het_job_env(job_record_t *het_job_leader,
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 {
-	burst_buffer_launch_msg_t *burst_buffer_msg_ptr = NULL;
+	
 	uint16_t protocol_version 				        = job_ptr->start_protocol_ver;
 	uint16_t msg_flags 								= 0;
 	agent_arg_t *agent_arg_ptr 						= NULL;
@@ -4124,10 +4124,9 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 #ifndef HAVE_FRONT_END
 	node_record_t *node_ptr 						= NULL;
 #endif
-	if(launch_flag != 3 || !job_ptr || !job_ptr->nodes) {
+	if(flag != 3 || !job_ptr || !job_ptr->nodes) {
 		return;
 	} 
-	xassert(job_ptr);
 
 #ifdef HAVE_FRONT_END
 	/* For a batch job the prolog will be
@@ -4149,7 +4148,7 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	}
 #endif
 
-	burst_buffer_msg_ptr = xmalloc(sizeof(burst_buffer_launch_msg_t));
+	burst_buffer_launch_msg_t *burst_buffer_msg_ptr = xmalloc(sizeof(burst_buffer_launch_msg_t));
 
 	/* Locks: Write job */
 	// if ((slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) &&
@@ -4159,15 +4158,14 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 		FREE_NULL_BITMAP(job_ptr->node_bitmap_pr);
 		job_ptr->node_bitmap_pr = bit_copy(job_ptr->node_bitmap);
 #endif
-	}
-	//burst_buffer_msg_ptr-> = ;
-	xassert(job_ptr->nodes);
+	//}
+
 	burst_buffer_msg_ptr->nodes                  = xstrdup(job_ptr->nodes);
 	burst_buffer_msg_ptr->job_id                 = job_ptr->job_id;
-	burst_buffer_msg_ptr->uid                    = job_ptr->user_id;
-	burst_buffer_msg_ptr->gid                    = job_ptr->group_id;
-	burst_buffer_msg_ptr->used_groups            = job_ptr->used_groups;
-	burst_buffer_msg_ptr->used_databases         = job_ptr->used_databases;
+	burst_buffer_msg_ptr->user_id                = job_ptr->user_id;
+	burst_buffer_msg_ptr->group_id               = job_ptr->group_id;
+	burst_buffer_msg_ptr->used_groups            = job_ptr->need_group_counts;
+	burst_buffer_msg_ptr->used_databases         = job_ptr->need_database_counts;
 	burst_buffer_msg_ptr->req_space              = job_ptr->req_space;
 	burst_buffer_msg_ptr->access_mode            = job_ptr->access_mode;
 	burst_buffer_msg_ptr->pfs			         = xstrdup(job_ptr->pfs);
@@ -4182,17 +4180,19 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	agent_arg_ptr->node_count 					= 1;
 	agent_arg_ptr->retry 						= 5;
 	
-	agent_arg_ptr->hostlist 					= hostlist_create(job_ptr->nodes);
-	hostlist_sort(agent_arg_ptr->hostlist);
-	agent_arg_ptr->hostlist                     = hostlist_nth(hl, 0);
+	hostlist_t *hl								= hostlist_create(job_ptr->nodes);
+	hostlist_sort(hl);
+	agent_arg_ptr->hostlist                     = hostlist_create(hostlist_nth(hl, 0));
+
 	agent_arg_ptr->msg_type 					= REQUEST_CREATE_BB_JOB_LAUNCH;
 	agent_arg_ptr->msg_args 					= (void *) burst_buffer_msg_ptr;
 	set_agent_arg_r_uid(agent_arg_ptr, SLURM_AUTH_UID_ANY);
 	/* Launch the RPC via agent */
 	agent_queue_request(agent_arg_ptr);
 	/* Launch the RPC via agent */
-	set_agent_arg_r_uid(burst_buffer_msg_ptr, SLURM_AUTH_UID_ANY);
-	agent_queue_request(burst_buffer_msg_ptr);
+	set_agent_arg_r_uid(agent_arg_ptr, SLURM_AUTH_UID_ANY);
+	agent_queue_request(agent_arg_ptr);
+	hostlist_destroy(hl);
 }
 #endif
 /*

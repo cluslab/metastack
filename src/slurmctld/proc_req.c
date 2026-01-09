@@ -2564,7 +2564,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 {
 	int error_code = SLURM_SUCCESS;
 	DEF_TIMERS;
-	complete_prolog_msg_t *comp_msg = msg->data;
+	complete_create_bb_msg_t *comp_msg = msg->data;
 	/* Locks: Write job, write node */
 	slurmctld_lock_t job_write_lock = {
 		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
@@ -2576,7 +2576,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		lock_slurmctld(job_write_lock);
-	error_code = prolog_complete(comp_msg->job_id, comp_msg->bb_rc,
+	error_code = create_bb_complete(comp_msg->job_id, comp_msg->bb_rc,
 				     comp_msg->node_name);
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		unlock_slurmctld(job_write_lock);
@@ -7828,6 +7828,15 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 		.msg_type = REQUEST_COMPLETE_JOB_ALLOCATION,
 		.func = _slurm_rpc_complete_job_allocation,
 	},{
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		.msg_type = REQUEST_COMPLETE_CREATE_BB,
+		_slurm_rpc_complete_create_bb,
+		.queue_enabled = true,
+		.locks = {
+			.job = WRITE_LOCK,
+		},
+	},{
+#endif
 		.msg_type = REQUEST_COMPLETE_PROLOG,
 		.func = _slurm_rpc_complete_prolog,
 		.queue_enabled = true,
