@@ -558,7 +558,9 @@ struct job_record {
 	uint32_t max_clients_per_job; 	 /* 缓存组粒度：几个客户端划分为一个缓存组 */
 	bool	 bb_enable_pb; 			 //是否开启pb
 	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好
-	uint32_t create_step;
+	uint32_t create_step;			 //对应作业步
+	bool     bb_need_wait; 			//是否等待bb完成
+	char     *bb_create_nodes;
 #endif
 };
 

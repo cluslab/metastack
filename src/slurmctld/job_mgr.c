@@ -9644,7 +9644,7 @@ void job_time_limit(void)
 			     __func__, job_ptr);
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 			job_config_fini(job_ptr);
-			if(job_ptr->bb_enable_pb == false) {
+			if(!IS_JOB_STAGING(job_ptr)) {
 				if (job_ptr->batch_flag)
 					launch_job(job_ptr);
 			} else {

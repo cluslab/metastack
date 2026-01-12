@@ -3382,6 +3382,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 #endif
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
+	if(job_ptr->bb_enable_pb) {
+		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+	}
 	/*
 	 * Request asynchronous launch of a prolog for a
 	 * non-batch job as long as the node is not configuring for
@@ -3390,13 +3393,20 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	 * PROLOG_FLAG_CONTAIN also turns on PROLOG_FLAG_ALLOC.
 	 */
 
-	if (!IS_JOB_CONFIGURING(job_ptr) && !(job_ptr->bb_enable_pb)) {
-		if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC)
-			launch_prolog(job_ptr);
-	}  else if(!IS_JOB_CONFIGURING(job_ptr) && (job_ptr->bb_enable_pb)) {
-		uint32_t launch_flag	 = 3;
-		job_ptr->create_step 	|= LAUNCH_PROLOG_BIT;
-		create_bb_job(job_ptr, launch_flag);
+	if(IS_JOB_STAGING(job_ptr)) {
+		if (!IS_JOB_CONFIGURING(job_ptr)) {
+			if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) {
+				uint32_t launch_flag	 = 3;
+				job_ptr->create_step 	|= LAUNCH_PROLOG_BIT;
+				create_bb_job(job_ptr, launch_flag);
+			}	
+		}
+
+	} else {
+		if (!IS_JOB_CONFIGURING(job_ptr)) {
+			if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC)
+				launch_prolog(job_ptr);
+		}
 	}
 #else
 	/*

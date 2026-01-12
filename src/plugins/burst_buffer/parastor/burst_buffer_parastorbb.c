@@ -1428,8 +1428,8 @@ static void _test_config()
 {
 		/* 24-day max time limit. (2073600 seconds) */
 	static uint32_t max_timeout = (60 * 60 * 24 * 24);
-	uint32_t max_groups = 1024;
- 	uint32_t max_datasets = 1024;
+	uint32_t max_groups = 2048;
+ 	uint32_t max_datasets = 8096;
 	uint32_t max_node_per_groups = 1024;
 	if (bb_state.bb_config.get_sys_state) {
 		error("%s: found get_sys_state which is unused in this plugin, unsetting",
@@ -2254,41 +2254,12 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 		return ESLURM_INVALID_BURST_BUFFER_REQUEST;
 	}
 
-    if(job_ptr->node_bitmap)
-        bb_node_cnt = bit_set_count(job_ptr->node_bitmap);//计算分配的节点数量
-    else {
-        error("no job nodes for %pJ", job_ptr);
-        xfree(job_ptr->state_desc);
-        job_ptr->state_desc = xstrdup("Could not find job node");
-        job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-        //_queue_teardown(bb_job);
-        slurm_mutex_unlock(&bb_state.bb_mutex);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-        _add_job_state_to_queue(job_ptr);
-#endif
-        return ESLURM_INVALID_BURST_BUFFER_REQUEST;
-    }
-	
-	if (bb_state.bb_config.max_clients_per_job <= 0) {
-		bb_state.bb_config.max_clients_per_job = GROUP_SIZE;
-	}
 
-    job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_job + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_job; 
-	job_ptr->need_database_counts = job_ptr->need_group_counts * bb_job->pfs_cnt;
-    log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
-	log_flag(BURST_BUF, "required number of datasets %d", job_ptr->need_database_counts);
-	//job_ptr->req_space                 = bb_job->req_space;
-	//job_ptr->access_mode 	   		   = bb_job->access_mode;
-	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
 
-	job_ptr->req_space            = bb_job->req_space;  	//当前作业请求的空间
-	job_ptr->access_mode          = bb_job->access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
-	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
 	job_ptr->max_clients_per_job  = bb_state.bb_config.max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
 	job_ptr->bb_ready			  = false;     //计算节点的burstbuffer是否已经准备好
 	job_ptr->bb_enable_pb = true;	
-	job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+	// job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
 	log_flag(BURST_BUF, "%pJ", job_ptr);
 	//timeout = bb_state.bb_config.validate_timeout * 1000;
 	slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -3481,7 +3452,22 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 #endif
         return SLURM_ERROR;
     }
+	if (bb_state.bb_config.max_clients_per_job <= 0) {
+		bb_state.bb_config.max_clients_per_job = GROUP_SIZE;
+	}
 
+    job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_job + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_job; 
+	job_ptr->need_database_counts = job_ptr->need_group_counts * bb_job->pfs_cnt;
+    log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
+	log_flag(BURST_BUF, "required number of datasets %d", job_ptr->need_database_counts);
+	//job_ptr->req_space                 = bb_job->req_space;
+	//job_ptr->access_mode 	   		   = bb_job->access_mode;
+	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
+
+	job_ptr->req_space            = bb_job->req_space;  	//当前作业请求的空间
+	job_ptr->access_mode          = bb_job->access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
+	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
 	if (job_ptr->need_group_counts > bb_state.bb_config.free_groups 
 			|| job_ptr->need_database_counts > bb_state.bb_config.free_datasets ) {
 		slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -3489,7 +3475,9 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 			  "free groups count:%d, require datasets count:%d, free datasets count:%d",
 			  job_ptr->need_group_counts, bb_state.bb_config.free_groups, 
 			  job_ptr->need_database_counts, bb_state.bb_config.free_datasets);
-		return SLURM_ERROR;
+			  job_ptr->bb_need_wait = false;
+	} else {
+		job_ptr->bb_need_wait = true;
 	}
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -3497,27 +3485,28 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 #endif
 
 	/* Check whether the task is forced to run */
-	if (bb_job->enforce_bb_flag == true) {
+	if (job_ptr->bb_need_wait = true) {
 		/* enforce_bb_flag=true: 资源不足时不运行作业 */
 		xfree(job_ptr->state_desc);
 		job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
 		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
-		_queue_teardown(bb_job);
+		//_queue_teardown(bb_job);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
 #endif
-		return SLURM_ERROR;
+		//return SLURM_ERROR;
 	} else {
-		/* enforce_bb_flag=false: 资源不足作业不用BB资源直接运行 */
-		xfree(job_ptr->state_desc);
-		job_ptr->state_desc = xstrdup("enforce_bb_flag=false:The job runs without using BB resources");
-		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
-		_queue_teardown(bb_job);
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif
+// 		/* enforce_bb_flag=false: 资源不足作业不用BB资源直接运行 */
+// 		xfree(job_ptr->state_desc);
+// 		job_ptr->state_desc = xstrdup("enforce_bb_flag=false:The job runs without using BB resources");
+// 		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+// 		_queue_teardown(bb_job);
+// 		slurm_mutex_unlock(&bb_state.bb_mutex);
+// #ifdef __METASTACK_OPT_CACHE_QUERY
+// 		_add_job_state_to_queue(job_ptr);
+// #endif
+	    //作业可直接运行
 		return SLURM_SUCCESS;
 	}
 
