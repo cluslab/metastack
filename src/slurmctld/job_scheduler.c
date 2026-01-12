@@ -4177,7 +4177,7 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	agent_arg_ptr 								= xmalloc(sizeof(agent_arg_t));
 	agent_arg_ptr->protocol_version 			= protocol_version;
 	agent_arg_ptr->node_count 					= 1;
-	agent_arg_ptr->retry 						= 5;
+	agent_arg_ptr->retry 						= 0;
 	
 	hostlist_t *hl								= hostlist_create(job_ptr->nodes);
 	hostlist_sort(hl);
@@ -4188,14 +4188,11 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	}
 	hostlist_destroy(hl);
 	debug3("send node %s to create bb job", host);
-	agent_arg_ptr->hostlist                     = hostlist_create(host);
+	agent_arg_ptr->hostlist						= hostlist_create(host);
 	agent_arg_ptr->msg_type 					= REQUEST_CREATE_BB_JOB_LAUNCH;
 	agent_arg_ptr->msg_args 					= (void *) burst_buffer_msg_ptr;
 	set_agent_arg_r_uid(agent_arg_ptr, SLURM_AUTH_UID_ANY);
 	/* Launch the RPC via agent */
-	agent_queue_request(agent_arg_ptr);
-	/* Launch the RPC via agent */
-	set_agent_arg_r_uid(agent_arg_ptr, SLURM_AUTH_UID_ANY);
 	agent_queue_request(agent_arg_ptr);
 }
 #endif

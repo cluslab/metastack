@@ -3529,13 +3529,13 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	// pre_run_args->timeout = bb_state.bb_config.other_timeout * 1000;
 	// pre_run_args->user_id = job_ptr->user_id;
 	// pre_run_args->bb_node_cnt = bb_node_cnt;
-	if (job_ptr->details) { /* Defer launch until completion */
-		job_ptr->details->prolog_running++;
-		job_state_set_flag(job_ptr, JOB_CONFIGURING);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif
-	}
+// 	if (job_ptr->details) { /* Defer launch until completion */
+// 		job_ptr->details->prolog_running++;
+// 		job_state_set_flag(job_ptr, JOB_CONFIGURING);
+// #ifdef __METASTACK_OPT_CACHE_QUERY
+// 		_add_job_state_to_queue(job_ptr);
+// #endif
+// 	}
 	// slurm_thread_create_detached(_start_pre_run, pre_run_args);
 
 	return ret;

@@ -9671,15 +9671,17 @@ void job_time_limit(void)
 			if(job_ptr->create_step & LAUNCH_PROLOG_BIT) {
 				job_ptr->create_step &= ~LAUNCH_PROLOG_BIT;
 				launch_prolog(job_ptr);
-			} else if(job_ptr->create_step & LAUNCH_JOB_BIT) {
+			} 
+			if(job_ptr->create_step & LAUNCH_JOB_BIT) {
 				job_ptr->create_step &= ~LAUNCH_JOB_BIT;
 				launch_job(job_ptr);
-			} else if(job_ptr->create_step & SRUN_ALLOCATE_BIT) {
+			}
+			
+			if(job_ptr->create_step & SRUN_ALLOCATE_BIT) {
 				job_ptr->create_step &= ~SRUN_ALLOCATE_BIT;
 				srun_allocate(job_ptr);
 			}
 		}
-
 #endif
 
 		/*
