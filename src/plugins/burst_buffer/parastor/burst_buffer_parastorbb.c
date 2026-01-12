@@ -124,27 +124,27 @@ const uint32_t plugin_version   = SLURM_VERSION_NUMBER;
  * easily use common functions from multiple burst buffer plugins.
  */
 static bb_state_t bb_state;
-static bool bb_state_init = false;
+// static bool bb_state_init = false;
 static char *directive_str;
 static int directive_len = 0;
 
-static char *parastor_script_path;
-static const char *req_fxns[] = {
-	"slurm_bb_job_process",
-	"slurm_bb_pools",
-	"slurm_bb_job_teardown",
-	"slurm_bb_setup",
-	"slurm_bb_data_in",
-	"slurm_bb_test_data_in",
-	"slurm_bb_real_size",
-	"slurm_bb_paths",
-	"slurm_bb_pre_run",
-	"slurm_bb_post_run",
-	"slurm_bb_data_out",
-	"slurm_bb_test_data_out",
-	"slurm_bb_get_status",
-	NULL
-};
+// static char *parastor_script_path;
+// static const char *req_fxns[] = {
+// 	"slurm_bb_job_process",
+// 	"slurm_bb_pools",
+// 	"slurm_bb_job_teardown",
+// 	"slurm_bb_setup",
+// 	"slurm_bb_data_in",
+// 	"slurm_bb_test_data_in",
+// 	"slurm_bb_real_size",
+// 	"slurm_bb_paths",
+// 	"slurm_bb_pre_run",
+// 	"slurm_bb_post_run",
+// 	"slurm_bb_data_out",
+// 	"slurm_bb_test_data_out",
+// 	"slurm_bb_get_status",
+// 	NULL
+// };
 
 /* Keep this in sync with req_fxns */
 typedef enum {
@@ -811,7 +811,7 @@ static void *_bb_agent(void *args)
 static int _xlate_interactive(job_desc_msg_t *job_desc)
 {
 	char *bb_copy = NULL, *capacity = NULL, *pfs = NULL, *type = NULL, *enforce_bb = NULL;
-	char *end_ptr = NULL, *sep, *tok;
+	char *sep = NULL, *tok = NULL;
 	uint64_t buf_size = 0;
 	int i, rc = SLURM_SUCCESS, tok_len;
 
@@ -1021,11 +1021,11 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 
 	int rc = SLURM_SUCCESS;
 	char *bb_script, *save_ptr = NULL;
-	char *bb_name = NULL, *bb_pool, *capacity;
-	char *end_ptr = NULL, *sub_tok, *tok;
-	uint64_t tmp_cnt, swap_cnt = 0;
+	char *bb_pool = NULL;
+	char *sub_tok = NULL, *tok = NULL;
+	uint64_t tmp_cnt = 0;
 	//bool enable_persist = false;
-	bool have_bb = false, have_stage_out = false;
+	bool have_bb = false;
 
 	xassert(bb_size);
 	*bb_size = 0;
@@ -1098,11 +1098,11 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 /* Note: bb_mutex is locked on entry */
 static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 {
-	char *bb_specs, *bb_hurry, *pfs_list, *bb_type, *bb_access, *bb_pool;
-	char *end_ptr = NULL, *save_ptr = NULL, *sub_tok, *tok;
+	char *bb_specs  = NULL;
+	char *save_ptr = NULL, *sub_tok, *tok = NULL;
 	bool have_bb = false, have_status = false;
 	char *error_param = NULL;  /* 记录出错的参数名 */
-	uint64_t tmp_cnt;
+	// uint64_t tmp_cnt;
 	int inx;
 	bb_job_t *bb_job;
 	uint16_t new_bb_state;
@@ -1511,6 +1511,12 @@ static void _test_config()
 		      max_datasets);
 		bb_state.bb_config.max_datasets = max_datasets;
 	}	
+	if(bb_state.bb_config.max_clients_per_job > max_node_per_groups) {
+		error("%s: MaxClientsPerJob=%u exceeds maximum allowed %u, setting MaxClientsPerJob to maximum",
+		      plugin_type, bb_state.bb_config.max_clients_per_job,
+		      max_node_per_groups);
+		bb_state.bb_config.max_clients_per_job = max_node_per_groups;
+	}
 }
 
 	
@@ -2210,20 +2216,20 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 	char *hash_dir = NULL, *job_dir = NULL, *script_file = NULL;
 	char *task_script_file = NULL;
 	//char *resp_msg = NULL, **script_argv;
-	char *dw_cli_path;
-	int fd = -1, hash_inx, rc = SLURM_SUCCESS, status = 0;
-	uint32_t bb_node_cnt = 0;
+	// char *dw_cli_path;
+	int fd = -1, hash_inx, rc = SLURM_SUCCESS;
+	// uint32_t bb_node_cnt = 0;
 
 	bb_job_t *bb_job;
 	//uint32_t timeout;
-	stage_args_t *pre_run_args;
+	// stage_args_t *pre_run_args;
 	bool using_master_script = false;
-	DEF_TIMERS;
-	run_command_args_t run_command_args = {
-		.script_path = bb_state.bb_config.get_sys_state,
-		.script_type = "job_process",
-		.status = &status,
-	};
+	// DEF_TIMERS;
+	// run_command_args_t run_command_args = {
+	// 	.script_path = bb_state.bb_config.get_sys_state,
+	// 	.script_type = "job_process",
+	// 	.status = &status,
+	// };
 
 	if ((job_ptr->burst_buffer == NULL) ||
 	    (job_ptr->burst_buffer[0] == '\0')) {
@@ -2597,7 +2603,7 @@ static void *_start_stage_in(void *x)
 {
 	stage_args_t *stage_in_args = x;
 	//uint64_t real_size = 0;
-	uint64_t orig_real_size = stage_in_args->bb_size;
+	// uint64_t orig_real_size = stage_in_args->bb_size;
 	job_record_t *job_ptr;
 	slurmctld_lock_t job_write_lock = { .job = WRITE_LOCK };
 
@@ -2831,12 +2837,12 @@ static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_ta
  */
 extern int bb_p_job_try_stage_in(List job_queue)
 {
-	bb_job_queue_rec_t *job_rec;
-	//List job_candidates;
-	list_itr_t *job_iter;
-	job_record_t *job_ptr;
-	bb_job_t *bb_job;
-	int rc = 0;
+	// bb_job_queue_rec_t *job_rec;
+	// //List job_candidates;
+	// list_itr_t *job_iter;
+	// job_record_t *job_ptr;
+	// bb_job_t *bb_job;
+	
 
 	// slurm_mutex_lock(&bb_state.bb_mutex);
 	// log_flag(BURST_BUF, "Mutex locked");
@@ -3397,13 +3403,13 @@ fini:
 extern int bb_p_job_begin(job_record_t *job_ptr)
 {
     bb_job_t *bb_job = NULL;
-	pre_run_bb_args_t *pre_run_args;
+	// pre_run_bb_args_t *pre_run_args;
     uint32_t bb_node_cnt = 0;
 	int ret = SLURM_SUCCESS;
 
 	if ((job_ptr->burst_buffer == NULL) || (job_ptr->burst_buffer[0] == '\0')){
 		debug("BB-----jobid %d no need burst buffer", job_ptr->job_id);
-		return SLURM_SUCCESS;
+		return ret;
 	}
 
 	if (!job_ptr->job_resrcs || !job_ptr->job_resrcs->nodes) {
@@ -3441,11 +3447,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
     if(job_ptr->node_bitmap)
         bb_node_cnt = bit_set_count(job_ptr->node_bitmap);//计算分配的节点数量
     else {
-        error("no job nodes for %pJ", job_ptr);
+        error("no job nodes for %pJ, node bitmap is %d", job_ptr, bb_node_cnt);
         xfree(job_ptr->state_desc);
         job_ptr->state_desc = xstrdup("Could not find job node");
         job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-        _queue_teardown(bb_job);
         slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
         _add_job_state_to_queue(job_ptr);
@@ -3485,7 +3490,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 #endif
 
 	/* Check whether the task is forced to run */
-	if (job_ptr->bb_need_wait = true) {
+	if (job_ptr->bb_need_wait == true) {
 		/* enforce_bb_flag=true: 资源不足时不运行作业 */
 		xfree(job_ptr->state_desc);
 		job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
@@ -3507,7 +3512,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 // 		_add_job_state_to_queue(job_ptr);
 // #endif
 	    //作业可直接运行
-		return SLURM_SUCCESS;
+		return ret;
 	}
 
 	/* Handle count before creating cache */
@@ -3533,7 +3538,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	}
 	// slurm_thread_create_detached(_start_pre_run, pre_run_args);
 
-	return SLURM_SUCCESS;
+	return ret;
 }
 
 /* Revoke allocation, but do not release resources.

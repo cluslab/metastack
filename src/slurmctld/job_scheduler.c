@@ -4119,8 +4119,7 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	uint16_t protocol_version 				        = job_ptr->start_protocol_ver;
 	uint16_t msg_flags 								= 0;
 	agent_arg_t *agent_arg_ptr 						= NULL;
-	job_resources_t *job_resrcs_ptr					= NULL;
-	slurm_cred_arg_t cred_arg;
+	char *temp = NULL, *host 						= NULL;
 #ifndef HAVE_FRONT_END
 	node_record_t *node_ptr 						= NULL;
 #endif
@@ -4182,10 +4181,14 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	
 	hostlist_t *hl								= hostlist_create(job_ptr->nodes);
 	hostlist_sort(hl);
-	char *tmp_node 								= hostlist_nth(hl, 0);
-	agent_arg_ptr->hostlist                     = hostlist_create(tmp_node);
-	xfree(tmp_node);
+	temp 										= hostlist_nth(hl, 0);
+	if (temp) {
+		host = xstrdup(temp);
+		free(temp);
+	}
 	hostlist_destroy(hl);
+	debug3("send node %s to create bb job", host);
+	agent_arg_ptr->hostlist                     = hostlist_create(host);
 	agent_arg_ptr->msg_type 					= REQUEST_CREATE_BB_JOB_LAUNCH;
 	agent_arg_ptr->msg_args 					= (void *) burst_buffer_msg_ptr;
 	set_agent_arg_r_uid(agent_arg_ptr, SLURM_AUTH_UID_ANY);

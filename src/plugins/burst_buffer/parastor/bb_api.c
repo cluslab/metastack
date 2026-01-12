@@ -372,7 +372,7 @@ static int json_string_set_response(const char* json_str, bb_response* resp_out,
     /* If there is no result  in the response, return directly after parsing the basic information  */
     if (type == NO_RESULT) {
         json_decref(root);
-        return ESPANK_SUCCESS;
+        return rc;
     }
     /* get result*/
     json_t *result = json_object_get(root, "result");
@@ -401,7 +401,7 @@ static int json_string_set_response(const char* json_str, bb_response* resp_out,
     }
 
     json_decref(root);
-    return ESPANK_SUCCESS;
+    return rc;
 }
 static int json_group_get_response(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out)
 {
@@ -629,7 +629,7 @@ static int task_json_string_get_response(const char* json_str, bb_response* resp
         return SLURM_ERROR;
     }
     json_decref(root);
-    return SLURM_SUCCESS;
+    return rc;
 }
 
 // static int json_string_get_response(const char* json_str, bb_response* resp_out, result_type type, query_params_request *query_params)
@@ -1501,7 +1501,7 @@ extern int create_burst_buffer_group(create_params_request *create_params, bb_mi
         debug("failed to get token");
         return SLURM_ERROR;
     }
-    bb_attribute_group *bb_group_tmp = NULL;
+    // bb_attribute_group *bb_group_tmp = NULL;
     json_string = concatenate_group_strings(bb_config, create_params, CREATE_CALL);
     if (json_string == NULL) {
         debug("failed to concatenate strings in create_burst_buffer_group ");
@@ -1526,7 +1526,7 @@ extern int create_burst_buffer_group(create_params_request *create_params, bb_mi
 */
 extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
-    bb_attribute_group *bb_group_tmp = NULL;
+    // bb_attribute_group *bb_group_tmp = NULL;
     if( bb_config == NULL || resp_out == NULL || delete_params == NULL ){
         debug("invalid parametes to delete group");
         return SLURM_ERROR;
