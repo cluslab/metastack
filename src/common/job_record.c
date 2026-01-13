@@ -953,7 +953,7 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 		pack32(dump_job_ptr->create_step,     		   buffer);		
 		packbool(dump_job_ptr->bb_need_wait,  		   buffer);
 #endif     //#endif
-	} if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
+	} else if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		/* Dump basic job info */
 		pack32(dump_job_ptr->array_job_id, buffer);
 		pack32(dump_job_ptr->array_task_id, buffer);

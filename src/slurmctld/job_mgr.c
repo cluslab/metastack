@@ -9497,6 +9497,7 @@ extern void job_config_fini(job_record_t *job_ptr)
 	if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) {
 		if(IS_JOB_STAGING(job_ptr)){
 			uint32_t launch_flag = 3;
+			job_ptr->create_step |= LAUNCH_PROLOG_BIT;
 			create_bb_job(job_ptr, launch_flag);
 		} else {
 			launch_prolog(job_ptr);

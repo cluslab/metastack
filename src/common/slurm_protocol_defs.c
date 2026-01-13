@@ -2807,7 +2807,7 @@ extern char *job_state_string_compact(uint32_t inx)
 	if (inx & JOB_STAGE_OUT)
 		return "SO";
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-	if (inx & JOB_BURSTBUFFER_STAGING)
+	if ((inx & JOB_BURSTBUFFER_STAGING) && !(inx & JOB_CONFIGURING))
 		return "SI_BB";
 #endif
 	if (inx & JOB_CONFIGURING)
