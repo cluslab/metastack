@@ -560,7 +560,6 @@ struct job_record {
 	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好
 	uint32_t create_step;			 //对应作业步
 	bool     bb_need_wait; 			//是否等待bb完成
-	char     *bb_create_nodes;
 #endif
 };
 
