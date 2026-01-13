@@ -588,7 +588,7 @@ static int json_string_get_response_client_and_task(const char* json_str, result
                 json_t *clients_obj                 = json_array_get(clients, i);
                 bb_client                           = xmalloc(sizeof(bb_attribute_client));
                 _parse_json_result_to_client(clients_obj, bb_client);
-                resp_out->last_client_id            = bb_client->id; //TODO: check the last client id
+                resp_out->last_client_id            = bb_client->id; 
                 resp_out->client_join_groups_counts = bb_client->groups_count;
                 resp_out->bb_client                 = bb_client;
             }
