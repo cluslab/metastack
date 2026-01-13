@@ -2914,13 +2914,12 @@ extern int job_record_unpack(job_record_t **out,
 		safe_unpack32(&job_ptr->req_space,	 		 	 buffer);
 		safe_unpack32(&job_ptr->access_mode,	 	 	 buffer);
 		safe_unpackstr(&job_ptr->pfs, 				  	 buffer);
-		safe_unpackpool(&job_ptr->metadata_acceleration, buffer);
+		safe_unpackbool(&job_ptr->metadata_acceleration, buffer);
 		safe_unpack32(&job_ptr->max_clients_per_job,	 buffer);
-		safe_unpackpool(&job_ptr->bb_enable_pb,			 buffer);	
-		safe_unpackpool(&job_ptr->bb_ready,				 buffer);	
+		safe_unpackbool(&job_ptr->bb_enable_pb,			 buffer);	
+		safe_unpackbool(&job_ptr->bb_ready,				 buffer);	
 		safe_unpack32(&job_ptr->create_step,	 		 buffer);	
-		safe_unpackpool(&job_ptr->bb_need_wait,			 buffer);
-#endif
+		safe_unpackbool(&job_ptr->bb_need_wait,			 buffer);
 #endif
 	} else if(protocol_version >= SLURM_24_05_PROTOCOL_VERSION){
 		safe_unpack32(&job_ptr->array_job_id, buffer);
