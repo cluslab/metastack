@@ -976,7 +976,7 @@ slurm_sprint_job_info ( job_info_t * job_ptr, int one_liner )
 	if (job_ptr->burst_buffer) {
 		xstrcat(out, line_end);
 		xstrfmtcat(out, "BurstBuffer=%s", job_ptr->burst_buffer);
-#ifndef __METASTACK_NEW_BURSTBUFFER
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		/* show enforce_bb_flag */
 		char *enforce_bb_val = NULL;
 		char *tok = xstrstr(job_ptr->burst_buffer, "enforce_bb=");

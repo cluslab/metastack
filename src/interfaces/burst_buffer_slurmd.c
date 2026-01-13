@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <dlfcn.h>
 
-#include "slurm/slurm.h"
 #include "slurm/slurm_errno.h"
 
 #include "src/interfaces/burst_buffer_slurmd.h"
@@ -41,9 +40,27 @@
 typedef struct slurm_bb_api_ops {
 	/* 测试函数：验证库是否正确加载 */
 	int (*bb_api_test_function) (void);
-	/* 示例函数：获取 groups 列表 */
-	List (*get_groups_burst_buffer) (void *query_params, void *bb_min_config, void *resp_out);
 	
+	/* 通过SN创建缓存组 */
+	int (*create_bb_group_by_sn) (void *create_params, void *bb_config);
+	/* 通过SN创建数据集规则 */
+	int (*create_bb_dataset_by_sn) (void *create_params, void *bb_config);
+	/* 提交预热任务（通过数据集ID） */
+	int (*submit_bb_task) (void *create_params, void *bb_config);
+	/* 通过SN获取缓存组ID */
+	int (*query_bb_groupid_by_sn) (char *group_sn, void *bb_min_config);
+	/* 传入缓存组ID和数据集路径，查询数据集规则 */
+	int (*query_datasetid_by_path_groupid) (const int group_id, const char *path, void *bb_config);
+	/* 根据task_id查询bb任务 */
+	int (*query_bb_tasks_by_taskid) (int task_id, void *bb_config, void *bb_task);
+	/* 根据group_sn删除缓存组 */
+	int (*delete_bb_group_by_sn) (char *group_sn, void *bb_config);
+	/* 根据dataset_id删除数据集规则 */
+	int (*delete_bb_dataset_by_id) (int dataset_id, void *bb_config);
+	/* 根据task_id取消BB任务 */
+	int (*cancel_bb_task_by_id) (int task_id, void *bb_config);
+	/* 释放BB结构体 */
+	void (*slurm_free_task) (void *object);
 } slurm_bb_api_ops_t;
 
 /*
@@ -52,13 +69,16 @@ typedef struct slurm_bb_api_ops {
  */
 static const char *bb_api_syms[] = {
 	"bb_api_test_function",
-	"get_groups_burst_buffer",
-	/* 
-	 * 添加新函数时，在这里添加对应的符号名称，例如：
-	 * "get_datasets_burst_buffer",
-	 * "create_burst_buffer_group",
-	 * ... 等等
-	 */
+	"create_bb_group_by_sn",
+	"create_bb_dataset_by_sn",
+	"submit_bb_task",
+	"query_bb_groupid_by_sn",
+	"query_datasetid_by_path_groupid",
+	"query_bb_tasks_by_taskid",
+	"delete_bb_group_by_sn",
+	"delete_bb_dataset_by_id",
+	"cancel_bb_task_by_id",
+	"slurm_free_task",
 };
 
 /* bb_api 库句柄和操作结构 */
@@ -216,4 +236,297 @@ extern int bb_g_bb_api_test_function(void)
 	slurm_mutex_unlock(&g_bb_api_context_lock);
 
 	return rc;
+}
+
+/*
+ * 通过SN创建缓存组
+ * 
+ * @param create_params 参数，详细参考create_params_request结构体注释
+ * @param bb_config 最小配置参数
+ * @return 0>表示成功且返回缓存组ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int bb_g_create_bb_group_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->create_bb_group_by_sn) {
+		rc = (*(bb_api_ops->create_bb_group_by_sn))(create_params, bb_config);
+	} else {
+		error("%s: create_bb_group_by_sn not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 通过SN创建数据集规则
+ * 
+ * @param create_params 参数，详细参考create_params_request结构体注释
+ * @param bb_config 最小配置参数
+ * @return 0>表示成功且返回数据集规则ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int bb_g_create_bb_dataset_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->create_bb_dataset_by_sn) {
+		rc = (*(bb_api_ops->create_bb_dataset_by_sn))(create_params, bb_config);
+	} else {
+		error("%s: create_bb_dataset_by_sn not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 提交预热任务（通过数据集ID）
+ * 
+ * @param create_params 提交参数，详见create_params_request注释
+ * @param bb_config 最小配置参数
+ * @return 成功返回task_id (>0);  -1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_submit_bb_task(create_params_request *create_params, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->submit_bb_task) {
+		rc = (*(bb_api_ops->submit_bb_task))(create_params, bb_config);
+	} else {
+		error("%s: submit_bb_task not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 通过SN获取缓存组ID
+ * 
+ * @param group_sn 缓存组的SN
+ * @param bb_min_config bb最小配置
+ * @return 存在返回group_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->query_bb_groupid_by_sn) {
+		rc = (*(bb_api_ops->query_bb_groupid_by_sn))(group_sn, bb_min_config);
+	} else {
+		error("%s: query_bb_groupid_by_sn not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 传入缓存组ID和数据集路径，查询数据集规则
+ * 
+ * @param group_id 缓存组ID
+ * @param path 数据集路径
+ * @param bb_config 最小配置参数
+ * @return 存在返回dataset_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_query_datasetid_by_path_groupid(const int group_id, const char *path, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->query_datasetid_by_path_groupid) {
+		rc = (*(bb_api_ops->query_datasetid_by_path_groupid))(group_id, path, bb_config);
+	} else {
+		error("%s: query_datasetid_by_path_groupid not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 根据task_id查询bb任务
+ * 
+ * @param task_id 任务ID
+ * @param bb_config 最小配置文件
+ * @param bb_task 出参，传入初始化后变量指针，返回bb_task
+ * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config, bb_attribute_task *bb_task)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->query_bb_tasks_by_taskid) {
+		rc = (*(bb_api_ops->query_bb_tasks_by_taskid))(task_id, bb_config, bb_task);
+	} else {
+		error("%s: query_bb_tasks_by_taskid not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 根据group_sn删除缓存组
+ * 
+ * @param group_sn 缓存组sn
+ * @param bb_config 最小配置
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->delete_bb_group_by_sn) {
+		rc = (*(bb_api_ops->delete_bb_group_by_sn))(group_sn, bb_config);
+	} else {
+		error("%s: delete_bb_group_by_sn not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 根据dataset_id删除数据集规则
+ * 
+ * @param dataset_id 数据集ID
+ * @param bb_config 最小配置
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_delete_bb_dataset_by_id(int dataset_id, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->delete_bb_dataset_by_id) {
+		rc = (*(bb_api_ops->delete_bb_dataset_by_id))(dataset_id, bb_config);
+	} else {
+		error("%s: delete_bb_dataset_by_id not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+/*
+ * 根据task_id取消BB任务
+ * 
+ * @param task_id 任务ID
+ * @param bb_config 最小配置
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->cancel_bb_task_by_id) {
+		rc = (*(bb_api_ops->cancel_bb_task_by_id))(task_id, bb_config);
+	} else {
+		error("%s: cancel_bb_task_by_id not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}
+
+
+
+/**
+ * @brief 释放task结构体
+ * @return
+ */
+extern void bb_g_slurm_free_task(void *object)
+{
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->slurm_free_task) {
+		(*(bb_api_ops->slurm_free_task))(object);
+	} else {
+		error("%s: slurm_free_task not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return ;
+
+
+
 }
