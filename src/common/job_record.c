@@ -943,7 +943,7 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 		// packstr(dump_job_ptr->burst_buffer2, buffer);
 		pack32(dump_job_ptr->need_group_counts,        buffer);
 		pack32(dump_job_ptr->need_database_counts,     buffer);
-		pack32(dump_job_ptr->req_space, 		       buffer);
+		pack64(dump_job_ptr->req_space, 		       buffer);
 		pack32(dump_job_ptr->access_mode, 		       buffer);	
 		packstr(dump_job_ptr->pfs,		 		   	   buffer);
 		packbool(dump_job_ptr->metadata_acceleration,  buffer);
@@ -2911,7 +2911,7 @@ extern int job_record_unpack(job_record_t **out,
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		safe_unpack32(&job_ptr->need_group_counts, 	  	 buffer);
 		safe_unpack32(&job_ptr->need_database_counts,	 buffer);
-		safe_unpack32(&job_ptr->req_space,	 		 	 buffer);
+		safe_unpack64(&job_ptr->req_space,	 		 	 buffer);
 		safe_unpack32(&job_ptr->access_mode,	 	 	 buffer);
 		safe_unpackstr(&job_ptr->pfs, 				  	 buffer);
 		safe_unpackbool(&job_ptr->metadata_acceleration, buffer);
