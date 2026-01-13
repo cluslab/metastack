@@ -661,22 +661,22 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 			     "ValidateTimeout", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_groups,
 			     "MaxGroups", bb_hashtbl);
-	if (state_ptr->bb_config.max_groups == 0) {
+	if (state_ptr->bb_config.max_groups <= 0) {
 		state_ptr->bb_config.max_groups = 2048;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_datasets,
 			     "MaxDatasets", bb_hashtbl);
-	if (state_ptr->bb_config.max_datasets == 0) {
+	if (state_ptr->bb_config.max_datasets <= 0) {
 		state_ptr->bb_config.max_datasets = 8192;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_join,
 			     "MaxGroupsPerClients", bb_hashtbl);
-	if (state_ptr->bb_config.max_clients_join == 0) {
+	if (state_ptr->bb_config.max_clients_join <= 0) {
 		state_ptr->bb_config.max_clients_join = 4;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_per_job,
 			     "MaxClientsPerJob", bb_hashtbl);
-	if (state_ptr->bb_config.max_clients_per_job == 0) {
+	if (state_ptr->bb_config.max_clients_per_job <= 0) {
 		state_ptr->bb_config.max_clients_per_job = 4;
 	}
 	(void) s_p_get_string(&state_ptr->bb_config.para_stor_addr,
@@ -707,15 +707,15 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 			     "FileSystemCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
-	if (state_ptr->bb_config.max_acc_dirs_per_job == 0) {
+	if (state_ptr->bb_config.max_acc_dirs_per_job <= 0) {
 		state_ptr->bb_config.max_acc_dirs_per_job = 4;
 	}
-	if (state_ptr->bb_config.max_acc_dirs_per_job > 8) {
+	if (state_ptr->bb_config.max_acc_dirs_per_job > 8 || (state_ptr->bb_config.max_acc_dirs_per_job) <= 0)  {
 		state_ptr->bb_config.max_acc_dirs_per_job = 8;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
 			     "MaxAccDirLen", bb_hashtbl);
-	if ( &state_ptr->bb_config.max_acc_dir_len == 0) {
+	if (&state_ptr->bb_config.max_acc_dir_len <= 0) {
 		state_ptr->bb_config.max_acc_dir_len = 512;
 	}
 
