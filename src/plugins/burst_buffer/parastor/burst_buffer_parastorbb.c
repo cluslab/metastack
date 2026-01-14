@@ -3467,9 +3467,9 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
     log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
 	log_flag(BURST_BUF, "required number of datasets %d", job_ptr->need_database_counts);
 	if(job_ptr->enforce_bb_flag)
-		log_flag(BURST_BUF, "Forced use of BB acceleration; if not satisfied, queue up");
+		log_flag(BURST_BUF, "forced use of BB acceleration; do not satisfied, queue up");
 	else
-		log_flag(BURST_BUF, "If BB acceleration is not forced and BB resources are not available, the job will run directly");
+		log_flag(BURST_BUF, "BB acceleration is not forced and BB resources are not available, the job will run directly");
 	//job_ptr->req_space                 = bb_job->req_space;
 	//job_ptr->access_mode 	   		   = bb_job->access_mode;
 	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
@@ -3485,9 +3485,9 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 			  "free groups count:%d, require datasets count:%d, free datasets count:%d",
 			  job_ptr->need_group_counts, bb_state.bb_config.free_groups, 
 			  job_ptr->need_database_counts, bb_state.bb_config.free_datasets);
-			  job_ptr->bb_need_wait = false;
+			  job_ptr->bb_need_wait = true;
 	} else {
-		job_ptr->bb_need_wait = true;
+		job_ptr->bb_need_wait = false;
 	}
 
 #ifdef __METASTACK_OPT_CACHE_QUERY

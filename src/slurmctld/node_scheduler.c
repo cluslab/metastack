@@ -2785,7 +2785,8 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 #endif	
 {
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-	int return_code = SLURM_SUCCESS;
+	int return_code   = SLURM_SUCCESS;
+	bool is_create_bb = false;
 #endif
 	int bb, error_code = SLURM_SUCCESS, i, node_set_size = 0;
 	bitstr_t *select_bitmap = NULL;
@@ -2796,6 +2797,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	uint32_t min_nodes = 0, max_nodes = 0, req_nodes = 0;
 	time_t now = time(NULL);
 	bool configuring = false;
+
 	List preemptee_job_list = NULL;
 	uint32_t selected_node_cnt = NO_VAL;
 	uint64_t tres_req_cnt[slurmctld_tres_cnt];
@@ -3243,10 +3245,15 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 		tmp_job->resv_port_cnt = orig_resv_port_cnt;
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	return_code = bb_g_job_begin(job_ptr);
+	if(job_ptr->bb_enable_pb) {
+		is_create_bb = true;
+		//job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+	}
+
 	if (return_code!= SLURM_SUCCESS ) {
 		if((return_code == ESLURM_BB_RESOURCE_LIMIT) && (job_ptr->enforce_bb_flag)) {
 			/* Leave job queued, something is hosed */
-			debug2("bb_g_job_begin(%pJ): the job can be started directly without waiting for BB resources.", job_ptr);
+			debug2("bb_g_job_begin(%pJ): the job can not be started directly without waiting for BB resources.", job_ptr);
 
 			/* Cancel previously started job */
 			(void) bb_g_job_revoke_alloc(job_ptr);
@@ -3259,9 +3266,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			last_job_update = now;
 			goto cleanup;
 		} else if((return_code == ESLURM_BB_RESOURCE_LIMIT) && !(job_ptr->enforce_bb_flag)) {
-			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
-			debug2("bb_g_job_begin(%pJ):", job_ptr);
-	    } else {
+			is_create_bb = false;
+			debug2("bb_g_job_begin(%pJ): the job can be started directly without waiting for BB resources.", job_ptr);
+		} else {
 			/* Leave job queued, something is hosed */
 			error_code = ESLURM_INVALID_BURST_BUFFER_REQUEST;
 			error("bb_g_job_begin(%pJ): %s",
@@ -3274,7 +3281,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			last_job_update = now;
 			goto cleanup;
 		}
-
+	}
 #else
 	if (bb_g_job_begin(job_ptr) != SLURM_SUCCESS) {
 
@@ -3422,9 +3429,6 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 #endif
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-	if(job_ptr->bb_enable_pb) {
-		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
-	}
 	/*
 	 * Request asynchronous launch of a prolog for a
 	 * non-batch job as long as the node is not configuring for
@@ -3432,6 +3436,11 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	 * recheck its state to see if it's currently configuring.
 	 * PROLOG_FLAG_CONTAIN also turns on PROLOG_FLAG_ALLOC.
 	 */
+	if(is_create_bb) {
+		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+	} else {
+		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+	}
 
 	if(IS_JOB_STAGING(job_ptr)) {
 		if (!IS_JOB_CONFIGURING(job_ptr)) {
