@@ -155,10 +155,6 @@ typedef struct {
     int task_id;
 } delete_params_request;
 
-
-
-
-
 /* get permanent token */
 extern int get_permanent_token(bb_config_t *bb_config);
 /* get groups list */
@@ -167,8 +163,7 @@ extern List get_groups_burst_buffer(query_params_request* query_params, bb_minim
 extern List get_datasets_burst_buffer(query_params_request *query_params, bb_minimal_config_t *bb_min_config, bb_response *resp_out);
 /* get set burst buffer clients and task list */
 extern int get_set_burst_buffer_clients_and_tasks(query_params_request *query_params,  bb_minimal_config_t *bb_min_config, result_type type, bb_response *resp_out);
-/* get burst buffer task list */
-extern int get_burst_buffer_tasks(query_params_request *query_params, bb_state_t *bb_state, bb_response *resp_out);
+
 /* get single task,return data of task into bb_task */
 extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_task,  bb_minimal_config_t *bb_min_config, bb_response *resp_out);
 /* Create a cache group by client ids */
@@ -297,7 +292,7 @@ extern int _find_group_key(void *x, void *key);
 
 extern int _find_dataset_key(void *x, void *key);
 
-
+/* 接口参数结构体清理函数 */
 extern void free_query_params(query_params_request *query_params);
 extern void free_create_params(create_params_request *create_params);
 extern void free_delete_params(delete_params_request *delete_params);
