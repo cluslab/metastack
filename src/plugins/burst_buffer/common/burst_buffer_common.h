@@ -285,7 +285,11 @@ typedef struct bb_minimal_config {
 	char    *para_stor_user_name;	/* user name */
 	char    *para_stor_password;	/* password */
 	char    *token;	/* password */
-	long 	timeout;
+	long	other_timeout;
+	long	stagein_timeout;
+	long	stageout_timeout;
+	long	poll_interval;
+	int		retry_count;
 } bb_minimal_config_t;
 
 typedef enum {

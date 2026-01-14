@@ -436,7 +436,6 @@ extern int run_burst_buffer_create(prolog_launch_msg_t *req) {
 	// bb_g_job_create_group();
 	// bb_g_job_create_dataset();
 	// bb_g_job_prefetch();
-	bb_g_bb_api_test_function();
 	return rc;
 }
 

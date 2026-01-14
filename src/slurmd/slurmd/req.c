@@ -173,6 +173,7 @@ static void _rpc_abort_job(slurm_msg_t *);
 static void _rpc_batch_job(slurm_msg_t *msg);
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		static void _rpc_create_bb(slurm_msg_t *msg);
+		static void _rpc_clean_bb(slurm_msg_t *msg);
 #endif
 static void _rpc_prolog(slurm_msg_t *msg);
 static void _rpc_job_notify(slurm_msg_t *);
@@ -515,6 +516,7 @@ slurmd_req(slurm_msg_t *msg)
 		_rpc_prolog(msg);
 		//DEBUG:测试
 		_rpc_create_bb(msg);
+		_rpc_clean_bb(msg);
 		last_slurmctld_msg = time(NULL);
 		break;
 	case REQUEST_BATCH_JOB_LAUNCH:
@@ -2620,8 +2622,6 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 {
 	int rc = SLURM_SUCCESS;
 	prolog_launch_msg_t *req = msg->data;
-	int retry_count = 0;
-	const int MAX_RETRY_COUNT = 3;  // 重试次数 X，可根据需要调整
 
 	if (req == NULL)
 		return;
@@ -2631,16 +2631,18 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			msg->auth_uid);
 		return;
 	}
-	//=============================================⬇通用变量⬇=============================================
-	
+	//DEBUG:测试变量
 	bb_minimal_config_t bmc = { 0 };
 	bmc.para_stor_addr = "172.16.120.117";
 	bmc.para_stor_port = 8443;
 	bmc.para_stor_password = "Admin@123";
 	bmc.token ="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
-	bmc.timeout = 1000;
+	bmc.other_timeout = 1000;
+	bmc.retry_count = 3;
+	bmc.stagein_timeout = 1000;
+	bmc.stageout_timeout = 1000;
+	bmc.poll_interval = 5;
 
-	// char *group_sn = "TEST0001";
 	char group_sn_buf[64];
 	time_t now = time(NULL);
 	pid_t pid = getpid();
@@ -2653,257 +2655,42 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	int dataset_id = 0;
 	int task_id = 0;
 
-	//=============================================⬇创建缓存组⬇=============================================
-	create_params_request cpr_group = { 0 };
-	cpr_group.group_sn = group_sn;
-	cpr_group.client_count = 1;
-	cpr_group.client_ids = (int[]){ 1000005};
-	
-	// 总共尝试 MAX_RETRY_COUNT 次
-	for (retry_count = 0; retry_count < MAX_RETRY_COUNT; retry_count++) {
-		rc = bb_g_create_bb_group_by_sn(&cpr_group, &bmc);
-		if (rc > 0) {
-			debug("创建缓存组成功,group_id,%d",rc);
-			group_id = rc;
-			rc = 0;
-			break;
-		} else if (rc == -1) {
-			error("创建缓存组代码错误");
-			return;
-		} else if (rc == -2) {
-			error("创建缓存组接口返回错误，重试 %d/%d", retry_count + 1, MAX_RETRY_COUNT);
-			continue;
-		} else if (rc == -3) {
-			debug("创建缓存组接口超时，查询是否已创建成功");
-			int query_rc = bb_g_query_bb_groupid_by_sn(cpr_group.group_sn, &bmc);
-			if (query_rc < 0) {
-				error("查询失败");
-				return;
-			}
-			if (query_rc = 0) {
-				debug("缓存组未创建成功，重试 %d/%d", retry_count + 1, MAX_RETRY_COUNT);
-				continue;
-			}
-			if (query_rc > 0) {
-				debug("查询成功");
-				group_id = rc;
-				rc = 0;
-				break;
-			}
-		} else {
-			error("未知返回结果");
-			return;
-		}
-	}
-	// 检查最终结果
-	if (rc != 0) {
-		error("创建缓存组失败，尝试 %d 次后仍失败，错误码: %d", MAX_RETRY_COUNT, rc);
-		return;
-	}
-	//=============================================⬇创建数据集规则⬇=============================================
-	create_params_request cpr_dateset = { 0 };
-	cpr_dateset.group_sn = group_sn;
-	cpr_dateset.path = path;
-	cpr_dateset.is_use_metadata = false;
-	cpr_dateset.data_cache_type = SHARE_CACHE;
-	// 总共尝试 MAX_RETRY_COUNT 次
-	for (retry_count = 0; retry_count < MAX_RETRY_COUNT; retry_count++) {
-		rc = bb_g_create_bb_dataset_by_sn(&cpr_dateset, &bmc);
-		if (rc > 0) {
-			debug("创建数据集规则成功,dataset_id:%d", rc);
-			dataset_id = rc;
-			rc = 0;
-			break;
-		} else if (rc == -1) {
-			error("创建数据集规则错误");
-			break;
-		} else if (rc == -2) {
-			debug("创建数据集规则接口返回错误，重试 %d/%d", retry_count + 1, MAX_RETRY_COUNT);
-			continue;
-		} else if (rc == -3) {
-			debug("创建数据集规则接口超时，查询是否已创建成功");
-			int query_rc = bb_g_query_datasetid_by_path_groupid(group_id, path, &bmc);
-			if (query_rc < 0) {
-				error("查询失败");
-				break;
-			}
-			if (query_rc = 0) {
-				debug("缓存组未创建成功，重试 %d/%d", retry_count + 1, MAX_RETRY_COUNT);
-				continue;
-			}
-			if (query_rc > 0) {
-				debug("查询成功");
-				dataset_id = rc;
-				rc = 0;
-				break;
-			}
-		} else {
-			error("未知返回结果");
-			break;
-		}
-	}
-	// 检查最终结果
-	if (rc != 0) {
-		error("创建数据集规则失败，尝试 %d 次后仍失败，错误码: %d", MAX_RETRY_COUNT, rc);
-		return;
-	}
-	//=============================================⬇提交预热任务⬇=============================================
-	create_params_request cpr_task_prefetch = { 0 };
-	cpr_task_prefetch.dataset_id = dataset_id;
-	cpr_task_prefetch.task_type = BURST_BUFFER_TASK_TYPE_PREFETCH;
-	cpr_task_prefetch.error_action_type = 0;
-
-	rc = bb_g_submit_bb_task(&cpr_task_prefetch, &bmc);
-	// 多个任务无法通过dataset确定唯一任务，所以不重试
+	int clients_arr[] = {1000005};
+	/* 创建缓存组 */
+	rc = bb_g_create_bb_group_by_sn(group_sn, 1, clients_arr, &bmc);
 	if (rc > 0) {
-		debug("提交预热任务成功,任务ID:%d",rc);
-		task_id = rc;
-		rc = 0;
-	} else if (rc == -1) {
-		error("提交预热任务错误");
-	} else if (rc == -2) {
-		debug("提交预热任务接口返回错误");
-	} else if (rc == -3) {
-		error("提交预热任务超时");
+		group_id = rc;
+		debug("BB-----创建缓存组成功,sn为%s,id为%d", group_sn, group_id);
 	} else {
-		error("未知返回结果");
-	}
-	// 检查最终结果
-	if (rc != 0) {
-		error("提交预热任务失败，尝试 %d 次后仍失败，错误码: %d", MAX_RETRY_COUNT, rc);
+		error("BB-----创建缓存组失败,sn为%s,return code%d", group_sn, rc);
 		return;
 	}
-	//=============================================⬇等待预热完成⬇=============================================
-	// 定义时间常量
-	const int CHECK_INTERVAL_SEC = 5;      // XX: 每隔5秒检查一次（可根据需要调整）
-	const int SOFT_TIMEOUT_SEC = 60;       // Z: 软时间限制60秒（可根据需要调整）
-	const int HARD_TIMEOUT_SEC = 300;      // Y: 硬超时时间300秒（可根据需要调整）
-	
-	time_t start_time = time(NULL);         // 记录开始检查的时间
-	time_t last_check_time = start_time;    // 上次检查的时间
-	time_t soft_timeout_time = start_time + SOFT_TIMEOUT_SEC;  // 软超时时间点
-	time_t hard_timeout_time = start_time + HARD_TIMEOUT_SEC;  // 硬超时时间点
-	bool soft_timeout_reached = false;      // 是否已超过软超时时间
-	bool task_completed = false;            // 任务是否完成
-	int query_rc = 0;                       // 查询返回值
-	bb_attribute_task *bb_task = xmalloc(sizeof(bb_attribute_task));  // 任务属性结构体指针
-	debug("开始等待预热任务完成，task_id=%d, 检查间隔=%d秒, 软超时=%d秒, 硬超时=%d秒", 
-	      task_id, CHECK_INTERVAL_SEC, SOFT_TIMEOUT_SEC, HARD_TIMEOUT_SEC);
-	
-	while (!task_completed) {
-		time_t current_time = time(NULL);
-		time_t elapsed_time = current_time - start_time;
-		
-		// 检查是否超过硬超时时间
-		if (current_time >= hard_timeout_time) {
-			error("等待预热任务完成超时（硬超时：%d秒），task_id=%d，已等待%d秒", 
-			      HARD_TIMEOUT_SEC, task_id, elapsed_time);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		// 检查是否到达检查间隔时间，或者在软/硬超时时间点需要单独检查
-		bool need_check = false;
-		if (current_time - last_check_time >= CHECK_INTERVAL_SEC) {
-			need_check = true;
-		} else if (current_time >= soft_timeout_time && !soft_timeout_reached) {
-			// 到达软超时时间点，单独检查一次
-			need_check = true;
-			soft_timeout_reached = true;
-		} else if (current_time >= hard_timeout_time) {
-			// 到达硬超时时间点，单独检查一次
-			need_check = true;
-		}
-		
-		if (!need_check) {
-			// 未到检查时间，等待一小段时间后继续循环
-			sleep(1);
-			continue;
-		}
-		
-		// 执行状态查询
-		query_rc = bb_g_query_bb_tasks_by_taskid(task_id, &bmc, bb_task);
-		
-		// 查询失败，直接返回
-		if (query_rc < 0) {
-			error("查询预热任务状态失败，task_id=%d, 错误码=%d", task_id, query_rc);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		// 根据是否超过软超时时间决定日志级别
-		if (soft_timeout_reached) {
-			// 超过软超时时间后，使用info级别输出日志
-			info("查询预热任务状态（已超过软超时时间%d秒），task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒", 
-			     SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, elapsed_time);
-		} else {
-			// 未超过软超时时间，使用debug级别
-			debug("查询预热任务状态，task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒", 
-			      task_id, query_rc, bb_task->task_state, elapsed_time);
-		}
-		
-		// 检查任务是否存在
-		if (query_rc == 0) {
-			// 任务不存在
-			error("预热任务不存在，task_id=%d", task_id);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		// 检查任务状态
-		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
-			task_completed = true;
-			info("预热任务完成，task_id=%d, 总耗时=%d秒", task_id, elapsed_time);
-			break;
-		} else if (bb_task->task_state == BB_TASK_STATE_FAILED || 
-		           bb_task->task_state == BB_TASK_STATE_CANCELED) {
-			// 异常状态，直接返回
-			error("预热任务失败或已取消，task_id=%d, 任务状态=%d, 已等待%d秒", 
-			      task_id, bb_task->task_state, elapsed_time);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING || 
-		           bb_task->task_state == BB_TASK_STATE_RUNNING) {
-			// 任务仍在进行中
-			if (soft_timeout_reached) {
-				info("预热任务仍在进行中，task_id=%d, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%d秒", 
-				     task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, elapsed_time);
-			} else {
-				debug("预热任务仍在进行中，task_id=%d, 任务状态=%d, 已等待%d秒", 
-				      task_id, bb_task->task_state, elapsed_time);
-			}
-		} else {
-			// 未知状态，视为异常，直接返回
-			error("预热任务状态未知，task_id=%d, 任务状态=%d, 已等待%d秒", 
-			      task_id, bb_task->task_state, elapsed_time);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		last_check_time = current_time;
-		
-		// 计算下次检查前的等待时间
-		time_t next_check_time = last_check_time + CHECK_INTERVAL_SEC;
-		time_t wait_until = next_check_time;
-		
-		// 如果软超时或硬超时时间更早到达，则等待到那个时间点
-		if (!soft_timeout_reached && soft_timeout_time < wait_until) {
-			wait_until = soft_timeout_time;
-		}
-		if (hard_timeout_time < wait_until) {
-			wait_until = hard_timeout_time;
-		}
-		
-		time_t sleep_time = wait_until - current_time;
-		if (sleep_time > 0) {
-			sleep(sleep_time);
-		}
+	/* 创建数据集规则 */
+	rc = bb_g_create_bb_dataset_by_sn(group_sn, group_id, path, false, false, &bmc);
+	if (rc > 0) {
+		dataset_id = rc;
+		debug("BB-----创建数据集规则成功,id为%d", dataset_id);
+	} else {
+		error("BB-----创建数据集规则失败,return code%d", rc);
+		return;
 	}
-	
-	// 清理资源
-	bb_g_slurm_free_task(bb_task);
-
-
+	/* 提交预热任务 */
+	rc = bb_g_submit_bb_task(dataset_id, 1, &bmc);
+	if (rc > 0) {
+		task_id = rc;
+		debug("BB-----提交预热任务成功,id为%d", task_id);
+	} else {
+		error("BB-----提交预热任务失败,return code%d", rc);
+		return;
+	}
+	/* 阻塞等待任务完成 */
+	rc = bb_g_wait_task_complete(task_id, 1, &bmc);
+	if (rc == 0) {
+		debug("BB-----任务%d预热成功", task_id);
+	} else {
+		error("BB-----任务%d预热失败,return code%d", task_id, rc);
+		return;
+	}
 }
 
 /**
@@ -2914,282 +2701,69 @@ static void _rpc_clean_bb(slurm_msg_t *msg)
 {
 	int rc = SLURM_SUCCESS;
 	prolog_launch_msg_t *req = msg->data;
-	int retry_count = 0;
-	const int MAX_RETRY_COUNT = 3;  // 重试次数 X，可根据需要调整
 
 	if (req == NULL)
 		return;
 
 	if (!_slurm_authorized_user(msg->auth_uid)) {
-		error("REQUEST_CREATE_BURST_BUFFER request from uid %u",
+		error("REQUEST_CLEAN_BURST_BUFFER request from uid %u",
 			msg->auth_uid);
 		return;
 	}
-	//=============================================⬇通用变量⬇=============================================
 	
+	//DEBUG:测试使用变量
 	bb_minimal_config_t bmc = { 0 };
 	bmc.para_stor_addr = "172.16.120.117";
 	bmc.para_stor_port = 8443;
 	bmc.para_stor_password = "Admin@123";
-	bmc.token ="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
-	bmc.timeout = 1000;
+	bmc.token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
+	bmc.other_timeout = 1000;
+	bmc.retry_count = 3;
+	bmc.stagein_timeout = 1000;
+	bmc.stageout_timeout = 1000;
+	bmc.poll_interval = 5;
 
-	// char *group_sn = "TEST0001";
-	char group_sn_buf[64];
-	time_t now = time(NULL);
-	pid_t pid = getpid();
-	unsigned int rand_val = (unsigned int)(now ^ pid) % 10000;  // 取后4位
-	snprintf(group_sn_buf, sizeof(group_sn_buf), "DEBUG%04u", rand_val);
-	char *group_sn = group_sn_buf;
-
-
-
-	char *path = "bb_hpc:/test1";
-	int group_id = 0;
-	int dataset_id = 0;
+	char *group_sn = "DEBUG2088";
+	int group_id = 7;
+	int dataset_id = 6;
 	int task_id = 0;
+	char *path = "bb_hpc:/test1";
 
 
-	//=============================================⬇提交回收任务⬇=============================================
-	create_params_request cpr_task_prefetch = { 0 };
-	cpr_task_prefetch.dataset_id = dataset_id;
-	cpr_task_prefetch.task_type = BURST_BUFFER_TASK_TYPE_RECYCLE;
-	cpr_task_prefetch.error_action_type = 0;
-
-	rc = bb_g_submit_bb_task(&cpr_task_prefetch, &bmc);
-	// 多个任务无法通过dataset确定唯一任务，所以不重试
+	/* 提交回收任务 */
+	rc = bb_g_submit_bb_task(dataset_id, 2, &bmc);
 	if (rc > 0) {
-		debug("提交回收任务成功,任务ID:%d",rc);
 		task_id = rc;
-		rc = 0;
-	} else if (rc == -1) {
-		error("提交预热任务错误");
-	} else if (rc == -2) {
-		debug("提交预热任务接口返回错误");
-	} else if (rc == -3) {
-		error("提交预热任务超时");
+		debug("BB-----提交回收任务成功,id为%d", task_id);
 	} else {
-		error("未知返回结果");
-	}
-	// 检查最终结果
-	if (rc != 0) {
-		error("提交预热任务失败，尝试 %d 次后仍失败，错误码: %d", MAX_RETRY_COUNT, rc);
+		error("BB-----提交回收任务失败,return code%d", rc);
 		return;
 	}
-
-
-
-	//=============================================⬇查看回收任务状态⬇=============================================
-	// 定义时间常量
-	const int CHECK_INTERVAL_SEC = 5;      // XX: 每隔5秒检查一次（可根据需要调整）
-	const int SOFT_TIMEOUT_SEC = 60;       // Z: 软时间限制60秒（可根据需要调整）
-	const int HARD_TIMEOUT_SEC = 300;      // Y: 硬超时时间300秒（可根据需要调整）
-	
-	time_t start_time = time(NULL);         // 记录开始检查的时间
-	time_t last_check_time = start_time;    // 上次检查的时间
-	time_t soft_timeout_time = start_time + SOFT_TIMEOUT_SEC;  // 软超时时间点
-	time_t hard_timeout_time = start_time + HARD_TIMEOUT_SEC;  // 硬超时时间点
-	bool soft_timeout_reached = false;      // 是否已超过软超时时间
-	bool task_completed = false;            // 任务是否完成
-	int query_rc = 0;                       // 查询返回值
-	bb_attribute_task *bb_task = xmalloc(sizeof(bb_attribute_task));  // 任务属性结构体指针
-	debug("开始等待回收任务完成,task_id=%d, 检查间隔=%d秒, 软超时=%d秒, 硬超时=%d秒", 
-	      task_id, CHECK_INTERVAL_SEC, SOFT_TIMEOUT_SEC, HARD_TIMEOUT_SEC);
-	
-	while (!task_completed) {
-		time_t current_time = time(NULL);
-		time_t elapsed_time = current_time - start_time;
-		
-		// 检查是否超过硬超时时间
-		if (current_time >= hard_timeout_time) {
-			error("等待回收任务完成超时（硬超时：%d秒),task_id=%d,已等待%d秒", 
-			      HARD_TIMEOUT_SEC, task_id, elapsed_time);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		// 检查是否到达检查间隔时间，或者在软/硬超时时间点需要单独检查
-		bool need_check = false;
-		if (current_time - last_check_time >= CHECK_INTERVAL_SEC) {
-			need_check = true;
-		} else if (current_time >= soft_timeout_time && !soft_timeout_reached) {
-			// 到达软超时时间点，单独检查一次
-			need_check = true;
-			soft_timeout_reached = true;
-		} else if (current_time >= hard_timeout_time) {
-			// 到达硬超时时间点，单独检查一次
-			need_check = true;
-		}
-		
-		if (!need_check) {
-			// 未到检查时间，等待一小段时间后继续循环
-			sleep(1);
-			continue;
-		}
-		
-		// 执行状态查询
-		query_rc = bb_g_query_bb_tasks_by_taskid(task_id, &bmc, bb_task);
-		
-		// 查询失败，直接返回
-		if (query_rc < 0) {
-			error("查询预热任务状态失败,task_id=%d, 错误码=%d", task_id, query_rc);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		// 根据是否超过软超时时间决定日志级别
-		if (soft_timeout_reached) {
-			// 超过软超时时间后，使用info级别输出日志
-			info("查询回收任务状态（已超过软超时时间%d秒),task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒", 
-			     SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, elapsed_time);
-		} else {
-			// 未超过软超时时间，使用debug级别
-			debug("查询回收任务状态,task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒", 
-			      task_id, query_rc, bb_task->task_state, elapsed_time);
-		}
-		
-		// 检查任务是否存在
-		if (query_rc == 0) {
-			// 任务不存在
-			error("回收任务不存在,task_id=%d", task_id);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		// 检查任务状态
-		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
-			task_completed = true;
-			info("回收任务完成，task_id=%d, 总耗时=%d秒", task_id, elapsed_time);
-			break;
-		} else if (bb_task->task_state == BB_TASK_STATE_FAILED || 
-		           bb_task->task_state == BB_TASK_STATE_CANCELED) {
-			// 异常状态，直接返回
-			error("回收任务失败或已取消，task_id=%d, 任务状态=%d, 已等待%d秒", 
-			      task_id, bb_task->task_state, elapsed_time);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING || 
-		           bb_task->task_state == BB_TASK_STATE_RUNNING) {
-			// 任务仍在进行中
-			if (soft_timeout_reached) {
-				info("回收任务仍在进行中，task_id=%d, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%d秒", 
-				     task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, elapsed_time);
-			} else {
-				debug("回收任务仍在进行中，task_id=%d, 任务状态=%d, 已等待%d秒", 
-				      task_id, bb_task->task_state, elapsed_time);
-			}
-		} else {
-			// 未知状态，视为异常，直接返回
-			error("回收任务状态未知，task_id=%d, 任务状态=%d, 已等待%d秒", 
-			      task_id, bb_task->task_state, elapsed_time);
-			bb_g_slurm_free_task(bb_task);
-			return;
-		}
-		
-		last_check_time = current_time;
-		
-		// 计算下次检查前的等待时间
-		time_t next_check_time = last_check_time + CHECK_INTERVAL_SEC;
-		time_t wait_until = next_check_time;
-		
-		// 如果软超时或硬超时时间更早到达，则等待到那个时间点
-		if (!soft_timeout_reached && soft_timeout_time < wait_until) {
-			wait_until = soft_timeout_time;
-		}
-		if (hard_timeout_time < wait_until) {
-			wait_until = hard_timeout_time;
-		}
-		
-		time_t sleep_time = wait_until - current_time;
-		if (sleep_time > 0) {
-			sleep(sleep_time);
-		}
-	}
-	// 清理资源
-	bb_g_slurm_free_task(bb_task);
-	//=============================================⬇删除数据集规则⬇=============================================
-	// 总共尝试 MAX_RETRY_COUNT 次
-	for (retry_count = 0; retry_count < MAX_RETRY_COUNT; retry_count++) {
-		rc = bb_g_delete_bb_dataset_by_id(dataset_id, &bmc);
-		if (rc = 0) {
-			debug("删除数据集规则成功,dataset_id:%d", rc);
-			break;
-		} else if (rc == -1) {
-			error("删除数据集规则错误");
-			break;
-		} else if (rc == -2) {
-			debug("删除数据集规则接口返回错误");
-			break;
-		} else if (rc == -3) {
-			debug("删除数据集规则接口超时，查询是否已删除成功");
-			int query_rc = bb_g_query_datasetid_by_path_groupid(group_id, path, &bmc);
-			if (query_rc < 0) {
-				error("查询接口异常");
-				break;
-			}
-			if (query_rc = 0) {
-				debug("删除成功");
-				rc = 0;
-				break;
-			}
-			if (query_rc > 0) {
-				debug("删除失败");
-				continue;
-			}
-		} else {
-			error("未知返回结果");
-			break;
-		}
-	}
-	// 检查最终结果
-	if (rc != 0) {
-		error("删除数据集规则%d失败", dataset_id, rc);
+	/* 阻塞等待回收任务完成 */
+	rc = bb_g_wait_task_complete(task_id, 1, &bmc);
+	if (rc == 0) {
+		debug("BB-----任务%d回收成功", task_id);
+	} else {
+		error("BB-----任务%d回收失败,return code%d", task_id, rc);
 		return;
 	}
-	//=============================================⬇删除缓存组⬇=============================================	
-	// 总共尝试 MAX_RETRY_COUNT 次
-	for (retry_count = 0; retry_count < MAX_RETRY_COUNT; retry_count++) {
-		rc = bb_g_delete_bb_group_by_sn(group_sn, &bmc);
-		if (rc = 0) {
-			debug("删除缓存组成功,group_id,%d",rc);
-			break;
-		} else if (rc == -1) {
-			error("删除缓存组代码错误");
-			break;
-		} else if (rc == -2) {
-			error("删除缓存组接口返回错误");
-			break;
-		} else if (rc == -3) {
-			debug("删除缓存组接口超时，查询是否已删除成功");
-			int query_rc = bb_g_query_bb_groupid_by_sn(cpr_group.group_sn, &bmc);
-			if (query_rc < 0) {
-				error("查询失败");
-				break;
-			}
-			if (query_rc = 0) {
-				debug("删除缓存组成功");
-				rc = 0;
-				break;
-			}
-			if (query_rc > 0) {
-				debug("删除组未创建成功，重试 %d/%d", retry_count + 1, MAX_RETRY_COUNT);
-				continue;
-			}
-		} else {
-			error("未知返回结果");
-			return;
-		}
+	/* 删除数据集规则 */
+	rc = bb_g_delete_bb_dataset_by_id(dataset_id, group_id, path, &bmc);
+	if (rc == 0) {
+		debug("BB-----成功删除数据集规则%d", dataset_id);
+	} else {
+		error("BB-----删除数据集规则%d失败,return code%d", dataset_id, rc);
+		return;
 	}
-	// 检查最终结果
-	if (rc != 0) {
-		error("创建缓存组失败，尝试 %d 次后仍失败，错误码: %d", MAX_RETRY_COUNT, rc);
+	/* 删除缓存组 */
+	rc = bb_g_delete_bb_group_by_sn(group_sn, &bmc);
+	if (rc == 0) {
+		debug("BB-----成功删除缓存组%s", group_sn);
+	} else {
+		error("BB-----删除缓存组%s失败,return code%d", group_sn, rc);
 		return;
 	}
 }
-
-
-
-
 #endif
 
 static void _rpc_prolog(slurm_msg_t *msg)

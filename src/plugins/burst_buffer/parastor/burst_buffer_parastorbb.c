@@ -3785,7 +3785,7 @@ static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config)
 		bb_min_config->para_stor_user_name = xstrdup(bb_config->para_stor_user_name);
 		bb_min_config->para_stor_password  = xstrdup(bb_config->para_stor_password);
 		bb_min_config->token			   = xstrdup(bb_config->token);
-		bb_min_config->timeout	   = bb_config->other_timeout;
+		//TODO:增加超时配置读取
 	} else {
 		error("bb_config is NULL, can't get minimal config.");
 		return NULL;

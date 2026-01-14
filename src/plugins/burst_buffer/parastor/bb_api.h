@@ -116,12 +116,12 @@ typedef struct {
     /* create group params */
     char *group_sn;
     int client_count; /*  The client_count and client_ids must be entered at the same time. */
-    const int *client_ids;
+    int *client_ids;
     int del_delay_time; /* delay time for delete operation,defalut is 3600s */
     int fault_delay_time; /* fault_delay_time: delay time for fault operation,defalut is 3600s */
 
     /* create datasets params */
-    const char *path;
+    char *path;
     int group_id;
     bool is_use_metadata;
     data_cache_type data_cache_type;
@@ -218,7 +218,6 @@ extern int query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_co
  */
 extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_minimal_config_t *bb_config);
 
-
 /**
  * @brief 根据group_id、path查询bb任务
  * @param task_id 入参，传入缓存组ID
@@ -300,11 +299,7 @@ extern int _find_dataset_key(void *x, void *key);
 
 
 extern void free_query_params(query_params_request *query_params);
-// extern void free_create_params(create_params_request *create_params);
-// extern void free_delete_params(delete_params_request *delete_params);
-
-
-/* Test function to verify bb_api library loading */
-extern int bb_api_test_function(void);
+extern void free_create_params(create_params_request *create_params);
+extern void free_delete_params(delete_params_request *delete_params);
 
 #endif

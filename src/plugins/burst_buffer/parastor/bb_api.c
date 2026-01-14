@@ -1541,7 +1541,7 @@ static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, ca
         /*assemble the full query for cache groups*/
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s",
             bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
-        ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->timeout, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1571,7 +1571,7 @@ static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, ca
         xstrfmtcat(body, "}");
         /* END---assembl body*/      
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-group-nodes/by-sn", bb_config->para_stor_addr, bb_config->para_stor_port);       
-        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->timeout, &json_string); 
+        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->other_timeout, &json_string); 
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1596,7 +1596,7 @@ static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, ca
         }
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s", bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
         debug("the request url of delete groups:%s", url_api);
-        ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->timeout, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1710,7 +1710,7 @@ static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, 
 
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets",
             bb_config->para_stor_addr, bb_config->para_stor_port);
-        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->timeout, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1734,7 +1734,7 @@ static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, 
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%d",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->dataset_id);
         debug("the request url of delete dataset:%s", url_api);
-        ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->timeout, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1844,7 +1844,7 @@ static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, cal
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks?%s",
             bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
         debug("the query task url is :%s", url_api);
-        ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->timeout, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1879,7 +1879,7 @@ static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, cal
         /* END---assembl body*/
 
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks", bb_config->para_stor_addr, bb_config->para_stor_port);
-        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->timeout, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1903,7 +1903,7 @@ static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, cal
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks/%d:cancel",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->task_id);
         debug("the request url of cancel task:%s", url_api);
-        ret = call_rest_api_with_token_timeout(url_api, "PUT", NULL, bb_config->token, bb_config->timeout, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "PUT", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -2350,7 +2350,9 @@ extern int query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config,
         return 0;
     }
     /* 检查查询到的task数据ID是否正确 */
-    if (bb_task->task_id != task_id) {
+    if (bb_task->task_id == task_id) {
+        ret = bb_task->task_id;
+    } else {
         error("get task id error, the task_id  is %d, but return task_id is %d", task_id, bb_task->task_id);
         bb_response_free(resp_out);
         return SLURM_ERROR;
@@ -2757,20 +2759,27 @@ extern void free_query_params(query_params_request *query_params)
         xfree(query_params->group_sn);
     if (query_params->path)
         xfree(query_params->path);
+    xfree(query_params);
 }
 
-
-
-/*
- * ============================================================================
- * 测试函数：用于验证 bb_api 库是否正确加载和调用
- * 
- * Returns: 0 on success, -1 on error
- * ============================================================================
- */
-extern int bb_api_test_function(void)
+extern void free_create_params(create_params_request *create_params)
 {
-	debug("xxxxxxxxx-bb_api_test_function: bb_api library is successfully loaded and called!");
-	debug("xxxxxxxxx-bb_api_test_function: This is a test function to verify library loading");
-	return 0;
+    if (!create_params)
+        return;
+    if (create_params->group_sn)
+        xfree(create_params->group_sn);
+    if (create_params->path)
+        xfree(create_params->path);
+    if (create_params->client_ids && create_params->client_count > 0)
+        xfree(create_params->client_ids);
+    xfree(create_params);
+}
+
+extern void free_delete_params(delete_params_request *delete_params)
+{
+    if (!delete_params)
+        return;
+    if (delete_params->group_sn)
+        xfree(delete_params->group_sn);
+    xfree(delete_params);
 }
