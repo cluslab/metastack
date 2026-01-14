@@ -2784,6 +2784,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			bool submission, uint32_t scheduler_type, bool sched, int index)
 #endif	
 {
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	int return_code = SLURM_SUCCESS;
+#endif
 	int bb, error_code = SLURM_SUCCESS, i, node_set_size = 0;
 	bitstr_t *select_bitmap = NULL;
 	struct node_set *node_set_ptr = NULL;
@@ -3238,8 +3241,43 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	tmp_job = job_array_post_sched(job_ptr);
 	if (tmp_job && (tmp_job != job_ptr) && (orig_resv_port_cnt == NO_VAL16))
 		tmp_job->resv_port_cnt = orig_resv_port_cnt;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	return_code = bb_g_job_begin(job_ptr);
+	if (return_code!= SLURM_SUCCESS ) {
+		if((return_code == ESLURM_BB_RESOURCE_LIMIT) && (job_ptr->enforce_bb_flag)) {
+			/* Leave job queued, something is hosed */
+			debug2("bb_g_job_begin(%pJ): the job can be started directly without waiting for BB resources.", job_ptr);
 
+			/* Cancel previously started job */
+			(void) bb_g_job_revoke_alloc(job_ptr);
+
+			//error_code = ESLURM_NODES_BUSY;
+			job_ptr->start_time = 0;
+			job_ptr->time_last_active = 0;
+			job_ptr->end_time = 0;
+			job_ptr->state_reason = WAIT_RESOURCES;
+			last_job_update = now;
+			goto cleanup;
+		} else if((return_code == ESLURM_BB_RESOURCE_LIMIT) && !(job_ptr->enforce_bb_flag)) {
+			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+			debug2("bb_g_job_begin(%pJ):", job_ptr);
+	    } else {
+			/* Leave job queued, something is hosed */
+			error_code = ESLURM_INVALID_BURST_BUFFER_REQUEST;
+			error("bb_g_job_begin(%pJ): %s",
+				job_ptr, slurm_strerror(error_code));
+			job_ptr->start_time = 0;
+			job_ptr->time_last_active = 0;
+			job_ptr->end_time = 0;
+			job_ptr->priority = 0;
+			job_ptr->state_reason = WAIT_HELD;
+			last_job_update = now;
+			goto cleanup;
+		}
+
+#else
 	if (bb_g_job_begin(job_ptr) != SLURM_SUCCESS) {
+
 		/* Leave job queued, something is hosed */
 		error_code = ESLURM_INVALID_BURST_BUFFER_REQUEST;
 		error("bb_g_job_begin(%pJ): %s",
@@ -3251,7 +3289,9 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 		job_ptr->state_reason = WAIT_HELD;
 		last_job_update = now;
 		goto cleanup;
+
 	}
+#endif
 	if (select_g_job_begin(job_ptr) != SLURM_SUCCESS) {
 		/* Leave job queued, something is hosed */
 		error("select_g_job_begin(%pJ): %m", job_ptr);

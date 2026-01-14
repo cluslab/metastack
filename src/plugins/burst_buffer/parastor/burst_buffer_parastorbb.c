@@ -3463,8 +3463,13 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 
     job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_job + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_job; 
 	job_ptr->need_database_counts = job_ptr->need_group_counts * bb_job->pfs_cnt;
+	job_ptr->enforce_bb_flag = bb_job->enforce_bb_flag;
     log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
 	log_flag(BURST_BUF, "required number of datasets %d", job_ptr->need_database_counts);
+	if(job_ptr->enforce_bb_flag)
+		log_flag(BURST_BUF, "Forced use of BB acceleration; if not satisfied, queue up");
+	else
+		log_flag(BURST_BUF, "If BB acceleration is not forced and BB resources are not available, the job will run directly");
 	//job_ptr->req_space                 = bb_job->req_space;
 	//job_ptr->access_mode 	   		   = bb_job->access_mode;
 	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
@@ -3500,20 +3505,8 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
 #endif
-		//return SLURM_ERROR;
-	} else {
-// 		/* enforce_bb_flag=false: 资源不足作业不用BB资源直接运行 */
-// 		xfree(job_ptr->state_desc);
-// 		job_ptr->state_desc = xstrdup("enforce_bb_flag=false:The job runs without using BB resources");
-// 		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
-// 		_queue_teardown(bb_job);
-// 		slurm_mutex_unlock(&bb_state.bb_mutex);
-// #ifdef __METASTACK_OPT_CACHE_QUERY
-// 		_add_job_state_to_queue(job_ptr);
-// #endif
-	    //作业可直接运行
-		return ret;
-	}
+		return ESLURM_BB_RESOURCE_LIMIT;
+	} 
 
 	/* Handle count before creating cache */
 	bb_state.bb_config.free_groups    -= job_ptr->need_group_counts;
@@ -3523,20 +3516,6 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 
 	//job_ptr->bb_enable_pb			   = true;	
 	slurm_mutex_unlock(&bb_state.bb_mutex);
-	// pre_run_args = xmalloc(sizeof(pre_run_bb_args_t));
-	// pre_run_args->args = NULL;
-	// pre_run_args->job_id = job_ptr->job_id;
-	// pre_run_args->timeout = bb_state.bb_config.other_timeout * 1000;
-	// pre_run_args->user_id = job_ptr->user_id;
-	// pre_run_args->bb_node_cnt = bb_node_cnt;
-// 	if (job_ptr->details) { /* Defer launch until completion */
-// 		job_ptr->details->prolog_running++;
-// 		job_state_set_flag(job_ptr, JOB_CONFIGURING);
-// #ifdef __METASTACK_OPT_CACHE_QUERY
-// 		_add_job_state_to_queue(job_ptr);
-// #endif
-// 	}
-	// slurm_thread_create_detached(_start_pre_run, pre_run_args);
 
 	return ret;
 }

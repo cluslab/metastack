@@ -62,6 +62,14 @@ extern "C" {
 #ifndef __METASTACK_NEW_CUSTOM_EXCEPTION
 #define __METASTACK_NEW_CUSTOM_EXCEPTION
 #endif
+
+
+#ifndef __METASTACK_NEW_BURSTBUFFER
+#define __METASTACK_NEW_BURSTBUFFER
+#define __METASTACK_NEW_BURSTBUFFER1
+#define __METASTACK_NEW_BURSTBUFFER2
+#endif
+
 /* set errno to the specified value - then return -1 */
 #define slurm_seterrno_ret(errnum) do { \
 	slurm_seterrno(errnum);         \
@@ -412,6 +420,9 @@ typedef enum {
 	ESLURM_CONTAINER_NOT_CONFIGURED = 10000,
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	ESLURMD_INVALID_WATCH_DOG,
+#endif
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	ESLURM_BB_RESOURCE_LIMIT,
 #endif
 } slurm_err_t;
 
