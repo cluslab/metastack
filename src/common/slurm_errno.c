@@ -485,7 +485,10 @@ slurm_errtab_t slurm_errtab[] = {
 	  "RestrictedCoresPerGPU: No GPUs configured on node" },
 	{ ERRTAB_ENTRY(ESLURM_MAX_POWERED_NODES),
 	  "Max powered up nodes reached" },
-
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_LIMIT),
+	  "Max burst buffer resources reached" },
+#endif
 	/* SPANK errors */
 	{ ERRTAB_ENTRY(ESPANK_ERROR),
 	  "Generic error"					},

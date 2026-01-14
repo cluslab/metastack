@@ -3257,7 +3257,8 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 
 			/* Cancel previously started job */
 			(void) bb_g_job_revoke_alloc(job_ptr);
-
+		     error_code =  ESLURM_BB_RESOURCE_LIMIT
+			 xfree(job_ptr->state_desc);
 			//error_code = ESLURM_NODES_BUSY;
 			job_ptr->start_time = 0;
 			job_ptr->time_last_active = 0;
