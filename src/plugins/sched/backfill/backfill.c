@@ -3378,10 +3378,31 @@ static int _start_job(job_record_t *job_ptr, bitstr_t *resv_bitmap)
 		last_job_update = time(NULL);
 		info("Started %pJ in %s on %s",
 		     job_ptr, job_ptr->part_ptr->name, job_ptr->nodes);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		if(!IS_JOB_STAGING(job_ptr)) {
+			if (job_ptr->batch_flag == 0)
+				srun_allocate(job_ptr);
+			else if (!IS_JOB_CONFIGURING(job_ptr))
+				launch_job(job_ptr);
+		} else {
+			if (job_ptr->batch_flag == 0){
+				uint32_t srun_flag = 1;
+				job_ptr->create_step |= SRUN_ALLOCATE_BIT;
+				create_bb_job(job_ptr, srun_flag);
+				//srun_allocate(job_ptr);
+			} else if (!IS_JOB_CONFIGURING(job_ptr)) {
+				uint32_t launch_flag = 2;
+				job_ptr->create_step |= LAUNCH_JOB_BIT;
+				create_bb_job(job_ptr, launch_flag);
+				//launch_job(job_ptr);
+			}
+		}
+#else
 		if (job_ptr->batch_flag == 0)
 			srun_allocate(job_ptr);
 		else if (!IS_JOB_CONFIGURING(job_ptr))
 			launch_job(job_ptr);
+#endif
 		slurmctld_diag_stats.backfilled_jobs++;
 		slurmctld_diag_stats.last_backfilled_jobs++;
 		if (job_ptr->het_job_id)

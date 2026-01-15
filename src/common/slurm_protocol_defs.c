@@ -1711,6 +1711,29 @@ extern void slurm_free_dep_update_origin_msg(dep_update_origin_msg_t *msg)
 	}
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg)
+{
+	if(msg) {
+		xfree(msg->nodes);
+		xfree(msg->first_sn);
+		xfree(msg->last_sn);
+		xfree(msg->pfs);
+		xfree(msg);
+	}
+}
+
+extern void slurm_free_complete_create_bb_launch_msg(complete_create_bb_msg_t * msg)
+{
+	if(msg) {
+		xfree(msg->node_name);
+		xfree(msg->groups_id);
+		xfree(msg->databases_id);
+		xfree(msg);
+	}
+}
+#endif
+
 extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 {
 	int i;
@@ -1742,9 +1765,6 @@ extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 		xfree(msg->watch_dog);
 		xfree(msg->watch_dog_script);
 #endif
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-		xfree(msg->pfs);
-#endif 
 		FREE_NULL_LIST(msg->job_node_array);
 
 		FREE_NULL_BUFFER(msg->job_ptr_buf);
@@ -2725,6 +2745,10 @@ extern char *job_state_string(uint32_t inx)
 		return "STAGE_OUT";
 	if (inx & JOB_CONFIGURING)
 		return "CONFIGURING";
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (inx & JOB_BURSTBUFFER_STAGING)
+		return "STAGE_IN";
+#endif
 	if (inx & JOB_RESIZING)
 		return "RESIZING";
 	if (inx & JOB_REQUEUE)
@@ -2782,6 +2806,10 @@ extern char *job_state_string_compact(uint32_t inx)
 		return "CG";
 	if (inx & JOB_STAGE_OUT)
 		return "SO";
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if ((inx & JOB_BURSTBUFFER_STAGING) && !(inx & JOB_CONFIGURING))
+		return "SI_BB";
+#endif
 	if (inx & JOB_CONFIGURING)
 		return "CF";
 	if (inx & JOB_RESIZING)
@@ -2898,6 +2926,10 @@ extern char *job_state_string_complete(uint32_t state)
 		xstrcat(state_str, ",COMPLETING");
 	if (state & JOB_CONFIGURING)
 		xstrcat(state_str, ",CONFIGURING");
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (state & JOB_BURSTBUFFER_STAGING)
+		xstrcat(state_str, ",STAGING");
+#endif
 	if (state & JOB_POWER_UP_NODE)
 		xstrcat(state_str, ",POWER_UP_NODE");
 	if (state & JOB_RECONFIG_FAIL)
@@ -2948,6 +2980,10 @@ extern uint32_t job_state_num(const char *state_name)
 		return JOB_COMPLETING;
 	if (_job_name_test(JOB_CONFIGURING, state_name))
 		return JOB_CONFIGURING;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (_job_name_test(JOB_BURSTBUFFER_STAGING, state_name))
+		return JOB_BURSTBUFFER_STAGING;
+#endif
 	if (_job_name_test(JOB_RESIZING, state_name))
 		return JOB_RESIZING;
 	if (_job_name_test(JOB_RESV_DEL_HOLD, state_name))
@@ -5151,6 +5187,15 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case REQUEST_LAUNCH_PROLOG:
 		slurm_free_prolog_launch_msg(data);
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	case REQUEST_CREATE_BB_JOB_LAUNCH:
+		slurm_free_create_bb_launch_msg(data);
+		break;
+	case REQUEST_COMPLETE_CREATE_BB:
+		slurm_free_complete_create_bb_launch_msg(data);
+		break;
+#endif
+
 	case REQUEST_RESOURCE_ALLOCATION:
 	case REQUEST_JOB_WILL_RUN:
 	case REQUEST_SUBMIT_BATCH_JOB:
@@ -6557,6 +6602,10 @@ extern void purge_agent_args(agent_arg_t *agent_arg_ptr)
 			slurm_free_nhc_info_msg(*(node_rec_state_array_split_t **)agent_arg_ptr->msg_args);
 			xfree(agent_arg_ptr->msg_args);
 		}
+#endif
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		else if (agent_arg_ptr->msg_type == REQUEST_CREATE_BB_JOB_LAUNCH)
+			slurm_free_create_bb_launch_msg(agent_arg_ptr->msg_args);
 #endif
 		else
 			xfree(agent_arg_ptr->msg_args);

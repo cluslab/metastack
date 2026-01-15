@@ -572,6 +572,9 @@ extern void create_search_popup(GtkAction *action, gpointer user_data)
 		display_data_t pulldown_display_data[] = {
 			{G_TYPE_NONE, JOB_PENDING, "Pending", true, -1},
 			{G_TYPE_NONE, JOB_CONFIGURING, "Configuring", true, -1},
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+			{G_TYPE_NONE, JOB_BURSTBUFFER_STAGING, "Staging", true, -1},	
+#endif
 			{G_TYPE_NONE, JOB_RUNNING, "Running", true, -1},
 			{G_TYPE_NONE, JOB_SUSPENDED, "Suspended", true, -1},
 			{G_TYPE_NONE, JOB_COMPLETE, "Complete", true, -1},

@@ -177,6 +177,15 @@ extern bool job_is_completing(bitstr_t *eff_cg_bitmap);
 extern int job_start_data(job_record_t *job_ptr,
 			  will_run_response_msg_t **resp);
 
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+/* 
+ * After node allocation, slurmctld requests slurmd to create the corresponding
+ * cache group.
+ */
+
+extern void create_bb_job(job_record_t *job_ptr, uint32_t flag);
+#endif
+
 /*
  * launch_job - send an RPC to a slurmd to initiate a batch job
  * IN job_ptr - pointer to job that will be initiated

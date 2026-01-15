@@ -4216,8 +4216,13 @@ static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
 		job_ptr->state_reason = WAIT_QOS_THRES;
 	else if (rc == ESLURM_REQUESTED_PART_CONFIG_UNAVAILABLE)
 		job_ptr->state_reason = WAIT_PART_CONFIG;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	else if (rc == ESLURM_BURST_BUFFER_WAIT || rc == ESLURM_BB_RESOURCE_LIMIT )
+		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;	
+#else
 	else if (rc == ESLURM_BURST_BUFFER_WAIT)
 		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+#endif
 	else if (rc == ESLURM_PARTITION_DOWN)
 		job_ptr->state_reason = WAIT_PART_DOWN;
 	else if (rc == ESLURM_INVALID_QOS)
@@ -6159,6 +6164,71 @@ static void _signal_batch_job(job_record_t *job_ptr, uint16_t signal,
 	set_agent_arg_r_uid(agent_args, SLURM_AUTH_UID_ANY);
 	agent_queue_request(agent_args);
 }
+
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+/*
+ * prolog_complete - note the normal termination of the prolog
+ * IN job_id - id of the job which completed
+ * IN prolog_return_code - prolog's return code,
+ *    if set then set job state to FAILED
+ * RET - 0 on success, otherwise ESLURM error code
+ * global: job_list - pointer global job list
+ *	last_job_update - time of last job table update
+ */
+extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
+			   char *node_name)
+{
+	job_record_t *job_ptr;
+
+	job_ptr = find_job_record(job_id);
+	if (job_ptr == NULL) {
+		info("create_bb_complete: invalid JobId=%u", job_id);
+		return ESLURM_INVALID_JOB_ID;
+	}
+
+	if (IS_JOB_COMPLETING(job_ptr))
+		return SLURM_SUCCESS;
+
+	if (bb_return_code) {
+		error("creqate launch failure, %pJ", job_ptr);
+		job_ptr->exit_code = bb_return_code;
+		///////////////////////这里需要补充异常场景下作业异常处理，节点状态异常处理
+	}
+	/*
+	 * job_ptr->node_bitmap_pr is always NULL for front end systems
+	 */
+	if (job_ptr->node_bitmap_pr) {
+		node_record_t *node_ptr = NULL;
+
+		if (node_name)
+			node_ptr = find_node_record(node_name);
+
+		if (node_ptr) {
+			bit_clear(job_ptr->node_bitmap_pr, node_ptr->index);
+		} else {
+			if (node_name)
+				error("%s: can't find node:%s",
+				      __func__, node_name);
+			bit_clear_all(job_ptr->node_bitmap_pr);
+		}
+	}
+	if (!job_ptr->node_bitmap_pr ||
+	    (bit_ffs(job_ptr->node_bitmap_pr) == -1))
+	{
+		job_ptr->state_reason = WAIT_NO_REASON;
+		agent_trigger(999, false, true);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
+	}
+	job_ptr->bb_ready = true;
+	last_job_update = time(NULL);
+
+	return SLURM_SUCCESS;
+}
+#endif
+
 
 /*
  * prolog_complete - note the normal termination of the prolog
@@ -9385,6 +9455,25 @@ static void _het_job_time_limit_incr(job_record_t *job_ptr,
 	list_iterator_destroy(iter);
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+/* Clear job's SI flag and advance end time as needed */
+extern void job_create_fini(job_record_t *job_ptr) {
+	time_t now = time(NULL);
+	last_job_update = now;
+	if (IS_JOB_STAGING(job_ptr)) {
+		info("Resetting %pJ start time for create burst buffer", job_ptr);
+		job_ptr->start_time = now;
+		_het_job_time_limit_incr(job_ptr, job_ptr->job_id);
+		jobacct_storage_g_job_start(acct_db_conn, job_ptr);
+		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+	} 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	_add_job_state_to_queue(job_ptr);
+#endif
+
+}
+#endif
+
 /* Clear job's CONFIGURING flag and advance end time as needed */
 extern void job_config_fini(job_record_t *job_ptr)
 {
@@ -9409,8 +9498,21 @@ extern void job_config_fini(job_record_t *job_ptr)
 	 * Request asynchronous launch of a prolog for a non-batch job.
 	 * PROLOG_FLAG_CONTAIN also turns on PROLOG_FLAG_ALLOC.
 	 */
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) {
+		if(IS_JOB_STAGING(job_ptr)){
+			uint32_t launch_flag = 3;
+			job_ptr->create_step |= LAUNCH_PROLOG_BIT;
+			create_bb_job(job_ptr, launch_flag);
+		} else {
+			launch_prolog(job_ptr);
+		}
+	}
+#else
 	if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC)
 		launch_prolog(job_ptr);
+#endif
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	_add_job_state_to_queue(job_ptr);
 #endif
@@ -9546,10 +9648,47 @@ void job_time_limit(void)
 		    test_job_nodes_ready(job_ptr)) {
 			info("%s: Configuration for %pJ complete",
 			     __func__, job_ptr);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+			job_config_fini(job_ptr);
+			if(!IS_JOB_STAGING(job_ptr)) {
+				if (job_ptr->batch_flag)
+					launch_job(job_ptr);
+			} else {
+				if (job_ptr->batch_flag) {
+					uint32_t launch_flag = 2;
+					job_ptr->create_step |= LAUNCH_JOB_BIT;
+					create_bb_job(job_ptr, launch_flag);
+				}
+		
+			}
+#else
 			job_config_fini(job_ptr);
 			if (job_ptr->batch_flag)
 				launch_job(job_ptr);
+#endif
 		}
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		if(job_ptr->bb_ready) {
+			debug3("JobId=%u has created burstbuffer job", job_ptr->job_id);
+			if(IS_JOB_STAGING(job_ptr)){
+				job_create_fini(job_ptr);
+			}
+			if(job_ptr->create_step & LAUNCH_PROLOG_BIT) {
+				job_ptr->create_step &= ~LAUNCH_PROLOG_BIT;
+				launch_prolog(job_ptr);
+			} 
+			if(job_ptr->create_step & LAUNCH_JOB_BIT) {
+				job_ptr->create_step &= ~LAUNCH_JOB_BIT;
+				launch_job(job_ptr);
+			}
+			
+			if(job_ptr->create_step & SRUN_ALLOCATE_BIT) {
+				job_ptr->create_step &= ~SRUN_ALLOCATE_BIT;
+				srun_allocate(job_ptr);
+			}
+		}
+#endif
 
 		/*
 		 * Features have been changed on some node, make job eligiable
@@ -18042,7 +18181,9 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 		/* Remove configuring state just to make sure it isn't there
 		 * since it will throw off displays of the job. */
 		job_state_unset_flag(job_ptr, JOB_CONFIGURING);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+#endif
 		/* make sure all parts of the job are notified
 		 * Fed Jobs: only signal the srun from where the job is running
 		 * or from the origin if the job wasn't running. */

@@ -445,9 +445,9 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->mpi_default         = xstrdup(conf->mpi_default);
 	conf_ptr->mpi_params          = xstrdup(conf->mpi_params);
 	conf_ptr->msg_timeout         = conf->msg_timeout;
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-	conf_ptr->bb_msg_timeout      = conf->bb_msg_timeout;
-#endif
+// #ifdef  __METASTACK_NEW_BURSTBUFFER1
+// 	conf_ptr->bb_msg_timeout      = conf->bb_msg_timeout;
+// #endif
 
 	conf_ptr->next_job_id         = next_job_id;
 	conf_ptr->node_features_conf  = node_features_g_get_config();
@@ -2556,6 +2556,44 @@ static void _slurm_rpc_complete_job_allocation(slurm_msg_t *msg)
 
 	log_flag(TRACE_JOBS, "%s: return %pJ", __func__, job_ptr);
 }
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+/* _slurm_rpc_complete_create_bb - process RPC to note the
+ *	completion of a crete burst buffer */
+static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
+{
+	int error_code = SLURM_SUCCESS;
+	DEF_TIMERS;
+	complete_create_bb_msg_t *comp_msg = msg->data;
+	/* Locks: Write job, write node */
+	slurmctld_lock_t job_write_lock = {
+		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+
+	/* init */
+	START_TIMER;
+	debug3("Processing RPC details: REQUEST_COMPLETE_CREATE_BB from JobId=%u",
+	       comp_msg->job_id);
+
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+		lock_slurmctld(job_write_lock);
+	error_code = create_bb_complete(comp_msg->job_id, comp_msg->bb_rc,
+				     comp_msg->node_name);
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+		unlock_slurmctld(job_write_lock);
+
+	END_TIMER2(__func__);
+
+	/* return result */
+	if (error_code) {
+		info("%s JobId=%u: %s ",
+		     __func__, comp_msg->job_id, slurm_strerror(error_code));
+		slurm_send_rc_msg(msg, error_code);
+	} else {
+		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);
+		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+	}
+}
+#endif
 
 /* _slurm_rpc_complete_prolog - process RPC to note the
  *	completion of a prolog */
@@ -7790,6 +7828,15 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 		.msg_type = REQUEST_COMPLETE_JOB_ALLOCATION,
 		.func = _slurm_rpc_complete_job_allocation,
 	},{
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		.msg_type = REQUEST_COMPLETE_CREATE_BB,
+		_slurm_rpc_complete_create_bb,
+		.queue_enabled = true,
+		.locks = {
+			.job = WRITE_LOCK,
+		},
+	},{
+#endif
 		.msg_type = REQUEST_COMPLETE_PROLOG,
 		.func = _slurm_rpc_complete_prolog,
 		.queue_enabled = true,

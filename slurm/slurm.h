@@ -652,6 +652,10 @@ enum job_states {
 #ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
 #define JOB_PROLOG_MAXREQUEUE_HOLD  SLURM_BIT(27) /* Requeue jobs in hold when failed to run prologue for much times */
 #endif
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+#define JOB_BURSTBUFFER_STAGING  SLURM_BIT(28) /* Job is using burst buffer 2 */
+#define JOB_BURSTBUFFER_STAGE  SLURM_BIT(29) /* Job is using burst buffer 2 */
+#endif
 
 #define READY_JOB_FATAL	   -2	/* fatal error */
 #define READY_JOB_ERROR    -1	/* ordinary error */
@@ -997,6 +1001,9 @@ enum job_state_reason {
 					    * (Unknown) */
 	WAIT_MAX_POWERED_NODES,            /* max_powered_nodes reached */
 	WAIT_MPI_PORTS_BUSY,		   /* MPI resv_ports busy */
+// #ifdef __METASTACK_NEW_BURSTBUFFER2
+// 	WAIT_BB_RESOURCES,
+// #endif
 	REASON_END, /* end of table */
 };
 
@@ -3737,9 +3744,9 @@ typedef struct {
 	uint16_t cache_query; /*High Performance Query Switch*/
 	uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
 #endif
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-	uint16_t bb_msg_timeout;	/* burst buffer message timeout */
-#endif
+// #ifdef  __METASTACK_NEW_BURSTBUFFER1
+// 	uint16_t bb_msg_timeout;	/* burst buffer message timeout */
+// #endif
 } slurm_conf_t;
 
 typedef struct slurmd_status_msg {

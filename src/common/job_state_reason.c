@@ -93,6 +93,11 @@ const static entry_t jsra[] = {
 	[WAIT_LICENSES] = {
 		.str = "Licenses",
 	},
+// #ifdef __METASTACK_NEW_BURSTBUFFER2
+// 	[WAIT_BB_RESOURCES] = {
+// 		.str = "BurstTBuffer2Resources",
+// 	},
+// #endif
 	[WAIT_ASSOC_JOB_LIMIT] = {
 		.flags = JSR_QOS_ASSOC,
 		.str = "AssociationJobLimit",
