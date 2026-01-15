@@ -3253,7 +3253,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	if (return_code!= SLURM_SUCCESS ) {
 		if((return_code == ESLURM_BB_RESOURCE_LIMIT) && (job_ptr->enforce_bb_flag)) {
 			/* Leave job queued, something is hosed */
-			debug2("bb_g_job_begin(%pJ): the job can not be started directly without waiting for BB resources.", job_ptr);
+			debug2("bb_g_job_begin(%pJ): the job can not be started directly and need waiting for BB resources.", job_ptr);
 
 			/* Cancel previously started job */
 			(void) bb_g_job_revoke_alloc(job_ptr);
