@@ -556,11 +556,11 @@ struct job_record {
 	char     *pfs;            		 //后端存储路径,可能有多个
 	bool     metadata_acceleration;  //是否开启元数据加速
 	uint32_t max_clients_per_job; 	 /* 缓存组粒度：几个客户端划分为一个缓存组 */
-	bool	 bb_enable_pb; 			 //是否开启pb
+	bool	 bb_enable_pb; 			 //作业是bb类型作业
 	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好
 	uint32_t create_step;			 //对应作业步
 	bool     bb_need_wait; 			//是否等待bb完成
-	bool 	 enforce_bb_flag; 		//是否强制等待bb
+	bool 	 enforce_bb_flag; 		//是否强制等待创建缓存组完成
 #endif
 };
 

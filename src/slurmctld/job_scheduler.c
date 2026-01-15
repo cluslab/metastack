@@ -2989,7 +2989,7 @@ skip_start:
 			continue;
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-		} else if (error_code == ESLURM_BURST_BUFFER_WAIT || ESLURM_BB_RESOURCE_LIMIT) {
+		} else if (error_code == ESLURM_BURST_BUFFER_WAIT || error_code == ESLURM_BB_RESOURCE_LIMIT) {
 #else
 		} else if (error_code == ESLURM_BURST_BUFFER_WAIT) {
 #endif
