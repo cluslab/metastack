@@ -3257,13 +3257,14 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 
 			/* Cancel previously started job */
 			(void) bb_g_job_revoke_alloc(job_ptr);
-		     error_code =  ESLURM_BB_RESOURCE_LIMIT
+			 error_code =  ESLURM_BB_RESOURCE_LIMIT;
 			 xfree(job_ptr->state_desc);
 			//error_code = ESLURM_NODES_BUSY;
 			job_ptr->start_time = 0;
 			job_ptr->time_last_active = 0;
 			job_ptr->end_time = 0;
-			job_ptr->state_reason = WAIT_RESOURCES;
+			//job_ptr->state_reason = WAIT_BB_RESOURCES;
+			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
 			last_job_update = now;
 			goto cleanup;
 		} else if((return_code == ESLURM_BB_RESOURCE_LIMIT) && !(job_ptr->enforce_bb_flag)) {

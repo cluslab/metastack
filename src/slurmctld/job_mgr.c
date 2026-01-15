@@ -4216,8 +4216,13 @@ static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
 		job_ptr->state_reason = WAIT_QOS_THRES;
 	else if (rc == ESLURM_REQUESTED_PART_CONFIG_UNAVAILABLE)
 		job_ptr->state_reason = WAIT_PART_CONFIG;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	else if (rc == ESLURM_BURST_BUFFER_WAIT || rc == ESLURM_BB_RESOURCE_LIMIT )
+		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;	
+#else
 	else if (rc == ESLURM_BURST_BUFFER_WAIT)
 		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+#endif
 	else if (rc == ESLURM_PARTITION_DOWN)
 		job_ptr->state_reason = WAIT_PART_DOWN;
 	else if (rc == ESLURM_INVALID_QOS)

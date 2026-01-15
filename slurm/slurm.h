@@ -1001,6 +1001,9 @@ enum job_state_reason {
 					    * (Unknown) */
 	WAIT_MAX_POWERED_NODES,            /* max_powered_nodes reached */
 	WAIT_MPI_PORTS_BUSY,		   /* MPI resv_ports busy */
+// #ifdef __METASTACK_NEW_BURSTBUFFER2
+// 	WAIT_BB_RESOURCES,
+// #endif
 	REASON_END, /* end of table */
 };
 
