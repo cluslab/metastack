@@ -126,6 +126,9 @@
 #include "src/slurmd/slurmd/req.h"
 #include "src/slurmd/slurmd/slurmd.h"
 
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+#include "src/interfaces/burst_buffer.h"	
+#endif
 decl_static_data(usage_txt);
 
 #define MAX_THREADS		256
@@ -353,7 +356,10 @@ main (int argc, char **argv)
 	}
 
 	cred_state_init();
-
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+	if (bb_g_init() != SLURM_SUCCESS)
+		fatal("Unable to initialize burst_buffer.conf");	
+#endif
 	if (acct_gather_conf_init() != SLURM_SUCCESS)
 		fatal("Unable to initialize acct_gather_conf");
 	if (jobacct_gather_init() != SLURM_SUCCESS)

@@ -6,26 +6,6 @@
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
 #include "slurm/slurm_version.h"
 
-/*
- * 为兼容 burst_buffer 公共代码中对 plugin_type 的引用，
- * 在 libbb_api.so 中提供一套 Slurm 插件识别符号。
- * 同时避免 dlopen 时出现 undefined symbol: plugin_type。
- */
-const char plugin_name[]    = "bb_api library for parastor burst buffer";
-const char plugin_type[]    = "burst_buffer/parastor/bb_api";
-const uint32_t plugin_version = SLURM_VERSION_NUMBER;
-
-/* 
- * 在 slurmd 侧使用 libbb_api.so 时，并不存在真正的数据库连接，
- * 但 burst_buffer 公共代码中有对 acct_db_conn 的引用。
- * 这里提供一个空指针定义，避免 dlopen libbb_api.so 时出现
- * undefined symbol: acct_db_conn。
- *
- * 在 slurmctld 进程中有真正的 acct_db_conn 定义，而 slurmd 只加载
- * libbb_api.so，不会与 slurmctld 的定义冲突。
- */
-void *acct_db_conn = NULL;
-
 
 
 /* Declaration Helper Function */
@@ -42,7 +22,6 @@ static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, cal
 static int parse_single_json_of_group(const char *json_str, bb_response *resp_out, bb_attribute_group *bb_group);
 static int parse_single_json_of_dataset(const char* json_str, bb_attribute_dataset * bb_dataset, bb_response* resp_out);
 static int parse_single_json_of_task(const char* json_str, bb_response* resp_out, bb_attribute_task *bb_task);
-static int parse_single_json_of_client(const char *json_str, bb_response *resp_out, bb_attribute_client bb_client);
 
 static int parse_json_of_groups(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out);
 static int parse_json_of_datasets(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out);
@@ -60,9 +39,11 @@ static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *par
 * @param group Pointer to the group structure used to store the parsed data.
 */
 static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group)
+static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group)
 {
     int rc = SLURM_SUCCESS;
     if (!group_obj || !group) {
+        debug("_parse_json_result_to_group 参数为空\n");
         debug("_parse_json_result_to_group 参数为空\n");
         return SLURM_ERROR;
     }

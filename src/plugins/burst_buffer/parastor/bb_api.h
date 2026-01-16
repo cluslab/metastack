@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 // #include "slurm/slurm.h"
+// #include "slurm/slurm.h"
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
 #include "bb_curl_wrapper.h"
 #include <string.h>

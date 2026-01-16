@@ -1,240 +1,135 @@
-
-#include <inttypes.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <dlfcn.h>
-
-#include "slurm/slurm_errno.h"
-
-#include "src/interfaces/burst_buffer_slurmd.h"
-
-#include "src/common/list.h"
-#include "src/common/macros.h"
-#include "src/common/pack.h"
-#include "src/common/plugin.h"
-#include "src/common/slurm_protocol_api.h"
-#include "src/common/xmalloc.h"
-#include "src/common/xstring.h"
-#include "src/common/read_config.h" 
-
-/*
- * ============================================================================
- * 配置 bb_api 库路径（普通共享库）
- * 直接从 slurm_conf.plugindir 加载 "libbb_api.so"
- * ============================================================================
- */
-#define BB_API_LIB_NAME "libbb_api.so"
-
-/*
- * ============================================================================
- * 操作结构体：定义 bb_api 库中所有函数的函数指针
- * 
- * 添加新函数步骤：
- * 1. 在 slurm_bb_api_ops_t 结构体中添加函数指针
- * 2. 在 bb_api_syms 数组中添加对应的符号名称（必须与库中函数名完全一致）
- * 3. 在文件末尾添加对应的包装函数
- * ============================================================================
- */
-typedef struct slurm_bb_api_ops {	
-	/* 通过SN创建缓存组 */
-	int (*create_bb_group_by_sn) (void *create_params, void *bb_config);
-	/* 通过SN创建数据集规则 */
-	int (*create_bb_dataset_by_sn) (void *create_params, void *bb_config);
-	/* 提交预热任务（通过数据集ID） */
-	int (*submit_bb_task) (void *create_params, void *bb_config);
-	/* 通过SN获取缓存组ID */
-	int (*query_bb_groupid_by_sn) (char *group_sn, void *bb_min_config);
-	/* 传入缓存组ID和数据集路径,查询数据集规则 */
-	int (*query_datasetid_by_path_groupid) (const int group_id, const char *path, void *bb_config);
-	/* 根据task_id查询bb任务 */
-	int (*query_bb_tasks_by_taskid) (int task_id, void *bb_config, void *bb_task);
-	/* 根据group_sn删除缓存组 */
-	int (*delete_bb_group_by_sn) (char *group_sn, void *bb_config);
-	/* 根据dataset_id删除数据集规则 */
-	int (*delete_bb_dataset_by_id) (int dataset_id, void *bb_config);
-	/* 根据task_id取消BB任务 */
-	int (*cancel_bb_task_by_id) (int task_id, void *bb_config);
-	/* 释放BB结构体 */
-	void (*slurm_free_task) (void *object);
-	/* 释放创建参数结构体 */
-	void (*_bb_g_free_create_params) (void *object);
-	/* 释放删除参数结构体 */
-	void (*_bb_g_free_delete_params) (void *object);
-	
-	
-} slurm_bb_api_ops_t;
-
-/*
- * 符号表：必须与 slurm_bb_api_ops_t 结构体中的函数指针顺序完全一致
- * 每个符号名称必须与 bb_api 库中导出的函数名完全一致
- */
-static const char *bb_api_syms[] = {
-	"bb_p_create_bb_group_by_sn",
-	"create_bb_dataset_by_sn",
-	"submit_bb_task",
-	"query_bb_groupid_by_sn",
-	"query_datasetid_by_path_groupid",
-	"query_bb_tasks_by_taskid",
-	"delete_bb_group_by_sn",
-	"delete_bb_dataset_by_id",
-	"cancel_bb_task_by_id",
-	"slurm_free_task",
-	"free_create_params",
-	"free_delete_params"
-};
-
-
-
-
-/* bb_api 库句柄和操作结构 */
-static int g_bb_api_context_cnt = -1;
-static slurm_bb_api_ops_t *bb_api_ops = NULL;
-static plugin_handle_t g_bb_api_handle = PLUGIN_INVALID_HANDLE;
-static pthread_mutex_t g_bb_api_context_lock = PTHREAD_MUTEX_INITIALIZER;
-
-/* 静态函数 */
-static void _bb_g_slurm_free_task(void *object);
-static void _bb_g_free_create_params(void *object);
-static void _bb_g_free_delete_params(void *object);
-
-static int bb_api_init(void)
-{
-	int rc = SLURM_SUCCESS;
-	char *plugin_dir = NULL;
-	char *lib_path = NULL;
-	int n_syms;
-	int i;
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (g_bb_api_context_cnt >= 0)
-		goto fini;
-
-	g_bb_api_context_cnt = 0;
-	bb_api_ops = xmalloc(sizeof(slurm_bb_api_ops_t));
-
-	/* 获取插件目录并构建库路径 */
-	if (!(plugin_dir = xstrdup(slurm_conf.plugindir))) {
-		error("%s: No plugin dir configured", __func__);
-		rc = SLURM_ERROR;
-		goto fail;
-	}
-
-	xstrfmtcat(lib_path, "%s/%s", plugin_dir, BB_API_LIB_NAME);
-
-	/* 通过 dlopen 加载普通共享库 */
-	(void) dlerror();
-	g_bb_api_handle = dlopen(lib_path, RTLD_LAZY | RTLD_GLOBAL);
-	if (!g_bb_api_handle) {
-		error("%s: cannot load bb_api library %s: %s",
-		      __func__, lib_path, dlerror());
-		rc = SLURM_ERROR;
-		goto fail;
-	}
-
-	/* 使用 plugin_get_syms 解析符号到 ops 结构体 */
-	n_syms = sizeof(bb_api_syms) / sizeof(char *);
-	if (plugin_get_syms(g_bb_api_handle, n_syms,
-			    bb_api_syms, (void **)bb_api_ops) < n_syms) {
-		error("%s: cannot get all required symbols from %s",
-		      __func__, lib_path);
-		error("Missing symbols:");
-		for (i = 0; i < n_syms; i++) {
-			if (!((void **)bb_api_ops)[i])
-				error("  - %s", bb_api_syms[i]);
-		}
-		rc = SLURM_ERROR;
-		goto fail;
-	}
-
-	g_bb_api_context_cnt = 1;
-	goto fini;
-
-fail:
-	if (g_bb_api_handle != PLUGIN_INVALID_HANDLE) {
-		plugin_unload(g_bb_api_handle);
-		g_bb_api_handle = PLUGIN_INVALID_HANDLE;
-	}
-	xfree(bb_api_ops);
-	bb_api_ops = NULL;
-	g_bb_api_context_cnt = -1;
-
-fini:
-	xfree(lib_path);
-	xfree(plugin_dir);
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-	return rc;
-}
-
-static int bb_api_fini(void)
-{
-	int rc = SLURM_SUCCESS;
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (g_bb_api_context_cnt < 0)
-		goto fini;
-
-	if (g_bb_api_handle != PLUGIN_INVALID_HANDLE) {
-		plugin_unload(g_bb_api_handle);
-		g_bb_api_handle = PLUGIN_INVALID_HANDLE;
-	}
-	xfree(bb_api_ops);
-	bb_api_ops = NULL;
-	g_bb_api_context_cnt = -1;
-
-fini:
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-	return rc;
-}
-
-/*
- * ============================================================================
- * 公共接口函数
- * ============================================================================
- */
-
-/*
- * Initialize the bb_api library infrastructure.
+/*****************************************************************************\
+ *  burst_buffer_parastorbb.c - Plugin for managing burst buffers with parastor
+ *****************************************************************************
+ *  Copyright (C) SchedMD LLC.
  *
- * Returns a Slurm errno.
- */
-extern int bb_g_init(void)
-{
-	return bb_api_init();
-}
+ *  This file is part of Slurm, a resource management program.
+ *  For details, see <https://slurm.schedmd.com/>.
+ *  Please also read the included file: DISCLAIMER.
+ *
+ *  Slurm is free software; you can redistribute it and/or modify it under
+ *  the terms of the GNU General Public License as published by the Free
+ *  Software Foundation; either version 2 of the License, or (at your option)
+ *  any later version.
+ *
+ *  In addition, as a special exception, the copyright holders give permission
+ *  to link the code of portions of this program with the OpenSSL library under
+ *  certain conditions as described in each individual source file, and
+ *  distribute linked combinations including the two. You must obey the GNU
+ *  General Public License in all respects for all of the code used other than
+ *  OpenSSL. If you modify file(s) with this exception, you may extend this
+ *  exception to your version of the file(s), but you are not obligated to do
+ *  so. If you do not wish to do so, delete this exception statement from your
+ *  version.  If you delete this exception statement from all source files in
+ *  the program, then also delete it here.
+ *
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ *  details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
+\*****************************************************************************/
 
-extern int bb_g_fini(void)
-{
-	return bb_api_fini();
-}
+#define _GNU_SOURCE
+
+#include <ctype.h>
+#include <curl/curl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include "slurm/slurm.h"
+
+#include "src/common/assoc_mgr.h"
+#include "src/common/data.h"
+#include "src/common/fd.h"
+#include "src/common/run_command.h"
+#include "src/common/slurm_protocol_pack.h"
+#include "src/common/xsignal.h"
+#include "src/common/xstring.h"
+#include "src/interfaces/serializer.h"
+// #include "src/parastor/slurm_parastor.h"
+#include "src/slurmctld/agent.h"
+#include "src/slurmctld/job_scheduler.h"
+#include "src/slurmctld/locks.h"
+#include "src/slurmctld/node_scheduler.h"
+#include "src/slurmctld/slurmctld.h"
+#include "src/slurmctld/slurmscriptd.h"
+#include "src/slurmctld/trigger_mgr.h"
+#include "src/plugins/burst_buffer/common/burst_buffer_common.h"
+
+#include "bb_curl_wrapper.h"
+#include "bb_api.h"
+/* Script directive */
+#define DEFAULT_DIRECTIVE_STR "PB"
+/* Script line types */
+#define LINE_OTHER 0
+#define LINE_BB    1
+#define LINE_DW    2
+#define LINE_PB    3
+//define GROUP_SIZE 100 //设置缓存组包含的最大节点数量
+/* Hold job if pre_run fails more times than MAX_RETRY_CNT */
+#define MAX_RETRY_CNT 2
+/* Used for the polling hooks "test_data_{in|out}" */
+#define SLURM_BB_BUSY "BUSY"
+#define GROUP_TYPE_TEMPORARY 0  /* 作业申请缓存组类型，0：临时 */
+#define GROUP_TYPE_PERSISTENT 1 /* 作业申请缓存组类型，1：持久 */
+#define DATASET_TYPE_STRIPED 0 /* 数据集加速类型，0:共享方式 */
+#define DATASET_TYPE_PRIVATE 1 /* 数据集加速类型，1:本地方式 */
+#define GROUP_SIZE  10         /* 默认缓存组大小 */
+/*
+ * Limit the number of burst buffers APIs allowed to run in parallel so that we
+ * don't exceed process or system resource limits (such as number of processes
+ * or max open files) when we run scripts through slurmscriptd. We limit this
+ * per "stage" (stage in, pre run, stage out, teardown) so that if we hit the
+ * maximum in stage in (for example) we won't block all jobs from completing.
+ * We also do this so that if 1000+ jobs complete or get cancelled all at
+ * once they won't all run teardown at the same time.
+ */
+#define MAX_BURST_BUFFERS_PER_STAGE 128
 
 /*
- * ============================================================================
- * bb_api 库函数包装器
- * 
- * 每个包装函数遵循相同的模式：
- * 1. 检查插件是否已初始化,如果没有则初始化
- * 2. 使用互斥锁保护
- * 3. 通过函数指针调用库中的函数
- * 4. 返回结果
- * ============================================================================
+ * These variables are required by the burst buffer plugin interface.  If they
+ * are not found in the plugin, the plugin loader will ignore it.
+ *
+ * plugin_name - a string giving a human-readable description of the
+ * plugin.  There is no maximum length, but the symbol must refer to
+ * a valid string.
+ *
+ * plugin_type - a string suggesting the type of the plugin or its
+ * applicability to a particular form of data or method of data handling.
+ * If the low-level plugin API is used, the contents of this string are
+ * unimportant and may be anything.  Slurm uses the higher-level plugin
+ * interface which requires this string to be of the form
+ *
+ *      <application>/<method>
+ *
+ * where <application> is a description of the intended application of
+ * the plugin (e.g., "burst_buffer" for Slurm burst_buffer) and <method> is a
+ * description of how this plugin satisfies that application.  Slurm will only
+ * load a burst_buffer plugin if the plugin_type string has a prefix of
+ * "burst_buffer/".
+ *
+ * plugin_version - an unsigned 32-bit integer containing the Slurm version
+ * (major.minor.micro combined into a single number).
  */
+/*
+ * 为兼容 burst_buffer 公共代码中对 plugin_type 的引用，
+ * 在 libbb_api.so 中提供一套 Slurm 插件识别符号。
+ * 同时避免 dlopen 时出现 undefined symbol: plugin_type。
+ */
+const char plugin_name[]    = "bb_api library for parastor burst buffer";
+const char plugin_type[]    = "burst_buffer/parastor/bb_api";
+const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr, bb_minimal_config_t *bb_config)
+
+extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr, bb_minimal_config_t *bb_config)
 {
 	int rc = SLURM_ERROR;
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
-	if (!group_sn || client_cnt <= 0 || !client_arr || !bb_config) {
-		error("error params");
-		return SLURM_ERROR;
-	}
+
 	create_params_request *create_params = xmalloc(sizeof(create_params_request));
 	create_params->group_sn = xstrdup(group_sn);
 	create_params->client_count = client_cnt;
@@ -785,7 +680,7 @@ extern int bb_g_cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config
  * @brief 释放task结构体
  * @return
  */
-static void _bb_g_slurm_free_task(void *object)
+extern void _bb_g_slurm_free_task(void *object)
 {
 	if (g_bb_api_context_cnt < 0) {
 		if (bb_api_init() != SLURM_SUCCESS) {
@@ -808,7 +703,7 @@ static void _bb_g_slurm_free_task(void *object)
  * @brief 释放创建参数结构体
  * @return
  */
-static void _bb_g_free_create_params(void *object)
+extern void _bb_g_free_create_params(void *object)
 {
 	if (g_bb_api_context_cnt < 0) {
 		if (bb_api_init() != SLURM_SUCCESS) {
@@ -831,7 +726,7 @@ static void _bb_g_free_create_params(void *object)
  * @brief 释放删除参数结构体
  * @return
  */
-static void _bb_g_free_delete_params(void *object)
+extern void _bb_g_free_delete_params(void *object)
 {
 	if (g_bb_api_context_cnt < 0) {
 		if (bb_api_init() != SLURM_SUCCESS) {

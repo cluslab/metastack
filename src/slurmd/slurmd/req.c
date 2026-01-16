@@ -521,7 +521,9 @@ slurmd_req(slurm_msg_t *msg)
 		break;
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
+		//DEBUG:测试
 		_rpc_create_bb(msg);
+		_rpc_clean_bb(msg);
 		last_slurmctld_msg = time(NULL);
 		break;
 #endif
