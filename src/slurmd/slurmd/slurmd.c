@@ -126,6 +126,9 @@
 #include "src/slurmd/slurmd/req.h"
 #include "src/slurmd/slurmd/slurmd.h"
 
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+#include "src/interfaces/burst_buffer.h"	
+#endif
 decl_static_data(usage_txt);
 
 #define MAX_THREADS		256
