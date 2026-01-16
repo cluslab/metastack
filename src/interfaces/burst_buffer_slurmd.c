@@ -57,11 +57,13 @@ typedef struct slurm_bb_api_ops {
 	/* 根据task_id取消BB任务 */
 	int (*cancel_bb_task_by_id) (int task_id, void *bb_config);
 	/* 释放BB结构体 */
-	void (*slurm_free_task) (void *object);
+	void (*free_bb_task) (void *object);
 	/* 释放创建参数结构体 */
 	void (*_bb_g_free_create_params) (void *object);
 	/* 释放删除参数结构体 */
 	void (*_bb_g_free_delete_params) (void *object);
+	/* 根据hostname查询客户端id */
+	int (*query_clientid_by_hostname)(const char *hostname, void *bb_config);
 	
 	
 } slurm_bb_api_ops_t;
@@ -80,9 +82,10 @@ static const char *bb_api_syms[] = {
 	"delete_bb_group_by_sn",
 	"delete_bb_dataset_by_id",
 	"cancel_bb_task_by_id",
-	"slurm_free_task",
+	"free_bb_task",
 	"free_create_params",
-	"free_delete_params"
+	"free_delete_params",
+	"query_clientid_by_hostname"
 };
 
 
@@ -492,11 +495,11 @@ extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config
 		// 根据是否超过软超时时间决定日志级别
 		if (soft_timeout_reached) {
 			// 超过软超时时间后,使用info级别输出日志
-			info("查询预热任务状态（已超过软超时时间%d秒）,task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒",
+			info("查询预热任务状态（已超过软超时时间%d秒）,task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%ld秒",
 				SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, elapsed_time);
 		} else {
 			// 未超过软超时时间,使用debug级别
-			debug("查询预热任务状态,task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒",
+			debug("查询预热任务状态,task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%ld秒",
 				task_id, query_rc, bb_task->task_state, elapsed_time);
 		}
 
@@ -792,10 +795,10 @@ static void _bb_g_slurm_free_task(void *object)
 		}
 	}
 	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->slurm_free_task) {
-		(*(bb_api_ops->slurm_free_task))(object);
+	if (bb_api_ops && bb_api_ops->free_bb_task) {
+		(*(bb_api_ops->free_bb_task))(object);
 	} else {
-		error("%s: slurm_free_task not available", __func__);
+		error("%s: free_bb_task not available", __func__);
 	}
 	slurm_mutex_unlock(&g_bb_api_context_lock);
 	return ;
@@ -815,7 +818,7 @@ static void _bb_g_free_create_params(void *object)
 		}
 	}
 	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->slurm_free_task) {
+	if (bb_api_ops && bb_api_ops->free_bb_task) {
 		(*(bb_api_ops->_bb_g_free_create_params))(object);
 	} else {
 		error("%s: _bb_g_free_create_params not available", __func__);
@@ -838,13 +841,39 @@ static void _bb_g_free_delete_params(void *object)
 		}
 	}
 	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->slurm_free_task) {
+	if (bb_api_ops && bb_api_ops->free_bb_task) {
 		(*(bb_api_ops->_bb_g_free_delete_params))(object);
 	} else {
 		error("%s: _bb_g_free_delete_params not available", __func__);
 	}
 	slurm_mutex_unlock(&g_bb_api_context_lock);
 	return ;
-
 }
 
+/**
+ * @brief 传入hostname获取对应client_id
+ * @param hostname 
+ * @param bb_config 
+ * @return 成功返回clietnid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_query_clientid_by_hostname(const char *hostname, bb_minimal_config_t *bb_config)
+{
+	int rc = SLURM_ERROR;
+
+	if (g_bb_api_context_cnt < 0) {
+		if (bb_api_init() != SLURM_SUCCESS) {
+			error("%s: failed to initialize bb_api plugin", __func__);
+			return SLURM_ERROR;
+		}
+	}
+
+	slurm_mutex_lock(&g_bb_api_context_lock);
+	if (bb_api_ops && bb_api_ops->query_clientid_by_hostname) {
+		rc = (*(bb_api_ops->query_clientid_by_hostname))(hostname, bb_config);
+	} else {
+		error("%s: query_clientid_by_hostname not available", __func__);
+	}
+	slurm_mutex_unlock(&g_bb_api_context_lock);
+
+	return rc;
+}

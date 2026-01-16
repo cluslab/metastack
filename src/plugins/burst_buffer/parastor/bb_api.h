@@ -49,7 +49,14 @@ before call API,must initialize the structure,and set must params
     - task_id: 任务ID
     - task_type: 任务类型，设置为BURST_BUFFER_TASK_TYPE_NULL表示不
     - task_state： 任务状态，设置为BB_TASK_STATE_NULL表示不限制
-
+4.查询client所需参数
+    - start: 查询起始记录数
+    - limit: 查询记录数
+    - client_ids:可选,格式为xxx1,xxx2
+    - client_ips:可选,客户端IP，目前接口只支持单个
+    - client_ip_match_mode:可选，0:精确查询，1:模糊查询
+    - host_name:可选,客户端hostname，目前接口只支持单个
+    - host_name_match_mode:选，0:精确查询，1:模糊查询
     */
 typedef struct { 
     int start; /* Query starting from which record */
@@ -223,6 +230,14 @@ extern int query_datasetid_by_path_groupid(const int group_id, const char *path,
 extern int query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config, bb_attribute_task *bb_task);
 
 /**
+ * @brief 传入hostname获取对应client_id
+ * @param hostname 
+ * @param bb_config 
+ * @return 成功返回clietnid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int query_clientid_by_hostname(const char *hostname, bb_minimal_config_t *bb_config);
+
+/**
  * @brief 根据group_sn删除缓存组
  * @param group_sn 入参：缓存组sn
  * @param bb_config 入参：最小配置
@@ -276,15 +291,15 @@ extern int lock_burst_buffer_dataset();
 extern int unlock_burst_buffer_dataset();
 
 
-extern void bb_response_free(bb_response *resp);
+extern void free_bb_response(bb_response *resp);
 /* 释放缓存组 */
-extern void slurm_free_group(void *object);
+extern void free_bb_group(void *object);
 /* 释放数据集机 */
-extern void slurm_free_dataset(void *object);
+extern void free_bb_dataset(void *object);
 /* 释放客户端 */
-extern void slurm_free_client(void *object);
+extern void free_bb_client(void *object);
 /* 释放任务 */
-extern void slurm_free_task(void *object);
+extern void free_bb_task(void *object);
 /* list_find_first 查找函数 */
 extern int _find_client_key(void *x, void *key);
 

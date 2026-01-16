@@ -120,12 +120,13 @@ extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
  */
 extern int bb_g_cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config);
 
-
-// /**
-//  * @brief 释放task结构体
-//  * @return 
-//  */
-// extern void bb_g_slurm_free_task(void *object);
+/**
+ * @brief 传入hostname获取对应client_id
+ * @param hostname 
+ * @param bb_config 
+ * @return 成功返回clietnid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_query_clientid_by_hostname(const char *hostname, bb_minimal_config_t *bb_config);
 
 
 
