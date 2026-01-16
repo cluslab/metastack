@@ -31,10 +31,9 @@ extern int bb_g_fini(void);
  * @param group_sn 
  * @param client_cnt client_arr中元素个数，必须严格对应
  * @param client_arr 客户端ID数组
- * @param bb_config 
  * @return 0>表示成功且返回缓存组ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr, bb_minimal_config_t *bb_config);
+extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr);
 
 /**
  * @brief 通过SN和加速目录创建数据集规则
