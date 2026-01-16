@@ -2735,9 +2735,6 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 
 	//缓存组、数据集创建、数据集预热等操作
 	_notify_slurmctld_create_bb_fini(req->job_id, rc);
-
-
-
 }
 
 /**

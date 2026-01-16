@@ -562,6 +562,14 @@ struct job_record {
 	bool     bb_need_wait; 			//是否等待bb完成
 	bool 	 enforce_bb_flag; 		//是否强制等待bb
 #endif
+//XXX:1.增加jobptr参数
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+	uint32_t pfs_cnt; //加速路径个数
+
+
+
+#endif
+
 };
 
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED

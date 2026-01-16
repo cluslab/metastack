@@ -3479,6 +3479,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	job_ptr->access_mode          = bb_job->access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
 	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
 	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
+	job_ptr->pfs_cnt= bb_job->pfs_cnt;
 	if (job_ptr->need_group_counts > bb_state.bb_config.free_groups 
 			|| job_ptr->need_database_counts > bb_state.bb_config.free_datasets ) {
 		slurm_mutex_unlock(&bb_state.bb_mutex);
