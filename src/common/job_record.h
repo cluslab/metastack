@@ -565,6 +565,8 @@ struct job_record {
 //XXX:1.增加jobptr参数
 #ifdef __METASTACK_NEW_BURSTBUFFER3
 	uint32_t pfs_cnt; //加速路径个数
+	char *group_sn_arr;
+	uint32_t bb_node_cnt;
 
 
 
