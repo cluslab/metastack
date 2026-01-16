@@ -9670,20 +9670,23 @@ void job_time_limit(void)
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		if(job_ptr->bb_ready) {
-			debug3("JobId=%u has created burstbuffer job", job_ptr->job_id);
+			log_flag(BURST_BUF, "JobId=%u has created burstbuffer job", job_ptr->job_id);
 			if(IS_JOB_STAGING(job_ptr)){
 				job_create_fini(job_ptr);
 			}
 			if(job_ptr->create_step & LAUNCH_PROLOG_BIT) {
+				log_flag(BURST_BUF, "create extern stepd for job %u", job_ptr->job_id);
 				job_ptr->create_step &= ~LAUNCH_PROLOG_BIT;
 				launch_prolog(job_ptr);
 			} 
 			if(job_ptr->create_step & LAUNCH_JOB_BIT) {
+				log_flag(BURST_BUF, "create batch stepd for job %u", job_ptr->job_id);
 				job_ptr->create_step &= ~LAUNCH_JOB_BIT;
 				launch_job(job_ptr);
 			}
 			
 			if(job_ptr->create_step & SRUN_ALLOCATE_BIT) {
+				log_flag(BURST_BUF, "create digital stepd for job %u", job_ptr->job_id);
 				job_ptr->create_step &= ~SRUN_ALLOCATE_BIT;
 				srun_allocate(job_ptr);
 			}

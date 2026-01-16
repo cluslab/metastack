@@ -2929,7 +2929,17 @@ skip_start:
 			} else if (rc == SLURM_SUCCESS) {
 				error("start_time of 0 on successful backfill. This shouldn't happen. :)");
 			}
-
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+			if ((rc == ESLURM_BB_RESOURCE_LIMIT) || (rc == ESLURM_RESERVATION_BUSY) ||
+			    (rc == ESLURM_ACCOUNTING_POLICY &&
+			     !assoc_limit_stop) ||
+			    ((rc == ESLURM_REQUESTED_NODE_CONFIG_UNAVAILABLE) &&
+			     job_ptr->extra_constraints)) {
+				/* Unknown future start time, just skip job */
+				job_ptr->start_time = orig_start_time;
+				_set_job_time_limit(job_ptr, orig_time_limit);
+				continue;
+#else
 			if ((rc == ESLURM_RESERVATION_BUSY) ||
 			    (rc == ESLURM_ACCOUNTING_POLICY &&
 			     !assoc_limit_stop) ||
@@ -2939,6 +2949,7 @@ skip_start:
 				job_ptr->start_time = orig_start_time;
 				_set_job_time_limit(job_ptr, orig_time_limit);
 				continue;
+#endif
 			} else if (rc == ESLURM_ACCOUNTING_POLICY) {
 				/* Unknown future start time. Determining
 				 * when it can start with certainty requires

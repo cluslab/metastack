@@ -2988,7 +2988,11 @@ skip_start:
 #endif
 			continue;
 #endif
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		} else if (error_code == ESLURM_BURST_BUFFER_WAIT || error_code == ESLURM_BB_RESOURCE_LIMIT) {
+#else
 		} else if (error_code == ESLURM_BURST_BUFFER_WAIT) {
+#endif
 			if (job_ptr->start_time == 0) {
 				job_ptr->start_time = last_job_sched_start;
 				bb_wait_cnt++;
