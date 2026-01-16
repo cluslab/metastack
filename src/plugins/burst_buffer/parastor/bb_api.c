@@ -26,35 +26,42 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
  */
 void *acct_db_conn = NULL;
 
-static int parse_json_dataset_result(json_t *dataset_obj, bb_attribute_dataset *dataset);
-static int parse_json_groups_result(json_t *group_obj, bb_attribute_group *group);
-static int parse_json_client_result(json_t *client_obj, bb_attribute_client *client);
-static int parse_json_tasks_result(json_t *task_obj, bb_attribute_task *task);
+
 
 /* Declaration Helper Function */
-static int json_string_set_response(const char* json_str, bb_response* resp_out, result_type type);
-static int task_json_string_get_response(const char* json_str, bb_response* resp_out, bb_attribute_task *bb_task);
-///* get temporary token */
-//static char *_get_token_from_header(const char *ip, int port, const char *user, const char *password);
-/* get permanent token */
+
+static int _parse_json_result_to_dataset(json_t *dataset_obj, bb_attribute_dataset *dataset);
+static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group);
+static int _parse_json_result_to_client(json_t *client_obj, bb_attribute_client *client);
+static int _parse_json_result_to_task(json_t *task_obj, bb_attribute_task *task);
+
+static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string);
+static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string);
+static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, call_type type, char **return_string);
+
+static int parse_single_json_of_group(const char *json_str, bb_response *resp_out, bb_attribute_group *bb_group);
+static int parse_single_json_of_dataset(const char* json_str, bb_attribute_dataset * bb_dataset, bb_response* resp_out);
+static int parse_single_json_of_task(const char* json_str, bb_response* resp_out, bb_attribute_task *bb_task);
+
+static int parse_json_of_groups(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out);
+static int parse_json_of_datasets(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out);
+static int parse_json_to_response(const char* json_str, bb_response* resp_out, result_type type);
+
 static char *_get_permanent_token_from_header(const char *ip, int port, const char *user, const char *password);   
-/* encode password for calling permanent token */
 static char *_encode_password(const char *password);
-/* helper function for _encode_password */
 static char *_base64_encode(const unsigned char *data, size_t len);
-static int json_group_get_response(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out);
-static int json_dataset_get_response(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out);
+
 
 /**
 * Parse the JSON-formatted group result and populate the group structure.
 * @param group_obj Pointer to the JSON object containing group information.
 * @param group Pointer to the group structure used to store the parsed data.
 */
-static int parse_json_groups_result(json_t *group_obj, bb_attribute_group *group)
+static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group)
 {
     int rc = SLURM_SUCCESS;
     if (!group_obj || !group) {
-        debug("parse_json_groups_result 参数为空\n");
+        debug("_parse_json_result_to_group 参数为空\n");
         return SLURM_ERROR;
     }
     /* example
@@ -91,6 +98,7 @@ static int parse_json_groups_result(json_t *group_obj, bb_attribute_group *group
     group->hit_bytes_rate       = json_real_value(json_object_get(group_obj, "hit_bytes_rate"));
     group->hit_io_num_rate      = json_real_value(json_object_get(group_obj, "hit_io_num_rate"));
     group->meta_hit_io_num_rate = json_real_value(json_object_get(group_obj, "meta_hit_io_num_rate"));
+    group->group_sn             = xstrdup(json_string_value(json_object_get(group_obj, "sn")));
     /* check whether client_ids exists and is an array.
      * the following if statement is temporarily not used.
      */ 
@@ -111,7 +119,7 @@ static int parse_json_groups_result(json_t *group_obj, bb_attribute_group *group
 * @param dataset_obj Pointer to the JSON object containing dataset information.
 * @param dataset Pointer to the dataset structure used to store the parsed data.
 */
-static int parse_json_dataset_result(json_t *dataset_obj, bb_attribute_dataset *dataset)
+static int _parse_json_result_to_dataset(json_t *dataset_obj, bb_attribute_dataset *dataset)
 {
     int rc = SLURM_SUCCESS;
     if (!dataset_obj || !dataset) {
@@ -194,7 +202,7 @@ static int parse_json_dataset_result(json_t *dataset_obj, bb_attribute_dataset *
 * @param client_obj Pointer to the JSON object containing client information.
 * @param client Pointer to the client structure used to store the parsed data.
 */
-static int parse_json_client_result(json_t *client_obj, bb_attribute_client *client)
+static int _parse_json_result_to_client(json_t *client_obj, bb_attribute_client *client)
 {
     int rc = SLURM_SUCCESS;
     if (!client_obj || !client) {
@@ -285,11 +293,11 @@ static int parse_json_client_result(json_t *client_obj, bb_attribute_client *cli
 * @param task_obj Pointer to the JSON object containing task information.
 * @param task Pointer to the task structure used to store the parsed data.
 */
-static int parse_json_tasks_result(json_t *task_obj, bb_attribute_task *task)
+static int _parse_json_result_to_task(json_t *task_obj, bb_attribute_task *task)
 {
     int rc = SLURM_SUCCESS;
     if (!task_obj || !task) {
-        debug("parse_json_tasks_result 参数为空\n");
+        debug("_parse_json_result_to_task 参数为空\n");
         return SLURM_ERROR;
     }
     /* example
@@ -344,16 +352,43 @@ static int parse_json_tasks_result(json_t *task_obj, bb_attribute_task *task)
         for (int i = 0; i < n;i++)
             task->failed_node_infos[i] = xstrdup(json_string_value(json_array_get(failed_node_infos, i)));
     }
-    task->task_state = xstrdup(json_string_value(json_object_get(task_obj, "state")));
-    task->task_type = xstrdup(json_string_value(json_object_get(task_obj, "type")));
+    // task->task_state = xstrdup(json_string_value(json_object_get(task_obj, "state")));
+    // task->task_type = xstrdup(json_string_value(json_object_get(task_obj, "type")));
+    const char *state_str = json_string_value(json_object_get(task_obj, "state"));
+    const char *type_str = json_string_value(json_object_get(task_obj, "type"));
+    
+    if (!state_str || !xstrcasecmp(state_str, "SUBMITTING"))
+        task->task_state = BB_TASK_STATE_SUBMITTING;
+    else if (!xstrcasecmp(state_str, "RUNNING"))
+        task->task_state = BB_TASK_STATE_RUNNING;
+    else if (!xstrcasecmp(state_str, "COMPLETED"))
+        task->task_state = BB_TASK_STATE_COMPLETED;
+    else if (!xstrcasecmp(state_str, "FAILED"))
+        task->task_state = BB_TASK_STATE_FAILED;
+    else if (!xstrcasecmp(state_str, "CANCELED"))
+        task->task_state = BB_TASK_STATE_CANCELED;
+    else
+        task->task_state = BB_TASK_STATE_NULL;
+    
+    if (!type_str || !xstrcasecmp(type_str, "BURST_BUFFER_TASK_TYPE_PREFETCH"))
+        task->task_type = BURST_BUFFER_TASK_TYPE_PREFETCH;
+    else if (!xstrcasecmp(type_str, "BURST_BUFFER_TASK_TYPE_RECYCLE"))
+        task->task_type = BURST_BUFFER_TASK_TYPE_RECYCLE;
+    else
+        task->task_type = BURST_BUFFER_TASK_TYPE_NULL;
 
     return rc;
 }
 
-
-static int json_string_set_response(const char* json_str, bb_response* resp_out, result_type type)
+/**
+ * @brief 用于创建、提交、删除接口调用后，解析返回的json字符串到bb_response结构体，不解析到bb_attribute_xxx结构体
+ * @param json_str 入餐：需要解析的json字符串
+ * @param resp_out 出参：group_id接收创建缓存组ID;dataset_id接收创建数据集规则ID;task_id接收创建任务ID;
+ * @param type 调用接口类型
+ * @return 0：成功；非0:失败
+ */
+static int parse_json_to_response(const char* json_str, bb_response* resp_out, result_type type)
 {
-    int rc = SLURM_SUCCESS;
     json_error_t error_t;
     json_t *root = json_loads(json_str, 0, &error_t);
     if (!root) {
@@ -361,27 +396,23 @@ static int json_string_set_response(const char* json_str, bb_response* resp_out,
         return SLURM_ERROR;
     }
     /* parse basic info */
-    resp_out->err_no           = json_integer_value(json_object_get(root, "err_no"));
-    resp_out->err_msg          = xstrdup(json_string_value(json_object_get(root, "err_msg")));
-    resp_out->detail_err_msg   = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
-    resp_out->sync             = json_is_true(json_object_get(root, "sync"));
-    resp_out->time_stamp       = json_integer_value(json_object_get(root, "time_stamp"));
+    resp_out->err_no = json_integer_value(json_object_get(root, "err_no"));
+    resp_out->err_msg = xstrdup(json_string_value(json_object_get(root, "err_msg")));
+    resp_out->detail_err_msg = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
+    resp_out->sync = json_is_true(json_object_get(root, "sync"));
+    resp_out->time_stamp = json_integer_value(json_object_get(root, "time_stamp"));
     resp_out->time_zone_offset = json_integer_value(json_object_get(root, "time_zone_offset"));
-    resp_out->trace_id         = xstrdup(json_string_value(json_object_get(root, "trace_id")));
+    resp_out->trace_id = xstrdup(json_string_value(json_object_get(root, "trace_id")));
 
     /* If there is no result  in the response, return directly after parsing the basic information  */
     if (type == NO_RESULT) {
         json_decref(root);
-        return rc;
+        return SLURM_SUCCESS;
     }
     /* get result*/
     json_t *result = json_object_get(root, "result");
-    if (!result) {
-        debug("result 为空\n");
-        json_decref(root);
-        return SLURM_ERROR;
-    }
-    switch (type) {
+    if (result) {
+        switch (type) {
         case GROUP_CREATE: {
             resp_out->group_id = json_integer_value(json_object_get(json_array_get(result, 0), "id"));
             break;
@@ -394,16 +425,18 @@ static int json_string_set_response(const char* json_str, bb_response* resp_out,
             resp_out->dataset_id = json_integer_value(json_object_get(json_array_get(result, 0), "id"));
             break;
         }
-
         default:
             debug("Unknown result type: %d\n", type);
             break;
+        }
+    } else {
+        debug("result 为空\n");
     }
 
     json_decref(root);
-    return rc;
+    return SLURM_SUCCESS;
 }
-static int json_group_get_response(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out)
+static int parse_json_of_groups(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out)
 {
     json_error_t error_t;
  
@@ -417,42 +450,48 @@ static int json_group_get_response(const char* json_str, query_params_request *q
     resp_out->err_msg          = xstrdup(json_string_value(json_object_get(root, "err_msg")));
     resp_out->detail_err_msg   = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
     resp_out->sync             = json_is_true(json_object_get(root, "sync"));
-    resp_out->time_stamp       = json_integer_value(json_object_get(root, "time_stamp"));
+    resp_out->time_stamp = json_integer_value(json_object_get(root, "time_stamp"));
     resp_out->time_zone_offset = json_integer_value(json_object_get(root, "time_zone_offset"));
-    resp_out->trace_id         = xstrdup(json_string_value(json_object_get(root, "trace_id")));
+    resp_out->trace_id = xstrdup(json_string_value(json_object_get(root, "trace_id")));
     /* get result*/
     json_t *result = json_object_get(root, "result");
-    if (!result) {
-        debug("result is NULL");
-        json_decref(root);
-        return SLURM_ERROR;
-    }   
-
-    /* analysis result to bb_attribute_group */
-    json_t *groups = json_object_get(result, "cache_groups");
-    resp_out->group_count = json_integer_value(json_object_get(result, "total"));
-    if (groups && json_is_array(groups)) {
-        int page_group_count = json_array_size(groups);
-        /* Dynamic update count by pagention result*/
-        for (int i = 0; i < page_group_count; i++) {
-            bb_attribute_group* bb_groups = xmalloc(sizeof(bb_attribute_group));  
-            json_t *group_obj = json_array_get(groups, i);
-            parse_json_groups_result(group_obj, bb_groups);
-            bb_attribute_group* bb_groups_tmp = NULL;
-            bb_groups_tmp = list_remove_first(list, _find_group_key, &bb_groups->id);
-            if(bb_groups_tmp)
-                slurm_free_group(bb_groups_tmp);
-            list_append(list, bb_groups);           
+    if (result) {
+        /* analysis result to bb_attribute_group */
+        json_t *groups = json_object_get(result, "cache_groups");
+        resp_out->group_count = json_integer_value(json_object_get(result, "total"));
+        if (groups && json_is_array(groups)) {
+            int page_group_count = json_array_size(groups);
+            /* Dynamic update count by pagention result*/
+            for (int i = 0; i < page_group_count; i++) {
+                bb_attribute_group *bb_groups = xmalloc(sizeof(bb_attribute_group));
+                json_t *group_obj = json_array_get(groups, i);
+                _parse_json_result_to_group(group_obj, bb_groups);
+                bb_attribute_group *bb_groups_tmp = NULL;
+                bb_groups_tmp = list_remove_first(list, _find_group_key, &bb_groups->id);
+                if (bb_groups_tmp)
+                    slurm_free_group(bb_groups_tmp);
+                list_append(list, bb_groups);
+            }
+        } else {
+            json_decref(root);
+            return SLURM_ERROR;
         }
     } else {
-        json_decref(root);
-        return SLURM_ERROR;
+        debug("result is NULL");    
     }
     json_decref(root);
     return SLURM_SUCCESS;
 }
 
-static int json_dataset_get_response(const char* json_str, query_params_request *query_params, List list, bb_response* resp_out)
+/**
+ * @brief 解析接口返回的datasets json字符串到bb_response和bb_attribute_dataset列表
+ * @param json_str 
+ * @param query_params 
+ * @param list 
+ * @param resp_out 
+ * @return 
+ */
+static int parse_json_of_datasets(const char *json_str, query_params_request *query_params, List list, bb_response *resp_out)
 {
     int rc = SLURM_SUCCESS;
     json_error_t error_t;
@@ -472,33 +511,32 @@ static int json_dataset_get_response(const char* json_str, query_params_request 
 
     /* get result*/
     json_t *result = json_object_get(root, "result");
-    if (!result) {
-        debug("result is NULL");
-        json_decref(root);
-        return SLURM_ERROR;
-    }
-
-    /* analysis result to bb_attribute_dataset */
-    json_t *data_sets = json_object_get(result, "data_sets");
-    resp_out->dataset_count = json_integer_value(json_object_get(result, "total"));
-    if (data_sets && json_is_array(data_sets)) {
-        int page_dataset_cnt = json_array_size(data_sets);
-        for (int i = 0; i < page_dataset_cnt; i++) {
-            json_t *dataset_obj = json_array_get(data_sets, i);
-            bb_attribute_dataset *bb_dataset = NULL;
-            bb_attribute_dataset *bb_dataset_tmp = NULL;
-            bb_dataset = xmalloc(sizeof(bb_attribute_dataset));
-            parse_json_dataset_result(dataset_obj, bb_dataset);
-            if (list)
-                bb_dataset_tmp = list_remove_first(list, _find_dataset_key, &bb_dataset->id);
-            if (bb_dataset_tmp)
-                slurm_free_dataset(bb_dataset_tmp);
-            list_append(list, bb_dataset);
+    if (result) {
+        /* analysis result to bb_attribute_dataset */
+        json_t *data_sets = json_object_get(result, "data_sets");
+        resp_out->dataset_count = json_integer_value(json_object_get(result, "total"));
+        if (data_sets && json_is_array(data_sets)) {
+            int page_dataset_cnt = json_array_size(data_sets);
+            for (int i = 0; i < page_dataset_cnt; i++) {
+                json_t *dataset_obj = json_array_get(data_sets, i);
+                bb_attribute_dataset *bb_dataset = NULL;
+                bb_attribute_dataset *bb_dataset_tmp = NULL;
+                bb_dataset = xmalloc(sizeof(bb_attribute_dataset));
+                _parse_json_result_to_dataset(dataset_obj, bb_dataset);
+                if (list)
+                    bb_dataset_tmp = list_remove_first(list, _find_dataset_key, &bb_dataset->id);
+                if (bb_dataset_tmp)
+                    slurm_free_dataset(bb_dataset_tmp);
+                list_append(list, bb_dataset);
+            }
+        } else {
+            json_decref(root);
+            return SLURM_ERROR;
         }
     } else {
-        json_decref(root);
-        return SLURM_ERROR;
+        debug("result is NULL");
     }
+
     json_decref(root);
     return rc;
 }
@@ -548,8 +586,8 @@ static int json_string_get_response_client_and_task(const char* json_str, result
                 bb_attribute_client *bb_client      = NULL;
                 json_t *clients_obj                 = json_array_get(clients, i);
                 bb_client                           = xmalloc(sizeof(bb_attribute_client));
-                parse_json_client_result(clients_obj, bb_client);
-                resp_out->last_client_id            = bb_client->id; //TODO: check the last client id
+                _parse_json_result_to_client(clients_obj, bb_client);
+                resp_out->last_client_id            = bb_client->id; 
                 resp_out->client_join_groups_counts = bb_client->groups_count;
                 resp_out->bb_client                 = bb_client;
             }
@@ -569,7 +607,7 @@ static int json_string_get_response_client_and_task(const char* json_str, result
     //         for (int i = 0; i < page_task_count; i++) {
     //             json_t *task_obj = json_array_get(tasks, i);
     //             bb_attribute_task *bb_tasks = xmalloc(sizeof(bb_attribute_task));
-    //             parse_json_tasks_result(task_obj, bb_tasks);
+    //             _parse_json_result_to_task(task_obj, bb_tasks);
     //             bb_attribute_task *bb_tasks_tmp = NULL;
     //             if (bb_state->list_tasks)
     //                 bb_tasks_tmp = list_remove_first(bb_state->list_tasks, _find_task_key, bb_tasks->task_id);
@@ -594,104 +632,53 @@ static int json_string_get_response_client_and_task(const char* json_str, result
     return rc;
 }
 
-static int task_json_string_get_response(const char* json_str, bb_response* resp_out, bb_attribute_task *bb_task)
+/**
+ * @brief 解析查询的单个任务的json字符串
+ * @param json_str 代解析json字符串
+ * @param resp_out 出参：接收通用响应体
+ * @param bb_task 出参：接收解析的任务属性
+ * @return 0:成功；非0：失败
+ */
+static int parse_single_json_of_task(const char* json_str, bb_response* resp_out, bb_attribute_task *bb_task)
 {
-    int rc = SLURM_SUCCESS;
     json_error_t error_t;
     json_t *root = json_loads(json_str, 0, &error_t);
     if (!root) {
         debug("JSON parse error: %s", error_t.text);
-        return SLURM_ERROR;
+        return BB_CODE_ERROR;
     }
     /* parse basic info */
     resp_out->err_no           = json_integer_value(json_object_get(root, "err_no"));
     resp_out->err_msg          = xstrdup(json_string_value(json_object_get(root, "err_msg")));
-    resp_out->detail_err_msg   = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
-    resp_out->sync             = json_is_true(json_object_get(root, "sync"));
-    resp_out->time_stamp       = json_integer_value(json_object_get(root, "time_stamp"));
+    resp_out->detail_err_msg = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
+    resp_out->sync = json_is_true(json_object_get(root, "sync"));
+    resp_out->time_stamp = json_integer_value(json_object_get(root, "time_stamp"));
     resp_out->time_zone_offset = json_integer_value(json_object_get(root, "time_zone_offset"));
-    resp_out->trace_id         = xstrdup(json_string_value(json_object_get(root, "trace_id")));
+    resp_out->trace_id = xstrdup(json_string_value(json_object_get(root, "trace_id")));
 
     /* get result*/
     json_t *result = json_object_get(root, "result");
-    if (!result) {
-        debug("result is NULL");
-        json_decref(root);
-        return SLURM_ERROR;
-    }
-    json_t *tasks = json_object_get(result, "tasks");
-    resp_out->task_count = json_integer_value(json_object_get(result, "total"));
-    if (tasks && json_is_array(tasks)) {          
+    if (result) {
+        json_t *tasks = json_object_get(result, "tasks");
+        resp_out->task_count = json_integer_value(json_object_get(result, "total"));
+        if (tasks && json_is_array(tasks)) {
             json_t *task_obj = json_array_get(tasks, 0);/* 只应该解析出一个 */
-            parse_json_tasks_result(task_obj, bb_task);
+            if (!task_obj) {
+                return BB_SUCCESS_NO_DATA;
+            } else
+                _parse_json_result_to_task(task_obj, bb_task);
+        } else {
+            json_decref(root);
+            return BB_CODE_ERROR;
+        }
     } else {
-        json_decref(root);
-        return SLURM_ERROR;
+        debug("result is NULL");
     }
+
     json_decref(root);
-    return rc;
+    return BB_SUCCESS;
 }
 
-// static int json_string_get_response(const char* json_str, bb_response* resp_out, result_type type, query_params_request *query_params)
-// {
-//     int rc = SLURM_SUCCESS;
-//     json_error_t error_t;
-//     json_t *root = json_loads(json_str, 0, &error_t);
-//     if (!root) {
-//         debug("JSON parse error: %s", error_t.text);
-//         return SLURM_ERROR;
-//     }
-//     /* parse basic info */
-//     resp_out->err_no           = json_integer_value(json_object_get(root, "err_no"));
-//     resp_out->err_msg          = xstrdup(json_string_value(json_object_get(root, "err_msg")));
-//     resp_out->detail_err_msg   = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
-//     resp_out->sync             = json_is_true(json_object_get(root, "sync"));
-//     resp_out->time_stamp       = json_integer_value(json_object_get(root, "time_stamp"));
-//     resp_out->time_zone_offset = json_integer_value(json_object_get(root, "time_zone_offset"));
-//     resp_out->trace_id         = xstrdup(json_string_value(json_object_get(root, "trace_id")));
-
-//     /* If there is no result  in the response, return directly after parsing the basic information  */
-//     if (type == NO_RESULT) {
-//         json_decref(root);
-//         return SLURM_SUCCESS;
-//     }
-//     /* get result*/
-//     json_t *result = json_object_get(root, "result");
-//     if (!result) {
-//         debug("result is NULL");
-//         json_decref(root);
-//         return SLURM_ERROR;
-//     }
-//     switch (type) {
-
-
-//     /* analysis result to bb_attribute_task */
-//     case RESULT_TASK: {
-//         json_t *tasks = json_object_get(result, "tasks");
-//         resp_out->task_count = json_integer_value(json_object_get(result, "total"));
-//         if (tasks && json_is_array(tasks)) {
-//             int page_task_count = json_array_size(tasks);
-//             for (int i = 0; i < page_task_count; i++) {
-//                 json_t *task_obj = json_array_get(tasks, i);
-//                 bb_attribute_task *bb_tasks = xmalloc(sizeof(bb_attribute_task));
-//                 parse_json_tasks_result(task_obj, bb_tasks);
-//                 list_append(resp_out->list_tasks, bb_tasks);
-//             }
-//         } else {
-//             json_decref(root);
-//             return SLURM_ERROR;
-//         }
-//         break;
-//     }
-
-//     default:
-//         debug("Unknown result type: %d\n", type);
-//         break;
-//     }
-
-//     json_decref(root);
-//     return SLURM_SUCCESS;
-// }
 
 static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *params, call_type type)
 {
@@ -707,7 +694,6 @@ static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *par
         /* check whether the start and limit
          * in the query parameters are valid (non-negative)
          */
-        debug("we have url timeout(%d) but not used ", bb_config->other_timeout);
         if (query_params->start >= 0 || query_params->limit >= 0) {
             if (query_params->limit > 0)
                 xstrfmtcat(tmp_params_str, "start=%d&limit=%d", query_params->start, query_params->limit);
@@ -761,7 +747,6 @@ static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *par
 
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups",
             bb_config->para_stor_addr, bb_config->para_stor_port);
-        debug("we have url timeout(%d) but not used ", bb_config->other_timeout);
         if (call_rest_api_with_token(url_api, "POST", body, bb_config->token, &json_string) != 0) {
             error("API call failed");
             xfree(json_string);
@@ -786,7 +771,6 @@ static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *par
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s", 
             bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
         debug("the request url of delete groups:%s", url_api);    
-        debug("we have url timeout(%d) but not used ", bb_config->other_timeout);
         if (call_rest_api_with_token(url_api, "DELETE", NULL, bb_config->token, &json_string) != 0) {
             error("API call failed");
             xfree(json_string);
@@ -888,7 +872,6 @@ static char *concatenate_dataset_strings(bb_minimal_config_t *bb_config, void *p
 
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets",
             bb_config->para_stor_addr, bb_config->para_stor_port);
-        debug("we have url timeout(%d) but not used ", bb_config->other_timeout);
         if (call_rest_api_with_token(url_api, "POST", body, bb_config->token, &json_string) != 0) {
             error("API call failed");
             xfree(json_string);
@@ -912,7 +895,6 @@ static char *concatenate_dataset_strings(bb_minimal_config_t *bb_config, void *p
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%d",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->dataset_id);
         debug("the request url of delete dataset:%s", url_api);
-        debug("we have url timeout(%d) but not used ", bb_config->other_timeout);
         if (call_rest_api_with_token(url_api, "DELETE", NULL, bb_config->token, &json_string) != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1119,7 +1101,6 @@ static char *concatenate_task_strings(bb_minimal_config_t *bb_config, void *para
 
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks",
             bb_config->para_stor_addr, bb_config->para_stor_port);
-        debug("we have url timeout(%d) but not used ", bb_config->other_timeout);
         if (call_rest_api_with_token(url_api, "POST", body, bb_config->token, &json_string) != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1142,7 +1123,6 @@ static char *concatenate_task_strings(bb_minimal_config_t *bb_config, void *para
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks/%d:cancel",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->task_id);
         debug("the request url of cancel task:%s", url_api);
-        debug("we have url timeout(%d) but not used ", bb_config->other_timeout);
         if (call_rest_api_with_token(url_api, "PUT", NULL, bb_config->token, &json_string) != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1168,6 +1148,7 @@ extern void slurm_free_group(void *object)
     bb_attribute_group *result = (bb_attribute_group *)object;
 	if (result) {
 		xfree(result->client_ids);
+        xfree(result->group_sn);
 		xfree(result);
 	}
 }
@@ -1206,8 +1187,8 @@ extern void slurm_free_task(void *object)
     bb_attribute_task *result = (bb_attribute_task *)object;
     if (result) {
         xfree(result->error_action_type);
-        xfree(result->task_type);
-        xfree(result->task_state);
+        // xfree(result->task_type);
+        // xfree(result->task_state);
         for (int i = 0; i < result->failed_node_num; i++)
             xfree(result->failed_node_infos[i]);
         xfree(result->failed_node_infos);
@@ -1296,7 +1277,7 @@ extern List get_groups_burst_buffer(query_params_request* query_params,  bb_mini
             return NULL;
         }
         /* retrieve query results */
-        ret = json_group_get_response(json_string, query_params, init_list_groups, resp_out);
+        ret = parse_json_of_groups(json_string, query_params, init_list_groups, resp_out);
         if (ret == SLURM_ERROR || resp_out->err_no != 0) {
             //debug("failed to obtain cache group or dataset in one page");
             xfree(json_string);
@@ -1334,13 +1315,15 @@ extern List get_datasets_burst_buffer(query_params_request *query_params, bb_min
         json_string = concatenate_dataset_strings(bb_min_config, query_params, QUERY_CALL);
         if (json_string == NULL) {
             debug("failed to concatenate strings");
+            list_destroy(init_list_datasets);
             return NULL;
         }
         /* retrieve query results */
-        int ret = json_dataset_get_response(json_string,  query_params, init_list_datasets, resp_out);
+        int ret = parse_json_of_datasets(json_string,  query_params, init_list_datasets, resp_out);
         if (ret == SLURM_ERROR || resp_out->err_no != 0) {
             //debug("failed to obtain cache group or dataset in one page");
             xfree(json_string);
+            list_destroy(init_list_datasets);
             return NULL;
         }
         //debug("successfully obtain cache group or dataset in one page");
@@ -1428,7 +1411,7 @@ extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_tas
         return SLURM_ERROR;
     }
     /* 获取查询结果 */
-    ret = task_json_string_get_response(json_string, resp_out, bb_task);
+    ret = parse_single_json_of_task(json_string, resp_out, bb_task);
     if (ret == SLURM_ERROR || resp_out->err_no != 0) {
         debug("failed to obtain single task");
         xfree(json_string);
@@ -1447,47 +1430,6 @@ extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_tas
     return ret;
 }
 
-// extern int get_burst_buffer_tasks(query_params_request *query_params, bb_state_t *bb_state, bb_response *resp_out)
-// {
-//     if (bb_state == NULL || resp_out == NULL || query_params == NULL) {
-//         debug("Invalid parameters to get_burst_buffer_tasks\n");
-//         return SLURM_ERROR;
-//     }
-
-//     int ret = 0;
-//     char *json_string = NULL;
-
-//     /* init page status */
-//    resp_out->dataset_count = 0;
-//     int count_flag = 0;
-//     /* Paging query */
-//     do {
-//         json_string = NULL;
-//         if (query_params->limit == 0)
-//             query_params->limit = 100;
-//         count_flag += query_params->limit;
-//         json_string = concatenate_task_strings(&bb_state->bb_config, query_params, QUERY_CALL);
-//         if (json_string == NULL) {
-//             debug("Failed to concatenate strings in get_burst_buffer_tasks");
-//             return SLURM_ERROR;
-//         }
-//         /* 获取查询结果 */
-//         ret = json_string_get_response(json_string,resp_out, RESULT_TASK, query_params);
-//         if (ret == SLURM_ERROR || resp_out->err_no != 0) {
-//             debug("failed to obtain clients in one page");
-//             xfree(json_string);
-//             return SLURM_ERROR;
-//         }
-//         debug("successfully obtain clients in one page");
-//         xfree(json_string);
-//         /* 更新start参数 */
-//         query_params->start += query_params->limit;
-//     } while (count_flag < resp_out->task_count);
-
-//     return ret;
-// }
-
-
 /* Create a cache group by client ids */
 extern int create_burst_buffer_group(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
@@ -1501,14 +1443,13 @@ extern int create_burst_buffer_group(create_params_request *create_params, bb_mi
         debug("failed to get token");
         return SLURM_ERROR;
     }
-    // bb_attribute_group *bb_group_tmp = NULL;
     json_string = concatenate_group_strings(bb_config, create_params, CREATE_CALL);
     if (json_string == NULL) {
         debug("failed to concatenate strings in create_burst_buffer_group ");
         return SLURM_ERROR;
     }
-    /* retrieve create results */
-    ret = json_string_set_response(json_string, resp_out, GROUP_CREATE);
+   
+    ret = parse_json_to_response(json_string, resp_out, GROUP_CREATE);
     if(ret == SLURM_ERROR || resp_out->err_no != 0) {
         debug("failed to create cache group");
         xfree(json_string);
@@ -1520,13 +1461,998 @@ extern int create_burst_buffer_group(create_params_request *create_params, bb_mi
     return ret;
 }
 
+/**  
+ * @brief 通过SN调用缓存组相关接口获取json字符串
+ * @param bb_config
+ * @param params 接口参数
+ * @param type 调用类型
+ * @param return_string 出参，传入空字符串指针地址，返回jsong字符串
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string)
+{
+    int ret = 0;
+    char *url_api = NULL;
+    char *tmp_params_str = NULL;
+    char *json_string = NULL;
+    char *body = NULL;
+    if (!bb_config || !params)
+        return BB_CODE_ERROR;
+    switch (type) {
+    case QUERY_CALL: {
+        query_params_request *query_params = (query_params_request *)params;
+        if (query_params->start >= 0 || query_params->limit >= 0) {
+            if (query_params->limit > 0)
+                xstrfmtcat(tmp_params_str, "start=%d&limit=%d", query_params->start, query_params->limit);
+            else
+                xstrfmtcat(tmp_params_str, "start=%d", query_params->start);
+        }
+        /* host_name_match_mode */
+        if (query_params->group_sn != NULL) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "sn=%s", query_params->group_sn);
+            else
+                xstrfmtcat(tmp_params_str, "&sn=%s", query_params->group_sn);
+        }
+        /*assemble the full query for cache groups*/
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s",
+            bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
+        ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->other_timeout, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(tmp_params_str);
+            xfree(url_api);
+            return ret;
+        }
+        *return_string = json_string;
+        xfree(tmp_params_str);
+        xfree(url_api);
+        return ret;
+        break;
+    }
+    case CREATE_CALL:{
+        create_params_request *create_params = (create_params_request *)params;
+        if (create_params->client_count <= 0 || create_params->client_ids == NULL || create_params->group_sn == NULL || !return_string) {
+            debug("Invalid params \n");
+            return -1;
+        }
+        /* START---assembl body*/
+        xstrfmtcat(body, "{");
+        xstrfmtcat(body, "\"sn\":\"%s\"", create_params->group_sn);
+        xstrfmtcat(body, ",\"client_ids\":[");
+        for (int i = 0; i < create_params->client_count; i++) 
+            xstrfmtcat(body, "%d,", create_params->client_ids[i]);
+        xstrfmtcat(body, "]");
+        xstrfmtcat(body, "}");
+        /* END---assembl body*/      
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-group-nodes/by-sn", bb_config->para_stor_addr, bb_config->para_stor_port);       
+        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->other_timeout, &json_string); 
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(body);
+            xfree(url_api);
+            return ret;
+        }
+        *return_string = json_string;
+        xfree(body);
+        xfree(url_api);
+        return ret;
+        break;
+    }
+
+    case DELETE_CALL: {
+        delete_params_request *delete_params = (delete_params_request *)params;
+
+        if (delete_params->group_sn) {
+            xstrfmtcat(tmp_params_str, "sn=%s", delete_params->group_sn);
+        } else if (delete_params->group_id > 0) {
+            xstrfmtcat(tmp_params_str, "id=%d", delete_params->group_id);
+        }
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s", bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
+        debug("the request url of delete groups:%s", url_api);
+        ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->other_timeout, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(body);
+            xfree(url_api);
+            return ret;
+        }
+        *return_string = json_string;
+        xfree(body);
+        xfree(url_api);
+        return ret;
+        break;
+    }
+
+    default:
+        debug("Unsupported call_type in concatenate_group_strings\n");
+        return BB_CODE_ERROR;
+        break;
+    } //switch end
+
+}
+
+
+
+/**
+ * @brief 组装数据集规则接口，调用接口返回json字符串
+ * @param bb_config 最小配置参数
+ * @param params 调用参数
+ * @param type 调用类型
+ * @param return_string 出参，传入空字符串指针地址，返回jsong字符串
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string)
+{
+    int ret = BB_SUCCESS;
+    char *url_api = NULL;
+    char *tmp_params_str = NULL;
+    char *json_string = NULL;
+    char *body = NULL;
+    if(!bb_config || !params)
+        return BB_CODE_ERROR;
+    switch (type) {
+    case QUERY_CALL: {
+        query_params_request *query_params = (query_params_request *)params;
+         /* start & limit*/
+        if (query_params->start >= 0 || query_params->limit >= 0) {
+            if (query_params->limit > 0)
+                xstrfmtcat(tmp_params_str, "start=%d&limit=%d", query_params->start, query_params->limit);
+            else
+                xstrfmtcat(tmp_params_str, "start=%d", query_params->start);
+        }
+        /* path */
+        if (query_params->path) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "path=%s", query_params->path);
+            else
+                xstrfmtcat(tmp_params_str, "&path=%s", query_params->path);
+        }
+        /* group_id */
+        if (query_params->group_id > 0) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "group_id=%d", query_params->group_id);
+            else
+                xstrfmtcat(tmp_params_str, "&group_id=%d", query_params->group_id);
+        }
+        /*assemble the full query for cache datasets*/
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets?%s",
+            bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
+        ret = call_rest_api_with_token(url_api, "GET", NULL, bb_config->token, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(tmp_params_str);
+            xfree(url_api);
+            return ret;
+        }
+        xfree(tmp_params_str);
+        xfree(url_api);
+        *return_string = json_string;
+        return BB_SUCCESS;
+
+    }
+
+    case CREATE_CALL: {
+        create_params_request *create_params = (create_params_request *)params;
+        if (create_params->path == NULL || !create_params->group_sn || (create_params->is_use_metadata != true && create_params->is_use_metadata != false)) {
+            debug("Invalid params \n");
+            return BB_CODE_ERROR;
+        }
+
+        /* START---assembl body*/
+        xstrfmtcat(body, "{");
+        xstrfmtcat(body, "\"path\":\"%s\"", create_params->path);
+        //如果有SN，则通过SN创建，如果没有SN则通过group_id创建      
+        xstrfmtcat(body, ",\"group_sn\":\"%s\"", create_params->group_sn);   
+        if (create_params->is_use_metadata == true && create_params->data_cache_type == LOCAL_CACHE) {
+            xstrfmtcat(body, ",\"ordinary_mode\":\"%s\"", "METADATA_RW_DATA_R");
+        }
+        if (create_params->is_use_metadata == true && create_params->data_cache_type == SHARE_CACHE) {
+            xstrfmtcat(body, ",\"ordinary_mode\":\"%s\"", "METADATA_RW_DATA_SHARE_R");
+        }
+        if (create_params->is_use_metadata == false && create_params->data_cache_type == LOCAL_CACHE) {
+            xstrfmtcat(body, ",\"use_data\":%s,\"data_cache_type\":\"%s\"","true","LOCAL");
+        }
+        if (create_params->is_use_metadata == false && create_params->data_cache_type == SHARE_CACHE) {
+            xstrfmtcat(body, ",\"use_data\":%s,\"data_cache_type\":\"%s\"","true","SHARE");
+        }
+        xstrfmtcat(body, "}");
+        //debug("the request body of create dataset:%s", body);
+        /* END---assembl body*/
+
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets",
+            bb_config->para_stor_addr, bb_config->para_stor_port);
+        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->other_timeout, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(body);
+            xfree(url_api);
+            return ret;
+        }
+        xfree(body);
+        xfree(url_api);
+        *return_string = json_string;
+        return ret;
+        break;
+    }
+
+    case DELETE_CALL: {
+        delete_params_request *delete_params = (delete_params_request *)params;
+        if (delete_params->dataset_id <= 0) {
+            debug("invaild dataset_id to delete dataset \n");
+            return BB_CODE_ERROR;
+        }
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%d",
+            bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->dataset_id);
+        debug("the request url of delete dataset:%s", url_api);
+        ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->other_timeout, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(body);
+            xfree(url_api);
+            return ret;
+        }
+        xfree(body);
+        xfree(url_api);
+        *return_string = json_string;
+        return ret;
+        break;
+    }
+
+    default:
+        debug("Unsupported call_type in concatenate_group_strings\n");
+        return BB_CODE_ERROR;
+        break;
+    } //switch end        
+}
+
+
+
+/**
+ * @brief 组装bb任务接口，调用接口返回json字符串
+ * @param bb_config 最小配置参数
+ * @param params 调用参数
+ * @param type 调用类型
+ * @param return_string 出参，传入空字符串指针地址，返回jsong字符串
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, call_type type, char **return_string)
+{
+    int ret = 0;
+    char *url_api = NULL;
+    char *tmp_params_str = NULL;
+    char *json_string = NULL;
+    char *body = NULL;
+    if(!bb_config || !params)
+        return BB_CODE_ERROR;
+    switch (type) {
+    case QUERY_CALL: {
+        query_params_request *query_params = (query_params_request *)params;
+         /* start & limit*/
+        if (query_params->start >= 0 || query_params->limit >= 0) {
+            if (query_params->limit > 0)
+                xstrfmtcat(tmp_params_str, "start=%d&limit=%d", query_params->start, query_params->limit);
+            else
+                xstrfmtcat(tmp_params_str, "start=%d", query_params->start);
+        }
+        /* other params */
+        if (query_params->group_id > 0) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "group_id=%d", query_params->group_id);
+            else
+                xstrfmtcat(tmp_params_str, "&group_id=%d", query_params->group_id);
+        }
+        if (query_params->task_id > 0) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "task_id=%d", query_params->task_id);
+            else
+                xstrfmtcat(tmp_params_str, "&task_id=%d", query_params->task_id);
+        }
+        if (query_params->task_type == BURST_BUFFER_TASK_TYPE_PREFETCH) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "type=%s", "BURST_BUFFER_TASK_TYPE_PREFETCH");
+            else
+                xstrfmtcat(tmp_params_str, "&type=%s", "BURST_BUFFER_TASK_TYPE_PREFETCH");
+        }
+        if (query_params->task_type == BURST_BUFFER_TASK_TYPE_RECYCLE) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "type=%s", "BURST_BUFFER_TASK_TYPE_RECYCLE");
+            else
+                xstrfmtcat(tmp_params_str, "&type=%s", "BURST_BUFFER_TASK_TYPE_RECYCLE");
+        }
+        if (query_params->task_state == BB_TASK_STATE_SUBMITTING) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "states=%s", "SUBMITTING");
+            else
+                xstrfmtcat(tmp_params_str, "&states=%s", "SUBMITTING");
+        }
+        if (query_params->task_state == BB_TASK_STATE_RUNNING) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "states=%s", "RUNNING");
+            else
+                xstrfmtcat(tmp_params_str, "&states=%s", "RUNNING");
+        }
+        if (query_params->task_state == BB_TASK_STATE_COMPLETED) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "states=%s", "COMPLETED");
+            else
+                xstrfmtcat(tmp_params_str, "&states=%s", "COMPLETED");
+        }
+        if (query_params->task_state == BB_TASK_STATE_FAILED) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "states=%s", "FAILED");
+            else
+                xstrfmtcat(tmp_params_str, "&states=%s", "FAILED");
+        }
+        if (query_params->task_state == BB_TASK_STATE_CANCELED) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "states=%s", "CANCELED");
+            else
+                xstrfmtcat(tmp_params_str, "&states=%s", "CANCELED");
+        }
+        /*assemble the full query for tasks*/
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks?%s",
+            bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
+        debug("the query task url is :%s", url_api);
+        ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->other_timeout, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(tmp_params_str);
+            xfree(url_api);
+            return BB_CODE_ERROR;
+        }
+        xfree(tmp_params_str);
+        xfree(url_api);
+        *return_string = json_string;
+        return BB_SUCCESS;
+    }
+    case CREATE_CALL: {
+        create_params_request *create_params = (create_params_request *)params;
+        if (create_params->dataset_id <= 0 || (create_params->error_action_type != 0 && create_params->error_action_type != 1)) {
+            debug("Invalid dataset_id or error_action_typ \n");
+            return BB_CODE_ERROR;
+        }
+        /* START---assembl body*/
+        xstrfmtcat(body, "{");
+        /* dataset_id */
+        xstrfmtcat(body, "\"dataset_id\":%d", create_params->dataset_id);
+        /* type */
+        if (create_params->task_type == BURST_BUFFER_TASK_TYPE_PREFETCH)
+            xstrfmtcat(body, ",\"type\":\"%s\"", "BURST_BUFFER_TASK_TYPE_PREFETCH");
+        if (create_params->task_type == BURST_BUFFER_TASK_TYPE_RECYCLE)
+            xstrfmtcat(body, ",\"type\":\"%s\"", "BURST_BUFFER_TASK_TYPE_RECYCLE");
+        /* error_action_type */
+        xstrfmtcat(body, ",\"error_action_type\":%d", create_params->error_action_type);
+        xstrfmtcat(body, "}");
+        //debug("the request body of create tasks:%s", body);
+        /* END---assembl body*/
+
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks", bb_config->para_stor_addr, bb_config->para_stor_port);
+        ret = call_rest_api_with_token_timeout(url_api, "POST", body, bb_config->token, bb_config->other_timeout, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(body);
+            xfree(url_api);
+            return BB_CODE_ERROR;
+        }
+        xfree(body);
+        xfree(url_api);
+        *return_string = json_string;
+        return BB_SUCCESS;
+        break;
+    }
+
+    case CANCEL_CALL: {
+        delete_params_request *delete_params = (delete_params_request *)params;
+        if (delete_params->task_id <= 0) {
+            debug("invaild task_id to cancel task \n");
+            return BB_CODE_ERROR;
+        }
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks/%d:cancel",
+            bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->task_id);
+        debug("the request url of cancel task:%s", url_api);
+        ret = call_rest_api_with_token_timeout(url_api, "PUT", NULL, bb_config->token, bb_config->other_timeout, &json_string);
+        if (ret != 0) {
+            error("API call failed");
+            xfree(json_string);
+            xfree(body);
+            xfree(url_api);
+            return BB_CODE_ERROR;
+        }
+        xfree(body);
+        xfree(url_api);
+        *return_string = json_string;
+        return BB_SUCCESS;
+        break;
+    }
+
+    default:
+        debug("Unsupported call_type in concatenate_group_strings\n");
+        return BB_CODE_ERROR;
+        break;
+    } //switch end        
+}
+
+
+
+
+ /**
+  * @brief 解析缓存组json到结构体(单个缓存组)
+  * @param json_str 需要解析的json
+  * @param resp_out 接收通用响应信息
+  * @param bb_group 接收解析出的缓存组信息
+  * @return 0表示成功解析并查到，1(BB_SUCCESS_NO_DATA)表示成功解析未查到,-1表示代码错误
+  */
+static int parse_single_json_of_group(const char *json_str, bb_response *resp_out, bb_attribute_group *bb_group)
+{
+    json_error_t error_t;
+    json_t *root = json_loads(json_str, 0, &error_t);
+    if (!root) {
+        debug("JSON parse error: %s", error_t.text);
+        return SLURM_ERROR;
+    }
+    /* parse basic info */
+    resp_out->err_no = json_integer_value(json_object_get(root, "err_no"));
+    resp_out->err_msg = xstrdup(json_string_value(json_object_get(root, "err_msg")));
+    resp_out->detail_err_msg = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
+    resp_out->sync = json_is_true(json_object_get(root, "sync"));
+    resp_out->time_stamp = json_integer_value(json_object_get(root, "time_stamp"));
+    resp_out->time_zone_offset = json_integer_value(json_object_get(root, "time_zone_offset"));
+    resp_out->trace_id = xstrdup(json_string_value(json_object_get(root, "trace_id")));
+
+    /* get result*/
+    json_t *result = json_object_get(root, "result");
+    if (result) {
+        json_t *groups = json_object_get(result, "cache_groups");
+        resp_out->group_count = json_integer_value(json_object_get(result, "total"));
+        if (resp_out->group_count == 0) {
+            json_decref(root);
+            return BB_SUCCESS_NO_DATA;
+        }
+        if (groups && json_is_array(groups) && json_array_size(groups) > 0) {
+            json_t *group_obj = json_array_get(groups, 0);
+            _parse_json_result_to_group(group_obj, bb_group);
+        } else {
+            json_decref(root);
+            return BB_CODE_ERROR;
+        }
+    } else {
+        debug("result is NULL");
+    }
+    json_decref(root);
+    return BB_SUCCESS;
+
+}
+
+
+
+/**
+ * @brief 把json字符串解析为response和bb_attribute_dataset结构体(单个)
+ * @param json_str 代解析json字符串
+ * @param bb_dataset 出参，用于接收解析的dataset,如果结果为空，置为NULL
+ * @param resp_out 通用响应体
+ * @return 0表示成功解析并查到，1(BB_SUCCESS_NO_DATA)表示成功解析未查到,-1表示代码错误
+ * 
+ * */
+static int parse_single_json_of_dataset(const char* json_str, bb_attribute_dataset * bb_dataset, bb_response* resp_out)
+{
+    json_error_t error_t;
+    json_t *root = json_loads(json_str, 0, &error_t);
+    if (!root) {
+        debug("JSON parse error: %s", error_t.text);
+        return BB_CODE_ERROR;
+    }
+    /* parse basic info */
+    resp_out->err_no = json_integer_value(json_object_get(root, "err_no"));
+    resp_out->err_msg = xstrdup(json_string_value(json_object_get(root, "err_msg")));
+    resp_out->detail_err_msg = xstrdup(json_string_value(json_object_get(root, "detail_err_msg")));
+    resp_out->sync = json_is_true(json_object_get(root, "sync"));
+    resp_out->time_stamp = json_integer_value(json_object_get(root, "time_stamp"));
+    resp_out->time_zone_offset = json_integer_value(json_object_get(root, "time_zone_offset"));
+    resp_out->trace_id = xstrdup(json_string_value(json_object_get(root, "trace_id")));
+
+    /* get result*/
+    json_t *result = json_object_get(root, "result");
+    if (result) {
+        /* analysis result to bb_attribute_dataset */
+        json_t *data_sets = json_object_get(result, "data_sets");
+        resp_out->dataset_count = json_integer_value(json_object_get(result, "total"));
+        if (resp_out->dataset_count == 0) {
+            json_decref(root);
+            return BB_SUCCESS_NO_DATA;
+        }
+        if (data_sets && json_is_array(data_sets) && json_array_size(data_sets) > 0) {
+            json_t *dataset_obj = json_array_get(data_sets, 0);
+            if (!dataset_obj) {
+                return BB_SUCCESS_NO_DATA;
+            } else
+                _parse_json_result_to_dataset(dataset_obj, bb_dataset);
+        } else {
+            json_decref(root);
+            return BB_CODE_ERROR;
+        }
+    } else {
+        debug("result is NULL");
+    }
+
+    json_decref(root);
+    return BB_SUCCESS;
+}
+
+
+
+
+/** 
+ * @brief 通过SN创建缓存组
+ * @param create_params 参数，详细参考create_params_request结构体注释
+ * @param bb_config 最小配置参数
+ * @param resp_out 通用响应体
+ * @return >0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int create_bb_group_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config)
+{
+    if (!bb_config || !create_params) {
+        debug("Invalid parameters to create_burst_buffer_group\n");
+        return BB_CODE_ERROR;
+    }
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    int ret = BB_SUCCESS;
+    int group_id = 0;
+    char *json_string = NULL;
+    ret = call_bb_api_of_group(bb_config, create_params, CREATE_CALL, &json_string);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    ret = parse_json_to_response(json_string, resp_out, GROUP_CREATE);
+    xfree(json_string);
+    if (ret != 0) {
+        error("failed to analysis jsong string to response");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    group_id = resp_out->group_id;
+    bb_response_free(resp_out);
+    return group_id;
+}
+
+/** 
+ * @brief 通过SN创建数据集规则
+ * @param create_params 参数，详细参考create_params_request结构体注释
+ * @param bb_config 最小配置参数
+ * @param resp_out 通用响应体
+ * @return 0>表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config)
+{
+
+    if (!bb_config || !create_params) {
+        debug("Invalid parameters to create_burst_buffer_group\n");
+        return BB_CODE_ERROR;
+    }
+    int ret = BB_SUCCESS;
+    int dataset_id = 0;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    char *json_string = NULL;
+    ret = call_bb_api_of_dataset(bb_config, create_params, CREATE_CALL, &json_string);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    ret = parse_json_to_response(json_string, resp_out, DATASET_CREATE);
+    xfree(json_string);
+    if (ret != 0) {
+        error("failed to analysis jsong string to response");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    dataset_id = resp_out->dataset_id;
+    bb_response_free(resp_out);
+    return dataset_id;
+}
+
+
+/**
+ * @brief 通过SN获取缓存组ID
+ * @param group_sn 缓存组的SN
+ * @param bb_min_config bb最小配置
+ * @return 成功获取返回缓存组ID(>0)，0表示不存在,-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_config)
+{
+    if (! bb_min_config || !group_sn ) {
+        debug("Invalid parameters \n");
+        return BB_CODE_ERROR;
+    }
+    int ret = 0;
+    char *json_string = NULL;
+    int group_id = 0;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    bb_attribute_group *bb_group = xmalloc(sizeof(bb_group));
+    query_params_request query_params = (query_params_request){ 0 };
+    query_params.start = 0;
+    query_params.limit = 1;
+    query_params.group_sn = xstrdup(group_sn);
+    ret = call_bb_api_of_group(bb_min_config, &query_params, QUERY_CALL, &json_string);
+    xfree(query_params.group_sn);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call query group API");
+        slurm_free_group(bb_group);
+        bb_response_free(resp_out);
+        return ret;
+    }
+    ret = parse_single_json_of_group (json_string, resp_out, bb_group);
+    xfree(json_string);
+    if (ret ==  BB_CODE_ERROR) {
+        error("failed to analysis jsong string to response");
+        slurm_free_group(bb_group);
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        slurm_free_group(bb_group);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    if (ret == BB_SUCCESS_NO_DATA) {
+        debug("the group sn:%s is not exist", group_sn);
+        slurm_free_group(bb_group);
+        bb_response_free(resp_out);
+        return 0;
+    }
+    /* 确认查询到的group的sn与传入的一致 */
+    if (ret == 0 && xstrcmp(bb_group->group_sn, group_sn) != 0) {
+        error("get group sn error, the group_sn  is %s, but return group_sn is %s", group_sn, bb_group->group_sn);
+        slurm_free_group(bb_group);
+        bb_response_free(resp_out);
+        return BB_CODE_ERROR;
+    }
+    group_id = bb_group->id;
+    slurm_free_group(bb_group);
+    bb_response_free(resp_out);
+    return group_id;
+}
+
+
+
+
+/**
+ * @brief 传入缓存组ID和数据集路径，检查是否存在该数据集规则
+ * @param group_id 缓存组ID
+ * @param path 数据集路径
+ * @return 存在返回datasetid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_minimal_config_t *bb_config)
+{
+
+    if (!bb_config || group_id < 0 || !path) {
+        debug("Invalid parameters \n");
+        return BB_CODE_ERROR;
+    }
+    int ret = 0;
+    char *json_string = NULL;
+    int dataset_id = 0;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    bb_attribute_dataset *bb_dataset = xmalloc(sizeof(bb_attribute_dataset));
+    query_params_request query_params = { 0 };
+    query_params.start = 0;
+    query_params.limit = 500;
+    query_params.task_type = BURST_BUFFER_TASK_TYPE_NULL;
+    query_params.task_state = BB_TASK_STATE_NULL;
+    query_params.group_id = group_id;
+    query_params.path = xstrdup(path);
+    ret = call_bb_api_of_dataset(bb_config, &query_params, QUERY_CALL, &json_string);
+    xfree(query_params.path);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        slurm_free_dataset(bb_dataset);
+        return ret;
+    }
+
+    ret = parse_single_json_of_dataset(json_string, bb_dataset, resp_out);
+    xfree(json_string);
+    if (ret ==  BB_CODE_ERROR) {
+        error("failed to analysis jsong string");
+        slurm_free_dataset(bb_dataset);
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        slurm_free_dataset(bb_dataset);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    if (ret == BB_SUCCESS_NO_DATA) {
+        debug("the datasets is not exist");
+        slurm_free_dataset(bb_dataset);
+        bb_response_free(resp_out);
+        return 0;
+    }
+    /* 确认查询到的group的sn与传入的一致 */
+    if (ret == 0 && (xstrcmp(bb_dataset->path, path) != 0 || bb_dataset->group_id != group_id)) {
+        error(" the path  is %s, but return path is %s; the group_id is %d , but return group_id is %d", 
+            path, bb_dataset->path, group_id , bb_dataset->group_id);
+        slurm_free_dataset(bb_dataset);
+        bb_response_free(resp_out);
+        return BB_CODE_ERROR;
+    }
+    dataset_id = bb_dataset->id;
+    slurm_free_dataset(bb_dataset);
+    bb_response_free(resp_out);
+    return dataset_id;
+
+}
+
+/**
+ * @brief 提交预热任务（通过数据集ID）,该接口为异步接口，只有接口错误（返回erro_message才重试）
+ * @param create_params 提交参数，详见create_params_request注释
+ * @param bb_config 最小配置参数
+ * @return 成功返回task_id (>0);  -1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int submit_bb_task(create_params_request *create_params, bb_minimal_config_t *bb_config)
+{
+    if (bb_config == NULL || create_params == NULL) {
+        debug("Invalid parameters to submit_burst_buffer_task\n");
+        return BB_CODE_ERROR;
+    }
+    int ret = 0;
+    char *json_string = NULL;
+    int task_id = 0;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    ret = call_bb_api_of_task(bb_config, create_params, CREATE_CALL, &json_string);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        bb_response_free(resp_out);
+        return ret;
+    }
+   
+    
+    ret = parse_json_to_response(json_string, resp_out, TASK_SUBMIT);
+    xfree(json_string);
+    if (ret != 0) {
+        error("failed to analysis jsong string to response");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    task_id = resp_out->task_id;
+    bb_response_free(resp_out);
+    return task_id;
+}
+
+
+/**
+ * @brief 根据group_id、path查询bb任务
+ * @param task_id 入参，传入缓存组ID
+ * @param bb_config 入参，最小配置文件
+ * @param bb_task 出参，传入初始化后变量指针，返回bb_task
+ * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config, bb_attribute_task *bb_task)
+{
+    if (bb_config == NULL || bb_task == NULL) {
+        debug("Invalid parameters to get_single_burst_buffer_tasks\n");
+        return SLURM_ERROR;
+    }
+    int ret = 0;
+    char *json_string = NULL;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    query_params_request query_params ={ 0 };
+    query_params.start = 0;
+    query_params.limit = 1;
+    query_params.task_type = BURST_BUFFER_TASK_TYPE_NULL;
+    query_params.task_state = BB_TASK_STATE_NULL;
+    query_params.task_id = task_id;
+    ret = call_bb_api_of_task(bb_config, &query_params, QUERY_CALL, &json_string);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    /* 获取查询结果 */
+    ret = parse_single_json_of_task(json_string, resp_out, bb_task);
+    xfree(json_string);
+    if (ret == BB_CODE_ERROR) {
+        error("failed to analysis jsong string to response");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    if (ret == BB_SUCCESS_NO_DATA) {
+        debug("the datasets is not exist");
+        bb_response_free(resp_out);
+        return 0;
+    }
+    /* 检查查询到的task数据ID是否正确 */
+    if (bb_task->task_id == task_id) {
+        ret = bb_task->task_id;
+    } else {
+        error("get task id error, the task_id  is %d, but return task_id is %d", task_id, bb_task->task_id);
+        bb_response_free(resp_out);
+        return SLURM_ERROR;
+    }
+    bb_response_free(resp_out);
+    return ret;
+}
+
+
+/**
+ * @brief 根据group_sn删除缓存组
+ * @param group_sn 入参：缓存组sn
+ * @param bb_config 入参：最小配置
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config)
+{
+    if (!bb_config || !group_sn) {
+        debug("invalid parametes ");
+        return SLURM_ERROR;
+    }
+    int ret = BB_SUCCESS;
+    char *json_string = NULL;
+
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    delete_params_request delete_params = { 0 };
+    delete_params.group_sn = xstrdup(group_sn);
+    ret = call_bb_api_of_group(bb_config, &delete_params, DELETE_CALL, &json_string);
+    xfree(delete_params.group_sn);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        bb_response_free(resp_out);
+        return ret;
+    }
+
+    ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
+    xfree(json_string);
+    if (ret != 0) {
+        error("failed to analysis jsong string to response");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    bb_response_free(resp_out);
+    return ret;
+}
+
+/**
+ * @brief 根据dataset_id删除数据集规则
+ * @param dataset_id 
+ * @param bb_config 
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int delete_bb_dataset_by_id(int dataset_id, bb_minimal_config_t *bb_config)
+{
+    if (!bb_config || dataset_id <= 0) {
+        debug("invalid parametes ");
+        return SLURM_ERROR;
+    }
+    int ret = BB_SUCCESS;
+    char *json_string = NULL;
+
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    delete_params_request delete_params = { 0 };
+    delete_params.dataset_id = dataset_id;
+    ret = call_bb_api_of_dataset(bb_config, &delete_params, DELETE_CALL, &json_string);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
+    xfree(json_string);
+    if (ret != 0) {
+        error("failed to analysis jsong string to response");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    bb_response_free(resp_out);
+    return ret;
+}
+
+/**
+ * @brief 根据task_id删除BB任务
+ * @param task_id 
+ * @param bb_config 
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config)
+{
+    if (!bb_config || task_id <= 0) {
+        debug("invalid parametes ");
+        return SLURM_ERROR;
+    }
+    int ret = BB_SUCCESS;
+    char *json_string = NULL;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    delete_params_request delete_params = { 0 };
+    delete_params.task_id = task_id;
+    ret = call_bb_api_of_task(bb_config, &delete_params, CANCEL_CALL, &json_string);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
+    xfree(json_string);
+    if (ret != 0) {
+        error("failed to analysis jsong string to response");
+        bb_response_free(resp_out);
+        return ret;
+    }
+    if (resp_out->err_no != 0) {
+        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+        bb_response_free(resp_out);
+        return BB_API_ERROR;
+    }
+    bb_response_free(resp_out);
+    return ret;
+}
+
+
+
 /* 
 * delete a cache group by client ids 
 * NOTE: before deleting the cache group, make sure to delete the datasets under this group first.
 */
 extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
-    // bb_attribute_group *bb_group_tmp = NULL;
     if( bb_config == NULL || resp_out == NULL || delete_params == NULL ){
         debug("invalid parametes to delete group");
         return SLURM_ERROR;
@@ -1538,8 +2464,8 @@ extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_mi
         debug("failed to concatenate strings in delete_burst_buffer_group ");
         return SLURM_ERROR;
     }
-    /* retrieve create results */
-    ret = json_string_set_response(json_string, resp_out, NO_RESULT);
+   
+    ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
     if(ret == SLURM_ERROR || resp_out->err_no != 0) {
         debug("failed to delete cache group:%s",resp_out->detail_err_msg);
         xfree(json_string);
@@ -1562,8 +2488,8 @@ extern int create_burst_buffer_dataset(create_params_request *create_params, bb_
         debug("failed to concatenate strings in create_burst_buffer_dataset ");
         return SLURM_ERROR;
     }
-    /* retrieve create results */
-    ret = json_string_set_response(json_string, resp_out, DATASET_CREATE);
+   
+    ret = parse_json_to_response(json_string, resp_out, DATASET_CREATE);
     if (ret == SLURM_ERROR || resp_out->err_no != 0) {
         debug("failed to create dataset");
         xfree(json_string);
@@ -1588,8 +2514,8 @@ extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_
         debug("failed to concatenate strings in delete_burst_buffer_dataset ");
         return SLURM_ERROR;
     }
-    /* retrieve create results */
-    ret = json_string_set_response(json_string, resp_out, NO_RESULT);
+   
+    ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
     if (ret == SLURM_ERROR || resp_out->err_no != 0) {
         debug("failed to delete dataset:%s", resp_out->detail_err_msg);
         xfree(json_string);
@@ -1599,6 +2525,7 @@ extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_
     xfree(json_string);
     return ret;
 }
+
 /* 预热数据集 */
 extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out){
     if (bb_config == NULL || resp_out == NULL || create_params == NULL) {
@@ -1613,8 +2540,8 @@ extern int submit_burst_buffer_task(create_params_request *create_params, bb_min
         debug("failed to concatenate strings in create_burst_buffer_dataset ");
         return SLURM_ERROR;
     }
-    /* retrieve create results */
-    ret = json_string_set_response(json_string, resp_out, TASK_SUBMIT);
+   
+    ret = parse_json_to_response(json_string, resp_out, TASK_SUBMIT);
     if (ret == SLURM_ERROR || ret !=0 || resp_out->err_no != 0) {
         debug("failed to submit task");
         xfree(json_string);
@@ -1627,31 +2554,7 @@ extern int submit_burst_buffer_task(create_params_request *create_params, bb_min
 }
 
 
-/* Cancel a task by task_id */
-extern int cancel_burst_buffer_task(bb_minimal_config_t *bb_config, delete_params_request *delete_params, bb_response *resp_out)
-{
-    if (bb_config == NULL || resp_out == NULL || delete_params == NULL) {
-        debug("invalid parametes to delete task");
-        return SLURM_ERROR;
-    }
-    int ret = 0;
-    char *json_string = NULL;
-    json_string = concatenate_task_strings(bb_config, delete_params, CANCEL_CALL);
-    if (json_string == NULL) {
-        debug("failed to concatenate strings in delete_burst_buffer_task ");
-        return SLURM_ERROR;
-    }
-    /* retrieve create results */
-    ret = json_string_set_response(json_string, resp_out, NO_RESULT);
-    if (ret == SLURM_ERROR || resp_out->err_no != 0) {
-        debug("failed to cancel task:%s", resp_out->detail_err_msg);
-        xfree(json_string);
-        return SLURM_ERROR;
-    }
-    debug("successfully cancel task");
-    xfree(json_string);
-    return ret;
-}
+
 
 /* Not yet implemented: POSIX BB cache group immediate adjustment mapping */
 extern int remap_burst_buffer_group()
@@ -1697,29 +2600,6 @@ extern int get_permanent_token(bb_config_t *bb_config)
     return SLURM_SUCCESS ;
 }
 
-
-// /* get token from header */
-// static char *_get_token_from_header(const char *ip, int port,
-//                                 const char *user, const char *password)
-// {
-//     if (!ip || !user || !password) {
-//         debug("Invalid parameters to get_token_from_header");
-//         return NULL;
-//     }
-//     char url_token[URL_MAX_LEN];
-//     char* token = (char*)xmalloc(TOKEN_MAX_LEN);
-//     snprintf(url_token, sizeof(url_token), "https://%s:%d/restLogin", ip, port);
-
-//     if (rest_login(url_token, user, password, token) != 0) {
-//         debug("Login failed");     
-//         xfree(token);
-//         return NULL;
-//     }
-//     token[TOKEN_MAX_LEN - 1] = '\0';
-//     /*   DONT FOEGET FREE */
-//     return token;
-// }
-
 /* get permanent token from header */
 static char *_get_permanent_token_from_header(const char *ip, int port,
     const char *user, const char *password)
@@ -1754,7 +2634,12 @@ static char *_get_permanent_token_from_header(const char *ip, int port,
     return token;
 }
 
-/* base64_encode */
+/**
+ * @brief base64 code for _encode_password function
+ * @param data 
+ * @param len 
+ * @return 
+ */
 static char *_base64_encode(const unsigned char *data, size_t len)
 {
     const char base64_table[] =
@@ -1783,7 +2668,11 @@ static char *_base64_encode(const unsigned char *data, size_t len)
     return out;
 }
 
-/* encode password by base64 function */
+/**
+ * @brief encode password for calling permanent token
+ * @param password 
+ * @return 
+ */
 static char *_encode_password(const char *password)
 {
     if (!password) {
@@ -1809,16 +2698,43 @@ static char *_encode_password(const char *password)
     return out;
 }
 
-/*
- * ============================================================================
- * 测试函数：用于验证 bb_api 库是否正确加载和调用
- * 
- * Returns: 0 on success, -1 on error
- * ============================================================================
- */
-extern int bb_api_test_function(void)
+extern void free_query_params(query_params_request *query_params)
 {
-	debug("xxxxxxxxx-bb_api_test_function: bb_api library is successfully loaded and called!");
-	debug("xxxxxxxxx-bb_api_test_function: This is a test function to verify library loading");
-	return 0;
+    if (!query_params)
+        return;
+    if (query_params->ids)
+        xfree(query_params->ids);
+    if (query_params->client_ids)
+        xfree(query_params->client_ids);
+    if (query_params->client_ips)
+        xfree(query_params->client_ips);
+    if (query_params->host_name)
+        xfree(query_params->host_name);
+    if (query_params->group_sn)
+        xfree(query_params->group_sn);
+    if (query_params->path)
+        xfree(query_params->path);
+    xfree(query_params);
+}
+
+extern void free_create_params(create_params_request *create_params)
+{
+    if (!create_params)
+        return;
+    if (create_params->group_sn)
+        xfree(create_params->group_sn);
+    if (create_params->path)
+        xfree(create_params->path);
+    if (create_params->client_ids && create_params->client_count > 0)
+        xfree(create_params->client_ids);
+    xfree(create_params);
+}
+
+extern void free_delete_params(delete_params_request *delete_params)
+{
+    if (!delete_params)
+        return;
+    if (delete_params->group_sn)
+        xfree(delete_params->group_sn);
+    xfree(delete_params);
 }

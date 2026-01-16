@@ -208,3 +208,83 @@ int call_rest_api_with_token(const char *url, const char *method, const char *bo
     curl_easy_cleanup(curl);
     return 0;
 }
+
+
+
+
+/** 
+ * @brief 通过CURL调用RESTful API
+ * @param url
+ * @param method
+ * @param body
+ * @param token
+ * @param timeout
+ * @param response_out 出参：返回JSON格式响应体
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int call_rest_api_with_token_timeout(const char *url, const char *method, const char *body,
+    const char *token, long timeout, char **response_out)
+{
+    if (!url || !method || !response_out || !token ) {
+        return BB_CODE_ERROR;
+    }
+    CURL *curl = curl_easy_init();
+    if (!curl)
+        return BB_CODE_ERROR;
+    struct memory chunk = { 0 };
+    chunk.response = xmalloc(1);
+    chunk.size = 0;
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    
+    /* 设置超时控制 */
+    if (timeout > 0) {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+    }
+    
+    /* set method, default GET */
+    if (method && strcasecmp(method, "POST") == 0) {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    } else if (method && strcasecmp(method, "PUT") == 0) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+    } else if (method && strcasecmp(method, "DELETE") == 0) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    } 
+    /* set body */
+    if (body && (strcasecmp(method, "POST") == 0 || strcasecmp(method, "PUT") == 0)) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    }
+    /* token header */
+    struct curl_slist *headers = NULL;
+    if (token) {
+        char header_buf[512];
+        snprintf(header_buf, sizeof(header_buf), "token: %s", token);
+        headers = curl_slist_append(headers, header_buf);
+    }
+    /* Content-Type header */
+    headers = curl_slist_append(headers, "Content-Type:application/json");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    CURLcode res = curl_easy_perform(curl);
+
+    if (res != CURLE_OK) {
+        int ret_code = BB_API_ERROR;
+        /* 判断是否为超时错误 */
+        if (res == CURLE_OPERATION_TIMEDOUT) {
+            debug("curl request timeout: %s", curl_easy_strerror(res));
+            ret_code = BB_API_TIMEOUT;  // 整体请求超时
+        }
+        debug("curl perform failed: %s", curl_easy_strerror(res));
+        xfree(chunk.response);
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+        return ret_code;
+    }
+    *response_out = chunk.response;/*  DONT FORGET FREE */
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    return BB_SUCCESS;
+}

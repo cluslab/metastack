@@ -1528,7 +1528,7 @@ static int _bb_get_parastors_state(void) {
 	int rc = SLURM_SUCCESS;
 
 	//slurm_mutex_unlock(&bb_state.bb_mutex);
-	query_params_request *params  = xmalloc(sizeof(query_params_request));
+	query_params_request *params  =  xmalloc(sizeof(query_params_request));
 	bb_response *resp_out_group   =  xmalloc(sizeof(bb_response));
 	bb_response *resp_out_dataset =  xmalloc(sizeof(bb_response));
 	memset(params, 0, sizeof(query_params_request));
@@ -1553,7 +1553,8 @@ static int _bb_get_parastors_state(void) {
 	}
 	debug("burst datasets=%d , list_count(datasets)=%d", resp_out_dataset->dataset_count, list_count(tmp_list_datasets));
 
-	xfree(params);
+	free_query_params(params);
+	// xfree(params);
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	/* load the bb information from parastor resrful*/
@@ -2784,7 +2785,7 @@ static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_ta
 		/* 任务状态非完成（作业运行完时），则预热失败 */
 		debug("BB-----the state of task %d of job %u is %s", bb_task_ids[i], job_id, bb_task->task_state);
 		// TODO:预热失败信息需要进一步处理
-		if (xstrcmp(bb_task->task_state, "COMPLETED") != 0) {
+		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
 			debug("BB-----the task %d of job %u haven't finish cache prefetch", bb_task_ids[i], job_id);
 			_bb_min_config_free(bb_min_config);
 			bb_response_free(resp_out);
@@ -3478,6 +3479,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	job_ptr->access_mode          = bb_job->access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
 	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
 	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
+	job_ptr->pfs_cnt= bb_job->pfs_cnt;
 	if (job_ptr->need_group_counts > bb_state.bb_config.free_groups 
 			|| job_ptr->need_database_counts > bb_state.bb_config.free_datasets ) {
 		slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -3787,7 +3789,7 @@ static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config)
 		bb_min_config->para_stor_user_name = xstrdup(bb_config->para_stor_user_name);
 		bb_min_config->para_stor_password  = xstrdup(bb_config->para_stor_password);
 		bb_min_config->token			   = xstrdup(bb_config->token);
-		bb_min_config->other_timeout	   = bb_config->other_timeout;
+		//TODO:增加超时配置读取
 	} else {
 		error("bb_config is NULL, can't get minimal config.");
 		return NULL;

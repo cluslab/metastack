@@ -115,16 +115,7 @@ typedef struct bb_config {
 #endif
 } bb_config_t;
 
-#ifdef __METASTACK_NEW_BURSTBUFFER	
-typedef struct bb_minimal_config {
-	char    *para_stor_addr;	/* IP address */
-	uint32_t para_stor_port;	/* port number */
-	char    *para_stor_user_name;	/* user name */
-	char    *para_stor_password;	/* password */
-	char    *token;	/* password */
-	uint32_t other_timeout;
-} bb_minimal_config_t;
-#endif
+
 
 /* Current burst buffer allocations (instances). Some of these will be job
  * specific (job_id != 0) and others persistent */
@@ -286,6 +277,36 @@ struct preempt_bb_recs {
 };
 
 #ifdef __METASTACK_NEW_BURSTBUFFER  
+
+
+typedef struct bb_minimal_config {
+	char    *para_stor_addr;	/* IP address */
+	uint32_t para_stor_port;	/* port number */
+	char    *para_stor_user_name;	/* user name */
+	char    *para_stor_password;	/* password */
+	char    *token;	/* password */
+	long	other_timeout;
+	long	stagein_timeout;
+	long	stageout_timeout;
+	long	poll_interval;
+	int		retry_count;
+} bb_minimal_config_t;
+
+typedef enum {
+    BURST_BUFFER_TASK_TYPE_NULL = 0, /* set this type if not need this param */
+    BURST_BUFFER_TASK_TYPE_PREFETCH, /* 预热 */
+    BURST_BUFFER_TASK_TYPE_RECYCLE /* 回收 */
+} bb_task_type;
+
+typedef enum {
+    BB_TASK_STATE_NULL = 0,/* set this type if not need this param */
+    BB_TASK_STATE_SUBMITTING,
+    BB_TASK_STATE_RUNNING,
+    BB_TASK_STATE_COMPLETED,
+    BB_TASK_STATE_FAILED,
+    BB_TASK_STATE_CANCELED
+} bb_task_state_type;
+
 /* 定义缓存组结构体 bb_cache_group */
 typedef struct {
     int id;                    // 缓存组ID
@@ -296,6 +317,7 @@ typedef struct {
     double hit_bytes_rate;     // 命中字节率
     double hit_io_num_rate;    // 命中IO数量率
     double meta_hit_io_num_rate; // 元数据命中IO数量率
+	char* group_sn;		// 缓存组唯一标识符
 } bb_attribute_group;
 
 /* response info of datasets */
@@ -343,8 +365,10 @@ typedef struct {
     int task_id;
     int dataset_id;
     int group_id;
-    char *task_state;
-    char *task_type; 
+    // char *task_state;
+    // char *task_type; 
+	bb_task_type task_type;
+	bb_task_state_type task_state;
     long long begin_time;
     long long end_time;
     long long completed_bytes;
@@ -357,6 +381,24 @@ typedef struct {
     int exit_code;
 } bb_attribute_task;
 /* top response */
+
+
+/* 
+响应结构体
+1. 通用响应字段
+  - err_no            错误码，0表示成功，非0表示失败
+  - sync              同步标志，暂未使用
+  - time_stamp       时间戳，单位毫秒
+  - time_zone_offset 时区偏移，单位分钟
+  - trace_id		 跟踪ID，用于请求跟踪
+  - err_msg          错误信息，简要描述错误原因	
+  - detail_err_msg   详细错误信息，提供更具体的错误描述
+2.创建缓存组
+  - group_id 接收创建成功后返回的缓存组ID
+3.创建数据集规则
+  - dataset_id 接收创建成功后返回的数据集ID
+*/
+
 typedef struct {
     int err_no;
     int sync;
@@ -371,14 +413,7 @@ typedef struct {
     int client_count;
     int task_count;
 
-
-	
 	int client_join_groups_counts;
-
-    // List list_groups;     // bb cache group list
-    // List list_datasets;   // bb cache datasets list
-    // List list_clients;   // bb cache client list
-    // List list_tasks; // bb task list
 
     int group_id;
     int dataset_id; 

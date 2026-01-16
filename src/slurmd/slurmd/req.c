@@ -113,6 +113,11 @@
 #include "src/slurmd/slurmd/get_mach_stat.h"
 #include "src/slurmd/slurmd/slurmd.h"
 
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+#include "src/interfaces/burst_buffer_slurmd.h"
+#endif
+
+
 #define _LIMIT_INFO 0
 
 #define RETRY_DELAY 15		/* retry every 15 seconds */
@@ -167,7 +172,8 @@ static void _rpc_launch_tasks(slurm_msg_t *);
 static void _rpc_abort_job(slurm_msg_t *);
 static void _rpc_batch_job(slurm_msg_t *msg);
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-static void _rpc_create_bb(slurm_msg_t *msg);
+		static void _rpc_create_bb(slurm_msg_t *msg);
+		static void _rpc_clean_bb(slurm_msg_t *msg);
 #endif
 static void _rpc_prolog(slurm_msg_t *msg);
 static void _rpc_job_notify(slurm_msg_t *);
@@ -501,8 +507,16 @@ slurmd_req(slurm_msg_t *msg)
 
 	debug2("Processing RPC: %s", rpc_num2string(msg->msg_type));
 	switch (msg->msg_type) {
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	//case REQUEST_CREATE_BURST_BUFFER:
+		// _rpc_create_bb(msg);
+	//	break;
+#endif
 	case REQUEST_LAUNCH_PROLOG:
 		_rpc_prolog(msg);
+		//DEBUG:测试
+		_rpc_create_bb(msg);
+		_rpc_clean_bb(msg);
 		last_slurmctld_msg = time(NULL);
 		break;
 #ifdef __METASTACK_NEW_BURSTBUFFER2
@@ -2609,7 +2623,6 @@ static void _notify_result_rpc_prolog(prolog_launch_msg_t *req, int rc)
 		}
 	}
 }
-
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 static int _notify_slurmctld_create_bb_fini(
 	uint32_t job_id, uint32_t bb_return_code)
@@ -2620,12 +2633,12 @@ static int _notify_slurmctld_create_bb_fini(
 
 	slurm_msg_t_init(&req_msg);
 	memset(&req, 0, sizeof(req));
-	req.job_id		    = job_id;
-	req.node_name		= conf->node_name;
-	req.bb_rc			= bb_return_code;
+	req.job_id = job_id;
+	req.node_name = conf->node_name;
+	req.bb_rc = bb_return_code;
 
-	req_msg.msg_type    = REQUEST_COMPLETE_CREATE_BB;
-	req_msg.data	    = &req;
+	req_msg.msg_type = REQUEST_COMPLETE_CREATE_BB;
+	req_msg.data = &req;
 
 	/*
 	 * Here we only care about the return code of
@@ -2633,7 +2646,7 @@ static int _notify_slurmctld_create_bb_fini(
 	 * communication failure and we may need to try again.
 	 */
 	if ((ret_c = slurm_send_recv_controller_rc_msg(
-		     &req_msg, &rc, working_cluster_rec)))
+		&req_msg, &rc, working_cluster_rec)))
 		error("Error sending prolog completion notification: %m");
 
 	return ret_c;
@@ -2647,14 +2660,156 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		return;
 	if (!_slurm_authorized_user(msg->auth_uid)) {
 		error("REQUEST_LAUNCH_PROLOG request from uid %u",
-		      msg->auth_uid);
+			msg->auth_uid);
 		return;
 	}
-		/*
-	 * Send message back to the slurmctld so it knows we got the rpc.  A
-	 * bb  could easily run way longer than a MessageTimeout or we would
-	 * just wait.
-	 */
+	//DEBUG:测试变量
+	bb_minimal_config_t bmc = { 0 };
+	bmc.para_stor_addr = "172.16.120.117";
+	bmc.para_stor_port = 8443;
+	bmc.para_stor_password = "Admin@123";
+	bmc.token ="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
+	bmc.other_timeout = 1000;
+	bmc.retry_count = 3;
+	bmc.stagein_timeout = 1000;
+	bmc.stageout_timeout = 1000;
+	bmc.poll_interval = 5;
+
+	char group_sn_buf[64];
+	time_t now = time(NULL);
+	pid_t pid = getpid();
+	unsigned int rand_val = (unsigned int)(now ^ pid) % 10000;  // 取后4位
+	snprintf(group_sn_buf, sizeof(group_sn_buf), "DEBUG%04u", rand_val);
+	char *group_sn = group_sn_buf;
+
+	char *path = "bb_hpc:/test1";
+	int group_id = 0;
+	int dataset_id = 0;
+	int task_id = 0;
+
+	int clients_arr[] = {1000005};
+	/* 创建缓存组 */
+	rc = bb_g_create_bb_group_by_sn(group_sn, 1, clients_arr, &bmc);
+	if (rc > 0) {
+		group_id = rc;
+		debug("BB-----创建缓存组成功,sn为%s,id为%d", group_sn, group_id);
+	} else {
+		error("BB-----创建缓存组失败,sn为%s,return code%d", group_sn, rc);
+		return;
+	}
+	/* 创建数据集规则 */
+	rc = bb_g_create_bb_dataset_by_sn(group_sn, group_id, path, false, false, &bmc);
+	if (rc > 0) {
+		dataset_id = rc;
+		debug("BB-----创建数据集规则成功,id为%d", dataset_id);
+	} else {
+		error("BB-----创建数据集规则失败,return code%d", rc);
+		return;
+	}
+	/* 提交预热任务 */
+	rc = bb_g_submit_bb_task(dataset_id, 1, &bmc);
+	if (rc > 0) {
+		task_id = rc;
+		debug("BB-----提交预热任务成功,id为%d", task_id);
+	} else {
+		error("BB-----提交预热任务失败,return code%d", rc);
+		return;
+	}
+	/* 阻塞等待任务完成 */
+	rc = bb_g_wait_task_complete(task_id, 1, &bmc);
+	if (rc == 0) {
+		debug("BB-----任务%d预热成功", task_id);
+	} else {
+		error("BB-----任务%d预热失败,return code%d", task_id, rc);
+		return;
+	}
+
+	/*
+	* Send message back to the slurmctld so it knows we got the rpc.  A
+	* bb  could easily run way longer than a MessageTimeout or we would
+	* just wait.
+	*/
+	if (slurm_send_rc_msg(msg, rc) < 0) {
+		error("%s: Error talking to slurmctld: %m", __func__);
+	}
+
+	//缓存组、数据集创建、数据集预热等操作
+	_notify_slurmctld_create_bb_fini(req->job_id, rc);
+}
+
+/**
+ * @brief 清除缓冲区
+ * @param msg 
+ */
+static void _rpc_clean_bb(slurm_msg_t *msg)
+{
+	int rc = SLURM_SUCCESS;
+	burst_buffer_launch_msg_t *req = msg->data;
+	if (req == NULL)
+		return;
+	if (!_slurm_authorized_user(msg->auth_uid)) {
+		error("REQUEST_LAUNCH_PROLOG request from uid %u",
+			msg->auth_uid);
+		return;
+	}
+	
+	//DEBUG:测试使用变量
+	bb_minimal_config_t bmc = { 0 };
+	bmc.para_stor_addr = "172.16.120.117";
+	bmc.para_stor_port = 8443;
+	bmc.para_stor_password = "Admin@123";
+	bmc.token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
+	bmc.other_timeout = 1000;
+	bmc.retry_count = 3;
+	bmc.stagein_timeout = 1000;
+	bmc.stageout_timeout = 1000;
+	bmc.poll_interval = 5;
+
+	char *group_sn = "DEBUG2088";
+	int group_id = 7;
+	int dataset_id = 6;
+	int task_id = 0;
+	char *path = "bb_hpc:/test1";
+
+
+	/* 提交回收任务 */
+	rc = bb_g_submit_bb_task(dataset_id, 2, &bmc);
+	if (rc > 0) {
+		task_id = rc;
+		debug("BB-----提交回收任务成功,id为%d", task_id);
+	} else {
+		error("BB-----提交回收任务失败,return code%d", rc);
+		return;
+	}
+	/* 阻塞等待回收任务完成 */
+	rc = bb_g_wait_task_complete(task_id, 1, &bmc);
+	if (rc == 0) {
+		debug("BB-----任务%d回收成功", task_id);
+	} else {
+		error("BB-----任务%d回收失败,return code%d", task_id, rc);
+		return;
+	}
+	/* 删除数据集规则 */
+	rc = bb_g_delete_bb_dataset_by_id(dataset_id, group_id, path, &bmc);
+	if (rc == 0) {
+		debug("BB-----成功删除数据集规则%d", dataset_id);
+	} else {
+		error("BB-----删除数据集规则%d失败,return code%d", dataset_id, rc);
+		return;
+	}
+	/* 删除缓存组 */
+	rc = bb_g_delete_bb_group_by_sn(group_sn, &bmc);
+	if (rc == 0) {
+		debug("BB-----成功删除缓存组%s", group_sn);
+	} else {
+		error("BB-----删除缓存组%s失败,return code%d", group_sn, rc);
+		return;
+	}
+	/*
+	* Send message back to the slurmctld so it knows we got the rpc.  A
+	* bb  could easily run way longer than a MessageTimeout or we would
+	* just wait.
+	*/
 	if (slurm_send_rc_msg(msg, rc) < 0) {
 		error("%s: Error talking to slurmctld: %m", __func__);
 	}
@@ -2664,10 +2819,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 
 
 }
-
-
 #endif
-
 
 static void _rpc_prolog(slurm_msg_t *msg)
 {
