@@ -68,6 +68,7 @@ extern "C" {
 #define __METASTACK_NEW_BURSTBUFFER
 #define __METASTACK_NEW_BURSTBUFFER1
 #define __METASTACK_NEW_BURSTBUFFER2
+#define __METASTACK_NEW_BURSTBUFFER3
 #endif
 
 /* set errno to the specified value - then return -1 */
