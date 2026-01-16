@@ -136,17 +136,7 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, int *clien
 	create_params->client_ids = xmalloc(create_params->client_count * sizeof(int));
 	memcpy(create_params->client_ids, client_arr, create_params->client_count * sizeof(int));
 	for (int retry_count = 0; retry_count < bb_config->retry_count; retry_count++) {
-		slurm_mutex_lock(&g_bb_api_context_lock);
-		if (bb_api_ops && bb_api_ops->create_bb_group_by_sn) {
-			rc = (*(bb_api_ops->create_bb_group_by_sn))(create_params, bb_config);
-		} else {
-			error("%s: create_bb_group_by_sn not available", __func__);
-			slurm_mutex_unlock(&g_bb_api_context_lock);
-			_bb_g_free_create_params(create_params);
-			return SLURM_ERROR;
-		}
-		slurm_mutex_unlock(&g_bb_api_context_lock);
-
+		rc = create_bb_group_by_sn(create_params, bb_config);
 		if (rc > 0) {
 			debug("创建缓存组成功,group_id,%d", rc);
 			break;
@@ -158,7 +148,7 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, int *clien
 			break;
 		} else if (rc == -3) {
 			debug("创建缓存组接口超时,查询是否已创建成功");
-			int query_rc = bb_g_query_bb_groupid_by_sn(group_sn, bb_config);
+			int query_rc = query_bb_groupid_by_sn(group_sn, bb_config);
 			if (query_rc < 0) {
 				error("查询失败");
 				break;
@@ -181,20 +171,14 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, int *clien
 	if (rc < 0) {
 		error("创建缓存组%s失败,错误码: %d", group_sn, rc);
 	}
-	_bb_g_free_create_params(create_params);
+	free_create_params(create_params);
 	return rc;
 
 }
 
-extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache, bb_minimal_config_t *bb_config)
+extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache, bb_minimal_config_t *bb_config)
 {
 	int rc = SLURM_ERROR;
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
 	if (!group_sn || !path || !bb_config) {
 		error("error params");
 		return SLURM_ERROR;
@@ -209,17 +193,7 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 		create_params->data_cache_type = LOCAL_CACHE;
 	}
 	for (int retry_count = 0; retry_count < bb_config->retry_count; retry_count++) {
-
-		slurm_mutex_lock(&g_bb_api_context_lock);
-		if (bb_api_ops && bb_api_ops->create_bb_dataset_by_sn) {
-			rc = (*(bb_api_ops->create_bb_dataset_by_sn))(create_params, bb_config);
-		} else {
-			error("%s: create_bb_dataset_by_sn not available", __func__);
-			slurm_mutex_unlock(&g_bb_api_context_lock);
-			_bb_g_free_create_params(create_params);
-			return SLURM_ERROR;
-		}
-		slurm_mutex_unlock(&g_bb_api_context_lock);
+		rc = create_bb_dataset_by_sn(create_params, bb_config);
 		if (rc > 0) {
 			debug("创建数据集规则成功,dataset_id:%d", rc);
 			break;
@@ -231,7 +205,7 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 			break;
 		} else if (rc == -3) {
 			debug("创建数据集规则接口超时,查询是否已创建成功");
-			int query_rc = bb_g_query_datasetid_by_path_groupid(group_id, path, bb_config);
+			int query_rc = query_datasetid_by_path_groupid(group_id, path, bb_config);
 			if (query_rc < 0) {
 				error("查询失败");
 				break;
@@ -254,20 +228,14 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 	if (rc < 0) {
 		error("创建数据集规则失败");
 	}
-	_bb_g_free_create_params(create_params);
+	free_create_params(create_params);
 	return rc;
 }
 
 
-extern int bb_g_submit_bb_task(int dataset_id, int task_type, bb_minimal_config_t *bb_config)
+extern int bb_p_submit_bb_task(int dataset_id, int task_type, bb_minimal_config_t *bb_config)
 {
 	int rc = SLURM_ERROR;
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
 	if (dataset_id <= 0 || (task_type != BURST_BUFFER_TASK_TYPE_PREFETCH && task_type != BURST_BUFFER_TASK_TYPE_RECYCLE) || !bb_config) {
 		error("error params");
 		return SLURM_ERROR;
@@ -276,18 +244,7 @@ extern int bb_g_submit_bb_task(int dataset_id, int task_type, bb_minimal_config_
 	create_params->dataset_id = dataset_id;
 	create_params->task_type = task_type;
 	create_params->error_action_type = 0;
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->submit_bb_task) {
-		rc = (*(bb_api_ops->submit_bb_task))(create_params, bb_config);
-	} else {
-		slurm_mutex_unlock(&g_bb_api_context_lock);
-		_bb_g_free_create_params(create_params);
-		error("%s: submit_bb_task not available", __func__);
-		return SLURM_ERROR;
-
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
+	rc = submit_bb_task(create_params, bb_config);
 
 	if (rc > 0) {
 		debug("提交任务成功,任务ID:%d", rc);
@@ -300,12 +257,12 @@ extern int bb_g_submit_bb_task(int dataset_id, int task_type, bb_minimal_config_
 	} else {
 		error("提交失败,错误码: %d", rc);
 	}
-	_bb_g_free_create_params(create_params);
+	free_create_params(create_params);
 	return rc;
 }
 
 
-extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config_t *bb_config)
+extern int bb_p_wait_task_complete(int task_id, int task_type, bb_minimal_config_t *bb_config)
 {
 	if (task_id <= 0 || (task_type != BURST_BUFFER_TASK_TYPE_PREFETCH && task_type != BURST_BUFFER_TASK_TYPE_RECYCLE) || !bb_config) {
 		error("error params");
@@ -353,7 +310,7 @@ extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config
 		if (elapsed_time >= HARD_TIMEOUT_SEC) {
 			error("等待预热任务完成超时（硬超时：%d秒),task_id=%d,已等待%d秒",
 				HARD_TIMEOUT_SEC, task_id, elapsed_time);
-			_bb_g_slurm_free_task(bb_task);
+			free_bb_task(bb_task);
 			return SLURM_ERROR;
 		}
 
@@ -377,12 +334,12 @@ extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config
 		}
 
 		// 执行状态查询
-		query_rc = bb_g_query_bb_tasks_by_taskid(task_id, bb_config, bb_task);
+		query_rc = query_bb_tasks_by_taskid(task_id, bb_config, bb_task);
 
 		// 查询失败,直接返回
 		if (query_rc < 0) {
 			error("查询预热任务状态失败,task_id=%d, 错误码=%d", task_id, query_rc);
-			_bb_g_slurm_free_task(bb_task);
+			free_bb_task(bb_task);
 			return rc;
 		}
 
@@ -401,7 +358,7 @@ extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config
 		if (query_rc == 0) {
 			// 任务不存在
 			error("预热任务不存在,task_id=%d", task_id);
-			_bb_g_slurm_free_task(bb_task);
+			free_bb_task(bb_task);
 			return rc;
 		}
 
@@ -413,7 +370,7 @@ extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config
 			break;
 		} else if (bb_task->task_state == BB_TASK_STATE_FAILED || bb_task->task_state == BB_TASK_STATE_CANCELED) {
 			error("预热任务失败或已取消,task_id=%d, 任务状态=%d, 已等待%d秒", task_id, bb_task->task_state, elapsed_time);
-			_bb_g_slurm_free_task(bb_task);
+			free_bb_task(bb_task);
 			return rc;
 		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING || bb_task->task_state == BB_TASK_STATE_RUNNING) {
 			if (soft_timeout_reached) {
@@ -426,7 +383,7 @@ extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config
 			// 未知状态,视为异常,直接返回
 			error("预热任务状态未知,task_id=%d, 任务状态=%d, 已等待%d秒",
 				task_id, bb_task->task_state, elapsed_time);
-			_bb_g_slurm_free_task(bb_task);
+			free_bb_task(bb_task);
 			return rc;
 		}
 
@@ -450,103 +407,42 @@ extern int bb_g_wait_task_complete(int task_id, int task_type, bb_minimal_config
 		}
 	}
 	// 清理资源
-	_bb_g_slurm_free_task(bb_task);
+	free_bb_task(bb_task);
 	return rc;
 
 }
 
 
-extern int bb_g_query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_config)
+extern int bb_p_query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_config)
 {
 	int rc = SLURM_ERROR;
-
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->query_bb_groupid_by_sn) {
-		rc = (*(bb_api_ops->query_bb_groupid_by_sn))(group_sn, bb_min_config);
-	} else {
-		error("%s: query_bb_groupid_by_sn not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-
+	rc = query_bb_groupid_by_sn(group_sn, bb_min_config);
 	return rc;
 }
 
-extern int bb_g_query_datasetid_by_path_groupid(const int group_id, const char *path, bb_minimal_config_t *bb_config)
+extern int bb_p_query_datasetid_by_path_groupid(const int group_id, const char *path, bb_minimal_config_t *bb_config)
 {
 	int rc = SLURM_ERROR;
-
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->query_datasetid_by_path_groupid) {
-		rc = (*(bb_api_ops->query_datasetid_by_path_groupid))(group_id, path, bb_config);
-	} else {
-		error("%s: query_datasetid_by_path_groupid not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-
+	rc = query_datasetid_by_path_groupid(group_id, path, bb_config);
 	return rc;
 }
 
-extern int bb_g_query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config, bb_attribute_task *bb_task)
+extern int bb_p_query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config, bb_attribute_task *bb_task)
 {
 	int rc = SLURM_ERROR;
-
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->query_bb_tasks_by_taskid) {
-		rc = (*(bb_api_ops->query_bb_tasks_by_taskid))(task_id, bb_config, bb_task);
-	} else {
-		error("%s: query_bb_tasks_by_taskid not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-
+	rc = query_bb_tasks_by_taskid(task_id, bb_config, bb_task);
 	return rc;
 }
 
-extern int bb_g_delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config)
+extern int bb_p_delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config)
 {
 	int rc = SLURM_ERROR;
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
 	if (!group_sn || !bb_config) {
 		error("error params");
 		return SLURM_ERROR;
 	}
-
 	for (int retry_count = 0; retry_count < bb_config->retry_count; retry_count++) {
-		slurm_mutex_lock(&g_bb_api_context_lock);
-		if (bb_api_ops && bb_api_ops->delete_bb_group_by_sn) {
-			rc = (*(bb_api_ops->delete_bb_group_by_sn))(group_sn, bb_config);
-		} else {
-			slurm_mutex_unlock(&g_bb_api_context_lock);
-			error("%s: delete_bb_group_by_sn not available", __func__);
-			return SLURM_ERROR;
-		}
-		slurm_mutex_unlock(&g_bb_api_context_lock);
-
+		rc = delete_bb_group_by_sn(group_sn, bb_config);
 		if (rc == 0) {
 			debug("删除缓存组%s成功", group_sn);
 			break;
@@ -583,31 +479,15 @@ extern int bb_g_delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_co
 	return rc;
 }
 
-extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * path,bb_minimal_config_t *bb_config)
+extern int bb_p_delete_bb_dataset_by_id(int dataset_id, int group_id, char * path,bb_minimal_config_t *bb_config)
 {
 	int rc = SLURM_ERROR;
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
 	if (dataset_id <= 0 || !bb_config) {
 		error("error params");
 		return SLURM_ERROR;
 	}
 	for (int retry_count = 0; retry_count < bb_config->retry_count; retry_count++) {
-
-		slurm_mutex_lock(&g_bb_api_context_lock);
-		if (bb_api_ops && bb_api_ops->delete_bb_dataset_by_id) {
-			rc = (*(bb_api_ops->delete_bb_dataset_by_id))(dataset_id, bb_config);
-		} else {
-			slurm_mutex_unlock(&g_bb_api_context_lock);
-			error("%s: delete_bb_dataset_by_id not available", __func__);
-			return SLURM_ERROR;
-		}
-		slurm_mutex_unlock(&g_bb_api_context_lock);
-
+		rc = delete_bb_dataset_by_id(dataset_id, bb_config);
 		if (rc == 0) {
 			debug("删除数据集规则%d成功", dataset_id);
 			break;
@@ -652,96 +532,10 @@ extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
  * @param bb_config 最小配置
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config)
+extern int bb_p_cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config)
 {
 	int rc = SLURM_ERROR;
-
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return SLURM_ERROR;
-		}
-	}
-
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->cancel_bb_task_by_id) {
-		rc = (*(bb_api_ops->cancel_bb_task_by_id))(task_id, bb_config);
-	} else {
-		error("%s: cancel_bb_task_by_id not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-
+	rc = cancel_bb_task_by_id(task_id, bb_config);
 	return rc;
-}
-
-
-
-/**
- * @brief 释放task结构体
- * @return
- */
-extern void _bb_g_slurm_free_task(void *object)
-{
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return ;
-		}
-	}
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->slurm_free_task) {
-		(*(bb_api_ops->slurm_free_task))(object);
-	} else {
-		error("%s: slurm_free_task not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-	return ;
-
-}
-
-/**
- * @brief 释放创建参数结构体
- * @return
- */
-extern void _bb_g_free_create_params(void *object)
-{
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return ;
-		}
-	}
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->slurm_free_task) {
-		(*(bb_api_ops->_bb_g_free_create_params))(object);
-	} else {
-		error("%s: _bb_g_free_create_params not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-	return ;
-
-}
-
-/**
- * @brief 释放删除参数结构体
- * @return
- */
-extern void _bb_g_free_delete_params(void *object)
-{
-	if (g_bb_api_context_cnt < 0) {
-		if (bb_api_init() != SLURM_SUCCESS) {
-			error("%s: failed to initialize bb_api plugin", __func__);
-			return ;
-		}
-	}
-	slurm_mutex_lock(&g_bb_api_context_lock);
-	if (bb_api_ops && bb_api_ops->slurm_free_task) {
-		(*(bb_api_ops->_bb_g_free_delete_params))(object);
-	} else {
-		error("%s: _bb_g_free_delete_params not available", __func__);
-	}
-	slurm_mutex_unlock(&g_bb_api_context_lock);
-	return ;
-
 }
 
