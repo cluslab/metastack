@@ -2447,7 +2447,11 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 	else
 		debug2("%s: %pJ Node=%s %s",
 		       __func__, job_ptr, epilog_msg->node_name, TIME_STR);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER4	
+	if(job_ptr->bb_enable_pb) { //需要设置是否创建缓存组标志位，还有error状态处理
+		(void) bb_g_job_start_stage_out(job_ptr);
+	}	   	
+#endif
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
 		unlock_slurmctld(job_write_lock);
 		_throttle_fini(&active_rpc_cnt);

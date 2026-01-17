@@ -69,6 +69,7 @@ extern "C" {
 #define __METASTACK_NEW_BURSTBUFFER1
 #define __METASTACK_NEW_BURSTBUFFER2
 #define __METASTACK_NEW_BURSTBUFFER3
+#define __METASTACK_NEW_BURSTBUFFER4 //epilog
 #endif
 
 /* set errno to the specified value - then return -1 */
