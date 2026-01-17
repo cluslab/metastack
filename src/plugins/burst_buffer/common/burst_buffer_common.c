@@ -543,6 +543,7 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		{"StopStageIn", S_P_STRING},
 		{"StopStageOut", S_P_STRING},
 		{"ValidateTimeout", S_P_UINT32},
+		{"RetryCount", S_P_UINT32},
 		{"MaxGroups", S_P_UINT32},	
 		{"MaxDatasets", S_P_UINT32},	
 		//{"MaxNodePerGroups", S_P_UINT32},	
@@ -585,6 +586,13 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 	state_ptr->bb_config.stage_in_timeout = DEFAULT_STATE_IN_TIMEOUT;
 	state_ptr->bb_config.stage_out_timeout = DEFAULT_STATE_OUT_TIMEOUT;
 	state_ptr->bb_config.validate_timeout = DEFAULT_VALIDATE_TIMEOUT;
+	state_ptr->bb_config.retry_count = DEFAULT_RETRY_COUNT;
+	state_ptr->bb_config.max_groups = DEFAULT_MAX_GROUPS;
+	state_ptr->bb_config.max_datasets = DEFAULT_MAX_DATASETS;
+	state_ptr->bb_config.max_clients_join = DEFAULT_MAX_GROUPS_PER_CLIENTS;
+	state_ptr->bb_config.max_clients_per_job = DEFAULT_MAX_CLIENTS_PER_JOB;
+	state_ptr->bb_config.max_acc_dirs_per_job = DEFAULT_MAX_ACC_DIRS_PER_JOB;
+	state_ptr->bb_config.max_acc_dir_len = DEFAULT_MAX_ACC_DIR_LEN;
 
 	/* First look for "burst_buffer.conf" then with "type" field,
 	 * for example "burst_buffer_datawarp.conf" */
@@ -659,26 +667,16 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		       bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.validate_timeout,
 			     "ValidateTimeout", bb_hashtbl);
+	(void)s_p_get_uint32(&state_ptr->bb_config.retry_count,
+		"RetryCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_groups,
 			     "MaxGroups", bb_hashtbl);
-	if (state_ptr->bb_config.max_groups <= 0) {
-		state_ptr->bb_config.max_groups = 2048;
-	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_datasets,
 			     "MaxDatasets", bb_hashtbl);
-	if (state_ptr->bb_config.max_datasets <= 0) {
-		state_ptr->bb_config.max_datasets = 8192;
-	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_join,
 			     "MaxGroupsPerClients", bb_hashtbl);
-	if (state_ptr->bb_config.max_clients_join <= 0) {
-		state_ptr->bb_config.max_clients_join = 4;
-	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_per_job,
 			     "MaxClientsPerJob", bb_hashtbl);
-	if (state_ptr->bb_config.max_clients_per_job <= 0) {
-		state_ptr->bb_config.max_clients_per_job = 4;
-	}
 	(void) s_p_get_string(&state_ptr->bb_config.para_stor_addr,
 			     "ParaStorAddr", bb_hashtbl);
 	if (!state_ptr->bb_config.para_stor_addr) {
@@ -707,17 +705,17 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 			     "FileSystemCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
-	if (state_ptr->bb_config.max_acc_dirs_per_job <= 0) {
-		state_ptr->bb_config.max_acc_dirs_per_job = 4;
-	}
-	if (state_ptr->bb_config.max_acc_dirs_per_job > 8 || (state_ptr->bb_config.max_acc_dirs_per_job) <= 0)  {
+	// if (state_ptr->bb_config.max_acc_dirs_per_job <= 0) {
+	// 	state_ptr->bb_config.max_acc_dirs_per_job = 4;
+	// }
+	if (state_ptr->bb_config.max_acc_dirs_per_job > 8)  {
 		state_ptr->bb_config.max_acc_dirs_per_job = 8;
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
 			     "MaxAccDirLen", bb_hashtbl);
-	if (&state_ptr->bb_config.max_acc_dir_len <= 0) {
-		state_ptr->bb_config.max_acc_dir_len = 512;
-	}
+	// if (&state_ptr->bb_config.max_acc_dir_len <= 0) {
+	// 	state_ptr->bb_config.max_acc_dir_len = 512;
+	// }
 
 	(void) s_p_get_string(&state_ptr->bb_config.file_system,
 			     "FileSystem", bb_hashtbl);
@@ -768,8 +766,10 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		     state_ptr->bb_config.stop_stage_out);
 		info("ValidateTimeout:%u",
 		     state_ptr->bb_config.validate_timeout);
+		info("RetryCount:%u",
+			state_ptr->bb_config.retry_count);
 		info("MaxGroups:%u",
-		     state_ptr->bb_config.max_groups);
+			state_ptr->bb_config.max_groups);
 		info("MaxDatasets:%u",
 		     state_ptr->bb_config.max_datasets);
 		info("MaxGroupsPerClients:%u",
@@ -780,7 +780,6 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		     state_ptr->bb_config.para_stor_addr);
 		info("ParaStorAddrPort:%u",
 		     state_ptr->bb_config.para_stor_port);
-
 		info("FileSystem:%s",
 		     state_ptr->bb_config.file_system);
 		info("FileSystemMount:%s",
@@ -789,14 +788,9 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		     state_ptr->bb_config.max_acc_dirs_per_job);
 		info("MaxAccDirLen:%d",
 		     state_ptr->bb_config.max_acc_dir_len);
-		// info("FileSystemCount:%d",
-		//      state_ptr->bb_config.file_system_count);
-		// info("ParaStorUserPasswd:%s",d
-		//      state_ptr->bb_config.para_stor_password);
 	}
 }
 #endif
-
 /* Load and process configuration parameters */
 extern void bb_load_config(bb_state_t *state_ptr, char *plugin_type)
 {

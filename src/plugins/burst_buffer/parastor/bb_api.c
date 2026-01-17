@@ -15,9 +15,9 @@ static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *gr
 static int _parse_json_result_to_client(json_t *client_obj, bb_attribute_client *client);
 static int _parse_json_result_to_task(json_t *task_obj, bb_attribute_task *task);
 
-static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string);
-static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string);
-static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, call_type type, char **return_string);
+static int call_bb_api_of_group(bb_config_t *bb_config, void *params, call_type type, char** return_string);
+static int call_bb_api_of_dataset(bb_config_t *bb_config, void *params, call_type type, char** return_string);
+static int call_bb_api_of_task(bb_config_t *bb_config, void *params, call_type type, char **return_string);
 
 static int parse_single_json_of_group(const char *json_str, bb_response *resp_out, bb_attribute_group *bb_group);
 static int parse_single_json_of_dataset(const char* json_str, bb_attribute_dataset * bb_dataset, bb_response* resp_out);
@@ -31,7 +31,7 @@ static char *_get_permanent_token_from_header(const char *ip, int port, const ch
 static char *_encode_password(const char *password);
 static char *_base64_encode(const unsigned char *data, size_t len);
 
-static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *params, call_type type);
+static char *concatenate_group_strings(bb_config_t *bb_config, void *params, call_type type);
 
 /**
 * Parse the JSON-formatted group result and populate the group structure.
@@ -709,7 +709,7 @@ static int parse_single_json_of_client(const char *json_str, bb_response *resp_o
 }
 
 
-static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *params, call_type type)
+static char *concatenate_group_strings(bb_config_t *bb_config, void *params, call_type type)
 {
     char *url_api = NULL;
     char *tmp_params_str = NULL;
@@ -821,7 +821,7 @@ static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *par
 
 }
 
-static char *concatenate_dataset_strings(bb_minimal_config_t *bb_config, void *params, call_type type)
+static char *concatenate_dataset_strings(bb_config_t *bb_config, void *params, call_type type)
 {
     char *url_api = NULL;
     char *tmp_params_str = NULL;
@@ -944,7 +944,7 @@ static char *concatenate_dataset_strings(bb_minimal_config_t *bb_config, void *p
     } //switch end        
 }
 
-static char *concatenate_client_strings(bb_minimal_config_t *bb_config, const query_params_request* query_params) 
+static char *concatenate_client_strings(bb_config_t *bb_config, const query_params_request* query_params) 
 {
 
     if (query_params == NULL && bb_config == NULL) {
@@ -1016,7 +1016,7 @@ static char *concatenate_client_strings(bb_minimal_config_t *bb_config, const qu
     return json_string;
 }
 
-static char *concatenate_task_strings(bb_minimal_config_t *bb_config, void *params, call_type type)
+static char *concatenate_task_strings(bb_config_t *bb_config, void *params, call_type type)
 {
     char *url_api = NULL;
     char *tmp_params_str = NULL;
@@ -1275,7 +1275,7 @@ extern void free_bb_response(bb_response *resp)
 
 
 /* Get set the number of groups */
-extern List get_groups_burst_buffer(query_params_request* query_params,  bb_minimal_config_t *bb_min_config, bb_response *resp_out)
+extern List get_groups_burst_buffer(query_params_request* query_params,  bb_config_t *bb_min_config, bb_response *resp_out)
 {
     if (query_params == NULL || resp_out == NULL ) {
         debug("Invalid parameters to get_groups_burst_buffer");
@@ -1323,7 +1323,7 @@ extern List get_groups_burst_buffer(query_params_request* query_params,  bb_mini
     return init_list_groups;
 }
 
-extern List get_datasets_burst_buffer(query_params_request *query_params, bb_minimal_config_t *bb_min_config, bb_response *resp_out)
+extern List get_datasets_burst_buffer(query_params_request *query_params, bb_config_t *bb_min_config, bb_response *resp_out)
 {
     if (bb_min_config == NULL || query_params == NULL || resp_out == NULL) {
         debug("Invalid parameters to get_datasets_burst_buffer");
@@ -1366,7 +1366,7 @@ extern List get_datasets_burst_buffer(query_params_request *query_params, bb_min
 
 /* get clients info   */
 extern int get_set_burst_buffer_clients_and_tasks( query_params_request *query_params,
-                                            bb_minimal_config_t *bb_min_config, result_type type, bb_response *resp_out)
+                                            bb_config_t *bb_min_config, result_type type, bb_response *resp_out)
 {
 
     if (bb_min_config == NULL  || query_params == NULL) {
@@ -1417,7 +1417,7 @@ extern int get_set_burst_buffer_clients_and_tasks( query_params_request *query_p
 
 /* 获取单个task，输出为task */
 extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_task,
-                                            bb_minimal_config_t *bb_config, bb_response *resp_out)
+                                            bb_config_t *bb_config, bb_response *resp_out)
 {
 
     if (bb_config == NULL || resp_out == NULL || bb_task == NULL) {
@@ -1460,7 +1460,7 @@ extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_tas
 }
 
 /* Create a cache group by client ids */
-extern int create_burst_buffer_group(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
+extern int create_burst_buffer_group(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out)
 {
     if( bb_config == NULL || resp_out == NULL || create_params == NULL ){
         debug("Invalid parameters to create_burst_buffer_group\n");
@@ -1498,7 +1498,7 @@ extern int create_burst_buffer_group(create_params_request *create_params, bb_mi
  * @param return_string 出参，传入空字符串指针地址，返回jsong字符串
  * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string)
+static int call_bb_api_of_group(bb_config_t *bb_config, void *params, call_type type, char** return_string)
 {
     int ret = 0;
     char *url_api = NULL;
@@ -1614,7 +1614,7 @@ static int call_bb_api_of_group(bb_minimal_config_t *bb_config, void *params, ca
  * @param return_string 出参，传入空字符串指针地址，返回jsong字符串
  * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, call_type type, char** return_string)
+static int call_bb_api_of_dataset(bb_config_t *bb_config, void *params, call_type type, char** return_string)
 {
     int ret = BB_SUCCESS;
     char *url_api = NULL;
@@ -1650,7 +1650,7 @@ static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, 
         /*assemble the full query for cache datasets*/
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets?%s",
             bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
-        ret = call_rest_api_with_token(url_api, "GET", NULL, bb_config->token, &json_string);
+        ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1751,7 +1751,7 @@ static int call_bb_api_of_dataset(bb_minimal_config_t *bb_config, void *params, 
  * @param return_string 出参，传入空字符串指针地址，返回jsong字符串
  * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, call_type type, char **return_string)
+static int call_bb_api_of_task(bb_config_t *bb_config, void *params, call_type type, char **return_string)
 {
     int ret = 0;
     char *url_api = NULL;
@@ -1917,7 +1917,7 @@ static int call_bb_api_of_task(bb_minimal_config_t *bb_config, void *params, cal
  * @param return_string 出参，传入空字符串指针地址，返回jsong字符串
  * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-static int call_bb_api_of_client(bb_minimal_config_t *bb_config, const query_params_request* query_params, char **return_string) 
+static int call_bb_api_of_client(bb_config_t *bb_config, const query_params_request* query_params, char **return_string) 
 {
 
     int ret = 0;
@@ -2104,7 +2104,7 @@ static int parse_single_json_of_dataset(const char* json_str, bb_attribute_datas
  * @param resp_out 通用响应体
  * @return >0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int create_bb_group_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config)
+extern int create_bb_group_by_sn(create_params_request *create_params, bb_config_t *bb_config)
 {
     if (!bb_config || !create_params) {
         debug("Invalid parameters to create_burst_buffer_group\n");
@@ -2146,7 +2146,7 @@ extern int create_bb_group_by_sn(create_params_request *create_params, bb_minima
  * @param resp_out 通用响应体
  * @return 0>表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config)
+extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_config_t *bb_config)
 {
 
     if (!bb_config || !create_params) {
@@ -2189,7 +2189,7 @@ extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_mini
  * @param bb_min_config bb最小配置
  * @return 成功获取返回缓存组ID(>0)，0表示不存在,-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_config)
+extern int query_bb_groupid_by_sn(char *group_sn, bb_config_t *bb_min_config)
 {
     if (! bb_min_config || !group_sn ) {
         debug("Invalid parameters \n");
@@ -2256,7 +2256,7 @@ extern int query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_co
  * @param path 数据集路径
  * @return 存在返回datasetid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_minimal_config_t *bb_config)
+extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_config_t *bb_config)
 {
 
     if (!bb_config || group_id < 0 || !path) {
@@ -2326,7 +2326,7 @@ extern int query_datasetid_by_path_groupid(const int group_id, const char *path,
  * @param bb_config 最小配置参数
  * @return 成功返回task_id (>0);  -1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int submit_bb_task(create_params_request *create_params, bb_minimal_config_t *bb_config)
+extern int submit_bb_task(create_params_request *create_params, bb_config_t *bb_config)
 {
     if (bb_config == NULL || create_params == NULL) {
         debug("Invalid parameters to submit_burst_buffer_task\n");
@@ -2371,7 +2371,7 @@ extern int submit_bb_task(create_params_request *create_params, bb_minimal_confi
  * @param bb_task 出参，传入初始化后变量指针，返回bb_task
  * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config, bb_attribute_task *bb_task)
+extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attribute_task *bb_task)
 {
     if (bb_config == NULL || bb_task == NULL) {
         debug("Invalid parameters to get_single_burst_buffer_tasks\n");
@@ -2424,7 +2424,7 @@ extern int query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config,
     return ret;
 }
 
-extern int query_clientid_by_hostname(const char *hostname, bb_minimal_config_t *bb_config)
+extern int query_clientid_by_hostname(const char *hostname, bb_config_t *bb_config)
 {
     if (bb_config == NULL || hostname == NULL) {
         debug("Invalid parameters to query_clientid_by_hostname\n");
@@ -2492,7 +2492,7 @@ extern int query_clientid_by_hostname(const char *hostname, bb_minimal_config_t 
  * @param bb_config 入参：最小配置
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config)
+extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
 {
     if (!bb_config || !group_sn) {
         debug("invalid parametes ");
@@ -2536,7 +2536,7 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config)
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int delete_bb_dataset_by_id(int dataset_id, bb_minimal_config_t *bb_config)
+extern int delete_bb_dataset_by_id(int dataset_id, bb_config_t *bb_config)
 {
     if (!bb_config || dataset_id <= 0) {
         debug("invalid parametes ");
@@ -2578,7 +2578,7 @@ extern int delete_bb_dataset_by_id(int dataset_id, bb_minimal_config_t *bb_confi
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config)
+extern int cancel_bb_task_by_id(int task_id, bb_config_t *bb_config)
 {
     if (!bb_config || task_id <= 0) {
         debug("invalid parametes ");
@@ -2619,7 +2619,7 @@ extern int cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config)
 * delete a cache group by client ids 
 * NOTE: before deleting the cache group, make sure to delete the datasets under this group first.
 */
-extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
+extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out)
 {
     if( bb_config == NULL || resp_out == NULL || delete_params == NULL ){
         debug("invalid parametes to delete group");
@@ -2643,7 +2643,7 @@ extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_mi
     return ret;
 }
 
-extern int create_burst_buffer_dataset(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
+extern int create_burst_buffer_dataset(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out)
 {
     if (bb_config == NULL || resp_out == NULL || create_params == NULL) {
         debug("Invalid parameters to create_burst_buffer_group\n");
@@ -2669,7 +2669,7 @@ extern int create_burst_buffer_dataset(create_params_request *create_params, bb_
     return ret;
 }
 
-extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
+extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out)
 {
     if (bb_config == NULL || resp_out == NULL || delete_params == NULL) {
         debug("invalid parametes to delete group");
@@ -2695,7 +2695,7 @@ extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_
 }
 
 /* 预热数据集 */
-extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out){
+extern int submit_burst_buffer_task(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out){
     if (bb_config == NULL || resp_out == NULL || create_params == NULL) {
         debug("Invalid parameters to submit_burst_buffer_task\n");
         return -1;

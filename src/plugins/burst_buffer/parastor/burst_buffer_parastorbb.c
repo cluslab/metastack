@@ -1561,7 +1561,7 @@ static int _bb_get_parastors_state(void) {
 	if(!bb_state.list_clients)
 		bb_state.list_clients       = list_create(free_bb_client);//需要释放
 	if(!bb_state.list_tasks)
-		bb_state.list_tasks         = list_create(free_bb_task);
+		bb_state.list_tasks         = list_create(slurm_free_task);
 	if(!tmp_list_groups)
 		bb_state.list_groups        = list_create(free_bb_group);//需要释放
 	else
@@ -1591,8 +1591,8 @@ static int _bb_get_parastors_state(void) {
 			bb_state.bb_config.used_groups, bb_state.bb_config.free_groups );
 	debug("the current system has total datasets count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_datasets,
 			bb_state.bb_config.used_datasets, bb_state.bb_config.free_datasets );
-	free_bb_response(resp_out_group);
-	free_bb_response(resp_out_dataset);
+	bb_response_free(resp_out_group);
+	bb_response_free(resp_out_dataset);
 	_bb_min_config_free(bb_min_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
@@ -1740,7 +1740,7 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 					bb_state.bb_config.used_datasets--;
 				slurm_mutex_unlock(&bb_state.bb_mutex);
 			}
-			free_bb_response(resp_out);
+			bb_response_free(resp_out);
 		}
 	} else {
 		info("no dataset to delete for JobId=%u", tmp_job_id);
@@ -1769,7 +1769,7 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 					bb_state.bb_config.used_groups--;
 				slurm_mutex_unlock(&bb_state.bb_mutex);
 			}
-			free_bb_response(resp_out);
+			bb_response_free(resp_out);
 		}
 	} else {
 		info("no group to delete for JobId=%u", tmp_job_id);
@@ -2505,7 +2505,7 @@ static void *_start_teardown(void *x)
 					bb_state.bb_config.used_datasets--;
 				slurm_mutex_unlock(&bb_state.bb_mutex);
 			}
-			free_bb_response(resp_out);
+			bb_response_free(resp_out);
 		}
 	}else {
 		info("no dataset to delete for JobId=%u", tmp_job_id);
@@ -2534,7 +2534,7 @@ static void *_start_teardown(void *x)
 					bb_state.bb_config.used_groups--;
 				slurm_mutex_unlock(&bb_state.bb_mutex);
 			}
-			free_bb_response(resp_out);
+			bb_response_free(resp_out);
 		}
 	}else {
 		info("no group to delete for JobId=%u", tmp_job_id);
@@ -2779,7 +2779,7 @@ static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_ta
 		if (rc != 0) {
 			error("BB-----can't get task %d", bb_task_ids[i]);
 			_bb_min_config_free(bb_min_config);
-			free_bb_response(resp_out);
+			bb_response_free(resp_out);
 			return SLURM_ERROR;
 		}
 		/* 任务状态非完成（作业运行完时），则预热失败 */
@@ -2788,12 +2788,12 @@ static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_ta
 		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
 			debug("BB-----the task %d of job %u haven't finish cache prefetch", bb_task_ids[i], job_id);
 			_bb_min_config_free(bb_min_config);
-			free_bb_response(resp_out);
+			bb_response_free(resp_out);
 			return SLURM_ERROR;
 		}
-		free_bb_task(bb_task);
+		slurm_free_task(bb_task);
 	}
-	free_bb_response(resp_out);
+	bb_response_free(resp_out);
 	return SLURM_SUCCESS;
 }
 
@@ -3145,7 +3145,7 @@ fini:
 // 			if(resp_out->client_join_groups_counts >= bb_state.bb_config.max_clients_join) {
 // 				debug("The node exceeds the configured number of cache groups it can join. ");
 // 				xfree(last_client_ids);
-// 				free_bb_response(resp_out);
+// 				bb_response_free(resp_out);
 // 				hostlist_destroy(hl);
 // 				slurm_mutex_unlock(&bb_state.bb_mutex);
 // 				_bb_min_config_free(bb_min_config);
@@ -3156,7 +3156,7 @@ fini:
 // 			last_client_ids[index++] = resp_out->last_client_id;
 // 			debug(" The host %s clients' IDs is %d of the current node. index is %d", host, resp_out->last_client_id, index);
 // 			xfree(params.host_name);
-// 			free_bb_response(resp_out);
+// 			bb_response_free(resp_out);
 // 			slurm_mutex_unlock(&bb_state.bb_mutex);
 // 		}
 // 		hostlist_destroy(hl);
@@ -3222,7 +3222,7 @@ fini:
 // 		slurm_mutex_lock(&bb_state.bb_mutex);
 // 		if (ret == SLURM_ERROR) {
 // 				xfree(last_client_ids);
-// 				free_bb_response(resp_out1);
+// 				bb_response_free(resp_out1);
 // 				xfree(tmp_job_nodes);
 // 				bb_job->bb_group_ids = group_ids;
 // 				slurm_mutex_unlock(&bb_state.bb_mutex);
@@ -3240,7 +3240,7 @@ fini:
 // 		debug("Create cache group with ID  %d", bb_group->id);
 // 	}
 
-// 	free_bb_response(resp_out1);
+// 	bb_response_free(resp_out1);
 
 // 	//创建数据集规则
 // 	str_split = strtok_r(pfs_copy,",",&save_ptr);
@@ -3261,7 +3261,7 @@ fini:
 // 			if (ret == SLURM_ERROR) {
 // 					xfree(create_params.path);
 // 					xfree(last_client_ids);
-// 					free_bb_response(resp_out3);
+// 					bb_response_free(resp_out3);
 // 					xfree(tmp_job_nodes);
 // 					xfree(pfs_copy);
 // 					//xfree(dataset_ids);
@@ -3279,7 +3279,7 @@ fini:
 // 			list_append(bb_state.list_datasets, bb_dataset);
 // 			debug("Job[%d] create datasets with ID  %d", bb_job->job_id, bb_dataset->id);
 // 			slurm_mutex_unlock(&bb_state.bb_mutex);
-// 			free_bb_response(resp_out3);
+// 			bb_response_free(resp_out3);
 // 		}
 // 		xfree(create_params.path);
 // 		str_split = strtok_r(NULL,",", &save_ptr);
@@ -3310,7 +3310,7 @@ fini:
 // 			continue; /* 不成功不记录，直接跳过 */
 // 		}
 // 		task_ids[tmp_task_cnt++] = resp_out->task_id;
-// 		free_bb_response(resp_out);
+// 		bb_response_free(resp_out);
 // 	}
 // 	//作业需要记录缓存组id和数据集id
 // 	slurm_mutex_lock(&bb_state.bb_mutex);

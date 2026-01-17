@@ -32,5 +32,5 @@ extern int call_rest_api_with_token(const char* url, const char* method, const c
  * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
 extern int call_rest_api_with_token_timeout(const char *url, const char *method, const char *body,
-    const char *token, long timeout, char **response_out);
+    const char *token, uint32_t timeout, char **response_out);
 #endif 
