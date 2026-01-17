@@ -1248,20 +1248,13 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
-					char *tmp_enforce = xstrdup(enforce_val);
-					sub_tok = xstrchr(tmp_enforce, ' ');
-					if (sub_tok)
-						sub_tok[0] = '\0';
-					/* 转换为小写进行比较 */
-					for (char *p = tmp_enforce; *p; p++)
-						*p = tolower(*p);
-					if (xstrcmp(tmp_enforce, "no") == 0 ||
-						xstrcmp(tmp_enforce, "false") == 0 ||
-						xstrcmp(tmp_enforce, "0") == 0) {
+					if (xstrcasecmp(enforce_val, "no") == 0 ||
+						xstrcasecmp(enforce_val, "false") == 0 ||
+						xstrcasecmp(enforce_val, "0") == 0) {
 						bb_job->enforce_bb_flag = false;
-					} else if (xstrcmp(tmp_enforce, "yes") == 0 ||
-						xstrcmp(tmp_enforce, "true") == 0 ||
-						xstrcmp(tmp_enforce, "1") == 0) {
+					} else if (xstrcasecmp(enforce_val, "yes") == 0 ||
+						xstrcasecmp(enforce_val, "true") == 0 ||
+						xstrcasecmp(enforce_val, "1") == 0) {
 						bb_job->enforce_bb_flag = true;
 					} else {
 						/* 无效的 enforce_bb 值 */

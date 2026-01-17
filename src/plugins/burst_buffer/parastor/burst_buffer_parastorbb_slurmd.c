@@ -1,131 +1,23 @@
-/*****************************************************************************\
- *  burst_buffer_parastorbb.c - Plugin for managing burst buffers with parastor
- *****************************************************************************
- *  Copyright (C) SchedMD LLC.
- *
- *  This file is part of Slurm, a resource management program.
- *  For details, see <https://slurm.schedmd.com/>.
- *  Please also read the included file: DISCLAIMER.
- *
- *  Slurm is free software; you can redistribute it and/or modify it under
- *  the terms of the GNU General Public License as published by the Free
- *  Software Foundation; either version 2 of the License, or (at your option)
- *  any later version.
- *
- *  In addition, as a special exception, the copyright holders give permission
- *  to link the code of portions of this program with the OpenSSL library under
- *  certain conditions as described in each individual source file, and
- *  distribute linked combinations including the two. You must obey the GNU
- *  General Public License in all respects for all of the code used other than
- *  OpenSSL. If you modify file(s) with this exception, you may extend this
- *  exception to your version of the file(s), but you are not obligated to do
- *  so. If you do not wish to do so, delete this exception statement from your
- *  version.  If you delete this exception statement from all source files in
- *  the program, then also delete it here.
- *
- *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
- *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- *  details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with Slurm; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
-\*****************************************************************************/
-
 #define _GNU_SOURCE
 
-#include <ctype.h>
-#include <curl/curl.h>
-#include <stdlib.h>
 #include <unistd.h>
-
 #include "slurm/slurm.h"
-
-#include "src/common/assoc_mgr.h"
-#include "src/common/data.h"
-#include "src/common/fd.h"
-#include "src/common/run_command.h"
-#include "src/common/slurm_protocol_pack.h"
-#include "src/common/xsignal.h"
 #include "src/common/xstring.h"
-#include "src/interfaces/serializer.h"
-// #include "src/parastor/slurm_parastor.h"
-#include "src/slurmctld/agent.h"
-#include "src/slurmctld/job_scheduler.h"
-#include "src/slurmctld/locks.h"
-#include "src/slurmctld/node_scheduler.h"
-#include "src/slurmctld/slurmctld.h"
-#include "src/slurmctld/slurmscriptd.h"
-#include "src/slurmctld/trigger_mgr.h"
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
-
 #include "bb_curl_wrapper.h"
 #include "bb_api.h"
-/* Script directive */
-#define DEFAULT_DIRECTIVE_STR "PB"
-/* Script line types */
-#define LINE_OTHER 0
-#define LINE_BB    1
-#define LINE_DW    2
-#define LINE_PB    3
-//define GROUP_SIZE 100 //设置缓存组包含的最大节点数量
-/* Hold job if pre_run fails more times than MAX_RETRY_CNT */
-#define MAX_RETRY_CNT 2
-/* Used for the polling hooks "test_data_{in|out}" */
-#define SLURM_BB_BUSY "BUSY"
-#define GROUP_TYPE_TEMPORARY 0  /* 作业申请缓存组类型，0：临时 */
-#define GROUP_TYPE_PERSISTENT 1 /* 作业申请缓存组类型，1：持久 */
-#define DATASET_TYPE_STRIPED 0 /* 数据集加速类型，0:共享方式 */
-#define DATASET_TYPE_PRIVATE 1 /* 数据集加速类型，1:本地方式 */
-#define GROUP_SIZE  10         /* 默认缓存组大小 */
-/*
- * Limit the number of burst buffers APIs allowed to run in parallel so that we
- * don't exceed process or system resource limits (such as number of processes
- * or max open files) when we run scripts through slurmscriptd. We limit this
- * per "stage" (stage in, pre run, stage out, teardown) so that if we hit the
- * maximum in stage in (for example) we won't block all jobs from completing.
- * We also do this so that if 1000+ jobs complete or get cancelled all at
- * once they won't all run teardown at the same time.
- */
-#define MAX_BURST_BUFFERS_PER_STAGE 128
 
-/*
- * These variables are required by the burst buffer plugin interface.  If they
- * are not found in the plugin, the plugin loader will ignore it.
- *
- * plugin_name - a string giving a human-readable description of the
- * plugin.  There is no maximum length, but the symbol must refer to
- * a valid string.
- *
- * plugin_type - a string suggesting the type of the plugin or its
- * applicability to a particular form of data or method of data handling.
- * If the low-level plugin API is used, the contents of this string are
- * unimportant and may be anything.  Slurm uses the higher-level plugin
- * interface which requires this string to be of the form
- *
- *      <application>/<method>
- *
- * where <application> is a description of the intended application of
- * the plugin (e.g., "burst_buffer" for Slurm burst_buffer) and <method> is a
- * description of how this plugin satisfies that application.  Slurm will only
- * load a burst_buffer plugin if the plugin_type string has a prefix of
- * "burst_buffer/".
- *
- * plugin_version - an unsigned 32-bit integer containing the Slurm version
- * (major.minor.micro combined into a single number).
- */
+
 /*
  * 为兼容 burst_buffer 公共代码中对 plugin_type 的引用，
  * 在 libbb_api.so 中提供一套 Slurm 插件识别符号。
  * 同时避免 dlopen 时出现 undefined symbol: plugin_type。
  */
-const char plugin_name[]    = "bb_api library for parastor burst buffer";
-const char plugin_type[]    = "burst_buffer/parastor/bb_api";
+const char plugin_name[]    = "burst_buffer parastor slurmd plugin";
+const char plugin_type[]    = "burst_buffer/parastor_slurmd";
 const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 static void _test_config();
-
 static bb_state_t bb_state;
 
 /*
@@ -200,7 +92,7 @@ static void _test_config()
 		/* 24-day max time limit. (2073600 seconds) */
 	static uint32_t max_timeout = (60 * 60 * 24 * 24);
 	uint32_t max_groups = 2048;
- 	uint32_t max_datasets = 8096;
+ 	uint32_t max_datasets = 8196;
 	uint32_t max_node_per_groups = 1024;
 	if (bb_state.bb_config.get_sys_state) {
 		error("%s: found get_sys_state which is unused in this plugin, unsetting",
