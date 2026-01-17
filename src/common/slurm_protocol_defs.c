@@ -1716,8 +1716,7 @@ extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg)
 {
 	if(msg) {
 		xfree(msg->nodes);
-		xfree(msg->first_sn);
-		xfree(msg->last_sn);
+		xfree(msg->group_sn);
 		xfree(msg->pfs);
 		xfree(msg);
 	}

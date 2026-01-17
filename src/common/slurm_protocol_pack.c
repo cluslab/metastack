@@ -15937,18 +15937,23 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 		packstr(msg->nodes, 				buffer);
 		pack32(msg->job_id, 				buffer);
 		pack32(msg->user_id, 				buffer);
-		pack32(msg->group_id, 				buffer);
+		//pack32(msg->group_id, 			buffer);
 		pack32(msg->used_groups, 			buffer);
+		if(msg->used_groups > 0 ) {
+			for (int i = 0; i < msg->count; i++) {
+				packstr(msg->group_sn[i],	buffer);
+			}
+		}
 		pack32(msg->used_databases, 		buffer);
 		pack64(msg->req_space, 				buffer);
 		pack32(msg->access_mode, 			buffer);	
 		packstr(msg->pfs, 					buffer);
 		packbool(msg->metadata_acceleration,buffer);
 		pack32(msg->max_clients_per_job, 	buffer);	
-		pack32(msg->max_clients_per_job, 	buffer);	
+		pack32(msg->pfs_cnt, 				buffer);	
 		packbool(msg->bb_enable_pb,			buffer);
 		pack32(msg->flag, 					buffer);	
-		packstr(msg->first_sn, 				buffer);
+		packstr(msg->nodes, 				buffer);
 	}
 	#endif
 
@@ -16218,16 +16223,21 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		safe_unpack32(&msg->user_id, 				buffer);
 		safe_unpack32(&msg->group_id, 				buffer);
 		safe_unpack32(&msg->used_groups, 			buffer);
+		if(msg->used_groups > 0 ) {
+			for (int i = 0; i < msg->count; i++) {
+				packstr(&msg->group_sn[i],			buffer);
+			}
+		}
 		safe_unpack32(&msg->used_databases, 		buffer);
 		safe_unpack64(&msg->req_space, 				buffer);
 		safe_unpack32(&msg->access_mode, 			buffer);	
 		safe_unpackstr(&msg->pfs, 					buffer);
 		safe_unpackbool(&msg->metadata_acceleration,buffer);
 		safe_unpack32(&msg->max_clients_per_job, 	buffer);	
-		safe_unpack32(&msg->max_clients_per_job, 	buffer);	
+		safe_unpack32(&msg->pfs_cnt, 				buffer);	
 		safe_unpackbool(&msg->bb_enable_pb,			buffer);
 		safe_unpack32(&msg->flag, 					buffer);	
-		safe_unpackstr(&msg->first_sn, 				buffer);	
+		safe_unpackstr(&msg->nodes, 				buffer);	
 	} else {
 		goto unpack_error;
 	} 

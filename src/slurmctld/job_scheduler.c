@@ -4166,7 +4166,7 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	burst_buffer_msg_ptr->nodes                  = xstrdup(job_ptr->nodes);
 	burst_buffer_msg_ptr->job_id                 = job_ptr->job_id;
 	burst_buffer_msg_ptr->user_id                = job_ptr->user_id;
-	burst_buffer_msg_ptr->group_id               = job_ptr->group_id;
+	//burst_buffer_msg_ptr->group_id               = job_ptr->group_id;
 	burst_buffer_msg_ptr->used_groups            = job_ptr->need_group_counts;
 	burst_buffer_msg_ptr->used_databases         = job_ptr->need_database_counts;
 	burst_buffer_msg_ptr->req_space              = job_ptr->req_space;
@@ -4175,8 +4175,10 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	burst_buffer_msg_ptr->metadata_acceleration  = job_ptr->metadata_acceleration;
 	burst_buffer_msg_ptr->max_clients_per_job    = job_ptr->max_clients_per_job;
 	burst_buffer_msg_ptr->flag					 = flag;
-	xstrfmtcat(burst_buffer_msg_ptr->first_sn, "g%d+1", job_ptr->job_id);
- 	burst_buffer_msg_ptr->bb_launch_time         = time(NULL);
+	burst_buffer_msg_ptr->group_sn				 = xstrdup(job_ptr->group_sn)
+	burst_buffer_msg_ptr->bb_launch_time         = time(NULL);
+	burst_buffer_msg_ptr->pfs_cnt				 = job_ptr->pfs_cnt;
+	
 
 	agent_arg_ptr 								= xmalloc(sizeof(agent_arg_t));
 	agent_arg_ptr->protocol_version 			= protocol_version;

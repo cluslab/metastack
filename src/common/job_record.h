@@ -544,7 +544,7 @@ struct job_record {
 #ifdef __METASTACK_NEW_PENDING_ORDER
 	uint32_t pending_order;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER3
 	// int bb_group_counts; /* Number of burst buffer groups */
 	// //int *bb_group_ids; /* Sizes of each burst buffer group */
 	// int bb_dataset_counts; /* Number of burst buffer datasets */
@@ -561,10 +561,9 @@ struct job_record {
 	uint32_t create_step;			 //对应作业步
 	bool     bb_need_wait; 			//是否等待bb完成
 	bool 	 enforce_bb_flag; 		//是否强制等待创建缓存组完成
-#endif
-#ifdef __METASTACK_NEW_BURSTBUFFER3
 	uint32_t pfs_cnt; //加速路径个数
-	uint32_t bb_node_cnt;
+	char *group_sn;   //缓存组唯一sn码，作业可能有多个缓存组
+	bool clean_finish; //是否完成清理
 #endif
 
 };

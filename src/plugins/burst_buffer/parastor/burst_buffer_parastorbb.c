@@ -78,7 +78,7 @@
 #define GROUP_TYPE_PERSISTENT 1 /* 作业申请缓存组类型，1：持久 */
 #define DATASET_TYPE_STRIPED 0 /* 数据集加速类型，0:共享方式 */
 #define DATASET_TYPE_PRIVATE 1 /* 数据集加速类型，1:本地方式 */
-#define GROUP_SIZE  10         /* 默认缓存组大小 */
+#define GROUP_SIZE  20         /* 默认缓存组大小 */
 /*
  * Limit the number of burst buffers APIs allowed to run in parallel so that we
  * don't exceed process or system resource limits (such as number of processes
@@ -226,12 +226,12 @@ pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Function prototypes */
 static bb_job_t *_get_bb_job(job_record_t *job_ptr);
-static void _queue_teardown(bb_job_t *bb_job);
+static void _queue_teardown(bb_job_t *bb_job, bool *clean_finish);
 // static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
 // static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
 static int _bb_get_parastors_state(void);
 static void *_start_stage_out(void *x);
-static void *_start_teardown(void *x);
+// static void *_start_teardown(void *x);
 static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_tasks, bb_minimal_config_t *bb_min_config);
 static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config);
 static void _bb_min_config_free(bb_minimal_config_t * config);
@@ -301,7 +301,7 @@ static void _save_bb_state(void)
 					packstr(bb_alloc->pool,		buffer);
 					packstr(bb_alloc->qos,		buffer);
 					pack32(bb_alloc->user_id,	buffer);
-#ifdef __METASTACK_NEW_BURSTBUFFER
+
 					debug("BB-----save parastor bb state");
 					pack16(bb_alloc->state,		buffer);
 					//pack64(bb_alloc->bb_group_id, buffer);
@@ -314,6 +314,7 @@ static void _save_bb_state(void)
 					pack32(bb_alloc->access_mode, buffer);
 					packstr(bb_alloc->pfs, buffer);
 					pack32(bb_alloc->pfs_cnt, buffer);
+					
 					packbool(bb_alloc->metadata_acceleration, buffer);
 					/* Save bb_group_ids array */
 					pack32(bb_alloc->index_groups, buffer);
@@ -336,7 +337,6 @@ static void _save_bb_state(void)
 							pack32(bb_alloc->bb_task_ids[j], buffer);
 						}
 					}
-#endif
 					rec_count++;
 				}
 				bb_alloc = bb_alloc->next;
@@ -730,7 +730,7 @@ static void *_start_stage_out(void *x)
 				bb_alloc->state = BB_STATE_STAGED_IN;
 			}
 		}
-		_queue_teardown(bb_job);
+		_queue_teardown(bb_job, &job_ptr->clean_finish);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 	}
 	unlock_slurmctld(job_write_lock);
@@ -1903,7 +1903,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 		log_flag(BURST_BUF, "Purging buffer for pending %pJ",
 			job_ptr);
 		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		_queue_teardown(bb_job);
+		_queue_teardown(bb_job,  &job_ptr->clean_finish);
 		if (job_ptr->details &&
 			(job_ptr->details->begin_time < defer_time)) {
 			job_ptr->details->begin_time = defer_time;
@@ -1931,7 +1931,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 	case BB_STATE_TEARDOWN_FAIL:
 		log_flag(BURST_BUF, "Restarting burst buffer teardown for %pJ",
 			job_ptr);
-		_queue_teardown(bb_job);
+		_queue_teardown(bb_job, &job_ptr->clean_finish);
 		break;
 	case BB_STATE_COMPLETE:
 		/*
@@ -1976,7 +1976,7 @@ static void _purge_vestigial_bufs(void)
 				/* For parastorbb, try to find bb_job first */
 				bb_job_t *bb_job = bb_job_find(&bb_state, bb_alloc->job_id);
 				if (bb_job) {
-					_queue_teardown(bb_job);
+					_queue_teardown(bb_job,  &job_ptr->clean_finish);
 				} else {
 					/* No bb_job found, use bb_alloc to clean up resources */
 					info("Job and bb_job not found for JobId=%u, cleaning up resources from bb_alloc",
@@ -2437,151 +2437,160 @@ static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
 	xfree(hash_dir);
 }
 
-static void *_start_teardown(void *x)
+// static void *_start_teardown(void *x)
+// {
+// 	bb_job_t *bb_job = (bb_job_t *)x;
+// 	int rc = SLURM_SUCCESS;
+// 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+// 	job_record_t *job_ptr = NULL;
+// 	bb_alloc_t *bb_alloc = NULL;
+
+// 	/* 拿锁，把数据赋值给临时变量，减少持锁时间 */
+// 	slurm_mutex_lock(&bb_state.bb_mutex);
+// 	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
+// 	uint32_t tmp_job_id = bb_job->job_id;
+// 	uint32_t tmp_index_tasks = bb_job->index_tasks;
+// 	int *tmp_task_arr = xmalloc(sizeof(uint32_t) * tmp_index_tasks);
+// 	if (bb_job->bb_task_ids)
+// 		memcpy(tmp_task_arr, bb_job->bb_task_ids, sizeof(uint32_t) * tmp_index_tasks);
+// 	uint32_t tmp_index_datasets = bb_job->index_datasets;
+// 	uint32_t *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
+// 	if (bb_job->bb_dataset_ids)
+// 		memcpy(tmp_dataset_arr, bb_job->bb_dataset_ids, sizeof(uint32_t) * tmp_index_datasets);
+// 	uint32_t tmp_index_groups = bb_job->index_groups;
+// 	uint32_t *tmp_group_arr = xmalloc(sizeof(uint32_t) * tmp_index_groups);
+// 	if (bb_job->bb_group_ids)
+// 		memcpy(tmp_group_arr, bb_job->bb_group_ids, sizeof(uint32_t) * tmp_index_groups);
+// 	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+// 	if (bb_min_config == NULL) {
+// 		error("failed to get bb minimal config for JobId=%u", tmp_job_id);
+// 		return NULL;
+// 	}
+
+// 	DEF_TIMERS
+// 	_incr_parastor_thread_cnt();
+// 	track_script_rec_add(tmp_job_id, 0, pthread_self());
+// 	_calibrate_task_state(tmp_job_id, tmp_task_arr, tmp_index_tasks, bb_min_config); // 查询作业task状态
+
+// 	START_TIMER;
+// 	/* 1) 删除数据集 */
+// 	if (tmp_dataset_arr && tmp_index_datasets > 0) {
+// 		for (int i = 0; i < tmp_index_datasets; i++) {
+// 			delete_params_request delete_params = { 0 };
+// 			delete_params.dataset_id = tmp_dataset_arr[i];
+// 			bb_response *resp_out = xmalloc(sizeof(bb_response));
+// 			int ret = delete_burst_buffer_dataset(&delete_params, bb_min_config, resp_out);
+// 			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
+// 				error("delete dataset %d for JobId=%u failed",
+// 					delete_params.dataset_id, tmp_job_id);
+// 				rc = SLURM_ERROR;
+// 			} else {
+// 				bb_attribute_dataset *bb_dataset_tmp = NULL;
+// 				slurm_mutex_lock(&bb_state.bb_mutex);
+// 				if (bb_state.list_datasets)
+// 					bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &delete_params.dataset_id);
+// 				if (bb_dataset_tmp)
+// 					slurm_free_dataset(bb_dataset_tmp);
+// 				if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
+// 					bb_state.bb_config.free_datasets++;
+// 				if (bb_state.bb_config.used_datasets > 0)
+// 					bb_state.bb_config.used_datasets--;
+// 				slurm_mutex_unlock(&bb_state.bb_mutex);
+// 			}
+// 			bb_response_free(resp_out);
+// 		}
+// 	}else {
+// 		info("no dataset to delete for JobId=%u", tmp_job_id);
+// 	}
+// 	/* 2) 删除缓存组（必须在数据集清理完成后） */
+// 	if (tmp_group_arr && tmp_index_groups > 0) {
+// 		for (int i = 0; i < tmp_index_groups; i++) {
+// 			delete_params_request delete_params = { 0 };
+// 			delete_params.group_id = tmp_group_arr[i];
+// 			bb_response *resp_out = xmalloc(sizeof(bb_response));
+// 			int ret = delete_burst_buffer_group(&delete_params, bb_min_config, resp_out);
+// 			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
+// 				error("delete group %d for JobId=%u failed",
+// 					delete_params.group_id, tmp_job_id);
+// 				rc = SLURM_ERROR;
+// 			} else {
+// 				bb_attribute_group *bb_group_tmp = NULL;
+// 				slurm_mutex_lock(&bb_state.bb_mutex);
+// 				if (bb_state.list_groups)
+// 					bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &delete_params.group_id);
+// 				if (bb_group_tmp)
+// 					slurm_free_group(bb_group_tmp);
+// 				if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
+// 					bb_state.bb_config.free_groups++;
+// 				if (bb_state.bb_config.used_groups > 0)
+// 					bb_state.bb_config.used_groups--;
+// 				slurm_mutex_unlock(&bb_state.bb_mutex);
+// 			}
+// 			bb_response_free(resp_out);
+// 		}
+// 	}else {
+// 		info("no group to delete for JobId=%u", tmp_job_id);
+// 	}
+// 	_bb_min_config_free(bb_min_config);
+// 	xfree(tmp_task_arr);
+// 	xfree(tmp_dataset_arr);
+// 	xfree(tmp_group_arr);
+// 	END_TIMER;
+// 	info("teardown (parastor cleanup) for JobId=%u ran for %s", bb_job->job_id, TIME_STR);
+
+// 	/* 更新作业与分配状态，释放记录 */
+// 	lock_slurmctld(job_write_lock);
+// 	job_ptr = find_job_record(bb_job->job_id);
+// 	_purge_bb_files(bb_job->job_id, job_ptr);
+// 	if (job_ptr) {
+// 		if (rc != SLURM_SUCCESS) {
+// 			job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
+// 			xfree(job_ptr->state_desc);
+// 			xstrfmtcat(job_ptr->state_desc, "%s: teardown cleanup failed", plugin_type);
+// #ifdef __METASTACK_OPT_CACHE_QUERY
+// 			_add_job_state_to_queue(job_ptr);
+// #endif
+// 		} else {
+// 			job_state_unset_flag(job_ptr, JOB_STAGE_OUT);
+// 			xfree(job_ptr->state_desc);
+// 			last_job_update = time(NULL);
+// 		}
+
+// 		slurm_mutex_lock(&bb_state.bb_mutex);
+// 		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
+// 		if (bb_alloc) {
+// 			bb_limit_rem(bb_alloc->user_id, bb_alloc->size, bb_alloc->pool, &bb_state);
+// 			(void)bb_free_alloc_rec(&bb_state, bb_alloc);
+// 		}
+// 		if (rc == SLURM_SUCCESS) {
+// 			bb_job_t *tmp = _get_bb_job(job_ptr);
+// 			if (tmp) {
+// 				bb_set_job_bb_state(job_ptr, tmp, BB_STATE_COMPLETE);
+// 				bb_job_del(&bb_state, tmp->job_id);
+// 			}
+// 		}
+// 		slurm_mutex_unlock(&bb_state.bb_mutex);
+// 	}
+// 	unlock_slurmctld(job_write_lock);
+
+// 	track_script_remove(pthread_self());
+// 	_decr_parastor_thread_cnt();
+// 	return NULL;
+// }
+
+static void _queue_teardown(bb_job_t *bb_job, bool *clean_finish)
 {
-	bb_job_t *bb_job = (bb_job_t *)x;
-	int rc = SLURM_SUCCESS;
-	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
-	job_record_t *job_ptr = NULL;
-	bb_alloc_t *bb_alloc = NULL;
-
-	/* 拿锁，把数据赋值给临时变量，减少持锁时间 */
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-	uint32_t tmp_job_id = bb_job->job_id;
-	uint32_t tmp_index_tasks = bb_job->index_tasks;
-	int *tmp_task_arr = xmalloc(sizeof(uint32_t) * tmp_index_tasks);
-	if (bb_job->bb_task_ids)
-		memcpy(tmp_task_arr, bb_job->bb_task_ids, sizeof(uint32_t) * tmp_index_tasks);
-	uint32_t tmp_index_datasets = bb_job->index_datasets;
-	uint32_t *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
-	if (bb_job->bb_dataset_ids)
-		memcpy(tmp_dataset_arr, bb_job->bb_dataset_ids, sizeof(uint32_t) * tmp_index_datasets);
-	uint32_t tmp_index_groups = bb_job->index_groups;
-	uint32_t *tmp_group_arr = xmalloc(sizeof(uint32_t) * tmp_index_groups);
-	if (bb_job->bb_group_ids)
-		memcpy(tmp_group_arr, bb_job->bb_group_ids, sizeof(uint32_t) * tmp_index_groups);
-	slurm_mutex_unlock(&bb_state.bb_mutex);
-
-	if (bb_min_config == NULL) {
-		error("failed to get bb minimal config for JobId=%u", tmp_job_id);
-		return NULL;
+	if(clean_finish) {
+		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
+		bb_state.bb_config.used_groups				-= bb_job->index_groups
+		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
+		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
+		clean_finish = false;
 	}
+		
 
-	DEF_TIMERS
-	_incr_parastor_thread_cnt();
-	track_script_rec_add(tmp_job_id, 0, pthread_self());
-	_calibrate_task_state(tmp_job_id, tmp_task_arr, tmp_index_tasks, bb_min_config); // 查询作业task状态
-
-	START_TIMER;
-	/* 1) 删除数据集 */
-	if (tmp_dataset_arr && tmp_index_datasets > 0) {
-		for (int i = 0; i < tmp_index_datasets; i++) {
-			delete_params_request delete_params = { 0 };
-			delete_params.dataset_id = tmp_dataset_arr[i];
-			bb_response *resp_out = xmalloc(sizeof(bb_response));
-			int ret = delete_burst_buffer_dataset(&delete_params, bb_min_config, resp_out);
-			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-				error("delete dataset %d for JobId=%u failed",
-					delete_params.dataset_id, tmp_job_id);
-				rc = SLURM_ERROR;
-			} else {
-				bb_attribute_dataset *bb_dataset_tmp = NULL;
-				slurm_mutex_lock(&bb_state.bb_mutex);
-				if (bb_state.list_datasets)
-					bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &delete_params.dataset_id);
-				if (bb_dataset_tmp)
-					free_bb_dataset(bb_dataset_tmp);
-				if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
-					bb_state.bb_config.free_datasets++;
-				if (bb_state.bb_config.used_datasets > 0)
-					bb_state.bb_config.used_datasets--;
-				slurm_mutex_unlock(&bb_state.bb_mutex);
-			}
-			bb_response_free(resp_out);
-		}
-	}else {
-		info("no dataset to delete for JobId=%u", tmp_job_id);
-	}
-	/* 2) 删除缓存组（必须在数据集清理完成后） */
-	if (tmp_group_arr && tmp_index_groups > 0) {
-		for (int i = 0; i < tmp_index_groups; i++) {
-			delete_params_request delete_params = { 0 };
-			delete_params.group_id = tmp_group_arr[i];
-			bb_response *resp_out = xmalloc(sizeof(bb_response));
-			int ret = delete_burst_buffer_group(&delete_params, bb_min_config, resp_out);
-			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-				error("delete group %d for JobId=%u failed",
-					delete_params.group_id, tmp_job_id);
-				rc = SLURM_ERROR;
-			} else {
-				bb_attribute_group *bb_group_tmp = NULL;
-				slurm_mutex_lock(&bb_state.bb_mutex);
-				if (bb_state.list_groups)
-					bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &delete_params.group_id);
-				if (bb_group_tmp)
-					free_bb_group(bb_group_tmp);
-				if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
-					bb_state.bb_config.free_groups++;
-				if (bb_state.bb_config.used_groups > 0)
-					bb_state.bb_config.used_groups--;
-				slurm_mutex_unlock(&bb_state.bb_mutex);
-			}
-			bb_response_free(resp_out);
-		}
-	}else {
-		info("no group to delete for JobId=%u", tmp_job_id);
-	}
-	_bb_min_config_free(bb_min_config);
-	xfree(tmp_task_arr);
-	xfree(tmp_dataset_arr);
-	xfree(tmp_group_arr);
-	END_TIMER;
-	info("teardown (parastor cleanup) for JobId=%u ran for %s", bb_job->job_id, TIME_STR);
-
-	/* 更新作业与分配状态，释放记录 */
-	lock_slurmctld(job_write_lock);
-	job_ptr = find_job_record(bb_job->job_id);
-	_purge_bb_files(bb_job->job_id, job_ptr);
-	if (job_ptr) {
-		if (rc != SLURM_SUCCESS) {
-			job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-			xfree(job_ptr->state_desc);
-			xstrfmtcat(job_ptr->state_desc, "%s: teardown cleanup failed", plugin_type);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-			_add_job_state_to_queue(job_ptr);
-#endif
-		} else {
-			job_state_unset_flag(job_ptr, JOB_STAGE_OUT);
-			xfree(job_ptr->state_desc);
-			last_job_update = time(NULL);
-		}
-
-		slurm_mutex_lock(&bb_state.bb_mutex);
-		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
-		if (bb_alloc) {
-			bb_limit_rem(bb_alloc->user_id, bb_alloc->size, bb_alloc->pool, &bb_state);
-			(void)bb_free_alloc_rec(&bb_state, bb_alloc);
-		}
-		if (rc == SLURM_SUCCESS) {
-			bb_job_t *tmp = _get_bb_job(job_ptr);
-			if (tmp) {
-				bb_set_job_bb_state(job_ptr, tmp, BB_STATE_COMPLETE);
-				bb_job_del(&bb_state, tmp->job_id);
-			}
-		}
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-	}
-	unlock_slurmctld(job_write_lock);
-
-	track_script_remove(pthread_self());
-	_decr_parastor_thread_cnt();
-	return NULL;
-}
-
-static void _queue_teardown(bb_job_t *bb_job)
-{
-	slurm_thread_create_detached(_start_teardown, bb_job);
+	//slurm_thread_create_detached(_start_teardown, bb_job);
 }
 
 // static int _run_real_size(stage_args_t *stage_args, init_argv_f_t init_argv,
@@ -2752,7 +2761,7 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 		rc = _queue_stage_in(job_ptr, bb_job);
 		if (rc != SLURM_SUCCESS) {
 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-			_queue_teardown(bb_job);
+			_queue_teardown(bb_job,  &job_ptr->clean_finish);
 		}
 	}
 	return rc;
@@ -2790,124 +2799,11 @@ static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_ta
 	return SLURM_SUCCESS;
 }
 
-// static int _try_alloc_job_bb(void *x, void *arg)
-// {
-// 	bb_job_queue_rec_t *job_rec = (bb_job_queue_rec_t *) x;
-// 	job_record_t *job_ptr = job_rec->job_ptr;
-// 	bb_job_t *bb_job = job_rec->bb_job;
-// 	int rc = 0;
-
-// 	if (bb_job->state >= BB_STATE_STAGING_IN)
-// 		return SLURM_SUCCESS; /* Job was already allocated a buffer */
-
-// 	// if (bb_job->job_pool && bb_job->req_size)
-// 	// 	rc = bb_test_size_limit(job_ptr, bb_job, &bb_state, NULL);
-// 	// else
-// 	// 	rc = 0;
-
-// 	if (rc == 0) {
-// 		/*
-// 		 * Job could start now. Allocate burst buffer and continue to
-// 		 * the next job.
-// 		 */
-// 		_alloc_job_bb(job_ptr, bb_job, true);
-// 		rc = SLURM_SUCCESS;
-// 	} else if (rc == 1) /* Exceeds configured limits, try next job */
-// 		rc = SLURM_SUCCESS;
-// 	else /* No space currently available, break out of loop */
-// 		rc = SLURM_ERROR;
-
-// 	return rc;
-// }
-// static void _job_queue_del(void *x)
-// {
-// 	bb_job_queue_rec_t *job_rec = (bb_job_queue_rec_t *) x;
-// 	if (job_rec) {
-// 		xfree(job_rec);
-// 	}
-// }
 /*
  * Attempt to allocate resources and begin file staging for pending jobs.
  */
 extern int bb_p_job_try_stage_in(List job_queue)
 {
-	// bb_job_queue_rec_t *job_rec;
-	// //List job_candidates;
-	// list_itr_t *job_iter;
-	// job_record_t *job_ptr;
-	// bb_job_t *bb_job;
-	
-
-	// slurm_mutex_lock(&bb_state.bb_mutex);
-	// log_flag(BURST_BUF, "Mutex locked");
-
-	// if (bb_state.last_load_time == 0) {
-	// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-	// 	return SLURM_SUCCESS;
-	// }
-
-	// /* Identify candidates to be allocated burst buffers */
-	// job_candidates = list_create(_job_queue_del);
-	// job_iter = list_iterator_create(job_queue);
-	// while ((job_ptr = list_next(job_iter))) {
-	// 	if (!IS_JOB_PENDING(job_ptr) ||
-	// 	    (job_ptr->start_time == 0) ||
-	// 	    (job_ptr->burst_buffer == NULL) ||
-	// 	    (job_ptr->burst_buffer[0] == '\0'))
-	// 		continue;
-	// 	if (job_ptr->array_recs &&
-	// 	    ((job_ptr->array_task_id == NO_VAL) ||
-	// 	     (job_ptr->array_task_id == INFINITE)))
-	// 		continue;	/* Can't operate on job array struct */
-	// 	bb_job = _get_bb_job(job_ptr);
-	// 	if (bb_job == NULL)
-	// 		continue;
-	// 	if (bb_job->state == BB_STATE_COMPLETE)
-	// 		bb_set_job_bb_state(job_ptr, bb_job, /* job requeued */
-	// 				    BB_STATE_PENDING);
-	// 	else if (bb_job->state >= BB_STATE_POST_RUN)
-	// 		continue;	/* Requeued job still staging out */
-	// 	job_rec = xmalloc(sizeof(bb_job_queue_rec_t));
-	// 	job_rec->job_ptr = job_ptr;
-	// 	job_rec->bb_job = bb_job;
-	// 	list_push(job_candidates, job_rec);
-	// }
-	// list_iterator_destroy(job_iter);
-
-	// /* Sort in order of expected start time */
-	// list_sort(job_candidates, bb_job_queue_sort);
-
-	// bb_set_use_time(&bb_state);
-	// job_iter = list_iterator_create(job_candidates);
-	// while ((job_rec = list_next(job_iter))) {
-	// 	job_ptr = job_rec->job_ptr;
-	// 	bb_job = job_rec->bb_job;
-	// 	if (bb_job->state >= BB_STATE_STAGING_IN)
-	// 		continue;	/* Job was already allocated a buffer */
-
-	// 	// rc = bb_test_size_limit(job_ptr, bb_job, &bb_state,
-	// 	// 			_queue_teardown);
-	// 	if (rc == 0) {  /* Could start now */
-	// 	// 	(void)_alloc_job_bb(job_ptr, bb_job, true);
-	// 	// 	//校验预热任务状态
-	// 	// 	while ((job_rec = list_next(job_iter))) {
-	// 	// 		if (bb_job->state == BB_STATE_STAGING_IN)
-	// 	// 			/* 只保留task状态为running、submitting或者completed的任务ID */
-	// 	// 			_calibrate_task_state(job_ptr, bb_job);
-	// 	// 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_RUNNING);
-	// 	// 	}
-	// 	// }
-	// 	} else if (rc == 1)	/* Exceeds configured limits */
-	// 		continue;
-	// 	else			/* No space currently available */
-	// 		break;
-	// }
-	// list_iterator_destroy(job_iter);
-
-
-
-	// slurm_mutex_unlock(&bb_state.bb_mutex);
-	//FREE_NULL_LIST(job_candidates);
 
 	return SLURM_SUCCESS;
 }
@@ -2981,413 +2877,6 @@ fini:
 	return rc;
 }
 
-/* Add key=value pairs from file_path to the job's environment */
-// static void _update_job_env(job_record_t *job_ptr, char *file_path)
-// {
-
-// }
-
-// /* Kill job from CONFIGURING state */
-// static void _kill_job(job_record_t *job_ptr, bool hold_job)
-// {
-// 	last_job_update = time(NULL);
-// 	job_ptr->end_time = last_job_update;
-// 	if (hold_job)
-// 		job_ptr->priority = 0;
-// 	build_cg_bitmap(job_ptr);
-// 	job_ptr->exit_code = 1;
-// 	job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-// 	xfree(job_ptr->state_desc);
-// 	job_ptr->state_desc = xstrdup("Burst buffer pre_run error");
-
-// 	//job_state_set(job_ptr, JOB_REQUEUE);
-// 	job_completion_logger(job_ptr, true);
-// 	job_state_set(job_ptr, (JOB_PENDING | JOB_COMPLETING));
-
-// 	deallocate_nodes(job_ptr, false, false, false);
-// #ifdef __METASTACK_OPT_CACHE_QUERY
-// 	_add_job_state_to_queue(job_ptr);
-// #endif
-// }
-
-// static void *_start_pre_run(void *x)
-// {
-//     bb_job_t   *bb_job = NULL;
-// 	bb_alloc_t *bb_alloc = NULL;
-//     int bb_node_cnt = 0;
-//     //int dividend = 10; 
-// 	int *last_client_ids  = NULL;
-// 	uint32_t index = 0;
-// 	uint32_t tmp_groups_count = 0;
-// 	uint32_t *group_ids = NULL;
-// 	uint32_t index_groups = 0;
-// 	char *pfs_copy = NULL, *save_ptr = NULL;;
-// 	char *str_split = NULL;
-// 	uint32_t *dataset_ids = NULL;
-// 	uint32_t  index_datasets = 0;
-// 	int ret = SLURM_SUCCESS;
-// 	bool run_kill_job = false;
-// 	bool hold_job = false;
-// 	create_params_request create_params = {0};
-// 	query_params_request params = {0};
-//     job_record_t *job_ptr;
-// 	/* Locks: read job */
-// 	slurmctld_lock_t job_read_lock = {
-// 		NO_LOCK, READ_LOCK, NO_LOCK, NO_LOCK };
-// 	/* Locks: write job */
-// 	slurmctld_lock_t job_write_lock = {
-// 		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, READ_LOCK };
-// 	int tmp_task_cnt = 0; /* 只记录成功的个数 */
-
-// 	pre_run_bb_args_t *pre_run_args = (pre_run_bb_args_t *) x;
-// 	pthread_t tid = pthread_self();
-// 	track_script_rec_add(pre_run_args->job_id, 0, pthread_self());	
-
-// 	lock_slurmctld(job_read_lock);
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-//     job_ptr = find_job_record(pre_run_args->job_id);
-// 	if (job_ptr) {
-// 		bb_job   =  _get_bb_job(job_ptr);
-// 		bb_alloc =  bb_find_alloc_rec(&bb_state, job_ptr);
-// 		if(!bb_job || !bb_alloc) {
-// 			error( "Invalid jobid: %d can't start pre_run", pre_run_args->job_id);
-// 			slurm_mutex_unlock(&bb_state.bb_mutex);
-// 			unlock_slurmctld(job_read_lock);
-// 			track_script_remove(pthread_self());
-// 			_decr_parastor_thread_cnt();
-// 			return NULL;
-// 		}
-// 	} else {
-// 	    error( "Invalid jobid: %d", pre_run_args->job_id);
-// 		slurm_mutex_unlock(&bb_state.bb_mutex);
-// 		unlock_slurmctld(job_read_lock);
-// 		track_script_remove(pthread_self());
-// 		_decr_parastor_thread_cnt();
-// 		return NULL;
-// 	}
-	
-// 	char *tmp_job_nodes = bitmap2node_name(job_ptr->node_bitmap);
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-// 	unlock_slurmctld(job_read_lock);
-
-
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-// 	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-// 	if(!bb_state.list_clients || !bb_state.list_groups ||!bb_state.list_datasets) {
-// 	    error("The bb system may not be initialized.");
-// 		slurm_mutex_unlock(&bb_state.bb_mutex);
-// 		track_script_remove(pthread_self());
-// 		_decr_parastor_thread_cnt();
-// 		return NULL;
-// 	}
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-// 	if (bb_min_config == NULL) {
-// 		error("failed to get bb minimal config for JobId=%u", bb_job->job_id);
-// 		track_script_remove(pthread_self());
-// 		_decr_parastor_thread_cnt();
-// 		return NULL;
-// 	}
-
-// 	//创建缓存组
-
-// 	if( bb_state.bb_config.max_clients_per_job <= 0) {
-// 		 bb_state.bb_config.max_clients_per_job = GROUP_SIZE;
-// 	}
-// 	//数据集规则目录
-// 	pfs_copy = xstrdup(bb_job->pfs);
-	
-// 	if(tmp_job_nodes) {
-// 		hostlist_t *hl = NULL;
-// 		char *host = NULL;
-// 		hl = hostlist_create_dims(tmp_job_nodes, 0);
-// 		if (!hl) {
-// 			error( "Invalid hostlist: %s", tmp_job_nodes);
-// 			//slurm_mutex_unlock(&bb_state.bb_mutex);
-// 			_bb_min_config_free(bb_min_config);
-// 			track_script_remove(pthread_self());
-// 			_decr_parastor_thread_cnt();
-// 			return NULL;
-// 		}
-// 		last_client_ids= xmalloc(sizeof(int) * hostlist_count(hl));  // 存储每个节点的 last_client_id
-
-
-// 		while ((host = hostlist_shift_dims(hl, 0))) {
-// 			bb_response *resp_out = xmalloc(sizeof(bb_response));	
-// 			params.host_name = xstrdup(host);
-// 			params.max_clients_join = bb_state.bb_config.max_clients_join;
-// 			params.limit = 1;
-// 			params.start = 0;
-// 			params.ids = NULL;
-// 			get_set_burst_buffer_clients_and_tasks(&params, bb_min_config, RESULT_CLIENT, resp_out);
-// 			slurm_mutex_lock(&bb_state.bb_mutex);
-// 			bb_attribute_client *bb_client = resp_out->bb_client;
-// 			bb_attribute_client* bb_client_tmp = NULL;
-//                 if(bb_state.list_clients)
-//                     bb_client_tmp = list_remove_first(bb_state.list_clients, _find_client_key, bb_client->hostname);
-//                 if(bb_client_tmp) {
-//                     free_bb_client(bb_client_tmp);
-//                 }
-//             list_append(bb_state.list_clients, bb_client);
-			
-
-// 			if(bb_state.bb_config.max_clients_join <= 0) {
-// 				bb_state.bb_config.max_clients_join = 32; //默认最大客户端连接数
-// 			}
-// 			debug(" The number of cache groups the %s has joined is %d, and the current maximum limit for this node is %d.",
-// 				host, resp_out->client_join_groups_counts, bb_state.bb_config.max_clients_join);
-// 			if(resp_out->client_join_groups_counts >= bb_state.bb_config.max_clients_join) {
-// 				debug("The node exceeds the configured number of cache groups it can join. ");
-// 				xfree(last_client_ids);
-// 				bb_response_free(resp_out);
-// 				hostlist_destroy(hl);
-// 				slurm_mutex_unlock(&bb_state.bb_mutex);
-// 				_bb_min_config_free(bb_min_config);
-// 				track_script_remove(pthread_self());
-// 				_decr_parastor_thread_cnt();
-// 				return NULL;
-// 			}
-// 			last_client_ids[index++] = resp_out->last_client_id;
-// 			debug(" The host %s clients' IDs is %d of the current node. index is %d", host, resp_out->last_client_id, index);
-// 			xfree(params.host_name);
-// 			bb_response_free(resp_out);
-// 			slurm_mutex_unlock(&bb_state.bb_mutex);
-// 		}
-// 		hostlist_destroy(hl);
-	
-// 	} else{
-// 		error("host list is empty");
-// 	}
-	
-// 	tmp_groups_count  = index / ( bb_state.bb_config.max_clients_per_job);
-// 	uint32_t dvi = index % ( bb_state.bb_config.max_clients_per_job);
-// 	if( dvi > 0) {
-// 		tmp_groups_count += 1;
-// 	}
-	
-// 	group_ids = xmalloc(sizeof(int) * (tmp_groups_count));
-
-// 	bb_response *resp_out1 = xmalloc(sizeof(bb_response));	
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-// 	// bb_state.bb_config.free_groups    -= tmp_groups_count;
-// 	// bb_state.bb_config.free_datasets  -= bb_job->pfs_cnt * tmp_groups_count;
-// 	// bb_state.bb_config.used_groups    += tmp_groups_count;
-// 	// bb_state.bb_config.used_datasets  += bb_job->pfs_cnt * tmp_groups_count;
-// 	bb_job->index_groups              = tmp_groups_count;
-// 	bb_job->index_datasets            = bb_job->pfs_cnt * tmp_groups_count;
-// 	int tmp_datasets_counts           = bb_job->index_groups * bb_job->pfs_cnt;
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-
-// 	if(tmp_groups_count > 1) {
-// 		for (size_t i = 0; i < index; i +=  bb_state.bb_config.max_clients_per_job) {
-// 			int tmp_ids[ bb_state.bb_config.max_clients_per_job]; // 创建一个新数组保存这一组 id
-// 			size_t batch_size = (i +  bb_state.bb_config.max_clients_per_job <= index) ?  bb_state.bb_config.max_clients_per_job : (index - i);  // 计算当前批次的大小（可能最后一组不足 10 个）
-// 			memcpy(tmp_ids, &last_client_ids[i], batch_size * sizeof(int));
-// 			create_params.client_ids = tmp_ids;
-// 			create_params.client_count = batch_size;
-// 			ret = create_burst_buffer_group(&create_params, bb_min_config, resp_out1);
-// 			slurm_mutex_lock(&bb_state.bb_mutex);
-// 			if (ret == SLURM_ERROR) {
-// 				xfree(last_client_ids);
-// 				xfree(tmp_job_nodes);
-// 				bb_job->bb_group_ids  = group_ids;
-// 				slurm_mutex_unlock(&bb_state.bb_mutex);
-// 				_bb_min_config_free(bb_min_config);
-// 				track_script_remove(pthread_self());
-// 				_decr_parastor_thread_cnt();
-// 				return NULL;
-// 			}
-// 			group_ids[index_groups++] = resp_out1->group_id; //记录创建缓存组id
-// 			//group->id = resp_out1->group_id;
-			
-// 			bb_attribute_group* bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &resp_out1->group_id);
-// 			bb_attribute_group* bb_group     = resp_out1->bb_group;
-// 			if(bb_group_tmp)
-// 				free_bb_dataset(bb_group_tmp);
-// 			list_append(bb_state.list_groups, bb_group);
-// 			slurm_mutex_unlock(&bb_state.bb_mutex);
-// 			debug("Create cache group with ID  %d",  bb_group->id);
-// 		}
-// 	} else {
-// 		create_params.client_ids = last_client_ids;
-// 		create_params.client_count = index;
-// 		ret = create_burst_buffer_group(&create_params, bb_min_config, resp_out1);
-// 		group_ids[index_groups++] = resp_out1->group_id; //记录创建缓存组id
-// 		slurm_mutex_lock(&bb_state.bb_mutex);
-// 		if (ret == SLURM_ERROR) {
-// 				xfree(last_client_ids);
-// 				bb_response_free(resp_out1);
-// 				xfree(tmp_job_nodes);
-// 				bb_job->bb_group_ids = group_ids;
-// 				slurm_mutex_unlock(&bb_state.bb_mutex);
-// 				_bb_min_config_free(bb_min_config);
-// 				track_script_remove(pthread_self());
-// 				_decr_parastor_thread_cnt();
-// 				return NULL;
-// 		}
-// 		bb_attribute_group* bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &resp_out1->group_id);
-// 		bb_attribute_group* bb_group     = resp_out1->bb_group;
-// 		if(bb_group_tmp)
-// 			free_bb_dataset(bb_group_tmp);	
-// 		list_append(bb_state.list_groups, bb_group);
-// 		slurm_mutex_unlock(&bb_state.bb_mutex);
-// 		debug("Create cache group with ID  %d", bb_group->id);
-// 	}
-
-// 	bb_response_free(resp_out1);
-
-// 	//创建数据集规则
-// 	str_split = strtok_r(pfs_copy,",",&save_ptr);
-// 	dataset_ids = xmalloc(sizeof(int) * tmp_datasets_counts);
-// 	while (str_split) {	
-// 		//create_params.path = xstrdup(str_split);
-// 		for (size_t i = 0; i < index_groups; i++) {
-// 			bb_response *resp_out3 = xmalloc(sizeof(bb_response));	
-// 			create_params.group_id = group_ids[i];
-// 			create_params.path = xstrdup(str_split);
-
-// 			if ( bb_job->type == DATASET_TYPE_PRIVATE )
-// 				create_params.task_type = LOCAL_CACHE;
-// 			else
-// 				create_params.task_type = SHARE_CACHE;	
-// 			ret = create_burst_buffer_dataset(&create_params, bb_min_config, resp_out3);
-// 			slurm_mutex_lock(&bb_state.bb_mutex);
-// 			if (ret == SLURM_ERROR) {
-// 					xfree(create_params.path);
-// 					xfree(last_client_ids);
-// 					bb_response_free(resp_out3);
-// 					xfree(tmp_job_nodes);
-// 					xfree(pfs_copy);
-// 					//xfree(dataset_ids);
-// 					//bb_job->bb_dataset_ids =  dataset_ids;
-// 					error("Failed create datasets with ID[%ld]  %d and path is %s",  i, dataset_ids[index_datasets], str_split);
-// 					//run_kill_job = true;
-// 					slurm_mutex_unlock(&bb_state.bb_mutex);
-// 					break;
-// 			}	
-// 			dataset_ids[index_datasets++] = resp_out3->dataset_id;
-// 			bb_attribute_dataset* bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &resp_out3->dataset_id);
-// 			bb_attribute_dataset* bb_dataset     = resp_out3->bb_dataset;
-// 			if(bb_dataset_tmp)
-// 				free_bb_dataset(bb_dataset_tmp);
-// 			list_append(bb_state.list_datasets, bb_dataset);
-// 			debug("Job[%d] create datasets with ID  %d", bb_job->job_id, bb_dataset->id);
-// 			slurm_mutex_unlock(&bb_state.bb_mutex);
-// 			bb_response_free(resp_out3);
-// 		}
-// 		xfree(create_params.path);
-// 		str_split = strtok_r(NULL,",", &save_ptr);
-// 	}
-// 	xfree(pfs_copy);
-
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-// 	bb_job->bb_group_ids = group_ids;
-// 	bb_job->bb_dataset_ids = dataset_ids;
-// 	bb_job->index_datasets = index_datasets;
-// 	uint32_t tmp_index_datasets = bb_job->index_datasets;
-// 	uint32_t *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
-// 	if (bb_job->bb_dataset_ids)
-// 		memcpy(tmp_dataset_arr, bb_job->bb_dataset_ids, sizeof(int) * tmp_index_datasets);
-// 	uint32_t *task_ids = xmalloc(sizeof(int) * tmp_index_datasets); /* 最多每个数据集一个task */
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-
-// 	for (size_t i = 0; i < tmp_index_datasets; i++) {
-// 		create_params_request create_params1 = {0};
-// 		create_params1.dataset_id = tmp_dataset_arr[i];
-// 		create_params1.task_type = BURST_BUFFER_TASK_TYPE_PREFETCH;
-// 		create_params1.error_action_type = 0; //0:单个节点失败后任务中断执行;1:单个节点失败后任务继续执行
-// 		debug(" start the warm-up task ");
-// 		bb_response *resp_out = xmalloc(sizeof(bb_response));
-// 		int rc = submit_burst_buffer_task(&create_params1, bb_min_config, resp_out);
-// 		if (rc != 0 || resp_out->err_no != 0) {
-// 			debug("submit task of the dataset %d failure", create_params1.dataset_id);
-// 			continue; /* 不成功不记录，直接跳过 */
-// 		}
-// 		task_ids[tmp_task_cnt++] = resp_out->task_id;
-// 		bb_response_free(resp_out);
-// 	}
-// 	//作业需要记录缓存组id和数据集id
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-
-// 	/* 把实际task个数存储到job_ptr，任务号数组存储到bb_job */
-// 	bb_job->index_tasks = tmp_task_cnt;
-// 	task_ids = xrealloc(task_ids, tmp_task_cnt * sizeof(int));
-// 	bb_job->bb_task_ids = task_ids;
-
-// 	alter_bb_alloc_job_rec(bb_alloc, bb_job, true);
-
-// 	debug(" The number of cache groups that have been created is %d," 
-// 			"and the number of datasets that have been created is %d,"	 
-// 			" and the number of taskids that have been created is %d",	
-// 			index_groups, index_datasets, tmp_task_cnt);
-// 	xfree(last_client_ids);
-// 	xfree(tmp_job_nodes);
-// 	xfree(tmp_dataset_arr);
-		
-//     char* new_state_str = bb_state_string(BB_STATE_RUNNING);
-//     // bb_job->state = BB_STATE_RUNNING;
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-// 	_bb_min_config_free(bb_min_config);
-// 	//////////
-
-//     // //slurm_mutex_unlock(&bb_state.bb_mutex);
-//     // lock_slurmctld(job_write_lock);
-//     // if (!job_ptr) {
-//     //     /* This should never happen, but handle it just in case. */
-// 	// 	error("%s: Could not find job_ptr for JobId=%u, unable to set new burst buffer state %s in job.",
-// 	// 		__func__, bb_job->job_id, new_state_str);
-// 	// 	_bb_min_config_free(bb_min_config);
-// 	// 	track_script_remove(pthread_self());
-// 	// 	_decr_parastor_thread_cnt();
-// 	// 	return;
-//     // }
-//     // log_flag(BURST_BUF, "Modify %pJ burst buffer state from %s to %s",
-//     //      job_ptr, job_ptr->burst_buffer_state, new_state_str);
-//     // xfree(job_ptr->burst_buffer_state);
-
-//     // job_ptr->burst_buffer_state = xstrdup(new_state_str);
-//     // unlock_slurmctld(job_write_lock);
-//     // /* 只保留task状态为running、submitting或者completed的任务ID */
-// 	lock_slurmctld(job_write_lock);
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-// 	if (ret != SLURM_SUCCESS) {
-// 		/* pre_run failure */
-// 		trigger_burst_buffer();
-// 		error("pre_run failed for JobId=%u", pre_run_args->job_id);
-// 		bb_update_system_comment(job_ptr, "pre_run", "pre_run failed for JobId", 0);
-// 		if (job_ptr && bb_job) {
-// 			if (IS_JOB_RUNNING(job_ptr))
-// 				run_kill_job = true;
-// 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-// 			hold_job = true;
-// 			_queue_teardown(bb_job);
-// 		}
-// 	} else if (bb_job) {
-// 		/* pre_run success and the job's BB record exists */
-// 		/* 状态已经在前面设置为 BB_STATE_RUNNING，这里只需要确保一致性 */
-// 		if (bb_job->state != BB_STATE_RUNNING) {
-// 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_RUNNING);
-// 		}
-// 	}
-
-// 	if (run_kill_job) {
-// 		job_state_unset_flag(job_ptr, JOB_CONFIGURING);
-// #ifdef __METASTACK_OPT_CACHE_QUERY
-// 		_add_job_state_to_queue(job_ptr);
-// #endif
-// 	}
-// 	prolog_running_decr(job_ptr);
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-// 	if (run_kill_job) {
-// 		/* bb_mutex must be unlocked before calling this */
-// 		_kill_job(job_ptr, hold_job);
-// 	}
-// 	unlock_slurmctld(job_write_lock);
-// 	track_script_remove(pthread_self());
-// 	_decr_parastor_thread_cnt();
-// 	return NULL;
-	
-// }
-
 /* Attempt to claim burst buffer resources.
  * At this time, bb_g_job_test_stage_in() should have been run successfully AND
  * the compute nodes selected for the job.
@@ -3396,11 +2885,13 @@ fini:
  */
 extern int bb_p_job_begin(job_record_t *job_ptr)
 {
-    bb_job_t *bb_job = NULL;
+	bb_job_t *bb_job = NULL;
 	// pre_run_bb_args_t *pre_run_args;
-    uint32_t bb_node_cnt = 0;
+	uint32_t bb_node_cnt = 0;
 	int ret = SLURM_SUCCESS;
-
+#ifdef __METASTACK_NEW_BURSTBUFFER3	
+	int i = 0 ;
+#endif
 	if ((job_ptr->burst_buffer == NULL) || (job_ptr->burst_buffer[0] == '\0')){
 		debug("BB-----jobid %d no need burst buffer", job_ptr->job_id);
 		return ret;
@@ -3408,57 +2899,57 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 
 	if (!job_ptr->job_resrcs || !job_ptr->job_resrcs->nodes) {
 		error("%pJ lacks node allocation",
-		      job_ptr);
+			job_ptr);
 		return SLURM_ERROR;
 	}
 
-    slurm_mutex_lock(&bb_state.bb_mutex);
-    log_flag(BURST_BUF, "%pJ",
-         job_ptr);
-    if (bb_state.last_load_time == 0) {
-        info("Burst buffer down, can not start %pJ",
-              job_ptr);
-        slurm_mutex_unlock(&bb_state.bb_mutex);
-        return SLURM_ERROR;
-    }
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	log_flag(BURST_BUF, "%pJ",
+		job_ptr);
+	if (bb_state.last_load_time == 0 ) {
+		info("Burst buffer down, can not start %pJ",
+			job_ptr);
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+		return SLURM_ERROR;
+	}
 
-    bb_job = _get_bb_job(job_ptr);
-    if (!bb_job) {
-        error("no job record buffer for %pJ",
-              job_ptr);
-        xfree(job_ptr->state_desc);
-        job_ptr->state_desc =
-            xstrdup("Could not find burst buffer record");
-        job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-        //_queue_teardown(bb_job);
-        slurm_mutex_unlock(&bb_state.bb_mutex);
+	bb_job = _get_bb_job(job_ptr);
+	if (!bb_job || (bb_job->pfs_cnt < 0)) {
+		error("no job record buffer for %pJ",
+			job_ptr);
+		xfree(job_ptr->state_desc);
+		job_ptr->state_desc =
+			xstrdup("Could not find burst buffer record");
+		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
+		//_queue_teardown(bb_job);
+		slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-        _add_job_state_to_queue(job_ptr);
+		_add_job_state_to_queue(job_ptr);
 #endif
-        return SLURM_ERROR;
-    }
+		return SLURM_ERROR;
+	}
 
-    if(job_ptr->node_bitmap)
-        bb_node_cnt = bit_set_count(job_ptr->node_bitmap);//计算分配的节点数量
-    else {
-        error("no job nodes for %pJ, node bitmap is %d", job_ptr, bb_node_cnt);
-        xfree(job_ptr->state_desc);
-        job_ptr->state_desc = xstrdup("Could not find job node");
-        job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-        slurm_mutex_unlock(&bb_state.bb_mutex);
+	if(job_ptr->node_bitmap)
+		bb_node_cnt = bit_set_count(job_ptr->node_bitmap);//计算分配的节点数量
+	else {
+		error("no job nodes for %pJ, node bitmap is %d", job_ptr, bb_node_cnt);
+		xfree(job_ptr->state_desc);
+		job_ptr->state_desc = xstrdup("Could not find job node");
+		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
+		slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-        _add_job_state_to_queue(job_ptr);
+		_add_job_state_to_queue(job_ptr);
 #endif
-        return SLURM_ERROR;
-    }
+		return SLURM_ERROR;
+	}
 	if (bb_state.bb_config.max_clients_per_job <= 0) {
 		bb_state.bb_config.max_clients_per_job = GROUP_SIZE;
 	}
 
-    job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_job + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_job; 
+	job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_job + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_job; 
 	job_ptr->need_database_counts = job_ptr->need_group_counts * bb_job->pfs_cnt;
 	job_ptr->enforce_bb_flag = bb_job->enforce_bb_flag;
-    log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
+	log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
 	log_flag(BURST_BUF, "required number of datasets %d", job_ptr->need_database_counts);
 	if(job_ptr->enforce_bb_flag)
 		log_flag(BURST_BUF, "forced use of BB acceleration; do not satisfied, queue up");
@@ -3467,20 +2958,26 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	//job_ptr->req_space                 = bb_job->req_space;
 	//job_ptr->access_mode 	   		   = bb_job->access_mode;
 	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
-
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+	job_ptr->pfs_cnt				= bb_job->pfs_cnt;
+	job_ptr->group_sn 				= xmalloc(job_ptr->need_group_counts * sizeof(char *));
+	for (i = 0; i < job_ptr->need_group_counts; i++) {
+		job_ptr->group_sn[i] = xstrdup_printf("j%un%d", job_ptr->job_id, i); // sn 最长存储限制16位，第一个字符是字目作业id为uint32_t类型，最大值为4294 9672 95
+	}
+#endif
 	job_ptr->req_space            = bb_job->req_space;  	//当前作业请求的空间
 	job_ptr->access_mode          = bb_job->access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
 	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
 	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
-	job_ptr->pfs_cnt= bb_job->pfs_cnt;
+
 	if (job_ptr->need_group_counts > bb_state.bb_config.free_groups 
 			|| job_ptr->need_database_counts > bb_state.bb_config.free_datasets ) {
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		debug("free groups or datasets is not enough,requie groups count:%d,"
-			  "free groups count:%d, require datasets count:%d, free datasets count:%d",
-			  job_ptr->need_group_counts, bb_state.bb_config.free_groups, 
-			  job_ptr->need_database_counts, bb_state.bb_config.free_datasets);
-			  job_ptr->bb_need_wait = true;
+			"free groups count:%d, require datasets count:%d, free datasets count:%d",
+			job_ptr->need_group_counts, bb_state.bb_config.free_groups, 
+			job_ptr->need_database_counts, bb_state.bb_config.free_datasets);
+			job_ptr->bb_need_wait = true;
 	} else {
 		job_ptr->bb_need_wait = false;
 	}
@@ -3575,7 +3072,7 @@ extern int bb_p_job_start_stage_out(job_record_t *job_ptr)
 	} else if (bb_job->state < BB_STATE_RUNNING) {
 		/* Job never started. Just teardown the buffer */
 		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		_queue_teardown(bb_job);
+		_queue_teardown(bb_job, &job_ptr->clean_finish);
 	} else if (bb_job->state < BB_STATE_POST_RUN) {
 		_pre_queue_stage_out(job_ptr, bb_job);
 	}
@@ -3732,7 +3229,7 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 			bb_alloc->state_time = time(NULL);
 			bb_state.last_update_time = time(NULL);
 		}
-		_queue_teardown(bb_job);
+		_queue_teardown(bb_job,  &job_ptr->clean_finish);
 	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 

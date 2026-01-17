@@ -251,8 +251,9 @@ extern void job_record_delete(void *job_entry)
 	xfree(job_ptr->batch_features);
 	xfree(job_ptr->batch_host);
 	xfree(job_ptr->burst_buffer);
-#ifdef  __METASTACK_NEW_BURSTBUFFER2
-	xfree(job_ptr->pfs);		
+#ifdef  __METASTACK_NEW_BURSTBUFFER3
+	xfree(job_ptr->pfs);	
+	xfree(job_ptr->group_sn);
 #endif
 	xfree(job_ptr->burst_buffer_state);
 	xfree(job_ptr->comment);
@@ -942,6 +943,11 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		// packstr(dump_job_ptr->burst_buffer2, buffer);
 		pack32(dump_job_ptr->need_group_counts,        buffer);
+		if(dump_job_ptr->need_group_count > 0) {
+			for (int i = 0; i < dump_job_ptr->need_group_counts; i++) {
+				packstr(dump_job_ptr->need_group_counts[i],	buffer);
+			}	
+		}
 		pack32(dump_job_ptr->need_database_counts,     buffer);
 		pack64(dump_job_ptr->req_space, 		       buffer);
 		pack32(dump_job_ptr->access_mode, 		       buffer);	
@@ -2911,6 +2917,11 @@ extern int job_record_unpack(job_record_t **out,
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		safe_unpack32(&job_ptr->need_group_counts, 	  	 buffer);
+		if(job_ptr->need_group_counts > 0 ) {
+			for (int i = 0; i < job_ptr->need_group_counts; i++) {
+				safe_unpackstr(&job_ptr->need_group_counts[i],	buffer);
+			}
+		}
 		safe_unpack32(&job_ptr->need_database_counts,	 buffer);
 		safe_unpack64(&job_ptr->req_space,	 		 	 buffer);
 		safe_unpack32(&job_ptr->access_mode,	 	 	 buffer);
@@ -2922,6 +2933,8 @@ extern int job_record_unpack(job_record_t **out,
 		safe_unpack32(&job_ptr->create_step,	 		 buffer);	
 		safe_unpackbool(&job_ptr->bb_need_wait,			 buffer);
 		safe_unpackbool(&job_ptr->enforce_bb_flag,		 buffer);
+		safe_unpack32(&job_ptr->pfs_cnt,	 		 	 buffer);
+		safe_unpackbool(&job_ptr->clean_finish,			 buffer);
 #endif
 	} else if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		safe_unpack32(&job_ptr->array_job_id, buffer);
