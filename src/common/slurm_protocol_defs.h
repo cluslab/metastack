@@ -943,25 +943,25 @@ typedef struct prolog_launch_msg {
 #endif
 } prolog_launch_msg_t;
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER3
 typedef struct burst_buffer_launch_msg {
 	char *nodes;			/* list of nodes allocated to job */
 	uint32_t job_id;		/* job ID */
 	uint32_t user_id;		/* user the job runs as */	
-	uint32_t group_id;		/* group submitted under */
-
+	//uint32_t group_id;		/* group submitted under */
+	char *group_sn;       /* 缓存组SN */
 	uint32_t used_groups; 
 	uint32_t used_databases;
+	uint32_t pfs_cnt;
 	uint64_t req_space;		   //当前作业请求的空间
 	uint32_t access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
 	char     *pfs;             //后端存储路径,可能有多个
 	bool     metadata_acceleration; //是否开启元数据加速
 	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
+	
 	bool	 bb_enable_pb; //是否开启pb
 	bool     bb_ready;     //计算节点的burstbuffer是否已经准备好
 	uint32_t flag;       //3:launch_prolog 2:launch_job(job_ptr) 1: srun_allocate
-	char	 *first_sn;
-	char	 *last_sn;
 	time_t   bb_launch_time;	/* When the prolog was launched from the
 					 * controller -- PrologFlags=alloc */
 } burst_buffer_launch_msg_t;
