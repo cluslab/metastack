@@ -2874,6 +2874,10 @@ cleanup:
 
 	// 通知 slurmctld 创建完成
 	_notify_slurmctld_create_bb_fini(req->job_id, rc);
+
+
+
+
 }
 
 /**
