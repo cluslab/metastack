@@ -263,7 +263,7 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
 	return rc;
 }
 
-extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache)
+extern int bb_p_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char *path, bool is_use_metadata, bool is_share_cache)
 {
 	int rc = SLURM_ERROR;
 	if (!group_sn || !path) {
@@ -273,6 +273,7 @@ extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 	create_params_request *create_params = xmalloc(sizeof(create_params_request));
 	create_params->group_sn = xstrdup(group_sn);
 	create_params->path = xstrdup(path);
+	create_params->group_id = group_id;
 	create_params->is_use_metadata = is_use_metadata;
 	if (is_share_cache == true) {
 		create_params->data_cache_type = SHARE_CACHE;
@@ -321,7 +322,7 @@ extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 }
 
 
-extern int bb_p_submit_bb_task(int dataset_id, int task_type)
+extern int bb_p_submit_bb_task(uint32_t dataset_id, int task_type)
 {
 	int rc = SLURM_ERROR;
 	if (dataset_id <= 0 || (task_type != BURST_BUFFER_TASK_TYPE_PREFETCH && task_type != BURST_BUFFER_TASK_TYPE_RECYCLE)) {
@@ -552,7 +553,7 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 	return rc;
 }
 
-extern int bb_p_delete_bb_dataset_by_id(int dataset_id, int group_id, char * path)
+extern int bb_p_delete_bb_dataset_by_id(uint32_t dataset_id, int group_id, char * path)
 {
 	int rc = SLURM_ERROR;
 	if (dataset_id <= 0) {
@@ -607,7 +608,7 @@ extern int bb_p_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
  * @param bb_config 最小配置
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_p_cancel_bb_task_by_id(int task_id)
+extern int bb_p_cancel_bb_task_by_id(uint32_t task_id)
 {
 	int rc = SLURM_ERROR;
 	slurm_mutex_lock(&bb_state.bb_mutex);

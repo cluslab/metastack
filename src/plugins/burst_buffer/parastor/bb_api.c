@@ -893,10 +893,10 @@ static char *concatenate_group_strings(bb_config_t *bb_config, void *params, cal
         xstrfmtcat(body, "]");
         /* del_delay_time */
         if (create_params->del_delay_time > 0)
-            xstrfmtcat(body, ",\"del_delay_time\":%d", create_params->del_delay_time);
+            xstrfmtcat(body, ",\"del_delay_time\":%ld", (long)create_params->del_delay_time);
         /* fault_delay_time */
         if (create_params->fault_delay_time > 0)
-            xstrfmtcat(body, ",\"fault_delay_time\":%d", create_params->fault_delay_time);
+            xstrfmtcat(body, ",\"fault_delay_time\":%ld", (long)create_params->fault_delay_time);
         xstrfmtcat(body, "}");
         //debug("the request body of create groups:%s", body);
         /* END---assembl body*/      
@@ -923,7 +923,7 @@ static char *concatenate_group_strings(bb_config_t *bb_config, void *params, cal
             debug("invaild group_id to delete group \n");
             return NULL;
         }
-        xstrfmtcat(tmp_params_str, "id=%d", delete_params->group_id);  
+        xstrfmtcat(tmp_params_str, "id=%u", delete_params->group_id);  
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s", 
             bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
         debug("the request url of delete groups:%s", url_api);    
@@ -1009,7 +1009,7 @@ static char *concatenate_dataset_strings(bb_config_t *bb_config, void *params, c
         /* START---assembl body*/
         xstrfmtcat(body, "{");
         xstrfmtcat(body, "\"path\":\"%s\"", create_params->path);
-        xstrfmtcat(body, ",\"group_id\":%d", create_params->group_id);
+        xstrfmtcat(body, ",\"group_id\":%u", create_params->group_id);
         if (create_params->is_use_metadata == true && create_params->data_cache_type == LOCAL_CACHE) {
             xstrfmtcat(body, ",\"ordinary_mode\":\"%s\"", "METADATA_RW_DATA_R");
         }
@@ -1048,7 +1048,7 @@ static char *concatenate_dataset_strings(bb_config_t *bb_config, void *params, c
             debug("invaild dataset_id to delete dataset \n");
             return NULL;
         }
-        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%d",
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%u",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->dataset_id);
         debug("the request url of delete dataset:%s", url_api);
         if (call_rest_api_with_token(url_api, "DELETE", NULL, bb_config->token, &json_string) != 0) {
@@ -1243,7 +1243,7 @@ static char *concatenate_task_strings(bb_config_t *bb_config, void *params, call
         /* START---assembl body*/
         xstrfmtcat(body, "{");
         /* dataset_id */
-        xstrfmtcat(body, "\"dataset_id\":%d", create_params->dataset_id);
+        xstrfmtcat(body, "\"dataset_id\":%u", create_params->dataset_id);
         /* type */
         if (create_params->task_type == BURST_BUFFER_TASK_TYPE_PREFETCH)
             xstrfmtcat(body, ",\"type\":\"%s\"", "BURST_BUFFER_TASK_TYPE_PREFETCH");
@@ -1276,7 +1276,7 @@ static char *concatenate_task_strings(bb_config_t *bb_config, void *params, call
             debug("invaild task_id to cancel task \n");
             return NULL;
         }
-        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks/%d:cancel",
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks/%u:cancel",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->task_id);
         debug("the request url of cancel task:%s", url_api);
         if (call_rest_api_with_token(url_api, "PUT", NULL, bb_config->token, &json_string) != 0) {
@@ -1543,12 +1543,12 @@ extern int get_set_burst_buffer_clients_and_tasks( query_params_request *query_p
 
 
 /* 获取单个task，输出为task */
-extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_task,
+extern int get_single_burst_buffer_tasks( uint32_t task_id, bb_attribute_task *bb_task,
                                             bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
 
     if (bb_config == NULL || resp_out == NULL || bb_task == NULL) {
-        debug("Invalid parameters to get_single_burst_buffer_tasks\n");
+        debug("Invalid parameters\n");
         return SLURM_ERROR;
     }
     int ret = 0;
@@ -1575,7 +1575,7 @@ extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_tas
     }
     /* 检查查询到的task数据ID是否正确 */
     if (bb_task->task_id != task_id) {
-        error("get task id error, the task_id  is %d, but return task_id is %d",task_id, bb_task->task_id);
+        error("get task id error, the task_id  is %u, but return task_id is %u",task_id, bb_task->task_id);
         xfree(json_string);
         return SLURM_ERROR;
     }
@@ -1704,7 +1704,7 @@ static int call_bb_api_of_group(bb_config_t *bb_config, void *params, call_type 
         if (delete_params->group_sn) {
             xstrfmtcat(tmp_params_str, "sn=%s", delete_params->group_sn);
         } else if (delete_params->group_id > 0) {
-            xstrfmtcat(tmp_params_str, "id=%d", delete_params->group_id);
+            xstrfmtcat(tmp_params_str, "id=%u", delete_params->group_id);
         }
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s", bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
         debug("the request url of delete groups:%s", url_api);
@@ -1843,7 +1843,7 @@ static int call_bb_api_of_dataset(bb_config_t *bb_config, void *params, call_typ
             debug("invaild dataset_id to delete dataset \n");
             return BB_CODE_ERROR;
         }
-        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%d",
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%u",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->dataset_id);
         debug("the request url of delete dataset:%s", url_api);
         ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->other_timeout, &json_string);
@@ -1978,7 +1978,7 @@ static int call_bb_api_of_task(bb_config_t *bb_config, void *params, call_type t
         /* START---assembl body*/
         xstrfmtcat(body, "{");
         /* dataset_id */
-        xstrfmtcat(body, "\"dataset_id\":%d", create_params->dataset_id);
+        xstrfmtcat(body, "\"dataset_id\":%u", create_params->dataset_id);
         /* type */
         if (create_params->task_type == BURST_BUFFER_TASK_TYPE_PREFETCH)
             xstrfmtcat(body, ",\"type\":\"%s\"", "BURST_BUFFER_TASK_TYPE_PREFETCH");
@@ -2012,7 +2012,7 @@ static int call_bb_api_of_task(bb_config_t *bb_config, void *params, call_type t
             debug("invaild task_id to cancel task \n");
             return BB_CODE_ERROR;
         }
-        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks/%d:cancel",
+        xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks/%u:cancel",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->task_id);
         debug("the request url of cancel task:%s", url_api);
         ret = call_rest_api_with_token_timeout(url_api, "PUT", NULL, bb_config->token, bb_config->other_timeout, &json_string);
@@ -2383,10 +2383,10 @@ extern int query_bb_groupid_by_sn(char *group_sn, bb_config_t *bb_min_config)
  * @param path 数据集路径
  * @return 存在返回datasetid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_config_t *bb_config)
+extern int query_datasetid_by_path_groupid( uint32_t group_id, const char *path, bb_config_t *bb_config)
 {
 
-    if (!bb_config || group_id < 0 || !path) {
+    if (!bb_config || group_id <= 0 || !path) {
         debug("Invalid parameters \n");
         return BB_CODE_ERROR;
     }
@@ -2434,7 +2434,7 @@ extern int query_datasetid_by_path_groupid(const int group_id, const char *path,
     }
     /* 确认查询到的group的sn与传入的一致 */
     if (ret == 0 && (xstrcmp(bb_dataset->path, path) != 0 || bb_dataset->group_id != group_id)) {
-        error(" the path  is %s, but return path is %s; the group_id is %d , but return group_id is %d", 
+        error(" the path  is %s, but return path is %s; the group_id is %u , but return group_id is %u", 
             path, bb_dataset->path, group_id , bb_dataset->group_id);
         free_bb_dataset(bb_dataset);
         free_bb_response(resp_out);
@@ -2501,7 +2501,7 @@ extern int submit_bb_task(create_params_request *create_params, bb_config_t *bb_
 extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attribute_task *bb_task)
 {
     if (bb_config == NULL || bb_task == NULL) {
-        debug("Invalid parameters to get_single_burst_buffer_tasks\n");
+        debug("Invalid parameters\n");
         return SLURM_ERROR;
     }
     int ret = 0;
@@ -2512,7 +2512,7 @@ extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attr
     query_params.limit = 1;
     query_params.task_type = BURST_BUFFER_TASK_TYPE_NULL;
     query_params.task_state = BB_TASK_STATE_NULL;
-    query_params.task_id = task_id;
+    query_params.task_id = (uint32_t)task_id;
     ret = call_bb_api_of_task(bb_config, &query_params, QUERY_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
@@ -2663,7 +2663,7 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int delete_bb_dataset_by_id(int dataset_id, bb_config_t *bb_config)
+extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config)
 {
     if (!bb_config || dataset_id <= 0) {
         debug("invalid parametes ");
@@ -2705,7 +2705,7 @@ extern int delete_bb_dataset_by_id(int dataset_id, bb_config_t *bb_config)
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int cancel_bb_task_by_id(int task_id, bb_config_t *bb_config)
+extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config)
 {
     if (!bb_config || task_id <= 0) {
         debug("invalid parametes ");

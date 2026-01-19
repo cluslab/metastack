@@ -60,8 +60,8 @@ before call API,must initialize the structure,and set must params
     - host_name_match_mode:选，0:精确查询，1:模糊查询
     */
 typedef struct { 
-    int start; /* Query starting from which record */
-    int limit; /* Number of records to query */
+    uint32_t start; /* Query starting from which record */
+    uint32_t limit; /* Number of records to query */
     // int calc_count; /* Current page number */
 
     /* groups para */
@@ -69,21 +69,21 @@ typedef struct {
     char* client_ids;
     char* client_ips;
     char* host_name; 
-    int client_ids_count;
+    uint32_t client_ids_count;
     char* group_sn;
     
-    int client_ips_count; 
+    uint32_t client_ips_count; 
     int client_ip_match_mode; /* 0: Exact match, 1: Fuzzy match */
-    int host_name_count;    
+    uint32_t host_name_count;    
     int host_name_match_mode; /* 0: Exact match, 1: Fuzzy match */
 
    /* datasets result */
     const char *path;/* dataset path, fuzzy match*/
-    int group_id ;/* cache group id . Default value is 0, indicating no restriction */
+    uint32_t group_id ;/* cache group id . Default value is 0, indicating no restriction */
     uint32_t max_clients_join;
 
-    int task_id; // 
-    int dataset_id; // dataset id
+    uint32_t task_id; // 
+    uint32_t dataset_id; // dataset id
     /* clients result */
     bb_task_type task_type;
     bb_task_state_type task_state;
@@ -123,19 +123,19 @@ typedef enum {
 typedef struct {
     /* create group params */
     char *group_sn;
-    int client_count; /*  The client_count and client_ids must be entered at the same time. */
-    int *client_ids;
-    int del_delay_time; /* delay time for delete operation,defalut is 3600s */
-    int fault_delay_time; /* fault_delay_time: delay time for fault operation,defalut is 3600s */
+    uint32_t client_count; /*  The client_count and client_ids must be entered at the same time. */
+    uint32_t *client_ids;
+    time_t del_delay_time; /* delay time for delete operation,defalut is 3600s */
+    time_t fault_delay_time; /* fault_delay_time: delay time for fault operation,defalut is 3600s */
 
     /* create datasets params */
     char *path;
-    int group_id;
+    uint32_t group_id;
     bool is_use_metadata;
     data_cache_type data_cache_type;
 
     /* submit task params */
-    int dataset_id;
+    uint32_t dataset_id;
     bb_task_type task_type;
     /* 
     Type of execution behavior after exception.
@@ -157,10 +157,10 @@ typedef struct {
  *  - task_id 取消任务的ID
  */
 typedef struct {
-    int group_id;
+    uint32_t group_id;
     char *group_sn;
-    int dataset_id;
-    int task_id;
+    uint32_t dataset_id;
+    uint32_t task_id;
 } delete_params_request;
 
 /* get permanent token */
@@ -173,7 +173,7 @@ extern List get_datasets_burst_buffer(query_params_request *query_params, bb_min
 extern int get_set_burst_buffer_clients_and_tasks(query_params_request *query_params,  bb_minimal_config_t *bb_min_config, result_type type, bb_response *resp_out);
 
 /* get single task,return data of task into bb_task */
-extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_task,  bb_minimal_config_t *bb_min_config, bb_response *resp_out);
+extern int get_single_burst_buffer_tasks( uint32_t task_id, bb_attribute_task *bb_task,  bb_minimal_config_t *bb_min_config, bb_response *resp_out);
 /* Create a cache group by client ids */
 extern int create_burst_buffer_group(create_params_request *create_params,  bb_minimal_config_t *bb_min_config, bb_response *resp_out);
 
@@ -219,7 +219,7 @@ extern int query_bb_groupid_by_sn(char *group_sn, bb_config_t *bb_min_config);
  * @param path 数据集路径
  * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_config_t *bb_config);
+extern int query_datasetid_by_path_groupid( uint32_t group_id, const char *path, bb_config_t *bb_config);
 
 /**
  * @brief 根据group_id、path查询bb任务
@@ -252,7 +252,7 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config);
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int delete_bb_dataset_by_id(int dataset_id, bb_config_t *bb_config);
+extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config);
 
 
 /**
@@ -261,7 +261,7 @@ extern int delete_bb_dataset_by_id(int dataset_id, bb_config_t *bb_config);
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int cancel_bb_task_by_id(int task_id, bb_config_t *bb_config);
+extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config);
 
 
 /* 
