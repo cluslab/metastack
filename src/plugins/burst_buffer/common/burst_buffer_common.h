@@ -363,8 +363,8 @@ typedef struct {
    uint32_t id;       // 客户端ID,对应client_id
    char *hostname;
    char *ip;
-   time_t total_size;/* bytes */
-   time_t used_size; /* bytes */
+   uint32_t total_size;/* bytes */
+   uint32_t used_size; /* bytes */
    int version;
    int ips_count;
    uint32_t devices_count;
@@ -377,8 +377,6 @@ typedef struct {
     uint32_t task_id;
     uint32_t dataset_id;
     uint32_t group_id;
-    // char *task_state;
-    // char *task_type; 
 	bb_task_type task_type;
 	bb_task_state_type task_state;
     time_t begin_time;
