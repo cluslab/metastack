@@ -9,6 +9,8 @@
 
 
 /* Declaration Helper Function */
+static int _json_uint32_t_value(const json_t *j, uint32_t *value);
+static int _convert_json_t_to_time_t(const json_t *j, time_t *value);
 
 static int _parse_json_result_to_dataset(json_t *dataset_obj, bb_attribute_dataset *dataset);
 static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group);
@@ -32,14 +34,14 @@ static char *_encode_password(const char *password);
 static char *_base64_encode(const unsigned char *data, size_t len);
 
 static char *concatenate_group_strings(bb_config_t *bb_config, void *params, call_type type);
-static int _convert_json_t_to_uint32_t(const json_t *j, uint32_t *value);
+
 /**
 * Parse the JSON-formatted group result and populate the group structure.
 * @param group_obj Pointer to the JSON object containing group information.
 * @param group Pointer to the group structure used to store the parsed data.
 */
 
-static int _convert_json_t_to_uint32_t(const json_t *j, uint32_t *value)
+static int _json_uint32_t_value(const json_t *j, uint32_t *value)
 {
     json_int_t v;
 
@@ -58,6 +60,34 @@ static int _convert_json_t_to_uint32_t(const json_t *j, uint32_t *value)
     return SLURM_SUCCESS;
 }
 
+static int _json_time_t_value(const json_t *j, time_t *value)
+{
+    json_int_t v;
+    time_t t;
+
+    if (!j || !value)
+        return SLURM_ERROR;
+
+    if (!json_is_integer(j))
+        return SLURM_ERROR;
+
+    v = json_integer_value(j);
+
+    /* 通常不接受负时间戳（1970-01-01 之前） */
+    if (v < 0)
+        return SLURM_ERROR;
+
+    /*
+     * 关键点：
+     * 先强转，再反向比较，确保没有发生截断或溢出
+     */
+    t = (time_t)v;
+    if ((json_int_t)t != v)
+        return SLURM_ERROR;
+
+    *value = t;
+    return SLURM_SUCCESS;
+}
 
 static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group)
 {
@@ -68,45 +98,67 @@ static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *gr
         return SLURM_ERROR;
     }
     /* example
-     * curl -k --location --request GET 'https://11.16.123.210:8443/burst-buffer/cache-groups' --header 'token:xxxxxx'
-     * {"detail_err_msg":"","err_msg":"","err_no":0,"result":
-     * {"cache_groups":
-     * [{"client_ids":[1000003],"
-     * client_num":1,
-     * "del_delay_time":3600,
-     * "fault_delay_time":3600,
-     * "hit_bytes_rate":0,
-     * "hit_io_num_rate":0,
-     * "id":2,
-     * "meta_hit_io_num_rate":0.00},
-     * {"client_ids":[1000004],"client_num":1,"del_delay_time":3600,"fault_delay_time":3600,"hit_bytes_rate":0,
-     * "hit_io_num_rate":0,"id":3,"meta_hit_io_num_rate":0}],
-     * "isExact":false,
-     * "limit":0,
-     * "searches":[],
-     * "sort":"NONE",
-     * "start":0,"
-     * total":2},
-     * "sync":true,
-     * "time_stamp":0,
-     * "time_zone_offset":0,
-     * "trace_id":"[37af548c89]"}
-     */
+    * curl -k --location --request GET 'https://11.16.123.210:8443/burst-buffer/cache-groups' --header 'token:xxxxxx'
+    * {"detail_err_msg":"","err_msg":"","err_no":0,"result":
+    * {"cache_groups":
+    * [{"client_ids":[1000003],"
+    * client_num":1,
+    * "del_delay_time":3600,
+    * "fault_delay_time":3600,
+    * "hit_bytes_rate":0,
+    * "hit_io_num_rate":0,
+    * "id":2,
+    * "meta_hit_io_num_rate":0.00},
+    * {"client_ids":[1000004],"client_num":1,"del_delay_time":3600,"fault_delay_time":3600,"hit_bytes_rate":0,
+    * "hit_io_num_rate":0,"id":3,"meta_hit_io_num_rate":0}],
+    * "isExact":false,
+    * "limit":0,
+    * "searches":[],
+    * "sort":"NONE",
+    * "start":0,"
+    * total":2},
+    * "sync":true,
+    * "time_stamp":0,
+    * "time_zone_offset":0,
+    * "trace_id":"[37af548c89]"}
+    */
     memset(group, 0, sizeof(*group));
     json_t *client_ids          = json_object_get(group_obj, "client_ids");
-    group->id                   = json_integer_value(json_object_get(group_obj, "id"));
-    group->client_num           = json_integer_value(json_object_get(group_obj, "client_num"));
-    group->del_delay_time       = json_integer_value(json_object_get(group_obj, "del_delay_time"));
-    group->fault_delay_time     = json_integer_value(json_object_get(group_obj, "fault_delay_time"));
+    if(_json_uint32_t_value(json_object_get(group_obj, "id"), &group->id) == SLURM_ERROR) {
+       return SLURM_ERROR; 
+    }
+        
+    if(_json_uint32_t_value(json_object_get(group_obj, "client_num"), &group->client_num)== SLURM_ERROR) {
+         return SLURM_ERROR;
+    }
+
+    if(_json_uint32_t_value(json_object_get(group_obj, "del_delay_time"), &group->del_delay_time) == SLURM_ERROR) {
+       return SLURM_ERROR; 
+    }
+        
+    if( _json_uint32_t_value(json_object_get(group_obj, "fault_delay_time"), &group->fault_delay_time) == SLURM_ERROR) {
+         return SLURM_ERROR;
+    }
+
+    if(_json_time_t_value(json_object_get(group_obj, "client_num"),      &group->client_num ) == SLURM_ERROR) {
+         return SLURM_ERROR;
+    } 
+    if(_json_time_t_value(json_object_get(group_obj, "del_delay_time"),  &group->del_delay_time ) == SLURM_ERROR) {
+         return SLURM_ERROR;
+    }
+    if(_json_time_t_value(json_object_get(group_obj, "fault_delay_time"),& group->fault_delay_time) == SLURM_ERROR) {
+         return SLURM_ERROR;
+    }
+
     group->hit_bytes_rate       = json_real_value(json_object_get(group_obj, "hit_bytes_rate"));
     group->hit_io_num_rate      = json_real_value(json_object_get(group_obj, "hit_io_num_rate"));
     group->meta_hit_io_num_rate = json_real_value(json_object_get(group_obj, "meta_hit_io_num_rate"));
     group->group_sn             = xstrdup(json_string_value(json_object_get(group_obj, "sn")));
     /* check whether client_ids exists and is an array.
-     * the following if statement is temporarily not used.
-     */ 
+    * the following if statement is temporarily not used.
+    */ 
     if (client_ids && json_is_array(client_ids)) {
-        int n             = json_array_size(client_ids);
+       int n             = json_array_size(client_ids);
         group->client_ids = xcalloc(n, sizeof(int));
         for (int j = 0; j < n; j++) { 
             json_t *id_json = json_array_get(client_ids, j);

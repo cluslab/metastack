@@ -321,11 +321,11 @@ typedef enum {
 
 /* 定义缓存组结构体 bb_cache_group */
 typedef struct {
-    int id;                    // 缓存组ID
-    int client_num;            // 客户端数量
-    int *client_ids;           // 客户端ID数组指针
-    int del_delay_time;        // 删除延迟时间
-    int fault_delay_time;      // 故障延迟时间
+    uint32_t id;                    // 缓存组ID
+    uint32_t client_num;            // 客户端数量
+    uint32_t *client_ids;           // 客户端ID数组指针
+    time_t del_delay_time;        // 删除延迟时间
+    time_t fault_delay_time;      // 故障延迟时间
     double hit_bytes_rate;     // 命中字节率
     double hit_io_num_rate;    // 命中IO数量率
     double meta_hit_io_num_rate; // 元数据命中IO数量率
@@ -337,16 +337,16 @@ typedef struct {
     char *burstBufferDataSetCacheMode;
     char *burstBufferDataSetCacheType;
     char *burstBufferMetaDataSetCacheMode;
-    int64_t create_time;
+    time_t create_time;
     bool dataOpen;
     char *data_cache_mode;
     char *data_cache_type;
-    int fs_id;
-    int group_id;
-    int id;
+    uint32_t fs_id;
+    uint32_t group_id;
+    uint32_t id;
     char *idesc;
     int key;
-    int64_t last_submit_task_time;
+    time_t last_submit_task_time;
     char *last_submit_task_type;
     bool lock_flag;
     char *meta_data_cache_mode;
@@ -360,35 +360,35 @@ typedef struct {
 
 /* ip info of bb_attribute_client */
 typedef struct {
-   int id;       // 客户端ID,对应client_id
+   uint32_t id;       // 客户端ID,对应client_id
    char *hostname;
    char *ip;
-   long long total_size;/* bytes */
-   long long used_size; /* bytes */
+   time_t total_size;/* bytes */
+   time_t used_size; /* bytes */
    int version;
    int ips_count;
-   int devices_count;
-   int groups_count; // 节点当前加入缓存组数量
-   int *groups_ids;;
+   uint32_t devices_count;
+   uint32_t groups_count; // 节点当前加入缓存组数量
+   uint32_t *groups_ids;;
    char *cap_dev_name;
 } bb_attribute_client;
 
 typedef struct {
-    int task_id;
-    int dataset_id;
-    int group_id;
+    uint32_t task_id;
+    uint32_t dataset_id;
+    uint32_t group_id;
     // char *task_state;
     // char *task_type; 
 	bb_task_type task_type;
 	bb_task_state_type task_state;
-    long long begin_time;
-    long long end_time;
-    long long completed_bytes;
-    int total_node_num;
-    int completed_node_num;
-    int canceled_node_num;
+    time_t begin_time;
+    time_t end_time;
+    time_t completed_bytes;
+    uint32_t total_node_num;
+    uint32_t completed_node_num;
+    uint32_t canceled_node_num;
     char *error_action_type;
-    int failed_node_num;
+    uint32_t failed_node_num;
     char **failed_node_infos;
     int exit_code;
 } bb_attribute_task;
@@ -414,23 +414,23 @@ typedef struct {
 typedef struct {
     int err_no;
     int sync;
-    long time_stamp;
-    long time_zone_offset;
+    time_t time_stamp;
+    time_t time_zone_offset;
     char* trace_id;
     char* err_msg;
     char* detail_err_msg;
 
-    int group_count;      // 存储当前缓存组数量
-    int dataset_count;    // 存储当前数据集规则数量
-    int client_count;
-    int task_count;
+    uint32_t group_count;      // 存储当前缓存组数量
+    uint32_t dataset_count;    // 存储当前数据集规则数量
+    uint32_t client_count;
+    uint32_t task_count;
 
-	int client_join_groups_counts;
+	uint32_t client_join_groups_counts;
 
-    int group_id;
-    int dataset_id; 
-    int task_id;
-	int last_client_id;  // Record the IDs of the current node.
+    uint32_t group_id;
+    uint32_t dataset_id; 
+    uint32_t task_id;
+	uint32_t last_client_id;  // Record the IDs of the current node.
 	bb_attribute_group   *bb_group;
 	bb_attribute_client  *bb_client;
 	bb_attribute_dataset *bb_dataset;
