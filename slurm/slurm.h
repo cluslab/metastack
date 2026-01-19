@@ -454,6 +454,7 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_NEW_BURSTBUFFER
 #define __METASTACK_NEW_BURSTBUFFER1
 #define __METASTACK_NEW_BURSTBUFFER2
+#define __METASTACK_NEW_BURSTBUFFER3
 #endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES

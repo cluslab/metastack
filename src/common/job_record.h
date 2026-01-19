@@ -562,7 +562,7 @@ struct job_record {
 	bool     bb_need_wait; 			//是否等待bb完成
 	bool 	 enforce_bb_flag; 		//是否强制等待创建缓存组完成
 	uint32_t pfs_cnt; //加速路径个数
-	char *group_sn;   //缓存组唯一sn码，作业可能有多个缓存组
+	char **group_sn;   //缓存组唯一sn码，作业可能有多个缓存组
 	bool clean_finish; //是否完成清理
 #endif
 

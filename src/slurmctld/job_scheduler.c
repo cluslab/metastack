@@ -4172,12 +4172,19 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	burst_buffer_msg_ptr->req_space              = job_ptr->req_space;
 	burst_buffer_msg_ptr->access_mode            = job_ptr->access_mode;
 	burst_buffer_msg_ptr->pfs			         = xstrdup(job_ptr->pfs);
-	burst_buffer_msg_ptr->metadata_acceleration  = job_ptr->metadata_acceleration;
-	burst_buffer_msg_ptr->max_clients_per_job    = job_ptr->max_clients_per_job;
-	burst_buffer_msg_ptr->flag					 = flag;
-	burst_buffer_msg_ptr->group_sn				 = xstrdup(job_ptr->group_sn)
-	burst_buffer_msg_ptr->bb_launch_time         = time(NULL);
-	burst_buffer_msg_ptr->pfs_cnt				 = job_ptr->pfs_cnt;
+	burst_buffer_msg_ptr->metadata_acceleration = job_ptr->metadata_acceleration;
+	burst_buffer_msg_ptr->max_clients_per_job = job_ptr->max_clients_per_job;
+	burst_buffer_msg_ptr->flag = flag;
+	if (job_ptr->group_sn && job_ptr->need_group_counts > 0) {
+		burst_buffer_msg_ptr->group_sn = xmalloc(job_ptr->need_group_counts * sizeof(char *));
+		for (int i = 0; i < job_ptr->need_group_counts; i++) {
+			burst_buffer_msg_ptr->group_sn[i] = xstrdup(job_ptr->group_sn[i]);
+		}
+	} else {
+		burst_buffer_msg_ptr->group_sn = NULL;
+	}
+	burst_buffer_msg_ptr->bb_launch_time = time(NULL);
+	burst_buffer_msg_ptr->pfs_cnt = job_ptr->pfs_cnt;
 	
 
 	agent_arg_ptr 								= xmalloc(sizeof(agent_arg_t));

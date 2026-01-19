@@ -949,7 +949,7 @@ typedef struct burst_buffer_launch_msg {
 	uint32_t job_id;		/* job ID */
 	uint32_t user_id;		/* user the job runs as */	
 	//uint32_t group_id;		/* group submitted under */
-	char *group_sn;       /* 缓存组SN */
+	char **group_sn;       /* 缓存组SN */
 	uint32_t used_groups; 
 	uint32_t used_databases;
 	uint32_t pfs_cnt;

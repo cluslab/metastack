@@ -192,6 +192,16 @@ burst_buffer_parastorbb_la_LIBADD = libbb_api.la \
 				    -ljansson 
 am_burst_buffer_parastorbb_la_OBJECTS = burst_buffer_parastorbb.lo
 burst_buffer_parastorbb_la_OBJECTS = $(am_burst_buffer_parastorbb_la_OBJECTS)
+
+burst_buffer_parastorbb_slurmd_la_LIBADD = libbb_api.la \
+				    ../common/libburst_buffer_common.la \
+			            -lcurl \
+				    -ljansson 
+am_burst_buffer_parastorbb_slurmd_la_OBJECTS = burst_buffer_parastorbb_slurmd.lo
+burst_buffer_parastorbb_slurmd_la_OBJECTS = $(am_burst_buffer_parastorbb_slurmd_la_OBJECTS)
+
+
+
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
@@ -204,6 +214,12 @@ burst_buffer_parastorbb_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(AM_CFLAGS) $(CFLAGS) $(burst_buffer_parastorbb_la_LDFLAGS) \
 	$(LDFLAGS) -o $@
+
+burst_buffer_parastorbb_slurmd_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(AM_CFLAGS) $(CFLAGS) $(burst_buffer_parastorbb_slurmd_la_LDFLAGS) \
+	$(LDFLAGS) -o $@
+
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -220,7 +236,8 @@ DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir) -I$(top_builddir)/slurm
 depcomp = $(SHELL) $(top_srcdir)/auxdir/depcomp
 am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/bb_api.Plo ./$(DEPDIR)/bb_curl_wrapper.Plo \
-	./$(DEPDIR)/burst_buffer_parastorbb.Plo 
+	./$(DEPDIR)/burst_buffer_parastorbb.Plo \
+	./$(DEPDIR)/burst_buffer_parastorbb_slurmd.Plo
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -240,7 +257,7 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libbb_api_la_SOURCES) $(burst_buffer_parastorbb_la_SOURCES)
+SOURCES = $(libbb_api_la_SOURCES) $(burst_buffer_parastorbb_la_SOURCES) $(burst_buffer_parastorbb_slurmd_la_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -526,7 +543,7 @@ AUTOMAKE_OPTIONS = foreign
 PLUGIN_FLAGS = -module -avoid-version --export-dynamic
 AM_CPPFLAGS = -DSLURM_PLUGIN_DEBUG -I$(top_srcdir) -I$(top_srcdir)/src/common -I$(top_srcdir)/src/plugins/burst_buffer/common @PARASTOR_CPPFLAGS@ @LIBCURL_CPPFLAGS@
 
-pkglib_LTLIBRARIES = libbb_api.la burst_buffer_parastorbb.la
+pkglib_LTLIBRARIES = libbb_api.la burst_buffer_parastorbb.la burst_buffer_parastorbb_slurmd.la
 
 libbb_api_la_SOURCES = \
 	bb_api.c bb_api.h \
@@ -547,6 +564,18 @@ burst_buffer_parastorbb_la_LIBADD = libbb_api.la \
 				    @PARASTOR_LDFLAGS@ \
 				    @LIBCURL@
 burst_buffer_parastorbb_la_DEPENDENCIES = libbb_api.la
+
+burst_buffer_parastorbb_slurmd_la_SOURCES = \
+	burst_buffer_parastorbb_slurmd.c 
+
+burst_buffer_parastorbb_slurmd_la_LDFLAGS = $(PLUGIN_FLAGS)
+burst_buffer_parastorbb_slurmd_la_LIBADD = libbb_api.la \
+				    ../common/libburst_buffer_common.la \
+				    @PARASTOR_LDFLAGS@ \
+				    @LIBCURL@
+burst_buffer_parastorbb_slurmd_la_DEPENDENCIES = libbb_api.la
+
+
 all: all-am
 
 .SUFFIXES:
@@ -626,6 +655,8 @@ libbb_api.la: $(libbb_api_la_OBJECTS) $(libbb_api_la_DEPENDENCIES) $(EXTRA_libbb
 burst_buffer_parastorbb.la: $(burst_buffer_parastorbb_la_OBJECTS) $(burst_buffer_parastorbb_la_DEPENDENCIES) $(EXTRA_burst_buffer_parastorbb_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(burst_buffer_parastorbb_la_LINK) -rpath $(pkglibdir) $(burst_buffer_parastorbb_la_OBJECTS) $(burst_buffer_parastorbb_la_LIBADD) $(LIBS)
 
+burst_buffer_parastorbb_slurmd.la: $(burst_buffer_parastorbb_slurmd_la_OBJECTS) $(burst_buffer_parastorbb_slurmd_la_DEPENDENCIES) $(EXTRA_burst_buffer_parastorbb_slurmd_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(burst_buffer_parastorbb_slurmd_la_LINK) -rpath $(pkglibdir) $(burst_buffer_parastorbb_slurmd_la_OBJECTS) $(burst_buffer_parastorbb_slurmd_la_LIBADD) $(LIBS)
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -635,6 +666,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bb_api.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bb_curl_wrapper.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/burst_buffer_parastorbb.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/burst_buffer_parastorbb_slurmd.Plo@am__quote@ # am--include-marker
 
 
 $(am__depfiles_remade):
@@ -767,6 +799,7 @@ distclean: distclean-am
 		-rm -f ./$(DEPDIR)/bb_api.Plo
 	-rm -f ./$(DEPDIR)/bb_curl_wrapper.Plo
 	-rm -f ./$(DEPDIR)/burst_buffer_parastorbb.Plo
+	-rm -f ./$(DEPDIR)/burst_buffer_parastorbb_slurmd.Plo
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -815,6 +848,7 @@ maintainer-clean: maintainer-clean-am
 		-rm -f ./$(DEPDIR)/bb_api.Plo
 	-rm -f ./$(DEPDIR)/bb_curl_wrapper.Plo
 	-rm -f ./$(DEPDIR)/burst_buffer_parastorbb.Plo
+	-rm -f ./$(DEPDIR)/burst_buffer_parastorbb_slurmd.Plo
 	-rm -f Makefile
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic

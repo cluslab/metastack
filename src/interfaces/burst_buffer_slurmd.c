@@ -10,8 +10,6 @@
 #include "slurm/slurm_errno.h"
 #include "src/common/timers.h"
 
-#include "src/interfaces/burst_buffer_slurmd.h"
-
 #include "src/common/list.h"
 #include "src/common/macros.h"
 #include "src/common/pack.h"
@@ -33,26 +31,19 @@
  */
 typedef struct slurm_bb_ops {	
 	/* 通过SN创建缓存组 */
-	int (*create_bb_group_by_sn) (void *create_params);
+	int (*bb_p_create_bb_group_by_sn) (char *group_sn, int client_cnt, int *client_arr);
 	/* 通过SN创建数据集规则 */
-	int (*create_bb_dataset_by_sn) (void *create_params);
-	/* 提交预热任务（通过数据集ID） */
-	int (*submit_bb_task) (void *create_params);
-	/* 通过SN获取缓存组ID */
-	int (*bb_p_wait_task_complete) (void *create_params);
-	/* 通过SN获取缓存组ID */
-	int (*query_bb_groupid_by_sn) (char *group_sn*);
-	/* 传入缓存组ID和数据集路径,查询数据集规则 */
-	int (*query_datasetid_by_path_groupid) (const int group_id, const char *path);
-	/* 根据task_id查询bb任务 */
-	int (*query_bb_tasks_by_taskid) (int task_id, void *bb_task);
+	int (*bb_p_create_bb_dataset_by_sn) (char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache);
+	/* 提交任务（通过数据集ID） */
+	int (*bb_p_submit_bb_task) (int dataset_id, int task_type);
+	/* 等待任务完成 */
+	int (*bb_p_wait_task_complete) (int task_id, int task_type);
 	/* 根据group_sn删除缓存组 */
-	int (*delete_bb_group_by_sn) (char *group_sn);
+	int (*bb_p_delete_bb_group_by_sn) (char *group_sn);
 	/* 根据dataset_id删除数据集规则 */
-	int (*delete_bb_dataset_by_id) (int dataset_id);
+	int (*bb_p_delete_bb_dataset_by_id) (int dataset_id, int group_id, char * path);
 	/* 根据task_id取消BB任务 */
-	int (*cancel_bb_task_by_id) (int task_id);
-
+	int (*bb_p_cancel_bb_task_by_id) (int task_id);
 } slurm_bb_slurmd_ops_t;
 
 /*
@@ -64,15 +55,9 @@ static const char *syms[] = {
 	"bb_p_create_bb_dataset_by_sn",
 	"bb_p_submit_bb_task",
 	"bb_p_wait_task_complete",
-	"bb_p_query_bb_groupid_by_sn",
-	"bb_p_query_datasetid_by_path_groupid",
-	"bb_p_query_bb_tasks_by_taskid",
 	"bb_p_delete_bb_group_by_sn",
 	"bb_p_delete_bb_dataset_by_id",
 	"bb_p_cancel_bb_task_by_id",
-	"bb_p_slurm_free_task",
-	"bb_p_free_create_params",
-	"bb_p_free_delete_params"
 };
 
 
@@ -189,58 +174,46 @@ fini:	slurm_mutex_unlock(&g_context_lock);
 extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr)
 {
 	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
+	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].create_bb_group_by_sn))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
+		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_arr);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
 	return rc;
-
-
 }
 
 extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache)
 {
 	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
+	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].create_bb_dataset_by_sn))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
+		rc = (*(ops[i].bb_p_create_bb_dataset_by_sn))(group_sn, group_id, path, is_use_metadata, is_share_cache);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
 	return rc;
-	
 }
 
 
 extern int bb_g_submit_bb_task(int dataset_id, int task_type)
 {
 	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
+	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].submit_bb_task))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
+		rc = (*(ops[i].bb_p_submit_bb_task))(dataset_id, task_type);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
 	return rc;
 }
 
@@ -248,135 +221,60 @@ extern int bb_g_submit_bb_task(int dataset_id, int task_type)
 extern int bb_g_wait_task_complete(int task_id, int task_type)
 {
 	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
+	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].wait_task_complete))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
+		rc = (*(ops[i].bb_p_wait_task_complete))(task_id, task_type);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
-	return rc;
-
-}
-
-
-extern int bb_g_query_bb_groupid_by_sn(char *group_sn)
-{
-	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
-	START_TIMER;
-	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].query_bb_groupid_by_sn))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
-	}
-	slurm_mutex_unlock(&g_context_lock);
-	END_TIMER2(__func__);
-
-	return rc;
-}
-
-extern int bb_g_query_datasetid_by_path_groupid(const int group_id, const char *path)
-{
-	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
-	START_TIMER;
-	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].query_datasetid_by_path_groupid))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
-	}
-	slurm_mutex_unlock(&g_context_lock);
-	END_TIMER2(__func__);
-
-	return rc;
-}
-
-extern int bb_g_query_bb_tasks_by_taskid(int task_id, bb_attribute_task *bb_task)
-{
-	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
-	START_TIMER;
-	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].query_bb_tasks_by_taskid))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
-	}
-	slurm_mutex_unlock(&g_context_lock);
-	END_TIMER2(__func__);
-
 	return rc;
 }
 
 extern int bb_g_delete_bb_group_by_sn(char *group_sn)
 {
 	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
+	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].delete_bb_group_by_sn))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
+		rc = (*(ops[i].bb_p_delete_bb_group_by_sn))(group_sn);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
 	return rc;
 }
 
 extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * path)
 {
 	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
+	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].delete_bb_dataset_by_id))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
+	for (int i = 0; i < g_context_cnt; i++) {
+		rc = (*(ops[i].bb_p_delete_bb_dataset_by_id))(dataset_id, group_id, path);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
 	return rc;
 }
 
-/*
- * 根据task_id取消BB任务
- * 
- * @param task_id 任务ID
- * @param bb_config 最小配置
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
- */
 extern int bb_g_cancel_bb_task_by_id(int task_id)
 {
 	DEF_TIMERS;
-	int i, rc = 1, rc2;
-
 	START_TIMER;
+	int rc = 0;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].cancel_bb_task_by_id))(group_sn, client_cnt, client_arr);
-		rc = MIN(rc, rc2);
+	for (int i = 0; i < g_context_cnt; i++) {
+		rc = (*(ops[i].bb_p_cancel_bb_task_by_id))(task_id);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
 	return rc;
 }
 

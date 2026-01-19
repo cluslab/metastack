@@ -5,6 +5,7 @@
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 #include "bb_curl_wrapper.h"
+#include <limits.h>
 
 struct memory {
     char *response;
@@ -223,7 +224,7 @@ int call_rest_api_with_token(const char *url, const char *method, const char *bo
  * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
 extern int call_rest_api_with_token_timeout(const char *url, const char *method, const char *body,
-    const char *token, long timeout, char **response_out)
+    const char *token, uint32_t timeout, char **response_out)
 {
     if (!url || !method || !response_out || !token ) {
         return BB_CODE_ERROR;
@@ -241,8 +242,13 @@ extern int call_rest_api_with_token_timeout(const char *url, const char *method,
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     
     /* 设置超时控制 */
-    if (timeout > 0) {
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+    if (timeout > 0 && timeout <= LONG_MAX) {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)timeout);
+    } else if (timeout > 0 && timeout > LONG_MAX) {
+        debug("timeout exceeds the maximum value of long type and is set to maximum value of long");
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)LONG_MAX);
+    } else if (timeout < 0) {
+        error("timeout is less than 0");
     }
     
     /* set method, default GET */

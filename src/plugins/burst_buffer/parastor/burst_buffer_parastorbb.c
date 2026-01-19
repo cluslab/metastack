@@ -689,7 +689,7 @@ static void *_start_stage_out(void *x)
 					bb_group->hit_bytes_rate,
 					bb_group->hit_io_num_rate,
 					bb_group->meta_hit_io_num_rate);
-				slurm_free_group(bb_group);
+				free_bb_group(bb_group);
 			} else {
 				error("BB-----query cache group %d of job job %u is NULL ",
 					tmp_groups_arr[i], tmp_job_id);
@@ -1248,20 +1248,13 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
-					char *tmp_enforce = xstrdup(enforce_val);
-					sub_tok = xstrchr(tmp_enforce, ' ');
-					if (sub_tok)
-						sub_tok[0] = '\0';
-					/* 转换为小写进行比较 */
-					for (char *p = tmp_enforce; *p; p++)
-						*p = tolower(*p);
-					if (xstrcmp(tmp_enforce, "no") == 0 ||
-						xstrcmp(tmp_enforce, "false") == 0 ||
-						xstrcmp(tmp_enforce, "0") == 0) {
+					if (xstrcasecmp(enforce_val, "no") == 0 ||
+						xstrcasecmp(enforce_val, "false") == 0 ||
+						xstrcasecmp(enforce_val, "0") == 0) {
 						bb_job->enforce_bb_flag = false;
-					} else if (xstrcmp(tmp_enforce, "yes") == 0 ||
-						xstrcmp(tmp_enforce, "true") == 0 ||
-						xstrcmp(tmp_enforce, "1") == 0) {
+					} else if (xstrcasecmp(enforce_val, "yes") == 0 ||
+						xstrcasecmp(enforce_val, "true") == 0 ||
+						xstrcasecmp(enforce_val, "1") == 0) {
 						bb_job->enforce_bb_flag = true;
 					} else {
 						/* 无效的 enforce_bb 值 */
@@ -1559,16 +1552,16 @@ static int _bb_get_parastors_state(void) {
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	/* load the bb information from parastor resrful*/
 	if(!bb_state.list_clients)
-		bb_state.list_clients       = list_create(slurm_free_client);//需要释放
+		bb_state.list_clients       = list_create(free_bb_client);//需要释放
 	if(!bb_state.list_tasks)
 		bb_state.list_tasks         = list_create(slurm_free_task);
 	if(!tmp_list_groups)
-		bb_state.list_groups        = list_create(slurm_free_group);//需要释放
+		bb_state.list_groups        = list_create(free_bb_group);//需要释放
 	else
 		bb_state.list_groups        = tmp_list_groups;
 		
 	if(!tmp_list_datasets)
-		bb_state.list_datasets      = list_create(slurm_free_dataset);//需要释放
+		bb_state.list_datasets      = list_create(free_bb_dataset);//需要释放
 	else
 		bb_state.list_datasets      = tmp_list_datasets;
 
@@ -1733,7 +1726,7 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 				if (bb_state.list_datasets)
 					bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &delete_params.dataset_id);
 				if (bb_dataset_tmp)
-					slurm_free_dataset(bb_dataset_tmp);
+					free_bb_dataset(bb_dataset_tmp);
 				if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
 					bb_state.bb_config.free_datasets++;
 				if (bb_state.bb_config.used_datasets > 0)
@@ -1762,7 +1755,7 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 				if (bb_state.list_groups)
 					bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &delete_params.group_id);
 				if (bb_group_tmp)
-					slurm_free_group(bb_group_tmp);
+					free_bb_group(bb_group_tmp);
 				if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
 					bb_state.bb_config.free_groups++;
 				if (bb_state.bb_config.used_groups > 0)

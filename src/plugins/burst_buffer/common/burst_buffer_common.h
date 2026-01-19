@@ -62,6 +62,17 @@
 #define DEFAULT_STATE_OUT_TIMEOUT	86400	/* 1 day */
 #define DEFAULT_VALIDATE_TIMEOUT	5	/* 5 seconds */
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+#define DEFAULT_RETRY_COUNT		3	/* 3 retries */
+#define DEFAULT_MAX_GROUPS 2048
+#define DEFAULT_MAX_DATASETS 8192
+#define DEFAULT_MAX_GROUPS_PER_CLIENTS 4
+#define DEFAULT_MAX_CLIENTS_PER_JOB 4
+#define DEFAULT_POLL_INTERVAL 5  /* 5 second */
+#define DEFAULT_MAX_ACC_DIRS_PER_JOB 8
+#define DEFAULT_MAX_ACC_DIR_LEN 512
+#endif
+
 /* Burst buffer configuration parameters */
 typedef struct bb_config {
 	uid_t   *allow_users;
@@ -112,6 +123,7 @@ typedef struct bb_config {
 	char    *para_stor_user_name;	/* user name */
 	char    *para_stor_password;	/* password */
 	char    *token;	/* password */
+	uint32_t retry_count; /* 超时重试次数 */
 #endif
 } bb_config_t;
 
@@ -285,11 +297,11 @@ typedef struct bb_minimal_config {
 	char    *para_stor_user_name;	/* user name */
 	char    *para_stor_password;	/* password */
 	char    *token;	/* password */
-	long	other_timeout;
-	long	stagein_timeout;
-	long	stageout_timeout;
-	long	poll_interval;
-	int		retry_count;
+	uint32_t	other_timeout;
+	uint32_t	stagein_timeout;
+	uint32_t	stageout_timeout;
+	uint32_t	poll_interval;
+	uint32_t	retry_count;
 } bb_minimal_config_t;
 
 typedef enum {
