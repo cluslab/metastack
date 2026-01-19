@@ -10,7 +10,8 @@
 
 /* Declaration Helper Function */
 static int _json_uint32_t_value(const json_t *j, uint32_t *value);
-static int _convert_json_t_to_time_t(const json_t *j, time_t *value);
+static int _json_time_t_value(const json_t *j, time_t *value);
+static int _json_int_value(const json_t *j, int *value);
 
 static int _parse_json_result_to_dataset(json_t *dataset_obj, bb_attribute_dataset *dataset);
 static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group);
@@ -73,14 +74,9 @@ static int _json_time_t_value(const json_t *j, time_t *value)
 
     v = json_integer_value(j);
 
-    /* 通常不接受负时间戳（1970-01-01 之前） */
     if (v < 0)
         return SLURM_ERROR;
 
-    /*
-     * 关键点：
-     * 先强转，再反向比较，确保没有发生截断或溢出
-     */
     t = (time_t)v;
     if ((json_int_t)t != v)
         return SLURM_ERROR;
@@ -88,6 +84,27 @@ static int _json_time_t_value(const json_t *j, time_t *value)
     *value = t;
     return SLURM_SUCCESS;
 }
+static int _json_int_value(const json_t *j, int *value)
+{
+    json_int_t v;
+    int i;
+
+    if (!j || !value)
+        return SLURM_ERROR;
+
+    if (!json_is_integer(j))
+        return SLURM_ERROR;
+
+    v = json_integer_value(j);
+
+    i = (int)v;
+    if ((json_int_t)i != v)
+        return SLURM_ERROR;
+
+    *value = i;
+    return SLURM_SUCCESS;
+}
+
 
 static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group)
 {
@@ -132,21 +149,11 @@ static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *gr
          return SLURM_ERROR;
     }
 
-    if(_json_uint32_t_value(json_object_get(group_obj, "del_delay_time"), &group->del_delay_time) == SLURM_ERROR) {
+    if(_json_time_t_value(json_object_get(group_obj, "del_delay_time"), &group->del_delay_time) == SLURM_ERROR) {
        return SLURM_ERROR; 
     }
         
-    if( _json_uint32_t_value(json_object_get(group_obj, "fault_delay_time"), &group->fault_delay_time) == SLURM_ERROR) {
-         return SLURM_ERROR;
-    }
-
-    if(_json_time_t_value(json_object_get(group_obj, "client_num"),      &group->client_num ) == SLURM_ERROR) {
-         return SLURM_ERROR;
-    } 
-    if(_json_time_t_value(json_object_get(group_obj, "del_delay_time"),  &group->del_delay_time ) == SLURM_ERROR) {
-         return SLURM_ERROR;
-    }
-    if(_json_time_t_value(json_object_get(group_obj, "fault_delay_time"),& group->fault_delay_time) == SLURM_ERROR) {
+    if(_json_time_t_value(json_object_get(group_obj, "fault_delay_time"), &group->fault_delay_time) == SLURM_ERROR) {
          return SLURM_ERROR;
     }
 
@@ -229,25 +236,41 @@ static int _parse_json_result_to_dataset(json_t *dataset_obj, bb_attribute_datas
     dataset->burstBufferDataSetCacheMode     = xstrdup(json_string_value(json_object_get(dataset_obj, "burstBufferDataSetCacheMode")));
     dataset->burstBufferDataSetCacheType     = xstrdup(json_string_value(json_object_get(dataset_obj, "burstBufferDataSetCacheType")));
     dataset->burstBufferMetaDataSetCacheMode = xstrdup(json_string_value(json_object_get(dataset_obj, "burstBufferMetaDataSetCacheMode")));
-    dataset->create_time                     = json_integer_value(json_object_get(dataset_obj, "create_time"));
+    if(_json_time_t_value(json_object_get(dataset_obj, "create_time"), &dataset->create_time) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
     dataset->dataOpen                        = json_is_true(json_object_get(dataset_obj, "dataOpen"));
     dataset->data_cache_mode                 = xstrdup(json_string_value(json_object_get(dataset_obj, "data_cache_mode")));
     dataset->data_cache_type                 = xstrdup(json_string_value(json_object_get(dataset_obj, "data_cache_type")));
-    dataset->fs_id                           = json_integer_value(json_object_get(dataset_obj, "fs_id"));
-    dataset->group_id                        = json_integer_value(json_object_get(dataset_obj, "group_id"));
-    dataset->id                              = json_integer_value(json_object_get(dataset_obj, "id"));
-    dataset->idesc                           = xstrdup(json_string_value(json_object_get(dataset_obj, "idesc")));
-    dataset->key                             = json_integer_value(json_object_get(dataset_obj, "key"));
-    dataset->last_submit_task_time           = json_integer_value(json_object_get(dataset_obj, "last_submit_task_time"));
-    dataset->last_submit_task_type           = xstrdup(json_string_value(json_object_get(dataset_obj, "last_submit_task_type")));
-    dataset->lock_flag                       = json_is_true(json_object_get(dataset_obj, "lock_flag"));
-    dataset->meta_data_cache_mode            = xstrdup(json_string_value(json_object_get(dataset_obj, "meta_data_cache_mode")));
-    dataset->path                            = xstrdup(json_string_value(json_object_get(dataset_obj, "path")));
-    dataset->path_version                    = json_integer_value(json_object_get(dataset_obj, "path_version"));
-    dataset->state                           = xstrdup(json_string_value(json_object_get(dataset_obj, "state")));
-    dataset->use_data                        = json_is_true(json_object_get(dataset_obj, "use_data"));
-    dataset->use_meta_data                   = json_is_true(json_object_get(dataset_obj, "use_meta_data"));
-    dataset->version                         = json_integer_value(json_object_get(dataset_obj, "version"));
+    if(_json_uint32_t_value(json_object_get(dataset_obj, "fs_id"), &dataset->fs_id) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if (_json_uint32_t_value(json_object_get(dataset_obj, "group_id"), &dataset->group_id) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if (_json_uint32_t_value(json_object_get(dataset_obj, "id"), &dataset->id) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    dataset->idesc = xstrdup(json_string_value(json_object_get(dataset_obj, "idesc")));
+    if (_json_int_value(json_object_get(dataset_obj, "key"), &dataset->key) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if (_json_time_t_value(json_object_get(dataset_obj, "last_submit_task_time"), &dataset->last_submit_task_time) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    dataset->last_submit_task_type = xstrdup(json_string_value(json_object_get(dataset_obj, "last_submit_task_type")));
+    dataset->lock_flag = json_is_true(json_object_get(dataset_obj, "lock_flag"));
+    dataset->meta_data_cache_mode = xstrdup(json_string_value(json_object_get(dataset_obj, "meta_data_cache_mode")));
+    dataset->path = xstrdup(json_string_value(json_object_get(dataset_obj, "path")));
+    if (_json_int_value(json_object_get(dataset_obj, "path_version"), &dataset->path_version) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    dataset->state = xstrdup(json_string_value(json_object_get(dataset_obj, "state")));
+    dataset->use_data = json_is_true(json_object_get(dataset_obj, "use_data"));
+    dataset->use_meta_data = json_is_true(json_object_get(dataset_obj, "use_meta_data"));
+    if (_json_int_value(json_object_get(dataset_obj, "version"), &dataset->version) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
     return rc;
 }
 
@@ -303,12 +326,20 @@ static int _parse_json_result_to_client(json_t *client_obj, bb_attribute_client 
      */
     xfree(client->hostname);
     xfree(client->ip);
-    client->id         = json_integer_value(json_object_get(client_obj, "id"));
+    if(_json_uint32_t_value(json_object_get(client_obj, "id"), &client->id) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
     client->hostname   = xstrdup(json_string_value(json_object_get(client_obj, "hostname")));
     client->ip         = xstrdup(json_string_value(json_object_get(client_obj, "client_ip")));
-    client->total_size = json_integer_value(json_object_get(client_obj, "total_bytes"));
-    client->used_size  = json_integer_value(json_object_get(client_obj, "used_bytes"));
-    client->version    = json_integer_value(json_object_get(client_obj, "version"));
+    if(_json_uint32_t_value(json_object_get(client_obj, "total_bytes"), &client->total_size) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_uint32_t_value(json_object_get(client_obj, "used_bytes"), &client->used_size) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if (_json_int_value(json_object_get(client_obj, "version"), &client->version) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
     /* don't need to parse ips, just use client_ip
     json_t *ips = json_object_get(client_obj, "burst_buffer_cache_ips");
     if (ips && json_is_array(ips)) {
@@ -335,9 +366,11 @@ static int _parse_json_result_to_client(json_t *client_obj, bb_attribute_client 
     if (groups_ids && json_is_array(groups_ids)) {
         int n = json_array_size(groups_ids);
         client->groups_count = n;
-        client->groups_ids = xcalloc(n, sizeof(int));
+        client->groups_ids = xcalloc(n, sizeof(uint32_t));
         for (int j = 0; j < n; j++) { 
-            client->groups_ids[j] = json_integer_value(json_array_get(groups_ids, j));
+            if(_json_uint32_t_value(json_array_get(groups_ids, j), &client->groups_ids[j]) == SLURM_ERROR) {
+                return SLURM_ERROR;
+            }
         }
     }   
     return rc;
@@ -389,17 +422,39 @@ static int _parse_json_result_to_task(json_t *task_obj, bb_attribute_task *task)
      
     memset(task, 0, sizeof(*task));
 
-    task->task_id            = json_integer_value(json_object_get(task_obj, "id"));
-    task->dataset_id         = json_integer_value(json_object_get(task_obj, "dataset_id"));
-    task->group_id           = json_integer_value(json_object_get(task_obj, "cache_group_id"));
-    task->begin_time         = json_integer_value(json_object_get(task_obj, "begin_time"));
-    task->end_time           = json_integer_value(json_object_get(task_obj, "end_time"));
-    task->completed_bytes    = json_integer_value(json_object_get(task_obj, "completed_bytes"));
-    task->total_node_num     = json_integer_value(json_object_get(task_obj, "total_node_num"));
-    task->completed_node_num = json_integer_value(json_object_get(task_obj, "completed_node_num"));
-    task->canceled_node_num  = json_integer_value(json_object_get(task_obj, "canceled_node_num"));
-    task->failed_node_num    = json_integer_value(json_object_get(task_obj, "failed_node_num"));
-    task->exit_code          = json_integer_value(json_object_get(task_obj, "exit_code"));
+    if(_json_uint32_t_value(json_object_get(task_obj, "id"), &task->task_id) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_uint32_t_value(json_object_get(task_obj, "dataset_id"), &task->dataset_id) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_uint32_t_value(json_object_get(task_obj, "cache_group_id"), &task->group_id) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_time_t_value(json_object_get(task_obj, "begin_time"), &task->begin_time) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_time_t_value(json_object_get(task_obj, "end_time"), &task->end_time) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_time_t_value(json_object_get(task_obj, "completed_bytes"), &task->completed_bytes) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_uint32_t_value(json_object_get(task_obj, "total_node_num"), &task->total_node_num) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_uint32_t_value(json_object_get(task_obj, "completed_node_num"), &task->completed_node_num) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_uint32_t_value(json_object_get(task_obj, "canceled_node_num"), &task->canceled_node_num) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if(_json_uint32_t_value(json_object_get(task_obj, "failed_node_num"), &task->failed_node_num) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
+    if (_json_int_value(json_object_get(task_obj, "exit_code"), &task->exit_code) == SLURM_ERROR) {
+        return SLURM_ERROR;
+    }
     json_t *failed_node_infos = json_object_get(task_obj, "failed_node_infos");
     if (failed_node_infos && json_is_array(failed_node_infos)) {
         int n = json_array_size(failed_node_infos);
