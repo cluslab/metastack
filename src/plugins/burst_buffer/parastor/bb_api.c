@@ -32,13 +32,33 @@ static char *_encode_password(const char *password);
 static char *_base64_encode(const unsigned char *data, size_t len);
 
 static char *concatenate_group_strings(bb_config_t *bb_config, void *params, call_type type);
-
+static int _convert_json_t_to_uint32_t(const json_t *j, uint32_t *value);
 /**
 * Parse the JSON-formatted group result and populate the group structure.
 * @param group_obj Pointer to the JSON object containing group information.
 * @param group Pointer to the group structure used to store the parsed data.
 */
-static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group)
+
+static int _convert_json_t_to_uint32_t(const json_t *j, uint32_t *value)
+{
+    json_int_t v;
+
+    if (!j || !value)
+        return SLURM_ERROR;
+
+    if (!json_is_integer(j))
+        return SLURM_ERROR;
+
+    v = json_integer_value(j);
+
+    if (v < 0 || v > UINT32_MAX)
+        return SLURM_ERROR;
+
+    *value = (uint32_t)v;
+    return SLURM_SUCCESS;
+}
+
+
 static int _parse_json_result_to_group(json_t *group_obj, bb_attribute_group *group)
 {
     int rc = SLURM_SUCCESS;

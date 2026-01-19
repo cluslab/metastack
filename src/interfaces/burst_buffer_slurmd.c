@@ -31,7 +31,7 @@
  */
 typedef struct slurm_bb_ops {	
 	/* 通过SN创建缓存组 */
-	int (*bb_p_create_bb_group_by_sn) (char *group_sn, int client_cnt, int *client_arr);
+	int (*bb_p_create_bb_group_by_sn) (char *group_sn, int client_cnt, char **client_hostname_arr);
 	/* 通过SN创建数据集规则 */
 	int (*bb_p_create_bb_dataset_by_sn) (char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache);
 	/* 提交任务（通过数据集ID） */
@@ -171,7 +171,7 @@ fini:	slurm_mutex_unlock(&g_context_lock);
  */
 
 
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr)
+extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr)
 {
 	DEF_TIMERS;
 	int rc = 0;
@@ -179,7 +179,7 @@ extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *clien
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_arr);
+		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_hostname_arr);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);

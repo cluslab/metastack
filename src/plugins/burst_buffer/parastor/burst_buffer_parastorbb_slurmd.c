@@ -178,14 +178,43 @@ static void _test_config()
 
 
 
-extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr)
+extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr)
 {
 	int rc = SLURM_ERROR;
-	if (!group_sn || !client_arr || client_cnt < 0) {
+	if (!group_sn || !client_hostname_arr || client_cnt < 0) {
 		error("error params");
 		return SLURM_ERROR;
 	}
-
+	int *client_ids = xmalloc(client_cnt * sizeof(int));
+	bool query_success = true;
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	for (int i = 0; i < client_cnt; i++) {
+		if (!client_hostname_arr[i]) {
+			error("hostname[%d] is NULL", i);
+			query_success = false;
+			break;
+		}
+		rc = query_clientid_by_hostname(client_hostname_arr[i], &bb_state.bb_config);
+		if (rc > 0) {
+			client_ids[i] = rc;
+			debug("查询 client_id 成功: hostname=%s, client_id=%d", 
+				client_hostname_arr[i], client_ids[i]);
+		} else if (rc == 0) {
+			error("hostname %s 对应的 client_id 不存在", client_hostname_arr[i]);
+			query_success = false;
+			break;
+		} else {
+			error("查询 hostname %s 的 client_id 失败, return code=%d", 
+				client_hostname_arr[i], rc);
+			query_success = false;
+			break;
+		}
+	}
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+	if (!query_success) {
+		xfree(client_ids);
+		return SLURM_ERROR;
+	}
 	create_params_request *create_params = xmalloc(sizeof(create_params_request));
 	create_params->group_sn = xstrdup(group_sn);
 	create_params->client_count = client_cnt;
@@ -232,7 +261,6 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, int *clien
 		error("创建缓存组%s失败,错误码: %d", group_sn, rc);
 	}
 	return rc;
-
 }
 
 extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache)
