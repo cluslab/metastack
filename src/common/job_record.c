@@ -943,10 +943,12 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		// packstr(dump_job_ptr->burst_buffer2, buffer);
 		pack32(dump_job_ptr->need_group_counts,        buffer);
-		if(dump_job_ptr->need_group_count > 0) {
-			for (int i = 0; i < dump_job_ptr->need_group_counts; i++) {
-				packstr(dump_job_ptr->need_group_counts[i],	buffer);
-			}	
+		if(dump_job_ptr->need_group_counts > 0) {
+			// for (int i = 0; i < dump_job_ptr->need_group_counts; i++) {
+			// 	packstr(dump_job_ptr->group_sn[i],	buffer);
+			// }	
+			packstr_array(dump_job_ptr->group_sn, dump_job_ptr->need_group_counts,
+			      buffer);
 		}
 		pack32(dump_job_ptr->need_database_counts,     buffer);
 		pack64(dump_job_ptr->req_space, 		       buffer);
@@ -2918,9 +2920,11 @@ extern int job_record_unpack(job_record_t **out,
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		safe_unpack32(&job_ptr->need_group_counts, 	  	 buffer);
 		if(job_ptr->need_group_counts > 0 ) {
-			for (int i = 0; i < job_ptr->need_group_counts; i++) {
-				safe_unpackstr(&job_ptr->need_group_counts[i],	buffer);
-			}
+			// for (int i = 0; i < job_ptr->need_group_counts; i++) {
+			// 	safe_unpackstr(&job_ptr->group_sn[i],	buffer);
+			// }
+			safe_unpackstr_array(&job_ptr->group_sn, &job_ptr->need_group_counts,
+				     			buffer);
 		}
 		safe_unpack32(&job_ptr->need_database_counts,	 buffer);
 		safe_unpack64(&job_ptr->req_space,	 		 	 buffer);

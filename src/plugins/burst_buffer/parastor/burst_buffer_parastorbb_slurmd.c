@@ -6,7 +6,7 @@
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
 #include "bb_curl_wrapper.h"
 #include "bb_api.h"
-
+#include "src/common/run_in_daemon.h"
 
 /*
  * 为兼容 burst_buffer 公共代码中对 plugin_type 的引用，
