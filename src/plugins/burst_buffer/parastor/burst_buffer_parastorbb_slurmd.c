@@ -529,7 +529,7 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 			break;
 		} else if (rc == -3) {
 			debug("删除缓存组接口超时，查询是否已删除成功");
-			int query_rc = bb_g_query_bb_groupid_by_sn(group_sn, &bb_state.bb_config);
+			int query_rc = query_bb_groupid_by_sn(group_sn, &bb_state.bb_config);
 			if (query_rc < 0) {
 				error("查询失败");
 				break;
@@ -540,7 +540,7 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 				break;
 			}
 			if (query_rc > 0) {
-				debug("删除缓存组超时，重试 %d/%d", retry_count + 1, bb_state.bb_config.>retry_count);
+				debug("删除缓存组超时，重试 %d/%d", retry_count + 1, bb_state.bb_config->retry_count);
 				continue;
 			}
 		} else {
@@ -575,7 +575,7 @@ extern int bb_p_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
 			break;
 		} else if (rc == -3) {
 			debug("删除数据集规则接口超时，查询是否已删除成功");
-			int query_rc = bb_g_query_datasetid_by_path_groupid(group_id, path, &bb_state.bb_config);
+			int query_rc = query_datasetid_by_path_groupid(group_id, path, &bb_state.bb_config);
 			if (query_rc < 0) {
 				error("查询接口异常");
 				break;
