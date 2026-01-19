@@ -7,6 +7,7 @@
 #include "bb_curl_wrapper.h"
 #include "bb_api.h"
 #include "src/common/run_in_daemon.h"
+#include "src/common/xmalloc.h"
 
 /*
  * 为兼容 burst_buffer 公共代码中对 plugin_type 的引用，
@@ -19,7 +20,8 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
 static void _test_config();
 static bb_state_t bb_state;
-
+static char *directive_str;
+static int directive_len = 0;
 /*
  * init() is called when the plugin is loaded, before any other functions
  * are called.  Put global initialization here.
@@ -68,7 +70,7 @@ extern int init(void)
 extern int fini(void)
 {
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	log_flag(BURST_BUF, "");
+	debug3("BURST_BUF PLUG FINISHED");
 
 	slurm_mutex_lock(&bb_state.term_mutex);
 	bb_state.term_flag = true;

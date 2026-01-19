@@ -948,7 +948,7 @@ static char *concatenate_group_strings(bb_minimal_config_t *bb_config, void *par
 
 }
 
-static char *concatenate_dataset_strings(bb_config_t *bb_config, void *params, call_type type)
+static char *concatenate_dataset_strings(bb_minimal_config_t *bb_config, void *params, call_type type)
 {
     char *url_api = NULL;
     char *tmp_params_str = NULL;
@@ -1071,7 +1071,7 @@ static char *concatenate_dataset_strings(bb_config_t *bb_config, void *params, c
     } //switch end        
 }
 
-static char *concatenate_client_strings(bb_config_t *bb_config, const query_params_request* query_params) 
+static char *concatenate_client_strings(bb_minimal_config_t *bb_config, const query_params_request* query_params) 
 {
 
     if (query_params == NULL && bb_config == NULL) {
@@ -1143,7 +1143,7 @@ static char *concatenate_client_strings(bb_config_t *bb_config, const query_para
     return json_string;
 }
 
-static char *concatenate_task_strings(bb_config_t *bb_config, void *params, call_type type)
+static char *concatenate_task_strings(bb_minimal_config_t *bb_config, void *params, call_type type)
 {
     char *url_api = NULL;
     char *tmp_params_str = NULL;
@@ -2114,7 +2114,6 @@ static int call_bb_api_of_client(bb_config_t *bb_config, const query_params_requ
     xfree(url_api);
     *return_string = json_string;
     return BB_SUCCESS;
-    break;
 }
 
 
@@ -2770,7 +2769,7 @@ extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_mi
     return ret;
 }
 
-extern int create_burst_buffer_dataset(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out)
+extern int create_burst_buffer_dataset(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
     if (bb_config == NULL || resp_out == NULL || create_params == NULL) {
         debug("Invalid parameters to create_burst_buffer_group\n");
@@ -2796,7 +2795,7 @@ extern int create_burst_buffer_dataset(create_params_request *create_params, bb_
     return ret;
 }
 
-extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out)
+extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
     if (bb_config == NULL || resp_out == NULL || delete_params == NULL) {
         debug("invalid parametes to delete group");
@@ -2822,7 +2821,7 @@ extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_
 }
 
 /* 预热数据集 */
-extern int submit_burst_buffer_task(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out){
+extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out){
     if (bb_config == NULL || resp_out == NULL || create_params == NULL) {
         debug("Invalid parameters to submit_burst_buffer_task\n");
         return -1;
