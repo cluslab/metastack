@@ -2665,32 +2665,21 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			msg->auth_uid);
 		return;
 	}
-	//===========需要变量==================
-	int node_count = 0;
-	char **node_array = NULL;
-	int pfs_count = 0;
-	char **pfs_array = NULL;
-	char *group_sn = NULL;
-	char **group_sn_array = NULL;
-	group_sn_count = 0;
 
-/* 直接使用的变量
-	uint32_t group_sn_count = req->used_groups;
-	char **	group_sn_array = req->group_sn; 
- 	uint32_t job_id = req->job_id;
+	// ========== 从 msg 中获取变量 ==========
+	uint32_t job_id = req->job_id;
 	uint32_t user_id = req->user_id;
-	uint32_t used_groups = req->used_groups;
-	uint32_t used_databases = req->used_databases;
-	uint64_t req_space = req->req_space;
+	uint32_t group_sn_count = req->used_groups;
+	char **group_sn_array = req->group_sn;
+	char **pfs_array = NULL;
+	int pfs_count = req->pfs_cnt;
+	uint32_t max_clients_per_job = req->max_clients_per_job;
 	uint32_t access_mode = req->access_mode;
 	bool metadata_acceleration = req->metadata_acceleration;
-	uint32_t max_clients_per_job = req->max_clients_per_job; 
-*/
-
-	bool bb_enable_pb = req->bb_enable_pb;
-	uint32_t flag = req->flag;
 
 	// ========== 解析 nodes 字段 ==========
+	int node_count = 0;
+	char **node_array = NULL;
 	hostlist_t *hl = NULL;
 	if (!req->nodes) {
 		error("BB------node list is null");
@@ -2706,23 +2695,24 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		node_array = xmalloc(node_count * sizeof(char *));
 		char *node_name = NULL;
 		int idx = 0;
-
-		// 遍历 hostlist 获取每个节点名
 		while ((node_name = hostlist_shift(hl)) != NULL) {
-			node_array[idx] = xstrdup(node_name);
-			free(node_name);  // hostlist_shift 返回的字符串需要释放
-			idx++;
+			node_array[idx++] = xstrdup(node_name);
+			free(node_name);
 		}
 	}
 	hostlist_destroy(hl);
-	
 
-	// ========== 解析 pfs 字段（逗号分隔的路径字符串）==========
+	// ========== 解析 pfs 字段 ==========
 	if (!req->pfs || req->pfs_cnt <= 0) {
 		error("BB-----pfs in msg is error");
+		// 清理已分配的 node_array
+		for (int i = 0; i < node_count; i++) {
+			xfree(node_array[i]);
+		}
+		xfree(node_array);
 		return;
 	}
-	pfs_count = req->pfs_cnt;
+
 	pfs_array = xmalloc(pfs_count * sizeof(char *));
 	char *pfs_copy = xstrdup(req->pfs);
 	char *save_ptr = NULL;
@@ -2735,150 +2725,32 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			*end = '\0';
 			end--;
 		}
-		pfs_array[idx] = xstrdup(token);
-		idx++;
+		pfs_array[idx++] = xstrdup(token);
 		token = strtok_r(NULL, ",", &save_ptr);
 	}
 	xfree(pfs_copy);
 	if (idx != pfs_count) {
-		warning("PFS count mismatch: expected %u, got %d",
-			req->pfs_cnt, idx);
+		warning("PFS count mismatch: expected %u, got %d", req->pfs_cnt, idx);
 		pfs_count = idx;
 	}
 
 	// ========== 调试输出 ==========
-	debug("BB-----解析到的变量:");
-	debug("  job_id: %u", job_id);
-	debug("  user_id: %u", user_id);
-	debug("  nodes count: %d", node_count);
-	for (int i = 0; i < node_count; i++) {
-		debug("    node[%d]: %s", i, node_array[i]);
-	}
-	debug("  pfs count: %d", pfs_count);
-	for (int i = 0; i < pfs_count; i++) {
-		debug("    pfs[%d]: %s", i, pfs_array[i]);
-	}
-	debug("BB-----解析到 %u 个 group_sn:", group_sn_count);
+	debug("BB-----解析到的变量: job_id=%u, user_id=%u, nodes=%d, pfs=%d, groups=%u, max_clients_per_job=%u",
+		job_id, user_id, node_count, pfs_count, group_sn_count, max_clients_per_job);
+
+	// ========== 分配存储结构 ==========
+	uint32_t *group_ids = xmalloc(group_sn_count * sizeof(uint32_t));
+	uint32_t **dataset_ids = xmalloc(group_sn_count * sizeof(uint32_t *));
 	for (uint32_t i = 0; i < group_sn_count; i++) {
-		debug("  group_sn[%u]: %s", i, group_sn_array[i] ? group_sn_array[i] : "(NULL)");
-	}
-	debug("  used_groups: %u", used_groups);
-	debug("  req_space: %lu", req_space);
-	debug("  access_mode: %u", access_mode);
-	debug("  metadata_acceleration: %s", metadata_acceleration ? "true" : "false")
-
-
-	//DEBUG:测试变量
-	// bb_minimal_config_t bmc = { 0 };
-	// bmc.para_stor_addr = "172.16.120.117";
-	// bmc.para_stor_port = 8443;
-	// bmc.para_stor_password = "Admin@123";
-	// bmc.token ="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
-	// bmc.other_timeout = 1000;
-	// bmc.retry_count = 3;
-	// bmc.stagein_timeout = 1000;
-	// bmc.stageout_timeout = 1000;
-	// bmc.poll_interval = 5;
-
-	// char group_sn_buf[64];
-	// time_t now = time(NULL);
-	// pid_t pid = getpid();
-	// unsigned int rand_val = (unsigned int)(now ^ pid) % 10000;  // 取后4位
-	// snprintf(group_sn_buf, sizeof(group_sn_buf), "DEBUG%04u", rand_val);
-	// char *group_sn = group_sn_buf;
-
-	// char *path = "bb_hpc:/test1";
-	// int group_id = 0;
-	// int dataset_id = 0;
-	// int task_id = 0;
-
-	// int clients_arr[] = {1000005};
-	// /* 创建缓存组 */
-	// rc = bb_g_create_bb_group_by_sn(group_sn, 1, clients_arr, &bmc);
-	// if (rc > 0) {
-	// 	group_id = rc;
-	// 	debug("BB-----创建缓存组成功,sn为%s,id为%d", group_sn, group_id);
-	// } else {
-	// 	error("BB-----创建缓存组失败,sn为%s,return code%d", group_sn, rc);
-	// 	return;
-	// }
-	// /* 创建数据集规则 */
-	// rc = bb_g_create_bb_dataset_by_sn(group_sn, group_id, path, false, false, &bmc);
-	// if (rc > 0) {
-	// 	dataset_id = rc;
-	// 	debug("BB-----创建数据集规则成功,id为%d", dataset_id);
-	// } else {
-	// 	error("BB-----创建数据集规则失败,return code%d", rc);
-	// 	return;
-	// }
-	// /* 提交预热任务 */
-	// rc = bb_g_submit_bb_task(dataset_id, 1, &bmc);
-	// if (rc > 0) {
-	// 	task_id = rc;
-	// 	debug("BB-----提交预热任务成功,id为%d", task_id);
-	// } else {
-	// 	error("BB-----提交预热任务失败,return code%d", rc);
-	// 	return;
-	// }
-	// /* 阻塞等待任务完成 */
-	// rc = bb_g_wait_task_complete(task_id, 1, &bmc);
-	// if (rc == 0) {
-	// 	debug("BB-----任务%d预热成功", task_id);
-	// } else {
-	// 	error("BB-----任务%d预热失败,return code%d", task_id, rc);
-	// 	return;
-	// }
-
-	// /*
-	// * Send message back to the slurmctld so it knows we got the rpc.  A
-	// * bb  could easily run way longer than a MessageTimeout or we would
-	// * just wait.
-	// */
-	// if (slurm_send_rc_msg(msg, rc) < 0) {
-	// 	error("%s: Error talking to slurmctld: %m", __func__);
-	// }
-
-	// //缓存组、数据集创建、数据集预热等操作
-	// _notify_slurmctld_create_bb_fini(req->job_id, rc);
-
-
-
-	// ========== 计算需要创建的缓存组数量 ==========
-	if (max_clients_per_job <= 0) {
-		error("BB-----max_clients_per_job is invalid: %u", max_clients_per_job);
-		// 清理内存
-		for (int i = 0; i < node_count; i++) {
-			xfree(node_array[i]);
-		}
-		xfree(node_array);
-		for (int i = 0; i < pfs_count; i++) {
-			xfree(pfs_array[i]);
-		}
-		xfree(pfs_array);
-		return;
-	}
-	debug("BB-----需要创建 %u 个缓存组（节点数: %d, 每个缓存组最大节点数: %u）",
-		group_sn_count, node_count, max_clients_per_job);
-
-	// ========== 分配 group_sn_array ==========
-	group_sn_array = xmalloc(group_sn_count * sizeof(char *));
-	for (uint32_t i = 0; i < group_sn_count; i++) {
-		group_sn_array[i] = xstrdup_printf("j%un%u", job_id, i);
-		debug("BB-----缓存组 %u 的 SN: %s", i, group_sn_array[i]);
-	}
-
-	// ========== 存储每个缓存组的 group_id 和 dataset_ids ==========
-	int *group_ids = xmalloc(group_sn_count * sizeof(int));
-	int **dataset_ids = xmalloc(group_sn_count * sizeof(int *));
-	for (uint32_t i = 0; i < group_sn_count; i++) {
-		dataset_ids[i] = xmalloc(pfs_count * sizeof(int));
+		dataset_ids[i] = xmalloc(pfs_count * sizeof(uint32_t));
 		group_ids[i] = 0;
 		for (int j = 0; j < pfs_count; j++) {
 			dataset_ids[i][j] = 0;
 		}
 	}
 
-	// ========== 为每个缓存组创建缓存组并创建数据集规则 ==========
+	// ========== 第一阶段：创建所有缓存组 ==========
+	debug("BB-----开始创建 %u 个缓存组", group_sn_count);
 	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
 		// 计算当前缓存组的节点范围
 		int start_node = group_idx * max_clients_per_job;
@@ -2888,176 +2760,120 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		}
 		int current_group_node_count = end_node - start_node;
 		
-		debug("BB-----创建缓存组 %u: SN=%s, 节点范围 [%d, %d), 节点数=%d",
-			group_idx, group_sn_array[group_idx], start_node, end_node, current_group_node_count);
-
-		// ========== 通过 hostname 获取 client_ids ==========
-		int *client_ids = xmalloc(current_group_node_count * sizeof(int));
-		bool get_client_ids_success = true;
+		// 准备 hostname 数组（直接使用 node_array 的指针，不需要复制）
+		char **hostname_arr = &node_array[start_node];
 		
-		for (int i = 0; i < current_group_node_count; i++) {
-			// TODO: 这里需要通过 hostname 查询 client_id
-			// 由于当前接口需要 bb_config_t，而这里只有 bb_minimal_config_t
-			// 需要调用相应的接口获取 client_id
-			// 暂时假设可以通过 hostname 直接创建，或者需要先查询 client_id
-			
-			// 注意：这里需要调用 query_clientid_by_hostname 接口
-			// 但该接口需要 bb_config_t，可能需要从插件获取
-			// 暂时使用一个占位逻辑，实际需要实现获取 client_id 的逻辑
-			debug("BB-----为节点 %s 查询 client_id", node_array[start_node + i]);
-			// TODO: 实现通过 hostname 获取 client_id 的逻辑
-			// int client_id = query_clientid_by_hostname(node_array[start_node + i], bb_config);
-			// 如果查询失败，需要处理错误
-			// 暂时使用一个假设值，实际需要替换
-			client_ids[i] = 0; // 占位，需要实际查询
-		}
-
-		// ========== 创建缓存组 ==========
-		// 注意：根据用户要求，创建缓存组直接传 hostname 字符串
-		// 但当前接口需要 client_ids，可能需要：
-		// 1. 修改接口支持 hostname
-		// 2. 或者先通过 hostname 查询 client_id，然后创建
-		// 这里假设接口已经支持通过 hostname 创建，或者已经获取了 client_ids
-		
-		// 如果接口支持通过 hostname 创建，可以直接传递 hostname 数组
-		// 否则需要先获取 client_ids
-		rc = bb_g_create_bb_group_by_sn(group_sn_array[group_idx], 
-			current_group_node_count, client_ids);
+		debug("BB-----创建缓存组 %u: SN=%s, 节点数=%d", group_idx, group_sn_array[group_idx], current_group_node_count);
+		rc = bb_g_create_bb_group_by_sn(group_sn_array[group_idx], current_group_node_count, hostname_arr);
 		if (rc > 0) {
-			group_ids[group_idx] = rc;
-			debug("BB-----创建缓存组成功: SN=%s, ID=%d", 
+			group_ids[group_idx] = (uint32_t)rc;
+			debug("BB-----创建缓存组成功: SN=%s, ID=%u", 
 				group_sn_array[group_idx], group_ids[group_idx]);
 		} else {
 			error("BB-----创建缓存组失败: SN=%s, return code=%d", 
 				group_sn_array[group_idx], rc);
-			xfree(client_ids);
-			// 清理已分配的资源
-			for (uint32_t i = 0; i < group_sn_count; i++) {
-				xfree(group_sn_array[i]);
-				xfree(dataset_ids[i]);
-			}
-			xfree(group_sn_array);
-			xfree(group_ids);
-			xfree(dataset_ids);
-			for (int i = 0; i < node_count; i++) {
-				xfree(node_array[i]);
-			}
-			xfree(node_array);
-			for (int i = 0; i < pfs_count; i++) {
-				xfree(pfs_array[i]);
-			}
-			xfree(pfs_array);
-			return;
+			goto cleanup;
 		}
-		xfree(client_ids);
+	}
 
-		// ========== 为当前缓存组的每个 pfs 创建数据集规则 ==========
+	// ========== 第二阶段：为所有缓存组创建数据集规则 ==========
+	debug("BB-----开始创建数据集规则（%u 个缓存组 × %d 个 PFS）", group_sn_count, pfs_count);
+	bool is_share_cache = (access_mode == 0); // 0: 共享方式, 1: 本地方式
+	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
-			bool is_share_cache = (access_mode == 0); // 0: 共享方式, 1: 本地方式
-			
-			debug("BB-----为缓存组 %u (ID=%d) 和 PFS %d (%s) 创建数据集规则",
+			debug("BB-----创建数据集规则: 缓存组 %u (ID=%u), PFS %d (%s)", 
 				group_idx, group_ids[group_idx], pfs_idx, pfs_array[pfs_idx]);
 			
 			rc = bb_g_create_bb_dataset_by_sn(group_sn_array[group_idx], 
 				group_ids[group_idx], pfs_array[pfs_idx], 
 				metadata_acceleration, is_share_cache);
 			if (rc > 0) {
-				dataset_ids[group_idx][pfs_idx] = rc;
-				debug("BB-----创建数据集规则成功: 缓存组ID=%d, PFS=%s, 数据集ID=%d",
-					group_ids[group_idx], pfs_array[pfs_idx], rc);
+				dataset_ids[group_idx][pfs_idx] = (uint32_t)rc;
+				debug("BB-----创建数据集规则成功: 缓存组ID=%u, PFS=%s, 数据集ID=%u", 
+					group_ids[group_idx], pfs_array[pfs_idx], dataset_ids[group_idx][pfs_idx]);
 			} else {
-				error("BB-----创建数据集规则失败: 缓存组ID=%d, PFS=%s, return code=%d",
+				error("BB-----创建数据集规则失败: 缓存组ID=%u, PFS=%s, return code=%d", 
 					group_ids[group_idx], pfs_array[pfs_idx], rc);
-				// 清理已分配的资源
-				for (uint32_t i = 0; i < group_sn_count; i++) {
-					xfree(group_sn_array[i]);
-					xfree(dataset_ids[i]);
-				}
-				xfree(group_sn_array);
-				xfree(group_ids);
-				xfree(dataset_ids);
-				for (int i = 0; i < node_count; i++) {
-					xfree(node_array[i]);
-				}
-				xfree(node_array);
-				for (int i = 0; i < pfs_count; i++) {
-					xfree(pfs_array[i]);
-				}
-				xfree(pfs_array);
-				return;
+				goto cleanup;
 			}
 		}
 	}
 
-	// ========== 为每个数据集规则提交预热任务并等待完成 ==========
+	// ========== 第三阶段：为所有数据集规则提交预热任务并等待完成 ==========
 	debug("BB-----开始为所有数据集规则提交预热任务");
 	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
-			int dataset_id = dataset_ids[group_idx][pfs_idx];
-			int task_id = 0;
+			uint32_t dataset_id = dataset_ids[group_idx][pfs_idx];
+			uint32_t task_id = 0;
 			
-			debug("BB-----为数据集规则 %d (缓存组 %u, PFS %d) 提交预热任务",
+			debug("BB-----提交预热任务: 数据集ID=%u (缓存组 %u, PFS %d)", 
 				dataset_id, group_idx, pfs_idx);
 			
-			// 提交预热任务
-			rc = bb_g_submit_bb_task(dataset_id, 1); // 1: 预热任务
+			rc = bb_g_submit_bb_task((int)dataset_id, 1); // 1: 预热任务
 			if (rc > 0) {
-				task_id = rc;
-				debug("BB-----提交预热任务成功: 数据集ID=%d, 任务ID=%d", 
+				task_id = (uint32_t)rc;
+				debug("BB-----提交预热任务成功: 数据集ID=%u, 任务ID=%u", 
 					dataset_id, task_id);
 			} else {
-				error("BB-----提交预热任务失败: 数据集ID=%d, return code=%d", 
+				error("BB-----提交预热任务失败: 数据集ID=%u, return code=%d", 
 					dataset_id, rc);
-				// 继续处理其他数据集，不直接返回
-				continue;
+				continue; // 继续处理其他数据集
 			}
 
 			// 阻塞等待任务完成
-			debug("BB-----等待预热任务完成: 任务ID=%d", task_id);
-			rc = bb_g_wait_task_complete(task_id, 1); // 1: 预热任务
+			debug("BB-----等待预热任务完成: 任务ID=%u", task_id);
+			rc = bb_g_wait_task_complete((int)task_id, 1); // 1: 预热任务
 			if (rc == 0) {
-				debug("BB-----预热任务完成: 任务ID=%d, 缓存组 %u, PFS %d", 
+				debug("BB-----预热任务完成: 任务ID=%u, 缓存组 %u, PFS %d", 
 					task_id, group_idx, pfs_idx);
 			} else {
-				error("BB-----预热任务失败: 任务ID=%d, return code=%d, 缓存组 %u, PFS %d", 
+				error("BB-----预热任务失败: 任务ID=%u, return code=%d, 缓存组 %u, PFS %d", 
 					task_id, rc, group_idx, pfs_idx);
-				// 继续处理其他数据集，不直接返回
+				// 继续处理其他数据集
 			}
 		}
 	}
 
-	// ========== 清理资源 ==========
-	for (uint32_t i = 0; i < group_sn_count; i++) {
-		xfree(group_sn_array[i]);
-		xfree(dataset_ids[i]);
-	}
-	xfree(group_sn_array);
-	xfree(group_ids);
-	xfree(dataset_ids);
-	for (int i = 0; i < node_count; i++) {
-		xfree(node_array[i]);
-	}
-	xfree(node_array);
-	for (int i = 0; i < pfs_count; i++) {
-		xfree(pfs_array[i]);
-	}
-	xfree(pfs_array);
+	rc = SLURM_SUCCESS;
 
-	/*
-	* Send message back to the slurmctld so it knows we got the rpc.  A
-	* bb  could easily run way longer than a MessageTimeout or we would
-	* just wait.
-	*/
+cleanup:
+	// ========== 清理资源 ==========
+	// group_sn_array 来自 req，不需要释放
+	if (group_ids) {
+		xfree(group_ids);
+	}
+	if (dataset_ids) {
+		for (uint32_t i = 0; i < group_sn_count; i++) {
+			if (dataset_ids[i]) {
+				xfree(dataset_ids[i]);
+			}
+		}
+		xfree(dataset_ids);
+	}
+	if (node_array) {
+		for (int i = 0; i < node_count; i++) {
+			if (node_array[i]) {
+				xfree(node_array[i]);
+			}
+		}
+		xfree(node_array);
+	}
+	if (pfs_array) {
+		for (int i = 0; i < pfs_count; i++) {
+			if (pfs_array[i]) {
+				xfree(pfs_array[i]);
+			}
+		}
+		xfree(pfs_array);
+	}
+
+	// 发送响应消息
 	if (slurm_send_rc_msg(msg, rc) < 0) {
 		error("%s: Error talking to slurmctld: %m", __func__);
 	}
 
-	//缓存组、数据集创建、数据集预热等操作
+	// 通知 slurmctld 创建完成
 	_notify_slurmctld_create_bb_fini(req->job_id, rc);
-
-
-
-
 }
 
 /**
