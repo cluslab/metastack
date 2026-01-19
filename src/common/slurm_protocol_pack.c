@@ -15940,7 +15940,7 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 		//pack32(msg->group_id, 			buffer);
 		pack32(msg->used_groups, 			buffer);
 		if(msg->used_groups > 0 ) {
-			for (int i = 0; i < msg->count; i++) {
+			for (int i = 0; i < msg->used_groups; i++) {
 				packstr(msg->group_sn[i],	buffer);
 			}
 		}
@@ -15953,7 +15953,7 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 		pack32(msg->pfs_cnt, 				buffer);	
 		packbool(msg->bb_enable_pb,			buffer);
 		pack32(msg->flag, 					buffer);	
-		packstr(msg->nodes, 				buffer);
+		// packstr(msg->nodes, 				buffer);
 	}
 	#endif
 
@@ -16221,12 +16221,15 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		safe_unpackstr(&msg->nodes, 				buffer);
 		safe_unpack32(&msg->job_id, 				buffer);
 		safe_unpack32(&msg->user_id, 				buffer);
-		safe_unpack32(&msg->group_id, 				buffer);
+		// safe_unpack32(&msg->group_id, 				buffer);
 		safe_unpack32(&msg->used_groups, 			buffer);
-		if(msg->used_groups > 0 ) {
-			for (int i = 0; i < msg->count; i++) {
-				packstr(&msg->group_sn[i],			buffer);
+		if (msg->used_groups > 0) {
+			msg->group_sn = xmalloc(msg->used_groups * sizeof(char *));
+			for (int i = 0; i < msg->used_groups; i++) {
+				safe_unpackstr(&msg->group_sn[i], buffer);
 			}
+		} else {
+			msg->group_sn = NULL;
 		}
 		safe_unpack32(&msg->used_databases, 		buffer);
 		safe_unpack64(&msg->req_space, 				buffer);
@@ -16237,7 +16240,7 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		safe_unpack32(&msg->pfs_cnt, 				buffer);	
 		safe_unpackbool(&msg->bb_enable_pb,			buffer);
 		safe_unpack32(&msg->flag, 					buffer);	
-		safe_unpackstr(&msg->nodes, 				buffer);	
+		// safe_unpackstr(&msg->nodes, 				buffer);	
 	} else {
 		goto unpack_error;
 	} 

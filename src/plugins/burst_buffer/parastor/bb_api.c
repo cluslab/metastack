@@ -1275,7 +1275,7 @@ extern void free_bb_response(bb_response *resp)
 
 
 /* Get set the number of groups */
-extern List get_groups_burst_buffer(query_params_request* query_params,  bb_config_t *bb_min_config, bb_response *resp_out)
+extern List get_groups_burst_buffer(query_params_request* query_params,  bb_minimal_config_t *bb_min_config, bb_response *resp_out)
 {
     if (query_params == NULL || resp_out == NULL ) {
         debug("Invalid parameters to get_groups_burst_buffer");
@@ -1323,7 +1323,7 @@ extern List get_groups_burst_buffer(query_params_request* query_params,  bb_conf
     return init_list_groups;
 }
 
-extern List get_datasets_burst_buffer(query_params_request *query_params, bb_config_t *bb_min_config, bb_response *resp_out)
+extern List get_datasets_burst_buffer(query_params_request *query_params, bb_minimal_config_t *bb_min_config, bb_response *resp_out)
 {
     if (bb_min_config == NULL || query_params == NULL || resp_out == NULL) {
         debug("Invalid parameters to get_datasets_burst_buffer");
@@ -1366,7 +1366,7 @@ extern List get_datasets_burst_buffer(query_params_request *query_params, bb_con
 
 /* get clients info   */
 extern int get_set_burst_buffer_clients_and_tasks( query_params_request *query_params,
-                                            bb_config_t *bb_min_config, result_type type, bb_response *resp_out)
+                                            bb_minimal_config_t *bb_min_config, result_type type, bb_response *resp_out)
 {
 
     if (bb_min_config == NULL  || query_params == NULL) {
@@ -1417,7 +1417,7 @@ extern int get_set_burst_buffer_clients_and_tasks( query_params_request *query_p
 
 /* 获取单个task，输出为task */
 extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_task,
-                                            bb_config_t *bb_config, bb_response *resp_out)
+                                            bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
 
     if (bb_config == NULL || resp_out == NULL || bb_task == NULL) {
@@ -1460,7 +1460,7 @@ extern int get_single_burst_buffer_tasks( int task_id, bb_attribute_task *bb_tas
 }
 
 /* Create a cache group by client ids */
-extern int create_burst_buffer_group(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out)
+extern int create_burst_buffer_group(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out)
 {
     if( bb_config == NULL || resp_out == NULL || create_params == NULL ){
         debug("Invalid parameters to create_burst_buffer_group\n");

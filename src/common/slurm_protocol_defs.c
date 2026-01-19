@@ -1714,9 +1714,15 @@ extern void slurm_free_dep_update_origin_msg(dep_update_origin_msg_t *msg)
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg)
 {
-	if(msg) {
+	if (msg) {
 		xfree(msg->nodes);
-		xfree(msg->group_sn);
+		// 修复：先释放每个字符串，再释放数组
+		if (msg->group_sn) {
+			for (uint32_t i = 0; i < msg->used_groups; i++) {
+				xfree(msg->group_sn[i]);
+			}
+			xfree(msg->group_sn);
+		}
 		xfree(msg->pfs);
 		xfree(msg);
 	}

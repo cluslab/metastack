@@ -186,7 +186,7 @@ extern int create_burst_buffer_group(create_params_request *create_params,  bb_m
  * @param resp_out 通用响应体
  * @return 0>表示成功且返回缓存组ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int create_bb_group_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config);
+extern int create_bb_group_by_sn(create_params_request *create_params, bb_config_t *bb_config);
 
 /** 
  * @brief 通过SN创建数据集规则
@@ -195,7 +195,7 @@ extern int create_bb_group_by_sn(create_params_request *create_params, bb_minima
  * @param resp_out 通用响应体
  * @return 0>表示成功且返回数据集规则ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_minimal_config_t *bb_config);
+extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_config_t *bb_config);
 
  /**
  * @brief 提交预热任务（通过数据集ID）
@@ -203,7 +203,7 @@ extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_mini
  * @param bb_config 最小配置参数
  * @return 成功返回task_id (>0);  -1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int submit_bb_task(create_params_request *create_params, bb_minimal_config_t *bb_config);
+extern int submit_bb_task(create_params_request *create_params, bb_config_t *bb_config);
 
 /**
  * @brief 通过SN获取缓存组ID
@@ -211,7 +211,7 @@ extern int submit_bb_task(create_params_request *create_params, bb_minimal_confi
  * @param bb_min_config bb最小配置
  * @return 存在返回group_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_config);
+extern int query_bb_groupid_by_sn(char *group_sn, bb_config_t *bb_min_config);
 
 /**
  * @brief 传入缓存组ID和数据集路径，查询数据集规则
@@ -219,7 +219,7 @@ extern int query_bb_groupid_by_sn(char *group_sn, bb_minimal_config_t *bb_min_co
  * @param path 数据集路径
  * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_minimal_config_t *bb_config);
+extern int query_datasetid_by_path_groupid(const int group_id, const char *path, bb_config_t *bb_config);
 
 /**
  * @brief 根据group_id、path查询bb任务
@@ -228,7 +228,7 @@ extern int query_datasetid_by_path_groupid(const int group_id, const char *path,
  * @param bb_task 出参，传入初始化后变量指针，返回bb_task
  * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config, bb_attribute_task *bb_task);
+extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attribute_task *bb_task);
 
 /**
  * @brief 传入hostname获取对应client_id
@@ -236,7 +236,7 @@ extern int query_bb_tasks_by_taskid(int task_id, bb_minimal_config_t *bb_config,
  * @param bb_config 
  * @return 成功返回clietnid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int query_clientid_by_hostname(const char *hostname, bb_minimal_config_t *bb_config);
+extern int query_clientid_by_hostname(const char *hostname, bb_config_t *bb_config);
 
 /**
  * @brief 根据group_sn删除缓存组
@@ -244,7 +244,7 @@ extern int query_clientid_by_hostname(const char *hostname, bb_minimal_config_t 
  * @param bb_config 入参：最小配置
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config);
+extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config);
 
 /**
  * @brief 根据dataset_id删除缓存组
@@ -252,7 +252,7 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_minimal_config_t *bb_config)
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int delete_bb_dataset_by_id(int dataset_id, bb_minimal_config_t *bb_config);
+extern int delete_bb_dataset_by_id(int dataset_id, bb_config_t *bb_config);
 
 
 /**
@@ -261,23 +261,23 @@ extern int delete_bb_dataset_by_id(int dataset_id, bb_minimal_config_t *bb_confi
  * @param bb_config 
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int cancel_bb_task_by_id(int task_id, bb_minimal_config_t *bb_config);
+extern int cancel_bb_task_by_id(int task_id, bb_config_t *bb_config);
 
 
 /* 
 * delete a cache group by client ids 
 * NOTE: before deleting the cache group, make sure to delete the datasets under this group first.
 */
-extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
+extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out);
 
 /* Create a cache dataset */
-extern int create_burst_buffer_dataset(create_params_request *create_params,bb_minimal_config_t *bb_min_config, bb_response *resp_out);
+extern int create_burst_buffer_dataset(create_params_request *create_params,bb_config_t *bb_min_config, bb_response *resp_out);
 
 /* Delete a cache dataset by dataset_id */
-extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
+extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out);
 
 /* Submit bb task, include prefetch and recycle*/
-extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
+extern int submit_burst_buffer_task(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out);
 
 
 /* Not yet implemented: POSIX BB cache group immediate adjustment mapping */
