@@ -2619,7 +2619,9 @@ static void _notify_result_rpc_prolog(prolog_launch_msg_t *req, int rc)
 }
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 static int _notify_slurmctld_create_bb_fini(
-	uint32_t job_id, uint32_t bb_return_code)
+	uint32_t job_id, uint32_t bb_return_code,
+	uint32_t group_sn_count, uint32_t *group_ids,
+	uint32_t pfs_count, uint32_t **dataset_ids, uint32_t **task_ids)
 {
 	int rc, ret_c;
 	slurm_msg_t req_msg;
@@ -2630,6 +2632,43 @@ static int _notify_slurmctld_create_bb_fini(
 	req.job_id = job_id;
 	req.node_name = conf->node_name;
 	req.bb_rc = bb_return_code;
+	req.used_groups = group_sn_count;
+
+	// 分配并填充缓存组ID数组
+	if (group_sn_count > 0 && group_ids) {
+		req.groups_id = xmalloc(group_sn_count * sizeof(uint32_t));
+		for (uint32_t i = 0; i < group_sn_count; i++) {
+			req.groups_id[i] = group_ids[i];
+		}
+	}
+
+	// 计算数据集总数并展平二维数组为一维数组
+	uint32_t total_datasets = group_sn_count * pfs_count;
+	req.used_databases = total_datasets;
+	if (total_datasets > 0 && dataset_ids) {
+		req.databases_id = xmalloc(total_datasets * sizeof(uint32_t));
+		uint32_t idx = 0;
+		for (uint32_t i = 0; i < group_sn_count; i++) {
+			if (dataset_ids[i]) {
+				for (int j = 0; j < pfs_count; j++) {
+					req.databases_id[idx++] = dataset_ids[i][j];
+				}
+			}
+		}
+	}
+
+	// 展平任务ID二维数组为一维数组
+	if (total_datasets > 0 && task_ids) {
+		req.task_ids = xmalloc(total_datasets * sizeof(uint32_t));
+		uint32_t idx = 0;
+		for (uint32_t i = 0; i < group_sn_count; i++) {
+			if (task_ids[i]) {
+				for (int j = 0; j < pfs_count; j++) {
+					req.task_ids[idx++] = task_ids[i][j];
+				}
+			}
+		}
+	}
 
 	req_msg.msg_type = REQUEST_COMPLETE_CREATE_BB;
 	req_msg.data = &req;
@@ -2641,7 +2680,12 @@ static int _notify_slurmctld_create_bb_fini(
 	 */
 	if ((ret_c = slurm_send_recv_controller_rc_msg(
 		&req_msg, &rc, working_cluster_rec)))
-		error("Error sending prolog completion notification: %m");
+		error("Error sending create bb completion notification: %m");
+
+	// 清理临时分配的内存
+	xfree(req.groups_id);
+	xfree(req.databases_id);
+	xfree(req.task_ids);
 
 	return ret_c;
 }
@@ -2842,6 +2886,13 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 cleanup:
 	// ========== 清理资源 ==========
 	// group_sn_array 来自 req，不需要释放
+
+	// 在清理资源之前，先通知 slurmctld 创建完成（包含创建的信息）
+	_notify_slurmctld_create_bb_fini(req->job_id, rc,
+		group_sn_count, group_ids,
+		pfs_count, dataset_ids, task_ids);
+
+	// 然后清理本地资源
 	if (group_ids) {
 		xfree(group_ids);
 	}
@@ -2882,10 +2933,6 @@ cleanup:
 	if (slurm_send_rc_msg(msg, rc) < 0) {
 		error("%s: Error talking to slurmctld: %m", __func__);
 	}
-
-	// 通知 slurmctld 创建完成
-	_notify_slurmctld_create_bb_fini(req->job_id, rc);
-
 }
 
 /**

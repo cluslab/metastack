@@ -15918,12 +15918,29 @@ unpack_error:
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *buffer,
-				      uint16_t protocol_version)
+	uint16_t protocol_version)
 {
 	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号
 		pack32(msg->job_id, buffer);
 		packstr(msg->node_name, buffer);
 		pack32(msg->bb_rc, buffer);
+		pack32(msg->used_groups, buffer);
+		if (msg->used_groups > 0 && msg->groups_id) {
+			for (uint32_t i = 0; i < msg->used_groups; i++) {
+				pack32(msg->groups_id[i], buffer);
+			}
+		}
+		pack32(msg->used_databases, buffer);
+		if (msg->used_databases > 0 && msg->databases_id) {
+			for (uint32_t i = 0; i < msg->used_databases; i++) {
+				pack32(msg->databases_id[i], buffer);
+			}
+		}
+		if (msg->used_databases > 0 && msg->task_ids) {
+			for (uint32_t i = 0; i < msg->used_databases; i++) {
+				pack32(msg->task_ids[i], buffer);
+			}
+		}
 	}
 }
 
@@ -16194,15 +16211,34 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_ptr,
-				       buf_t *buffer, uint16_t protocol_version)
+	buf_t *buffer, uint16_t protocol_version)
 {
 	complete_create_bb_msg_t *msg = xmalloc(sizeof(*msg));
 	*msg_ptr = msg;
+	memset(msg, 0, sizeof(*msg));
 
 	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号
 		safe_unpack32(&msg->job_id, buffer);
 		safe_unpackstr(&msg->node_name, buffer);
 		safe_unpack32(&msg->bb_rc, buffer);
+		safe_unpack32(&msg->used_groups, buffer);
+		if (msg->used_groups > 0) {
+			msg->groups_id = xmalloc(msg->used_groups * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->used_groups; i++) {
+				safe_unpack32(&msg->groups_id[i], buffer);
+			}
+		}
+		safe_unpack32(&msg->used_databases, buffer);
+		if (msg->used_databases > 0) {
+			msg->databases_id = xmalloc(msg->used_databases * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->used_databases; i++) {
+				safe_unpack32(&msg->databases_id[i], buffer);
+			}
+			msg->task_ids = xmalloc(msg->used_databases * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->used_databases; i++) {
+				safe_unpack32(&msg->task_ids[i], buffer);
+			}
+		}
 	}
 
 	return SLURM_SUCCESS;

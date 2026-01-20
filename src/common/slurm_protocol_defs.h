@@ -508,11 +508,11 @@ typedef struct complete_prolog {
 typedef struct complete_create_bb {
 	uint32_t job_id;
 	char *node_name;
-	uint32_t used_groups; 
+	uint32_t used_groups;
 	uint32_t used_databases;
 	uint32_t *groups_id;
 	uint32_t *databases_id;
-
+	uint32_t *task_ids;          /* 任务ID数组，与databases_id一一对应 */
 	uint32_t bb_rc;
 } complete_create_bb_msg_t;
 #endif

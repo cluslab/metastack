@@ -1716,7 +1716,6 @@ extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg)
 {
 	if (msg) {
 		xfree(msg->nodes);
-		// 修复：先释放每个字符串，再释放数组
 		if (msg->group_sn) {
 			for (uint32_t i = 0; i < msg->used_groups; i++) {
 				xfree(msg->group_sn[i]);
@@ -1734,6 +1733,7 @@ extern void slurm_free_complete_create_bb_launch_msg(complete_create_bb_msg_t * 
 		xfree(msg->node_name);
 		xfree(msg->groups_id);
 		xfree(msg->databases_id);
+		xfree(msg->task_ids);
 		xfree(msg);
 	}
 }
