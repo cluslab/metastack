@@ -15925,15 +15925,15 @@ static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *b
 		packstr(msg->node_name, buffer);
 		pack32(msg->bb_rc, buffer);
 		pack32(msg->used_groups, buffer);
-		if (msg->used_groups > 0 && msg->groups_id) {
+		if (msg->used_groups > 0 && msg->group_ids) {
 			for (uint32_t i = 0; i < msg->used_groups; i++) {
-				pack32(msg->groups_id[i], buffer);
+				pack32(msg->group_ids[i], buffer);
 			}
 		}
 		pack32(msg->used_databases, buffer);
-		if (msg->used_databases > 0 && msg->databases_id) {
+		if (msg->used_databases > 0 && msg->dataset_ids) {
 			for (uint32_t i = 0; i < msg->used_databases; i++) {
-				pack32(msg->databases_id[i], buffer);
+				pack32(msg->dataset_ids[i], buffer);
 			}
 		}
 		if (msg->used_databases > 0 && msg->task_ids) {
@@ -16223,16 +16223,16 @@ static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_
 		safe_unpack32(&msg->bb_rc, buffer);
 		safe_unpack32(&msg->used_groups, buffer);
 		if (msg->used_groups > 0) {
-			msg->groups_id = xmalloc(msg->used_groups * sizeof(uint32_t));
+			msg->group_ids = xmalloc(msg->used_groups * sizeof(uint32_t));
 			for (uint32_t i = 0; i < msg->used_groups; i++) {
-				safe_unpack32(&msg->groups_id[i], buffer);
+				safe_unpack32(&msg->group_ids[i], buffer);
 			}
 		}
 		safe_unpack32(&msg->used_databases, buffer);
 		if (msg->used_databases > 0) {
-			msg->databases_id = xmalloc(msg->used_databases * sizeof(uint32_t));
+			msg->dataset_ids = xmalloc(msg->used_databases * sizeof(uint32_t));
 			for (uint32_t i = 0; i < msg->used_databases; i++) {
-				safe_unpack32(&msg->databases_id[i], buffer);
+				safe_unpack32(&msg->dataset_ids[i], buffer);
 			}
 			msg->task_ids = xmalloc(msg->used_databases * sizeof(uint32_t));
 			for (uint32_t i = 0; i < msg->used_databases; i++) {

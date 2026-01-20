@@ -2636,9 +2636,9 @@ static int _notify_slurmctld_create_bb_fini(
 
 	// 分配并填充缓存组ID数组
 	if (group_sn_count > 0 && group_ids) {
-		req.groups_id = xmalloc(group_sn_count * sizeof(uint32_t));
+		req.group_ids = xmalloc(group_sn_count * sizeof(uint32_t));
 		for (uint32_t i = 0; i < group_sn_count; i++) {
-			req.groups_id[i] = group_ids[i];
+			req.group_ids[i] = group_ids[i];
 		}
 	}
 
@@ -2646,12 +2646,12 @@ static int _notify_slurmctld_create_bb_fini(
 	uint32_t total_datasets = group_sn_count * pfs_count;
 	req.used_databases = total_datasets;
 	if (total_datasets > 0 && dataset_ids) {
-		req.databases_id = xmalloc(total_datasets * sizeof(uint32_t));
+		req.dataset_ids = xmalloc(total_datasets * sizeof(uint32_t));
 		uint32_t idx = 0;
 		for (uint32_t i = 0; i < group_sn_count; i++) {
 			if (dataset_ids[i]) {
 				for (int j = 0; j < pfs_count; j++) {
-					req.databases_id[idx++] = dataset_ids[i][j];
+					req.dataset_ids[idx++] = dataset_ids[i][j];
 				}
 			}
 		}
@@ -2683,8 +2683,8 @@ static int _notify_slurmctld_create_bb_fini(
 		error("Error sending create bb completion notification: %m");
 
 	// 清理临时分配的内存
-	xfree(req.groups_id);
-	xfree(req.databases_id);
+	xfree(req.group_ids);
+	xfree(req.dataset_ids);
 	xfree(req.task_ids);
 
 	return ret_c;

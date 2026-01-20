@@ -563,6 +563,9 @@ struct job_record {
 	bool 	 enforce_bb_flag; 		//是否强制等待创建缓存组完成
 	uint32_t pfs_cnt; //加速路径个数
 	char **group_sn;   //缓存组唯一sn码，作业可能有多个缓存组
+	uint32_t *group_ids;      //缓存组ID数组，从slurmd返回
+	uint32_t *dataset_ids;   //数据集ID数组，从slurmd返回
+	uint32_t *task_ids;       //任务ID数组，与dataset_ids一一对应，从slurmd返回
 	bool clean_finish; //是否完成清理
 #endif
 

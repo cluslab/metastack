@@ -1731,8 +1731,8 @@ extern void slurm_free_complete_create_bb_launch_msg(complete_create_bb_msg_t * 
 {
 	if(msg) {
 		xfree(msg->node_name);
-		xfree(msg->groups_id);
-		xfree(msg->databases_id);
+		xfree(msg->group_ids);
+		xfree(msg->dataset_ids);
 		xfree(msg->task_ids);
 		xfree(msg);
 	}

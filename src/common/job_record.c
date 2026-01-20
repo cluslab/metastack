@@ -253,7 +253,15 @@ extern void job_record_delete(void *job_entry)
 	xfree(job_ptr->burst_buffer);
 #ifdef  __METASTACK_NEW_BURSTBUFFER3
 	xfree(job_ptr->pfs);	
-	xfree(job_ptr->group_sn);
+	if (job_ptr->group_sn && job_ptr->need_group_counts > 0) {
+		for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
+			xfree(job_ptr->group_sn[i]);
+		}
+		xfree(job_ptr->group_sn);
+	}
+	xfree(job_ptr->group_ids);
+	xfree(job_ptr->dataset_ids);
+	xfree(job_ptr->task_ids);
 #endif
 	xfree(job_ptr->burst_buffer_state);
 	xfree(job_ptr->comment);
