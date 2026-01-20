@@ -943,7 +943,7 @@ typedef struct prolog_launch_msg {
 #endif
 } prolog_launch_msg_t;
 
-#ifdef __METASTACK_NEW_BURSTBUFFER3
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 typedef struct burst_buffer_launch_msg {
 	char *nodes;			/* list of nodes allocated to job */
 	uint32_t job_id;		/* job ID */
@@ -958,12 +958,13 @@ typedef struct burst_buffer_launch_msg {
 	char     *pfs;             //后端存储路径,可能有多个
 	bool     metadata_acceleration; //是否开启元数据加速
 	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
-	
+
 	bool	 bb_enable_pb; //是否开启pb
 	bool     bb_ready;     //计算节点的burstbuffer是否已经准备好
 	uint32_t flag;       //3:launch_prolog 2:launch_job(job_ptr) 1: srun_allocate
 	time_t   bb_launch_time;	/* When the prolog was launched from the
 					 * controller -- PrologFlags=alloc */
+	uint32_t het_job_id;		/* HetJob id or NO_VAL */
 } burst_buffer_launch_msg_t;
 #endif
 

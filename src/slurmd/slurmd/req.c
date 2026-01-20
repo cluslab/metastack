@@ -515,7 +515,6 @@ slurmd_req(slurm_msg_t *msg)
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		_rpc_create_bb(msg);
-		_rpc_clean_bb(msg);
 		last_slurmctld_msg = time(NULL);
 		break;
 #endif
@@ -553,6 +552,9 @@ slurmd_req(slurm_msg_t *msg)
 		break;
 	case REQUEST_TERMINATE_JOB:
 		last_slurmctld_msg = time(NULL);
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+		_rpc_clean_bb(msg); // 注意处理时间，可先模拟运行10分钟看是否对作业退出造成影响
+#endif
 		_rpc_terminate_job(msg);
 		break;
 	case REQUEST_SHUTDOWN:
@@ -2649,6 +2651,7 @@ static int _notify_slurmctld_create_bb_fini(
 static void _rpc_create_bb(slurm_msg_t *msg)
 {
 	int rc = SLURM_SUCCESS;
+	int alt_rc = SLURM_ERROR;
 	burst_buffer_launch_msg_t *req = msg->data;
 	if (req == NULL)
 		return;
@@ -2656,6 +2659,11 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		error("REQUEST_LAUNCH_PROLOG request from uid %u",
 			msg->auth_uid);
 		return;
+	}
+
+		// 发送响应消息
+	if (slurm_send_rc_msg(msg, rc) < 0) {
+		error("%s: Error talking to slurmctld: %m", __func__);
 	}
 	// ========== 从 msg 中获取变量 ==========
 	uint32_t job_id = req->job_id;
@@ -2668,6 +2676,10 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	uint32_t max_clients_per_job = req->max_clients_per_job;
 	uint32_t access_mode = req->access_mode;
 	bool metadata_acceleration = req->metadata_acceleration;
+
+
+	if (req->het_job_id && (req->het_job_id != NO_VAL))
+		job_id = req->het_job_id;
 
 	// ========== 解析 nodes 字段 ==========
 	int node_count = 0;
@@ -2877,15 +2889,25 @@ cleanup:
 		}
 		xfree(pfs_array);
 	}
-
-	// 发送响应消息
-	if (slurm_send_rc_msg(msg, rc) < 0) {
-		error("%s: Error talking to slurmctld: %m", __func__);
-	}
-
 	// 通知 slurmctld 创建完成
-	_notify_slurmctld_create_bb_fini(req->job_id, rc);
+		/*
+	 * We need the slurmctld to know we are done or we can get into a
+	 * situation where nothing from the job will ever launch because the
+	 * prolog will never appear to stop running.
+	 */
+	while (alt_rc != SLURM_SUCCESS) {
+		alt_rc = _notify_slurmctld_create_bb_fini(job_id, rc);
+		if (rc != SLURM_SUCCESS) {
+			alt_rc = _launch_job_fail(job_id, rc);
+			send_registration_msg(rc);
+		}
 
+		if (alt_rc != SLURM_SUCCESS) {
+			info("%s: Retrying prolog complete RPC for JobId=%u [sleeping %us]",
+			     __func__, req->job_id, RETRY_DELAY);
+			sleep(RETRY_DELAY);
+		}
+	}
 }
 
 /**
@@ -6163,6 +6185,9 @@ _rpc_terminate_job(slurm_msg_t *msg)
 			/* The epilog complete message processing on
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		//缓存组清理等操作，需要设置退出码
+#endif	
 			epilog_complete(req->step_id.job_id, req->nodes, rc);
 		}
 

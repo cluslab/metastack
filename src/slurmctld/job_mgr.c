@@ -6191,7 +6191,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		return SLURM_SUCCESS;
 
 	if (bb_return_code) {
-		error("creqate launch failure, %pJ", job_ptr);
+		error("create job burst buffer failure, %pJ", job_ptr);
 		job_ptr->exit_code = bb_return_code;
 		///////////////////////这里需要补充异常场景下作业异常处理，节点状态异常处理
 	}
@@ -17870,6 +17870,10 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 		}
 	}
 #else
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+   		//需要添加eplilog异常的方式下如何处理节点，原本处理逻辑drain_nodes
+		// if (return_code || return_bb_code) {
+#endif
 	if (return_code) {
 		error("%s: %pJ epilog error on %s, draining the node",
 		      __func__, job_ptr, node_name);

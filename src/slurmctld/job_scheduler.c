@@ -4166,7 +4166,7 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	burst_buffer_msg_ptr->nodes                  = xstrdup(job_ptr->nodes);
 	burst_buffer_msg_ptr->job_id                 = job_ptr->job_id;
 	burst_buffer_msg_ptr->user_id                = job_ptr->user_id;
-	//burst_buffer_msg_ptr->group_id               = job_ptr->group_id;
+	burst_buffer_msg_ptr->het_job_id             = job_ptr->het_job_id;
 	burst_buffer_msg_ptr->used_groups            = job_ptr->need_group_counts;
 	burst_buffer_msg_ptr->used_databases         = job_ptr->need_database_counts;
 	burst_buffer_msg_ptr->req_space              = job_ptr->req_space;
