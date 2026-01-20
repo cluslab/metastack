@@ -2781,11 +2781,9 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			debug("BB-----创建数据集规则: 缓存组 %u (ID=%u), PFS %d (%s)", 
 				group_idx, group_ids[group_idx], pfs_idx, pfs_array[pfs_idx]);
 			
-			rc = bb_g_create_bb_dataset_by_sn(group_sn_array[group_idx], 
-				group_ids[group_idx], pfs_array[pfs_idx], 
+			rc = bb_g_create_bb_dataset_by_sn(group_sn_array[group_idx], group_ids[group_idx], pfs_array[pfs_idx], 
 				metadata_acceleration, is_share_cache, &dataset_ids[group_idx][pfs_idx]);
 			if (rc == 0) {
-				dataset_ids[group_idx][pfs_idx] = (uint32_t)rc;
 				debug("BB-----创建数据集规则成功: 缓存组ID=%u, PFS=%s, 数据集ID=%u", 
 					group_ids[group_idx], pfs_array[pfs_idx], dataset_ids[group_idx][pfs_idx]);
 			} else {
@@ -2801,11 +2799,8 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
 			uint32_t dataset_id = dataset_ids[group_idx][pfs_idx];
-
-			debug("BB-----提交预热任务: 数据集ID=%u (缓存组 %u, PFS %d)",
-				dataset_id, group_idx, pfs_idx);
-
-			rc = bb_g_submit_bb_task((int)dataset_id, 1, &task_ids[group_idx][pfs_idx]);
+			debug("BB-----提交预热任务: 数据集ID=%u (缓存组 %u, PFS %d)", dataset_id, group_idx, pfs_idx);
+			rc = bb_g_submit_bb_task(dataset_id, 1, &task_ids[group_idx][pfs_idx]);
 			if (rc == 0) {
 				debug("BB-----提交预热任务成功: 数据集ID=%u, 任务ID=%u",
 					dataset_id, task_ids[group_idx][pfs_idx]);
