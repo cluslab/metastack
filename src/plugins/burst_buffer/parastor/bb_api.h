@@ -182,61 +182,66 @@ extern int create_burst_buffer_group(create_params_request *create_params,  bb_m
 /** 
  * @brief 通过SN创建缓存组
  * @param create_params 参数，详细参考create_params_request结构体注释
+ * @param group_id 返回创建成功的缓存组ID
  * @param bb_config 最小配置参数
- * @param resp_out 通用响应体
- * @return 0>表示成功且返回缓存组ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int create_bb_group_by_sn(create_params_request *create_params, bb_config_t *bb_config);
+extern int create_bb_group_by_sn(create_params_request *create_params, uint32_t *group_id, bb_config_t *bb_config);
 
-/** 
+/**
  * @brief 通过SN创建数据集规则
  * @param create_params 参数，详细参考create_params_request结构体注释
+ * @param dataset_id 通用响应体
  * @param bb_config 最小配置参数
- * @param resp_out 通用响应体
- * @return 0>表示成功且返回数据集规则ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_config_t *bb_config);
+extern int create_bb_dataset_by_sn(create_params_request *create_params, uint32_t *dataset_id, bb_config_t *bb_config);
 
- /**
- * @brief 提交预热任务（通过数据集ID）
- * @param create_params 提交参数，详见create_params_request注释
- * @param bb_config 最小配置参数
- * @return 成功返回task_id (>0);  -1:代码错误; -2:接口错误; -3:接口超时
- */
-extern int submit_bb_task(create_params_request *create_params, bb_config_t *bb_config);
+/**
+* @brief 提交预热任务（通过数据集ID）
+* @param create_params 提交参数，详见create_params_request注释
+* @param task_id 返回创建成功的任务ID
+* @param bb_config 最小配置参数
+* @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+*/
+extern int submit_bb_task(create_params_request *create_params, uint32_t *task_id, bb_config_t *bb_config);
 
 /**
  * @brief 通过SN获取缓存组ID
  * @param group_sn 缓存组的SN
+ * @param group_id 返回缓存组ID
  * @param bb_min_config bb最小配置
- * @return 存在返回group_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
  */
-extern int query_bb_groupid_by_sn(char *group_sn, bb_config_t *bb_min_config);
+extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_t *bb_min_config);
 
 /**
- * @brief 传入缓存组ID和数据集路径，查询数据集规则
+ * @brief 传入缓存组ID和数据集路径，查询数据集规则ID
  * @param group_id 缓存组ID
  * @param path 数据集路径
- * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ * @param dataset_id 返回数据集规则ID
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
  */
-extern int query_datasetid_by_path_groupid( uint32_t group_id, const char *path, bb_config_t *bb_config);
+extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, uint32_t *dataset_id, bb_config_t *bb_config);
+
 
 /**
  * @brief 根据group_id、path查询bb任务
- * @param task_id 入参，传入缓存组ID
- * @param bb_config 入参，最小配置文件
- * @param bb_task 出参，传入初始化后变量指针，返回bb_task
- * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ * @param task_id 
+ * @param bb_config 
+ * @param bb_task 返回查询到的bb_task结构体
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
  */
-extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attribute_task *bb_task);
+extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_attribute_task *bb_task);
 
 /**
  * @brief 传入hostname获取对应client_id
- * @param hostname 
- * @param bb_config 
- * @return 成功返回clietnid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
+ * @param hostname
+ * @param client_id 返回客户端ID
+ * @param bb_config
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
  */
-extern int query_clientid_by_hostname(const char *hostname, bb_config_t *bb_config);
+extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id, bb_config_t *bb_config);
 
 /**
  * @brief 根据group_sn删除缓存组

@@ -31,19 +31,19 @@
  */
 typedef struct slurm_bb_ops {	
 	/* 通过SN创建缓存组 */
-	int (*bb_p_create_bb_group_by_sn) (char *group_sn, int client_cnt, char **client_hostname_arr);
+	int (*bb_p_create_bb_group_by_sn) (char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id);
 	/* 通过SN创建数据集规则 */
-	int (*bb_p_create_bb_dataset_by_sn) (char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache);
+	int (*bb_p_create_bb_dataset_by_sn) (char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id);
 	/* 提交任务（通过数据集ID） */
-	int (*bb_p_submit_bb_task) (int dataset_id, int task_type);
+	int (*bb_p_submit_bb_task) (uint32_t dataset_id, int task_type, uint32_t *task_id);
 	/* 等待任务完成 */
-	int (*bb_p_wait_task_complete) (int task_id, int task_type);
+	int (*bb_p_wait_task_complete) (uint32_t task_id, int task_type);
 	/* 根据group_sn删除缓存组 */
 	int (*bb_p_delete_bb_group_by_sn) (char *group_sn);
 	/* 根据dataset_id删除数据集规则 */
-	int (*bb_p_delete_bb_dataset_by_id) (int dataset_id, int group_id, char * path);
+	int (*bb_p_delete_bb_dataset_by_id) (uint32_t dataset_id, int group_id, char * path);
 	/* 根据task_id取消BB任务 */
-	int (*bb_p_cancel_bb_task_by_id) (int task_id);
+	int (*bb_p_cancel_bb_task_by_id) (uint32_t task_id);
 } slurm_bb_slurmd_ops_t;
 
 /*
@@ -171,7 +171,7 @@ fini:	slurm_mutex_unlock(&g_context_lock);
  */
 
 
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr)
+extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id)
 {
 	DEF_TIMERS;
 	int rc = 0;
@@ -179,14 +179,14 @@ extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_hostname_arr);
+		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_hostname_arr, uint32_t *group_id);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
 
-extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache)
+extern int bb_g_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id)
 {
 	DEF_TIMERS;
 	int rc = 0;
@@ -194,7 +194,7 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc = (*(ops[i].bb_p_create_bb_dataset_by_sn))(group_sn, group_id, path, is_use_metadata, is_share_cache);
+		rc = (*(ops[i].bb_p_create_bb_dataset_by_sn))(group_sn, group_id, path, is_use_metadata, is_share_cache, dataset_id);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
@@ -202,7 +202,7 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 }
 
 
-extern int bb_g_submit_bb_task(int dataset_id, int task_type)
+extern int bb_g_submit_bb_task(uint32_t dataset_id, int task_type, uint32_t *task_id)
 {
 	DEF_TIMERS;
 	int rc = 0;
@@ -210,7 +210,7 @@ extern int bb_g_submit_bb_task(int dataset_id, int task_type)
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc = (*(ops[i].bb_p_submit_bb_task))(dataset_id, task_type);
+		rc = (*(ops[i].bb_p_submit_bb_task))(dataset_id, task_type, task_id);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
@@ -218,7 +218,7 @@ extern int bb_g_submit_bb_task(int dataset_id, int task_type)
 }
 
 
-extern int bb_g_wait_task_complete(int task_id, int task_type)
+extern int bb_g_wait_task_complete(uint32_t task_id, int task_type)
 {
 	DEF_TIMERS;
 	int rc = 0;
@@ -248,7 +248,7 @@ extern int bb_g_delete_bb_group_by_sn(char *group_sn)
 	return rc;
 }
 
-extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * path)
+extern int bb_g_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, char * path)
 {
 	DEF_TIMERS;
 	int rc = 0;
@@ -263,7 +263,7 @@ extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
 	return rc;
 }
 
-extern int bb_g_cancel_bb_task_by_id(int task_id)
+extern int bb_g_cancel_bb_task_by_id(uint32_t task_id)
 {
 	DEF_TIMERS;
 	START_TIMER;

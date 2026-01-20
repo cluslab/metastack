@@ -2222,24 +2222,14 @@ static int parse_single_json_of_dataset(const char* json_str, bb_attribute_datas
 }
 
 
-
-
-/** 
- * @brief 通过SN创建缓存组
- * @param create_params 参数，详细参考create_params_request结构体注释
- * @param bb_config 最小配置参数
- * @param resp_out 通用响应体
- * @return >0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
- */
-extern int create_bb_group_by_sn(create_params_request *create_params, bb_config_t *bb_config)
+extern int create_bb_group_by_sn(create_params_request *create_params, uint32_t *group_id, bb_config_t *bb_config)
 {
-    if (!bb_config || !create_params) {
-        debug("Invalid parameters to create_burst_buffer_group\n");
+    if (!bb_config || !create_params || !group_id) {
+        debug("Invalid parameters\n");
         return BB_CODE_ERROR;
     }
     bb_response *resp_out = xmalloc(sizeof(bb_response));
     int ret = BB_SUCCESS;
-    int group_id = 0;
     char *json_string = NULL;
     ret = call_bb_api_of_group(bb_config, create_params, CREATE_CALL, &json_string);
     if (ret != 0) {
@@ -2261,27 +2251,18 @@ extern int create_bb_group_by_sn(create_params_request *create_params, bb_config
         free_bb_response(resp_out);
         return BB_API_ERROR;
     }
-    group_id = resp_out->group_id;
+    *group_id = resp_out->group_id;
     free_bb_response(resp_out);
-    return group_id;
+    return ret;
 }
 
-/** 
- * @brief 通过SN创建数据集规则
- * @param create_params 参数，详细参考create_params_request结构体注释
- * @param bb_config 最小配置参数
- * @param resp_out 通用响应体
- * @return 0>表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
- */
-extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_config_t *bb_config)
+extern int create_bb_dataset_by_sn(create_params_request *create_params, uint32_t *dataset_id, bb_config_t *bb_config)
 {
-
-    if (!bb_config || !create_params) {
-        debug("Invalid parameters to create_burst_buffer_group\n");
+    if (!bb_config || !create_params || !dataset_id) {
+        debug("Invalid parameters\n");
         return BB_CODE_ERROR;
     }
     int ret = BB_SUCCESS;
-    int dataset_id = 0;
     bb_response *resp_out = xmalloc(sizeof(bb_response));
     char *json_string = NULL;
     ret = call_bb_api_of_dataset(bb_config, create_params, CREATE_CALL, &json_string);
@@ -2304,27 +2285,19 @@ extern int create_bb_dataset_by_sn(create_params_request *create_params, bb_conf
         free_bb_response(resp_out);
         return BB_API_ERROR;
     }
-    dataset_id = resp_out->dataset_id;
+    *dataset_id = resp_out->dataset_id;
     free_bb_response(resp_out);
-    return dataset_id;
+    return ret;
 }
 
-
-/**
- * @brief 通过SN获取缓存组ID
- * @param group_sn 缓存组的SN
- * @param bb_min_config bb最小配置
- * @return 成功获取返回缓存组ID(>0)，0表示不存在,-1表示代码错误，-2表示接口错误，-3表示接口超时
- */
-extern int query_bb_groupid_by_sn(char *group_sn, bb_config_t *bb_min_config)
+extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_t *bb_min_config)
 {
-    if (! bb_min_config || !group_sn ) {
+    if (! bb_min_config || !group_sn || !group_id) {
         debug("Invalid parameters \n");
         return BB_CODE_ERROR;
     }
     int ret = 0;
     char *json_string = NULL;
-    int group_id = 0;
     bb_response *resp_out = xmalloc(sizeof(bb_response));
     bb_attribute_group *bb_group = xmalloc(sizeof(bb_group));
     query_params_request query_params = (query_params_request){ 0 };
@@ -2341,58 +2314,33 @@ extern int query_bb_groupid_by_sn(char *group_sn, bb_config_t *bb_min_config)
         free_bb_response(resp_out);
         return ret;
     }
-    ret = parse_single_json_of_group (json_string, resp_out, bb_group);
+    ret = parse_single_json_of_group(json_string, resp_out, bb_group);
     xfree(json_string);
-    if (ret ==  BB_CODE_ERROR) {
-        error("failed to analysis jsong string to response");
-        free_bb_group(bb_group);
-        free_bb_response(resp_out);
-        return ret;
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
+        if (ret == 0 && xstrcmp(bb_group->group_sn, group_sn) != 0) {
+            error("get group sn error, the group_sn  is %s, but return group_sn is %s", group_sn, bb_group->group_sn);
+            ret = SLURM_ERROR;
+        } else {
+            *group_id = bb_group->id;
+        }
     }
-    if (resp_out->err_no != 0) {
-        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
-        free_bb_group(bb_group);
-        free_bb_response(resp_out);
-        return BB_API_ERROR;
-    }
-    if (ret == BB_SUCCESS_NO_DATA) {
-        debug("the group sn:%s is not exist", group_sn);
-        free_bb_group(bb_group);
-        free_bb_response(resp_out);
-        return 0;
-    }
-    /* 确认查询到的group的sn与传入的一致 */
-    if (ret == 0 && xstrcmp(bb_group->group_sn, group_sn) != 0) {
-        error("get group sn error, the group_sn  is %s, but return group_sn is %s", group_sn, bb_group->group_sn);
-        free_bb_group(bb_group);
-        free_bb_response(resp_out);
-        return BB_CODE_ERROR;
-    }
-    group_id = bb_group->id;
     free_bb_group(bb_group);
     free_bb_response(resp_out);
-    return group_id;
+    return ret;
 }
 
-
-
-
-/**
- * @brief 传入缓存组ID和数据集路径，检查是否存在该数据集规则
- * @param group_id 缓存组ID
- * @param path 数据集路径
- * @return 存在返回datasetid; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
- */
-extern int query_datasetid_by_path_groupid( uint32_t group_id, const char *path, bb_config_t *bb_config)
+extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, uint32_t *dataset_id, bb_config_t *bb_config)
 {
-
-    if (!bb_config || group_id <= 0 || !path) {
+    if (!bb_config || group_id <= 0 || !path || !dataset_id) {
         debug("Invalid parameters \n");
         return BB_CODE_ERROR;
     }
     int ret = 0;
     char *json_string = NULL;
-    int dataset_id = 0;
     bb_response *resp_out = xmalloc(sizeof(bb_response));
     bb_attribute_dataset *bb_dataset = xmalloc(sizeof(bb_attribute_dataset));
     query_params_request query_params = { 0 };
@@ -2411,57 +2359,34 @@ extern int query_datasetid_by_path_groupid( uint32_t group_id, const char *path,
         free_bb_dataset(bb_dataset);
         return ret;
     }
-
     ret = parse_single_json_of_dataset(json_string, bb_dataset, resp_out);
     xfree(json_string);
-    if (ret ==  BB_CODE_ERROR) {
-        error("failed to analysis jsong string");
-        free_bb_dataset(bb_dataset);
-        free_bb_response(resp_out);
-        return ret;
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
+        if (xstrcmp(bb_dataset->path, path) != 0 || bb_dataset->group_id != group_id) {
+            error("get dataset id error, the path  is %s, but return path is %s", path, bb_dataset->path);
+            error("get dataset id error, the group_id  is %u, but return group_id is %u", group_id, bb_dataset->group_id);
+            ret = SLURM_ERROR;
+        } else {
+            *dataset_id = bb_dataset->id;
+        }
     }
-    if (resp_out->err_no != 0) {
-        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
-        free_bb_dataset(bb_dataset);
-        free_bb_response(resp_out);
-        return BB_API_ERROR;
-    }
-    if (ret == BB_SUCCESS_NO_DATA) {
-        debug("the datasets is not exist");
-        free_bb_dataset(bb_dataset);
-        free_bb_response(resp_out);
-        return 0;
-    }
-    /* 确认查询到的group的sn与传入的一致 */
-    if (ret == 0 && (xstrcmp(bb_dataset->path, path) != 0 || bb_dataset->group_id != group_id)) {
-        error(" the path  is %s, but return path is %s; the group_id is %u , but return group_id is %u", 
-            path, bb_dataset->path, group_id , bb_dataset->group_id);
-        free_bb_dataset(bb_dataset);
-        free_bb_response(resp_out);
-        return BB_CODE_ERROR;
-    }
-    dataset_id = bb_dataset->id;
     free_bb_dataset(bb_dataset);
     free_bb_response(resp_out);
-    return dataset_id;
-
+    return ret;
 }
 
-/**
- * @brief 提交预热任务（通过数据集ID）,该接口为异步接口，只有接口错误（返回erro_message才重试）
- * @param create_params 提交参数，详见create_params_request注释
- * @param bb_config 最小配置参数
- * @return 成功返回task_id (>0);  -1:代码错误; -2:接口错误; -3:接口超时
- */
-extern int submit_bb_task(create_params_request *create_params, bb_config_t *bb_config)
+extern int submit_bb_task(create_params_request *create_params, uint32_t *task_id, bb_config_t *bb_config)
 {
-    if (bb_config == NULL || create_params == NULL) {
+    if (!bb_config || !create_params || !task_id) {
         debug("Invalid parameters to submit_burst_buffer_task\n");
         return BB_CODE_ERROR;
     }
     int ret = 0;
     char *json_string = NULL;
-    int task_id = 0;
     bb_response *resp_out = xmalloc(sizeof(bb_response));
     ret = call_bb_api_of_task(bb_config, create_params, CREATE_CALL, &json_string);
     if (ret != 0) {
@@ -2471,8 +2396,6 @@ extern int submit_bb_task(create_params_request *create_params, bb_config_t *bb_
         free_bb_response(resp_out);
         return ret;
     }
-   
-    
     ret = parse_json_to_response(json_string, resp_out, TASK_SUBMIT);
     xfree(json_string);
     if (ret != 0) {
@@ -2485,20 +2408,12 @@ extern int submit_bb_task(create_params_request *create_params, bb_config_t *bb_
         free_bb_response(resp_out);
         return BB_API_ERROR;
     }
-    task_id = resp_out->task_id;
+    *task_id = resp_out->task_id;
     free_bb_response(resp_out);
-    return task_id;
+    return ret;
 }
 
-
-/**
- * @brief 根据group_id、path查询bb任务
- * @param task_id 入参，传入缓存组ID
- * @param bb_config 入参，最小配置文件
- * @param bb_task 出参，传入初始化后变量指针，返回bb_task
- * @return 存在返回task_id; 0:不存在；-1:代码错误; -2:接口错误; -3:接口超时
- */
-extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attribute_task *bb_task)
+extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_attribute_task *bb_task)
 {
     if (bb_config == NULL || bb_task == NULL) {
         debug("Invalid parameters\n");
@@ -2507,12 +2422,12 @@ extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attr
     int ret = 0;
     char *json_string = NULL;
     bb_response *resp_out = xmalloc(sizeof(bb_response));
-    query_params_request query_params ={ 0 };
+    query_params_request query_params = { 0 };
     query_params.start = 0;
     query_params.limit = 1;
     query_params.task_type = BURST_BUFFER_TASK_TYPE_NULL;
     query_params.task_state = BB_TASK_STATE_NULL;
-    query_params.task_id = (uint32_t)task_id;
+    query_params.task_id = task_id;
     ret = call_bb_api_of_task(bb_config, &query_params, QUERY_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
@@ -2524,42 +2439,28 @@ extern int query_bb_tasks_by_taskid(int task_id, bb_config_t *bb_config, bb_attr
     /* 获取查询结果 */
     ret = parse_single_json_of_task(json_string, resp_out, bb_task);
     xfree(json_string);
-    if (ret == BB_CODE_ERROR) {
-        error("failed to analysis jsong string to response");
-        free_bb_response(resp_out);
-        return ret;
-    }
-    if (resp_out->err_no != 0) {
-        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
-        free_bb_response(resp_out);
-        return BB_API_ERROR;
-    }
-    if (ret == BB_SUCCESS_NO_DATA) {
-        debug("the datasets is not exist");
-        free_bb_response(resp_out);
-        return 0;
-    }
-    /* 检查查询到的task数据ID是否正确 */
-    if (bb_task->task_id == task_id) {
-        ret = bb_task->task_id;
-    } else {
-        error("get task id error, the task_id  is %d, but return task_id is %d", task_id, bb_task->task_id);
-        free_bb_response(resp_out);
-        return SLURM_ERROR;
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
+        if (bb_task->task_id != task_id) {
+            error("get task id error, the task_id  is %d, but return task_id is %d", task_id, bb_task->task_id);
+            ret = SLURM_ERROR;
+        }
     }
     free_bb_response(resp_out);
     return ret;
 }
 
-extern int query_clientid_by_hostname(const char *hostname, bb_config_t *bb_config)
+extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id, bb_config_t *bb_config)
 {
     if (bb_config == NULL || hostname == NULL) {
-        debug("Invalid parameters to query_clientid_by_hostname\n");
+        debug("Invalid parameters\n");
         return SLURM_ERROR;
     }
     int ret = 0;
     char *json_string = NULL;
-    bb_attribute_client *bb_client = xmalloc(sizeof(bb_attribute_client));
     bb_response *resp_out = xmalloc(sizeof(bb_response));
     query_params_request *query_params = xmalloc(sizeof(query_params_request));
     query_params->start = 0;
@@ -2568,57 +2469,34 @@ extern int query_clientid_by_hostname(const char *hostname, bb_config_t *bb_conf
     query_params->host_name_match_mode = 0;
     ret = call_bb_api_of_client(bb_config, query_params, &json_string);
     free_query_params(query_params);
-    if (ret != 0) {
+    if (ret != BB_SUCCESS) {
         if (ret == BB_API_TIMEOUT)
             error("调用接口超时");
         error("failed to call create bb group API");
-        free_bb_client(bb_client);
         free_bb_response(resp_out);
         return ret;
     }
     /* 获取查询结果 */
+    bb_attribute_client *bb_client = xmalloc(sizeof(bb_attribute_client));
     ret = parse_single_json_of_client(json_string, resp_out, bb_client);
     xfree(json_string);
-    if (ret == BB_CODE_ERROR) {
-        error("failed to analysis jsong string to response");
-        free_bb_client(bb_client);
-        free_bb_response(resp_out);
-        return ret;
-    }
-    if (resp_out->err_no != 0) {
-        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
-        free_bb_client(bb_client);
-        free_bb_response(resp_out);
-        return BB_API_ERROR;
-    }
-    if (ret == BB_SUCCESS_NO_DATA) {
-        debug("the datasets is not exist");
-        free_bb_client(bb_client);
-        free_bb_response(resp_out);
-        return 0;
-    }
-    /* 检查查询到的数据是否正确 */
-    if (xstrcmp(bb_client->hostname,hostname) == 0) {
-        ret = bb_client->id;
-    } else {
-        error("get client id error, the hostname  is %s, but return hostname is %s", hostname, bb_client->hostname);
-        free_bb_client(bb_client);
-        free_bb_response(resp_out);
-        return SLURM_ERROR;
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
+        if (xstrcmp(bb_client->hostname, hostname) != 0) {
+            error("get client id error, the hostname  is %s, but return hostname is %s", hostname, bb_client->hostname);
+            ret = SLURM_ERROR;
+        } else {
+            *client_id = bb_client->id;
+        }
     }
     free_bb_client(bb_client);
     free_bb_response(resp_out);
     return ret;
 }
 
-
-
-/**
- * @brief 根据group_sn删除缓存组
- * @param group_sn 入参：缓存组sn
- * @param bb_config 入参：最小配置
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
- */
 extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
 {
     if (!bb_config || !group_sn) {
@@ -2627,7 +2505,6 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
     }
     int ret = BB_SUCCESS;
     char *json_string = NULL;
-
     bb_response *resp_out = xmalloc(sizeof(bb_response));
     delete_params_request delete_params = { 0 };
     delete_params.group_sn = xstrdup(group_sn);
@@ -2640,29 +2517,18 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
         free_bb_response(resp_out);
         return ret;
     }
-
     ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
     xfree(json_string);
-    if (ret != 0) {
-        error("failed to analysis jsong string to response");
-        free_bb_response(resp_out);
-        return ret;
-    }
-    if (resp_out->err_no != 0) {
-        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
-        free_bb_response(resp_out);
-        return BB_API_ERROR;
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
     }
     free_bb_response(resp_out);
     return ret;
 }
 
-/**
- * @brief 根据dataset_id删除数据集规则
- * @param dataset_id 
- * @param bb_config 
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
- */
 extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config)
 {
     if (!bb_config || dataset_id <= 0) {
@@ -2685,26 +2551,16 @@ extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config)
     }
     ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
     xfree(json_string);
-    if (ret != 0) {
-        error("failed to analysis jsong string to response");
-        free_bb_response(resp_out);
-        return ret;
-    }
-    if (resp_out->err_no != 0) {
-        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
-        free_bb_response(resp_out);
-        return BB_API_ERROR;
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
     }
     free_bb_response(resp_out);
     return ret;
 }
 
-/**
- * @brief 根据task_id删除BB任务
- * @param task_id 
- * @param bb_config 
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
- */
 extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config)
 {
     if (!bb_config || task_id <= 0) {
@@ -2726,26 +2582,16 @@ extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config)
     }
     ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
     xfree(json_string);
-    if (ret != 0) {
-        error("failed to analysis jsong string to response");
-        free_bb_response(resp_out);
-        return ret;
-    }
-    if (resp_out->err_no != 0) {
-        debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
-        free_bb_response(resp_out);
-        return BB_API_ERROR;
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
     }
     free_bb_response(resp_out);
     return ret;
 }
 
-
-
-/* 
-* delete a cache group by client ids 
-* NOTE: before deleting the cache group, make sure to delete the datasets under this group first.
-*/
 extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out)
 {
     if( bb_config == NULL || resp_out == NULL || delete_params == NULL ){

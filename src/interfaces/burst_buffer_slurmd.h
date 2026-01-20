@@ -25,12 +25,13 @@ extern int bb_g_fini(void);
 
 /**
  * @brief 根据缓存组SN创建缓存组
- * @param group_sn 缓存组SN
+ * @param group_sn 
  * @param client_cnt 缓存组中客户端数量
- * @param client_arr 缓存组ID数组
- * @return 0>表示成功且返回缓存组ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ * @param client_hostname_arr  客户端hostname数组
+ * @param group_id 返回创建成功的缓存组ID
+ * @return 0:成功；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *client_arr);
+extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id);
 
 /**
  * @brief 创建数据集规则
@@ -41,15 +42,16 @@ extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, int *clien
  * @param is_share_cache 缓存方式（true为共享缓存,false为本地缓存）
  * @return 0>表示成功且返回数据集规则ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache);
+extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id);
 
 /**
  * @brief 提交任务
  * @param dataset_id 数据集规则ID
  * @param task_type 1:预热; 2:回收
+ * @param task_id 返回创建成功的任务ID
  * @return 0:成功提交；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_submit_bb_task(int dataset_id, int task_type);
+extern int bb_g_submit_bb_task(int dataset_id, int task_type, uint32_t *task_id);
 
 /**
  * @brief 阻塞等待任务完成
