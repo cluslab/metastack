@@ -2665,7 +2665,6 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			msg->auth_uid);
 		return;
 	}
-	int process_rc = 0;
 	// ========== 从 msg 中获取变量 ==========
 	uint32_t job_id = req->job_id;
 	uint32_t user_id = req->user_id;
