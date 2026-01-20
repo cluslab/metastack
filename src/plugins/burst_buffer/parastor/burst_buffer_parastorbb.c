@@ -1684,95 +1684,97 @@ static void _free_orphan_alloc_rec(void *x)
 }
 static void *_cleanup_bb_resources_from_alloc(void *x)
 {
-	bb_alloc_t *bb_alloc = (bb_alloc_t *)x;
+	// bb_alloc_t *bb_alloc = (bb_alloc_t *)x;
 
-	/* 拿锁，把数据赋值给临时变量，减少持锁时间 */
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-	uint32_t tmp_job_id = bb_alloc->job_id;
-	int tmp_index_tasks = bb_alloc->index_tasks;
-	int *tmp_task_arr = xmalloc(sizeof(int) * tmp_index_tasks);
-	if (bb_alloc->bb_task_ids)
-		memcpy(tmp_task_arr, bb_alloc->bb_task_ids, sizeof(int) * tmp_index_tasks);
-	int tmp_index_datasets = bb_alloc->index_datasets;
-	int *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
-	if (bb_alloc->bb_dataset_ids)
-		memcpy(tmp_dataset_arr, bb_alloc->bb_dataset_ids, sizeof(int) * tmp_index_datasets);
-	int tmp_index_groups = bb_alloc->index_groups;
-	int *tmp_group_arr = xmalloc(sizeof(int) * tmp_index_groups);
-	if (bb_alloc->bb_group_ids)
-		memcpy(tmp_group_arr, bb_alloc->bb_group_ids, sizeof(int) * tmp_index_groups);
-	slurm_mutex_unlock(&bb_state.bb_mutex);
+	// /* 拿锁，把数据赋值给临时变量，减少持锁时间 */
+	// slurm_mutex_lock(&bb_state.bb_mutex);
+	// bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
+	// uint32_t tmp_job_id = bb_alloc->job_id;
+	// int tmp_index_tasks = bb_alloc->index_tasks;
+	// int *tmp_task_arr = xmalloc(sizeof(int) * tmp_index_tasks);
+	// if (bb_alloc->bb_task_ids)
+	// 	memcpy(tmp_task_arr, bb_alloc->bb_task_ids, sizeof(int) * tmp_index_tasks);
+	// int tmp_index_datasets = bb_alloc->index_datasets;
+	// int *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
+	// if (bb_alloc->bb_dataset_ids)
+	// 	memcpy(tmp_dataset_arr, bb_alloc->bb_dataset_ids, sizeof(int) * tmp_index_datasets);
+	// int tmp_index_groups = bb_alloc->index_groups;
+	// int *tmp_group_arr = xmalloc(sizeof(int) * tmp_index_groups);
+	// if (bb_alloc->bb_group_ids)
+	// 	memcpy(tmp_group_arr, bb_alloc->bb_group_ids, sizeof(int) * tmp_index_groups);
+	// slurm_mutex_unlock(&bb_state.bb_mutex);
 
 
-	if (bb_min_config == NULL) {
-		error("failed to get bb minimal config for JobId=%u", tmp_job_id);
-		return NULL;
-	}
+	// if (bb_min_config == NULL) {
+	// 	error("failed to get bb minimal config for JobId=%u", tmp_job_id);
+	// 	return NULL;
+	// }
 
-	/* 1) 删除数据集 */
-	if (tmp_dataset_arr && tmp_index_datasets > 0) {
-		for (int i = 0; i < tmp_index_datasets; i++) {
-			delete_params_request delete_params = { 0 };
-			delete_params.dataset_id = tmp_dataset_arr[i];
-			bb_response *resp_out = xmalloc(sizeof(bb_response));
-			int ret = delete_burst_buffer_dataset(&delete_params, bb_min_config, resp_out);
-			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-				error("delete dataset %d for JobId=%u failed",
-					delete_params.dataset_id, tmp_job_id);
-			} else {
-				bb_attribute_dataset *bb_dataset_tmp = NULL;
-				slurm_mutex_lock(&bb_state.bb_mutex);
-				if (bb_state.list_datasets)
-					bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &delete_params.dataset_id);
-				if (bb_dataset_tmp)
-					free_bb_dataset(bb_dataset_tmp);
-				if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
-					bb_state.bb_config.free_datasets++;
-				if (bb_state.bb_config.used_datasets > 0)
-					bb_state.bb_config.used_datasets--;
-				slurm_mutex_unlock(&bb_state.bb_mutex);
-			}
-			free_bb_response(resp_out);
-		}
-	} else {
-		info("no dataset to delete for JobId=%u", tmp_job_id);
-	}
+	// /* 1) 删除数据集 */
+	// if (tmp_dataset_arr && tmp_index_datasets > 0) {
+	// 	for (int i = 0; i < tmp_index_datasets; i++) {
+	// 		delete_params_request delete_params = { 0 };
+	// 		delete_params.dataset_id = (uint32_t)tmp_dataset_arr[i];
+	// 		bb_response *resp_out = xmalloc(sizeof(bb_response));
+	// 		int ret = delete_burst_buffer_dataset(&delete_params, bb_min_config, resp_out);
+	// 		if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
+	// 			error("delete dataset %u for JobId=%u failed",
+	// 				delete_params.dataset_id, tmp_job_id);
+	// 		} else {
+	// 			bb_attribute_dataset *bb_dataset_tmp = NULL;
+	// 			int dataset_id_key = (int)delete_params.dataset_id;
+	// 			slurm_mutex_lock(&bb_state.bb_mutex);
+	// 			if (bb_state.list_datasets)
+	// 				bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &dataset_id_key);
+	// 			if (bb_dataset_tmp)
+	// 				free_bb_dataset(bb_dataset_tmp);
+	// 			if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
+	// 				bb_state.bb_config.free_datasets++;
+	// 			if (bb_state.bb_config.used_datasets > 0)
+	// 				bb_state.bb_config.used_datasets--;
+	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
+	// 		}
+	// 		bb_response_free(resp_out);
+	// 	}
+	// } else {
+	// 	info("no dataset to delete for JobId=%u", tmp_job_id);
+	// }
 
-	/* 2) 删除缓存组（必须在数据集清理完成后） */
-	if (tmp_group_arr && tmp_index_groups > 0) {
-		for (int i = 0; i < tmp_index_groups; i++) {
-			delete_params_request delete_params = { 0 };
-			delete_params.group_id = tmp_group_arr[i];
-			bb_response *resp_out = xmalloc(sizeof(bb_response));
-			int ret = delete_burst_buffer_group(&delete_params, bb_min_config, resp_out);
-			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-				error("delete group %d for JobId=%u failed",
-					delete_params.group_id, tmp_job_id);
-			} else {
-				bb_attribute_group *bb_group_tmp = NULL;
-				slurm_mutex_lock(&bb_state.bb_mutex);
-				if (bb_state.list_groups)
-					bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &delete_params.group_id);
-				if (bb_group_tmp)
-					free_bb_group(bb_group_tmp);
-				if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
-					bb_state.bb_config.free_groups++;
-				if (bb_state.bb_config.used_groups > 0)
-					bb_state.bb_config.used_groups--;
-				slurm_mutex_unlock(&bb_state.bb_mutex);
-			}
-			free_bb_response(resp_out);
-		}
-	} else {
-		info("no group to delete for JobId=%u", tmp_job_id);
-	}
+	// /* 2) 删除缓存组（必须在数据集清理完成后） */
+	// if (tmp_group_arr && tmp_index_groups > 0) {
+	// 	for (int i = 0; i < tmp_index_groups; i++) {
+	// 		delete_params_request delete_params = { 0 };
+	// 		delete_params.group_id = (uint32_t)tmp_group_arr[i];
+	// 		bb_response *resp_out = xmalloc(sizeof(bb_response));
+	// 		int ret = delete_burst_buffer_group(&delete_params, bb_min_config, resp_out);
+	// 		if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
+	// 			error("delete group %u for JobId=%u failed",
+	// 				delete_params.group_id, tmp_job_id);
+	// 		} else {
+	// 			bb_attribute_group *bb_group_tmp = NULL;
+	// 			int group_id_key = (int)delete_params.group_id;
+	// 			slurm_mutex_lock(&bb_state.bb_mutex);
+	// 			if (bb_state.list_groups)
+	// 				bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &group_id_key);
+	// 			if (bb_group_tmp)
+	// 				free_bb_group(bb_group_tmp);
+	// 			if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
+	// 				bb_state.bb_config.free_groups++;
+	// 			if (bb_state.bb_config.used_groups > 0)
+	// 				bb_state.bb_config.used_groups--;
+	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
+	// 		}
+	// 		bb_response_free(resp_out);
+	// 	}
+	// } else {
+	// 	info("no group to delete for JobId=%u", tmp_job_id);
+	// }
 
-	_bb_min_config_free(bb_min_config);
-	xfree(tmp_task_arr);
-	xfree(tmp_dataset_arr);
-	xfree(tmp_group_arr);
-	return NULL;
+	// _bb_min_config_free(bb_min_config);
+	// xfree(tmp_task_arr);
+	// xfree(tmp_dataset_arr);
+	// xfree(tmp_group_arr);
+	// return NULL;
 }
 
 static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc)
@@ -1955,6 +1957,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
  * the matching job is either gone or completed OR we have a job buffer and a
  * pending job, but don't know the status of stage-in)
  */
+//TODO: 清理流程修改，_clean_by_bb_alloc
 static void _purge_vestigial_bufs(void)
 {
 	List orphan_rec_list = list_create(_free_orphan_alloc_rec);

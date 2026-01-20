@@ -179,15 +179,22 @@ static void _test_config()
 }
 
 
-
-extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr)
+/**
+ * @brief 通过SN创建缓存组
+ * @param group_sn 
+ * @param client_cnt 客户端数量 
+ * @param client_hostname_arr 客户端hostname数组
+ * @param group_id 返回创建成功的缓存组ID
+ * @return 0成功，-1代码错误，-2接口错误，-3接口超时
+ */
+extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id)
 {
 	int rc = SLURM_ERROR;
 	if (!group_sn || !client_hostname_arr || client_cnt < 0) {
 		error("error params");
 		return SLURM_ERROR;
 	}
-	int *client_ids = xmalloc(client_cnt * sizeof(int));
+	uint32_t *client_ids = xmalloc(client_cnt * sizeof(int)); //后面指针给创建参数使用，通过创建参数释放
 	bool query_success = true;
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	for (int i = 0; i < client_cnt; i++) {
@@ -196,18 +203,15 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
 			query_success = false;
 			break;
 		}
-		rc = query_clientid_by_hostname(client_hostname_arr[i], &bb_state.bb_config);
-		if (rc > 0) {
-			client_ids[i] = rc;
-			debug("查询 client_id 成功: hostname=%s, client_id=%d", 
-				client_hostname_arr[i], client_ids[i]);
-		} else if (rc == 0) {
-			error("hostname %s 对应的 client_id 不存在", client_hostname_arr[i]);
+		rc = query_clientid_by_hostname(client_hostname_arr[i], &client_ids[i], &bb_state.bb_config);
+		if (rc == BB_SUCCESS) {
+			debug("查询 client_id 成功: hostname=%s, client_id=%d", client_hostname_arr[i], client_ids[i]);
+		} else if (rc == BB_SUCCESS_NO_DATA) {
+			error("hostname %s 对应的 client 不存在", client_hostname_arr[i]);
 			query_success = false;
 			break;
 		} else {
-			error("查询 hostname %s 的 client_id 失败, return code=%d", 
-				client_hostname_arr[i], rc);
+			error("查询 hostname %s 的 client_id 失败, return code=%d", client_hostname_arr[i], rc);
 			query_success = false;
 			break;
 		}
@@ -220,34 +224,33 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
 	create_params_request *create_params = xmalloc(sizeof(create_params_request));
 	create_params->group_sn = xstrdup(group_sn);
 	create_params->client_count = client_cnt;
-	create_params->client_ids = xmalloc(create_params->client_count * sizeof(int));
-	memcpy(create_params->client_ids, client_arr, create_params->client_count * sizeof(int));
+	create_params->client_ids = client_ids;
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	for (int retry_count = 0; retry_count < bb_state.bb_config.retry_count; retry_count++) {
-		rc = create_bb_group_by_sn(create_params, &bb_state.bb_config);
-		if (rc > 0) {
-			debug("创建缓存组成功,group_id,%d", rc);
+		rc = create_bb_group_by_sn(create_params, group_id, &bb_state.bb_config);
+		if (rc == BB_SUCCESS) {
+			debug("创建缓存组成功,group_id,%u", *group_id);
 			break;
-		} else if (rc == -1) {
+		} else if (rc == BB_CODE_ERROR) {
 			error("创建缓存组代码错误");
 			break;
-		} else if (rc == -2) {
+		} else if (rc == BB_API_ERROR) {
 			error("创建缓存组接口返回错误");
 			break;
-		} else if (rc == -3) {
+		} else if (rc == BB_API_TIMEOUT) {
 			debug("创建缓存组接口超时,查询是否已创建成功");
 			slurm_mutex_lock(&bb_state.bb_mutex);
-			int query_rc = query_bb_groupid_by_sn(group_sn, &bb_state.bb_config);
+			int query_rc = query_bb_groupid_by_sn(group_sn, group_id, &bb_state.bb_config);
 			slurm_mutex_unlock(&bb_state.bb_mutex);
 			if (query_rc < 0) {
 				error("查询失败");
 				break;
 			}
-			if (query_rc == 0) {
+			if (query_rc == BB_SUCCESS_NO_DATA) {
 				debug("缓存组未创建成功,重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
 				continue;
 			}
-			if (query_rc > 0) {
+			if (query_rc == BB_SUCCESS) {
 				debug("查询成功");
 				rc = query_rc;
 				break;
@@ -265,7 +268,7 @@ extern int bb_p_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
 	return rc;
 }
 
-extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache)
+extern int bb_p_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id)
 {
 	int rc = SLURM_ERROR;
 	if (!group_sn || !path) {
@@ -275,6 +278,7 @@ extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 	create_params_request *create_params = xmalloc(sizeof(create_params_request));
 	create_params->group_sn = xstrdup(group_sn);
 	create_params->path = xstrdup(path);
+	create_params->group_id = group_id;
 	create_params->is_use_metadata = is_use_metadata;
 	if (is_share_cache == true) {
 		create_params->data_cache_type = SHARE_CACHE;
@@ -283,28 +287,28 @@ extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 	}
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	for (int retry_count = 0; retry_count < bb_state.bb_config.retry_count; retry_count++) {
-		rc = create_bb_dataset_by_sn(create_params, &bb_state.bb_config);
-		if (rc > 0) {
-			debug("创建数据集规则成功,dataset_id:%d", rc);
+		rc = create_bb_dataset_by_sn(create_params, dataset_id, &bb_state.bb_config);
+		if (rc == BB_SUCCESS) {
+			debug("创建数据集规则成功,dataset_id:%d", *dataset_id);
 			break;
-		} else if (rc == -1) {
+		} else if (rc == BB_CODE_ERROR) {
 			error("创建数据集规则代码错误");
 			break;
-		} else if (rc == -2) {
+		} else if (rc == BB_API_ERROR) {
 			error("创建数据集规则接口返回错误,重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
 			break;
-		} else if (rc == -3) {
+		} else if (rc == BB_API_TIMEOUT) {
 			debug("创建数据集规则接口超时,查询是否已创建成功");
-			int query_rc = query_datasetid_by_path_groupid(group_id, path, &bb_state.bb_config);
+			int query_rc = query_datasetid_by_path_groupid(group_id, path, dataset_id, &bb_state.bb_config);
 			if (query_rc < 0) {
 				error("查询失败");
 				break;
 			}
-			if (query_rc == 0) {
+			if (query_rc == BB_SUCCESS_NO_DATA) {
 				debug("缓存组未创建成功,重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
 				continue;
 			}
-			if (query_rc > 0) {
+			if (query_rc == BB_SUCCESS) {
 				debug("查询成功");
 				rc = query_rc;
 				break;
@@ -323,7 +327,7 @@ extern int bb_p_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
 }
 
 
-extern int bb_p_submit_bb_task(int dataset_id, int task_type)
+extern int bb_p_submit_bb_task(uint32_t dataset_id, int task_type, uint32_t *task_id)
 {
 	int rc = SLURM_ERROR;
 	if (dataset_id <= 0 || (task_type != BURST_BUFFER_TASK_TYPE_PREFETCH && task_type != BURST_BUFFER_TASK_TYPE_RECYCLE)) {
@@ -335,9 +339,9 @@ extern int bb_p_submit_bb_task(int dataset_id, int task_type)
 	create_params->task_type = task_type;
 	create_params->error_action_type = 0;
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	rc = submit_bb_task(create_params, &bb_state.bb_config);
+	rc = submit_bb_task(create_params, task_id, &bb_state.bb_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
-	if (rc > 0) {
+	if (rc == 0) {
 		debug("提交任务成功,任务ID:%d", rc);
 	} else if (rc == -1) {
 		error("提交任务错误");
@@ -353,7 +357,7 @@ extern int bb_p_submit_bb_task(int dataset_id, int task_type)
 }
 
 
-extern int bb_p_wait_task_complete(int task_id, int task_type)
+extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 {
 	if (task_id <= 0 || (task_type != BURST_BUFFER_TASK_TYPE_PREFETCH && task_type != BURST_BUFFER_TASK_TYPE_RECYCLE)) {
 		error("error params");
@@ -361,10 +365,10 @@ extern int bb_p_wait_task_complete(int task_id, int task_type)
 	}
 	// 定义时间常量
 	int rc = SLURM_ERROR;
-	uint32_t HARD_TIMEOUT_SEC = 0;
+	time_t HARD_TIMEOUT_SEC = 0;
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	const uint32_t CHECK_INTERVAL_SEC = bb_state.bb_config.poll_interval;
-	const uint32_t SOFT_TIMEOUT_SEC = bb_state.bb_config.other_timeout;
+	const time_t CHECK_INTERVAL_SEC = bb_state.bb_config.poll_interval;
+	const time_t SOFT_TIMEOUT_SEC = bb_state.bb_config.other_timeout;
 
 	if (task_type == BURST_BUFFER_TASK_TYPE_PREFETCH)
 		HARD_TIMEOUT_SEC = bb_state.bb_config.stage_in_timeout;
@@ -376,8 +380,8 @@ extern int bb_p_wait_task_complete(int task_id, int task_type)
 	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	if (HARD_TIMEOUT_SEC <= 0 || SOFT_TIMEOUT_SEC < 0 || CHECK_INTERVAL_SEC <= 0) {
-		error("Invalid timeout values: HARD=%d, SOFT=%d, INTERVAL=%d",
-			HARD_TIMEOUT_SEC, SOFT_TIMEOUT_SEC, CHECK_INTERVAL_SEC);
+		error("Invalid timeout values: HARD=%ld, SOFT=%ld, INTERVAL=%ld",
+			(long)HARD_TIMEOUT_SEC, (long)SOFT_TIMEOUT_SEC, (long)CHECK_INTERVAL_SEC);
 		return SLURM_ERROR;
 	}
 	
@@ -389,7 +393,7 @@ extern int bb_p_wait_task_complete(int task_id, int task_type)
 	bool task_completed 	  = false;           
 	int query_rc 			  = 0;                    
 	bb_attribute_task *bb_task = xmalloc(sizeof(bb_attribute_task));  // 任务属性结构体指针
-	debug("开始等待任务完成,task_id=%d, 检查间隔=%d秒, 软超时=%d秒, 硬超时=%d秒", task_id, CHECK_INTERVAL_SEC, SOFT_TIMEOUT_SEC, HARD_TIMEOUT_SEC);
+	debug("开始等待任务完成,task_id=%u, 检查间隔=%ld秒, 软超时=%ld秒, 硬超时=%ld秒", task_id, (long)CHECK_INTERVAL_SEC, (long)SOFT_TIMEOUT_SEC, (long)HARD_TIMEOUT_SEC);
 
 	while (!task_completed) {
 		time_t current_time = time(NULL);
@@ -402,7 +406,7 @@ extern int bb_p_wait_task_complete(int task_id, int task_type)
 		time_t elapsed_time = current_time - start_time;
 
 		if (elapsed_time >= HARD_TIMEOUT_SEC) {
-			error("等待预热任务完成超时（硬超时：%d秒),task_id=%d,已等待%d秒",
+			error("等待预热任务完成超时（硬超时：%d秒),task_id=%u,已等待%d秒",
 				HARD_TIMEOUT_SEC, task_id, elapsed_time);
 			free_bb_task(bb_task);
 			return SLURM_ERROR;
@@ -429,30 +433,26 @@ extern int bb_p_wait_task_complete(int task_id, int task_type)
 
 		// 执行状态查询
 		slurm_mutex_lock(&bb_state.bb_mutex);
-		query_rc = query_bb_tasks_by_taskid(task_id, &bb_state.bb_config, bb_task);
+		query_rc = query_bb_task_by_taskid(task_id, &bb_state.bb_config, bb_task);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		// 查询失败,直接返回
-		if (query_rc < 0) {
-			error("查询预热任务状态失败,task_id=%d, 错误码=%d", task_id, query_rc);
+		if (query_rc != BB_SUCCESS) {
+			error("查询预热任务状态失败,task_id=%u, 错误码=%d", task_id, query_rc);
 			free_bb_task(bb_task);
 			return rc;
 		}
 
-		// 根据是否超过软超时时间决定日志级别
+		// 根据是否超过软超时时间
 		if (soft_timeout_reached) {
 			// 超过软超时时间后,使用info级别输出日志
-			info("查询预热任务状态（已超过软超时时间%d秒）,task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒",
-				SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, elapsed_time);
-		} else {
-			// 未超过软超时时间,使用debug级别
-			debug("查询预热任务状态,task_id=%d, 查询结果=%d, 任务状态=%d, 已等待%d秒",
-				task_id, query_rc, bb_task->task_state, elapsed_time);
-		}
+			debug("查询预热任务状态（已超过OtherTimeout时间%ld秒）,task_id=%u, 查询结果=%d, 任务状态=%d, 已等待%ld秒",
+				(long)SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, (long)elapsed_time);
+		} 
 
 		// 检查任务是否存在
 		if (query_rc == 0) {
 			// 任务不存在
-			error("预热任务不存在,task_id=%d", task_id);
+			error("预热任务不存在,task_id=%u", task_id);
 			free_bb_task(bb_task);
 			return rc;
 		}
@@ -461,23 +461,23 @@ extern int bb_p_wait_task_complete(int task_id, int task_type)
 		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
 			task_completed = true;
 			rc = BB_SUCCESS;
-			info("预热任务完成,task_id=%d, 总耗时=%d秒", task_id, elapsed_time);
+			info("预热任务完成,task_id=%u, 总耗时=%d秒", task_id, elapsed_time);
 			break;
 		} else if (bb_task->task_state == BB_TASK_STATE_FAILED || bb_task->task_state == BB_TASK_STATE_CANCELED) {
-			error("预热任务失败或已取消,task_id=%d, 任务状态=%d, 已等待%d秒", task_id, bb_task->task_state, elapsed_time);
+			error("预热任务失败或已取消,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
 			free_bb_task(bb_task);
 			return rc;
 		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING || bb_task->task_state == BB_TASK_STATE_RUNNING) {
 			if (soft_timeout_reached) {
-				info("预热任务仍在进行中,task_id=%d, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%d秒",
-					task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, elapsed_time);
+				info("预热任务仍在进行中,task_id=%u, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%ld秒",
+					task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, (long)elapsed_time);
 			} else {
-				debug("预热任务仍在进行中,task_id=%d, 任务状态=%d, 已等待%d秒", task_id, bb_task->task_state, elapsed_time);
+				debug("预热任务仍在进行中,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
 			}
 		} else {
 			// 未知状态,视为异常,直接返回
-			error("预热任务状态未知,task_id=%d, 任务状态=%d, 已等待%d秒",
-				task_id, bb_task->task_state, elapsed_time);
+			error("预热任务状态未知,task_id=%u, 任务状态=%d, 已等待%ld秒",
+				task_id, bb_task->task_state, (long)elapsed_time);
 			free_bb_task(bb_task);
 			return rc;
 		}
@@ -515,32 +515,33 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 		error("error params");
 		return SLURM_ERROR;
 	}
+	uint32_t group_id = 0;
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	for (int retry_count = 0; retry_count < bb_state.bb_config.retry_count; retry_count++) {
 		rc = delete_bb_group_by_sn(group_sn, &bb_state.bb_config);
-		if (rc == 0) {
+		if (rc == BB_SUCCESS) {
 			debug("删除缓存组%s成功", group_sn);
 			break;
-		} else if (rc == -1) {
+		} else if (rc == BB_CODE_ERROR) {
 			error("删除缓存组代码错误");
 			break;
-		} else if (rc == -2) {
+		} else if (rc == BB_API_ERROR) {
 			error("删除缓存组接口返回错误");
 			break;
-		} else if (rc == -3) {
+		} else if (rc == BB_API_TIMEOUT) {
 			debug("删除缓存组接口超时，查询是否已删除成功");
-			int query_rc = query_bb_groupid_by_sn(group_sn, &bb_state.bb_config);
+			int query_rc = query_bb_groupid_by_sn(group_sn, &(uint32_t){0}, &bb_state.bb_config);
 			if (query_rc < 0) {
 				error("查询失败");
 				break;
 			}
-			if (query_rc == 0) {
+			if (query_rc == BB_SUCCESS_NO_DATA) {
 				debug("删除缓存组成功");
 				rc = 0;
 				break;
 			}
-			if (query_rc > 0) {
-				debug("删除缓存组超时，重试 %d/%d", retry_count + 1, bb_state.bb_config->retry_count);
+			if (query_rc == BB_SUCCESS) {
+				debug("删除缓存组超时，重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
 				continue;
 			}
 		} else {
@@ -554,7 +555,7 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 	return rc;
 }
 
-extern int bb_p_delete_bb_dataset_by_id(int dataset_id, int group_id, char * path)
+extern int bb_p_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, char * path)
 {
 	int rc = SLURM_ERROR;
 	if (dataset_id <= 0) {
@@ -564,28 +565,28 @@ extern int bb_p_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	for (int retry_count = 0; retry_count < bb_state.bb_config.retry_count; retry_count++) {
 		rc = delete_bb_dataset_by_id(dataset_id, &bb_state.bb_config);
-		if (rc == 0) {
+		if (rc == BB_SUCCESS) {
 			debug("删除数据集规则%d成功", dataset_id);
 			break;
-		} else if (rc == -1) {
+		} else if (rc == BB_CODE_ERROR) {
 			error("删除数据集规则代码错误");
 			break;
-		} else if (rc == -2) {
+		} else if (rc == BB_API_ERROR) {
 			debug("删除数据集规则接口返回错误");
 			break;
-		} else if (rc == -3) {
+		} else if (rc == BB_API_TIMEOUT) {
 			debug("删除数据集规则接口超时，查询是否已删除成功");
-			int query_rc = query_datasetid_by_path_groupid(group_id, path, &bb_state.bb_config);
+			int query_rc = query_datasetid_by_path_groupid(group_id, path, &(uint32_t){0}, &bb_state.bb_config);
 			if (query_rc < 0) {
 				error("查询接口异常");
 				break;
 			}
-			if (query_rc == 0) {
+			if (query_rc == BB_SUCCESS_NO_DATA) {
 				debug("删除成功");
 				rc = 0;
 				break;
 			}
-			if (query_rc > 0) {
+			if (query_rc == BB_SUCCESS) {
 				debug("删除失败");
 				continue;
 			}
@@ -609,11 +610,11 @@ extern int bb_p_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
  * @param bb_config 最小配置
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_p_cancel_bb_task_by_id(int task_id)
+extern int bb_p_cancel_bb_task_by_id(uint32_t task_id)
 {
 	int rc = SLURM_ERROR;
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	rc = cancel_bb_task_by_id(task_id, bb_config);
+	rc = cancel_bb_task_by_id(task_id, &bb_state.bb_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	return rc;
 }

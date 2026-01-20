@@ -507,21 +507,13 @@ slurmd_req(slurm_msg_t *msg)
 
 	debug2("Processing RPC: %s", rpc_num2string(msg->msg_type));
 	switch (msg->msg_type) {
-#ifdef __METASTACK_NEW_BURSTBUFFER2
-	//case REQUEST_CREATE_BURST_BUFFER:
-		// _rpc_create_bb(msg);
-	//	break;
-#endif
+
 	case REQUEST_LAUNCH_PROLOG:
 		_rpc_prolog(msg);
-		//DEBUG:测试
-		_rpc_create_bb(msg);
-		_rpc_clean_bb(msg);
 		last_slurmctld_msg = time(NULL);
 		break;
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
-		//DEBUG:测试
 		_rpc_create_bb(msg);
 		_rpc_clean_bb(msg);
 		last_slurmctld_msg = time(NULL);
@@ -2665,11 +2657,11 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			msg->auth_uid);
 		return;
 	}
-
 	// ========== 从 msg 中获取变量 ==========
 	uint32_t job_id = req->job_id;
 	uint32_t user_id = req->user_id;
 	uint32_t group_sn_count = req->used_groups;
+	uint32_t datasets_count = req->used_databases;
 	char **group_sn_array = req->group_sn;
 	char **pfs_array = NULL;
 	int pfs_count = req->pfs_cnt;
@@ -2743,9 +2735,15 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	uint32_t **dataset_ids = xmalloc(group_sn_count * sizeof(uint32_t *));
 	for (uint32_t i = 0; i < group_sn_count; i++) {
 		dataset_ids[i] = xmalloc(pfs_count * sizeof(uint32_t));
-		group_ids[i] = 0;
 		for (int j = 0; j < pfs_count; j++) {
 			dataset_ids[i][j] = 0;
+		}
+	}
+	uint32_t **task_ids = xmalloc(group_sn_count * sizeof(uint32_t *));
+	for (uint32_t i = 0; i < group_sn_count; i++) {
+		task_ids[i] = xmalloc(pfs_count * sizeof(uint32_t));
+		for (int j = 0; j < pfs_count; j++) {
+			task_ids[i][j] = 0;
 		}
 	}
 
@@ -2764,9 +2762,8 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		char **hostname_arr = &node_array[start_node];
 		
 		debug("BB-----创建缓存组 %u: SN=%s, 节点数=%d", group_idx, group_sn_array[group_idx], current_group_node_count);
-		rc = bb_g_create_bb_group_by_sn(group_sn_array[group_idx], current_group_node_count, hostname_arr);
-		if (rc > 0) {
-			group_ids[group_idx] = (uint32_t)rc;
+		rc = bb_g_create_bb_group_by_sn(group_sn_array[group_idx], current_group_node_count, hostname_arr, &group_ids[group_idx]);
+		if (rc == 0) {
 			debug("BB-----创建缓存组成功: SN=%s, ID=%u", 
 				group_sn_array[group_idx], group_ids[group_idx]);
 		} else {
@@ -2784,52 +2781,58 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			debug("BB-----创建数据集规则: 缓存组 %u (ID=%u), PFS %d (%s)", 
 				group_idx, group_ids[group_idx], pfs_idx, pfs_array[pfs_idx]);
 			
-			rc = bb_g_create_bb_dataset_by_sn(group_sn_array[group_idx], 
-				group_ids[group_idx], pfs_array[pfs_idx], 
-				metadata_acceleration, is_share_cache);
-			if (rc > 0) {
-				dataset_ids[group_idx][pfs_idx] = (uint32_t)rc;
+			rc = bb_g_create_bb_dataset_by_sn(group_sn_array[group_idx], group_ids[group_idx], pfs_array[pfs_idx], 
+				metadata_acceleration, is_share_cache, &dataset_ids[group_idx][pfs_idx]);
+			if (rc == 0) {
 				debug("BB-----创建数据集规则成功: 缓存组ID=%u, PFS=%s, 数据集ID=%u", 
 					group_ids[group_idx], pfs_array[pfs_idx], dataset_ids[group_idx][pfs_idx]);
 			} else {
-				error("BB-----创建数据集规则失败: 缓存组ID=%u, PFS=%s, return code=%d", 
+				error("BB-----创建数据集规则失败: 缓存组ID=%u, PFS=%s, return code=%d",
 					group_ids[group_idx], pfs_array[pfs_idx], rc);
 				goto cleanup;
 			}
 		}
 	}
 
-	// ========== 第三阶段：为所有数据集规则提交预热任务并等待完成 ==========
+	// ========== 第三阶段：为所有数据集规则提交预热任务 ==========
 	debug("BB-----开始为所有数据集规则提交预热任务");
 	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
 			uint32_t dataset_id = dataset_ids[group_idx][pfs_idx];
-			uint32_t task_id = 0;
-			
-			debug("BB-----提交预热任务: 数据集ID=%u (缓存组 %u, PFS %d)", 
-				dataset_id, group_idx, pfs_idx);
-			
-			rc = bb_g_submit_bb_task((int)dataset_id, 1); // 1: 预热任务
-			if (rc > 0) {
-				task_id = (uint32_t)rc;
-				debug("BB-----提交预热任务成功: 数据集ID=%u, 任务ID=%u", 
-					dataset_id, task_id);
+			debug("BB-----提交预热任务: 数据集ID=%u (缓存组 %u, PFS %d)", dataset_id, group_idx, pfs_idx);
+			rc = bb_g_submit_bb_task(dataset_id, 1, &task_ids[group_idx][pfs_idx]);
+			if (rc == 0) {
+				debug("BB-----提交预热任务成功: 数据集ID=%u, 任务ID=%u",
+					dataset_id, task_ids[group_idx][pfs_idx]);
 			} else {
-				error("BB-----提交预热任务失败: 数据集ID=%u, return code=%d", 
+				error("BB-----提交预热任务失败: 数据集ID=%u, return code=%d",
 					dataset_id, rc);
-				continue; // 继续处理其他数据集
+				// 标记任务ID为0表示提交失败，后续跳过等待
+				task_ids[group_idx][pfs_idx] = 0;
+				goto cleanup;
 			}
+		}
+	}
 
-			// 阻塞等待任务完成
-			debug("BB-----等待预热任务完成: 任务ID=%u", task_id);
+	// ========== 第四阶段：等待所有预热任务完成 ==========
+	debug("BB-----开始等待所有预热任务完成");
+	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
+		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
+			uint32_t task_id = task_ids[group_idx][pfs_idx];
+			// 跳过提交失败的任务
+			if (task_id == 0) {
+				continue;
+			}
+			debug("BB-----等待预热任务完成: 任务ID=%u (缓存组 %u, PFS %d)",
+				task_id, group_idx, pfs_idx);
 			rc = bb_g_wait_task_complete((int)task_id, 1); // 1: 预热任务
 			if (rc == 0) {
-				debug("BB-----预热任务完成: 任务ID=%u, 缓存组 %u, PFS %d", 
+				debug("BB-----预热任务完成: 任务ID=%u, 缓存组 %u, PFS %d",
 					task_id, group_idx, pfs_idx);
 			} else {
-				error("BB-----预热任务失败: 任务ID=%u, return code=%d, 缓存组 %u, PFS %d", 
+				error("BB-----预热任务失败: 任务ID=%u, return code=%d, 缓存组 %u, PFS %d",
 					task_id, rc, group_idx, pfs_idx);
-				// 继续处理其他数据集
+				goto cleanup;
 			}
 		}
 	}
@@ -2849,6 +2852,14 @@ cleanup:
 			}
 		}
 		xfree(dataset_ids);
+	}
+	if (task_ids) {
+		for (uint32_t i = 0; i < group_sn_count; i++) {
+			if (task_ids[i]) {
+				xfree(task_ids[i]);
+			}
+		}
+		xfree(task_ids);
 	}
 	if (node_array) {
 		for (int i = 0; i < node_count; i++) {
@@ -2875,9 +2886,6 @@ cleanup:
 	// 通知 slurmctld 创建完成
 	_notify_slurmctld_create_bb_fini(req->job_id, rc);
 
-
-
-
 }
 
 /**
@@ -2886,79 +2894,79 @@ cleanup:
  */
 static void _rpc_clean_bb(slurm_msg_t *msg)
 {
-	int rc = SLURM_SUCCESS;
-	burst_buffer_launch_msg_t *req = msg->data;
-	if (req == NULL)
-		return;
-	if (!_slurm_authorized_user(msg->auth_uid)) {
-		error("REQUEST_LAUNCH_PROLOG request from uid %u",
-			msg->auth_uid);
-		return;
-	}
+	// int rc = SLURM_SUCCESS;
+	// burst_buffer_launch_msg_t *req = msg->data;
+	// if (req == NULL)
+	// 	return;
+	// if (!_slurm_authorized_user(msg->auth_uid)) {
+	// 	error("REQUEST_LAUNCH_PROLOG request from uid %u",
+	// 		msg->auth_uid);
+	// 	return;
+	// }
 	
-	//DEBUG:测试使用变量
-	bb_minimal_config_t bmc = { 0 };
-	bmc.para_stor_addr = "172.16.120.117";
-	bmc.para_stor_port = 8443;
-	bmc.para_stor_password = "Admin@123";
-	bmc.token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
-	bmc.other_timeout = 1000;
-	bmc.retry_count = 3;
-	bmc.stagein_timeout = 1000;
-	bmc.stageout_timeout = 1000;
-	bmc.poll_interval = 5;
+	// //DEBUG:测试使用变量
+	// bb_minimal_config_t bmc = { 0 };
+	// bmc.para_stor_addr = "172.16.120.117";
+	// bmc.para_stor_port = 8443;
+	// bmc.para_stor_password = "Admin@123";
+	// bmc.token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMiIsImF1ZCI6WyIxNzIuMTYuMTIzLjcwIiwiUkVTVCJdLCJleHAiOjQ5MjE4MDA5MTIsImlhdCI6MTc2ODIwMDkxMn0.9ZxXygHtRR1OY0URdM8VjLPK0v88QvK0zha3UdWnEeY";
+	// bmc.other_timeout = 1000;
+	// bmc.retry_count = 3;
+	// bmc.stagein_timeout = 1000;
+	// bmc.stageout_timeout = 1000;
+	// bmc.poll_interval = 5;
 
-	char *group_sn = "DEBUG2088";
-	int group_id = 7;
-	int dataset_id = 6;
-	int task_id = 0;
-	char *path = "bb_hpc:/test1";
+	// char *group_sn = "DEBUG2088";
+	// int group_id = 7;
+	// int dataset_id = 6;
+	// int task_id = 0;
+	// char *path = "bb_hpc:/test1";
 
 
-	/* 提交回收任务 */
-	rc = bb_g_submit_bb_task(dataset_id, 2, &bmc);
-	if (rc > 0) {
-		task_id = rc;
-		debug("BB-----提交回收任务成功,id为%d", task_id);
-	} else {
-		error("BB-----提交回收任务失败,return code%d", rc);
-		return;
-	}
-	/* 阻塞等待回收任务完成 */
-	rc = bb_g_wait_task_complete(task_id, 1, &bmc);
-	if (rc == 0) {
-		debug("BB-----任务%d回收成功", task_id);
-	} else {
-		error("BB-----任务%d回收失败,return code%d", task_id, rc);
-		return;
-	}
-	/* 删除数据集规则 */
-	rc = bb_g_delete_bb_dataset_by_id(dataset_id, group_id, path, &bmc);
-	if (rc == 0) {
-		debug("BB-----成功删除数据集规则%d", dataset_id);
-	} else {
-		error("BB-----删除数据集规则%d失败,return code%d", dataset_id, rc);
-		return;
-	}
-	/* 删除缓存组 */
-	rc = bb_g_delete_bb_group_by_sn(group_sn, &bmc);
-	if (rc == 0) {
-		debug("BB-----成功删除缓存组%s", group_sn);
-	} else {
-		error("BB-----删除缓存组%s失败,return code%d", group_sn, rc);
-		return;
-	}
-	/*
-	* Send message back to the slurmctld so it knows we got the rpc.  A
-	* bb  could easily run way longer than a MessageTimeout or we would
-	* just wait.
-	*/
-	if (slurm_send_rc_msg(msg, rc) < 0) {
-		error("%s: Error talking to slurmctld: %m", __func__);
-	}
+	// /* 提交回收任务 */
+	// rc = bb_g_submit_bb_task(dataset_id, 2, &bmc);
+	// if (rc > 0) {
+	// 	task_id = rc;
+	// 	debug("BB-----提交回收任务成功,id为%d", task_id);
+	// } else {
+	// 	error("BB-----提交回收任务失败,return code%d", rc);
+	// 	return;
+	// }
+	// /* 阻塞等待回收任务完成 */
+	// rc = bb_g_wait_task_complete(task_id, 1, &bmc);
+	// if (rc == 0) {
+	// 	debug("BB-----任务%d回收成功", task_id);
+	// } else {
+	// 	error("BB-----任务%d回收失败,return code%d", task_id, rc);
+	// 	return;
+	// }
+	// /* 删除数据集规则 */
+	// rc = bb_g_delete_bb_dataset_by_id(dataset_id, group_id, path, &bmc);
+	// if (rc == 0) {
+	// 	debug("BB-----成功删除数据集规则%d", dataset_id);
+	// } else {
+	// 	error("BB-----删除数据集规则%d失败,return code%d", dataset_id, rc);
+	// 	return;
+	// }
+	// /* 删除缓存组 */
+	// rc = bb_g_delete_bb_group_by_sn(group_sn, &bmc);
+	// if (rc == 0) {
+	// 	debug("BB-----成功删除缓存组%s", group_sn);
+	// } else {
+	// 	error("BB-----删除缓存组%s失败,return code%d", group_sn, rc);
+	// 	return;
+	// }
+	// /*
+	// * Send message back to the slurmctld so it knows we got the rpc.  A
+	// * bb  could easily run way longer than a MessageTimeout or we would
+	// * just wait.
+	// */
+	// if (slurm_send_rc_msg(msg, rc) < 0) {
+	// 	error("%s: Error talking to slurmctld: %m", __func__);
+	// }
 
-	//缓存组、数据集创建、数据集预热等操作
-	_notify_slurmctld_create_bb_fini(req->job_id, rc);
+	// //缓存组、数据集创建、数据集预热等操作
+	// _notify_slurmctld_create_bb_fini(req->job_id, rc);
 
 
 }

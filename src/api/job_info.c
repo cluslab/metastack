@@ -993,19 +993,14 @@ slurm_sprint_job_info ( job_info_t * job_ptr, int one_liner )
 			if (sep)
 				sep[0] = '\0';
 
-			char *enforce_bb_lower = xstrdup(enforce_bb_val);
-			for (int i = 0; enforce_bb_lower[i]; i++) {
-				enforce_bb_lower[i] = xstrtolower(enforce_bb_lower[i]);
-			}
-
-			if (!xstrcmp(enforce_bb_lower, "no") ||
-				!xstrcmp(enforce_bb_lower, "false") ||
-				!xstrcmp(enforce_bb_lower, "0")) {
+			if (!xstrcasecmp(enforce_bb_val, "no") ||
+				!xstrcasecmp(enforce_bb_val, "false") ||
+				!xstrcasecmp(enforce_bb_val, "0")) {
 				xstrcat(out, line_end);
 				xstrfmtcat(out, "EnforceBB=no");
-			} else if (!xstrcmp(enforce_bb_lower, "yes") ||
-				!xstrcmp(enforce_bb_lower, "true") ||
-				!xstrcmp(enforce_bb_lower, "1")) {
+			} else if (!xstrcasecmp(enforce_bb_val, "yes") ||
+				!xstrcasecmp(enforce_bb_val, "true") ||
+				!xstrcasecmp(enforce_bb_val, "1")) {
 				xstrcat(out, line_end);
 				xstrfmtcat(out, "EnforceBB=yes");
 			} else {
@@ -1013,7 +1008,6 @@ slurm_sprint_job_info ( job_info_t * job_ptr, int one_liner )
 				xstrfmtcat(out, "EnforceBB=error(invalid_value:%s)", enforce_bb_val);
 			}
 
-			xfree(enforce_bb_lower);
 			xfree(enforce_bb_val);
 		} else if (strstr(job_ptr->burst_buffer, "#PB")) {
 			/* 如果包含 #PB 但没有明确指定 enforce_bb，默认为 yes */
