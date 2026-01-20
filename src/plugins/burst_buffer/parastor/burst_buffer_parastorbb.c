@@ -232,7 +232,7 @@ static void _queue_teardown(bb_job_t *bb_job, bool *clean_finish);
 static int _bb_get_parastors_state(void);
 static void *_start_stage_out(void *x);
 // static void *_start_teardown(void *x);
-static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_tasks, bb_minimal_config_t *bb_min_config);
+// static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_tasks, bb_minimal_config_t *bb_min_config);
 static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config);
 static void _bb_min_config_free(bb_minimal_config_t * config);
 static void *_cleanup_bb_resources_from_alloc(void *x);
@@ -1260,11 +1260,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						/* 无效的 enforce_bb 值 */
 						error_param = "enforce_bb";
 						have_status = true;
-						xfree(tmp_enforce);
+						//xfree(tmp_enforce);
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
-					xfree(tmp_enforce);
+					//xfree(tmp_enforce);
 				} else {
 					/* 默认强制加速（资源不足等待资源） */
 					bb_job->enforce_bb_flag = true;
@@ -1554,7 +1554,7 @@ static int _bb_get_parastors_state(void) {
 	if(!bb_state.list_clients)
 		bb_state.list_clients       = list_create(free_bb_client);//需要释放
 	if(!bb_state.list_tasks)
-		bb_state.list_tasks         = list_create(slurm_free_task);
+		bb_state.list_tasks         = list_create(free_bb_task);
 	if(!tmp_list_groups)
 		bb_state.list_groups        = list_create(free_bb_group);//需要释放
 	else
@@ -1584,8 +1584,8 @@ static int _bb_get_parastors_state(void) {
 			bb_state.bb_config.used_groups, bb_state.bb_config.free_groups );
 	debug("the current system has total datasets count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_datasets,
 			bb_state.bb_config.used_datasets, bb_state.bb_config.free_datasets );
-	bb_response_free(resp_out_group);
-	bb_response_free(resp_out_dataset);
+	free_bb_response(resp_out_group);
+	free_bb_response(resp_out_dataset);
 	_bb_min_config_free(bb_min_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
@@ -2412,33 +2412,33 @@ extern time_t bb_p_job_get_est_start(job_record_t *job_ptr)
  * bb_state.bb_mutex is locked on function entry.
  * job_ptr may be NULL if not found
  */
-static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
-{
-	char *hash_dir = NULL, *job_dir = NULL;
-	char *script_file = NULL, *path_file = NULL;
-	int hash_inx;
+// static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
+// {
+// 	char *hash_dir = NULL, *job_dir = NULL;
+// 	char *script_file = NULL, *path_file = NULL;
+// 	int hash_inx;
 
-	hash_inx = job_id % 10;
-	xstrfmtcat(hash_dir, "%s/hash.%d",
-		   slurm_conf.state_save_location, hash_inx);
-	(void) mkdir(hash_dir, 0700);
-	xstrfmtcat(job_dir, "%s/job.%u", hash_dir, job_id);
-	(void) mkdir(job_dir, 0700);
+// 	hash_inx = job_id % 10;
+// 	xstrfmtcat(hash_dir, "%s/hash.%d",
+// 		   slurm_conf.state_save_location, hash_inx);
+// 	(void) mkdir(hash_dir, 0700);
+// 	xstrfmtcat(job_dir, "%s/job.%u", hash_dir, job_id);
+// 	(void) mkdir(job_dir, 0700);
 
-	xstrfmtcat(path_file, "%s/pathfile", job_dir);
-	(void) unlink(path_file);
-	xfree(path_file);
+// 	xstrfmtcat(path_file, "%s/pathfile", job_dir);
+// 	(void) unlink(path_file);
+// 	xfree(path_file);
 
-	if (!job_ptr || (job_ptr->batch_flag == 0)) {
-		xstrfmtcat(script_file, "%s/script", job_dir);
-		(void) unlink(script_file);
-		xfree(script_file);
-	}
+// 	if (!job_ptr || (job_ptr->batch_flag == 0)) {
+// 		xstrfmtcat(script_file, "%s/script", job_dir);
+// 		(void) unlink(script_file);
+// 		xfree(script_file);
+// 	}
 
-	(void) unlink(job_dir);
-	xfree(job_dir);
-	xfree(hash_dir);
-}
+// 	(void) unlink(job_dir);
+// 	xfree(job_dir);
+// 	xfree(hash_dir);
+// }
 
 // static void *_start_teardown(void *x)
 // {
@@ -2501,7 +2501,7 @@ static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
 // 					bb_state.bb_config.used_datasets--;
 // 				slurm_mutex_unlock(&bb_state.bb_mutex);
 // 			}
-// 			bb_response_free(resp_out);
+// 			free_bb_response(resp_out);
 // 		}
 // 	}else {
 // 		info("no dataset to delete for JobId=%u", tmp_job_id);
@@ -2530,7 +2530,7 @@ static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
 // 					bb_state.bb_config.used_groups--;
 // 				slurm_mutex_unlock(&bb_state.bb_mutex);
 // 			}
-// 			bb_response_free(resp_out);
+// 			free_bb_response(resp_out);
 // 		}
 // 	}else {
 // 		info("no group to delete for JobId=%u", tmp_job_id);
@@ -2586,7 +2586,7 @@ static void _queue_teardown(bb_job_t *bb_job, bool *clean_finish)
 {
 	if(clean_finish) {
 		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
-		bb_state.bb_config.used_groups				-= bb_job->index_groups
+		bb_state.bb_config.used_groups				-= bb_job->index_groups;
 		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
 		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
 		clean_finish = false;
@@ -2784,7 +2784,7 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 // 		if (rc != 0) {
 // 			error("BB-----can't get task %d", bb_task_ids[i]);
 // 			_bb_min_config_free(bb_min_config);
-// 			bb_response_free(resp_out);
+// 			free_bb_response(resp_out);
 // 			return SLURM_ERROR;
 // 		}
 // 		/* 任务状态非完成（作业运行完时），则预热失败 */
@@ -2793,12 +2793,12 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 // 		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
 // 			debug("BB-----the task %d of job %u haven't finish cache prefetch", bb_task_ids[i], job_id);
 // 			_bb_min_config_free(bb_min_config);
-// 			bb_response_free(resp_out);
+// 			free_bb_response(resp_out);
 // 			return SLURM_ERROR;
 // 		}
-// 		slurm_free_task(bb_task);
+// 		free_bb_task(bb_task);
 // 	}
-// 	bb_response_free(resp_out);
+// 	free_bb_response(resp_out);
 // 	return SLURM_SUCCESS;
 // }
 

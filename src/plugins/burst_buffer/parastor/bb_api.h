@@ -273,16 +273,16 @@ extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config);
 * delete a cache group by client ids 
 * NOTE: before deleting the cache group, make sure to delete the datasets under this group first.
 */
-extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out);
+extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
 
 /* Create a cache dataset */
-extern int create_burst_buffer_dataset(create_params_request *create_params,bb_config_t *bb_min_config, bb_response *resp_out);
+extern int create_burst_buffer_dataset(create_params_request *create_params, bb_minimal_config_t *bb_min_config, bb_response *resp_out);
 
 /* Delete a cache dataset by dataset_id */
-extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_config_t *bb_config, bb_response *resp_out);
+extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
 
 /* Submit bb task, include prefetch and recycle*/
-extern int submit_burst_buffer_task(create_params_request *create_params, bb_config_t *bb_config, bb_response *resp_out);
+extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
 
 
 /* Not yet implemented: POSIX BB cache group immediate adjustment mapping */

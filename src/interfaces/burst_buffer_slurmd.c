@@ -19,6 +19,8 @@
 #include "src/common/xstring.h"
 #include "src/common/read_config.h" 
 
+extern int bb_g_init(void);
+extern int bb_g_fini(void);
 /*
  * ============================================================================
  * 操作结构体：定义 bb_api 库中所有函数的函数指针
@@ -91,7 +93,7 @@ extern int bb_g_init(void)
 
 	names = bb_plugin_list;
 	while ((type = strtok_r(names, ",", &last))) {
-		xrecalloc(ops, g_context_cnt + 1, sizeof(slurm_bb_ops_t));
+		xrecalloc(ops, g_context_cnt + 1, sizeof(slurm_bb_slurmd_ops_t));
 		xrecalloc(g_context, g_context_cnt + 1,
 			  sizeof(plugin_context_t *));
 		if (xstrncmp(type, "burst_buffer/", 13) == 0)
@@ -225,7 +227,7 @@ extern int bb_g_wait_task_complete(uint32_t task_id, int task_type)
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
+	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_wait_task_complete))(task_id, task_type);
 	}
 	slurm_mutex_unlock(&g_context_lock);
@@ -240,7 +242,7 @@ extern int bb_g_delete_bb_group_by_sn(char *group_sn)
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
+	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_delete_bb_group_by_sn))(group_sn);
 	}
 	slurm_mutex_unlock(&g_context_lock);
