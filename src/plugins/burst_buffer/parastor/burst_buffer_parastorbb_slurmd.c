@@ -541,7 +541,7 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 				break;
 			}
 			if (query_rc == BB_SUCCESS) {
-				debug("删除缓存组超时，重试 %d/%d", retry_count + 1, bb_state.bb_config.>retry_count);
+				debug("删除缓存组超时，重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
 				continue;
 			}
 		} else {
@@ -614,7 +614,7 @@ extern int bb_p_cancel_bb_task_by_id(uint32_t task_id)
 {
 	int rc = SLURM_ERROR;
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	rc = cancel_bb_task_by_id(task_id, bb_config);
+	rc = cancel_bb_task_by_id(task_id, &bb_state.bb_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	return rc;
 }

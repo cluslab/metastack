@@ -180,8 +180,8 @@ extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
-		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_hostname_arr, uint32_t *group_id);
+	for (int i = 0; i < g_context_cnt; i++) {
+		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_hostname_arr, group_id);
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
@@ -195,7 +195,7 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char 
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
+	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_create_bb_dataset_by_sn))(group_sn, group_id, path, is_use_metadata, is_share_cache, dataset_id);
 	}
 	slurm_mutex_unlock(&g_context_lock);
@@ -211,7 +211,7 @@ extern int bb_g_submit_bb_task(uint32_t dataset_id, int task_type, uint32_t *tas
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
 	slurm_mutex_lock(&g_context_lock);
-	for (i = 0; i < g_context_cnt; i++) {
+	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_submit_bb_task))(dataset_id, task_type, task_id);
 	}
 	slurm_mutex_unlock(&g_context_lock);
