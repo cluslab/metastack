@@ -6,7 +6,17 @@
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
 #include "slurm/slurm_version.h"
 
-
+/* These are defined here so when we link with something other than
+ * the slurmctld we will have these symbols defined.  They will get
+ * overwritten when linking with the slurmctld.
+ */
+#if defined (__APPLE__)
+extern uint16_t accounting_enforce __attribute__((weak_import));
+extern void *acct_db_conn  __attribute__((weak_import));
+#else
+uint16_t accounting_enforce = 0;
+void *acct_db_conn = NULL;
+#endif
 
 /* Declaration Helper Function */
 static int _json_uint32_t_value(const json_t *j, uint32_t *value);
