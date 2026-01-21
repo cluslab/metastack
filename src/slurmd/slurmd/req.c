@@ -2713,7 +2713,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	uint32_t job_id = req->job_id;
 	uint32_t user_id = req->user_id;
 	uint32_t group_sn_count = req->used_groups;
-	uint32_t datasets_count = req->used_databases;
+	//uint32_t datasets_count = req->used_databases;
 	char **group_sn_array = req->group_sn;
 	char **pfs_array = NULL;
 	int pfs_count = req->pfs_cnt;
@@ -2898,9 +2898,27 @@ cleanup:
 	// group_sn_array 来自 req，不需要释放
 
 	// 在清理资源之前，先通知 slurmctld 创建完成（包含创建的信息）
-	_notify_slurmctld_create_bb_fini(req->job_id, rc,
+	// 通知 slurmctld 创建完成
+		/*
+	 * We need the slurmctld to know we are done or we can get into a
+	 * situation where nothing from the job will ever launch because the
+	 * prolog will never appear to stop running.
+	 */
+	while (alt_rc != SLURM_SUCCESS) {
+		alt_rc = 	_notify_slurmctld_create_bb_fini(req->job_id, rc,
 		group_sn_count, group_ids,
 		pfs_count, dataset_ids, task_ids);
+		if (rc != SLURM_SUCCESS) {
+			alt_rc = _launch_job_fail(job_id, rc);
+			send_registration_msg(rc);
+		}
+
+		if (alt_rc != SLURM_SUCCESS) {
+			info("%s: Retrying prolog complete RPC for JobId=%u [sleeping %us]",
+			     __func__, req->job_id, RETRY_DELAY);
+			sleep(RETRY_DELAY);
+		}
+	}
 
 	// 然后清理本地资源
 	if (group_ids) {
@@ -2938,25 +2956,7 @@ cleanup:
 		}
 		xfree(pfs_array);
 	}
-	// 通知 slurmctld 创建完成
-		/*
-	 * We need the slurmctld to know we are done or we can get into a
-	 * situation where nothing from the job will ever launch because the
-	 * prolog will never appear to stop running.
-	 */
-	while (alt_rc != SLURM_SUCCESS) {
-		alt_rc = _notify_slurmctld_create_bb_fini(job_id, rc);
-		if (rc != SLURM_SUCCESS) {
-			alt_rc = _launch_job_fail(job_id, rc);
-			send_registration_msg(rc);
-		}
 
-		if (alt_rc != SLURM_SUCCESS) {
-			info("%s: Retrying prolog complete RPC for JobId=%u [sleeping %us]",
-			     __func__, req->job_id, RETRY_DELAY);
-			sleep(RETRY_DELAY);
-		}
-	}
 }
 
 /**

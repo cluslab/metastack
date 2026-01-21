@@ -83,6 +83,10 @@ extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * pat
  * @return 0:成功取消；-1:代码错误; -2:接口错误; -3:接口超时
  */
 extern int bb_g_cancel_bb_task_by_id(int task_id);
-
-
+/**
+ * @brief 根据group_id删除缓存组
+ * @param group_id 
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t dataset_id, uint32_t group_id, char * path);
 #endif

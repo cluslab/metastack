@@ -1774,7 +1774,7 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 	// xfree(tmp_task_arr);
 	// xfree(tmp_dataset_arr);
 	// xfree(tmp_group_arr);
-	// return NULL;
+	return NULL;
 }
 
 static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc)
