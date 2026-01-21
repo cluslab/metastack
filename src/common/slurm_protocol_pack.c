@@ -3786,7 +3786,56 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 	xassert(msg);
 
 #ifdef __META_PROTOCOL
-	if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //TODO:需要更改版本协议
+		if (msg->cred) {
+			pack8(1, buffer);
+			slurm_cred_pack(msg->cred, buffer, protocol_version);
+		} else
+			pack8(0, buffer);
+		packstr(msg->details, buffer);
+		pack32(msg->derived_ec, buffer);
+		pack32(msg->exit_code, buffer);
+		gres_prep_pack(msg->job_gres_prep, buffer, protocol_version);
+		pack_step_id(&msg->step_id, buffer, protocol_version);
+		pack32(msg->het_job_id, buffer);
+		pack32(msg->job_state, buffer);
+		pack32(msg->job_uid, buffer);
+		pack32(msg->job_gid, buffer);
+		packstr(msg->nodes, buffer);
+		packstr_array(msg->spank_job_env, msg->spank_job_env_size,
+				buffer);
+		pack_time(msg->start_time, buffer);
+		pack_time(msg->time, buffer);
+		packstr(msg->work_dir, buffer);
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		/* Pack burst buffer cleanup fields */
+		pack32(msg->group_count, buffer);
+		if (msg->group_count > 0 && msg->group_sn) {
+			packstr_array(msg->group_sn, msg->group_count, buffer);
+		} else {
+			pack32(0, buffer);
+		}
+		if (msg->group_count > 0 && msg->group_ids) {
+			pack32_array(msg->group_ids, msg->group_count, buffer);
+		} else {
+			pack32(0, buffer);
+		}
+		pack32(msg->dataset_count, buffer);
+		if (msg->dataset_count > 0 && msg->dataset_ids) {
+			pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
+		} else {
+			pack32(0, buffer);
+		}
+		if (msg->dataset_count > 0 && msg->task_ids) {
+			pack32_array(msg->task_ids, msg->dataset_count, buffer);
+		} else {
+			pack32(0, buffer);
+		}
+		packstr(msg->pfs, buffer);
+		pack32(msg->pfs_cnt, buffer);
+
+#endif
+	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		if (msg->cred) {
 			pack8(1, buffer);
 			slurm_cred_pack(msg->cred, buffer, protocol_version);
@@ -3830,6 +3879,7 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		pack_time(msg->start_time, buffer);
 		pack_time(msg->time, buffer);
 		packstr(msg->work_dir, buffer);
+
 	}
 #endif
 }
@@ -3846,11 +3896,66 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 	tmp_ptr = xmalloc(sizeof(kill_job_msg_t));
 	*msg = tmp_ptr;
 #ifdef __META_PROTOCOL
-	if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		safe_unpack8(&uint8_tmp, buffer);
 		if (uint8_tmp) {
 			tmp_ptr->cred = slurm_cred_unpack(buffer,
-							protocol_version);
+				protocol_version);
+			if (!tmp_ptr->cred)
+				goto unpack_error;
+		}
+		safe_unpackstr(&tmp_ptr->details, buffer);
+		safe_unpack32(&tmp_ptr->derived_ec, buffer);
+		safe_unpack32(&tmp_ptr->exit_code, buffer);
+		if (gres_prep_unpack(&tmp_ptr->job_gres_prep,
+			buffer, protocol_version))
+			goto unpack_error;
+		if (unpack_step_id_members(&tmp_ptr->step_id, buffer,
+			protocol_version))
+			goto unpack_error;
+		safe_unpack32(&tmp_ptr->het_job_id, buffer);
+		safe_unpack32(&tmp_ptr->job_state, buffer);
+		safe_unpack32(&tmp_ptr->job_uid, buffer);
+		safe_unpack32(&tmp_ptr->job_gid, buffer);
+		safe_unpackstr(&tmp_ptr->nodes, buffer);
+		safe_unpackstr_array(&tmp_ptr->spank_job_env,
+			&tmp_ptr->spank_job_env_size, buffer);
+		safe_unpack_time(&tmp_ptr->start_time, buffer);
+		safe_unpack_time(&tmp_ptr->time, buffer);
+		safe_unpackstr(&tmp_ptr->work_dir, buffer);
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		/* Unpack burst buffer cleanup fields */
+		safe_unpack32(&tmp_ptr->group_count, buffer);
+		uint32_t group_ids_count = 0;
+		safe_unpack32_array(&tmp_ptr->group_ids, &group_ids_count, buffer);
+		if (tmp_ptr->group_count > 0 && group_ids_count != tmp_ptr->group_count)
+			goto unpack_error;
+		if (tmp_ptr->group_count == 0 && group_ids_count != 0)
+			goto unpack_error;
+
+		safe_unpack32(&tmp_ptr->dataset_count, buffer);
+		uint32_t dataset_ids_count = 0;
+		safe_unpack32_array(&tmp_ptr->dataset_ids, &dataset_ids_count, buffer);
+		if (tmp_ptr->dataset_count > 0 && dataset_ids_count != tmp_ptr->dataset_count)
+			goto unpack_error;
+		if (tmp_ptr->dataset_count == 0 && dataset_ids_count != 0)
+			goto unpack_error;
+
+		uint32_t task_ids_count = 0;
+		safe_unpack32_array(&tmp_ptr->task_ids, &task_ids_count, buffer);
+		if (tmp_ptr->dataset_count > 0 && task_ids_count != tmp_ptr->dataset_count)
+			goto unpack_error;
+		if (tmp_ptr->dataset_count == 0 && task_ids_count != 0)
+			goto unpack_error;
+
+		safe_unpackstr(&tmp_ptr->pfs, buffer);
+		safe_unpack32(&tmp_ptr->pfs_cnt, buffer);
+#endif
+	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
+		safe_unpack8(&uint8_tmp, buffer);
+		if (uint8_tmp) {
+			tmp_ptr->cred = slurm_cred_unpack(buffer,
+				protocol_version);
 			if (!tmp_ptr->cred)
 				goto unpack_error;
 		}

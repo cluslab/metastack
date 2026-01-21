@@ -6191,7 +6191,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		return SLURM_SUCCESS;
 
 	if (bb_return_code) {
-		error("creqate launch failure, %pJ", job_ptr);
+		error("create launch failure, %pJ", job_ptr);
 		job_ptr->exit_code = bb_return_code;
 		///////////////////////这里需要补充异常场景下作业异常处理，节点状态异常处理
 	}
@@ -16806,6 +16806,53 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 	msg->spank_job_env_size = job_ptr->spank_job_env_size;
 	msg->time = time(NULL);
 	msg->work_dir = xstrdup(job_ptr->details->work_dir);
+
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	/* Copy burst buffer cleanup fields */
+	msg->group_count = 0;
+	msg->dataset_count = 0;
+	msg->group_sn = NULL;
+	msg->group_ids = NULL;
+	msg->dataset_ids = NULL;
+	msg->task_ids = NULL;
+	msg->pfs = NULL;
+	msg->pfs_cnt = 0;
+
+	if (job_ptr->need_group_counts > 0 && job_ptr->group_sn) {
+		msg->group_count = job_ptr->need_group_counts;
+		msg->group_sn = xmalloc(msg->group_count * sizeof(char *));
+		for (uint32_t i = 0; i < msg->group_count; i++) {
+			if (job_ptr->group_sn[i])
+				msg->group_sn[i] = xstrdup(job_ptr->group_sn[i]);
+			else
+				msg->group_sn[i] = NULL;
+		}
+	}
+
+	if (job_ptr->need_group_counts > 0 && job_ptr->group_ids) {
+		msg->group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+		memcpy(msg->group_ids, job_ptr->group_ids,
+		       job_ptr->need_group_counts * sizeof(uint32_t));
+	}
+
+	if (job_ptr->need_database_counts > 0 && job_ptr->dataset_ids) {
+		msg->dataset_count = job_ptr->need_database_counts;
+		msg->dataset_ids = xmalloc(msg->dataset_count * sizeof(uint32_t));
+		memcpy(msg->dataset_ids, job_ptr->dataset_ids,
+		       msg->dataset_count * sizeof(uint32_t));
+	}
+
+	if (job_ptr->need_database_counts > 0 && job_ptr->task_ids) {
+		msg->task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+		memcpy(msg->task_ids, job_ptr->task_ids,
+		       job_ptr->need_database_counts * sizeof(uint32_t));
+	}
+
+	if (job_ptr->pfs) {
+		msg->pfs = xstrdup(job_ptr->pfs);
+		msg->pfs_cnt = job_ptr->pfs_cnt;
+	}
+#endif
 
 	return msg;
 }
