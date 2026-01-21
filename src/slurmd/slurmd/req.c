@@ -2845,7 +2845,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
 			uint32_t dataset_id = dataset_ids[group_idx][pfs_idx];
-			debug("BB-----提交预热任务: 数据集ID=%u (缓存组 %u, PFS %d)", dataset_id, group_idx, pfs_idx);
+			debug("BB-----提交预热任务: 数据集ID=%u (第%u个缓存组 , 第%d个加速路径 )", dataset_id, group_idx + 1, pfs_idx + 1);
 			rc = bb_g_submit_bb_task(dataset_id, 1, &task_ids[group_idx][pfs_idx]);
 			if (rc == 0) {
 				debug("BB-----提交预热任务成功: 数据集ID=%u, 任务ID=%u",
@@ -3108,10 +3108,10 @@ cleanup:
 		xfree(pfs_array);
 	}
 
-	// ========== 发送响应消息 ==========
-	if (slurm_send_rc_msg(msg, rc) < 0) {
-		error("%s: Error talking to slurmctld: %m", __func__);
-	}
+	// // ========== 发送响应消息 ==========
+	// if (slurm_send_rc_msg(msg, rc) < 0) {
+	// 	error("%s: Error talking to slurmctld: %m", __func__);
+	// }
 }
 #endif
 

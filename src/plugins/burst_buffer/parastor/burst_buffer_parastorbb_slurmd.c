@@ -406,8 +406,8 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 		time_t elapsed_time = current_time - start_time;
 
 		if (elapsed_time >= HARD_TIMEOUT_SEC) {
-			error("等待预热任务完成超时（硬超时：%d秒),task_id=%u,已等待%d秒",
-				HARD_TIMEOUT_SEC, task_id, elapsed_time);
+			error("等待预热任务完成超时（硬超时：%ld秒),task_id=%u,已等待%ld秒",
+				(long)HARD_TIMEOUT_SEC, task_id, (long)elapsed_time);
 			free_bb_task(bb_task);
 			return SLURM_ERROR;
 		}

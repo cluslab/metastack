@@ -61,6 +61,7 @@ static const char *syms[] = {
 	"bb_p_wait_task_complete",
 	"bb_p_delete_bb_group_by_sn",
 	"bb_p_delete_bb_dataset_by_id",
+	"bb_p_delete_bb_dataset_by_groupid_path",
 	"bb_p_cancel_bb_task_by_id",
 };
 

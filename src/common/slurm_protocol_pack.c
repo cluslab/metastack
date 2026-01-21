@@ -3810,27 +3810,17 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Pack burst buffer cleanup fields */
 		pack32(msg->group_count, buffer);
-		if (msg->group_count > 0 && msg->group_sn) {
-			packstr_array(msg->group_sn, msg->group_count, buffer);
-		} else {
-			pack32(0, buffer);
-		}
-		if (msg->group_count > 0 && msg->group_ids) {
-			pack32_array(msg->group_ids, msg->group_count, buffer);
-		} else {
-			pack32(0, buffer);
-		}
+
+		packstr_array(msg->group_sn, msg->group_count, buffer);
+
+
+		pack32_array(msg->group_ids, msg->group_count, buffer);
+
 		pack32(msg->dataset_count, buffer);
-		if (msg->dataset_count > 0 && msg->dataset_ids) {
-			pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
-		} else {
-			pack32(0, buffer);
-		}
-		if (msg->dataset_count > 0 && msg->task_ids) {
-			pack32_array(msg->task_ids, msg->dataset_count, buffer);
-		} else {
-			pack32(0, buffer);
-		}
+
+		pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
+
+		pack32_array(msg->task_ids, msg->dataset_count, buffer);
 		packstr(msg->pfs, buffer);
 		pack32(msg->pfs_cnt, buffer);
 
@@ -3927,6 +3917,7 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 		/* Unpack burst buffer cleanup fields */
 		safe_unpack32(&tmp_ptr->group_count, buffer);
 		uint32_t group_ids_count = 0;
+		safe_unpackstr_array(&tmp_ptr->group_sn, &group_ids_count, buffer);
 		safe_unpack32_array(&tmp_ptr->group_ids, &group_ids_count, buffer);
 		if (tmp_ptr->group_count > 0 && group_ids_count != tmp_ptr->group_count)
 			goto unpack_error;
