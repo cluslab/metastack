@@ -450,7 +450,7 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 		} 
 
 		// 检查任务是否存在
-		if (query_rc == 0) {
+		if (query_rc == 1) {
 			// 任务不存在
 			error("预热任务不存在,task_id=%u", task_id);
 			free_bb_task(bb_task);
@@ -602,6 +602,71 @@ extern int bb_p_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, 
 	}
 	return rc;
 }
+
+/**
+ * @brief 根据group_id和path删除数据集规则
+ * @param group_id 
+ * @param path 
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_p_delete_bb_dataset_by_groupid_path(uint32_t group_id, char * path)
+{
+	int rc = SLURM_ERROR;
+	if (group_id <= 0 || !path) {
+		error("error params");
+		return SLURM_ERROR;
+	}
+	uint32_t dataset_id = 0;
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	rc = query_datasetid_by_path_groupid(group_id, path, &dataset_id, &bb_state.bb_config);
+	if (rc != BB_SUCCESS) {
+		error("通过group_id和加速路径查询数据集规则ID失败,group_id=%d, path=%s, return code=%d", group_id, path, rc);
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+		return rc;
+	}
+	for (int retry_count = 0; retry_count < bb_state.bb_config.retry_count; retry_count++) {
+		rc = delete_bb_dataset_by_id(dataset_id, &bb_state.bb_config);
+		if (rc == BB_SUCCESS) {
+			debug("删除数据集规则%d成功", dataset_id);
+			break;
+		} else if (rc == BB_CODE_ERROR) {
+			error("删除数据集规则代码错误");
+			break;
+		} else if (rc == BB_API_ERROR) {
+			debug("删除数据集规则接口返回错误");
+			break;
+		} else if (rc == BB_API_TIMEOUT) {
+			debug("删除数据集规则接口超时，查询是否已删除成功");
+			int query_rc = query_datasetid_by_path_groupid(group_id, path, &(uint32_t){0}, &bb_state.bb_config);
+			if (query_rc < 0) {
+				error("查询接口异常");
+				break;
+			}
+			if (query_rc == BB_SUCCESS_NO_DATA) {
+				debug("删除成功");
+				rc = 0;
+				break;
+			}
+			if (query_rc == BB_SUCCESS) {
+				debug("删除失败");
+				continue;
+			}
+		} else {
+			error("未知返回结果");
+			break;
+		}
+	}
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+	
+	if (rc != 0) {
+		error("删除数据集规则%d失败,return code:%d", dataset_id, rc);
+	}
+	return rc;
+}
+
+
+
+
 
 /*
  * 根据task_id取消BB任务
