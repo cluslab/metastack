@@ -508,11 +508,11 @@ typedef struct complete_prolog {
 typedef struct complete_create_bb {
 	uint32_t job_id;
 	char *node_name;
-	uint32_t used_groups; 
+	uint32_t used_groups;
 	uint32_t used_databases;
-	uint32_t *groups_id;
-	uint32_t *databases_id;
-
+	uint32_t *group_ids;
+	uint32_t *dataset_ids;
+	uint32_t *task_ids;          /* 任务ID数组，与dataset_ids一一对应 */
 	uint32_t bb_rc;
 } complete_create_bb_msg_t;
 #endif
@@ -875,6 +875,17 @@ typedef struct kill_job_msg {
 	slurm_step_id_t step_id;
 	time_t   time;		/* slurmctld's time of request */
 	char *work_dir;
+#ifdef __METASTACK_NEW_BURSTBUFFER2
+	/* Burst buffer cleanup fields */
+	char **group_sn;		/* 缓存组SN数组 */
+	uint32_t group_count;		/* 缓存组数量 */
+	uint32_t *group_ids;		/* 缓存组ID数组 */
+	uint32_t *dataset_ids;		/* 数据集ID数组 */
+	uint32_t *task_ids;		/* 任务ID数组 */
+	uint32_t dataset_count;		/* 数据集数量 */
+	char *pfs;			/* 后端存储路径 */
+	uint32_t pfs_cnt;		/* 加速路径个数 */
+#endif
 } kill_job_msg_t;
 
 typedef struct reattach_tasks_request_msg {

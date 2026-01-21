@@ -2569,6 +2569,9 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	int error_code = SLURM_SUCCESS;
 	DEF_TIMERS;
 	complete_create_bb_msg_t *comp_msg = msg->data;
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+	job_record_t *job_ptr = NULL;
+#endif
 	/* Locks: Write job, write node */
 	slurmctld_lock_t job_write_lock = {
 		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
@@ -2580,6 +2583,51 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		lock_slurmctld(job_write_lock);
+
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+	/*
+	 * 解析slurmd返回的缓存组/数据集信息，并将统计结果写回到job_ptr，
+	 * 便于后续在slurmctld侧进行作业状态判断或调度决策。
+	 */
+	job_ptr = find_job_record(comp_msg->job_id);
+	if (job_ptr) {
+		job_ptr->need_group_counts    = comp_msg->used_groups;
+		job_ptr->need_database_counts = comp_msg->used_databases;
+
+		/* 释放旧的数组（如果存在） */
+		xfree(job_ptr->group_ids);
+		xfree(job_ptr->dataset_ids);
+		xfree(job_ptr->task_ids);
+
+		/* group_ids */
+		if (comp_msg->used_groups > 0 && comp_msg->group_ids) {
+			job_ptr->group_ids = xmalloc(comp_msg->used_groups * sizeof(uint32_t));
+			memcpy(job_ptr->group_ids, comp_msg->group_ids,
+			       comp_msg->used_groups * sizeof(uint32_t));
+		} else {
+			job_ptr->group_ids = NULL;
+		}
+
+		/* 复制dataset_ids和task_ids数组 */
+		if (comp_msg->used_databases > 0 && comp_msg->dataset_ids) {
+			job_ptr->dataset_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
+			memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids,
+			       comp_msg->used_databases * sizeof(uint32_t));
+
+			if (comp_msg->task_ids) {
+				job_ptr->task_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
+				memcpy(job_ptr->task_ids, comp_msg->task_ids,
+				       comp_msg->used_databases * sizeof(uint32_t));
+			} else {
+				job_ptr->task_ids = NULL;
+			}
+		} else {
+			job_ptr->dataset_ids = NULL;
+			job_ptr->task_ids = NULL;
+		}
+	}
+#endif
+
 	error_code = create_bb_complete(comp_msg->job_id, comp_msg->bb_rc,
 				     comp_msg->node_name);
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
