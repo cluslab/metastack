@@ -17917,6 +17917,10 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 		}
 	}
 #else
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+   		//需要添加eplilog异常的方式下如何处理节点，原本处理逻辑drain_nodes
+		// if (return_code || return_bb_code) {
+#endif
 	if (return_code) {
 		error("%s: %pJ epilog error on %s, draining the node",
 		      __func__, job_ptr, node_name);

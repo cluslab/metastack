@@ -2695,6 +2695,7 @@ static int _notify_slurmctld_create_bb_fini(
 static void _rpc_create_bb(slurm_msg_t *msg)
 {
 	int rc = SLURM_SUCCESS;
+	int alt_rc = SLURM_ERROR;
 	burst_buffer_launch_msg_t *req = msg->data;
 	if (req == NULL)
 		return;
@@ -2703,17 +2704,26 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			msg->auth_uid);
 		return;
 	}
+
+		// 发送响应消息
+	if (slurm_send_rc_msg(msg, rc) < 0) {
+		error("%s: Error talking to slurmctld: %m", __func__);
+	}
 	// ========== 从 msg 中获取变量 ==========
 	uint32_t job_id = req->job_id;
 	uint32_t user_id = req->user_id;
 	uint32_t group_sn_count = req->used_groups;
-	uint32_t datasets_count = req->used_databases;
+	//uint32_t datasets_count = req->used_databases;
 	char **group_sn_array = req->group_sn;
 	char **pfs_array = NULL;
 	int pfs_count = req->pfs_cnt;
 	uint32_t max_clients_per_job = req->max_clients_per_job;
 	uint32_t access_mode = req->access_mode;
 	bool metadata_acceleration = req->metadata_acceleration;
+
+
+	if (req->het_job_id && (req->het_job_id != NO_VAL))
+		job_id = req->het_job_id;
 
 	// ========== 解析 nodes 字段 ==========
 	int node_count = 0;
@@ -2888,9 +2898,27 @@ cleanup:
 	// group_sn_array 来自 req，不需要释放
 
 	// 在清理资源之前，先通知 slurmctld 创建完成（包含创建的信息）
-	_notify_slurmctld_create_bb_fini(req->job_id, rc,
+	// 通知 slurmctld 创建完成
+		/*
+	 * We need the slurmctld to know we are done or we can get into a
+	 * situation where nothing from the job will ever launch because the
+	 * prolog will never appear to stop running.
+	 */
+	while (alt_rc != SLURM_SUCCESS) {
+		alt_rc = 	_notify_slurmctld_create_bb_fini(req->job_id, rc,
 		group_sn_count, group_ids,
 		pfs_count, dataset_ids, task_ids);
+		if (rc != SLURM_SUCCESS) {
+			alt_rc = _launch_job_fail(job_id, rc);
+			send_registration_msg(rc);
+		}
+
+		if (alt_rc != SLURM_SUCCESS) {
+			info("%s: Retrying prolog complete RPC for JobId=%u [sleeping %us]",
+			     __func__, req->job_id, RETRY_DELAY);
+			sleep(RETRY_DELAY);
+		}
+	}
 
 	// 然后清理本地资源
 	if (group_ids) {
@@ -2929,10 +2957,6 @@ cleanup:
 		xfree(pfs_array);
 	}
 
-	// 发送响应消息
-	if (slurm_send_rc_msg(msg, rc) < 0) {
-		error("%s: Error talking to slurmctld: %m", __func__);
-	}
 }
 
 /**
@@ -6306,6 +6330,9 @@ _rpc_terminate_job(slurm_msg_t *msg)
 			/* The epilog complete message processing on
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		//缓存组清理等操作，需要设置退出码
+#endif	
 			epilog_complete(req->step_id.job_id, req->nodes, rc);
 		}
 

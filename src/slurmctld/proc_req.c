@@ -2638,7 +2638,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	/* return result */
 	if (error_code) {
 		info("%s JobId=%u: %s ",
-		     __func__, comp_msg->job_id, slurm_strerror(error_code));
+		     __func__, comp_msg->job_id, slurm_strerror(error_code)); //这里需要根据bb数据加速阶段进行设置__METASTACK_NEW_BURSTBUFFER4
 		slurm_send_rc_msg(msg, error_code);
 	} else {
 		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);

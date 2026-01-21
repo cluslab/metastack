@@ -393,7 +393,7 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 	bool task_completed 	  = false;           
 	int query_rc 			  = 0;                    
 	bb_attribute_task *bb_task = xmalloc(sizeof(bb_attribute_task));  // 任务属性结构体指针
-	debug("开始等待任务完成,task_id=%u, 检查间隔=%ld秒, 软超时=%ld秒, 硬超时=%ld秒", task_id, (long)CHECK_INTERVAL_SEC, (long)SOFT_TIMEOUT_SEC, (long)HARD_TIMEOUT_SEC);
+	//debug("开始等待任务完成,task_id=%u, 检查间隔=%ld秒, 软超时=%ld秒, 硬超时=%ld秒", task_id, (long)CHECK_INTERVAL_SEC, (long)SOFT_TIMEOUT_SEC, (long)HARD_TIMEOUT_SEC);
 
 	while (!task_completed) {
 		time_t current_time = time(NULL);
@@ -406,8 +406,8 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 		time_t elapsed_time = current_time - start_time;
 
 		if (elapsed_time >= HARD_TIMEOUT_SEC) {
-			error("等待预热任务完成超时（硬超时：%ld秒),task_id=%u,已等待%ld秒",
-				(long)HARD_TIMEOUT_SEC, task_id, (long)elapsed_time);
+			// error("等待预热任务完成超时（硬超时：%ld秒),task_id=%ld,已等待%ld秒",
+			// 	HARD_TIMEOUT_SEC, task_id, elapsed_time);
 			free_bb_task(bb_task);
 			return SLURM_ERROR;
 		}
@@ -437,7 +437,7 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		// 查询失败,直接返回
 		if (query_rc != BB_SUCCESS) {
-			error("查询预热任务状态失败,task_id=%u, 错误码=%d", task_id, query_rc);
+			//error("查询预热任务状态失败,task_id=%u, 错误码=%d", task_id, query_rc);
 			free_bb_task(bb_task);
 			return rc;
 		}
@@ -445,8 +445,8 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 		// 根据是否超过软超时时间
 		if (soft_timeout_reached) {
 			// 超过软超时时间后,使用info级别输出日志
-			debug("查询预热任务状态（已超过OtherTimeout时间%ld秒）,task_id=%u, 查询结果=%d, 任务状态=%d, 已等待%ld秒",
-				(long)SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, (long)elapsed_time);
+			//debug("查询预热任务状态（已超过OtherTimeout时间%ld秒）,task_id=%u, 查询结果=%d, 任务状态=%d, 已等待%ld秒",
+			//	(long)SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, (long)elapsed_time);
 		} 
 
 		// 检查任务是否存在
@@ -461,23 +461,23 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
 			task_completed = true;
 			rc = BB_SUCCESS;
-			info("预热任务完成,task_id=%u, 总耗时=%d秒", task_id, elapsed_time);
+			//info("预热任务完成,task_id=%ld, 总耗时=%ld秒", task_id, elapsed_time);
 			break;
 		} else if (bb_task->task_state == BB_TASK_STATE_FAILED || bb_task->task_state == BB_TASK_STATE_CANCELED) {
-			error("预热任务失败或已取消,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
+			//error("预热任务失败或已取消,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
 			free_bb_task(bb_task);
 			return rc;
 		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING || bb_task->task_state == BB_TASK_STATE_RUNNING) {
 			if (soft_timeout_reached) {
-				info("预热任务仍在进行中,task_id=%u, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%ld秒",
-					task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, (long)elapsed_time);
+				//info("预热任务仍在进行中,task_id=%u, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%ld秒",
+				//	task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, (long)elapsed_time);
 			} else {
-				debug("预热任务仍在进行中,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
+				//debug("预热任务仍在进行中,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
 			}
 		} else {
 			// 未知状态,视为异常,直接返回
-			error("预热任务状态未知,task_id=%u, 任务状态=%d, 已等待%ld秒",
-				task_id, bb_task->task_state, (long)elapsed_time);
+			//error("预热任务状态未知,task_id=%u, 任务状态=%d, 已等待%ld秒",
+			//	task_id, bb_task->task_state, (long)elapsed_time);
 			free_bb_task(bb_task);
 			return rc;
 		}
@@ -515,7 +515,7 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 		error("error params");
 		return SLURM_ERROR;
 	}
-	uint32_t group_id = 0;
+	//uint32_t group_id = 0;
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	for (int retry_count = 0; retry_count < bb_state.bb_config.retry_count; retry_count++) {
 		rc = delete_bb_group_by_sn(group_sn, &bb_state.bb_config);

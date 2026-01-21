@@ -16066,7 +16066,7 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 		pack32(msg->pfs_cnt, 				buffer);	
 		packbool(msg->bb_enable_pb,			buffer);
 		pack32(msg->flag, 					buffer);	
-		// packstr(msg->nodes, 				buffer);
+		pack32(msg->het_job_id, 			buffer);
 	}
 	#endif
 
@@ -16372,7 +16372,7 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		safe_unpack32(&msg->pfs_cnt, 				buffer);	
 		safe_unpackbool(&msg->bb_enable_pb,			buffer);
 		safe_unpack32(&msg->flag, 					buffer);	
-		// safe_unpackstr(&msg->nodes, 				buffer);	
+		safe_unpack32(&msg->het_job_id, 			buffer);	
 	} else {
 		goto unpack_error;
 	} 

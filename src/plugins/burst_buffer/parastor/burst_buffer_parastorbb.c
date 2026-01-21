@@ -1774,7 +1774,7 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 	// xfree(tmp_task_arr);
 	// xfree(tmp_dataset_arr);
 	// xfree(tmp_group_arr);
-	// return NULL;
+	return NULL;
 }
 
 static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc)
@@ -2216,7 +2216,7 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 	// char *dw_cli_path;
 	int fd = -1, hash_inx, rc = SLURM_SUCCESS;
 	// uint32_t bb_node_cnt = 0;
-
+	bb_alloc_t *bb_alloc = NULL;
 	bb_job_t *bb_job;
 	//uint32_t timeout;
 	// stage_args_t *pre_run_args;
@@ -2265,6 +2265,10 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 	// job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
 	log_flag(BURST_BUF, "%pJ", job_ptr);
 	//timeout = bb_state.bb_config.validate_timeout * 1000;
+	if (!(bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr))) {
+		bb_alloc = bb_alloc_job(&bb_state, job_ptr, bb_job);
+		bb_alloc->create_time = time(NULL);
+	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	/* Standard file location for job arrays */
@@ -2740,10 +2744,10 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 	 * (if slurmctld is shut down) before the thread creates
 	 * bb_alloc. That race would mean the burst buffer isn't state saved.
 	 */
-	if (!(bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr))) {
-		bb_alloc = bb_alloc_job(&bb_state, job_ptr, bb_job);
-		bb_alloc->create_time = time(NULL);
-	}
+	// if (!(bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr))) {
+	// 	bb_alloc = bb_alloc_job(&bb_state, job_ptr, bb_job);
+	// 	bb_alloc->create_time = time(NULL);
+	// }
 
 	// bb_limit_add(job_ptr->user_id, bb_job->total_size, bb_job->job_pool,
 	// 	     &bb_state, true);
@@ -2892,8 +2896,9 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	// pre_run_bb_args_t *pre_run_args;
 	uint32_t bb_node_cnt = 0;
 	int ret = SLURM_SUCCESS;
-#ifdef __METASTACK_NEW_BURSTBUFFER3	
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 	int i = 0 ;
+	bb_alloc_t *bb_alloc = NULL;
 #endif
 	if ((job_ptr->burst_buffer == NULL) || (job_ptr->burst_buffer[0] == '\0')){
 		debug("BB-----jobid %d no need burst buffer", job_ptr->job_id);
@@ -3008,7 +3013,21 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	bb_state.bb_config.free_datasets  -= job_ptr->need_database_counts;
 	bb_state.bb_config.used_groups    += job_ptr->need_group_counts;
 	bb_state.bb_config.used_datasets  += job_ptr->need_database_counts;
-
+	/*
+	 * Create bb allocation for the job now. Check if it has already been
+	 * created (perhaps it was created but then slurmctld restarted).
+	 * bb_alloc is the structure that is state saved.
+	 * If we wait until the _start_stage_in thread to create bb_alloc,
+	 * we introduce a race condition where the thread could be killed
+	 * (if slurmctld is shut down) before the thread creates
+	 * bb_alloc. That race would mean the burst buffer isn't state saved.
+	 */
+	if (!(bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr))) {
+		bb_alloc = bb_alloc_job(&bb_state, job_ptr, bb_job);
+		bb_alloc->create_time = time(NULL);
+	} else {
+		alter_bb_alloc_job_rec(bb_alloc, bb_job, true);
+	}
 	//job_ptr->bb_enable_pb			   = true;	
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
