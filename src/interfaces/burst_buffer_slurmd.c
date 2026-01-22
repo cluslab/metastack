@@ -181,11 +181,11 @@ extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
 	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_create_bb_group_by_sn))(group_sn, client_cnt, client_hostname_arr, group_id);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
@@ -196,11 +196,11 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char 
 	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_create_bb_dataset_by_sn))(group_sn, group_id, path, is_use_metadata, is_share_cache, dataset_id);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
@@ -212,11 +212,11 @@ extern int bb_g_submit_bb_task(uint32_t dataset_id, int task_type, uint32_t *tas
 	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_submit_bb_task))(dataset_id, task_type, task_id);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
@@ -228,11 +228,11 @@ extern int bb_g_wait_task_complete(uint32_t task_id, int task_type)
 	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_wait_task_complete))(task_id, task_type);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
@@ -243,11 +243,11 @@ extern int bb_g_delete_bb_group_by_sn(char *group_sn)
 	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_delete_bb_group_by_sn))(group_sn);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
@@ -258,11 +258,11 @@ extern int bb_g_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, 
 	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_delete_bb_dataset_by_id))(dataset_id, group_id, path);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
@@ -273,11 +273,11 @@ extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t dataset_id, uint32_t 
 	int rc = 0;
 	START_TIMER;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_delete_bb_dataset_by_groupid_path))(group_id, path);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }
@@ -290,11 +290,11 @@ extern int bb_g_cancel_bb_task_by_id(uint32_t task_id)
 	START_TIMER;
 	int rc = 0;
 	xassert(g_context_cnt >= 0);
-	slurm_mutex_lock(&g_context_lock);
+	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_cancel_bb_task_by_id))(task_id);
 	}
-	slurm_mutex_unlock(&g_context_lock);
+	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
 	return rc;
 }

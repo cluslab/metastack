@@ -656,7 +656,7 @@ enum job_states {
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 #define JOB_BURSTBUFFER_STAGING  SLURM_BIT(28) /* Job is using burst buffer 2 */
-#define JOB_BURSTBUFFER_STAGE  SLURM_BIT(29) /* Job is using burst buffer 2 */
+#define JOB_BURSTBUFFER_STAGE_OUT  SLURM_BIT(29) /* Job is using burst buffer 2 */
 #endif
 
 #define READY_JOB_FATAL	   -2	/* fatal error */
