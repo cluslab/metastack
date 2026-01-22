@@ -885,6 +885,7 @@ typedef struct kill_job_msg {
 	uint32_t dataset_count;		/* 数据集数量 */
 	char *pfs;			/* 后端存储路径 */
 	uint32_t pfs_cnt;		/* 加速路径个数 */
+	char *job_nodes; /* 作业分配的节点. */
 #endif
 } kill_job_msg_t;
 

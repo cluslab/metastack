@@ -2217,6 +2217,7 @@ extern void slurm_free_kill_job_msg(kill_job_msg_t * msg)
 		xfree(msg->dataset_ids);
 		xfree(msg->task_ids);
 		xfree(msg->pfs);
+		xfree(msg->job_nodes);
 #endif
 		xfree(msg);
 	}

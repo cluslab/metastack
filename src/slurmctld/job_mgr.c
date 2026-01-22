@@ -16855,6 +16855,7 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 	if(job_ptr->bb_enable_pb && job_ptr->bb_ready) {
 		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 	}
+	msg->job_nodes = xstrdup(job_ptr->nodes);
 #endif
 
 	return msg;
