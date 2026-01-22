@@ -2719,7 +2719,7 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 	char *hash_dir = NULL, *job_dir = NULL;
 	int hash_inx = job_ptr->job_id % 10;
 	stage_args_t *stage_in_args;
-	bb_alloc_t *bb_alloc = NULL;
+	//bb_alloc_t *bb_alloc = NULL;
 	xstrfmtcat(hash_dir, "%s/hash.%d",
 		   slurm_conf.state_save_location, hash_inx);
 	(void) mkdir(hash_dir, 0700);

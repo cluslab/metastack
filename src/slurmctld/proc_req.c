@@ -2451,7 +2451,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
    
 	if(job_ptr->bb_enable_pb) { //需要设置是否创建缓存组标志位，还有error状态处理
 	 	job_ptr->clean_finish = true;
-		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 		(void) bb_g_job_start_stage_out(job_ptr);
 	}	   	
 #endif

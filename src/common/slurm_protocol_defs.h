@@ -105,7 +105,7 @@
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 #define IS_JOB_STAGING(_X)		\
 	(_X->job_state & JOB_BURSTBUFFER_STAGING)
-#define IS_JOB_STAGE_OUT(_X)		\
+#define IS_JOB_STAGE_OUT_2(_X)		\
 	(_X->job_state & JOB_BURSTBUFFER_STAGE_OUT)
 #endif
 
