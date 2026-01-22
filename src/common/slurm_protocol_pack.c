@@ -3810,16 +3810,10 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Pack burst buffer cleanup fields */
 		pack32(msg->group_count, buffer);
-
 		packstr_array(msg->group_sn, msg->group_count, buffer);
-
-
 		pack32_array(msg->group_ids, msg->group_count, buffer);
-
 		pack32(msg->dataset_count, buffer);
-
 		pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
-
 		pack32_array(msg->task_ids, msg->dataset_count, buffer);
 		packstr(msg->pfs, buffer);
 		pack32(msg->pfs_cnt, buffer);
