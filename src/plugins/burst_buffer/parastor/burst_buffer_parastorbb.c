@@ -2588,12 +2588,12 @@ extern time_t bb_p_job_get_est_start(job_record_t *job_ptr)
 
 static void _queue_teardown(bb_job_t *bb_job, bool *clean_finish)
 {
-	if(clean_finish) {
+	if(*clean_finish) {
 		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
 		bb_state.bb_config.used_groups				-= bb_job->index_groups;
 		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
 		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
-		clean_finish = false;
+		*clean_finish = false;
 	}
 		
 	//slurm_thread_create_detached(_start_teardown, bb_job);
