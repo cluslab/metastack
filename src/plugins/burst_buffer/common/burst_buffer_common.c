@@ -1135,7 +1135,7 @@ static void _pack_job_alloc(struct bb_alloc *bb_alloc, buf_t *buffer,
 		packbool(bb_alloc->bb_create_finished, buffer);	
 		if(bb_alloc->bb_create_finished) {
 			pack32(bb_alloc->index_groups,   buffer);
-			if(bb_alloc->index_groups > 0 && )
+			if(bb_alloc->index_groups > 0)
 				pack32_array(bb_alloc->bb_group_ids, bb_alloc->index_groups, buffer);
 			pack32(bb_alloc->index_datasets, buffer);
 			if(bb_alloc->index_datasets > 0)
@@ -1166,7 +1166,7 @@ extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 		bb_alloc = state_ptr->bb_ahash[i];
 		while (bb_alloc) {
 			if ((uid == 0) || (uid == bb_alloc->user_id)) {
-#ifdef __METASTACK_NEW_BURSTBUFFER
+
 				/* 当前只在在打包前同步更新 bb_alloc->state */
 				if (bb_alloc->job_id > 0) {
 					bb_job_t *bb_job = bb_job_find(state_ptr, bb_alloc->job_id);
@@ -1175,7 +1175,6 @@ extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 						bb_alloc->state_time = time(NULL);
 					}
 				}
-#endif
 				_pack_job_alloc(bb_alloc, buffer, protocol_version);
 				rec_count++;
 			}
