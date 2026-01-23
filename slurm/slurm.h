@@ -5777,7 +5777,7 @@ typedef struct {
 	uint64_t size;		/* In bytes by default */
 	uint16_t state;		/* See BB_STATE_* */
 	uint32_t user_id;
-#ifdef __METASTACK_NEW_BURSTBUFFER	
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 	//uint64_t bb_group_id; //缓存组id
 	uint32_t type; //缓存类型，可以支持持久及临时。temporary|persistent
 	// bool  cache_tmp;
@@ -5801,6 +5801,7 @@ typedef struct {
 	uint32_t index_groups; /* 作业中包含的缓存组个数 */
 	uint32_t index_datasets; /* 作业中包含的数据集个数 */
 	uint32_t index_tasks; /* 作业中包含的数据集个数 */
+	bool bb_create_finished; //缓存组创建完成
 #endif
 } burst_buffer_resv_t;
 
