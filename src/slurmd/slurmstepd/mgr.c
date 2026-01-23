@@ -1537,7 +1537,7 @@ fail1:
 
 		int epilog_rc = _run_prolog_epilog(step, true);
 		epilog_complete(step->step_id.job_id, step->node_list,
-				epilog_rc);
+				epilog_rc, 0);
 	}
 
 	return rc;

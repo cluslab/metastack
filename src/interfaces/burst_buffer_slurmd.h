@@ -42,7 +42,7 @@ extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **cli
  * @param is_share_cache 缓存方式（true为共享缓存,false为本地缓存）
  * @return 0>表示成功且返回数据集规则ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
  */
-extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id);
+extern int bb_g_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id);
 
 /**
  * @brief 提交任务
@@ -51,7 +51,7 @@ extern int bb_g_create_bb_dataset_by_sn(char *group_sn, int group_id ,char *path
  * @param task_id 返回创建成功的任务ID
  * @return 0:成功提交；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_submit_bb_task(int dataset_id, int task_type, uint32_t *task_id);
+extern int bb_g_submit_bb_task(uint32_t dataset_id, int task_type, uint32_t *task_id);
 
 /**
  * @brief 阻塞等待任务完成
@@ -59,7 +59,7 @@ extern int bb_g_submit_bb_task(int dataset_id, int task_type, uint32_t *task_id)
  * @param task_type 1:预热; 2:回收
  * @return 0:任务完成；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_wait_task_complete(int task_id, int task_type);
+extern int bb_g_wait_task_complete(uint32_t task_id, int task_type);
 
 /**
  * @brief 根据group_sn删除缓存组
@@ -75,14 +75,14 @@ extern int bb_g_delete_bb_group_by_sn(char *group_sn);
  * @param path 用于超时后查询数据集规则
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_delete_bb_dataset_by_id(int dataset_id, int group_id, char * path);
+extern int bb_g_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, char * path);
 
 /**
  * @brief 根据task_id取消BB任务
  * @param task_id 任务ID
  * @return 0:成功取消；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_cancel_bb_task_by_id(int task_id);
+extern int bb_g_cancel_bb_task_by_id(uint32_t task_id);
 /**
  * @brief 根据group_id删除缓存组
  * @param group_id 

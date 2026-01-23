@@ -549,6 +549,9 @@ typedef struct signal_tasks_msg {
 typedef struct epilog_complete_msg {
 	uint32_t job_id;
 	uint32_t return_code;
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	uint32_t bb_return_code;
+#endif
 	char    *node_name;
 } epilog_complete_msg_t;
 

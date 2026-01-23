@@ -147,7 +147,7 @@ fini:
  * Returns SLURM_SUCCESS if message sent successfully,
  *         SLURM_ERROR if epilog complete message fails to be sent.
  */
-extern int epilog_complete(uint32_t jobid, char *node_list, int rc)
+extern int epilog_complete(uint32_t jobid, char *node_list, int rc, int bb_rc)
 {
 	slurm_msg_t msg;
 	epilog_complete_msg_t req;
@@ -159,6 +159,9 @@ extern int epilog_complete(uint32_t jobid, char *node_list, int rc)
 
 	req.job_id = jobid;
 	req.return_code = rc;
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	req.bb_return_code = bb_rc;
+#endif
 	req.node_name = conf->node_name;
 
 	msg.msg_type = MESSAGE_EPILOG_COMPLETE;
