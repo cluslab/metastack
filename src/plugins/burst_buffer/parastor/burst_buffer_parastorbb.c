@@ -3026,10 +3026,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	if (!(bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr))) {
 		bb_alloc = bb_alloc_job(&bb_state, job_ptr, bb_job);
 		bb_alloc->create_time = time(NULL);
-		bb_alloc->bb_create_finished = true;
+		//bb_alloc->bb_create_finished = true;
 	} else {
 		alter_bb_alloc_job_rec(bb_alloc, bb_job, true);
-		bb_alloc->bb_create_finished = true;
+		//bb_alloc->bb_create_finished = true;
 	}
 	//job_ptr->bb_enable_pb			   = true;	
 	slurm_mutex_unlock(&bb_state.bb_mutex);

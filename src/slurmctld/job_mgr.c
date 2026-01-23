@@ -6223,6 +6223,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 #endif
 	}
 	job_ptr->bb_ready = true;
+	
 	last_job_update = time(NULL);
 
 	return SLURM_SUCCESS;
