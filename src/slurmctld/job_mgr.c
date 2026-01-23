@@ -16807,7 +16807,7 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 	msg->time = time(NULL);
 	msg->work_dir = xstrdup(job_ptr->details->work_dir);
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 	/* Copy burst buffer cleanup fields */
 	msg->group_count = 0;
 	msg->dataset_count = 0;
@@ -16852,6 +16852,10 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 		msg->pfs = xstrdup(job_ptr->pfs);
 		msg->pfs_cnt = job_ptr->pfs_cnt;
 	}
+	if(job_ptr->bb_enable_pb && job_ptr->bb_ready) {
+		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
+	}
+	msg->job_nodes = xstrdup(job_ptr->nodes);
 #endif
 
 	return msg;

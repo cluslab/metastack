@@ -2217,6 +2217,7 @@ extern void slurm_free_kill_job_msg(kill_job_msg_t * msg)
 		xfree(msg->dataset_ids);
 		xfree(msg->task_ids);
 		xfree(msg->pfs);
+		xfree(msg->job_nodes);
 #endif
 		xfree(msg);
 	}
@@ -2762,9 +2763,11 @@ extern char *job_state_string(uint32_t inx)
 		return "STAGE_OUT";
 	if (inx & JOB_CONFIGURING)
 		return "CONFIGURING";
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 	if (inx & JOB_BURSTBUFFER_STAGING)
 		return "STAGE_IN";
+	if (inx & JOB_BURSTBUFFER_STAGE_OUT)
+		return "STAGE_OUT";
 #endif
 	if (inx & JOB_RESIZING)
 		return "RESIZING";
@@ -2819,6 +2822,10 @@ extern char *job_state_string(uint32_t inx)
 extern char *job_state_string_compact(uint32_t inx)
 {
 	/* Process JOB_STATE_FLAGS */
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	if (inx & JOB_BURSTBUFFER_STAGE_OUT && (inx & JOB_COMPLETING))
+		return "SO_CG";
+#endif
 	if (inx & JOB_COMPLETING)
 		return "CG";
 	if (inx & JOB_STAGE_OUT)
@@ -2939,11 +2946,15 @@ extern char *job_state_string_complete(uint32_t state)
 		xstrcat(state_str, ",LAUNCH_FAILED");
 	if (state & JOB_UPDATE_DB)
 		xstrcat(state_str, ",UPDATE_DB");
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	if (state & JOB_BURSTBUFFER_STAGE_OUT)
+		xstrcat(state_str, ",STAGE_OUT");
+#endif
 	if (state & JOB_COMPLETING)
 		xstrcat(state_str, ",COMPLETING");
 	if (state & JOB_CONFIGURING)
 		xstrcat(state_str, ",CONFIGURING");
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 	if (state & JOB_BURSTBUFFER_STAGING)
 		xstrcat(state_str, ",STAGING");
 #endif
@@ -2992,12 +3003,13 @@ extern uint32_t job_state_num(const char *state_name)
 		if (_job_name_test(i, state_name))
 			return i;
 	}
-
 	if (_job_name_test(JOB_COMPLETING, state_name))
 		return JOB_COMPLETING;
 	if (_job_name_test(JOB_CONFIGURING, state_name))
 		return JOB_CONFIGURING;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	if (_job_name_test(JOB_BURSTBUFFER_STAGE_OUT, state_name))
+		return JOB_BURSTBUFFER_STAGE_OUT;
 	if (_job_name_test(JOB_BURSTBUFFER_STAGING, state_name))
 		return JOB_BURSTBUFFER_STAGING;
 #endif

@@ -51,8 +51,9 @@ sub IS_JOB_NODE_FAILED { (($_[0]->{job_state} & JOB_STATE_BASE) == JOB_NODE_FAIL
 # /* Derived job states */
 sub IS_JOB_COMPLETING  { ($_[0]->{job_state} & JOB_COMPLETING) }
 sub IS_JOB_CONFIGURING { ($_[0]->{job_state} & JOB_CONFIGURING) }
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER5
 sub IS_JOB_STAGING { ($_[0]->{job_state} & JOB_BURSTBUFFER_STAGING) }
+sub IS_JOB_STAGING { ($_[0]->{job_state} & JOB_BURSTBUFFER_STAGE_OUT) }
 #endif
 sub IS_JOB_STARTED     { (($_[0]->{job_state} & JOB_STATE_BASE) >  JOB_PENDING) }
 sub IS_JOB_FINISHED    { (($_[0]->{job_state} & JOB_STATE_BASE) >  JOB_SUSPENDED) }

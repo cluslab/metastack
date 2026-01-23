@@ -102,11 +102,11 @@
 	(_X->job_state & JOB_POWER_UP_NODE)
 
 /* Derived job states */
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 #define IS_JOB_STAGING(_X)		\
 	(_X->job_state & JOB_BURSTBUFFER_STAGING)
-	#define IS_JOB_STAGE(_X)		\
-	(_X->job_state & JOB_BURSTBUFFER_STAGE)
+#define IS_JOB_STAGE_OUT_2(_X)		\
+	(_X->job_state & JOB_BURSTBUFFER_STAGE_OUT)
 #endif
 
 #define IS_JOB_COMPLETING(_X)		\
@@ -885,6 +885,7 @@ typedef struct kill_job_msg {
 	uint32_t dataset_count;		/* 数据集数量 */
 	char *pfs;			/* 后端存储路径 */
 	uint32_t pfs_cnt;		/* 加速路径个数 */
+	char *job_nodes; /* 作业分配的节点. */
 #endif
 } kill_job_msg_t;
 

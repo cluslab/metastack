@@ -559,14 +559,15 @@ struct job_record {
 	bool	 bb_enable_pb; 			 //作业是bb类型作业
 	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好
 	uint32_t create_step;			 //对应作业步
-	bool     bb_need_wait; 			//是否等待bb完成
-	bool 	 enforce_bb_flag; 		//是否强制等待创建缓存组完成
-	uint32_t pfs_cnt; //加速路径个数
-	char **group_sn;   //缓存组唯一sn码，作业可能有多个缓存组
-	uint32_t *group_ids;      //缓存组ID数组，从slurmd返回
-	uint32_t *dataset_ids;   //数据集ID数组，从slurmd返回
-	uint32_t *task_ids;       //任务ID数组，与dataset_ids一一对应，从slurmd返回
-	bool clean_finish; //是否完成清理
+	bool     bb_need_wait; 			 //是否等待bb完成
+	bool 	 enforce_bb_flag; 		 //是否强制等待创建缓存组完成
+	uint32_t pfs_cnt; 				 //加速路径个数
+	char **group_sn;   				 //缓存组唯一sn码，作业可能有多个缓存组
+	uint32_t *group_ids;             //缓存组ID数组，从slurmd返回
+	uint32_t *dataset_ids;           //数据集ID数组，从slurmd返回
+	uint32_t *task_ids;              //任务ID数组，与dataset_ids一一对应，从slurmd返回
+	bool clean_finish;               //是否完成清理
+	bool real_used_bb;		         // 最终是否必须要使用bb，受bb_enable_pb参数的影响
 #endif
 
 };

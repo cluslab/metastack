@@ -3440,8 +3440,10 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	 */
 	if(is_create_bb) {
 		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+		job_ptr->real_used_bb = true;
 	} else {
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
+		job_ptr->real_used_bb = false;
 	}
 
 	if(IS_JOB_STAGING(job_ptr)) {

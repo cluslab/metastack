@@ -2950,7 +2950,7 @@ static void _rpc_clean_bb(slurm_msg_t *msg)
 {
 	int rc = SLURM_SUCCESS;
 	kill_job_msg_t *req = msg->data;
-	
+	char *temp = NULL;
 	if (req == NULL)
 		return;
 	
@@ -2959,6 +2959,24 @@ static void _rpc_clean_bb(slurm_msg_t *msg)
 			msg->auth_uid);
 		return;
 	}
+
+	/* Check if this is a non-job head node */
+	hostlist_t *hl = hostlist_create(req->job_nodes);
+	hostlist_sort(hl);
+	temp 		   = hostlist_nth(hl, 0);
+	char *host = xstrdup(conf->node_name);
+	if (xstrcmp(temp, host)) {
+		debug("Current node %s is a non-job head node, job head node is %s for job %u",  
+									conf->node_name, host, req->step_id.job_id);
+		xfree(host);
+		free(temp);
+		hostlist_destroy(hl);
+		return;
+	}
+	xfree(host);
+	free(temp);
+	hostlist_destroy(hl);
+	
 
 	/* 如果没有清理所需的参数，直接返回 */
 	if (!req->group_count || !req->dataset_count || !req->pfs) {
@@ -2978,11 +2996,11 @@ static void _rpc_clean_bb(slurm_msg_t *msg)
 	/* 解析 pfs 字段 */
 	char **pfs_array = NULL;
 	uint32_t actual_pfs_cnt = 0;
-	if (!pfs_str || pfs_cnt <= 0) {
+	if (!pfs_str || pfs_cnt <= 0 ) {
 		error("BB-----pfs in msg is error");
 		return;
-	}
-
+	} 
+    
 	pfs_array = xmalloc(pfs_cnt * sizeof(char *));
 	char *pfs_copy = xstrdup(pfs_str);
 	char *save_ptr = NULL;
