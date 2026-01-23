@@ -3817,6 +3817,7 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		pack32_array(msg->task_ids, msg->dataset_count, buffer);
 		packstr(msg->pfs, buffer);
 		pack32(msg->pfs_cnt, buffer);
+		packstr(msg->job_nodes, buffer);
 
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
@@ -3935,6 +3936,7 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 
 		safe_unpackstr(&tmp_ptr->pfs, buffer);
 		safe_unpack32(&tmp_ptr->pfs_cnt, buffer);
+		safe_unpackstr(&tmp_ptr->job_nodes, buffer);
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		safe_unpack8(&uint8_tmp, buffer);
