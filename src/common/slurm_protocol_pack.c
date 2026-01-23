@@ -17236,24 +17236,27 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 			    safe_unpackstr(&bb_resv_ptr->pfs,                	 buffer);	
 				safe_unpack32(&bb_resv_ptr->pfs_cnt,             	 buffer);
 				safe_unpackbool(&bb_resv_ptr->metadata_acceleration, buffer);	
-				safe_unpack32(&bb_resv_ptr->index_groups,         	 buffer);		
+				safe_unpackbool(&bb_resv_ptr->bb_create_finished,   buffer);	
+				if(bb_resv_ptr->bb_create_finished) {
+					safe_unpack32(&bb_resv_ptr->index_groups,         	 buffer);		
+				
+					if (bb_resv_ptr->index_groups > 0) {
+						safe_unpack32_array(&bb_resv_ptr->bb_group_ids,  &bb_resv_ptr->index_groups, buffer);
+					} else
+						xfree(bb_resv_ptr->bb_group_ids);
 
-				if (bb_resv_ptr->index_groups > 0) {
-					safe_unpack32_array(&bb_resv_ptr->bb_group_ids,  &bb_resv_ptr->index_groups, buffer);
-				} else
-					xfree(bb_resv_ptr->bb_group_ids);
-
-				safe_unpack32(&bb_resv_ptr->index_datasets,        buffer);	
-				if(bb_resv_ptr->index_datasets> 0) {
-					safe_unpack32_array(&bb_resv_ptr->bb_dataset_ids, &bb_resv_ptr->index_datasets, buffer);
-				} else
-					xfree(bb_resv_ptr->bb_dataset_ids);	
-					
-				safe_unpack32(&bb_resv_ptr->index_tasks,           buffer);
-				if(bb_resv_ptr->index_tasks > 0)   {
-					safe_unpack32_array(&bb_resv_ptr->bb_task_ids, &bb_resv_ptr->index_tasks, buffer);	
-				} else 
-					xfree(bb_resv_ptr->bb_task_ids);	
+					safe_unpack32(&bb_resv_ptr->index_datasets,        buffer);	
+					if(bb_resv_ptr->index_datasets> 0) {
+						safe_unpack32_array(&bb_resv_ptr->bb_dataset_ids, &bb_resv_ptr->index_datasets, buffer);
+					} else
+						xfree(bb_resv_ptr->bb_dataset_ids);	
+						
+					safe_unpack32(&bb_resv_ptr->index_tasks,           buffer);
+					if(bb_resv_ptr->index_tasks > 0)   {
+						safe_unpack32_array(&bb_resv_ptr->bb_task_ids, &bb_resv_ptr->index_tasks, buffer);	
+					} else 
+						xfree(bb_resv_ptr->bb_task_ids);	
+				}
 			}	
 		}
 	}

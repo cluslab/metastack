@@ -1132,17 +1132,19 @@ static void _pack_job_alloc(struct bb_alloc *bb_alloc, buf_t *buffer,
 			packstr("",           buffer);
 		pack32(bb_alloc->pfs_cnt,       buffer);
 		packbool(bb_alloc->metadata_acceleration, buffer);	
-
-		
-		pack32(bb_alloc->index_groups,   buffer);
-		if(bb_alloc->index_groups > 0)
-			pack32_array(bb_alloc->bb_group_ids, bb_alloc->index_groups, buffer);
-		pack32(bb_alloc->index_datasets, buffer);
-		if(bb_alloc->index_datasets > 0)
-			pack32_array(bb_alloc->bb_dataset_ids, bb_alloc->index_datasets, buffer);
-		pack32(bb_alloc->index_tasks, buffer);
-		if(bb_alloc->index_tasks > 0)
-			pack32_array(bb_alloc->bb_task_ids, bb_alloc->index_tasks, buffer);		
+		packbool(bb_alloc->bb_create_finished, buffer);	
+		if(bb_alloc->bb_create_finished) {
+			pack32(bb_alloc->index_groups,   buffer);
+			if(bb_alloc->index_groups > 0 && )
+				pack32_array(bb_alloc->bb_group_ids, bb_alloc->index_groups, buffer);
+			pack32(bb_alloc->index_datasets, buffer);
+			if(bb_alloc->index_datasets > 0)
+				pack32_array(bb_alloc->bb_dataset_ids, bb_alloc->index_datasets, buffer);
+			pack32(bb_alloc->index_tasks, buffer);
+			if(bb_alloc->index_tasks > 0)
+				pack32_array(bb_alloc->bb_task_ids, bb_alloc->index_tasks, buffer);	
+		}
+	
 	}
 }
 
