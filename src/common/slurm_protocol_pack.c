@@ -884,6 +884,9 @@ _pack_update_node_msg(update_node_msg_t * msg, buf_t *buffer,
 		packstr(msg->reason, buffer);
 		pack32(msg->resume_after, buffer);
 		pack32(msg->weight, buffer);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		pack32(msg->bb_cache_grp_cnt, buffer);
+#endif
 	}
 #ifdef __META_PROTOCOL
 	else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
@@ -948,6 +951,9 @@ _unpack_update_node_msg(update_node_msg_t ** msg, buf_t *buffer,
 		safe_unpackstr(&tmp_ptr->reason, buffer);
 		safe_unpack32(&tmp_ptr->resume_after, buffer);
 		safe_unpack32(&tmp_ptr->weight, buffer);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		safe_unpack32(&tmp_ptr->bb_cache_grp_cnt, buffer);
+#endif
 	}
 #ifdef __META_PROTOCOL
 	else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
@@ -1845,6 +1851,9 @@ _unpack_node_info_members(node_info_t * node, buf_t *buffer,
 		safe_unpackstr(&node->resv_name, buffer);
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		safe_unpackbool(&node->main_planned_flag, buffer);
+#endif
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		safe_unpack32(&node->bb_cache_grp_cnt, buffer);
 #endif
 	} else if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
 		safe_unpackstr(&node->name, buffer);

@@ -171,6 +171,9 @@ bitstr_t **para_sched_planned_update_bitmap = NULL;
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 bitstr_t **para_sched_resv_node_bitmap = NULL;
 #endif
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+bool enable_check_quota = false;
+#endif
 
 
 /*
@@ -544,6 +547,18 @@ extern hostlist_t *nodespec_to_hostlist(const char *nodes, bool uniq,
 		hostlist_uniq(hl);
 	return hl;
 }
+
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+static void init_enable_check_quota(void) {
+	if (xstrcasestr(slurm_conf.sched_params, "enable_check_quota")) {
+		enable_check_quota = true;
+	} else {
+		enable_check_quota = false;
+	}
+    debug("enable_check_quota is %s", 
+          enable_check_quota ? "enabled" : "disabled");
+}
+#endif
 
 static void _init_bitmaps(void)
 {
@@ -2239,6 +2254,9 @@ extern int read_slurm_conf(int recover)
 
 	_stat_slurm_dirs();
 
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	init_enable_check_quota();
+#endif
 	_init_bitmaps();
 
 	/*

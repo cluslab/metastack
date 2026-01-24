@@ -226,7 +226,7 @@ pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Function prototypes */
 static bb_job_t *_get_bb_job(job_record_t *job_ptr);
-static void _queue_teardown(bb_job_t *bb_job, bool *clean_finish);
+static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean_finish);
 // static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
 // static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
 static int _bb_get_parastors_state(void);
@@ -730,7 +730,7 @@ static void *_start_stage_out(void *x)
 				bb_alloc->state = BB_STATE_STAGED_IN;
 			}
 		}
-		_queue_teardown(bb_job, &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 	}
 	unlock_slurmctld(job_write_lock);
@@ -1905,7 +1905,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 		log_flag(BURST_BUF, "Purging buffer for pending %pJ",
 			job_ptr);
 		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		_queue_teardown(bb_job,  &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
 		if (job_ptr->details &&
 			(job_ptr->details->begin_time < defer_time)) {
 			job_ptr->details->begin_time = defer_time;
@@ -1933,7 +1933,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 	case BB_STATE_TEARDOWN_FAIL:
 		log_flag(BURST_BUF, "Restarting burst buffer teardown for %pJ",
 			job_ptr);
-		_queue_teardown(bb_job, &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
 		break;
 	case BB_STATE_COMPLETE:
 		/*
@@ -1979,7 +1979,7 @@ static void _purge_vestigial_bufs(void)
 				/* For parastorbb, try to find bb_job first */
 				bb_job_t *bb_job = bb_job_find(&bb_state, bb_alloc->job_id);
 				if (bb_job) {
-					_queue_teardown(bb_job,  &job_ptr->clean_finish);
+					_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
 				} else {
 					/* No bb_job found, use bb_alloc to clean up resources */
 					info("Job and bb_job not found for JobId=%u, cleaning up resources from bb_alloc",
@@ -2586,13 +2586,68 @@ extern time_t bb_p_job_get_est_start(job_record_t *job_ptr)
 // 	return NULL;
 // }
 
-static void _queue_teardown(bb_job_t *bb_job, bool *clean_finish)
+static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean_finish)
 {
 	if(*clean_finish) {
 		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
 		bb_state.bb_config.used_groups				-= bb_job->index_groups;
 		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
 		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		// 仅当传入了有效的 job_ptr 时才执行节点配额释放
+		if (job_ptr) {
+			uint32_t bb_quota = 4; // 默认值
+			bitstr_t *node_bitmap = NULL;
+
+			// 1. 获取配额配置
+			if (bb_state.bb_config.max_clients_join > 0) {
+				bb_quota = bb_state.bb_config.max_clients_join;
+				debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
+			} else {
+				debug3("max_clients_join not set, using default bb_quota: 4");
+			}
+
+			// 2. 确定使用哪个节点位图 
+			// 优先使用 job_resrcs 中的位图(在作业清理阶段最稳定)，如果没有则尝试使用 job_ptr 自带的位图
+			if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
+				node_bitmap = job_ptr->job_resrcs->node_bitmap;
+			} else if (job_ptr->node_bitmap) {
+				node_bitmap = job_ptr->node_bitmap;
+			}
+
+			// 3. 遍历节点并释放计数
+			if (node_bitmap) {
+				int i, i_first, i_last;
+				i_first = bit_ffs(node_bitmap);
+				i_last  = bit_fls(node_bitmap);
+
+				if (i_first != -1) {
+					for (i = i_first; i <= i_last; i++) {
+						if (!bit_test(node_bitmap, i)) {
+							continue;
+						}
+						node_record_t *node_ptr = node_record_table_ptr[i];
+						// 节点有效性检查
+						if (!node_ptr || !node_ptr->name) {
+							continue;
+						}
+						// 计数递减 (防止下溢)
+						if (node_ptr->bb_cache_grp_cnt > 0) {
+							node_ptr->bb_cache_grp_cnt--;
+							debug3("Teardown: Node %s (idx %d) BB count decremented to %u (quota=%u) for job %pJ",
+								node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
+						} else {
+							// 如果已经是0还在减，说明逻辑有误，打印错误但不崩溃
+							debug("Error: Node %s (idx %d) BB count underflow attempt for job %pJ", 
+								node_ptr->name, i, job_ptr);
+						}
+					}
+				}
+			} else {
+				debug("Teardown: No node bitmap found for job %pJ, skipping quota release", job_ptr);
+			}
+		}
+#endif
 		*clean_finish = false;
 	}
 		
@@ -2767,7 +2822,7 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 		rc = _queue_stage_in(job_ptr, bb_job);
 		if (rc != SLURM_SUCCESS) {
 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-			_queue_teardown(bb_job,  &job_ptr->clean_finish);
+			_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
 		}
 	}
 	return rc;
@@ -3014,6 +3069,60 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	bb_state.bb_config.used_datasets	+= job_ptr->need_database_counts;
 	bb_job->index_groups				=  job_ptr->need_group_counts;
 	bb_job->index_datasets				=  job_ptr->need_database_counts;
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	/* * NOTE: job_ptr is guaranteed to be valid here based on previous code.
+	* bb_state is a global, no need to check address.
+	 */
+	if (job_ptr->node_bitmap) { // 仅当节点位图存在时执行
+		int i, i_first, i_last;
+		node_record_t *node_ptr = NULL;
+		uint32_t bb_quota = 4; // 默认值
+
+		// 获取配额配置
+		if (bb_state.bb_config.max_clients_join > 0) {
+			bb_quota = bb_state.bb_config.max_clients_join;
+			debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
+		} else {
+			debug3("max_clients_join not set, using default bb_quota: 4");
+		}
+
+		i_first = bit_ffs(job_ptr->node_bitmap);
+		i_last  = bit_fls(job_ptr->node_bitmap);
+
+		if (i_first != -1) { // 确保位图非空
+			for (i = i_first; i <= i_last; i++) {
+				if (!bit_test(job_ptr->node_bitmap, i)) {
+					continue;
+				}
+
+				// 直接访问全局节点表
+				node_ptr = node_record_table_ptr[i];
+
+				// 安全检查
+				if (!node_ptr || !node_ptr->name) {
+					continue;
+				}
+
+				// 检查配额 (仅记录日志，若需阻断需在此处添加逻辑)
+				if (node_ptr->bb_cache_grp_cnt >= bb_quota) {
+					// 警告：当前仅仅是打印日志，作业仍会继续运行并占用配额
+					info("WARNING: Node %s (idx %d) BB quota reached (%u/%u) but job %pJ is proceeding.",
+						 node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
+				}
+
+				// 更新计数
+				if (node_ptr->bb_cache_grp_cnt < UINT32_MAX) {
+					node_ptr->bb_cache_grp_cnt++;
+					debug3("Node %s BB count incremented to %u for job %pJ", 
+					   node_ptr->name, node_ptr->bb_cache_grp_cnt, job_ptr);
+				}
+			}
+		}
+	} else {
+		debug3("Job %pJ has no node map, skip BB quota update", job_ptr);
+		// 不可以直接 return，必须往下走去解锁！
+	}
+#endif
 	/*
 	 * Create bb allocation for the job now. Check if it has already been
 	 * created (perhaps it was created but then slurmctld restarted).
@@ -3097,7 +3206,7 @@ extern int bb_p_job_start_stage_out(job_record_t *job_ptr)
 	} else if (bb_job->state < BB_STATE_RUNNING) {
 		/* Job never started. Just teardown the buffer */
 		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		_queue_teardown(bb_job, &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
 	} else if (bb_job->state < BB_STATE_POST_RUN) {
 		_pre_queue_stage_out(job_ptr, bb_job);
 	}
@@ -3254,7 +3363,7 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 			bb_alloc->state_time = time(NULL);
 			bb_state.last_update_time = time(NULL);
 		}
-		_queue_teardown(bb_job,  &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr,  &job_ptr->clean_finish);
 	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
