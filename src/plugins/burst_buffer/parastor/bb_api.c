@@ -2330,7 +2330,7 @@ extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_
             debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
-        if (ret == 0 && xstrcmp(bb_group->group_sn, group_sn) != 0) {
+        if (bb_group->group_sn && xstrcmp(bb_group->group_sn, group_sn) != 0) {
             error("get group sn error, the group_sn  is %s, but return group_sn is %s", group_sn, bb_group->group_sn);
             ret = SLURM_ERROR;
         } else {
@@ -2375,7 +2375,8 @@ extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, 
             debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
-        if (xstrcmp(bb_dataset->path, path) != 0 || bb_dataset->group_id != group_id) {
+        if ((bb_dataset->path && xstrcmp(bb_dataset->path, path) != 0) ||
+            (bb_dataset->group_id > 0 && bb_dataset->group_id != group_id)) {
             error("get dataset id error, the path  is %s, but return path is %s", path, bb_dataset->path);
             error("get dataset id error, the group_id  is %u, but return group_id is %u", group_id, bb_dataset->group_id);
             ret = SLURM_ERROR;
@@ -2453,7 +2454,7 @@ extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_
             debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
-        if (bb_task->task_id != task_id) {
+        if (bb_task->task_id > 0 && bb_task->task_id != task_id) {
             error("get task id error, the task_id  is %d, but return task_id is %d", task_id, bb_task->task_id);
             ret = SLURM_ERROR;
         }
@@ -2492,9 +2493,14 @@ extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id,
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
             debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            //DEBUG:打印token过期情况
+            if (xstrcmp(resp_out->detail_err_msg, "Token expired") == 0 ||
+                xstrcmp(resp_out->err_msg, "TOKEN_AUTHENTICATION_FAILED") == 0) {
+                error("The token is: %s", bb_config->token);
+            }
             ret = BB_API_ERROR;
         }
-        if (xstrcmp(bb_client->hostname, hostname) != 0) {
+        if (bb_client->hostname && xstrcmp(bb_client->hostname, hostname) != 0) {
             error("get client id error, the hostname  is %s, but return hostname is %s", hostname, bb_client->hostname);
             ret = SLURM_ERROR;
         } else {
