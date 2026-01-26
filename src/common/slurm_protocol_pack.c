@@ -3918,7 +3918,7 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 		safe_unpackbool(&tmp_ptr->enforce_bb_flag, buffer);
 		safe_unpackbool(&tmp_ptr->real_used_bb,    buffer);
 		safe_unpackbool(&tmp_ptr->bb_ready,        buffer);
-		if(tmp_ptr->enforce_bb_flag && tmp_ptr->real_used_bb && mp_ptr->bb_ready) {
+		if(tmp_ptr->enforce_bb_flag && tmp_ptr->real_used_bb && tmp_ptr->bb_ready) {
 			safe_unpack32(&tmp_ptr->group_count, buffer);
 			uint32_t group_ids_count = 0;
 			safe_unpackstr_array(&tmp_ptr->group_sn, &group_ids_count, buffer);

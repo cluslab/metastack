@@ -1894,9 +1894,9 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 	case BB_STATE_STAGING_IN:
 	case BB_STATE_STAGED_IN:
 		/* parastor中stage_in不做暂存操作 */
-		if(job_ptr->bb_ready && (!bb_alloc->bb_ready)) { //update
-			bb_alloc->
-		}
+		// if(job_ptr->bb_ready && (!bb_alloc->bb_ready)) { //update
+		// 	bb_alloc->
+		// }
 		break;
 	case BB_STATE_ALLOC_REVOKE:
 		/*
