@@ -6291,7 +6291,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-			if(req->enforce_bb_flag && req->real_used_bb && req->bb_ready)
+			if(req->bb_enable_pb && req->real_used_bb && req->bb_ready)
 				bb_rc = _rpc_clean_bb(req);
 			else	
 				bb_rc = SLURM_SUCCESS; 
@@ -6394,7 +6394,7 @@ done:
 
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-		if(req->enforce_bb_flag && req->real_used_bb && req->bb_ready)
+		if(req->bb_enable_pb && req->real_used_bb && req->bb_ready)
 			bb_rc = _rpc_clean_bb(req);
 		else	
 			bb_rc = SLURM_SUCCESS; 

@@ -3809,10 +3809,10 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		packstr(msg->work_dir, buffer);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Pack burst buffer cleanup fields */
-		packbool(msg->enforce_bb_flag, buffer);
+		packbool(msg->bb_enable_pb,  buffer);
 		packbool(msg->real_used_bb,    buffer);
 		packbool(msg->bb_ready,    	   buffer);
-	if(msg->enforce_bb_flag && msg->real_used_bb && msg->bb_ready) {
+	if(msg->bb_enable_pb && msg->real_used_bb && msg->bb_ready) {
 		pack32(msg->group_count, buffer);
 		packstr_array(msg->group_sn, msg->group_count, buffer);
 		pack32_array(msg->group_ids, msg->group_count, buffer);
@@ -3915,10 +3915,10 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 		safe_unpackstr(&tmp_ptr->work_dir, buffer);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Unpack burst buffer cleanup fields */
-		safe_unpackbool(&tmp_ptr->enforce_bb_flag, buffer);
+		safe_unpackbool(&tmp_ptr->bb_enable_pb, buffer);
 		safe_unpackbool(&tmp_ptr->real_used_bb,    buffer);
 		safe_unpackbool(&tmp_ptr->bb_ready,        buffer);
-		if(tmp_ptr->enforce_bb_flag && tmp_ptr->real_used_bb && tmp_ptr->bb_ready) {
+		if(tmp_ptr->bb_enable_pb && tmp_ptr->real_used_bb && tmp_ptr->bb_ready) {
 			safe_unpack32(&tmp_ptr->group_count, buffer);
 			uint32_t group_ids_count = 0;
 			safe_unpackstr_array(&tmp_ptr->group_sn, &group_ids_count, buffer);

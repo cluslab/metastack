@@ -16818,6 +16818,9 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 	msg->task_ids = NULL;
 	msg->pfs = NULL;
 	msg->pfs_cnt = 0;
+	msg->bb_enable_pb = job_ptr->bb_enable_pb;
+	msg->real_used_bb = job_ptr->real_used_bb;
+	msg->bb_ready = job_ptr->bb_ready;
 
 	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) {
 		if (job_ptr->need_group_counts > 0 && job_ptr->group_sn) {
