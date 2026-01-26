@@ -6394,7 +6394,10 @@ done:
 
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-		bb_rc = _rpc_clean_bb(req);
+		if(req->enforce_bb_flag && req->real_used_bb && req->bb_ready)
+			bb_rc = _rpc_clean_bb(req);
+		else	
+			bb_rc = SLURM_SUCCESS; 
 #endif
 		epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
 	}
