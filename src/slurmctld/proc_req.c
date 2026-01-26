@@ -2586,53 +2586,9 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		lock_slurmctld(job_write_lock);
-
-#ifdef __METASTACK_NEW_BURSTBUFFER3
-	/*
-	 * 解析slurmd返回的缓存组/数据集信息，并将统计结果写回到job_ptr，
-	 * 便于后续在slurmctld侧进行作业状态判断或调度决策。
-	 */
-	job_ptr = find_job_record(comp_msg->job_id);
-	if (job_ptr) {
-		job_ptr->need_group_counts    = comp_msg->used_groups;
-		job_ptr->need_database_counts = comp_msg->used_databases;
-
-		/* 释放旧的数组（如果存在） */
-		xfree(job_ptr->group_ids);
-		xfree(job_ptr->dataset_ids);
-		xfree(job_ptr->task_ids);
-
-		/* group_ids */
-		if (comp_msg->used_groups > 0 && comp_msg->group_ids) {
-			job_ptr->group_ids = xmalloc(comp_msg->used_groups * sizeof(uint32_t));
-			memcpy(job_ptr->group_ids, comp_msg->group_ids,
-			       comp_msg->used_groups * sizeof(uint32_t));
-		} else {
-			job_ptr->group_ids = NULL;
-		}
-
-		/* 复制dataset_ids和task_ids数组 */
-		if (comp_msg->used_databases > 0 && comp_msg->dataset_ids) {
-			job_ptr->dataset_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
-			memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids,
-			       comp_msg->used_databases * sizeof(uint32_t));
-
-			if (comp_msg->task_ids) {
-				job_ptr->task_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
-				memcpy(job_ptr->task_ids, comp_msg->task_ids,
-				       comp_msg->used_databases * sizeof(uint32_t));
-			} else {
-				job_ptr->task_ids = NULL;
-			}
-		} else {
-			job_ptr->dataset_ids = NULL;
-			job_ptr->task_ids = NULL;
-		}
-	}
-#endif
-
 	error_code = create_bb_complete(comp_msg->job_id, comp_msg->bb_rc,
 				     comp_msg->node_name);
+	
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		unlock_slurmctld(job_write_lock);
 
@@ -2641,10 +2597,62 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	/* return result */
 	if (error_code) {
 		info("%s JobId=%u: %s ",
-		     __func__, comp_msg->job_id, slurm_strerror(error_code)); //这里需要根据bb数据加速阶段进行设置__METASTACK_NEW_BURSTBUFFER4
+			__func__, comp_msg->job_id, slurm_strerror(error_code)); //这里需要根据bb数据加速阶段进行设置__METASTACK_NEW_BURSTBUFFER4
 		slurm_send_rc_msg(msg, error_code);
 	} else {
 		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);
+
+#ifdef __METASTACK_NEW_BURSTBUFFER3
+		/*
+		 * 解析slurmd返回的缓存组/数据集信息，并将统计结果写回到job_ptr，
+		 * 便于后续在slurmctld侧进行作业状态判断或调度决策。
+		 */
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+			lock_slurmctld(job_write_lock);
+		job_ptr = find_job_record(comp_msg->job_id);
+
+		if (job_ptr) {
+			job_ptr->need_group_counts = comp_msg->used_groups;
+			job_ptr->need_database_counts = comp_msg->used_databases;
+
+			/* 释放旧的数组（如果存在） */
+			xfree(job_ptr->group_ids);
+			xfree(job_ptr->dataset_ids);
+			xfree(job_ptr->task_ids);
+
+			/* group_ids */
+			if (comp_msg->used_groups > 0 && comp_msg->group_ids) {
+				job_ptr->group_ids = xmalloc(comp_msg->used_groups * sizeof(uint32_t));
+				memcpy(job_ptr->group_ids, comp_msg->group_ids,
+					comp_msg->used_groups * sizeof(uint32_t));
+			} else {
+				job_ptr->group_ids = NULL;
+			}
+
+			/* 复制dataset_ids和task_ids数组 */
+			if (comp_msg->used_databases > 0 && comp_msg->dataset_ids) {
+				job_ptr->dataset_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
+				memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids,
+					comp_msg->used_databases * sizeof(uint32_t));
+
+				if (comp_msg->task_ids) {
+					job_ptr->task_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
+					memcpy(job_ptr->task_ids, comp_msg->task_ids,
+						comp_msg->used_databases * sizeof(uint32_t));
+				} else {
+					job_ptr->task_ids = NULL;
+				}
+			} else {
+				job_ptr->dataset_ids = NULL;
+				job_ptr->task_ids = NULL;
+			}
+		}
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+			unlock_slurmctld(job_write_lock);
+#endif
+		if (bb_g_job_test_post_run(job_ptr) != 1) {
+			error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
+		}
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 
 	}

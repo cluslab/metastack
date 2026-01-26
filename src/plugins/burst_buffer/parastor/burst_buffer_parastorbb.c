@@ -313,28 +313,27 @@ static void _save_bb_state(void)
 					pack64(bb_alloc->req_space, buffer);
 					pack32(bb_alloc->access_mode, buffer);
 					packstr(bb_alloc->pfs, buffer);
-					pack32(bb_alloc->pfs_cnt, buffer);
-					
+					pack32(bb_alloc->pfs_cnt, buffer);			
 					packbool(bb_alloc->metadata_acceleration, buffer);
-					/* Save bb_group_ids array */
 					pack32(bb_alloc->index_groups, buffer);
-					if (bb_alloc->bb_group_ids && bb_alloc->index_groups > 0) {
-						for (int j = 0; j < bb_alloc->index_groups; j++) {
-							pack32(bb_alloc->bb_group_ids[j], buffer);
-						}
-					}
-					/* Save bb_dataset_ids array */
 					pack32(bb_alloc->index_datasets, buffer);
-					if (bb_alloc->bb_dataset_ids && bb_alloc->index_datasets > 0) {
-						for (int j = 0; j < bb_alloc->index_datasets; j++) {
-							pack32(bb_alloc->bb_dataset_ids[j], buffer);
-						}
-					}
-					/* Save bb_task_ids array */
 					pack32(bb_alloc->index_tasks, buffer);
-					if (bb_alloc->bb_task_ids && bb_alloc->index_tasks > 0) {
-						for (int j = 0; j < bb_alloc->index_tasks; j++) {
-							pack32(bb_alloc->bb_task_ids[j], buffer);
+					packbool(bb_alloc->bb_create_finished, buffer);
+					if (bb_alloc->bb_create_finished) {
+						if (bb_alloc->bb_group_ids && bb_alloc->index_groups > 0) {
+							for (int j = 0; j < bb_alloc->index_groups; j++) {
+								pack32(bb_alloc->bb_group_ids[j], buffer);
+							}
+						}
+						if (bb_alloc->bb_dataset_ids && bb_alloc->index_datasets > 0) {
+							for (int j = 0; j < bb_alloc->index_datasets; j++) {
+								pack32(bb_alloc->bb_dataset_ids[j], buffer);
+							}
+						}
+						if (bb_alloc->bb_task_ids && bb_alloc->index_tasks > 0) {
+							for (int j = 0; j < bb_alloc->index_tasks; j++) {
+								pack32(bb_alloc->bb_task_ids[j], buffer);
+							}
 						}
 					}
 					rec_count++;
@@ -455,7 +454,6 @@ static void _recover_bb_state(void)
 		pool = NULL;
 		bb_alloc->qos = qos;
 		qos = NULL;
-#ifdef __METASTACK_NEW_BURSTBUFFER
 		debug("BB-----recover BB state");
 		/* Recover parastorbb specific fields */
 		uint16_t state = 0;
@@ -474,6 +472,7 @@ static void _recover_bb_state(void)
 		uint32_t index_groups = 0;
 		uint32_t index_datasets = 0;
 		uint32_t index_tasks = 0;
+		bool bb_create_finished = false;
 		int j;
 
 		safe_unpack16(&state, buffer);
@@ -491,48 +490,49 @@ static void _recover_bb_state(void)
 
 		/* Recover bb_group_ids array */
 		safe_unpack32(&index_groups, buffer);
-		xfree(bb_alloc->bb_group_ids);
-		if (index_groups > 0) {
-			bb_alloc->bb_group_ids = xmalloc(sizeof(int) * index_groups);
-			for (j = 0; j < index_groups; j++) {
-				uint32_t tmp_val;
-				safe_unpack32(&tmp_val, buffer);
-				bb_alloc->bb_group_ids[j] = (int)tmp_val;
-			}
-		} else {
-			bb_alloc->bb_group_ids = NULL;
-		}
 		bb_alloc->index_groups = index_groups;
-
-		/* Recover bb_dataset_ids array */
 		safe_unpack32(&index_datasets, buffer);
-		xfree(bb_alloc->bb_dataset_ids);
-		if (index_datasets > 0) {
-			bb_alloc->bb_dataset_ids = xmalloc(sizeof(int) * index_datasets);
-			for (j = 0; j < index_datasets; j++) {
-				uint32_t tmp_val;
-				safe_unpack32(&tmp_val, buffer);
-				bb_alloc->bb_dataset_ids[j] = (int)tmp_val;
-			}
-		} else {
-			bb_alloc->bb_dataset_ids = NULL;
-		}
 		bb_alloc->index_datasets = index_datasets;
-
-		/* Recover bb_task_ids array */
 		safe_unpack32(&index_tasks, buffer);
-		xfree(bb_alloc->bb_task_ids);
-		if (index_tasks > 0) {
-			bb_alloc->bb_task_ids = xmalloc(sizeof(int) * index_tasks);
-			for (j = 0; j < index_tasks; j++) {
-				uint32_t tmp_val;
-				safe_unpack32(&tmp_val, buffer);
-				bb_alloc->bb_task_ids[j] = (int)tmp_val;
-			}
-		} else {
-			bb_alloc->bb_task_ids = NULL;
-		}
 		bb_alloc->index_tasks = index_tasks;
+		safe_unpackbool(&bb_create_finished, buffer);
+		bb_alloc->bb_create_finished = bb_create_finished;
+		if (bb_alloc->bb_create_finished) {
+			xfree(bb_alloc->bb_group_ids);
+			if (index_groups > 0) {
+				bb_alloc->bb_group_ids = xmalloc(sizeof(int) * index_groups);
+				for (j = 0; j < index_groups; j++) {
+					uint32_t tmp_val;
+					safe_unpack32(&tmp_val, buffer);
+					bb_alloc->bb_group_ids[j] = (int)tmp_val;
+				}
+			} else {
+				bb_alloc->bb_group_ids = NULL;
+			}
+			xfree(bb_alloc->bb_dataset_ids);
+			if (index_datasets > 0) {
+				bb_alloc->bb_dataset_ids = xmalloc(sizeof(int) * index_datasets);
+				for (j = 0; j < index_datasets; j++) {
+					uint32_t tmp_val;
+					safe_unpack32(&tmp_val, buffer);
+					bb_alloc->bb_dataset_ids[j] = (int)tmp_val;
+				}
+			} else {
+				bb_alloc->bb_dataset_ids = NULL;
+			}
+			xfree(bb_alloc->bb_task_ids);
+			if (index_tasks > 0) {
+				bb_alloc->bb_task_ids = xmalloc(sizeof(int) * index_tasks);
+				for (j = 0; j < index_tasks; j++) {
+					uint32_t tmp_val;
+					safe_unpack32(&tmp_val, buffer);
+					bb_alloc->bb_task_ids[j] = (int)tmp_val;
+				}
+			} else {
+				bb_alloc->bb_task_ids = NULL;
+			}
+		}
+
 
 		/* Assign recovered values to bb_alloc */
 		bb_alloc->state = state; 
@@ -549,7 +549,6 @@ static void _recover_bb_state(void)
 		pfs = NULL;
 		bb_alloc->pfs_cnt = pfs_cnt;
 		bb_alloc->metadata_acceleration = metadata_acceleration;
-#endif
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		xfree(name);
 	}
@@ -1115,6 +1114,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		return bb_job;	/* Cached data */
 
 	bb_job = bb_job_alloc(&bb_state, job_ptr->job_id);
+	bb_job->bb_create_finished = false;
 	bb_job->account = xstrdup(job_ptr->account);
 
 	if (job_ptr->part_ptr)
@@ -3072,6 +3072,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	bb_state.bb_config.used_datasets	+= job_ptr->need_database_counts;
 	bb_job->index_groups				=  job_ptr->need_group_counts;
 	bb_job->index_datasets				=  job_ptr->need_database_counts;
+	bb_job->index_tasks					=  job_ptr->need_database_counts;//暂时一个任务对应一个数据集
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 	/* * NOTE: job_ptr is guaranteed to be valid here based on previous code.
 	* bb_state is a global, no need to check address.
@@ -3228,12 +3229,15 @@ extern int bb_p_job_start_stage_out(job_record_t *job_ptr)
 extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 {
 	bb_job_t *bb_job;
+	bb_alloc_t *bb_alloc;
 	int rc = -1;
 
 	if ((job_ptr->burst_buffer == NULL) ||
 	    (job_ptr->burst_buffer[0] == '\0'))
 		return 1;
 
+	slurmctld_lock_t job_read_lock = { .job = READ_LOCK };
+	lock_slurmctld(job_read_lock);
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	log_flag(BURST_BUF, "%pJ", job_ptr);
 
@@ -3244,20 +3248,68 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 		return -1;
 	}
 	bb_job = bb_job_find(&bb_state, job_ptr->job_id);
-	if (!bb_job) {
+	bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
+	if (!bb_job || !bb_alloc) {
 		/* No job buffers. Assuming use of persistent buffers only */
-		verbose("%pJ bb job record not found",
-			job_ptr);
-		rc =  1;
+		error("%pJ bb job record not found", job_ptr);
+		rc =  -1;
 	} else {
-		if (bb_job->state < BB_STATE_POST_RUN) {
-			rc = -1;
-		} else if (bb_job->state > BB_STATE_POST_RUN) {
-			rc =  1;
+		bb_job->bb_create_finished = job_ptr->bb_ready;
+		bb_alloc->bb_create_finished = job_ptr->bb_ready;
+
+		xfree(bb_job->bb_group_ids);
+		xfree(bb_job->bb_dataset_ids);
+		xfree(bb_job->bb_task_ids);
+		xfree(bb_alloc->bb_group_ids);
+		xfree(bb_alloc->bb_dataset_ids);
+		xfree(bb_alloc->bb_task_ids);
+		if (job_ptr->need_group_counts > 0 && job_ptr->group_ids) {
+			bb_job->bb_group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+			memcpy(bb_job->bb_group_ids, job_ptr->group_ids, job_ptr->need_group_counts * sizeof(uint32_t));
+			bb_alloc->bb_group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+			memcpy(bb_alloc->bb_group_ids, job_ptr->group_ids, job_ptr->need_group_counts * sizeof(uint32_t));
 		} else {
-			rc =  0;
+			bb_job->bb_group_ids = NULL;
+			bb_alloc->bb_group_ids = NULL;
 		}
+		if (job_ptr->need_database_counts > 0 && job_ptr->dataset_ids) {
+			bb_job->bb_dataset_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_job->bb_dataset_ids, job_ptr->dataset_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+			bb_alloc->bb_dataset_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_alloc->bb_dataset_ids, job_ptr->dataset_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+		} else {
+			bb_job->bb_dataset_ids = NULL;
+			bb_alloc->bb_dataset_ids = NULL;
+		}
+		if (job_ptr->need_database_counts > 0 && job_ptr->task_ids) {
+			bb_job->bb_task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_job->bb_task_ids, job_ptr->task_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+			bb_alloc->bb_task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_alloc->bb_task_ids, job_ptr->task_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+		} else {
+			bb_job->bb_task_ids = NULL;
+			bb_alloc->bb_task_ids = NULL;
+		}
+
+
+
+
+
+
+
+
+
+
+		rc = 1;
+		// if (bb_job->state < BB_STATE_POST_RUN) {
+		// 	rc = -1;
+		// } else if (bb_job->state > BB_STATE_POST_RUN) {
+		// 	rc =  1;
+		// } else {
+		// 	rc =  0;
+		// }
 	}
+	unlock_slurmctld(job_read_lock);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	return rc;

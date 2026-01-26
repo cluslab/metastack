@@ -1639,36 +1639,41 @@ extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool 
 	}
 
 	bb_alloc->pfs_cnt		        = bb_job->pfs_cnt;          //后端存储路径个数
-	bb_alloc->state 				= (uint16_t)bb_job->state;  // 从 bb_job 获取 state
+	bb_alloc->state = (uint16_t)bb_job->state;  // 从 bb_job 获取 state
+	bb_alloc->bb_create_finished = bb_job->bb_create_finished; //缓存创建是否完成
 	if(update) {
 		// xfree(bb_alloc->bb_state);
 		// bb_alloc->bb_state 			 	= xstrdup(bb_job->bb_state);         //缓存组状态，启用，禁用,失败成功
 		bb_alloc->metadata_acceleration = bb_job->metadata_acceleration; //是否开启元数据加速
 		bb_alloc->index_groups 			= bb_job->index_groups; /* 作业中包含的缓存组个数 */
 		bb_alloc->index_datasets 		= bb_job->index_datasets; /* 作业中包含的数据集个数 */
-		bb_alloc->index_tasks 			= bb_job->index_tasks; /* 作业中包含的数据集个数 */
+		bb_alloc->index_tasks			= bb_job->index_tasks; /* 作业中包含的任务个数 */
 		bb_alloc->groups_nodes 			= bb_job->groups_nodes; //当前缓存组包含的节点数
-		xfree(bb_alloc->bb_group_ids);
-		if (bb_job->bb_group_ids && bb_job->index_groups > 0) { /* 作业中包含的缓存组id */
-			bb_alloc->bb_group_ids = xmalloc(sizeof(int) * bb_job->index_groups);
-			memcpy(bb_alloc->bb_group_ids, bb_job->bb_group_ids, sizeof(int) * bb_job->index_groups);
-		} else {
-			bb_alloc->bb_group_ids = NULL;
+		if (bb_alloc->bb_create_finished) {
+			xfree(bb_alloc->bb_group_ids);
+			if (bb_job->bb_group_ids && bb_job->index_groups > 0) { /* 作业中包含的缓存组id */
+				bb_alloc->bb_group_ids = xmalloc(sizeof(int) * bb_job->index_groups);
+				memcpy(bb_alloc->bb_group_ids, bb_job->bb_group_ids, sizeof(int) * bb_job->index_groups);
+			} else {
+				bb_alloc->bb_group_ids = NULL;
+			}
+			xfree(bb_alloc->bb_dataset_ids);
+			if (bb_job->bb_dataset_ids && bb_job->index_datasets > 0) { /*  作业中包含的数据集id  */
+				bb_alloc->bb_dataset_ids = xmalloc(sizeof(int) * bb_job->index_datasets);
+				memcpy(bb_alloc->bb_dataset_ids, bb_job->bb_dataset_ids, sizeof(int) * bb_job->index_datasets);
+			} else {
+				bb_alloc->bb_dataset_ids = NULL;
+			}
+			xfree(bb_alloc->bb_task_ids);
+			if (bb_job->bb_task_ids && bb_job->index_tasks > 0) { /* 作业中包含的任务id */
+				bb_alloc->bb_task_ids = xmalloc(sizeof(int) * bb_job->index_tasks);
+				memcpy(bb_alloc->bb_task_ids, bb_job->bb_task_ids, sizeof(int) * bb_job->index_tasks);
+			} else {
+				bb_alloc->bb_task_ids = NULL;
+			}
+
 		}
-		xfree(bb_alloc->bb_dataset_ids);
-		if (bb_job->bb_dataset_ids && bb_job->index_datasets > 0) { /*  作业中包含的数据集id  */
-			bb_alloc->bb_dataset_ids = xmalloc(sizeof(int) * bb_job->index_datasets);
-			memcpy(bb_alloc->bb_dataset_ids, bb_job->bb_dataset_ids, sizeof(int) * bb_job->index_datasets);
-		} else {
-			bb_alloc->bb_dataset_ids = NULL;
-		}
-		xfree(bb_alloc->bb_task_ids);
-		if (bb_job->bb_task_ids && bb_job->index_tasks > 0) { /* 作业中包含的任务id */
-			bb_alloc->bb_task_ids = xmalloc(sizeof(int) * bb_job->index_tasks);
-			memcpy(bb_alloc->bb_task_ids, bb_job->bb_task_ids, sizeof(int) * bb_job->index_tasks);
-		} else {
-			bb_alloc->bb_task_ids = NULL;
-		}
+
 	}
 }
 #endif 
@@ -1706,6 +1711,7 @@ extern bb_alloc_t *bb_alloc_job_rec(bb_state_t *state_ptr,
 	bb_alloc->seen_time = time(NULL);
 	bb_alloc->user_id = job_ptr->user_id;
 	bb_alloc->group_id = job_ptr->group_id;
+	bb_alloc->bb_create_finished = false;
 #ifdef __METASTACK_NEW_BURSTBUFFER	 
 	bb_alloc->create_time = time(NULL);	
 	alter_bb_alloc_job_rec(bb_alloc, bb_job, false);
