@@ -16819,7 +16819,7 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 	msg->pfs = NULL;
 	msg->pfs_cnt = 0;
 
-	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb) {
+	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) {
 		if (job_ptr->need_group_counts > 0 && job_ptr->group_sn) {
 			msg->group_count = job_ptr->need_group_counts;
 			msg->group_sn = xmalloc(msg->group_count * sizeof(char *));

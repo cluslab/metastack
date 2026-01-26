@@ -3811,7 +3811,8 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		/* Pack burst buffer cleanup fields */
 		packbool(msg->enforce_bb_flag, buffer);
 		packbool(msg->real_used_bb,    buffer);
-	if(msg->enforce_bb_flag && msg->real_used_bb) {
+		packbool(msg->bb_ready,    	   buffer);
+	if(msg->enforce_bb_flag && msg->real_used_bb && msg->bb_ready) {
 		pack32(msg->group_count, buffer);
 		packstr_array(msg->group_sn, msg->group_count, buffer);
 		pack32_array(msg->group_ids, msg->group_count, buffer);
@@ -3915,9 +3916,9 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Unpack burst buffer cleanup fields */
 		safe_unpackbool(&tmp_ptr->enforce_bb_flag, buffer);
-		safe_unpackbool(&tmp_ptr->real_used_bb, buffer);
-
-		if(tmp_ptr->enforce_bb_flag && tmp_ptr->real_used_bb) {
+		safe_unpackbool(&tmp_ptr->real_used_bb,    buffer);
+		safe_unpackbool(&tmp_ptr->bb_ready,        buffer);
+		if(tmp_ptr->enforce_bb_flag && tmp_ptr->real_used_bb && mp_ptr->bb_ready) {
 			safe_unpack32(&tmp_ptr->group_count, buffer);
 			uint32_t group_ids_count = 0;
 			safe_unpackstr_array(&tmp_ptr->group_sn, &group_ids_count, buffer);
@@ -4022,11 +4023,20 @@ _pack_epilog_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
 		      uint16_t protocol_version)
 {
 	xassert(msg);
-	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		pack32((uint32_t)msg->job_id, buffer);
+		pack32((uint32_t)msg->return_code, buffer);
+		packstr(msg->node_name, buffer);
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		pack32((uint32_t)msg->bb_return_code, buffer);
+#endif
+	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		pack32((uint32_t)msg->job_id, buffer);
 		pack32((uint32_t)msg->return_code, buffer);
 		packstr(msg->node_name, buffer);
 	}
+#endif
 }
 
 static int
@@ -4038,13 +4048,17 @@ _unpack_epilog_comp_msg(epilog_complete_msg_t ** msg, buf_t *buffer,
 	xassert(msg);
 	tmp_ptr = xmalloc(sizeof(epilog_complete_msg_t));
 	*msg = tmp_ptr;
-
-	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		safe_unpack32(&(tmp_ptr->job_id), buffer);
+		safe_unpack32(&(tmp_ptr->return_code), buffer);
+		safe_unpackstr(&(tmp_ptr->node_name), buffer);
+	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		safe_unpack32(&(tmp_ptr->job_id), buffer);
 		safe_unpack32(&(tmp_ptr->return_code), buffer);
 		safe_unpackstr(&(tmp_ptr->node_name), buffer);
 	}
-
+#endif
 	return SLURM_SUCCESS;
 
 unpack_error:

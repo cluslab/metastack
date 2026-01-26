@@ -6291,9 +6291,12 @@ _rpc_terminate_job(slurm_msg_t *msg)
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-			bb_rc = _rpc_clean_bb(req);
-#endif	
+			if(req->enforce_bb_flag && req->real_used_bb && req->bb_ready)
+				bb_rc = _rpc_clean_bb(req);
+			else	
+				bb_rc = SLURM_SUCCESS; 
 			epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
+#endif	
 		}
 
 		_launch_complete_rm(req->step_id.job_id);
