@@ -3256,6 +3256,50 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 	} else {
 		bb_job->bb_create_finished = job_ptr->bb_ready;
 		bb_alloc->bb_create_finished = job_ptr->bb_ready;
+
+		xfree(bb_job->bb_group_ids);
+		xfree(bb_job->bb_dataset_ids);
+		xfree(bb_job->bb_task_ids);
+		xfree(bb_alloc->bb_group_ids);
+		xfree(bb_alloc->bb_dataset_ids);
+		xfree(bb_alloc->bb_task_ids);
+		if (job_ptr->need_group_counts > 0 && job_ptr->group_ids) {
+			bb_job->bb_group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+			memcpy(bb_job->bb_group_ids, job_ptr->group_ids, job_ptr->need_group_counts * sizeof(uint32_t));
+			bb_alloc->bb_group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+			memcpy(bb_alloc->bb_group_ids, job_ptr->group_ids, job_ptr->need_group_counts * sizeof(uint32_t));
+		} else {
+			bb_job->bb_group_ids = NULL;
+			bb_alloc->bb_group_ids = NULL;
+		}
+		if (job_ptr->need_database_counts > 0 && job_ptr->dataset_ids) {
+			bb_job->bb_dataset_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_job->bb_dataset_ids, job_ptr->dataset_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+			bb_alloc->bb_dataset_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_alloc->bb_dataset_ids, job_ptr->dataset_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+		} else {
+			bb_job->bb_dataset_ids = NULL;
+			bb_alloc->bb_dataset_ids = NULL;
+		}
+		if (job_ptr->need_database_counts > 0 && job_ptr->task_ids) {
+			bb_job->bb_task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_job->bb_task_ids, job_ptr->task_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+			bb_alloc->bb_task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+			memcpy(bb_alloc->bb_task_ids, job_ptr->task_ids, job_ptr->need_database_counts * sizeof(uint32_t));
+		} else {
+			bb_job->bb_task_ids = NULL;
+			bb_alloc->bb_task_ids = NULL;
+		}
+
+
+
+
+
+
+
+
+
+
 		rc = 1;
 		// if (bb_job->state < BB_STATE_POST_RUN) {
 		// 	rc = -1;
