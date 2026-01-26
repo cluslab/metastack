@@ -889,6 +889,8 @@ typedef struct kill_job_msg {
 	char *pfs;			/* 后端存储路径 */
 	uint32_t pfs_cnt;		/* 加速路径个数 */
 	char *job_nodes; /* 作业分配的节点. */
+	bool enforce_bb_flag; 		 //是否强制等待创建缓存组完成
+	bool real_used_bb;		         // 最终是否必须要使用bb，受bb_enable_pb参数的影响	
 #endif
 } kill_job_msg_t;
 
