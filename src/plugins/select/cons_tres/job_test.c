@@ -43,6 +43,9 @@
 #include "gres_sock_list.h"
 
 #include "src/slurmctld/licenses.h"
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+bool enable_check_quota;
+#endif
 
 typedef struct {
 	int action;
@@ -1376,6 +1379,14 @@ static int _verify_node_state(part_res_record_t *cr_part_ptr,
 	}
 
 	for (int i = 0; (node_ptr = next_node_bitmap(node_bitmap, &i)); i++) {
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		// 若节点的bb_cache_grp_cnt达到限额，直接过滤
+		if (enable_check_quota && job_ptr->burst_buffer && node_ptr->bb_cache_grp_cnt >= 4) {
+			debug3("Not considering node %s, BB quota exceeded (bb_node_bitmap bit %d set) for %pJ",
+					node_ptr->name, i, job_ptr);
+			goto clear_bit;
+		}
+#endif
 		/* node-level memory check */
 		if (min_mem && (cr_type & CR_MEMORY)) {
 			avail_mem = node_ptr->real_memory -

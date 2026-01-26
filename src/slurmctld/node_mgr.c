@@ -832,6 +832,9 @@ extern int load_all_node_state ( bool state_only )
 			node_ptr->gpu_spec_bitmap =
 				node_state_rec->gpu_spec_bitmap;
 			node_state_rec->gpu_spec_bitmap = NULL;
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+			node_ptr->bb_cache_grp_cnt = node_state_rec->bb_cache_grp_cnt;
+#endif
 		} else {
 			if ((!power_save_mode) &&
 			    ((node_state & NODE_STATE_POWERED_DOWN) ||
@@ -908,6 +911,9 @@ extern int load_all_node_state ( bool state_only )
 			xfree(node_ptr->mcs_label);
 			node_ptr->mcs_label = node_state_rec->mcs_label;
 			node_state_rec->mcs_label = NULL;
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+			node_ptr->bb_cache_grp_cnt = node_state_rec->bb_cache_grp_cnt;
+#endif
 		}
 
 		if (node_ptr) {
@@ -1403,6 +1409,9 @@ static void _pack_node(node_record_t *dump_node_ptr, buf_t *buffer,
 		packstr(dump_node_ptr->resv_name, buffer);
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		packbool(dump_node_ptr->main_planned_flag, buffer);
+#endif
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		pack32(dump_node_ptr->bb_cache_grp_cnt, buffer);
 #endif
 	} else if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
 		packstr(dump_node_ptr->name, buffer);
@@ -2192,6 +2201,14 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 				// update_db = true;
 			}
 		}
+
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		if (update_node_msg->bb_cache_grp_cnt != NO_VAL) {
+			node_ptr->bb_cache_grp_cnt = update_node_msg->bb_cache_grp_cnt;
+			debug3("update_node: setting bb_cache_grp_cnt to %u for node %s",
+				node_ptr->bb_cache_grp_cnt, this_node_name);
+		}
+#endif
 
 		if (update_node_msg->comment) {
 			xfree(node_ptr->comment);

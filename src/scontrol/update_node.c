@@ -142,6 +142,15 @@ scontrol_update_node (int argc, char **argv)
 				return -1;
 			}
 			update_cnt++;
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		} else if (xstrncasecmp(tag, "bb_cache_grp_cnt", MAX(tag_len, 8)) == 0) {
+			if (parse_uint32(val, &node_msg.bb_cache_grp_cnt)) {
+				exit_code = 1;
+				error("Invalid value %s for bb_cache_grp_cnt", argv[i]);
+				return -1;
+			}
+			update_cnt++;
+#endif
 		} else if (!xstrncasecmp(tag, "Comment", MAX(tag_len, 2))) {
 			node_msg.comment = val;
 			update_cnt++;

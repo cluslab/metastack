@@ -328,6 +328,9 @@ extern list_t *queue_license_list; /* list of queue_license_list  */
  *                          configured for the job's partition)
  *  up_node_bitmap          Set if the node's state is not DOWN
 \*****************************************************************************/
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+extern bool enable_check_quota;
+#endif
 extern bitstr_t *avail_node_bitmap;	/* bitmap of available nodes,
 					 * state not DOWN, DRAIN or FAILING */
 extern bitstr_t *bf_ignore_node_bitmap;	/* bitmap of nodes made available during
