@@ -3176,13 +3176,6 @@ static void _rpc_prolog(slurm_msg_t *msg)
 		job_env.uid = req->uid;
 		job_env.gid = req->gid;
 
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
-		//if (req->bb_enable_pb) {
-			debug("start create burst buffer");
-		    rc = run_burst_buffer_create(req);
-			debug("end create burst buffer");
-		//}
-#endif
 		rc = run_prolog(&job_env, req->cred);
 		_free_job_env(&job_env);
 		if (rc) {
@@ -6298,9 +6291,12 @@ _rpc_terminate_job(slurm_msg_t *msg)
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-			bb_rc = _rpc_clean_bb(req);
-#endif	
+			if(req->bb_enable_pb && req->real_used_bb && req->bb_ready)
+				bb_rc = _rpc_clean_bb(req);
+			else	
+				bb_rc = SLURM_SUCCESS; 
 			epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
+#endif	
 		}
 
 		_launch_complete_rm(req->step_id.job_id);
@@ -6398,7 +6394,10 @@ done:
 
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-		bb_rc = _rpc_clean_bb(req);
+		if(req->bb_enable_pb && req->real_used_bb && req->bb_ready)
+			bb_rc = _rpc_clean_bb(req);
+		else	
+			bb_rc = SLURM_SUCCESS; 
 #endif
 		epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
 	}

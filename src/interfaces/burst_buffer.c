@@ -663,7 +663,7 @@ extern int bb_g_job_start_stage_out(job_record_t *job_ptr)
 	}
 	slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);
-
+ 
 	return rc;
 }
 

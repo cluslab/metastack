@@ -211,6 +211,9 @@ struct node_record {
 	char *orig_parts;		/*  Comma separated list of partitions containing
 				 * this node before be borrowed */
 #endif
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	uint32_t bb_cache_grp_cnt;	/* count of BB cache groups on node */
+#endif
 };
 
 #ifdef __METASTACK_OPT_CACHE_QUERY

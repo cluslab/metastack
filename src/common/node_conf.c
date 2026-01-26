@@ -1673,6 +1673,9 @@ extern void node_record_pack(void *in,
 		(void) gres_node_state_pack(object->gres_list, buffer,
 					    object->name);
 		pack32(object->weight, buffer);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		pack32(object->bb_cache_grp_cnt, buffer);
+#endif
 	}
 }
 
@@ -1726,6 +1729,9 @@ extern int node_record_unpack(void **out,
 		    SLURM_SUCCESS)
 			goto unpack_error;
 		safe_unpack32(&object->weight, buffer);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		safe_unpack32(&object->bb_cache_grp_cnt, buffer);
+#endif
 	} else if (protocol_version >= SLURM_23_11_PROTOCOL_VERSION) {
 		safe_unpackstr(&object->comm_name, buffer);
 		safe_unpackstr(&object->name, buffer);

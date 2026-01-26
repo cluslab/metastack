@@ -179,6 +179,9 @@ void slurm_init_update_node_msg (update_node_msg_t * update_node_msg)
 	update_node_msg->node_state = NO_VAL;
 	update_node_msg->resume_after = NO_VAL;
 	update_node_msg->weight = NO_VAL;
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	update_node_msg->bb_cache_grp_cnt = NO_VAL;
+#endif
 }
 
 /*

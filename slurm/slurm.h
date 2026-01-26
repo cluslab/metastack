@@ -443,6 +443,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
 #endif
 
+#ifndef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+#define __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR POSIX VALUES
 \*****************************************************************************/
@@ -2820,6 +2824,9 @@ typedef struct node_info {
 	uint32_t weight;	/* arbitrary priority of node for scheduling */
 	char *tres_fmt_str;	/* str representing configured TRES on node */
 	char *version;		 /* Slurm version number */
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	uint32_t bb_cache_grp_cnt;
+#endif
 } node_info_t;
 
 typedef struct node_info_msg {
@@ -3797,6 +3804,9 @@ typedef struct slurm_update_node_msg {
 	uint32_t resume_after;	/* automatically resume DOWN or DRAINED node
 				 * after this amount of seconds */
 	uint32_t weight;	/* new weight for node */
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	uint32_t bb_cache_grp_cnt;	/* cache group count of node*/
+#endif
 } update_node_msg_t;
 
 typedef struct slurm_update_front_end_msg {

@@ -337,6 +337,11 @@ char *slurm_sprint_node_table(node_info_t *node_ptr, int one_liner)
 		   node_ptr->weight);
 	xfree(complete_state);
 
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	xstrfmtcat(out, "BBCacheGrpCnt=%u ", node_ptr->bb_cache_grp_cnt);
+	xstrcat(out, line_end);
+#endif
+
 	if (node_ptr->owner == NO_VAL) {
 		xstrcat(out, "Owner=N/A ");
 	} else {

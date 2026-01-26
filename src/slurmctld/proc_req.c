@@ -2449,7 +2449,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		       __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 #ifdef __METASTACK_NEW_BURSTBUFFER4	
    
-	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb) { //需要设置是否创建缓存组标志位，还有error状态处理
+	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb &&  job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
 	 	job_ptr->clean_finish = true;
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 		(void) bb_g_job_start_stage_out(job_ptr);
@@ -2654,6 +2654,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 			error("%s JobId=%u: burst buffer post run test failed",  __func__, comp_msg->job_id);
 		}
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+
 	}
 }
 #endif

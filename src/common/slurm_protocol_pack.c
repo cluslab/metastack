@@ -884,6 +884,9 @@ _pack_update_node_msg(update_node_msg_t * msg, buf_t *buffer,
 		packstr(msg->reason, buffer);
 		pack32(msg->resume_after, buffer);
 		pack32(msg->weight, buffer);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		pack32(msg->bb_cache_grp_cnt, buffer);
+#endif
 	}
 #ifdef __META_PROTOCOL
 	else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
@@ -948,6 +951,9 @@ _unpack_update_node_msg(update_node_msg_t ** msg, buf_t *buffer,
 		safe_unpackstr(&tmp_ptr->reason, buffer);
 		safe_unpack32(&tmp_ptr->resume_after, buffer);
 		safe_unpack32(&tmp_ptr->weight, buffer);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		safe_unpack32(&tmp_ptr->bb_cache_grp_cnt, buffer);
+#endif
 	}
 #ifdef __META_PROTOCOL
 	else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
@@ -1845,6 +1851,9 @@ _unpack_node_info_members(node_info_t * node, buf_t *buffer,
 		safe_unpackstr(&node->resv_name, buffer);
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 		safe_unpackbool(&node->main_planned_flag, buffer);
+#endif
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+		safe_unpack32(&node->bb_cache_grp_cnt, buffer);
 #endif
 	} else if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
 		safe_unpackstr(&node->name, buffer);
@@ -3809,6 +3818,10 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		packstr(msg->work_dir, buffer);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Pack burst buffer cleanup fields */
+		packbool(msg->bb_enable_pb,  buffer);
+		packbool(msg->real_used_bb,    buffer);
+		packbool(msg->bb_ready,    	   buffer);
+	if(msg->bb_enable_pb && msg->real_used_bb && msg->bb_ready) {
 		pack32(msg->group_count, buffer);
 		packstr_array(msg->group_sn, msg->group_count, buffer);
 		pack32_array(msg->group_ids, msg->group_count, buffer);
@@ -3819,6 +3832,7 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		pack32(msg->pfs_cnt, buffer);
 		packstr(msg->job_nodes, buffer);
 
+	}
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		if (msg->cred) {
@@ -3910,33 +3924,39 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 		safe_unpackstr(&tmp_ptr->work_dir, buffer);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Unpack burst buffer cleanup fields */
-		safe_unpack32(&tmp_ptr->group_count, buffer);
-		uint32_t group_ids_count = 0;
-		safe_unpackstr_array(&tmp_ptr->group_sn, &group_ids_count, buffer);
-		safe_unpack32_array(&tmp_ptr->group_ids, &group_ids_count, buffer);
-		if (tmp_ptr->group_count > 0 && group_ids_count != tmp_ptr->group_count)
-			goto unpack_error;
-		if (tmp_ptr->group_count == 0 && group_ids_count != 0)
-			goto unpack_error;
+		safe_unpackbool(&tmp_ptr->bb_enable_pb, buffer);
+		safe_unpackbool(&tmp_ptr->real_used_bb,    buffer);
+		safe_unpackbool(&tmp_ptr->bb_ready,        buffer);
+		if(tmp_ptr->bb_enable_pb && tmp_ptr->real_used_bb && tmp_ptr->bb_ready) {
+			safe_unpack32(&tmp_ptr->group_count, buffer);
+			uint32_t group_ids_count = 0;
+			safe_unpackstr_array(&tmp_ptr->group_sn, &group_ids_count, buffer);
+			safe_unpack32_array(&tmp_ptr->group_ids, &group_ids_count, buffer);
+			if (tmp_ptr->group_count > 0 && group_ids_count != tmp_ptr->group_count)
+				goto unpack_error;
+			if (tmp_ptr->group_count == 0 && group_ids_count != 0)
+				goto unpack_error;
 
-		safe_unpack32(&tmp_ptr->dataset_count, buffer);
-		uint32_t dataset_ids_count = 0;
-		safe_unpack32_array(&tmp_ptr->dataset_ids, &dataset_ids_count, buffer);
-		if (tmp_ptr->dataset_count > 0 && dataset_ids_count != tmp_ptr->dataset_count)
-			goto unpack_error;
-		if (tmp_ptr->dataset_count == 0 && dataset_ids_count != 0)
-			goto unpack_error;
+			safe_unpack32(&tmp_ptr->dataset_count, buffer);
+			uint32_t dataset_ids_count = 0;
+			safe_unpack32_array(&tmp_ptr->dataset_ids, &dataset_ids_count, buffer);
+			if (tmp_ptr->dataset_count > 0 && dataset_ids_count != tmp_ptr->dataset_count)
+				goto unpack_error;
+			if (tmp_ptr->dataset_count == 0 && dataset_ids_count != 0)
+				goto unpack_error;
 
-		uint32_t task_ids_count = 0;
-		safe_unpack32_array(&tmp_ptr->task_ids, &task_ids_count, buffer);
-		if (tmp_ptr->dataset_count > 0 && task_ids_count != tmp_ptr->dataset_count)
-			goto unpack_error;
-		if (tmp_ptr->dataset_count == 0 && task_ids_count != 0)
-			goto unpack_error;
+			uint32_t task_ids_count = 0;
+			safe_unpack32_array(&tmp_ptr->task_ids, &task_ids_count, buffer);
+			if (tmp_ptr->dataset_count > 0 && task_ids_count != tmp_ptr->dataset_count)
+				goto unpack_error;
+			if (tmp_ptr->dataset_count == 0 && task_ids_count != 0)
+				goto unpack_error;
 
-		safe_unpackstr(&tmp_ptr->pfs, buffer);
-		safe_unpack32(&tmp_ptr->pfs_cnt, buffer);
-		safe_unpackstr(&tmp_ptr->job_nodes, buffer);
+			safe_unpackstr(&tmp_ptr->pfs, buffer);
+			safe_unpack32(&tmp_ptr->pfs_cnt, buffer);
+			safe_unpackstr(&tmp_ptr->job_nodes, buffer);
+		}
+
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		safe_unpack8(&uint8_tmp, buffer);
@@ -4012,11 +4032,20 @@ _pack_epilog_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
 		      uint16_t protocol_version)
 {
 	xassert(msg);
-	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		pack32((uint32_t)msg->job_id, buffer);
+		pack32((uint32_t)msg->return_code, buffer);
+		packstr(msg->node_name, buffer);
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		pack32((uint32_t)msg->bb_return_code, buffer);
+#endif
+	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		pack32((uint32_t)msg->job_id, buffer);
 		pack32((uint32_t)msg->return_code, buffer);
 		packstr(msg->node_name, buffer);
 	}
+#endif
 }
 
 static int
@@ -4028,13 +4057,17 @@ _unpack_epilog_comp_msg(epilog_complete_msg_t ** msg, buf_t *buffer,
 	xassert(msg);
 	tmp_ptr = xmalloc(sizeof(epilog_complete_msg_t));
 	*msg = tmp_ptr;
-
-	if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		safe_unpack32(&(tmp_ptr->job_id), buffer);
+		safe_unpack32(&(tmp_ptr->return_code), buffer);
+		safe_unpackstr(&(tmp_ptr->node_name), buffer);
+	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		safe_unpack32(&(tmp_ptr->job_id), buffer);
 		safe_unpack32(&(tmp_ptr->return_code), buffer);
 		safe_unpackstr(&(tmp_ptr->node_name), buffer);
 	}
-
+#endif
 	return SLURM_SUCCESS;
 
 unpack_error:
