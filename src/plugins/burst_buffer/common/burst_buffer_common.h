@@ -180,7 +180,7 @@ typedef struct bb_alloc {
 	uint32_t *bb_task_ids; /* 作业中包含的任务id */
 	uint32_t index_groups; /* 作业中包含的缓存组个数 */
 	uint32_t index_datasets; /* 作业中包含的数据集个数 */
-	uint32_t index_tasks; /* 作业中包含的数据集个数 */
+	uint32_t index_tasks; /* 作业中包含的任务个数 */
 	bool bb_create_finished; //是否已经完成缓存组分配
 #endif
 } bb_alloc_t;
@@ -269,6 +269,7 @@ typedef struct bb_job {
 	uint32_t index_groups; /* 作业中包含的缓存组个数 */
 	uint32_t index_datasets; /* 作业中包含的数据集个数 */
 	uint32_t index_tasks; /* 作业中包含的任务个数 */
+	bool bb_create_finished; //是否已经完成缓存组分配
 	uint32_t parastor_inx; /* 使用的存储系统代号 ,1第一套存储系统，2 第二套存储系统 */
 #endif
 } bb_job_t;

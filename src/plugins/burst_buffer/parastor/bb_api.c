@@ -1060,7 +1060,7 @@ static char *concatenate_dataset_strings(bb_minimal_config_t *bb_config, void *p
         }
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%u",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->dataset_id);
-        debug("the request url of delete dataset:%s", url_api);
+        // debug("the request url of delete dataset:%s", url_api);
         if (call_rest_api_with_token(url_api, "DELETE", NULL, bb_config->token, &json_string) != 0) {
             error("API call failed");
             xfree(json_string);
@@ -1855,7 +1855,7 @@ static int call_bb_api_of_dataset(bb_config_t *bb_config, void *params, call_typ
         }
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/datasets/%u",
             bb_config->para_stor_addr, bb_config->para_stor_port, delete_params->dataset_id);
-        debug("the request url of delete dataset:%s", url_api);
+        // debug("the request url of delete dataset:%s", url_api);
         ret = call_rest_api_with_token_timeout(url_api, "DELETE", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
