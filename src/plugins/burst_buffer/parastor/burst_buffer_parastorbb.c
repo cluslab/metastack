@@ -314,6 +314,7 @@ static void _save_bb_state(void)
 					pack32(bb_alloc->access_mode, buffer);
 					packstr(bb_alloc->pfs, buffer);
 					pack32(bb_alloc->pfs_cnt, buffer);			
+					pack32(bb_alloc->pfs_cnt, buffer);			
 					packbool(bb_alloc->metadata_acceleration, buffer);
 					pack32(bb_alloc->index_groups, buffer);
 					pack32(bb_alloc->index_datasets, buffer);
