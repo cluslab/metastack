@@ -314,25 +314,26 @@ static void _save_bb_state(void)
 					pack32(bb_alloc->access_mode, buffer);
 					packstr(bb_alloc->pfs, buffer);
 					pack32(bb_alloc->pfs_cnt, buffer);			
+					pack32(bb_alloc->pfs_cnt, buffer);			
 					packbool(bb_alloc->metadata_acceleration, buffer);
 					pack32(bb_alloc->index_groups, buffer);
 					pack32(bb_alloc->index_datasets, buffer);
 					pack32(bb_alloc->index_tasks, buffer);
 					packbool(bb_alloc->bb_create_finished, buffer);
 					if (bb_alloc->bb_create_finished) {
-						if (bb_alloc->bb_group_ids && bb_alloc->index_groups > 0) {
+						if (bb_alloc->index_groups > 0) {
 							for (int j = 0; j < bb_alloc->index_groups; j++) {
-								pack32(bb_alloc->bb_group_ids[j], buffer);
+								pack32(bb_alloc->bb_group_ids ? bb_alloc->bb_group_ids[j] : 0, buffer);
 							}
 						}
-						if (bb_alloc->bb_dataset_ids && bb_alloc->index_datasets > 0) {
+						if (bb_alloc->index_datasets > 0) {
 							for (int j = 0; j < bb_alloc->index_datasets; j++) {
-								pack32(bb_alloc->bb_dataset_ids[j], buffer);
+								pack32(bb_alloc->bb_dataset_ids ? bb_alloc->bb_dataset_ids[j] : 0, buffer);
 							}
 						}
-						if (bb_alloc->bb_task_ids && bb_alloc->index_tasks > 0) {
+						if (bb_alloc->index_tasks > 0) {
 							for (int j = 0; j < bb_alloc->index_tasks; j++) {
-								pack32(bb_alloc->bb_task_ids[j], buffer);
+								pack32(bb_alloc->bb_task_ids ? bb_alloc->bb_task_ids[j] : 0, buffer);
 							}
 						}
 					}
@@ -497,6 +498,9 @@ static void _recover_bb_state(void)
 		bb_alloc->index_tasks = index_tasks;
 		safe_unpackbool(&bb_create_finished, buffer);
 		bb_alloc->bb_create_finished = bb_create_finished;
+		xfree(bb_alloc->bb_group_ids);
+		xfree(bb_alloc->bb_dataset_ids);
+		xfree(bb_alloc->bb_task_ids);
 		if (bb_alloc->bb_create_finished) {
 			xfree(bb_alloc->bb_group_ids);
 			if (index_groups > 0) {
@@ -566,6 +570,7 @@ unpack_error:
 	xfree(name);
 	xfree(partition);
 	xfree(qos);
+	xfree(pfs);
 	FREE_NULL_BUFFER(buffer);
 	return;
 }

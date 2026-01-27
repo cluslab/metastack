@@ -17245,7 +17245,7 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 
 			safe_unpackstr(&bb_info_ptr->file_system,      buffer);
 			safe_unpackstr(&bb_info_ptr->file_system_mount,buffer);
-
+			safe_unpack32(&bb_info_ptr->buffer_count, buffer);
 			if (bb_info_ptr->buffer_count >= NO_VAL)
 					goto unpack_error;
 			safe_xcalloc(bb_info_ptr->burst_buffer_resv_ptr,
