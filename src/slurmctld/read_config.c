@@ -173,6 +173,7 @@ bitstr_t **para_sched_resv_node_bitmap = NULL;
 #endif
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 bool enable_check_quota = false;
+uint32_t bb_node_quota = 4;
 #endif
 
 
@@ -2334,6 +2335,10 @@ extern int read_slurm_conf(int recover)
 	 * _sync_nodes_to_jobs(), which calls bb_g_job_init().
 	 */
 	rc = bb_g_load_state(true);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	bb_node_quota = bb_g_get_node_quota();
+	debug("Scheduler: BB node quota synced to %u", bb_node_quota);
+#endif
 	error_code = MAX(error_code, rc);	/* not fatal */
 
 	(void) _sync_nodes_to_jobs();

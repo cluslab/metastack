@@ -3393,3 +3393,11 @@ static void _bb_min_config_free(bb_minimal_config_t * config)
 		xfree(config);
 	}
 }
+
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+extern uint32_t bb_p_get_node_quota(void)
+{
+	/* bb_state.bb_config.max_clients_join 是在 load_state 时解析出来的值 */
+	return bb_state.bb_config.max_clients_join;
+}
+#endif

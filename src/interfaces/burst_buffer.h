@@ -241,4 +241,8 @@ extern int bb_g_run_script(char *func, uint32_t job_id, uint32_t argc,
  */
 extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer);
 
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+extern uint32_t bb_g_get_node_quota(void);
+#endif
+
 #endif
