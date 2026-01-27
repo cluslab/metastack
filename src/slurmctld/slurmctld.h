@@ -330,6 +330,7 @@ extern list_t *queue_license_list; /* list of queue_license_list  */
 \*****************************************************************************/
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 extern bool enable_check_quota;
+extern uint32_t bb_node_quota;
 #endif
 extern bitstr_t *avail_node_bitmap;	/* bitmap of available nodes,
 					 * state not DOWN, DRAIN or FAILING */
