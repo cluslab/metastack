@@ -7894,7 +7894,7 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 	},{
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		.msg_type = REQUEST_COMPLETE_CREATE_BB,
-		_slurm_rpc_complete_create_bb,
+		.func =_slurm_rpc_complete_create_bb,
 		.queue_enabled = true,
 		.locks = {
 			.job = WRITE_LOCK,
