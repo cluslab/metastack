@@ -968,7 +968,9 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 		packbool(dump_job_ptr->bb_ready,  		       buffer);
 		pack32(dump_job_ptr->create_step,     		   buffer);		
 		packbool(dump_job_ptr->bb_need_wait,  		   buffer);
-		packbool(dump_job_ptr->enforce_bb_flag,		   buffer);
+		packbool(dump_job_ptr->enforce_bb_flag,		    buffer);
+		pack32(dump_job_ptr->pfs_cnt,     	  		   buffer); 
+		packbool(dump_job_ptr->clean_finish,		    buffer);  
 #endif     //#endif
 	} else if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		/* Dump basic job info */
@@ -2944,9 +2946,9 @@ extern int job_record_unpack(job_record_t **out,
 		safe_unpackbool(&job_ptr->bb_ready,				 buffer);	
 		safe_unpack32(&job_ptr->create_step,	 		 buffer);	
 		safe_unpackbool(&job_ptr->bb_need_wait,			 buffer);
-		safe_unpackbool(&job_ptr->enforce_bb_flag,		 buffer);
+		safe_unpackbool(&job_ptr->enforce_bb_flag,		  buffer);
 		safe_unpack32(&job_ptr->pfs_cnt,	 		 	 buffer);
-		safe_unpackbool(&job_ptr->clean_finish,			 buffer);
+		safe_unpackbool(&job_ptr->clean_finish,			  buffer);
 #endif
 	} else if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		safe_unpack32(&job_ptr->array_job_id, buffer);

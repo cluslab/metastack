@@ -313,8 +313,7 @@ static void _save_bb_state(void)
 					pack64(bb_alloc->req_space, buffer);
 					pack32(bb_alloc->access_mode, buffer);
 					packstr(bb_alloc->pfs, buffer);
-					pack32(bb_alloc->pfs_cnt, buffer);			
-					pack32(bb_alloc->pfs_cnt, buffer);			
+					pack32(bb_alloc->pfs_cnt, buffer);					
 					packbool(bb_alloc->metadata_acceleration, buffer);
 					pack32(bb_alloc->index_groups, buffer);
 					pack32(bb_alloc->index_datasets, buffer);
@@ -377,6 +376,7 @@ static void _recover_bb_state(void)
 	int i, state_fd;
 	char *account = NULL, *name = NULL;
 	char *partition = NULL, *pool = NULL, *qos = NULL;
+	char *pfs = NULL;
 	char *end_ptr = NULL;
 	time_t create_time = 0;
 	bb_alloc_t *bb_alloc;
@@ -466,7 +466,6 @@ static void _recover_bb_state(void)
 		uint32_t groups_nodes = 0;
 		uint64_t req_space = 0;
 		uint32_t access_mode = 0;
-		char *pfs = NULL;
 		uint32_t pfs_cnt = 0;
 		// char *bb_state_str = NULL;
 		bool metadata_acceleration = false;
