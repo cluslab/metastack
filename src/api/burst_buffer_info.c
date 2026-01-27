@@ -404,7 +404,7 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 		fprintf(out, "Allocated Buffers:\n");
 	}
 	if (burst_buffer_ptr->buffer_count == 0)
-		fprintf(out, "  No burstbuffer job\n");
+		fprintf(out, "No burstbuffer job\n");
 	for (i = 0, bb_resv_ptr = burst_buffer_ptr->burst_buffer_resv_ptr;
 		i < burst_buffer_ptr->buffer_count; i++, bb_resv_ptr++) {
 		out_buf = NULL;
