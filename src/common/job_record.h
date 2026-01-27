@@ -545,10 +545,6 @@ struct job_record {
 	uint32_t pending_order;
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER3
-	// int bb_group_counts; /* Number of burst buffer groups */
-	// //int *bb_group_ids; /* Sizes of each burst buffer group */
-	// int bb_dataset_counts; /* Number of burst buffer datasets */
-	// int bb_task_counts; /*  Number of burst buffer tasks */
 	uint32_t need_group_counts; 
 	uint32_t need_database_counts;
 	uint64_t req_space;		   		 //当前作业请求的空间
@@ -564,10 +560,12 @@ struct job_record {
 	uint32_t *group_ids;             //缓存组ID数组，从slurmd返回
 	uint32_t *dataset_ids;           //数据集ID数组，从slurmd返回
 	uint32_t *task_ids;              //任务ID数组，与dataset_ids一一对应，从slurmd返回
-	bool     bb_need_wait; 			 //是否等待bb完成
-	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好
-	bool clean_finish;               //是否完成清理
-	bool real_used_bb;		         // 最终是否必须要使用bb，受bb_enable_pb参数的影响
+	bool     bb_need_wait; 			 //是否等待bb完成，当bb资源用尽时，判断是否可以直接运行，受bb_enable_pb参数的影响
+	bool     real_used_bb;		     // 最终是否必须要使用bb，受bb_enable_pb参数的影响
+
+	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好,slurmd创建缓存组后置位
+	bool     clean_finish;           //是否完成清理，作业完成（terminal job）后执行清理完成后置位
+	bool   	 bb_kill_flag; 			 //当作业收到kill信号时，该位置位为true，即使未创建作业步（可能缓存组已经创建完成），也不再触发srun_allocate、launch_prolog、launch_job
 #endif
 
 };

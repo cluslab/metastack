@@ -5270,6 +5270,11 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_ptr->bit_flags |= JOB_KILL_HURRY;
 		return bb_g_job_cancel(job_ptr);
 	}
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	if(!job_ptr->bb_ready) {
+		job_ptr->bb_kill_flag = true;
+	}
+#endif
 
 	if (IS_JOB_FINISHED(job_ptr))
 		return ESLURM_ALREADY_DONE;
@@ -6222,6 +6227,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		_add_job_state_to_queue(job_ptr);
 #endif
 	}
+
 	job_ptr->bb_ready = true;
 	
 	last_job_update = time(NULL);
@@ -9670,7 +9676,7 @@ void job_time_limit(void)
 		}
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-		if(job_ptr->bb_ready) {
+		if(job_ptr->bb_ready && !(job_ptr->bb_kill_flag)) {
 			log_flag(BURST_BUF, "JobId=%u has created burstbuffer job", job_ptr->job_id);
 			if(IS_JOB_STAGING(job_ptr)){
 				job_create_fini(job_ptr);
