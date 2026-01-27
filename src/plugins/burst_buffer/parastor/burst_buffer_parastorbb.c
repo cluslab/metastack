@@ -2423,175 +2423,77 @@ extern time_t bb_p_job_get_est_start(job_record_t *job_ptr)
  * bb_state.bb_mutex is locked on function entry.
  * job_ptr may be NULL if not found
  */
-// static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
-// {
-// 	char *hash_dir = NULL, *job_dir = NULL;
-// 	char *script_file = NULL, *path_file = NULL;
-// 	int hash_inx;
+static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
+{
+	char *hash_dir = NULL, *job_dir = NULL;
+	char *script_file = NULL, *path_file = NULL;
+	int hash_inx;
 
-// 	hash_inx = job_id % 10;
-// 	xstrfmtcat(hash_dir, "%s/hash.%d",
-// 		   slurm_conf.state_save_location, hash_inx);
-// 	(void) mkdir(hash_dir, 0700);
-// 	xstrfmtcat(job_dir, "%s/job.%u", hash_dir, job_id);
-// 	(void) mkdir(job_dir, 0700);
+	hash_inx = job_id % 10;
+	xstrfmtcat(hash_dir, "%s/hash.%d",
+		   slurm_conf.state_save_location, hash_inx);
+	(void) mkdir(hash_dir, 0700);
+	xstrfmtcat(job_dir, "%s/job.%u", hash_dir, job_id);
+	(void) mkdir(job_dir, 0700);
 
-// 	xstrfmtcat(path_file, "%s/pathfile", job_dir);
-// 	(void) unlink(path_file);
-// 	xfree(path_file);
+	xstrfmtcat(path_file, "%s/pathfile", job_dir);
+	(void) unlink(path_file);
+	xfree(path_file);
 
-// 	if (!job_ptr || (job_ptr->batch_flag == 0)) {
-// 		xstrfmtcat(script_file, "%s/script", job_dir);
-// 		(void) unlink(script_file);
-// 		xfree(script_file);
-// 	}
+	if (!job_ptr || (job_ptr->batch_flag == 0)) {
+		xstrfmtcat(script_file, "%s/script", job_dir);
+		(void) unlink(script_file);
+		xfree(script_file);
+	}
 
-// 	(void) unlink(job_dir);
-// 	xfree(job_dir);
-// 	xfree(hash_dir);
-// }
+	(void) unlink(job_dir);
+	xfree(job_dir);
+	xfree(hash_dir);
+}
 
-// static void *_start_teardown(void *x)
-// {
-// 	bb_job_t *bb_job = (bb_job_t *)x;
-// 	int rc = SLURM_SUCCESS;
-// 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
-// 	job_record_t *job_ptr = NULL;
-// 	bb_alloc_t *bb_alloc = NULL;
+static void *_start_teardown(void *x)
+{
+	bb_job_t *bb_job = (bb_job_t *)x;
+	int rc = SLURM_SUCCESS; // rc一直保持成功状态，使start_teardown只进行bb_alloc的清理
+	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	job_record_t *job_ptr = NULL;
+	bb_alloc_t *bb_alloc = NULL;
 
-// 	/* 拿锁，把数据赋值给临时变量，减少持锁时间 */
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-// 	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-// 	uint32_t tmp_job_id = bb_job->job_id;
-// 	uint32_t tmp_index_tasks = bb_job->index_tasks;
-// 	int *tmp_task_arr = xmalloc(sizeof(uint32_t) * tmp_index_tasks);
-// 	if (bb_job->bb_task_ids)
-// 		memcpy(tmp_task_arr, bb_job->bb_task_ids, sizeof(uint32_t) * tmp_index_tasks);
-// 	uint32_t tmp_index_datasets = bb_job->index_datasets;
-// 	uint32_t *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
-// 	if (bb_job->bb_dataset_ids)
-// 		memcpy(tmp_dataset_arr, bb_job->bb_dataset_ids, sizeof(uint32_t) * tmp_index_datasets);
-// 	uint32_t tmp_index_groups = bb_job->index_groups;
-// 	uint32_t *tmp_group_arr = xmalloc(sizeof(uint32_t) * tmp_index_groups);
-// 	if (bb_job->bb_group_ids)
-// 		memcpy(tmp_group_arr, bb_job->bb_group_ids, sizeof(uint32_t) * tmp_index_groups);
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
+	lock_slurmctld(job_write_lock);
+	job_ptr = find_job_record(bb_job->job_id);
+	_purge_bb_files(bb_job->job_id, job_ptr);
+	if (job_ptr) {
+		if (rc != SLURM_SUCCESS) {
+			job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
+			xfree(job_ptr->state_desc);
+			xstrfmtcat(job_ptr->state_desc, "%s: teardown cleanup failed", plugin_type);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
+		} else {
+			job_state_unset_flag(job_ptr, JOB_STAGE_OUT);
+			xfree(job_ptr->state_desc);
+			last_job_update = time(NULL);
+		}
 
-// 	if (bb_min_config == NULL) {
-// 		error("failed to get bb minimal config for JobId=%u", tmp_job_id);
-// 		return NULL;
-// 	}
-
-// 	DEF_TIMERS
-// 	_incr_parastor_thread_cnt();
-// 	track_script_rec_add(tmp_job_id, 0, pthread_self());
-// 	_calibrate_task_state(tmp_job_id, tmp_task_arr, tmp_index_tasks, bb_min_config); // 查询作业task状态
-
-// 	START_TIMER;
-// 	/* 1) 删除数据集 */
-// 	if (tmp_dataset_arr && tmp_index_datasets > 0) {
-// 		for (int i = 0; i < tmp_index_datasets; i++) {
-// 			delete_params_request delete_params = { 0 };
-// 			delete_params.dataset_id = tmp_dataset_arr[i];
-// 			bb_response *resp_out = xmalloc(sizeof(bb_response));
-// 			int ret = delete_burst_buffer_dataset(&delete_params, bb_min_config, resp_out);
-// 			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-// 				error("delete dataset %d for JobId=%u failed",
-// 					delete_params.dataset_id, tmp_job_id);
-// 				rc = SLURM_ERROR;
-// 			} else {
-// 				bb_attribute_dataset *bb_dataset_tmp = NULL;
-// 				slurm_mutex_lock(&bb_state.bb_mutex);
-// 				if (bb_state.list_datasets)
-// 					bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &delete_params.dataset_id);
-// 				if (bb_dataset_tmp)
-// 					slurm_free_dataset(bb_dataset_tmp);
-// 				if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
-// 					bb_state.bb_config.free_datasets++;
-// 				if (bb_state.bb_config.used_datasets > 0)
-// 					bb_state.bb_config.used_datasets--;
-// 				slurm_mutex_unlock(&bb_state.bb_mutex);
-// 			}
-// 			free_bb_response(resp_out);
-// 		}
-// 	}else {
-// 		info("no dataset to delete for JobId=%u", tmp_job_id);
-// 	}
-// 	/* 2) 删除缓存组（必须在数据集清理完成后） */
-// 	if (tmp_group_arr && tmp_index_groups > 0) {
-// 		for (int i = 0; i < tmp_index_groups; i++) {
-// 			delete_params_request delete_params = { 0 };
-// 			delete_params.group_id = tmp_group_arr[i];
-// 			bb_response *resp_out = xmalloc(sizeof(bb_response));
-// 			int ret = delete_burst_buffer_group(&delete_params, bb_min_config, resp_out);
-// 			if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-// 				error("delete group %d for JobId=%u failed",
-// 					delete_params.group_id, tmp_job_id);
-// 				rc = SLURM_ERROR;
-// 			} else {
-// 				bb_attribute_group *bb_group_tmp = NULL;
-// 				slurm_mutex_lock(&bb_state.bb_mutex);
-// 				if (bb_state.list_groups)
-// 					bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &delete_params.group_id);
-// 				if (bb_group_tmp)
-// 					slurm_free_group(bb_group_tmp);
-// 				if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
-// 					bb_state.bb_config.free_groups++;
-// 				if (bb_state.bb_config.used_groups > 0)
-// 					bb_state.bb_config.used_groups--;
-// 				slurm_mutex_unlock(&bb_state.bb_mutex);
-// 			}
-// 			free_bb_response(resp_out);
-// 		}
-// 	}else {
-// 		info("no group to delete for JobId=%u", tmp_job_id);
-// 	}
-// 	_bb_min_config_free(bb_min_config);
-// 	xfree(tmp_task_arr);
-// 	xfree(tmp_dataset_arr);
-// 	xfree(tmp_group_arr);
-// 	END_TIMER;
-// 	info("teardown (parastor cleanup) for JobId=%u ran for %s", bb_job->job_id, TIME_STR);
-
-// 	/* 更新作业与分配状态，释放记录 */
-// 	lock_slurmctld(job_write_lock);
-// 	job_ptr = find_job_record(bb_job->job_id);
-// 	_purge_bb_files(bb_job->job_id, job_ptr);
-// 	if (job_ptr) {
-// 		if (rc != SLURM_SUCCESS) {
-// 			job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-// 			xfree(job_ptr->state_desc);
-// 			xstrfmtcat(job_ptr->state_desc, "%s: teardown cleanup failed", plugin_type);
-// #ifdef __METASTACK_OPT_CACHE_QUERY
-// 			_add_job_state_to_queue(job_ptr);
-// #endif
-// 		} else {
-// 			job_state_unset_flag(job_ptr, JOB_STAGE_OUT);
-// 			xfree(job_ptr->state_desc);
-// 			last_job_update = time(NULL);
-// 		}
-
-// 		slurm_mutex_lock(&bb_state.bb_mutex);
-// 		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
-// 		if (bb_alloc) {
-// 			bb_limit_rem(bb_alloc->user_id, bb_alloc->size, bb_alloc->pool, &bb_state);
-// 			(void)bb_free_alloc_rec(&bb_state, bb_alloc);
-// 		}
-// 		if (rc == SLURM_SUCCESS) {
-// 			bb_job_t *tmp = _get_bb_job(job_ptr);
-// 			if (tmp) {
-// 				bb_set_job_bb_state(job_ptr, tmp, BB_STATE_COMPLETE);
-// 				bb_job_del(&bb_state, tmp->job_id);
-// 			}
-// 		}
-// 		slurm_mutex_unlock(&bb_state.bb_mutex);
-// 	}
-// 	unlock_slurmctld(job_write_lock);
-
-// 	track_script_remove(pthread_self());
-// 	_decr_parastor_thread_cnt();
-// 	return NULL;
-// }
+		slurm_mutex_lock(&bb_state.bb_mutex);
+		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
+		if (bb_alloc) {
+			bb_limit_rem(bb_alloc->user_id, bb_alloc->size, bb_alloc->pool, &bb_state);
+			(void)bb_free_alloc_rec(&bb_state, bb_alloc);
+		}
+		if (rc == SLURM_SUCCESS) {
+			bb_job_t *tmp = _get_bb_job(job_ptr);
+			if (tmp) {
+				bb_set_job_bb_state(job_ptr, tmp, BB_STATE_COMPLETE);
+				bb_job_del(&bb_state, tmp->job_id);
+			}
+		}
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+	}
+	unlock_slurmctld(job_write_lock);
+	return NULL;
+}
 
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean_finish)
 {
@@ -2657,8 +2559,9 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean
 #endif
 		*clean_finish = false;
 	}
-		
-	//slurm_thread_create_detached(_start_teardown, bb_job);
+	slurm_thread_create_detached(_start_teardown, bb_job);
+
+	// slurm_thread_create_detached(_start_teardown, bb_job);
 }
 
 // static int _run_real_size(stage_args_t *stage_args, init_argv_f_t init_argv,
