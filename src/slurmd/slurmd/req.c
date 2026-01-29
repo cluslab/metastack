@@ -357,6 +357,7 @@ static void alloc_bb_jobid(uint32_t job_id)
 	if (bb_job_list == NULL) {
 		bb_job_list = list_create(_bb_job_list_delete);
 	} 
+
 	bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
 	if(!bb_job_ptr) { /* update job structure contents */
 		bb_job_msg_t *bb_job_ptr = xmalloc(sizeof(bb_job_msg_t));
@@ -376,7 +377,7 @@ static bool remove_alloc_bb_jobid(uint32_t job_id)
 	slurm_mutex_lock(&bb_job_list_mutex);
 	if(bb_job_list && list_count(bb_job_list)){
 		list_delete_first(bb_job_list,
-			_list_find_bb_job, job_id);
+			_list_find_bb_job, &job_id);
 	}
 	slurm_mutex_unlock(&bb_job_list_mutex);
 	return removed;
@@ -3098,6 +3099,7 @@ cleanup:
 		清理缓存组
 		清理数据集
 		停止任务
+		rc = ESLURM_BB_RESOURCE_SI_CANCEL;
 		remove_alloc_bb_jobid(job_id);
 		//
 	}
