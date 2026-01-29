@@ -113,8 +113,13 @@
 #include "src/slurmd/slurmd/get_mach_stat.h"
 #include "src/slurmd/slurmd/slurmd.h"
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER4
 #include "src/interfaces/burst_buffer_slurmd.h"
+#define BB_JOB_MEM_ALLOC 0
+#define BB_JOB_GROUPS    1
+#define BB_JOB_DATASETS  2
+#define BB_JOB_PREHEAT   3
+#define BB_JOB_FAIL      -1
 #endif
 
 
@@ -172,8 +177,8 @@ static void _rpc_launch_tasks(slurm_msg_t *);
 static void _rpc_abort_job(slurm_msg_t *);
 static void _rpc_batch_job(slurm_msg_t *msg);
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-		static void _rpc_create_bb(slurm_msg_t *msg);
-		static int _rpc_clean_bb(kill_job_msg_t *req);
+static void _rpc_create_bb(slurm_msg_t *msg);
+static int _rpc_clean_bb(kill_job_msg_t *req);
 #endif
 static void _rpc_prolog(slurm_msg_t *msg);
 static void _rpc_job_notify(slurm_msg_t *);
@@ -234,6 +239,42 @@ static void _wait_for_job_running_prolog(uint32_t job_id);
 static int _wait_for_request_launch_prolog(uint32_t job_id,
 					    bool *first_job_run);
 static bool _requeue_setup_env_fail(void);
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+pthread_mutex_t bb_job_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+List bb_job_list = NULL;
+typedef struct bb_job_msg{
+	uint32_t job_id;
+	uint32_t need_group_counts; 
+	uint32_t need_database_counts;
+	uint32_t pfs_cnt; 				 //加速路径个数
+	char     **group_sn;   			 //缓存组唯一sn码，作业可能有多个缓存组
+	uint32_t *group_ids;             //缓存组ID数组，从slurmd返回
+	uint32_t *dataset_ids;           //数据集ID数组，从slurmd返回
+	uint32_t *task_ids;              //任务ID数组，与dataset_ids一一对应，从slurmd返回
+	char     *pfs;            		 //后端存储路径,可能有多个
+	uint64_t req_space;		   		 //当前作业请求的空间
+	uint32_t access_mode;      		 //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	uint32_t status;                 //0:创建结构体 1：完成创建缓存组，2：完成创建数据集 3：完成预热任务 
+	int      terminal;                 //-1：失败, 0不做处理
+} bb_job_msg_t;
+
+static void _bb_job_list_delete(void *jobinfo)
+{
+	bb_job_msg_t *bb_slurmd_job_msg = (bb_job_msg_t *)jobinfo;
+	xfree(bb_slurmd_job_msg);
+}
+
+static int _list_find_bb_job(void *x, void *key)
+{
+	bb_job_msg_t *bb_job_ptr = (bb_job_msg_t *) x;
+	uint32_t jobid = *(uint32_t *) key;
+
+	if (bb_job_ptr->jobid == jobid)
+		return 1;
+	return 0;
+}
+
+#endif
 
 #ifdef __METASTACK_OPT_PMIX_AGENT
 /*
@@ -301,6 +342,140 @@ typedef enum {
 	RELAY_AUTH_SLURM_USER,
 	RELAY_AUTH_PRIVATE_DATA
 } relay_auth_type_t;
+
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+/* 更新或者创建bb结构体。
+ *
+ */
+static void alloc_bb_jobid(uint32_t job_id)
+{
+	/* If bb_job_list does not exist, create;
+	 * else find JobId and StepId in bb_job_list
+	 */	
+	bb_job_msg_t* bb_job_ptr = NULL;
+	slurm_mutex_lock(&bb_job_list_mutex);
+	if (bb_job_list == NULL) {
+		bb_job_list = list_create(_bb_job_list_delete);
+	} 
+	bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
+	if(!bb_job_ptr) { /* update job structure contents */
+		bb_job_msg_t *bb_job_ptr = xmalloc(sizeof(bb_job_msg_t));
+		bb_job_ptr->job_id       = job_id;
+		bb_job_ptr->status	     = BB_JOB_MEM_ALLOC;
+		bb_job_ptr->terminal     = 0;
+		(void) list_append(bb_job_list, bb_job_ptr);
+	}
+	slurm_mutex_unlock(&bb_job_list_mutex);	
+}
+
+static bool remove_alloc_bb_jobid(uint32_t job_id) 
+{
+	bb_job_msg_t *bb_job_msg = NULL;
+	bool removed = false;
+	/* Remove JobId from job_list */
+	slurm_mutex_lock(&bb_job_list_mutex);
+	if(bb_job_list && list_count(bb_job_list)){
+		list_delete_first(bb_job_list,
+			_list_find_bb_job, job_id);
+	}
+	slurm_mutex_unlock(&bb_job_list_mutex);
+	return removed;
+}
+
+static int update_bb_job_groups(uint32_t group_sn_count, uint32_t pfs_count, uint32_t *group_ids, char **group_sn_array, char *pfs)
+{
+	int rc = -1;
+
+	bb_job_msg_t* bb_job_ptr = NULL;
+	uint32_t *bb_group_ids = xmalloc(group_sn_count * sizeof(uint32_t));
+	char **bb_group_sns    = xmalloc(group_sn_count * sizeof(uint32_t));
+	if(!group_ids || !group_sn_array || !pfs || *group_sn_array) {
+		return SLURM_ERROR;
+	}
+	// slurm_mutex_lock(&bb_job_list_mutex);
+	bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
+	if(!bb_job_ptr) {
+		alloc_bb_jobid(job_id);
+	}
+
+	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
+		bb_group_sns[group_idx] = xstrdup(group_sn_array[group_idx]);
+		bb_group_ids[group_idx] = group_ids[group_idx];
+	}
+	bb_job_ptr->status	  = BB_JOB_GROUPS;
+	bb_job_ptr->pfs		  = xstrdup(pfs)
+	bb_job_ptr->pfs_count = pfs_count;
+	rc 					  = bb_job_ptr->terminal;
+	// slurm_mutex_unlock(&bb_job_list_mutex);	
+	return rc;
+}
+
+static int update_bb_job_datasets(uint32_t group_sn_count, uint32_t pfs_count, uint32_t **dataset_ids)
+{
+	int rc = SLURM_SUCCESS;
+
+	bb_job_msg_t* bb_job_ptr = NULL
+
+	//slurm_mutex_lock(&bb_job_list_mutex);
+	bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
+	if(!bb_job_ptr) {
+		alloc_bb_jobid(job_id);
+	}
+	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
+		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
+		//数据集赋值
+		}
+	}
+
+	bb_job_ptr->status	  = BB_JOB_DATASETS;
+	//slurm_mutex_unlock(&bb_job_list_mutex);	
+	return 
+}
+
+static int update_bb_job_preheating(uint32_t pfs_count, uint32_t **task_ids)
+{
+	int rc = SLURM_SUCCESS;
+
+	bb_job_msg_t* bb_job_ptr = NULL;
+	//slurm_mutex_lock(&bb_job_list_mutex);
+
+	bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
+	if(!bb_job_ptr) {
+		alloc_bb_jobid(job_id);
+	}
+	bb_job_ptr->status	  = BB_JOB_PREHEAT;
+	for (uint32_t group_idx = 0; group_idx < group_sn_count; group_idx++) {
+		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
+			//任务ID赋值
+		}
+	}
+	//slurm_mutex_unlock(&bb_job_list_mutex);	
+	return rc;
+}
+ //如果返回-1，走正常作业完成的清理流程，如果返回0，在创建的过程中的清理流程
+static int clean_bb_job_process(uint32_t job_id) 
+{
+	int rc = 0;
+	bb_job_msg_t* bb_job_ptr = NULL;
+	bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
+	if(!bb_job_ptr) {
+		return -1;
+	}
+	//slurm_mutex_lock(&bb_job_list_mutex);
+	if(bb_job_ptr->status < BB_JOB_PREHEAT) {
+		bb_job_ptr->terminal = BB_JOB_FAIL;
+		rc = 0
+	} else {
+		bb_job_ptr->terminal = 0;
+		rc = -1;
+		remove_alloc_bb_jobid(job_id);
+	}
+	
+	//slurm_mutex_unlock(&bb_job_list_mutex);	
+	return rc;
+
+}
+#endif
 
 static int _stepmgr_connect(slurm_step_id_t *step_id,
 			    uint16_t *protocol_version)
@@ -488,6 +663,13 @@ slurmd_req(slurm_msg_t *msg)
 			slurm_mutex_lock(&job_list_mutex);
 			FREE_NULL_LIST(job_list);
 			slurm_mutex_unlock(&job_list_mutex);
+		}
+#endif
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		if (bb_job_list) { //spool相关的写入
+			slurm_mutex_lock(&bb_job_list_mutex);
+			FREE_NULL_LIST(bb_job_list);
+			slurm_mutex_unlock(&bb_job_list_mutex);
 		}
 #endif
 		return;
@@ -2701,6 +2883,8 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	int pfs_count = 0;
 	uint32_t group_sn_count = 0;
 	uint32_t job_id = 0;
+	int  continue_flag = -1;
+	
 	burst_buffer_launch_msg_t *req = msg->data;
 	if (!req)
 		goto cleanup;
@@ -2719,7 +2903,8 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	uint32_t max_clients_per_job = req->max_clients_per_job;
 	uint32_t access_mode = req->access_mode;
 	bool metadata_acceleration = req->metadata_acceleration;
-
+    
+	alloc_bb_jobid(job_id); //创建全局变量（链表）1
 	if (req->het_job_id && (req->het_job_id != NO_VAL))
 		job_id = req->het_job_id;
 	/* 解析 nodes 字段 */
@@ -2729,6 +2914,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		error("BB------node list is null");
 		goto cleanup;
 	}
+
 	hl = hostlist_create(req->nodes);
 	if (!hl) {
 		error("Unable to parse hostlist: `%s'", req->nodes);
@@ -2817,6 +3003,15 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		}
 	}
 	debug("BB-----job_id=%u,所有缓存组（%u 个）创建成功", job_id, group_sn_count);
+	slurm_mutex_lock(&bb_job_list_mutex);
+	continue_flag = update_bb_job_groups(group_sn_count, pfs_count, group_ids, group_sn_array, pfs); 
+	if(continue_flag == BB_JOB_FAIL) {
+		clean_bb_job_process(job_id); //清理全局变量（链表）2
+		slurm_mutex_unlock(&bb_job_list_mutex);	
+		goto  cleanup;  这里需要清理缓存组数据集，为保证报错，以中文注释
+	}
+	slurm_mutex_unlock(&bb_job_list_mutex);	
+
 	/* 创建数据集规则 */
 	debug("BB-----job_id=%u,开始创建数据集规则（%u 个缓存组 x %d 个加速目录）", job_id, group_sn_count, pfs_count);
 	bool is_share_cache = (access_mode == 0); // 0: 共享方式, 1: 本地方式
@@ -2837,6 +3032,14 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			}
 		}
 	}
+	slurm_mutex_lock(&bb_job_list_mutex);
+	continue_flag = update_bb_job_datasets(group_sn_count, pfs_count, group_ids, group_sn_array, pfs); 
+	if(continue_flag == BB_JOB_FAIL) {
+		clean_bb_job_process(job_id); //清理全局变量（链表）2
+		slurm_mutex_unlock(&bb_job_list_mutex);	
+		goto  cleanup;  这里需要清理缓存组数据集，为保证报错，以中文注释
+	}
+	slurm_mutex_unlock(&bb_job_list_mutex);	
 	debug("BB-----job_id=%u,所有数据集规则创建成功（%u 个缓存组 x %d 个加速目录）", job_id, group_sn_count, pfs_count);
 	/* 为所有数据集规则提交预热任务 */
 	debug("BB-----job_id=%u,开始为所有数据集规则提交预热任务",job_id);
@@ -2879,8 +3082,26 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			}
 		}
 	}
+	slurm_mutex_lock(&bb_job_list_mutex);
+	continue_flag = update_bb_job_preheating(group_sn_count, pfs_count, group_ids, group_sn_array, pfs);  
+	if(continue_flag == BB_JOB_FAIL) {
+		clean_bb_job_process(job_id); //清理全局变量（链表）2
+		slurm_mutex_unlock(&bb_job_list_mutex);	
+		goto  cleanup;  这里需要清理缓存组数据集，为保证报错，以中文注释 //注意需要区分创建失败的场景
+	}
+	
+	slurm_mutex_unlock(&bb_job_list_mutex);	
 	debug("BB-----job_id=%u,所有预热任务完成", job_id);
 cleanup:
+	slurm_mutex_lock(&bb_job_list_mutex);
+	if(continue_flag == BB_JOB_FAIL) {  ///////////////////////////////////
+		清理缓存组
+		清理数据集
+		停止任务
+		remove_alloc_bb_jobid(job_id);
+		//
+	}
+	slurm_mutex_unlock(&bb_job_list_mutex);	
 	// 在清理资源之前，先通知 slurmctld 创建完成（包含创建的信息）
 	// 通知 slurmctld 创建完成
 		/*
@@ -6291,9 +6512,10 @@ _rpc_terminate_job(slurm_msg_t *msg)
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-			if(req->bb_enable_pb && req->real_used_bb && req->bb_ready)
+			if(req->bb_enable_pb && req->real_used_bb ) {
+				if((clean_bb_job_process(req->job)== -1) || req->bb_ready)
 				bb_rc = _rpc_clean_bb(req);
-			else	
+			}  else
 				bb_rc = SLURM_SUCCESS; 
 			epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
 #endif	
