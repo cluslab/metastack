@@ -3112,13 +3112,13 @@ cleanup:
 	 * prolog will never appear to stop running.
 	 */
 	while (alt_rc != SLURM_SUCCESS) {
-		if (rc == SLURM_SUCCESS)
-			alt_rc = _notify_slurmctld_create_bb_fini(req->job_id, rc,
+		考虑非成功情况下打包、解包、传值问题
+		alt_rc = _notify_slurmctld_create_bb_fini(req->job_id, rc,
 				group_sn_count, group_ids, pfs_count, dataset_ids, task_ids);
-		else {
-			alt_rc = _launch_job_fail(job_id, rc);
-			send_registration_msg(rc);
-		}
+		// if (rc == ) {
+		// 	alt_rc = _launch_job_fail(job_id, rc);
+		// 	send_registration_msg(rc);
+		// }
 
 		if (alt_rc != SLURM_SUCCESS) {
 			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]",
@@ -6514,11 +6514,14 @@ _rpc_terminate_job(slurm_msg_t *msg)
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-			if(req->bb_enable_pb && req->real_used_bb ) {
+			if(req->bb_enable_pb && req->real_used_bb) {
+				slurm_mutex_lock(&bb_job_list_mutex);
 				if((clean_bb_job_process(req->job)== -1) || req->bb_ready)
 				bb_rc = _rpc_clean_bb(req);
+				slurm_mutex_unlock(&bb_job_list_mutex);	
 			}  else
 				bb_rc = SLURM_SUCCESS; 
+
 			epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
 #endif	
 		}
