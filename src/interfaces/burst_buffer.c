@@ -89,6 +89,9 @@ typedef struct slurm_bb_ops {
 				       job_info_msg_t *job_info,
 				       char **resp_msg);
 	char *		(*xlate_bb_2_tres_str) (char *burst_buffer);
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	uint32_t	(*get_node_quota) (void);
+#endif
 } slurm_bb_ops_t;
 
 /*
@@ -114,7 +117,10 @@ static const char *syms[] = {
 	"bb_p_job_test_stage_out",
 	"bb_p_job_cancel",
 	"bb_p_run_script",
-	"bb_p_xlate_bb_2_tres_str"
+	"bb_p_xlate_bb_2_tres_str",
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	"bb_p_get_node_quota"
+#endif
 };
 
 static int g_context_cnt = -1;
@@ -805,3 +811,26 @@ extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer)
 
 	return tmp;
 }
+
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+extern uint32_t bb_g_get_node_quota(void)
+{
+	int i;
+	uint32_t quota = 4; // 默认值
+
+	slurm_mutex_lock(&g_context_lock);
+	/* 遍历所有已加载的插件上下文 */
+	for (i = 0; i < g_context_cnt; i++) {
+		/* 如果该插件实现了 get_node_quota 函数 */
+		if (ops[i].get_node_quota) {
+			/* 调用插件内部实现并获取结果 */
+			quota = (*(ops[i].get_node_quota))();
+			/* 既然我们只需要一个配额值，拿到第一个有效插件的值就可以跳出循环了 */
+			break;
+		}
+	}
+	slurm_mutex_unlock(&g_context_lock);
+
+	return quota;
+}
+#endif
