@@ -268,7 +268,7 @@ extern int bb_g_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, 
 	return rc;
 }
 
-extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t dataset_id, uint32_t group_id, char * path)
+extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t group_id, char *path)
 {
 	DEF_TIMERS;
 	int rc = 0;
