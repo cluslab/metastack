@@ -5271,7 +5271,7 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		return bb_g_job_cancel(job_ptr);
 	}
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-	if(!job_ptr->bb_ready) {
+	if(!job_ptr->bb_ready && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 	}
 #endif
