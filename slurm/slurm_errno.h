@@ -425,6 +425,7 @@ typedef enum {
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	ESLURM_BB_RESOURCE_LIMIT,
+	ESLURM_BB_RESOURCE_SI_CANCEL,
 #endif
 } slurm_err_t;
 

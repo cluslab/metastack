@@ -5271,7 +5271,7 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		return bb_g_job_cancel(job_ptr);
 	}
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-	if(!job_ptr->bb_ready) {
+	if(!job_ptr->bb_ready && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 	}
 #endif
@@ -6185,7 +6185,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 			   char *node_name)
 {
 	job_record_t *job_ptr;
-
+    int rc = SLURM_SUCCESS;
 	job_ptr = find_job_record(job_id);
 	if (job_ptr == NULL) {
 		info("create_bb_complete: invalid JobId=%u", job_id);
@@ -6196,9 +6196,14 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		return SLURM_SUCCESS;
 
 	if (bb_return_code) {
-		error("create launch failure, %pJ", job_ptr);
+		error("create launch failure, %pJ rc = %d", job_ptr, rc);
 		job_ptr->exit_code = bb_return_code;
-		///////////////////////这里需要补充异常场景下作业异常处理，节点状态异常处理
+		(void) bb_g_free_allocated_resources(job_record_t *job_ptr);
+		job_ptr->bb_ready = false;
+		if(bb_return_code == SI取消时对应状态)
+			return ESLURM_BB_RESOURCE_SI_CANCEL;
+		else if(bb_return_code == SI阶段创建失败)
+			return ESLURM_INVALID_BURST_BUFFER_REQUEST;
 	}
 	/*
 	 * job_ptr->node_bitmap_pr is always NULL for front end systems

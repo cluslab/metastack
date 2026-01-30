@@ -2449,7 +2449,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		       __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 #ifdef __METASTACK_NEW_BURSTBUFFER4	
    
-	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb &&  job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
+	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
 	 	job_ptr->clean_finish = true;
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 		(void) bb_g_job_start_stage_out(job_ptr);
@@ -2598,7 +2598,13 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	if (error_code) {
 		info("%s JobId=%u: %s ",
 			__func__, comp_msg->job_id, slurm_strerror(error_code)); //这里需要根据bb数据加速阶段进行设置__METASTACK_NEW_BURSTBUFFER4
-		slurm_send_rc_msg(msg, error_code);
+		//slurm_send_rc_msg(msg, error_code);
+		if(error_code == ESLURM_INVALID_BURST_BUFFER_REQUEST) {
+			drain_nodes(comp_msg->node_name,"Failed to allocate BB resources during the SI phase; manual cleanup may be required",
+							slurm_conf.slurm_user_id);
+		} else if(error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
+			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
+		}
 	} else {
 		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);
 

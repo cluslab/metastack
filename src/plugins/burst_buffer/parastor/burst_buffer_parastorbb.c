@@ -3126,6 +3126,35 @@ extern int bb_p_job_start_stage_out(job_record_t *job_ptr)
 	return SLURM_SUCCESS;
 }
 
+
+extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
+{
+
+	bb_job_t *bb_job = NULL;
+	int rc = SLURM_ERROR;
+	if(!job_ptr) {
+		return rc;
+	}
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	bb_job = _get_bb_job(job_ptr);
+	job_ptr->clean_finish = true;
+	if (!bb_job) {
+		/* No job buffers. Assuming use of persistent buffers only */
+		verbose("%pJ bb job record not found",job_ptr);
+		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
+		bb_state.bb_config.used_groups				-= bb_job->index_groups;
+		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
+		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+		return rc;
+	} else {
+		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
+		rc = SLURM_SUCCESS;
+	}
+	
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+}
 /*
  * Determine if a job's burst buffer post_run operation is complete
  *
