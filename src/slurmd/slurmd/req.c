@@ -429,8 +429,9 @@ static int update_bb_job_datasets(uint32_t group_sn_count, uint32_t pfs_count, u
 	}
 
 	bb_job_ptr->status	  = BB_JOB_DATASETS;
+	rc = bb_job_ptr->terminal;
 	//slurm_mutex_unlock(&bb_job_list_mutex);	
-	return 
+	return rc;
 }
 
 static int update_bb_job_preheating(uint32_t pfs_count, uint32_t **task_ids)
@@ -450,6 +451,7 @@ static int update_bb_job_preheating(uint32_t pfs_count, uint32_t **task_ids)
 			//任务ID赋值
 		}
 	}
+	rc = bb_job_ptr->terminal;
 	//slurm_mutex_unlock(&bb_job_list_mutex);	
 	return rc;
 }
@@ -6621,12 +6623,16 @@ done:
 
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-		if(req->bb_enable_pb && req->real_used_bb && req->bb_ready)
+		if(req->bb_enable_pb && req->real_used_bb) {
+			slurm_mutex_lock(&bb_job_list_mutex);
+			if((clean_bb_job_process(req->job)== -1) || req->bb_ready)
 			bb_rc = _rpc_clean_bb(req);
-		else	
+			slurm_mutex_unlock(&bb_job_list_mutex);	
+		}  else
 			bb_rc = SLURM_SUCCESS; 
-#endif
+
 		epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
+#endif
 	}
 
 }
