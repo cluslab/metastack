@@ -3219,6 +3219,9 @@ extern int kill_running_job_by_node_name(char *node_name)
 				job_completion_logger(job_ptr, false);
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
+#ifdef __METASTACK_NEW_BURSTBUFFER5
+				bb_g_free_allocated_resources(job_ptr);
+#endif
 			}
 		}
 
@@ -6198,7 +6201,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 	if (bb_return_code) {
 		error("create launch failure, %pJ rc = %d", job_ptr, rc);
 		job_ptr->exit_code = bb_return_code;
-		(void) bb_g_free_allocated_resources(job_record_t *job_ptr);
+		(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 		job_ptr->bb_ready = false;
 		if(bb_return_code == SI取消时对应状态)
 			return ESLURM_BB_RESOURCE_SI_CANCEL;
