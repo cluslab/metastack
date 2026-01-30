@@ -3101,6 +3101,15 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			task_ids[i][j] = 0;
 		}
 	}
+	/* 创建操作前存储pfs，检查作业取消标志 */
+	slurm_mutex_lock(&bb_job_list_mutex);
+	continue_flag = update_bb_job_pfs(job_id, pfs_count, pfs_array);
+	if (continue_flag == BB_JOB_FAIL) {
+		clean_bb_job_process(job_id); //清理全局变量（链表）2
+		slurm_mutex_unlock(&bb_job_list_mutex);
+		goto  cleanup;  这里需要清理缓存组数据集，为保证报错，以中文注释
+	}
+	slurm_mutex_unlock(&bb_job_list_mutex);
 
 	/* 创建缓存组 */
 	debug("BB-----job_id=%u,开始创建 %u 个缓存组", job_id, group_sn_count);
@@ -3125,7 +3134,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	}
 	debug("BB-----job_id=%u,所有缓存组（%u 个）创建成功", job_id, group_sn_count);
 	slurm_mutex_lock(&bb_job_list_mutex);
-	continue_flag = update_bb_job_groups(group_sn_count, pfs_count, group_ids, group_sn_array, pfs); 
+	continue_flag = update_bb_job_groups(job_id, group_sn_count, group_ids, group_sn_array); 
 	if(continue_flag == BB_JOB_FAIL) {
 		clean_bb_job_process(job_id); //清理全局变量（链表）2
 		slurm_mutex_unlock(&bb_job_list_mutex);	
