@@ -951,12 +951,8 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		// packstr(dump_job_ptr->burst_buffer2, buffer);
 		pack32(dump_job_ptr->need_group_counts,        buffer);
-		if(dump_job_ptr->need_group_counts > 0) { //这里还需要确认下需要真的分配了缓存组数据集才能
-			// for (int i = 0; i < dump_job_ptr->need_group_counts; i++) {
-			// 	packstr(dump_job_ptr->group_sn[i],	buffer);
-			// }	
-			packstr_array(dump_job_ptr->group_sn, dump_job_ptr->need_group_counts,
-			      buffer);
+		if(dump_job_ptr->need_group_counts > 0) {	
+			packstr_array(dump_job_ptr->group_sn, dump_job_ptr->need_group_counts, buffer);
 		}
 		pack32(dump_job_ptr->need_database_counts,     buffer);
 		pack64(dump_job_ptr->req_space, 		       buffer);
@@ -964,17 +960,21 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 		packstr(dump_job_ptr->pfs,		 		   	   buffer);
 		pack32(dump_job_ptr->max_clients_per_job,      buffer);		
 		packbool(dump_job_ptr->bb_enable_pb,  		   buffer);
-		packbool(dump_job_ptr->enforce_bb_flag,		   buffer);
+		packbool(dump_job_ptr->enforce_bb_flag,		    buffer);
 		packbool(dump_job_ptr->metadata_acceleration,  buffer);
-		pack32(dump_job_ptr->create_step,     		   buffer);	
-		pack32(dump_job_ptr->pfs_cnt,     	  		   buffer); 	
-
-		packbool(dump_job_ptr->bb_need_wait,  		   buffer);		
+		pack32(dump_job_ptr->create_step, 			   buffer);
+		pack32(dump_job_ptr->pfs_cnt, 				   buffer);
+		packbool(dump_job_ptr->bb_need_wait,		   buffer);
 		packbool(dump_job_ptr->real_used_bb,		   buffer);
-
-		packbool(dump_job_ptr->bb_ready,  		       buffer);
-		packbool(dump_job_ptr->clean_finish,		   buffer);
-		packbool(dump_job_ptr->bb_kill_flag,		   buffer);
+		packbool(dump_job_ptr->bb_ready, buffer);
+		/* BB创建完成才有id */
+		if (dump_job_ptr->bb_ready) {
+			pack32_array(dump_job_ptr->group_ids, dump_job_ptr->need_group_counts, buffer);
+			pack32_array(dump_job_ptr->dataset_ids, dump_job_ptr->need_database_counts, buffer);
+			pack32_array(dump_job_ptr->task_ids, dump_job_ptr->need_database_counts, buffer);
+		}
+		packbool(dump_job_ptr->clean_finish,		    buffer);
+		packbool(dump_job_ptr->bb_kill_flag,		    buffer);
 		packbool(dump_job_ptr->bb_have_reduce,		   buffer);
 #endif     //#endif
 	} else if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
@@ -2935,29 +2935,37 @@ extern int job_record_unpack(job_record_t **out,
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 		safe_unpack32(&job_ptr->need_group_counts, 	  	 buffer);
 		if(job_ptr->need_group_counts > 0 ) {
-			// for (int i = 0; i < job_ptr->need_group_counts; i++) {
-			// 	safe_unpackstr(&job_ptr->group_sn[i],	buffer);
-			// }
-			safe_unpackstr_array(&job_ptr->group_sn, &job_ptr->need_group_counts,
-				     			buffer);
+			safe_unpackstr_array(&job_ptr->group_sn, &job_ptr->need_group_counts, buffer);
 		}
 		safe_unpack32(&job_ptr->need_database_counts,	 buffer);
 		safe_unpack64(&job_ptr->req_space,	 		 	 buffer);
 		safe_unpack32(&job_ptr->access_mode,	 	 	 buffer);
 		safe_unpackstr(&job_ptr->pfs, 				  	 buffer);
 		safe_unpack32(&job_ptr->max_clients_per_job,	 buffer);
-
 		safe_unpackbool(&job_ptr->bb_enable_pb,			 buffer);	
 		safe_unpackbool(&job_ptr->enforce_bb_flag,		  buffer);
 		safe_unpackbool(&job_ptr->metadata_acceleration, buffer);
-
 		safe_unpack32(&job_ptr->create_step,	 		 buffer);	
 		safe_unpack32(&job_ptr->pfs_cnt,	 		 	 buffer);
-
 		safe_unpackbool(&job_ptr->bb_need_wait,			 buffer);
 		safe_unpackbool(&job_ptr->real_used_bb,			 buffer);
-
 		safe_unpackbool(&job_ptr->bb_ready,				 buffer);	
+		/* bb创建完成才存在id */
+		uint32_t tmp_count = 0;
+		if (&job_ptr->bb_ready) {
+			if (unpack32_array(&job_ptr->group_ids, &tmp_count, buffer) != SLURM_SUCCESS)
+				goto unpack_error;
+			if (tmp_count != job_ptr->need_group_counts)
+				goto unpack_error;
+			if (unpack32_array(&job_ptr->dataset_ids, &tmp_count, buffer) != SLURM_SUCCESS)
+				goto unpack_error;
+			if (tmp_count != job_ptr->need_database_counts)
+				goto unpack_error;
+			if (unpack32_array(&job_ptr->task_ids, &tmp_count, buffer) != SLURM_SUCCESS)
+				goto unpack_error;
+			if (tmp_count != job_ptr->need_database_counts)
+				goto unpack_error;
+		}
 		safe_unpackbool(&job_ptr->clean_finish,			 buffer);
 		safe_unpackbool(&job_ptr->bb_kill_flag,			 buffer);
 		safe_unpackbool(&job_ptr->bb_have_reduce,		 buffer);
