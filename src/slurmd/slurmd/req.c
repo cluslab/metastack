@@ -6915,12 +6915,16 @@ done:
 
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-		if(req->bb_enable_pb && req->real_used_bb && req->bb_ready)
+		if(req->bb_enable_pb && req->real_used_bb) {
+			slurm_mutex_lock(&bb_job_list_mutex);
+			if((clean_bb_job_process(req->job)== -1) || req->bb_ready)
 			bb_rc = _rpc_clean_bb(req);
-		else	
+			slurm_mutex_unlock(&bb_job_list_mutex);	
+		}  else
 			bb_rc = SLURM_SUCCESS; 
-#endif
+
 		epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
+#endif
 	}
 
 }

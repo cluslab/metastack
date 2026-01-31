@@ -2497,7 +2497,11 @@ static void *_start_teardown(void *x)
 
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean_finish)
 {
-	if(*clean_finish) {
+	if(!bb_job || !job_ptr || !clean_finish) {
+		return NULL;
+	}
+	if(*clean_finish && job_ptr->bb_have_reduce) {
+		job_ptr->bb_have_reduce = true;
 		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
 		bb_state.bb_config.used_groups				-= bb_job->index_groups;
 		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
@@ -3132,19 +3136,20 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 
 	bb_job_t *bb_job = NULL;
 	int rc = SLURM_ERROR;
-	if(!job_ptr) {
+	if(!job_ptr && job_ptr->bb_have_reduce) {
 		return rc;
 	}
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	bb_job = _get_bb_job(job_ptr);
 	job_ptr->clean_finish = true;
-	if (!bb_job) {
+	if (!bb_job && !job_ptr->bb_have_reduce) {
 		/* No job buffers. Assuming use of persistent buffers only */
 		verbose("%pJ bb job record not found",job_ptr);
 		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
 		bb_state.bb_config.used_groups				-= bb_job->index_groups;
 		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
 		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
+		job_ptr->bb_have_reduce = true;
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		return rc;
 	} else {
@@ -3332,7 +3337,11 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		return SLURM_SUCCESS;
 	}
-
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	if(!job_ptr->bb_ready && job_ptr->real_used_bb) {
+		job_ptr->bb_kill_flag = true;
+	}
+#endif
 	if (bb_job->state == BB_STATE_PENDING) {
 		/* No resources allocated yet, just mark as complete */
 		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_COMPLETE);

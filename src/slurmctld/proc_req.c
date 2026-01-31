@@ -2452,7 +2452,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
 	 	job_ptr->clean_finish = true;
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
-		(void) bb_g_job_start_stage_out(job_ptr);
+		(void) bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
 	}	   	
 #endif
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
@@ -2596,6 +2596,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 
 	/* return result */
 	if (error_code) {
+		//需要加上已经清理的资源
 		info("%s JobId=%u: %s ",
 			__func__, comp_msg->job_id, slurm_strerror(error_code)); //这里需要根据bb数据加速阶段进行设置__METASTACK_NEW_BURSTBUFFER4
 		//slurm_send_rc_msg(msg, error_code);
@@ -2605,6 +2606,8 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		} else if(error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
 			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
 		}
+
+
 	} else {
 		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);
 
