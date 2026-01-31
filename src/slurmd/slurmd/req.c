@@ -302,8 +302,7 @@ static int _list_find_bb_job(void *x, void *key)
 {
 	bb_job_msg_t *bb_job_ptr = (bb_job_msg_t *) x;
 	uint32_t jobid = *(uint32_t *) key;
-
-	if (bb_job_ptr->jobid == jobid)
+	if (bb_job_ptr->job_id == jobid)
 		return 1;
 	return 0;
 }
@@ -466,14 +465,14 @@ static int update_bb_job_groups(uint32_t job_id, uint32_t group_count, uint32_t 
 	if (bb_job_ptr->group_ids)
 		xfree(bb_job_ptr->group_ids);
 	bb_job_ptr->group_ids = xmalloc(bb_job_ptr->group_cnt * sizeof(uint32_t));
-	memcpy(bb_job_ptr->group_ids, group_ids, bb_job_ptr->group_cnt = group_count);
+	memcpy(bb_job_ptr->group_ids, group_ids, bb_job_ptr->group_cnt * sizeof(uint32_t));
 	if (bb_job_ptr->group_sn) {
 		for (uint32_t group_idx = 0; group_idx < bb_job_ptr->group_cnt; group_idx++) {
 			xfree(bb_job_ptr->group_sn[group_idx]);
 		}
 		xfree(bb_job_ptr->group_sn);
 	}
-	bb_job_ptr->group_sn = xmalloc(bb_job_ptr->group_cnt * sizeof(uint32_t));
+	bb_job_ptr->group_sn = xmalloc(bb_job_ptr->group_cnt * sizeof(char *));
 	for (uint32_t group_idx = 0; group_idx < bb_job_ptr->group_cnt; group_idx++) {
 		bb_job_ptr->group_sn[group_idx] = xstrdup(group_sn_array[group_idx]);
 	}
@@ -2976,7 +2975,7 @@ static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_node
 		return NULL;
 	}
 	*node_count = hostlist_count(hl);
-	if (node_count > 0) {
+	if (*node_count > 0) {
 		node_array = xmalloc((*node_count) * sizeof(char *));
 		char *node_name = NULL;
 		int idx = 0;
@@ -2991,29 +2990,53 @@ static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_node
 
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 {
-	if (!path_str) {
-		error("path_str is NULL");
+	if (!path_str || *path_count == 0) {
+		error("params error");
 		return NULL;
 	}
-	*path_count = 0;
 	char **path_array = NULL;
-	path_array = xmalloc(path_count * sizeof(char *));
 	char *path_copy = xstrdup(path_str);
 	char *save_ptr = NULL;
 	char *token = strtok_r(path_copy, ",", &save_ptr);
-	int idx = 0;
-	while (token && idx < path_count) {
+	uint32_t count = 0;
+	
+	while (token) {
+		// 跳过空字符串
+		while (*token == ' ') token++;
+		if (*token != '\0') {
+			count++;
+		}
+		token = strtok_r(NULL, ",", &save_ptr);
+	}
+	xfree(path_copy);
+	if (count == 0) {
+		if (path_count)
+			*path_count = 0;
+		return NULL;
+	} else if (count != *path_count) {
+		error("	The entered count does not match the actual calculated count, set entered count from %u to %u", *path_count, count);
+		*path_count = count;
+	}
+	
+	path_array = xmalloc(count * sizeof(char *));
+	path_copy = xstrdup(path_str);
+	save_ptr = NULL;
+	token = strtok_r(path_copy, ",", &save_ptr);
+	uint32_t idx = 0;
+	
+	while (token && idx < count) {
 		while (*token == ' ') token++;
 		char *end = token + strlen(token) - 1;
 		while (end > token && *end == ' ') {
 			*end = '\0';
 			end--;
 		}
-		path_array[idx++] = xstrdup(token);
+		if (*token != '\0') {
+			path_array[idx++] = xstrdup(token);
+		}
 		token = strtok_r(NULL, ",", &save_ptr);
 	}
 	xfree(path_copy);
-	*path_count = idx;
 	return path_array;
 }
 
@@ -3025,8 +3048,12 @@ static int _clean_canceled_bb_job(uint32_t job_id, List *bb_job_list)
 	}
 	int rc = SLURM_SUCCESS;
 	bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
+	if (!bb_job_ptr) {
+		error("BB-----_clean_canceled_bb_job: 未找到作业%u的bb信息", job_id);
+		return SLURM_ERROR;
+	}
 	uint32_t bb_stage = bb_job_ptr->status;
-	uint32_t *clean_task_ids = xmalloc(bb_job_ptr->dataset_cnt * sizeof(uint32_t *));
+	uint32_t *clean_task_ids = xmalloc(bb_job_ptr->dataset_cnt * sizeof(uint32_t));
 
 	switch (bb_stage) {
 	case BB_JOB_TASKS:
@@ -3046,7 +3073,7 @@ static int _clean_canceled_bb_job(uint32_t job_id, List *bb_job_list)
 			break;
 		}
 
-		if (_wait_bb_task_complete(bb_job_ptr->task_ids, BB_RECYCLE_TAKS_TYPE, bb_job_ptr->dataset_cnt) == SLURM_SUCCESS) {
+		if (_wait_bb_task_complete(clean_task_ids, BB_RECYCLE_TAKS_TYPE, bb_job_ptr->dataset_cnt) == SLURM_SUCCESS) {
 			debug("BB-----作业%u创建bb阶段取消,回收任务执行成功", job_id);
 		} else {
 			error("BB-----作业%u创建bb阶段取消,回收任务执行失败", job_id);
@@ -3075,10 +3102,10 @@ static int _clean_canceled_bb_job(uint32_t job_id, List *bb_job_list)
 
 	case BB_JOB_MEM_ALLOC:
 		debug("BB-----作业%u创建bb阶段取消(当前未开始创建)，无需清理", job_id);
-	else:
-	error("BB-----作业%u创建bb阶段取消,未知阶段 %u", job_id, bb_stage);
-	rc = SLURM_ERROR;
-	break;
+	default:
+		error("BB-----作业%u创建bb阶段取消,未知阶段 %u", job_id, bb_stage);
+		rc = SLURM_ERROR;
+		break;
 	}
 	xfree(clean_task_ids);
 	return rc;
@@ -3132,11 +3159,11 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		error("BB-----get node array  error");
 		goto cleanup;
 	}
-	pfs_array = _convert_path_string_to_arr(&pfs_count, req->pfs)
-		if (!pfs_array || pfs_count <= 0) {
-			error("BB-----get pfs array  error");
-			goto cleanup;
-		}
+	pfs_array = _convert_path_string_to_arr(&pfs_count, req->pfs);
+	if (!pfs_array || pfs_count <= 0) {
+		error("BB-----get pfs array  error");
+		goto cleanup;
+	}
 	dataset_task_count = group_count * pfs_count;
 	/* 创建全局变量（链表） */
 	alloc_bb_jobid(job_id);
@@ -3173,7 +3200,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 				group_sn_arr[group_idx], groupids_arr[group_idx]);
 		} else {
 			error("BB-----创建缓存组%s失败, return code=%d", 
-				group_sn_arr[group_idx], rc);
+				group_sn_arr[group_idx], bb_rc);
 			goto cleanup;
 		}
 	}
@@ -3202,7 +3229,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 					groupids_arr[group_idx], pfs_array[pfs_idx], datasets_arr[group_idx * pfs_count + pfs_idx]);
 			} else {
 				error("BB-----创建数据集规则(缓存组ID=%u, PFS=%s)失败,return code=%d",
-					groupids_arr[group_idx], pfs_array[pfs_idx], rc);
+					groupids_arr[group_idx], pfs_array[pfs_idx], bb_rc);
 				goto cleanup;
 			}
 		}
@@ -3225,9 +3252,9 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			if (bb_rc == SLURM_SUCCESS) {
 				debug("BB-----提交数据集%u预热任务成功,任务ID=%u", dataset_id, tasks_arr[group_idx * pfs_count + pfs_idx]);
 			} else {
-				error("BB-----提交数据集%u预热任务失败,return code=%d", dataset_id, rc);
+				error("BB-----提交数据集%u预热任务失败,return code=%d", dataset_id, bb_rc);
 				// 标记任务ID为0表示提交失败，后续跳过等待
-				taskid_arr2d[group_idx][pfs_idx] = 0;
+				tasks_arr[group_idx * pfs_count + pfs_idx] = 0;
 				goto cleanup;
 			}
 		}
@@ -3253,7 +3280,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 				goto cleanup;
 			}
 			debug("BB-----等待预热任务%u完成:(缓存组%s, 加速路径%s)",
-				task_id, group_sn_array[group_idx], pfs_array[pfs_idx]);
+				task_id, group_sn_arr[group_idx], pfs_array[pfs_idx]);
 			bb_rc = bb_g_wait_task_complete((int)task_id, BB_PREFETCH_TAKS_TYPE);
 			if (bb_rc == SLURM_SUCCESS) {
 				debug("BB-----预热任务%u完成(缓存组%s, 加速路径%s)",
@@ -3275,6 +3302,12 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	}
 
 cleanup:
+	/*
+	rc(bb_rc)取值:
+	创建成功、取消成功:SLURM_SUCCESS
+	创建过程中取消失败:ESLURM_BB_RESOURCE_SI_CANCEL,
+	创建过程失败:ESLURM_BB_RESOURCE_SI_FAIL
+	*/
 	if (continue_flag == BB_JOB_FAIL) {
 		slurm_mutex_lock(&bb_job_list_mutex);
 		clean_rc = _clean_canceled_bb_job(job_id, bb_job_list);
@@ -3305,26 +3338,9 @@ cleanup:
 		}
 	}
 
+	remove_alloc_bb_jobid(job_id);
 
-	/*
-		rc(bb_rc)取值:
-		创建成功、取消成功:SLURM_SUCCESS
-		创建过程中取消失败:ESLURM_BB_RESOURCE_SI_CANCEL,
-		创建过程失败:ESLURM_BB_RESOURCE_SI_FAIL
-		*/
-		rc = ESLURM_BB_RESOURCE_SI_CANCEL;
-		remove_alloc_bb_jobid(job_id);
 
-	
-	while (alt_rc != SLURM_SUCCESS) {
-		//考虑非成功情况下打包、解包、传值问题
-		alt_rc = _notify_slurmctld_create_bb_fini(job_id, rc, group_count, groupids_arr, pfs_count, datasets_arr, tasks_arr);
-		if (alt_rc != SLURM_SUCCESS) {
-			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]",
-				__func__, req->job_id, RETRY_DELAY);
-			sleep(RETRY_DELAY);
-		}
-	}
 	/*  释放变量内存  */
 
 	if (groupids_arr) {
@@ -3462,153 +3478,83 @@ static int _delete_bb_group_by_sn(uint32_t group_count, char **group_sn_array)
 static int _rpc_clean_bb(kill_job_msg_t *req)
 {
 	int bb_rc = SLURM_ERROR;
-	int actual_pfs_cnt = 0;
-	if (!req->job_nodes) {
-		error("BB------node list is null");
+
+	if (!req) {
+		error("BB-----参数为空");
 		goto bb_cleanup;
 	}
-	hostlist_t *hl = hostlist_create(req->job_nodes);
-	hostlist_sort(hl);
-	char *temp = hostlist_nth(hl, 0);
-	char *host = xstrdup(conf->node_name);
-	if (xstrcmp(temp, host)) {
-		debug("Current node %s is a non-job head node, job head node is %s for job %u",
-			conf->node_name, host, req->step_id.job_id);
-		xfree(host);
-		free(temp);
-		hostlist_destroy(hl);
-		goto bb_cleanup;
-	}
-	xfree(host);
-	free(temp);
-	hostlist_destroy(hl);
-	/* 如果没有清理所需的参数，直接返回 */
-	if (!req->group_count || !req->dataset_count || !req->pfs_cnt || !req->group_sn || !req->group_ids || !req->dataset_ids || !req->pfs) {
-		debug("BB-----清理请求中没有 burst buffer 信息，跳过清理");
-		goto bb_cleanup;
-	}
+
 	uint32_t job_id = req->step_id.job_id;
+
 	uint32_t group_count = req->group_count;
 	uint32_t dataset_count = req->dataset_count;
 	uint32_t pfs_cnt = req->pfs_cnt;
+
 	char **group_sn_array = req->group_sn;
 	uint32_t *group_ids = req->group_ids;
 	uint32_t *dataset_ids = req->dataset_ids;
-	char *pfs_str = req->pfs;
-
-	/* 解析 pfs 字段 */
+	uint32_t *recycle_task_ids = NULL;
 	char **pfs_array = NULL;
-	pfs_array = xmalloc(pfs_cnt * sizeof(char *));
-	char *pfs_copy = xstrdup(pfs_str);
-	char *save_ptr = NULL;
-	char *token = strtok_r(pfs_copy, ",", &save_ptr);
-	int idx = 0;
-	while (token && idx < pfs_cnt) {
-		while (*token == ' ') token++;
-		char *end = token + strlen(token) - 1;
-		while (end > token && *end == ' ') {
-			*end = '\0';
-			end--;
-		}
-		pfs_array[idx++] = xstrdup(token);
-		token = strtok_r(NULL, ",", &save_ptr);
+
+	if (group_count == 0 || dataset_count == 0 || pfs_cnt == 0 || !group_sn_array || !group_ids || !dataset_ids) {
+		error("BB-----清理参数为零或为空");
+		goto bb_cleanup;
 	}
-	xfree(pfs_copy);
-	actual_pfs_cnt = idx;
-	if (idx != pfs_cnt) {
-		warning("BB-----加速目录数量不匹配: 传入数量为%u, 实际解析数量为%d,采用实际解析到的数量进行处理", pfs_cnt, idx);
-		pfs_cnt = idx;
+	recycle_task_ids = xmalloc(dataset_count * sizeof(uint32_t));
+	pfs_array = _convert_path_string_to_arr(&pfs_cnt, req->pfs);
+	if (!pfs_array) {
+		error("BB-----get pfs array  error");
+		goto bb_cleanup;
 	}
-	uint32_t *recycle_task_ids = xmalloc(dataset_count * sizeof(uint32_t));
-	for (uint32_t i = 0; i < dataset_count; i++) {
-		recycle_task_ids[i] = 0;
-	}
-	uint32_t datasets_per_group = dataset_count / group_count;
-	if (datasets_per_group == 0)
-		datasets_per_group = pfs_cnt;
+
 	debug("BB-----开始清理 burst buffer: job_id=%u, group_count=%u, dataset_count=%u, pfs_cnt=%u",
 		job_id, group_count, dataset_count, pfs_cnt);
 	/* 为每个数据集提交回收任务 */
 	debug("BB-----job_id=%u, 开始提交(%u 个)回收任务", job_id, dataset_count);
-	for (uint32_t dataset_idx = 0; dataset_idx < dataset_count; dataset_idx++) {
-		uint32_t dataset_id = dataset_ids[dataset_idx];
-		debug("BB-----开始提交数据集%u回收任务: ", dataset_id);
-		uint32_t recycle_task_id = 0;
-		bb_rc = bb_g_submit_bb_task(dataset_id, BB_RECYCLE_TAKS_TYPE, &recycle_task_id);
-		if (bb_rc == 0 && recycle_task_id > 0) {
-			recycle_task_ids[dataset_idx] = recycle_task_id;
-			debug("BB-----提交数据集%u回收任务成功, 任务ID=%u", dataset_id, recycle_task_id);
-		} else {
-			error("BB-----提交数据集%u回收任务失败, return code=%d", dataset_id, bb_rc);
-			goto bb_cleanup;
-		}
+	bb_rc = _submit_bb_task(dataset_count, BB_RECYCLE_TAKS_TYPE, dataset_ids, recycle_task_ids);
+	if (bb_rc == SLURM_SUCCESS) {
+		debug("BB-----job_id=%u, 回收任务提交成功", job_id);
+	} else {
+		error("BB-----job_id=%u, 回收任务提交失败", job_id);
+		goto bb_cleanup;
 	}
-	debug("BB-----job_id=%u, (%u 个)回收任务提交成功", job_id, dataset_count);
 
 	/* 等待回收任务完成 */
 	debug("BB-----job_id=%u, 开始等待所有回收任务完成", job_id);
-	for (uint32_t dataset_idx = 0; dataset_idx < dataset_count; dataset_idx++) {
-		uint32_t recycle_task_id = recycle_task_ids[dataset_idx];
-		debug("BB-----等待回收任务%u完成", recycle_task_id);
-		bb_rc = bb_g_wait_task_complete(recycle_task_id, BB_RECYCLE_TAKS_TYPE);
-		if (bb_rc == SLURM_SUCCESS) {
-			debug("BB-----回收任务%u完成", recycle_task_id);
-		} else {
-			error("BB-----回收任务%u失败, return code=%d", recycle_task_id, bb_rc);
-			goto bb_cleanup;
-		}
+	bb_rc = _wait_bb_task_complete(recycle_task_ids, BB_RECYCLE_TAKS_TYPE, dataset_count);
+	if (bb_rc == SLURM_SUCCESS) {
+		debug("BB-----job_id=%u, 所有回收任务完成", job_id);
+	} else {
+		error("BB-----job_id=%u, 回收任务失败", job_id);
+		goto bb_cleanup;
 	}
-	debug("BB-----job_id=%u, 所有回收任务完成", job_id);
 
 	/* 删除所有数据集规则 */
 	debug("BB-----job_id=%u, 开始删除数据集规则（%u 个）", job_id, dataset_count);
-	for (uint32_t dataset_idx = 0; dataset_idx < dataset_count; dataset_idx++) {
-		uint32_t dataset_id = dataset_ids[dataset_idx];
-		uint32_t group_idx = dataset_idx / datasets_per_group;
-		uint32_t pfs_idx = dataset_idx % datasets_per_group;
-		uint32_t group_id = group_ids ? group_ids[group_idx] : 0;
-		char *path = (pfs_array && pfs_idx < pfs_cnt) ? pfs_array[pfs_idx] : NULL;
-		if (!path) {
-			error("BB-----数据集 %u 没有对应的路径", dataset_id);
-			bb_rc = SLURM_ERROR;
-			goto bb_cleanup;
-		}
-		debug("BB-----删除数据集规则%u(缓存组ID=%u, 路径=%s)", dataset_id, group_id, path);
-		bb_rc = bb_g_delete_bb_dataset_by_groupid_path(group_id, path);
-		if (bb_rc == SLURM_SUCCESS) {
-			debug("BB-----成功删除数据集规则%u", dataset_id);
-		} else {
-			error("BB-----删除数据集规则%u失败, return code=%d", dataset_id, bb_rc);
-			goto bb_cleanup;
-		}
+	bb_rc = _delete_bb_dataset_by_groupid_path(group_count, group_ids, pfs_cnt, pfs_array);
+	if (bb_rc == SLURM_SUCCESS) {
+		debug("BB-----job_id=%u, 成功删除所有数据集规则（%u 个）", job_id, dataset_count);
+	} else {
+		error("BB-----job_id=%u, 删除数据集规则失败", job_id);
+		goto bb_cleanup;
 	}
-	debug("BB-----job_id=%u, 成功删除所有数据集规则（%u 个）", job_id, dataset_count);
 
 	/* 删除所有缓存组 */
 	debug("BB-----job_id=%u, 开始删除缓存组（%u 个缓存组）", job_id, group_count);
-	for (uint32_t group_idx = 0; group_idx < group_count; group_idx++) {
-		char *group_sn = group_sn_array ? group_sn_array[group_idx] : NULL;
-		if (!group_sn) {
-			error("BB-----无法检索到缓存组SN");
-			bb_rc = SLURM_ERROR;
-			goto bb_cleanup;
-		}
-		debug("BB-----删除缓存组%s", group_sn);
-		bb_rc = bb_g_delete_bb_group_by_sn(group_sn);
-		if (bb_rc == SLURM_SUCCESS) {
-			debug("BB-----成功删除缓存组%s", group_sn);
-		} else {
-			error("BB-----删除缓存组%s失败, return code=%d", group_sn, bb_rc);
-			goto bb_cleanup;
-		}
+	bb_rc = _delete_bb_group_by_sn(group_count, group_sn_array);
+	if (bb_rc == SLURM_SUCCESS) {
+		debug("BB-----job_id=%u, 成功删除所有缓存组（%u 个）", job_id, group_count);
+	} else {
+		error("BB-----job_id=%u, 删除缓存组失败", job_id);
+		goto bb_cleanup;
 	}
-	debug("BB-----job_id=%u, 成功删除所有缓存组（%u 个）", job_id, group_count);
+
 bb_cleanup:
 	if (recycle_task_ids) {
 		xfree(recycle_task_ids);
 	}
 	if (pfs_array) {
-		for (uint32_t i = 0; i < actual_pfs_cnt; i++) {
+		for (uint32_t i = 0; i < pfs_cnt; i++) {
 			if (pfs_array[i]) {
 				xfree(pfs_array[i]);
 			}
