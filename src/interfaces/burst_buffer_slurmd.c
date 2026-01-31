@@ -176,7 +176,7 @@ fini:	slurm_mutex_unlock(&g_context_lock);
  */
 
 
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id)
+extern int bb_g_create_bb_group_by_sn(char *group_sn, uint32_t client_cnt, char **client_hostname_arr, uint32_t *group_id)
 {
 	DEF_TIMERS;
 	int rc = 0;

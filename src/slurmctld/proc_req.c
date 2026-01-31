@@ -2618,7 +2618,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		job_ptr = find_job_record(comp_msg->job_id);
 
 		if (job_ptr) {
-			job_ptr->need_group_counts = comp_msg->used_groups;
+			job_ptr->need_group_counts = comp_msg->groups_cnt;
 			job_ptr->need_database_counts = comp_msg->used_databases;
 
 			/* 释放旧的数组（如果存在） */
@@ -2627,24 +2627,24 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 			xfree(job_ptr->task_ids);
 
 			/* group_ids */
-			if (comp_msg->used_groups > 0 && comp_msg->group_ids) {
-				job_ptr->group_ids = xmalloc(comp_msg->used_groups * sizeof(uint32_t));
+			if (comp_msg->groups_cnt > 0 && comp_msg->group_ids) {
+				job_ptr->group_ids = xmalloc(comp_msg->groups_cnt * sizeof(uint32_t));
 				memcpy(job_ptr->group_ids, comp_msg->group_ids,
-					comp_msg->used_groups * sizeof(uint32_t));
+					comp_msg->groups_cnt * sizeof(uint32_t));
 			} else {
 				job_ptr->group_ids = NULL;
 			}
 
 			/* 复制dataset_ids和task_ids数组 */
-			if (comp_msg->used_databases > 0 && comp_msg->dataset_ids) {
-				job_ptr->dataset_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
+			if (comp_msg->datasets_cnt > 0 && comp_msg->dataset_ids) {
+				job_ptr->dataset_ids = xmalloc(comp_msg->datasets_cnt * sizeof(uint32_t));
 				memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids,
-					comp_msg->used_databases * sizeof(uint32_t));
+					comp_msg->datasets_cnt * sizeof(uint32_t));
 
 				if (comp_msg->task_ids) {
-					job_ptr->task_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
+					job_ptr->task_ids = xmalloc(comp_msg->datasets_cnt * sizeof(uint32_t));
 					memcpy(job_ptr->task_ids, comp_msg->task_ids,
-						comp_msg->used_databases * sizeof(uint32_t));
+						comp_msg->datasets_cnt * sizeof(uint32_t));
 				} else {
 					job_ptr->task_ids = NULL;
 				}

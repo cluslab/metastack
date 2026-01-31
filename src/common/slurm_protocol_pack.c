@@ -16049,20 +16049,20 @@ static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *b
 		pack32(msg->job_id, buffer);
 		packstr(msg->node_name, buffer);
 		pack32(msg->bb_rc, buffer);
-		pack32(msg->used_groups, buffer);
-		if (msg->used_groups > 0 && msg->group_ids) {
-			for (uint32_t i = 0; i < msg->used_groups; i++) {
+		pack32(msg->groups_cnt, buffer);
+		if (msg->groups_cnt > 0 && msg->group_ids) {
+			for (uint32_t i = 0; i < msg->groups_cnt; i++) {
 				pack32(msg->group_ids[i], buffer);
 			}
 		}
-		pack32(msg->used_databases, buffer);
-		if (msg->used_databases > 0 && msg->dataset_ids) {
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+		pack32(msg->datasets_cnt, buffer);
+		if (msg->datasets_cnt > 0 && msg->dataset_ids) {
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				pack32(msg->dataset_ids[i], buffer);
 			}
 		}
-		if (msg->used_databases > 0 && msg->task_ids) {
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+		if (msg->datasets_cnt > 0 && msg->task_ids) {
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				pack32(msg->task_ids[i], buffer);
 			}
 		}
@@ -16346,21 +16346,21 @@ static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_
 		safe_unpack32(&msg->job_id, buffer);
 		safe_unpackstr(&msg->node_name, buffer);
 		safe_unpack32(&msg->bb_rc, buffer);
-		safe_unpack32(&msg->used_groups, buffer);
-		if (msg->used_groups > 0) {
-			msg->group_ids = xmalloc(msg->used_groups * sizeof(uint32_t));
-			for (uint32_t i = 0; i < msg->used_groups; i++) {
+		safe_unpack32(&msg->groups_cnt, buffer);
+		if (msg->groups_cnt > 0) {
+			msg->group_ids = xmalloc(msg->groups_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->groups_cnt; i++) {
 				safe_unpack32(&msg->group_ids[i], buffer);
 			}
 		}
-		safe_unpack32(&msg->used_databases, buffer);
-		if (msg->used_databases > 0) {
-			msg->dataset_ids = xmalloc(msg->used_databases * sizeof(uint32_t));
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+		safe_unpack32(&msg->datasets_cnt, buffer);
+		if (msg->datasets_cnt > 0) {
+			msg->dataset_ids = xmalloc(msg->datasets_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				safe_unpack32(&msg->dataset_ids[i], buffer);
 			}
-			msg->task_ids = xmalloc(msg->used_databases * sizeof(uint32_t));
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+			msg->task_ids = xmalloc(msg->datasets_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				safe_unpack32(&msg->task_ids[i], buffer);
 			}
 		}

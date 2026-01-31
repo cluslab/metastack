@@ -31,7 +31,7 @@ extern int bb_g_fini(void);
  * @param group_id 返回创建成功的缓存组ID
  * @return 0:成功；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id);
+extern int bb_g_create_bb_group_by_sn(char *group_sn, uint32_t client_cnt, char **client_hostname_arr, uint32_t *group_id);
 
 /**
  * @brief 创建数据集规则
