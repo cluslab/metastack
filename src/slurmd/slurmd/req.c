@@ -253,7 +253,7 @@ static int _delete_bb_dataset_by_groupid_path(uint32_t group_count, uint32_t *gr
 static int _delete_bb_group_by_sn(uint32_t group_count, char **group_sn_array);
 static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_nodes);
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str);
-static int _clean_canceled_bb_job(uint32_t job_id, List *bb_job_list);
+static int _clean_canceled_bb_job(uint32_t job_id, List bb_job_list);
 pthread_mutex_t bb_job_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 List bb_job_list = NULL;
 typedef struct bb_job_msg{
@@ -404,7 +404,6 @@ static void alloc_bb_jobid(uint32_t job_id)
 
 static bool remove_alloc_bb_jobid(uint32_t job_id) 
 {
-	bb_job_msg_t *bb_job_msg = NULL;
 	bool removed = false;
 	/* Remove JobId from job_list */
 	slurm_mutex_lock(&bb_job_list_mutex);
@@ -430,15 +429,15 @@ static int update_bb_job_pfs(uint32_t job_id, uint32_t pfs_count, char **pfs)
 		alloc_bb_jobid(job_id);
 		bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
 	}
-	bb_job_ptr->pfs_count = pfs_count;
+	bb_job_ptr->pfs_cnt = pfs_count;
 	if (bb_job_ptr->pfs){
-		for (uint32_t pfs_idx = 0; pfs_idx < bb_job_ptr->pfs_count; pfs_idx++) {
+		for (uint32_t pfs_idx = 0; pfs_idx < bb_job_ptr->pfs_cnt; pfs_idx++) {
 			xfree(bb_job_ptr->pfs[pfs_idx]);
 		}
 		xfree(bb_job_ptr->pfs);
 	}
-	bb_job_ptr->pfs = xmalloc(bb_job_ptr->pfs_count * sizeof(char *));
-	for (uint32_t pfs_idx = 0; pfs_idx < bb_job_ptr->pfs_count; pfs_idx++) {
+	bb_job_ptr->pfs = xmalloc(bb_job_ptr->pfs_cnt * sizeof(char *));
+	for (uint32_t pfs_idx = 0; pfs_idx < bb_job_ptr->pfs_cnt; pfs_idx++) {
 		bb_job_ptr->pfs[pfs_idx] = xstrdup(pfs[pfs_idx]);
 	}
 	bb_job_ptr->status	  = BB_JOB_MEM_ALLOC;
@@ -565,7 +564,7 @@ static int clean_bb_job_process(uint32_t job_id)
 	//slurm_mutex_lock(&bb_job_list_mutex);
 	if(bb_job_ptr->status < BB_JOB_PREFETCH) {
 		bb_job_ptr->terminal = BB_JOB_FAIL;
-		rc = 0
+		rc = 0;
 	} else {
 		bb_job_ptr->terminal = 0;
 		rc = -1;
@@ -2916,13 +2915,13 @@ static int _notify_slurmctld_create_bb_fini(
 	req.bb_rc = bb_return_code;
 	/* 失败不传递 */
 	if (req.bb_rc != SLURM_SUCCESS) {
-		req.used_groups = 0;
+		req.groups_cnt = 0;
 		req.datasets_cnt = 0;
 	} else {
-		req.used_groups = group_count;
+		req.groups_cnt = group_count;
 		req.datasets_cnt = pfs_count * group_count;
 	}
-	if (req.used_groups > 0 && group_ids) {
+	if (req.groups_cnt > 0 && group_ids) {
 		req.group_ids = xmalloc(group_count * sizeof(uint32_t));
 		for (uint32_t i = 0; i < group_count; i++) {
 			req.group_ids[i] = group_ids[i];
@@ -2962,12 +2961,12 @@ static int _notify_slurmctld_create_bb_fini(
 
 static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_nodes)
 {
+	*node_count = 0;
 	if (!slurm_nodes) {
 		error("BB------node list is null");
 		return NULL;
 	}
 	char **node_array = NULL;
-	*node_count = 0;
 	hostlist_t *hl = NULL;
 	hl = hostlist_create(slurm_nodes);
 	if (!hl) {
@@ -3040,7 +3039,7 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 	return path_array;
 }
 
-static int _clean_canceled_bb_job(uint32_t job_id, List *bb_job_list)
+static int _clean_canceled_bb_job(uint32_t job_id, List bb_job_list)
 {
 	if (!bb_job_list) {
 		error("BB-----_clean_canceled_bb_job: bb_job_list is NULL");
@@ -3060,7 +3059,7 @@ static int _clean_canceled_bb_job(uint32_t job_id, List *bb_job_list)
 		/* 不知道任务状态，全部取消 */
 		debug("BB-----作业%u创建bb阶段取消(当前已完成任务提交)，取消所有任务", job_id);
 		for (int i = 0; i < bb_job_ptr->dataset_cnt; i++) {
-			int rc_cancel_bb = bb_g_cancel_bb_task_by_id(bb_job_ptr->task_ids[i]);
+			bb_g_cancel_bb_task_by_id(bb_job_ptr->task_ids[i]);
 		}
 
 	case BB_JOB_PREFETCH:
@@ -3119,6 +3118,32 @@ static int _clean_canceled_bb_job(uint32_t job_id, List *bb_job_list)
 static void _rpc_create_bb(slurm_msg_t *msg)
 {
 	burst_buffer_launch_msg_t *req = msg->data;
+	int bb_rc = SLURM_ERROR;
+	int clean_rc = SLURM_ERROR;
+	int alt_rc = SLURM_ERROR;
+	int ret_rc = SLURM_ERROR;
+	int  continue_flag = 0;
+
+	uint32_t job_id = 0;  
+	uint32_t node_count = 0;
+	char **node_array = NULL;
+
+	uint32_t group_count = 0;  
+	char **group_sn_arr = NULL;
+	uint32_t *groupids_arr = NULL;
+
+	uint32_t pfs_count = 0; 
+	char **pfs_array = NULL;
+
+	uint32_t dataset_task_count = 0;
+	uint32_t *datasets_arr = NULL;
+
+	uint32_t *tasks_arr = NULL;
+	
+	uint32_t max_clients_per_job = 0;
+	uint32_t access_mode = 0;
+	bool metadata_acceleration = false;
+
 	if (!req)
 		goto cleanup;
 	if (!_slurm_authorized_user(msg->auth_uid)) {
@@ -3126,32 +3151,19 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			msg->auth_uid);
 		goto cleanup;
 	}
-	int bb_rc = SLURM_ERROR;
-	int clean_rc = SLURM_ERROR;
-	int alt_rc = SLURM_ERROR;
-	int ret_rc = SLURM_ERROR;
-	int  continue_flag = -1;
 
-	uint32_t job_id = req->job_id;
-	uint32_t user_id = req->user_id;
+	job_id = req->job_id;
+	group_count = req->used_groups;
+	group_sn_arr = req->group_sn;
+	pfs_count = req->pfs_cnt;
+	max_clients_per_job = req->max_clients_per_job;
+	access_mode = req->access_mode;
+	metadata_acceleration = req->metadata_acceleration;
 
-	uint32_t node_count = 0;
-	char **node_array = NULL;
-
-	uint32_t group_count = req->used_groups; 
-	char **group_sn_arr = req->group_sn;  /* 不需要释放 */
-	uint32_t *groupids_arr = NULL;
-
-	uint32_t pfs_count = req->pfs_cnt;
-	char **pfs_array = NULL;
-
-	uint32_t dataset_task_count = 0;
-	uint32_t *datasets_arr = NULL;
-	uint32_t *tasks_arr = NULL;
-
-	uint32_t max_clients_per_job = req->max_clients_per_job;
-	uint32_t access_mode = req->access_mode;
-	bool metadata_acceleration = req->metadata_acceleration;
+	if (group_count == 0 || pfs_count == 0 || max_clients_per_job == 0 || !group_sn_arr) {
+		error("BB-----清理参数为零或为空");
+		goto cleanup;
+	}
 
 	/* 获取数值 */
 	node_array = _convert_slurm_nodes_to_arr(&node_count, req->nodes);
@@ -3304,9 +3316,9 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 cleanup:
 	/*
 	rc(bb_rc)取值:
-	创建成功、取消成功:SLURM_SUCCESS
-	创建过程中取消失败:ESLURM_BB_RESOURCE_SI_CANCEL,
-	创建过程失败:ESLURM_BB_RESOURCE_SI_FAIL
+	创建成功:SLURM_SUCCESS
+	创建过程中取消作业（成功）:ESLURM_BB_RESOURCE_SI_CANCEL,
+	创建过程失败（创建失败、取消失败）:ESLURM_BB_RESOURCE_SI_FAIL
 	*/
 	if (continue_flag == BB_JOB_FAIL) {
 		slurm_mutex_lock(&bb_job_list_mutex);
@@ -3314,10 +3326,10 @@ cleanup:
 		slurm_mutex_unlock(&bb_job_list_mutex);
 		if (clean_rc == SLURM_SUCCESS) {
 			debug("BB-----job_id=%u,取消的bb作业清理成功", job_id);
-			ret_rc = SLURM_SUCCESS;
+			ret_rc = ESLURM_BB_RESOURCE_SI_CANCEL;
 		} else {
 			error("BB-----job_id=%u,取消的bb作业清理失败", job_id);
-			ret_rc = ESLURM_BB_RESOURCE_SI_CANCEL;
+			ret_rc = ESLURM_BB_RESOURCE_SI_FAIL;
 		}
 	} else {
 		if (bb_rc == SLURM_SUCCESS) {
@@ -6756,7 +6768,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 			if(req->bb_enable_pb && req->real_used_bb) {
 				slurm_mutex_lock(&bb_job_list_mutex);
-				if((clean_bb_job_process(req->job)== -1) || req->bb_ready)
+				if((clean_bb_job_process(req->step_id.job_id)== -1) || req->bb_ready)
 				bb_rc = _rpc_clean_bb(req);
 				slurm_mutex_unlock(&bb_job_list_mutex);	
 			}  else
@@ -6863,7 +6875,7 @@ done:
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		if(req->bb_enable_pb && req->real_used_bb) {
 			slurm_mutex_lock(&bb_job_list_mutex);
-			if((clean_bb_job_process(req->job)== -1) || req->bb_ready)
+			if((clean_bb_job_process(req->step_id.job_id)== -1) || req->bb_ready)
 			bb_rc = _rpc_clean_bb(req);
 			slurm_mutex_unlock(&bb_job_list_mutex);	
 		}  else

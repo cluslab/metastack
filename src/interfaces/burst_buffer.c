@@ -842,8 +842,8 @@ extern uint32_t bb_g_get_node_quota(void)
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 extern uint32_t bb_g_free_allocated_resources(job_record_t *job_ptr)
 {
+	int i;
 	int rc = SLURM_SUCCESS;
-
 
 	slurm_mutex_lock(&g_context_lock);
 	/* 遍历所有已加载的插件上下文 */
@@ -851,7 +851,7 @@ extern uint32_t bb_g_free_allocated_resources(job_record_t *job_ptr)
 		/* 如果该插件实现了 free_allocated_resources 函数 */
 		if (ops[i].free_allocated_resources) {
 			/* 调用插件内部实现并获取结果 */
-			rc = SLURM_SUCCESS = (*(ops[i].free_allocated_resources))(job_id);
+			rc = (*(ops[i].free_allocated_resources))(job_ptr->job_id);
 			/* 既然我们只需要一个配额值，拿到第一个有效插件的值就可以跳出循环了 */
 			break;
 		}

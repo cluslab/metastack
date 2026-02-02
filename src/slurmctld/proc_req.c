@@ -2622,7 +2622,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 
 		if (job_ptr) {
 			job_ptr->need_group_counts = comp_msg->groups_cnt;
-			job_ptr->need_database_counts = comp_msg->used_databases;
+			job_ptr->need_database_counts = comp_msg->datasets_cnt;
 
 			/* 释放旧的数组（如果存在） */
 			xfree(job_ptr->group_ids);

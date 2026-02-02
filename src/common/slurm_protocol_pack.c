@@ -16086,7 +16086,7 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 				packstr(msg->group_sn[i],	buffer);
 			}
 		}
-		pack32(msg->used_databases, 		buffer);
+		pack32(msg->used_datasets, 		buffer);
 		pack64(msg->req_space, 				buffer);
 		pack32(msg->access_mode, 			buffer);	
 		packstr(msg->pfs, 					buffer);
@@ -16157,7 +16157,7 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 // 		packbool(msg->bb_enable_pb, buffer);
 // 		if(msg->bb_enable_pb) {
 // 			pack32(msg->used_groups,             buffer);
-// 			pack32(msg->used_databases,          buffer);
+// 			pack32(msg->used_datasets,          buffer);
 // 			pack64(msg->req_space,               buffer);
 // 			pack32(msg->access_mode,             buffer);
 // 			packstr(msg->pfs,                    buffer);
@@ -16392,7 +16392,7 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		} else {
 			msg->group_sn = NULL;
 		}
-		safe_unpack32(&msg->used_databases, 		buffer);
+		safe_unpack32(&msg->used_datasets, 		buffer);
 		safe_unpack64(&msg->req_space, 				buffer);
 		safe_unpack32(&msg->access_mode, 			buffer);	
 		safe_unpackstr(&msg->pfs, 					buffer);
@@ -16478,7 +16478,7 @@ static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 // 		safe_unpackbool(&msg->bb_enable_pb, buffer); 
 // 		if(msg->bb_enable_pb) {
 // 			safe_unpack32(&msg->used_groups,				buffer);
-// 			safe_unpack32(&msg->used_databases,				buffer);
+// 			safe_unpack32(&msg->used_datasets,				buffer);
 // 			safe_unpack64(&msg->req_space,					buffer);
 // 			safe_unpack32(&msg->access_mode, 				buffer);
 // 			safe_unpackstr(&msg->pfs, 						buffer);

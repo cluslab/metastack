@@ -6203,9 +6203,9 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		job_ptr->exit_code = bb_return_code;
 		(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 		job_ptr->bb_ready = false;
-		if(bb_return_code == SI取消时对应状态)
+		if(bb_return_code == ESLURM_BB_RESOURCE_SI_CANCEL)
 			return ESLURM_BB_RESOURCE_SI_CANCEL;
-		else if(bb_return_code == SI阶段创建失败)
+		else if(bb_return_code == ESLURM_BB_RESOURCE_SI_FAIL)
 			return ESLURM_INVALID_BURST_BUFFER_REQUEST;
 	}
 	/*

@@ -2498,7 +2498,7 @@ static void *_start_teardown(void *x)
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean_finish)
 {
 	if(!bb_job || !job_ptr || !clean_finish) {
-		return NULL;
+		return ;
 	}
 	if(*clean_finish && job_ptr->bb_have_reduce) {
 		job_ptr->bb_have_reduce = true;
@@ -3158,6 +3158,7 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 	}
 	
 	slurm_mutex_unlock(&bb_state.bb_mutex);
+	return rc;
 
 }
 /*
