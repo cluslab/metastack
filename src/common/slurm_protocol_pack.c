@@ -3790,7 +3790,7 @@ unpack_error:
 }
 
 static void
-_pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_version)
+_pack_kill_job_msg(kill_job_msg_t *msg, buf_t *buffer, uint16_t protocol_version)
 {
 	xassert(msg);
 
@@ -3812,27 +3812,27 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		pack32(msg->job_gid, buffer);
 		packstr(msg->nodes, buffer);
 		packstr_array(msg->spank_job_env, msg->spank_job_env_size,
-				buffer);
+			buffer);
 		pack_time(msg->start_time, buffer);
 		pack_time(msg->time, buffer);
 		packstr(msg->work_dir, buffer);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Pack burst buffer cleanup fields */
-		packbool(msg->bb_enable_pb,  buffer);
-		packbool(msg->real_used_bb,    buffer);
-		packbool(msg->bb_ready,    	   buffer);
-	if(msg->bb_enable_pb && msg->real_used_bb && msg->bb_ready) {
-		pack32(msg->group_count, buffer);
-		packstr_array(msg->group_sn, msg->group_count, buffer);
-		pack32_array(msg->group_ids, msg->group_count, buffer);
-		pack32(msg->dataset_count, buffer);
-		pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
-		pack32_array(msg->task_ids, msg->dataset_count, buffer);
-		packstr(msg->pfs, buffer);
-		pack32(msg->pfs_cnt, buffer);
-		packstr(msg->job_nodes, buffer);
+		packbool(msg->bb_enable_pb, buffer);
+		packbool(msg->real_used_bb, buffer);
+		packbool(msg->bb_ready, buffer);
+		if (msg->bb_enable_pb && msg->real_used_bb && msg->bb_ready) {
+			pack32(msg->group_count, buffer);
+			packstr_array(msg->group_sn, msg->group_count, buffer);
+			pack32_array(msg->group_ids, msg->group_count, buffer);
+			pack32(msg->dataset_count, buffer);
+			pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
+			pack32_array(msg->task_ids, msg->dataset_count, buffer);
+			packstr(msg->pfs, buffer);
+			pack32(msg->pfs_cnt, buffer);
+			packstr(msg->job_nodes, buffer);
 
-	}
+		}
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		if (msg->cred) {

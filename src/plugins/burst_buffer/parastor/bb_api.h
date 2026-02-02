@@ -34,8 +34,9 @@ before call API,must initialize the structure,and set must params
 1. 查询缓存组所需参数
     - start: 查询起始记录数
     - limit: 查询记录数
-    - group_sn: 缓存组唯一标识符，
-    - ids:缓存组id列表
+    - group_sn: 缓存组唯一标识符,（优先级高于group_id）
+    - ids:缓存组id列表（暂未使用）
+    - group_id:单个缓存组id,使用时保证group_sn为NULL
 2. 查询数据集规则所需参数
     - start: 查询起始记录数
     - limit: 查询记录数
@@ -148,9 +149,9 @@ typedef struct {
 
 /**
  * @brief 创建、提交操作参数的结构体
- * 1. 删除缓存组
- *  - group_id 删除缓存组的group_id
- *  - group_sn 删除缓存组的SN，覆盖group_id参数
+ * 1. 删除缓存组(id、sn使用一个)
+ *  - group_id 删除缓存组的group_id，使用id删除时，确保group_sn为NULL
+ *  - group_sn 删除缓存组的SN，覆盖group_id参数，使用
  * 2. 删除数据集规则
  *  - dataset_id 删除数据集规则的ID
  * 3. 取消BB任务
@@ -215,6 +216,16 @@ extern int submit_bb_task(create_params_request *create_params, uint32_t *task_i
  */
 extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_t *bb_min_config);
 
+
+/**
+ * @brief 传入缓存组id查询缓存组是否存在
+ * @param group_id 
+ * @param bb_min_config bb最小配置
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
+ */
+extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config);
+
+
 /**
  * @brief 传入缓存组ID和数据集路径，查询数据集规则ID
  * @param group_id 缓存组ID
@@ -250,6 +261,14 @@ extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id,
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
 extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config);
+
+/**
+ * @brief 根据group_id删除缓存组
+ * @param group_id 
+ * @param bb_config 入参：最小配置
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int delete_bb_group_by_id(uint32_t group_id, bb_config_t *bb_config);
 
 /**
  * @brief 根据dataset_id删除缓存组

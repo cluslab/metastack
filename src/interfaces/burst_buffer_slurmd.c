@@ -42,6 +42,8 @@ typedef struct slurm_bb_ops {
 	int (*bb_p_wait_task_complete) (uint32_t task_id, int task_type);
 	/* 根据group_sn删除缓存组 */
 	int (*bb_p_delete_bb_group_by_sn) (char *group_sn);
+	/* 根据group_id删除缓存组 */
+	int (*bb_p_delete_bb_group_by_id) (uint32_t group_id);
 	/* 根据dataset_id删除数据集规则 */
 	int (*bb_p_delete_bb_dataset_by_id) (uint32_t dataset_id, uint32_t group_id, char * path);
 	/* 根据group_id和path删除数据集规则 */
@@ -60,6 +62,7 @@ static const char *syms[] = {
 	"bb_p_submit_bb_task",
 	"bb_p_wait_task_complete",
 	"bb_p_delete_bb_group_by_sn",
+	"bb_p_delete_bb_group_by_id",
 	"bb_p_delete_bb_dataset_by_id",
 	"bb_p_delete_bb_dataset_by_groupid_path",
 	"bb_p_cancel_bb_task_by_id",
@@ -247,6 +250,21 @@ extern int bb_g_delete_bb_group_by_sn(char *group_sn)
 	//slurm_mutex_lock(&g_context_lock);
 	for (int i = 0; i < g_context_cnt; i++) {
 		rc = (*(ops[i].bb_p_delete_bb_group_by_sn))(group_sn);
+	}
+	//slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+	return rc;
+}
+
+extern int bb_g_delete_bb_group_by_id(uint32_t group_id)
+{
+	DEF_TIMERS;
+	int rc = 0;
+	START_TIMER;
+	xassert(g_context_cnt >= 0);
+	//slurm_mutex_lock(&g_context_lock);
+	for (int i = 0; i < g_context_cnt; i++) {
+		rc = (*(ops[i].bb_p_delete_bb_group_by_id))(group_id);
 	}
 	//slurm_mutex_unlock(&g_context_lock);
 	END_TIMER2(__func__);

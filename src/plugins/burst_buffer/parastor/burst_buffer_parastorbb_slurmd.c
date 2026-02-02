@@ -555,6 +555,54 @@ extern int bb_p_delete_bb_group_by_sn(char *group_sn)
 	return rc;
 }
 
+extern int bb_p_delete_bb_group_by_id(uint32_t group_id)
+{
+	int rc = SLURM_ERROR;
+	if (group_id == 0) {
+		error("error params");
+		return SLURM_ERROR;
+	}
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	for (int retry_count = 0; retry_count < bb_state.bb_config.retry_count; retry_count++) {
+		rc = delete_bb_group_by_id(group_id, &bb_state.bb_config);
+		if (rc == BB_SUCCESS) {
+			debug("删除缓存组%d成功", group_id);
+			break;
+		} else if (rc == BB_CODE_ERROR) {
+			error("删除缓存组代码错误");
+			break;
+		} else if (rc == BB_API_ERROR) {
+			error("删除缓存组接口返回错误");
+			break;
+		} else if (rc == BB_API_TIMEOUT) {
+			debug("删除缓存组接口超时，查询是否已删除成功");
+			int query_rc = has_bb_group_by_id(group_id, &bb_state.bb_config);
+			if (query_rc < 0) {
+				error("查询失败");
+				break;
+			}
+			if (query_rc == BB_SUCCESS_NO_DATA) {
+				debug("删除缓存组成功");
+				rc = 0;
+				break;
+			}
+			if (query_rc == BB_SUCCESS) {
+				debug("删除缓存组超时，重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
+				continue;
+			}
+		} else {
+			error("未知返回结果");
+		}
+	}
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+	if (rc != 0) {
+		error("删除缓存组失败，错误码: %d", rc);
+	}
+	return rc;
+}
+
+
+
 extern int bb_p_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, char * path)
 {
 	int rc = SLURM_ERROR;

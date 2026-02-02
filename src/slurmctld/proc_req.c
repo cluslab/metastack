@@ -2602,7 +2602,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 			__func__, comp_msg->job_id, slurm_strerror(error_code)); //这里需要根据bb数据加速阶段进行设置__METASTACK_NEW_BURSTBUFFER4
 		//slurm_send_rc_msg(msg, error_code);
 		if(error_code == ESLURM_INVALID_BURST_BUFFER_REQUEST) {
-			drain_nodes(comp_msg->node_name,"Failed to allocate BB resources during the SI phase; manual cleanup may be required",
+			drain_nodes(comp_msg->node_name,"Failed during the SI phase(create or cancel); manual cleanup may be required",
 							slurm_conf.slurm_user_id);
 			bb_clean_status = 0x01;
 		} else if(error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
@@ -2672,7 +2672,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 			unlock_slurmctld(job_write_lock);
 #endif
-		//需要设置BB状态
+		/* 把job_ptr同步给bb_alloc和bb_job */
 		if (bb_g_job_test_post_run(job_ptr) != 1) {
 			error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
 		}

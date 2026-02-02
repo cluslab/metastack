@@ -3232,16 +3232,6 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 			bb_job->bb_task_ids = NULL;
 			bb_alloc->bb_task_ids = NULL;
 		}
-
-
-
-
-
-
-
-
-
-
 		rc = 1;
 		// if (bb_job->state < BB_STATE_POST_RUN) {
 		// 	rc = -1;
