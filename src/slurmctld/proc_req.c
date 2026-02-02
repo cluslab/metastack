@@ -2564,7 +2564,7 @@ static void _slurm_rpc_complete_job_allocation(slurm_msg_t *msg)
 	log_flag(TRACE_JOBS, "%s: return %pJ", __func__, job_ptr);
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER5
 /* _slurm_rpc_complete_create_bb - process RPC to note the
  *	completion of a crete burst buffer */
 static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
@@ -2574,6 +2574,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	complete_create_bb_msg_t *comp_msg = msg->data;
 #ifdef __METASTACK_NEW_BURSTBUFFER3
 	job_record_t *job_ptr = NULL;
+	uint32_t bb_clean_status = -1;
 #endif
 	/* Locks: Write job, write node */
 	slurmctld_lock_t job_write_lock = {
@@ -2603,13 +2604,25 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		if(error_code == ESLURM_INVALID_BURST_BUFFER_REQUEST) {
 			drain_nodes(comp_msg->node_name,"Failed to allocate BB resources during the SI phase; manual cleanup may be required",
 							slurm_conf.slurm_user_id);
+			bb_clean_status = 0x01;
 		} else if(error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
 			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
+			bb_clean_status = 0x02;
 		}
 
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+			lock_slurmctld(job_write_lock);
+
+		job_ptr = find_job_record(comp_msg->job_id);
+		if(job_ptr)
+			job_ptr->bb_clean_status = bb_clean_status; //error_code返回值异常；此时slurmd正清理bb资源
+			
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+			unlock_slurmctld(job_write_lock);
 
 	} else {
 		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);
+		job_ptr->bb_clean_status = 0x10;
 
 #ifdef __METASTACK_NEW_BURSTBUFFER3
 		/*
@@ -2659,6 +2672,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 			unlock_slurmctld(job_write_lock);
 #endif
+		//需要设置BB状态
 		if (bb_g_job_test_post_run(job_ptr) != 1) {
 			error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
 		}
