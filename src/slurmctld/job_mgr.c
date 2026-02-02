@@ -3220,7 +3220,10 @@ extern int kill_running_job_by_node_name(char *node_name)
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
 #ifdef __METASTACK_NEW_BURSTBUFFER5
-				bb_g_free_allocated_resources(job_ptr);
+				//bb_g_free_allocated_resources(job_ptr);
+				//设置清理标志位在后台线程中进行处理,设置BB状态
+				//job_ptr->bb_free_flag = true;
+				job_ptr->bb_clean_status = 0x03;//BB资源需要删除校验，
 #endif
 			}
 		}
@@ -6201,7 +6204,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 	if (bb_return_code) {
 		error("create launch failure, %pJ rc = %d", job_ptr, rc);
 		job_ptr->exit_code = bb_return_code;
-		(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
+		//(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 		job_ptr->bb_ready = false;
 		if(bb_return_code == SI取消时对应状态)
 			return ESLURM_BB_RESOURCE_SI_CANCEL;
@@ -9707,7 +9710,16 @@ void job_time_limit(void)
 			}
 		}
 #endif
-
+#ifdef __METASTACK_NEW_BURSTBUFFER5
+		设置新的线程，新线程不能阻塞restart过程
+		1、slurmd返回创建失败（creat_bb_job: falg设置为0x1，该种情况下只需要将BB系统资源加回来即可）
+		2、slurmd主动或者被动down（该种情况下难于区分是节点不响应还是手动置位，需要在管理节点定时检查是否回收完成：SI(没有stepd需要适配) R（走回收） SO（走回收）），同时加回来已经减去的BB资源
+		if(slurmd返回创建失败 || slurmd主动或者被动down) {
+			主动通过SN检测作业缓存组数据集释放bb资源
+			//设置BB作业的清理状态
+			(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
+		}
+#endif
 		/*
 		 * Features have been changed on some node, make job eligiable
 		 * to run and test to see if it can run now
