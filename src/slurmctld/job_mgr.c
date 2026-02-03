@@ -6209,7 +6209,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		if(bb_return_code == ESLURM_BB_RESOURCE_SI_CANCEL)
 			return ESLURM_BB_RESOURCE_SI_CANCEL;
 		else if(bb_return_code == ESLURM_BB_RESOURCE_SI_FAIL)
-			return ESLURM_INVALID_BURST_BUFFER_REQUEST;
+			return ESLURM_BB_RESOURCE_SI_FAIL;
 	}
 	/*
 	 * job_ptr->node_bitmap_pr is always NULL for front end systems
@@ -7875,6 +7875,7 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	if (part_ptr->flags & PART_FLAG_BURSTBUFFER) {   /* add partition burstbuffer flags to job flags */
 		job_ptr->bit_flags |= JOB_FLAG_PART_BURSTBUFFER;
 	}
+	job_ptr->bb_clean_finish = false; /* Initialize cleanup status as false */
 #endif
 	job_ptr->part_ptr_list = part_ptr_list;
 	job_ptr->bit_flags |= JOB_DEPENDENT;

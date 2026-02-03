@@ -2968,6 +2968,7 @@ static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_node
 		error("Unable to parse hostlist: `%s'", slurm_nodes);
 		return NULL;
 	}
+	hostlist_sort(hl);
 	*node_count = hostlist_count(hl);
 	if (*node_count > 0) {
 		node_array = xmalloc((*node_count) * sizeof(char *));

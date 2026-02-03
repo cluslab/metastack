@@ -973,9 +973,8 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 			pack32_array(dump_job_ptr->dataset_ids, dump_job_ptr->need_database_counts, buffer);
 			pack32_array(dump_job_ptr->task_ids, dump_job_ptr->need_database_counts, buffer);
 		}
-		packbool(dump_job_ptr->clean_finish,		    buffer);
+		packbool(dump_job_ptr->bb_clean_finish,		    buffer);
 		packbool(dump_job_ptr->bb_kill_flag,		    buffer);
-		packbool(dump_job_ptr->bb_have_reduce,		   buffer);
 #endif     //#endif
 	} else if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		/* Dump basic job info */
@@ -2966,9 +2965,8 @@ extern int job_record_unpack(job_record_t **out,
 			if (tmp_count != job_ptr->need_database_counts)
 				goto unpack_error;
 		}
-		safe_unpackbool(&job_ptr->clean_finish,			 buffer);
+		safe_unpackbool(&job_ptr->bb_clean_finish,			 buffer);
 		safe_unpackbool(&job_ptr->bb_kill_flag,			 buffer);
-		safe_unpackbool(&job_ptr->bb_have_reduce,		 buffer);
 #endif
 	} else if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		safe_unpack32(&job_ptr->array_job_id, buffer);
