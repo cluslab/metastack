@@ -564,9 +564,8 @@ struct job_record {
 	bool     real_used_bb;		     // 最终是否必须要使用bb，受bb_enable_pb参数的影响
 
 	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好,slurmd创建缓存组后置位
-	bool     clean_finish;           //是否完成清理，作业完成（terminal job）后执行清理完成后置位
+	bool     bb_clean_finish;           //是否完成清理，作业完成（terminal job）后执行清理完成后置位
 	bool   	 bb_kill_flag; 			 //当作业收到kill信号时，该位置位为true，即使未创建作业步（可能缓存组已经创建完成），也不再触发srun_allocate、launch_prolog、launch_job
-	bool     bb_have_reduce;         //该标志用于判断是否已经将该作业申请的bb资源还回slurmctld，fasle是还没，true是已返还
     uint32_t bb_clean_status;        //作业或节点异常情况下，根据不同流程设置不同的标志位。
 #endif
 

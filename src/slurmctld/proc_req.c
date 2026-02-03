@@ -2450,7 +2450,6 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 #ifdef __METASTACK_NEW_BURSTBUFFER4	
    
 	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
-	 	job_ptr->clean_finish = true;
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 		(void) bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
 	}	   	
@@ -2577,108 +2576,90 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	uint32_t bb_clean_status = -1;
 #endif
 	/* Locks: Write job, write node */
-	slurmctld_lock_t job_write_lock = {
-		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 
 	/* init */
 	START_TIMER;
 	debug3("Processing RPC details: REQUEST_COMPLETE_CREATE_BB from JobId=%u",
-	       comp_msg->job_id);
+		comp_msg->job_id);
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		lock_slurmctld(job_write_lock);
-	error_code = create_bb_complete(comp_msg->job_id, comp_msg->bb_rc,
-				     comp_msg->node_name);
-	
+	/* 获取bb_return_code */
+	error_code = create_bb_complete(comp_msg->job_id, comp_msg->bb_rc, comp_msg->node_name);
+	/* 1. 解析响应结果到job_ptr中 */
+	job_ptr = find_job_record(comp_msg->job_id);
+	if (!job_ptr) {
+		error("The job_ptr of job %u does not exist", comp_msg->job_id);
+		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+		return;
+	}
+	if (error_code == ESLURM_BB_RESOURCE_SI_FAIL) {
+		job_ptr->bb_clean_status = 0x01;
+	} else if (error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
+		job_ptr->bb_clean_status = 0x02;
+	}
+
+	job_ptr->need_group_counts = comp_msg->groups_cnt;
+	job_ptr->need_database_counts = comp_msg->datasets_cnt;
+
+	xfree(job_ptr->group_ids);
+	xfree(job_ptr->dataset_ids);
+	xfree(job_ptr->task_ids);
+	if (comp_msg->groups_cnt > 0 && comp_msg->group_ids) {
+		job_ptr->group_ids = xmalloc(comp_msg->groups_cnt * sizeof(uint32_t));
+		memcpy(job_ptr->group_ids, comp_msg->group_ids,
+			comp_msg->groups_cnt * sizeof(uint32_t));
+	} else {
+		job_ptr->group_ids = NULL;
+	}
+	if (comp_msg->datasets_cnt > 0 && comp_msg->dataset_ids) {
+		job_ptr->dataset_ids = xmalloc(comp_msg->datasets_cnt * sizeof(uint32_t));
+		memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids,
+			comp_msg->datasets_cnt * sizeof(uint32_t));
+	} else {
+		job_ptr->dataset_ids = NULL;
+	}
+	if (comp_msg->datasets_cnt > 0 && comp_msg->task_ids) {
+		job_ptr->task_ids = xmalloc(comp_msg->datasets_cnt * sizeof(uint32_t));
+		memcpy(job_ptr->task_ids, comp_msg->task_ids, comp_msg->datasets_cnt * sizeof(uint32_t));
+	} else {
+		job_ptr->task_ids = NULL;
+	}
+
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		unlock_slurmctld(job_write_lock);
 
+	/* 把job_ptr同步给bb_alloc和bb_job,其中bb_g_job_test_post_run中有job_ptr读锁 */
+	if (bb_g_job_test_post_run(job_ptr) != 1) {
+		error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
+	}
+
 	END_TIMER2(__func__);
 
-	/* return result */
+	/* 2. 根据bb_return_code进行处理 */
+	//BINBIN:
+	//1.取消成功直接更新资源
+	//2.失败了也调用更新资源
+	//3.成功创建，不用处理，正常流程
 	if (error_code) {
 		//需要加上已经清理的资源
-		info("%s JobId=%u: %s ",
-			__func__, comp_msg->job_id, slurm_strerror(error_code)); //这里需要根据bb数据加速阶段进行设置__METASTACK_NEW_BURSTBUFFER4
-		//slurm_send_rc_msg(msg, error_code);
-		if(error_code == ESLURM_INVALID_BURST_BUFFER_REQUEST) {
-			drain_nodes(comp_msg->node_name,"Failed to allocate BB resources during the SI phase; manual cleanup may be required",
-							slurm_conf.slurm_user_id);
-			bb_clean_status = 0x01;
-		} else if(error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
+		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(error_code));
+
+		/* 创建BB失败（创建失败或者取消失败） */
+		if (error_code == ESLURM_BB_RESOURCE_SI_FAIL) {
+			drain_nodes(comp_msg->node_name, "Failed during the SI phase(create or cancel); manual cleanup may be required",
+						slurm_conf.slurm_user_id);
+			bb_g_free_allocated_resources(job_ptr);
+		}
+		/* 创建时成功被取消 */
+		else if (error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
 			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
-			bb_clean_status = 0x02;
+			//BINBIN:是否需要直接调用普通的teardown直接清理？
+			bb_g_free_allocated_resources(job_ptr);
 		}
-
-		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
-			lock_slurmctld(job_write_lock);
-
-		job_ptr = find_job_record(comp_msg->job_id);
-		if(job_ptr)
-			job_ptr->bb_clean_status = bb_clean_status; //error_code返回值异常；此时slurmd正清理bb资源
-			
-		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
-			unlock_slurmctld(job_write_lock);
-
-	} else {
-		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);
-		job_ptr->bb_clean_status = 0x10;
-
-#ifdef __METASTACK_NEW_BURSTBUFFER3
-		/*
-		 * 解析slurmd返回的缓存组/数据集信息，并将统计结果写回到job_ptr，
-		 * 便于后续在slurmctld侧进行作业状态判断或调度决策。
-		 */
-		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
-			lock_slurmctld(job_write_lock);
-		job_ptr = find_job_record(comp_msg->job_id);
-
-		if (job_ptr) {
-			job_ptr->need_group_counts = comp_msg->used_groups;
-			job_ptr->need_database_counts = comp_msg->used_databases;
-
-			/* 释放旧的数组（如果存在） */
-			xfree(job_ptr->group_ids);
-			xfree(job_ptr->dataset_ids);
-			xfree(job_ptr->task_ids);
-
-			/* group_ids */
-			if (comp_msg->used_groups > 0 && comp_msg->group_ids) {
-				job_ptr->group_ids = xmalloc(comp_msg->used_groups * sizeof(uint32_t));
-				memcpy(job_ptr->group_ids, comp_msg->group_ids,
-					comp_msg->used_groups * sizeof(uint32_t));
-			} else {
-				job_ptr->group_ids = NULL;
-			}
-
-			/* 复制dataset_ids和task_ids数组 */
-			if (comp_msg->used_databases > 0 && comp_msg->dataset_ids) {
-				job_ptr->dataset_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
-				memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids,
-					comp_msg->used_databases * sizeof(uint32_t));
-
-				if (comp_msg->task_ids) {
-					job_ptr->task_ids = xmalloc(comp_msg->used_databases * sizeof(uint32_t));
-					memcpy(job_ptr->task_ids, comp_msg->task_ids,
-						comp_msg->used_databases * sizeof(uint32_t));
-				} else {
-					job_ptr->task_ids = NULL;
-				}
-			} else {
-				job_ptr->dataset_ids = NULL;
-				job_ptr->task_ids = NULL;
-			}
-		}
-		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
-			unlock_slurmctld(job_write_lock);
-#endif
-		//需要设置BB状态
-		if (bb_g_job_test_post_run(job_ptr) != 1) {
-			error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
-		}
-		slurm_send_rc_msg(msg, SLURM_SUCCESS);
-
 	}
+	slurm_send_rc_msg(msg, SLURM_SUCCESS);
 }
 #endif
 

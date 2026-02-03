@@ -3790,7 +3790,7 @@ unpack_error:
 }
 
 static void
-_pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_version)
+_pack_kill_job_msg(kill_job_msg_t *msg, buf_t *buffer, uint16_t protocol_version)
 {
 	xassert(msg);
 
@@ -3812,27 +3812,27 @@ _pack_kill_job_msg(kill_job_msg_t * msg, buf_t *buffer, uint16_t protocol_versio
 		pack32(msg->job_gid, buffer);
 		packstr(msg->nodes, buffer);
 		packstr_array(msg->spank_job_env, msg->spank_job_env_size,
-				buffer);
+			buffer);
 		pack_time(msg->start_time, buffer);
 		pack_time(msg->time, buffer);
 		packstr(msg->work_dir, buffer);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Pack burst buffer cleanup fields */
-		packbool(msg->bb_enable_pb,  buffer);
-		packbool(msg->real_used_bb,    buffer);
-		packbool(msg->bb_ready,    	   buffer);
-	if(msg->bb_enable_pb && msg->real_used_bb && msg->bb_ready) {
-		pack32(msg->group_count, buffer);
-		packstr_array(msg->group_sn, msg->group_count, buffer);
-		pack32_array(msg->group_ids, msg->group_count, buffer);
-		pack32(msg->dataset_count, buffer);
-		pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
-		pack32_array(msg->task_ids, msg->dataset_count, buffer);
-		packstr(msg->pfs, buffer);
-		pack32(msg->pfs_cnt, buffer);
-		packstr(msg->job_nodes, buffer);
+		packbool(msg->bb_enable_pb, buffer);
+		packbool(msg->real_used_bb, buffer);
+		packbool(msg->bb_ready, buffer);
+		if (msg->bb_enable_pb && msg->real_used_bb && msg->bb_ready) {
+			pack32(msg->group_count, buffer);
+			packstr_array(msg->group_sn, msg->group_count, buffer);
+			pack32_array(msg->group_ids, msg->group_count, buffer);
+			pack32(msg->dataset_count, buffer);
+			pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
+			pack32_array(msg->task_ids, msg->dataset_count, buffer);
+			packstr(msg->pfs, buffer);
+			pack32(msg->pfs_cnt, buffer);
+			packstr(msg->job_nodes, buffer);
 
-	}
+		}
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		if (msg->cred) {
@@ -16049,20 +16049,20 @@ static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *b
 		pack32(msg->job_id, buffer);
 		packstr(msg->node_name, buffer);
 		pack32(msg->bb_rc, buffer);
-		pack32(msg->used_groups, buffer);
-		if (msg->used_groups > 0 && msg->group_ids) {
-			for (uint32_t i = 0; i < msg->used_groups; i++) {
+		pack32(msg->groups_cnt, buffer);
+		if (msg->groups_cnt > 0 && msg->group_ids) {
+			for (uint32_t i = 0; i < msg->groups_cnt; i++) {
 				pack32(msg->group_ids[i], buffer);
 			}
 		}
-		pack32(msg->used_databases, buffer);
-		if (msg->used_databases > 0 && msg->dataset_ids) {
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+		pack32(msg->datasets_cnt, buffer);
+		if (msg->datasets_cnt > 0 && msg->dataset_ids) {
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				pack32(msg->dataset_ids[i], buffer);
 			}
 		}
-		if (msg->used_databases > 0 && msg->task_ids) {
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+		if (msg->datasets_cnt > 0 && msg->task_ids) {
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				pack32(msg->task_ids[i], buffer);
 			}
 		}
@@ -16086,7 +16086,7 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 				packstr(msg->group_sn[i],	buffer);
 			}
 		}
-		pack32(msg->used_databases, 		buffer);
+		pack32(msg->used_datasets, 		buffer);
 		pack64(msg->req_space, 				buffer);
 		pack32(msg->access_mode, 			buffer);	
 		packstr(msg->pfs, 					buffer);
@@ -16157,7 +16157,7 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 // 		packbool(msg->bb_enable_pb, buffer);
 // 		if(msg->bb_enable_pb) {
 // 			pack32(msg->used_groups,             buffer);
-// 			pack32(msg->used_databases,          buffer);
+// 			pack32(msg->used_datasets,          buffer);
 // 			pack64(msg->req_space,               buffer);
 // 			pack32(msg->access_mode,             buffer);
 // 			packstr(msg->pfs,                    buffer);
@@ -16346,21 +16346,21 @@ static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_
 		safe_unpack32(&msg->job_id, buffer);
 		safe_unpackstr(&msg->node_name, buffer);
 		safe_unpack32(&msg->bb_rc, buffer);
-		safe_unpack32(&msg->used_groups, buffer);
-		if (msg->used_groups > 0) {
-			msg->group_ids = xmalloc(msg->used_groups * sizeof(uint32_t));
-			for (uint32_t i = 0; i < msg->used_groups; i++) {
+		safe_unpack32(&msg->groups_cnt, buffer);
+		if (msg->groups_cnt > 0) {
+			msg->group_ids = xmalloc(msg->groups_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->groups_cnt; i++) {
 				safe_unpack32(&msg->group_ids[i], buffer);
 			}
 		}
-		safe_unpack32(&msg->used_databases, buffer);
-		if (msg->used_databases > 0) {
-			msg->dataset_ids = xmalloc(msg->used_databases * sizeof(uint32_t));
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+		safe_unpack32(&msg->datasets_cnt, buffer);
+		if (msg->datasets_cnt > 0) {
+			msg->dataset_ids = xmalloc(msg->datasets_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				safe_unpack32(&msg->dataset_ids[i], buffer);
 			}
-			msg->task_ids = xmalloc(msg->used_databases * sizeof(uint32_t));
-			for (uint32_t i = 0; i < msg->used_databases; i++) {
+			msg->task_ids = xmalloc(msg->datasets_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 				safe_unpack32(&msg->task_ids[i], buffer);
 			}
 		}
@@ -16392,7 +16392,7 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		} else {
 			msg->group_sn = NULL;
 		}
-		safe_unpack32(&msg->used_databases, 		buffer);
+		safe_unpack32(&msg->used_datasets, 		buffer);
 		safe_unpack64(&msg->req_space, 				buffer);
 		safe_unpack32(&msg->access_mode, 			buffer);	
 		safe_unpackstr(&msg->pfs, 					buffer);
@@ -16478,7 +16478,7 @@ static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 // 		safe_unpackbool(&msg->bb_enable_pb, buffer); 
 // 		if(msg->bb_enable_pb) {
 // 			safe_unpack32(&msg->used_groups,				buffer);
-// 			safe_unpack32(&msg->used_databases,				buffer);
+// 			safe_unpack32(&msg->used_datasets,				buffer);
 // 			safe_unpack64(&msg->req_space,					buffer);
 // 			safe_unpack32(&msg->access_mode, 				buffer);
 // 			safe_unpackstr(&msg->pfs, 						buffer);

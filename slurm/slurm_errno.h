@@ -426,7 +426,8 @@ typedef enum {
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	ESLURM_BB_RESOURCE_LIMIT,
-	ESLURM_BB_RESOURCE_SI_CANCEL,
+	ESLURM_BB_RESOURCE_SI_CANCEL, /* Successfully canceled the assignment in the SI phase  */
+	ESLURM_BB_RESOURCE_SI_FAIL /* SI stage failure (failed to create or cancel job) */
 #endif
 } slurm_err_t;
 

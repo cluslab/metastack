@@ -508,8 +508,8 @@ typedef struct complete_prolog {
 typedef struct complete_create_bb {
 	uint32_t job_id;
 	char *node_name;
-	uint32_t used_groups;
-	uint32_t used_databases;
+	uint32_t groups_cnt;
+	uint32_t datasets_cnt;
 	uint32_t *group_ids;
 	uint32_t *dataset_ids;
 	uint32_t *task_ids;          /* 任务ID数组，与dataset_ids一一对应 */
@@ -969,7 +969,7 @@ typedef struct burst_buffer_launch_msg {
 	//uint32_t group_id;		/* group submitted under */
 	char **group_sn;       /* 缓存组SN */
 	uint32_t used_groups; 
-	uint32_t used_databases;
+	uint32_t used_datasets;
 	uint32_t pfs_cnt;
 	uint64_t req_space;		   //当前作业请求的空间
 	uint32_t access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式

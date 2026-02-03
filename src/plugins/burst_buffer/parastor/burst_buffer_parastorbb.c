@@ -226,7 +226,9 @@ pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Function prototypes */
 static bb_job_t *_get_bb_job(job_record_t *job_ptr);
-static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean_finish);
+static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr);
+static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
+	uint32_t free_group_cnt, uint32_t free_dataset_cnt);
 // static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
 // static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
 static int _bb_get_parastors_state(void);
@@ -733,7 +735,7 @@ static void *_start_stage_out(void *x)
 				bb_alloc->state = BB_STATE_STAGED_IN;
 			}
 		}
-		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 	}
 	unlock_slurmctld(job_write_lock);
@@ -1912,7 +1914,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 		log_flag(BURST_BUF, "Purging buffer for pending %pJ",
 			job_ptr);
 		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr);
 		if (job_ptr->details &&
 			(job_ptr->details->begin_time < defer_time)) {
 			job_ptr->details->begin_time = defer_time;
@@ -1940,7 +1942,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 	case BB_STATE_TEARDOWN_FAIL:
 		log_flag(BURST_BUF, "Restarting burst buffer teardown for %pJ",
 			job_ptr);
-		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr);
 		break;
 	case BB_STATE_COMPLETE:
 		/*
@@ -1986,7 +1988,7 @@ static void _purge_vestigial_bufs(void)
 				/* For parastorbb, try to find bb_job first */
 				bb_job_t *bb_job = bb_job_find(&bb_state, bb_alloc->job_id);
 				if (bb_job) {
-					_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
+					_queue_teardown(bb_job, job_ptr);
 				} else {
 					/* No bb_job found, use bb_alloc to clean up resources */
 					info("Job and bb_job not found for JobId=%u, cleaning up resources from bb_alloc",
@@ -2495,84 +2497,110 @@ static void *_start_teardown(void *x)
 	return NULL;
 }
 
-static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr, bool *clean_finish)
+static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
 {
-	if(!bb_job || !job_ptr || !clean_finish) {
-		return NULL;
+	if (!job_ptr || job_ptr->bb_clean_finish) {
+		return;
 	}
-	if(*clean_finish && job_ptr->bb_have_reduce) {
-		job_ptr->bb_have_reduce = true;
-		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
-		bb_state.bb_config.used_groups				-= bb_job->index_groups;
-		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
-		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
+	bb_state.bb_config.free_groups += bb_job->index_groups;
+	bb_state.bb_config.used_groups -= bb_job->index_groups;
+	bb_state.bb_config.free_datasets += bb_job->index_datasets;
+	bb_state.bb_config.used_datasets -= bb_job->index_datasets;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-		// 仅当传入了有效的 job_ptr 时才执行节点配额释放
-		if (job_ptr) {
-			uint32_t bb_quota = 4; // 默认值
-			bitstr_t *node_bitmap = NULL;
+	// 仅当传入了有效的 job_ptr 时才执行节点配额释放
+	if (job_ptr) {
+		uint32_t bb_quota = bb_state.bb_config.max_clients_join; // 默认值
+		bitstr_t *node_bitmap = NULL;
 
-			// 1. 获取配额配置
-			if (bb_state.bb_config.max_clients_join > 0) {
-				bb_quota = bb_state.bb_config.max_clients_join;
-				debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
-			} else {
-				debug3("max_clients_join not set, using default bb_quota: 4");
-			}
+		// 1. 获取配额配置
+		if (bb_state.bb_config.max_clients_join > 0) {
+			bb_quota = bb_state.bb_config.max_clients_join;
+			debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
+		} else {
+			debug3("max_clients_join not set, using default bb_quota: 4");
+		}
 
-			// 2. 确定使用哪个节点位图 
-			// 优先使用 job_resrcs 中的位图(在作业清理阶段最稳定)，如果没有则尝试使用 job_ptr 自带的位图
-			if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
-				node_bitmap = job_ptr->job_resrcs->node_bitmap;
-			} else if (job_ptr->node_bitmap) {
-				node_bitmap = job_ptr->node_bitmap;
-			}
+		// 2. 确定使用哪个节点位图 
+		// 优先使用 job_resrcs 中的位图(在作业清理阶段最稳定)，如果没有则尝试使用 job_ptr 自带的位图
+		if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
+			node_bitmap = job_ptr->job_resrcs->node_bitmap;
+		} else if (job_ptr->node_bitmap) {
+			node_bitmap = job_ptr->node_bitmap;
+		}
 
-			// 3. 遍历节点并释放计数
-			if (node_bitmap) {
-				int i, i_first, i_last;
-				i_first = bit_ffs(node_bitmap);
-				i_last  = bit_fls(node_bitmap);
+		// 3. 遍历节点并释放计数
+		if (node_bitmap) {
+			int i, i_first, i_last;
+			i_first = bit_ffs(node_bitmap);
+			i_last = bit_fls(node_bitmap);
 
-				if (i_first != -1) {
-					for (i = i_first; i <= i_last; i++) {
-						if (!bit_test(node_bitmap, i)) {
-							continue;
-						}
-						node_record_t *node_ptr = node_record_table_ptr[i];
-						// 节点有效性检查
-						if (!node_ptr || !node_ptr->name) {
-							continue;
-						}
-						// 计数递减 (防止下溢)
-						if (node_ptr->bb_cache_grp_cnt > 0) {
-							node_ptr->bb_cache_grp_cnt--;
-							debug3("Teardown: Node %s (idx %d) BB count decremented to %u (quota=%u) for job %pJ",
-								node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
-						} else {
-							// 如果已经是0还在减，说明逻辑有误，打印错误但不崩溃
-							debug("Error: Node %s (idx %d) BB count underflow attempt for job %pJ", 
-								node_ptr->name, i, job_ptr);
-						}
+			if (i_first != -1) {
+				for (i = i_first; i <= i_last; i++) {
+					if (!bit_test(node_bitmap, i)) {
+						continue;
+					}
+					node_record_t *node_ptr = node_record_table_ptr[i];
+					// 节点有效性检查
+					if (!node_ptr || !node_ptr->name) {
+						continue;
+					}
+					// 计数递减 (防止下溢)
+					if (node_ptr->bb_cache_grp_cnt > 0) {
+						node_ptr->bb_cache_grp_cnt--;
+						debug3("Teardown: Node %s (idx %d) BB count decremented to %u (quota=%u) for job %pJ",
+							node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
+					} else {
+						// 如果已经是0还在减，说明逻辑有误，打印错误但不崩溃
+						debug("Error: Node %s (idx %d) BB count underflow attempt for job %pJ",
+							node_ptr->name, i, job_ptr);
 					}
 				}
-			} else {
-				debug("Teardown: No node bitmap found for job %pJ, skipping quota release", job_ptr);
 			}
+		} else {
+			debug("Teardown: No node bitmap found for job %pJ, skipping quota release", job_ptr);
 		}
-#endif
-		*clean_finish = false;
 	}
-	slurm_thread_create_detached(_start_teardown, bb_job);
-
-	// slurm_thread_create_detached(_start_teardown, bb_job);
+#endif
+	if (bb_job)
+		slurm_thread_create_detached(_start_teardown, bb_job);
+	job_ptr->bb_clean_finish = true;
 }
+
+
+/**
+ * @brief 当创建BB失败时，释放BB没有用到的资源
+ * @param bb_job 
+ * @param job_ptr 
+ * @param free_hl 需要释放的节点列表（缓存组实际没有用到的BB节点）
+ * @param free_group_cnt 需要释放的缓存组个数
+ * @param free_dataset_cnt 需要释放的数据集规则个数
+ */
+static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
+	uint32_t free_group_cnt, uint32_t free_dataset_cnt)
+{
+	if (!job_ptr || job_ptr->bb_clean_finish) {
+		return;
+	}
+	bb_state.bb_config.free_groups += free_group_cnt;
+	bb_state.bb_config.used_groups -= free_group_cnt;
+	bb_state.bb_config.free_datasets += free_dataset_cnt;
+	bb_state.bb_config.used_datasets -= free_dataset_cnt;
+#ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
+	//BINBIN:子豪进行bit_map处理，free_hl为需要释放的节点
+
+#endif
+	if (bb_job)
+		slurm_thread_create_detached(_start_teardown, bb_job);
+	job_ptr->bb_clean_finish = true;
+}
+
+
 
 // static int _run_real_size(stage_args_t *stage_args, init_argv_f_t init_argv,
 // 			  const char *op, uint32_t job_id, uint32_t timeout,
 // 			  char **resp_msg)
 // {
-	
+
 // 	return SLURM_SUCCESS;
 // }
 
@@ -2736,7 +2764,7 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 		rc = _queue_stage_in(job_ptr, bb_job);
 		if (rc != SLURM_SUCCESS) {
 			bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-			_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
+			_queue_teardown(bb_job, job_ptr);
 		}
 	}
 	return rc;
@@ -3121,7 +3149,7 @@ extern int bb_p_job_start_stage_out(job_record_t *job_ptr)
 	} else if (bb_job->state < BB_STATE_RUNNING) {
 		/* Job never started. Just teardown the buffer */
 		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr);
 	} else if (bb_job->state < BB_STATE_POST_RUN) {
 		_pre_queue_stage_out(job_ptr, bb_job);
 	}
@@ -3133,39 +3161,74 @@ extern int bb_p_job_start_stage_out(job_record_t *job_ptr)
 
 extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 {
-
 	bb_job_t *bb_job = NULL;
-	int rc = SLURM_ERROR;
-	if(!job_ptr && job_ptr->bb_have_reduce) {
-		return rc;
+	int rc = SLURM_SUCCESS;
+	if (!job_ptr || job_ptr->bb_clean_finish) {
+		error("job_ptr is NULL");
+		return SLURM_ERROR;
 	}
+	if (job_ptr->bb_clean_finish) {
+		return SLURM_SUCCESS;
+	}
+
+	uint32_t group_count = job_ptr->need_group_counts;
+	uint32_t dataset_count = job_ptr->need_database_counts;
+	uint32_t max_node_cnt_per_group = job_ptr->max_clients_per_job;
+	uint32_t node_idx = 0;
+	uint32_t free_group_cnt = 0;
+	uint32_t free_datasets_cnt = 0;
+	hostlist_t *free_hl = hostlist_create(NULL);
+	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
+	if (!job_hl) {
+		error("Unable to parse hostlist: `%s'", job_ptr->nodes);
+		return SLURM_ERROR;
+	}
+	hostlist_sort(job_hl);
+	/* 缓存组id为0即为没有使用，记录对应hostname和数量用于释放 */
+	for (uint32_t i = 0; i < group_count; i++) {
+		uint32_t group_id = job_ptr->group_ids[i];
+		if (group_id == 0) {
+			for (int i = 0; i < max_node_cnt_per_group; i++) {
+				char *hostname = hostlist_nth(job_hl, i);
+				if (!hostname) {
+					error("获取hostname为空");
+					rc = SLURM_ERROR;
+					goto free_end;
+				}
+				if (hostlist_push(free_hl, hostname) == 0) {
+					error("push hostname into hostlist_t failed");
+					rc = SLURM_ERROR;
+					goto free_end;
+				}
+				free_group_cnt++;
+				free(hostname);
+			}
+		} else {
+			node_idx += max_node_cnt_per_group;
+		}
+	}
+	/* 数据集规则id为0即为没有使用，记录对应数量用于释放 */
+	for (uint32_t i = 0; i < dataset_count; i++) {
+		uint32_t dataset_id = job_ptr->dataset_ids[i];
+		if (dataset_id == 0) {
+			free_datasets_cnt++;
+		}
+	}
+
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	bb_job = _get_bb_job(job_ptr);
-	job_ptr->clean_finish = true;
-	if (!bb_job && !job_ptr->bb_have_reduce) {
-		/* No job buffers. Assuming use of persistent buffers only */
-		verbose("%pJ bb job record not found",job_ptr);
-		bb_state.bb_config.free_groups 				+= bb_job->index_groups;
-		bb_state.bb_config.used_groups				-= bb_job->index_groups;
-		bb_state.bb_config.free_datasets			+= bb_job->index_datasets;
-		bb_state.bb_config.used_datasets			-= bb_job->index_datasets;
-		job_ptr->bb_have_reduce = true;
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-		return rc;
-	} else {
-		_queue_teardown(bb_job, job_ptr, &job_ptr->clean_finish);
-		rc = SLURM_SUCCESS;
-	}
-	
+	_queue_teardown_on_abort(bb_job, job_ptr, free_hl, free_group_cnt, free_datasets_cnt);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
-
+free_end:
+	hostlist_destroy(job_hl);
+	hostlist_destroy(free_hl);
+	return rc;
 }
-/*
- * Determine if a job's burst buffer post_run operation is complete
- *
- * RET: 0 - post_run is underway
- *      1 - post_run complete
- *     -1 - fatal error
+
+/**
+ * @brief 创建BB后的处理
+ * @param job_ptr 函数中有读锁
+ * @return 
  */
 extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 {
@@ -3231,16 +3294,6 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 			bb_job->bb_task_ids = NULL;
 			bb_alloc->bb_task_ids = NULL;
 		}
-
-
-
-
-
-
-
-
-
-
 		rc = 1;
 		// if (bb_job->state < BB_STATE_POST_RUN) {
 		// 	rc = -1;
@@ -3363,7 +3416,7 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 			bb_alloc->state_time = time(NULL);
 			bb_state.last_update_time = time(NULL);
 		}
-		_queue_teardown(bb_job, job_ptr,  &job_ptr->clean_finish);
+		_queue_teardown(bb_job, job_ptr);
 	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 

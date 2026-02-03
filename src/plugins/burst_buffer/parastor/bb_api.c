@@ -1654,11 +1654,16 @@ static int call_bb_api_of_group(bb_config_t *bb_config, void *params, call_type 
                 xstrfmtcat(tmp_params_str, "start=%d", query_params->start);
         }
         /* host_name_match_mode */
-        if (query_params->group_sn != NULL) {
+        if (query_params->group_sn) {
             if (!tmp_params_str)
                 xstrfmtcat(tmp_params_str, "sn=%s", query_params->group_sn);
             else
                 xstrfmtcat(tmp_params_str, "&sn=%s", query_params->group_sn);
+        } else if (query_params->group_id) {
+            if (!tmp_params_str)
+                xstrfmtcat(tmp_params_str, "ids=%d", query_params->group_id);
+            else
+                xstrfmtcat(tmp_params_str, "&ids=%d", query_params->group_id);
         }
         /*assemble the full query for cache groups*/
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/cache-groups?%s",
@@ -2342,6 +2347,48 @@ extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_
     return ret;
 }
 
+extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config)
+{
+    if (!bb_min_config || group_id == 0) {
+        debug("Invalid parameters \n");
+        return BB_CODE_ERROR;
+    }
+    int ret = 0;
+    char *json_string = NULL;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    bb_attribute_group *bb_group = xmalloc(sizeof(bb_group));
+    query_params_request query_params = (query_params_request){ 0 };
+    query_params.start = 0;
+    query_params.limit = 1;
+    query_params.group_id = group_id;
+    ret = call_bb_api_of_group(bb_min_config, &query_params, QUERY_CALL, &json_string);
+
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call query group API");
+        free_bb_group(bb_group);
+        free_bb_response(resp_out);
+        return ret;
+    }
+    ret = parse_single_json_of_group(json_string, resp_out, bb_group);
+    xfree(json_string);
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
+        if (bb_group->group_sn && bb_group->id != group_id) {
+            error("get group id error, the group_id  is %s, but return group_sn is %s", group_id, bb_group->id);
+            ret = SLURM_ERROR;
+        }
+    }
+    free_bb_group(bb_group);
+    free_bb_response(resp_out);
+    return ret;
+}
+
+
 extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, uint32_t *dataset_id, bb_config_t *bb_config)
 {
     if (!bb_config || group_id <= 0 || !path || !dataset_id) {
@@ -2543,6 +2590,38 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
     free_bb_response(resp_out);
     return ret;
 }
+
+extern int delete_bb_group_by_id(uint32_t group_id, bb_config_t *bb_config)
+{
+    if (!bb_config || group_id == 0) {
+        debug("invalid parametes ");
+        return SLURM_ERROR;
+    }
+    int ret = BB_SUCCESS;
+    char *json_string = NULL;
+    bb_response *resp_out = xmalloc(sizeof(bb_response));
+    delete_params_request delete_params = { 0 };
+    delete_params.group_id = group_id;
+    ret = call_bb_api_of_group(bb_config, &delete_params, DELETE_CALL, &json_string);
+    if (ret != 0) {
+        if (ret == BB_API_TIMEOUT)
+            error("调用接口超时");
+        error("failed to call create bb group API");
+        free_bb_response(resp_out);
+        return ret;
+    }
+    ret = parse_json_to_response(json_string, resp_out, NO_RESULT);
+    xfree(json_string);
+    if (ret == BB_SUCCESS) {
+        if (resp_out->err_no != 0) {
+            debug("resp_out err_msg:%s,resp_out detail_err_msg:%s", resp_out->err_msg, resp_out->detail_err_msg);
+            ret = BB_API_ERROR;
+        }
+    }
+    free_bb_response(resp_out);
+    return ret;
+}
+
 
 extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config)
 {

@@ -31,7 +31,7 @@ extern int bb_g_fini(void);
  * @param group_id 返回创建成功的缓存组ID
  * @return 0:成功；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_create_bb_group_by_sn(char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id);
+extern int bb_g_create_bb_group_by_sn(char *group_sn, uint32_t client_cnt, char **client_hostname_arr, uint32_t *group_id);
 
 /**
  * @brief 创建数据集规则
@@ -69,6 +69,13 @@ extern int bb_g_wait_task_complete(uint32_t task_id, int task_type);
 extern int bb_g_delete_bb_group_by_sn(char *group_sn);
 
 /**
+ * @brief 根据group_id删除缓存组
+ * @param group_id 
+ * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ */
+extern int bb_g_delete_bb_group_by_id(uint32_t group_id);
+
+/**
  * @brief 根据dataset_id删除数据集规则
  * @param dataset_id 数据集ID
  * @param group_id 用于超时后查询数据集规则
@@ -84,9 +91,10 @@ extern int bb_g_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, 
  */
 extern int bb_g_cancel_bb_task_by_id(uint32_t task_id);
 /**
- * @brief 根据group_id删除缓存组
+ * @brief 根据group_id和path删除数据集规则
  * @param group_id 
+ * @param path
  * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
  */
-extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t dataset_id, uint32_t group_id, char * path);
+extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t group_id, char *path);
 #endif
