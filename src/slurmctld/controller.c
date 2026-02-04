@@ -302,6 +302,9 @@ static void _usage(void);
 static bool         _verify_clustername(void);
 static bool         _wait_for_server_thread(void);
 static void *       _wait_primary_prog(void *arg);
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+static void *slurmctld_bb_exception_handler(void *no_data);
+#endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 pthread_mutex_t query_mgr_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -748,11 +751,9 @@ int main(int argc, char **argv)
 #ifdef __METASTACK_NEW_BURSTBUFFER6
 		debug("print bb type = %s  slurm_conf.bb_type = %s",bb_tmp,  slurm_conf.bb_type);
 		if (!xstrcmp(bb_tmp, slurm_conf.bb_type)) {
-			slurm_thread_create(&slurmctld_config.thread_id_copy,
-						slurmctld_bb_exception_handler, NULL);
+			slurm_thread_create(&slurmctld_config.thread_id_bb_error,
+										slurmctld_bb_exception_handler, NULL);
 		}
-
-
 #endif
 		/*
 		 * create attached thread for node power management
@@ -810,6 +811,9 @@ int main(int argc, char **argv)
 		slurm_thread_join(slurmctld_config.thread_id_query);
 		slurm_thread_join(slurmctld_config.thread_id_copy);
 #endif		
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+		slurm_thread_join(slurmctld_config.thread_id_bb_error);
+#endif
 		slurm_mutex_lock(&slurmctld_config.acct_update_lock);
 		slurm_cond_broadcast(&slurmctld_config.acct_update_cond);
 		slurm_mutex_unlock(&slurmctld_config.acct_update_lock);
@@ -4188,6 +4192,19 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 		list_itr_t *job_iterator;
 	now = time(NULL);
 	while (1) {
+		slurm_mutex_lock(&shutdown_mutex);
+		if (!slurmctld_config.shutdown_time) {
+			struct timespec ts = {0, 0};
+			ts.tv_sec = time(NULL) + 1;
+			slurm_cond_timedwait(&shutdown_cond, &shutdown_mutex,
+					     &ts);
+		}
+		slurm_mutex_unlock(&shutdown_mutex);
+		if (slurmctld_config.shutdown_time) {
+			debug("Start shutting down slurmctld_bb_exception_handler thread");
+			break;
+		}
+
 		START_TIMER;
 		
 		if (slurm_conf.slurmctld_debug <= 3)
@@ -4207,15 +4224,15 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 				if ((job_ptr = find_job_record(bb_job_error->job_id)) == NULL) {
 					error("%s could not find JobId=%u",
 						__func__, bb_job_error->job_id);
-					//释放资源
+					//释放资源 	(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 					continue;
 				} else {
 					if( job_ptr->bb_clean_status == 0X01) { //SI取消失败
-						//释放资源
+						//释放资源 	(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 						//(void) bb_g_free_allocated_resources
 					} else if( job_ptr->bb_clean_status == 0X03){ //节点down
 						//需要手动处理
-						//不需要手动处理
+						//不需要手动处理 	(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 					}
 				}
 				list_remove(itr); //如果缓存组清理成功，则从链表中移除，后续手动修复也从该链表中获取
@@ -4223,14 +4240,6 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 			}
 			num = 0;
 			list_iterator_destroy(itr);
-		// 1、slurmd返回创建失败（creat_bb_job: falg设置为0x1，该种情况下只需要将BB系统资源加回来即可）
-		// 2、slurmd主动或者被动down（该种情况下难于区分是节点不响应还是手动置位，需要在管理节点定时检查是否回收完成：SI(没有stepd需要适配) R（走回收） SO（走回收）），同时加回来已经减去的BB资源
-
-		// if(slurmd返回创建失败 || slurmd主动或者被动down) {
-		// 	主动通过SN检测作业缓存组数据集释放bb资源
-		// 	//设置BB作业的清理状态
-		// 	(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
-		// }
 		}
 
 			unlock_slurmctld(job_write_lock);
