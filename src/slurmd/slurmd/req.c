@@ -254,6 +254,7 @@ static int _delete_bb_group_by_sn(uint32_t group_count, char **group_sn_array);
 static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_nodes);
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str);
 static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list);
+static int _delete_bb_group_by_id(uint32_t group_count, uint32_t *group_id_array);
 pthread_mutex_t bb_job_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 List bb_job_list = NULL;
 typedef struct bb_job_msg{

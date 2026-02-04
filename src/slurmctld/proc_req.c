@@ -2572,7 +2572,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	DEF_TIMERS;
 	complete_create_bb_msg_t *comp_msg = msg->data;
 	job_record_t *job_ptr = NULL;
-	uint32_t bb_clean_status = -1;
+	//uint32_t bb_clean_status = -1;
 	uint32_t node_idx = 0;
 	/* Locks: Write job, write node */
 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };

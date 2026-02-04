@@ -3239,7 +3239,7 @@ extern int kill_running_job_by_node_name(char *node_name)
 				job_ptr->bb_clean_status = 0x03;//BB资源需要删除校验，
 				bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
 				bb_job_error->bb_clean_status = 0x03;
-				bb_job_error->job_id = comp_msg->job_id;
+				bb_job_error->job_id = job_ptr->job_id;
 				list_append(bb_job_error_list, bb_job_error);
 #endif
 			}

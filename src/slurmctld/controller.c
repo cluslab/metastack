@@ -4182,14 +4182,14 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 {
 	time_t now = 0;
 	static time_t last_timelimit_time = 0;
-	int no_resp_msg_interval = 0;
+
 	int num = 0;
 	job_record_t *job_ptr = NULL;
 	DEF_TIMERS;
 	/* Locks: Read config and job */
 	slurmctld_lock_t job_write_lock = {
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
-		list_itr_t *job_iterator;
+	
 	now = time(NULL);
 	while (1) {
 		slurm_mutex_lock(&shutdown_mutex);
@@ -4207,12 +4207,6 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 
 		START_TIMER;
 		
-		if (slurm_conf.slurmctld_debug <= 3)
-			no_resp_msg_interval = 300;
-		else if (slurm_conf.slurmctld_debug == 4)
-			no_resp_msg_interval = 60;
-		else
-			no_resp_msg_interval = 1;
 		if (difftime(now, last_timelimit_time) >= PERIODIC_TIMEOUT * 10) {
 			lock_slurmctld(job_write_lock);
 		
