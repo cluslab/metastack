@@ -7876,6 +7876,7 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 		job_ptr->bit_flags |= JOB_FLAG_PART_BURSTBUFFER;
 	}
 	job_ptr->bb_clean_finish = false; /* Initialize cleanup status as false */
+	job_ptr->bb_enable_pb = false; /* Initialize bb_enable_pb  as false, after parastorbb vestiage set true */
 #endif
 	job_ptr->part_ptr_list = part_ptr_list;
 	job_ptr->bit_flags |= JOB_DEPENDENT;
