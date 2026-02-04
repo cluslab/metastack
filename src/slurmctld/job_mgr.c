@@ -235,6 +235,16 @@ bool purge_old_cache_job = false;
 /* Global variables */
 List   job_list = NULL;		/* job_record list */
 time_t last_job_update;		/* time of last update to job records */
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+//这里借用job_ptr的锁，这里会和job_ptr同时使用因此不需要额外新增锁
+List bb_job_error_list = NULL; /* burst buffer exception job list */
+
+static void _bb_job_error_list_delete(void *jobinfo)
+{
+	bb_job_error_msg_t *bb_job_error_msg = (bb_job_error_msg_t *)jobinfo;
+	xfree(bb_job_error_msg);
+}
+#endif
 
 list_t *purge_jobs_list = NULL;	/* job_record_t entries to free */
 
@@ -3064,6 +3074,9 @@ extern int kill_running_job_by_node_name(char *node_name)
 	node_record_t *node_ptr;
 	bitstr_t *orig_job_node_bitmap;
 	int kill_job_cnt = 0;
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+	bb_job_error_msg_t *bb_job_error = NULL;
+#endif
 	time_t now = time(NULL);
 
 	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
@@ -3219,11 +3232,15 @@ extern int kill_running_job_by_node_name(char *node_name)
 				job_completion_logger(job_ptr, false);
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
-#ifdef __METASTACK_NEW_BURSTBUFFER5
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 				//bb_g_free_allocated_resources(job_ptr);
 				//设置清理标志位在后台线程中进行处理,设置BB状态
 				//job_ptr->bb_free_flag = true;
 				job_ptr->bb_clean_status = 0x03;//BB资源需要删除校验，
+				bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+				bb_job_error->bb_clean_status = 0x03;
+				bb_job_error->job_id = comp_msg->job_id;
+				list_append(bb_job_error_list, bb_job_error);
 #endif
 			}
 		}
@@ -3512,7 +3529,11 @@ void init_job_conf(void)
 		cache_job_list = list_create(_move_to_purge_cache_jobs_list);
 	}
 #endif
-
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+	if (bb_job_error_list == NULL) {
+		bb_job_error_list = list_create(_bb_job_error_list_delete);
+	}
+#endif
 	last_job_update = time(NULL);
 
 	if (!purge_files_list) {
@@ -9711,16 +9732,6 @@ void job_time_limit(void)
 			}
 		}
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER5
-		设置新的线程，新线程不能阻塞restart过程
-		1、slurmd返回创建失败（creat_bb_job: falg设置为0x1，该种情况下只需要将BB系统资源加回来即可）
-		2、slurmd主动或者被动down（该种情况下难于区分是节点不响应还是手动置位，需要在管理节点定时检查是否回收完成：SI(没有stepd需要适配) R（走回收） SO（走回收）），同时加回来已经减去的BB资源
-		if(slurmd返回创建失败 || slurmd主动或者被动down) {
-			主动通过SN检测作业缓存组数据集释放bb资源
-			//设置BB作业的清理状态
-			(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
-		}
-#endif
 		/*
 		 * Features have been changed on some node, make job eligiable
 		 * to run and test to see if it can run now
@@ -10379,6 +10390,8 @@ static void _delete_job_common(job_record_t *job_ptr)
 		_remove_job_hash(job_ptr, JOB_HASH_ARRAY_TASK);
 	}
 }
+
+
 
 /*
  * Remove the job record from hash tables and append to purge_jobs_list.
@@ -18140,6 +18153,10 @@ void batch_requeue_fini(job_record_t *job_ptr)
 /* job_fini - free all memory associated with job records */
 void job_fini (void)
 {
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+	FREE_NULL_LIST(bb_job_error_list);
+#endif
+
 	FREE_NULL_LIST(job_list);
 	xfree(job_hash);
 	xfree(job_array_hash_j);

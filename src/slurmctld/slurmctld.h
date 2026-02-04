@@ -463,6 +463,10 @@ extern bool purge_old_cache_job;
 extern List job_list;			/* list of job_record entries */
 extern list_t *purge_jobs_list;		/* list of job_record_t to free */
 
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+//这里借用job_ptr的锁，这里会和job_ptr同时使用因此不需要额外新增锁
+List bb_job_error_list = NULL; /* burst buffer exception job list */
+#endif
 /*****************************************************************************\
  *  Consumable Resources parameters and data structures
 \*****************************************************************************/

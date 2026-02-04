@@ -334,6 +334,7 @@ extern void *slurmctld_state_save(void *no_data)
 	}
 }
 
+
 #ifdef __METASTACK_OPT_CACHE_QUERY
 
 /*_list_delete_cache_record: Clear the corresponding message 
