@@ -2571,10 +2571,9 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	int error_code = SLURM_SUCCESS;
 	DEF_TIMERS;
 	complete_create_bb_msg_t *comp_msg = msg->data;
-#ifdef __METASTACK_NEW_BURSTBUFFER3
 	job_record_t *job_ptr = NULL;
 	uint32_t bb_clean_status = -1;
-#endif
+	uint32_t node_idx = 0;
 	/* Locks: Write job, write node */
 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 
@@ -2637,26 +2636,48 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 
 	END_TIMER2(__func__);
 
-	/* 2. 根据bb_return_code进行处理 */
-	//BINBIN:
-	//1.取消成功直接更新资源
-	//2.失败了也调用更新资源
-	//3.成功创建，不用处理，正常流程
-	if (error_code) {
-		//需要加上已经清理的资源
-		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(error_code));
+	/* 
+	2. 根据bb_return_code进行处理
+		a.取消成功直接更新资源
+		b.失败了也调用更新资源
+		c.成功创建，不用处理，正常流程
+	*/
 
-		/* 创建BB失败（创建失败或者取消失败） */
+	if (error_code) {
+		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(error_code));
+		/* 失败场景1:创建BB失败（创建失败或者取消失败） */
 		if (error_code == ESLURM_BB_RESOURCE_SI_FAIL) {
-			drain_nodes(comp_msg->node_name, "Failed during the SI phase(create or cancel); manual cleanup may be required",
-						slurm_conf.slurm_user_id);
+			/* drain掉缓存组已使用无法释放的节点 */
+			hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
+			if (!job_hl) {
+				error("Unable to parse hostlist: `%s'", job_ptr->nodes);
+				return;
+			}
+			hostlist_sort(job_hl);
+			for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
+				uint32_t group_id = job_ptr->group_ids[i];
+				if (group_id != 0) {
+					for (int i = 0; i < job_ptr->max_clients_per_job; i++) {
+						char *hostname = hostlist_nth(job_hl, node_idx);
+						if (!hostname) {
+							error("获取hostname为空");
+							continue;;
+						}
+						drain_nodes(hostname, "Failed during the SI phase(create or cancel); manual cleanup may be required",
+							slurm_conf.slurm_user_id);
+						free(hostname);
+					}
+				} else {
+					node_idx += job_ptr->max_clients_per_job;
+				}
+			}
+			/* 更新bb资源数量 */
 			bb_g_free_allocated_resources(job_ptr);
 		}
-		/* 创建时成功被取消 */
+		/* 失败场景2:创建时成功被取消 */
 		else if (error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
 			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
-			//BINBIN:是否需要直接调用普通的teardown直接清理？
-			bb_g_free_allocated_resources(job_ptr);
+			bb_g_job_cancel(job_ptr);
 		}
 	}
 	slurm_send_rc_msg(msg, SLURM_SUCCESS);

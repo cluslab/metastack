@@ -3189,7 +3189,7 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 		uint32_t group_id = job_ptr->group_ids[i];
 		if (group_id == 0) {
 			for (int i = 0; i < max_node_cnt_per_group; i++) {
-				char *hostname = hostlist_nth(job_hl, i);
+				char *hostname = hostlist_nth(job_hl, node_idx);
 				if (!hostname) {
 					error("获取hostname为空");
 					rc = SLURM_ERROR;
@@ -3213,6 +3213,12 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 		if (dataset_id == 0) {
 			free_datasets_cnt++;
 		}
+	}
+
+	char *str = hostlist_ranged_string_xmalloc(free_hl);
+	if (str) {
+		debug("BB-----释放没有占用节点: %s\n", str);
+		xfree(str);
 	}
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
