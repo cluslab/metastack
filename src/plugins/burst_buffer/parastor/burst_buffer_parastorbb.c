@@ -229,6 +229,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr);
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr);
 static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
 	uint32_t free_group_cnt, uint32_t free_dataset_cnt);
+static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr);
+static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
+	uint32_t free_group_cnt, uint32_t free_dataset_cnt);
 // static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
 // static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
 static int _bb_get_parastors_state(void);
