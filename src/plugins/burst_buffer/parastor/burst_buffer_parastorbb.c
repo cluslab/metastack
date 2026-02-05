@@ -2589,9 +2589,10 @@ static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, ho
 	//BINBIN:子豪进行bit_map处理，free_hl为需要释放的节点
 
 #endif
-	if (bb_job)
-		slurm_thread_create_detached(_start_teardown, bb_job);
-	job_ptr->bb_clean_finish = true;
+	//不能走bb_job，会释放掉bb作业结构体
+	// if (bb_job)
+	// 	slurm_thread_create_detached(_start_teardown, bb_job);
+	// job_ptr->bb_clean_finish = true;
 }
 
 
