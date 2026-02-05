@@ -426,9 +426,11 @@ typedef enum {
 	ESLURMD_INVALID_WATCH_DOG,
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-	ESLURM_BB_RESOURCE_LIMIT,
+	ESLURM_BB_RESOURCE_LIMIT = 20000,
 	ESLURM_BB_RESOURCE_SI_CANCEL, /* Successfully canceled the assignment in the SI phase  */
-	ESLURM_BB_RESOURCE_SI_FAIL /* SI stage failure (failed to create or cancel job) */
+	ESLURM_BB_RESOURCE_SI_FAIL, /* SI stage failure (failed to create or cancel job) */
+	ELSURM_BB_RESOURCE_UNKNOW,
+	ELSURM_BB_RESOURCE_ERROR
 #endif
 } slurm_err_t;
 

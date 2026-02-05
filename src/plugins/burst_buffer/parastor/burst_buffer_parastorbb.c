@@ -239,6 +239,7 @@ static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config);
 static void _bb_min_config_free(bb_minimal_config_t * config);
 static void *_cleanup_bb_resources_from_alloc(void *x);
 static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc);
+static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str);
 static int _get_parastor_thread_cnt(void)
 {
 	int cnt;
@@ -3499,3 +3500,184 @@ extern uint32_t bb_p_get_node_quota(void)
 	return bb_state.bb_config.max_clients_join;
 }
 #endif
+
+
+
+/**
+ * @brief 根据job_ptr中group_sn数组和need_group_counts,查询group_id
+ * @param job_ptr
+ * @return 查询成功返回group_id数组,大小为need_group_counts,为0的值为缓存组不存在;失败则返回NULL
+ */
+extern uint32_t *bb_p_query_bb_groupid_by_sn(job_record_t *job_ptr)
+{
+	int qry_rc = 0;
+	uint32_t tmp_groupid = 0;
+	uint32_t *ret_groupid_arr = NULL;
+
+	if (!job_ptr || job_ptr->need_group_counts <= 0) {
+		error("BB-----无效的参数: job_ptr为空或need_group_counts无效");
+		return NULL;
+	}
+
+	ret_groupid_arr = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+	for (int i = 0;i < job_ptr->need_group_counts;i++) {
+
+		for (int j = 0;j < bb_state.bb_config.retry_count;j++) {
+			slurm_mutex_lock(&bb_state.bb_mutex);
+			qry_rc = query_bb_groupid_by_sn(job_ptr->group_sn[i], &tmp_groupid, &bb_state.bb_config);
+			slurm_mutex_unlock(&bb_state.bb_mutex);
+			if (qry_rc == -3) {
+				/* 超时重试 */
+				debug("BB-----查询缓存组id超时,进行第%u次重试", j + 1);
+				continue;
+			} else {
+				break;
+			}
+		}
+		switch (qry_rc) {
+		case 0:
+			ret_groupid_arr[i] = tmp_groupid;
+			break;
+		case 1:
+			ret_groupid_arr[i] = 0;
+			break;
+		case -3:
+			error("BB-----查询缓存组id超时,重试%d次后仍失败", bb_state.bb_config.retry_count);
+			goto cleanup_error;
+		default:
+			error("接口错误,return code为:%d", qry_rc);
+			goto cleanup_error;
+		}
+	}
+	return ret_groupid_arr;
+cleanup_error:
+	xfree(ret_groupid_arr);
+	return NULL;
+}
+
+
+
+/**
+ * @brief 根据job_ptr中group_ids数组和pfs,查询datasets_id
+ * @param job_ptr 
+ * @return 查询成功返回dataset_id数组,大小为缓存组个数*路径个数,为0的值为数据集规则不存在;失败则返回NULL
+ */
+extern uint32_t *bb_p_query_bb_datasetid_by_sn(job_record_t *job_ptr)
+{
+	int qry_rc = 0;
+	uint32_t tmp_datasetid = 0;
+	uint32_t *ret_datasetid_arr = NULL;
+	uint32_t dataset_cnt = 0;
+	uint32_t pfs_cnt = 0;
+	char **pfs_arr = NULL;
+
+	if (!job_ptr || job_ptr->need_group_counts == 0 || !job_ptr->pfs) {
+		error("BB-----无效的参数");
+		return NULL;
+	}
+	pfs_arr = _convert_path_string_to_arr(&pfs_cnt, job_ptr->pfs);
+	if (!pfs_arr || pfs_cnt == 0) {
+		error("BB-----get pfs array  error");
+		return NULL;
+	}
+
+	dataset_cnt = job_ptr->need_group_counts * pfs_cnt;
+	ret_datasetid_arr = xmalloc(dataset_cnt * sizeof(uint32_t));
+
+
+	for (uint32_t grp_idx = 0; grp_idx < job_ptr->need_group_counts; grp_idx++) {
+		for (int pfs_idx = 0; pfs_idx < pfs_cnt; pfs_idx++) {
+			for (int j = 0;j < bb_state.bb_config.retry_count;j++) {
+				if (job_ptr->group_ids[grp_idx] != 0) {
+					slurm_mutex_lock(&bb_state.bb_mutex);
+					qry_rc = query_datasetid_by_path_groupid(job_ptr->group_ids[grp_idx], pfs_arr[pfs_idx], &tmp_datasetid, &bb_state.bb_config);
+					slurm_mutex_unlock(&bb_state.bb_mutex);
+				} else {
+					continue;
+				}
+
+				if (qry_rc == -3) {
+					/* 超时重试 */
+					debug("BB-----查询dataset_id超时,进行第%u次重试", j + 1);
+					continue;
+				} else {
+					break;
+				}
+			}
+
+			switch (qry_rc) {
+			case 0:
+				ret_datasetid_arr[grp_idx * pfs_cnt + pfs_idx] = tmp_datasetid;
+				break;
+			case 1:
+				ret_datasetid_arr[grp_idx * pfs_cnt + pfs_idx] = 0;
+				break;
+			case -3:
+				error("BB-----查询缓存组id超时,重试%d次后仍失败", bb_state.bb_config.retry_count);
+				goto cleanup_error;
+			default:
+				error("接口错误,return code为:%d", qry_rc);
+				goto cleanup_error;
+			}
+		}
+	}
+	xfree(pfs_arr);
+	return ret_datasetid_arr;
+cleanup_error:
+	xfree(pfs_arr);
+	xfree(ret_datasetid_arr);
+	return NULL;
+}
+
+
+static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
+{
+	if (!path_str || *path_count == 0) {
+		error("params error");
+		return NULL;
+	}
+	char **path_array = NULL;
+	char *path_copy = xstrdup(path_str);
+	char *save_ptr = NULL;
+	char *token = strtok_r(path_copy, ",", &save_ptr);
+	uint32_t count = 0;
+	
+	while (token) {
+		// 跳过空字符串
+		while (*token == ' ') token++;
+		if (*token != '\0') {
+			count++;
+		}
+		token = strtok_r(NULL, ",", &save_ptr);
+	}
+	xfree(path_copy);
+	if (count == 0) {
+		if (path_count)
+			*path_count = 0;
+		return NULL;
+	} else if (count != *path_count) {
+		error("	The entered count does not match the actual calculated count, set entered count from %u to %u", *path_count, count);
+		*path_count = count;
+	}
+	
+	path_array = xmalloc(count * sizeof(char *));
+	path_copy = xstrdup(path_str);
+	save_ptr = NULL;
+	token = strtok_r(path_copy, ",", &save_ptr);
+	uint32_t idx = 0;
+	
+	while (token && idx < count) {
+		while (*token == ' ') token++;
+		char *end = token + strlen(token) - 1;
+		while (end > token && *end == ' ') {
+			*end = '\0';
+			end--;
+		}
+		if (*token != '\0') {
+			path_array[idx++] = xstrdup(token);
+		}
+		token = strtok_r(NULL, ",", &save_ptr);
+	}
+	xfree(path_copy);
+	return path_array;
+}

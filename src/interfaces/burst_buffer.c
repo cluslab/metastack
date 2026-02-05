@@ -65,8 +65,10 @@ typedef struct slurm_bb_ops {
 					 uint32_t uid, uint32_t gid);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	int		(*state_pack)	(uid_t uid, buf_t *buffer,
-					 uint16_t protocol_version, bool parastor);
+		uint16_t protocol_version, bool parastor);
 	int		(*free_allocated_resources)	(uint32_t job_id);
+	uint32_t *(*query_bb_groupid_by_sn)(job_record_t *job_ptr);
+	uint32_t *(*query_bb_datasetid_by_sn)(job_record_t *job_ptr);
 #endif
 	int		(*reconfig)	(void);
 	int		(*job_validate)	(job_desc_msg_t *job_desc,
@@ -106,6 +108,8 @@ static const char *syms[] = {
 	"bb_p_state_pack",
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	"bb_p_free_allocated_resources",
+	"bb_p_query_bb_groupid_by_sn"
+	"bb_p_query_bb_datasetid_by_sn"
 #endif
 	"bb_p_reconfig",
 	"bb_p_job_validate",
@@ -860,4 +864,41 @@ extern uint32_t bb_g_free_allocated_resources(job_record_t *job_ptr)
 
 	return rc;
 }
+
+extern uint32_t *bb_g_query_bb_groupid_by_sn(job_record_t *job_ptr)
+{
+	DEF_TIMERS;
+	int i;
+	uint32_t *tmp = NULL;
+
+	START_TIMER;
+	xassert(g_context_cnt >= 0);
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++) {
+		tmp = (*(ops[i].query_bb_groupid_by_sn))(job_ptr);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return tmp;
+}
+
+extern uint32_t *bb_g_query_bb_datasetid_by_sn(job_record_t *job_ptr)
+{
+	DEF_TIMERS;
+	int i;
+	uint32_t *tmp = NULL;
+
+	START_TIMER;
+	xassert(g_context_cnt >= 0);
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++) {
+		tmp = (*(ops[i].query_bb_groupid_by_sn))(job_ptr);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return tmp;
+}
+
 #endif

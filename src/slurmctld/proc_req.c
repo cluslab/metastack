@@ -2595,18 +2595,19 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	}
 	if (error_code == ESLURM_BB_RESOURCE_SI_FAIL) {
 		bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-		bb_job_error->bb_clean_status = 0x01;
+		bb_job_error->bb_clean_status = ESLURM_BB_RESOURCE_SI_FAIL;
 		bb_job_error->job_id = comp_msg->job_id;
 		list_append(bb_job_error_list, bb_job_error);
-		job_ptr->bb_clean_status = 0x01;
+		job_ptr->bb_clean_status = ESLURM_BB_RESOURCE_SI_FAIL;
 
 
 	} else if (error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
-		job_ptr->bb_clean_status = 0x02;//不在线程中单独处理
+		job_ptr->bb_clean_status = ESLURM_BB_RESOURCE_SI_CANCEL;//取消成功，不在线程中单独处理
 	}
 	/* 防止杀作业流程先于该流程触发，导致在terminal_job中job_ptr->bb_ready=fasle，而在本流程中设置job_ptr->bb_ready=true，导致两边都为做清理*/
+	/*  发送kill作业时已经收到创建已经完成，直接走bb_g_cancel流程*/
 	if(job_ptr->bb_kill_flag == true && job_ptr->bb_ready) {
-		job_ptr->bb_clean_status = 0x02; //不在线程中单独处理
+		job_ptr->bb_clean_status = ESLURM_BB_RESOURCE_SI_CANCEL; //不在线程中单独处理
 	}
 
 	job_ptr->need_group_counts = comp_msg->groups_cnt;
@@ -2653,10 +2654,10 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		c.成功创建，不用处理，正常流程
 	*/
 
-	if (error_code) {
+	if (job_ptr->bb_clean_status) {
 		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(error_code));
 		/* 失败场景1:创建BB失败（创建失败或者取消失败） */
-		if (error_code == ESLURM_BB_RESOURCE_SI_FAIL) {
+		if (job_ptr->bb_clean_status == ESLURM_BB_RESOURCE_SI_FAIL) {
 			/* drain掉缓存组已使用无法释放的节点 */
 			hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
 			if (!job_hl) {
@@ -2685,7 +2686,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 			bb_g_free_allocated_resources(job_ptr);
 		}
 		/* 失败场景2:创建时成功被取消 */
-		else if (job_ptr->bb_clean_status == 0X02) {
+		else if (job_ptr->bb_clean_status == ESLURM_BB_RESOURCE_SI_CANCEL) {
 			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
 			bb_g_job_cancel(job_ptr);
 			job_ptr->bb_ready = false;

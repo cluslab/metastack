@@ -3236,9 +3236,9 @@ extern int kill_running_job_by_node_name(char *node_name)
 				//bb_g_free_allocated_resources(job_ptr);
 				//设置清理标志位在后台线程中进行处理,设置BB状态
 				//job_ptr->bb_free_flag = true;
-				job_ptr->bb_clean_status = 0x03;//BB资源需要删除校验，
+				job_ptr->bb_clean_status = ELSURM_BB_RESOURCE_UNKNOW;//BB资源需要删除校验，
 				bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-				bb_job_error->bb_clean_status = 0x03;
+				bb_job_error->bb_clean_status = ELSURM_BB_RESOURCE_UNKNOW;
 				bb_job_error->job_id = job_ptr->job_id;
 				list_append(bb_job_error_list, bb_job_error);
 #endif
