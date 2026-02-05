@@ -2563,7 +2563,7 @@ static void _slurm_rpc_complete_job_allocation(slurm_msg_t *msg)
 	log_flag(TRACE_JOBS, "%s: return %pJ", __func__, job_ptr);
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER5
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 /* _slurm_rpc_complete_create_bb - process RPC to note the
  *	completion of a crete burst buffer */
 static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
@@ -2572,11 +2572,11 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	DEF_TIMERS;
 	complete_create_bb_msg_t *comp_msg = msg->data;
 	job_record_t *job_ptr = NULL;
-	uint32_t bb_clean_status = -1;
+	//uint32_t bb_clean_status = -1;
 	uint32_t node_idx = 0;
 	/* Locks: Write job, write node */
 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
-
+	bb_job_error_msg_t *bb_job_error = NULL;
 	/* init */
 	START_TIMER;
 	debug3("Processing RPC details: REQUEST_COMPLETE_CREATE_BB from JobId=%u",
@@ -2594,9 +2594,19 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		return;
 	}
 	if (error_code == ESLURM_BB_RESOURCE_SI_FAIL) {
+		bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+		bb_job_error->bb_clean_status = 0x01;
+		bb_job_error->job_id = comp_msg->job_id;
+		list_append(bb_job_error_list, bb_job_error);
 		job_ptr->bb_clean_status = 0x01;
+
+
 	} else if (error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
-		job_ptr->bb_clean_status = 0x02;
+		job_ptr->bb_clean_status = 0x02;//不在线程中单独处理
+	}
+	/* 防止杀作业流程先于该流程触发，导致在terminal_job中job_ptr->bb_ready=fasle，而在本流程中设置job_ptr->bb_ready=true，导致两边都为做清理*/
+	if(job_ptr->bb_kill_flag == true && job_ptr->bb_ready) {
+		job_ptr->bb_clean_status = 0x02; //不在线程中单独处理
 	}
 
 	job_ptr->need_group_counts = comp_msg->groups_cnt;
@@ -2675,9 +2685,10 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 			bb_g_free_allocated_resources(job_ptr);
 		}
 		/* 失败场景2:创建时成功被取消 */
-		else if (error_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
+		else if (job_ptr->bb_clean_status == 0X02) {
 			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
 			bb_g_job_cancel(job_ptr);
+			job_ptr->bb_ready = false;
 		}
 	}
 	slurm_send_rc_msg(msg, SLURM_SUCCESS);

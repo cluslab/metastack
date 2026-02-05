@@ -2379,7 +2379,7 @@ extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config)
             ret = BB_API_ERROR;
         }
         if (bb_group->group_sn && bb_group->id != group_id) {
-            error("get group id error, the group_id  is %s, but return group_sn is %s", group_id, bb_group->id);
+            error("get group id error, the group_id  is %d, but return group_sn is %d", group_id, bb_group->id);
             ret = SLURM_ERROR;
         }
     }

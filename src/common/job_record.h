@@ -571,6 +571,14 @@ struct job_record {
 
 };
 
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+//这里借用job_ptr的锁，这里会和job_ptr同时使用因此不需要额外新增锁
+typedef struct bb_job_error_msg_t{
+	uint32_t job_id;
+	uint32_t bb_clean_status;
+} bb_job_error_msg_t;
+#endif
+
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED
 typedef struct RR_job_record RR_job_record_t;
 struct RR_job_record {
