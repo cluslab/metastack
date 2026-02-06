@@ -16851,58 +16851,58 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	/* Copy burst buffer cleanup fields */
-	msg->group_count = 0;
-	msg->dataset_count = 0;
-	msg->group_sn = NULL;
-	msg->group_ids = NULL;
-	msg->dataset_ids = NULL;
-	msg->task_ids = NULL;
-	msg->pfs = NULL;
-	msg->pfs_cnt = 0;
+	// msg->group_count = 0;
+	// msg->dataset_count = 0;
+	// msg->group_sn = NULL;
+	// msg->group_ids = NULL;
+	// msg->dataset_ids = NULL;
+	// msg->task_ids = NULL;
+	// msg->pfs = NULL;
+	// msg->pfs_cnt = 0;
 	msg->bb_enable_pb = job_ptr->bb_enable_pb;
 	msg->real_used_bb = job_ptr->real_used_bb;
 	msg->bb_ready = job_ptr->bb_ready;
 
-	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) {
-		if (job_ptr->need_group_counts > 0 && job_ptr->group_sn) {
-			msg->group_count = job_ptr->need_group_counts;
-			msg->group_sn = xmalloc(msg->group_count * sizeof(char *));
-			for (uint32_t i = 0; i < msg->group_count; i++) {
-				if (job_ptr->group_sn[i])
-					msg->group_sn[i] = xstrdup(job_ptr->group_sn[i]);
-				else
-					msg->group_sn[i] = NULL;
-			}
-		}
+	//if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) {
+		// if (job_ptr->need_group_counts > 0 && job_ptr->group_sn) {
+		// 	msg->group_count = job_ptr->need_group_counts;
+		// 	msg->group_sn = xmalloc(msg->group_count * sizeof(char *));
+		// 	for (uint32_t i = 0; i < msg->group_count; i++) {
+		// 		if (job_ptr->group_sn[i])
+		// 			msg->group_sn[i] = xstrdup(job_ptr->group_sn[i]);
+		// 		else
+		// 			msg->group_sn[i] = NULL;
+		// 	}
+		// }
 
-		if (job_ptr->need_group_counts > 0 && job_ptr->group_ids) {
-			msg->group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
-			memcpy(msg->group_ids, job_ptr->group_ids,
-				job_ptr->need_group_counts * sizeof(uint32_t));
-		}
+		// if (job_ptr->need_group_counts > 0 && job_ptr->group_ids) {
+		// 	msg->group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+		// 	memcpy(msg->group_ids, job_ptr->group_ids,
+		// 		job_ptr->need_group_counts * sizeof(uint32_t));
+		// }
 
-		if (job_ptr->need_database_counts > 0 && job_ptr->dataset_ids) {
-			msg->dataset_count = job_ptr->need_database_counts;
-			msg->dataset_ids = xmalloc(msg->dataset_count * sizeof(uint32_t));
-			memcpy(msg->dataset_ids, job_ptr->dataset_ids,
-				msg->dataset_count * sizeof(uint32_t));
-		}
+		// if (job_ptr->need_database_counts > 0 && job_ptr->dataset_ids) {
+		// 	msg->dataset_count = job_ptr->need_database_counts;
+		// 	msg->dataset_ids = xmalloc(msg->dataset_count * sizeof(uint32_t));
+		// 	memcpy(msg->dataset_ids, job_ptr->dataset_ids,
+		// 		msg->dataset_count * sizeof(uint32_t));
+		// }
 
-		if (job_ptr->need_database_counts > 0 && job_ptr->task_ids) {
-			msg->task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
-			memcpy(msg->task_ids, job_ptr->task_ids,
-				job_ptr->need_database_counts * sizeof(uint32_t));
-		}
+		// if (job_ptr->need_database_counts > 0 && job_ptr->task_ids) {
+		// 	msg->task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+		// 	memcpy(msg->task_ids, job_ptr->task_ids,
+		// 		job_ptr->need_database_counts * sizeof(uint32_t));
+		// }
 
-		if (job_ptr->pfs) {
-			msg->pfs = xstrdup(job_ptr->pfs);
-			msg->pfs_cnt = job_ptr->pfs_cnt;
-		}
-		if(job_ptr->bb_enable_pb && job_ptr->bb_ready) {
-			job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
-		}
-		msg->job_nodes = xstrdup(job_ptr->nodes);
-	}
+		// if (job_ptr->pfs) {
+		// 	msg->pfs = xstrdup(job_ptr->pfs);
+		// 	msg->pfs_cnt = job_ptr->pfs_cnt;
+		// }
+		// if(job_ptr->bb_enable_pb && job_ptr->bb_ready) {
+		// 	job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
+		// }
+		//msg->job_nodes = xstrdup(job_ptr->nodes);
+	//}
 
 #endif
 

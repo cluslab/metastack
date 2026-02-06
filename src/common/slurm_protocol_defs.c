@@ -2208,16 +2208,16 @@ extern void slurm_free_kill_job_msg(kill_job_msg_t * msg)
 		xfree(msg->work_dir);
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 		/* Free burst buffer cleanup fields */
-		if (msg->group_sn) {
-			for (i = 0; i < msg->group_count; i++)
-				xfree(msg->group_sn[i]);
-			xfree(msg->group_sn);
-		}
-		xfree(msg->group_ids);
-		xfree(msg->dataset_ids);
-		xfree(msg->task_ids);
-		xfree(msg->pfs);
-		xfree(msg->job_nodes);
+		// if (msg->group_sn) {
+		// 	for (i = 0; i < msg->group_count; i++)
+		// 		xfree(msg->group_sn[i]);
+		// 	xfree(msg->group_sn);
+		// }
+		// xfree(msg->group_ids);
+		// xfree(msg->dataset_ids);
+		// xfree(msg->task_ids);
+		// xfree(msg->pfs);
+		// xfree(msg->job_nodes);
 #endif
 		xfree(msg);
 	}
