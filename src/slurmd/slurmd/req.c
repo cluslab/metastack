@@ -6877,6 +6877,15 @@ _rpc_terminate_job(slurm_msg_t *msg)
 		debug("credential for job %u revoked", req->step_id.job_id);
 	}
 
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	if(req->bb_enable_pb && req->real_used_bb) {
+		slurm_mutex_lock(&bb_job_list_mutex);
+		if((clean_bb_job_process(req->step_id.job_id)== -1) || req->bb_ready)
+		bb_rc = _rpc_clean_bb(req);
+		slurm_mutex_unlock(&bb_job_list_mutex);	
+	}  else
+		bb_rc = SLURM_SUCCESS; 
+#endif
 	if (_prolog_is_running(req->step_id.job_id)) {
 		if (msg->conn_fd >= 0) {
 			/* If the step hasn't finished running the prolog
@@ -6978,23 +6987,20 @@ _rpc_terminate_job(slurm_msg_t *msg)
 		 * could remain "completing" unnecessarily, until the request
 		 * to terminate is resent.
 		 */
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 		if (msg->conn_fd < 0) {
 			/* The epilog complete message processing on
 			 * slurmctld is equivalent to that of a
 			 * ESLURMD_KILL_JOB_ALREADY_COMPLETE reply above */
-#ifdef __METASTACK_NEW_BURSTBUFFER4
-			if(req->bb_enable_pb && req->real_used_bb) {
-				slurm_mutex_lock(&bb_job_list_mutex);
-				if((clean_bb_job_process(req->step_id.job_id)== -1) || req->bb_ready)
-				bb_rc = _rpc_clean_bb(req);
-				slurm_mutex_unlock(&bb_job_list_mutex);	
-			}  else
-				bb_rc = SLURM_SUCCESS; 
-
 			epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
-#endif	
-		}
+		} else {
 
+			if(req->bb_enable_pb && req->real_used_bb) {
+				debug("No jobs may be running on the current node");
+				bb_clean_complete_send(req->step_id.job_id, req->nodes, rc, bb_rc);
+			}
+		}
+#endif
 		_launch_complete_rm(req->step_id.job_id);
 		return;
 	}
@@ -7087,21 +7093,16 @@ _rpc_terminate_job(slurm_msg_t *msg)
 done:
 	_wait_state_completed(req->step_id.job_id, 5);
 	_waiter_complete(req->step_id.job_id);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
-#ifdef __METASTACK_NEW_BURSTBUFFER4
-		if(req->bb_enable_pb && req->real_used_bb) {
-			slurm_mutex_lock(&bb_job_list_mutex);
-			if((clean_bb_job_process(req->step_id.job_id)== -1) || req->bb_ready)
-			bb_rc = _rpc_clean_bb(req);
-			slurm_mutex_unlock(&bb_job_list_mutex);	
-		}  else
-			bb_rc = SLURM_SUCCESS; 
-
 		epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
-#endif
+	} else {  
+		//如果epilog_complete触发向slurmctld发送信息的流程，那么这里就不需要再发送信息了
+		if(req->bb_enable_pb && req->real_used_bb) {
+			
+		}
 	}
-
+#endif
 }
 
 /*

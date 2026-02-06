@@ -2396,6 +2396,116 @@ static void _slurm_rpc_dump_partitions(slurm_msg_t *msg)
 	}
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+/* _slurm_rpc_bb_complete - process RPC noting the completion of
+ * the bb denoting the completion of a job it its entirety */
+static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
+{
+	static int active_rpc_cnt = 0;
+	static time_t config_update = 0;
+	static bool defer_sched = false;
+	bb_job_error_msg_t *bb_job_error = NULL;
+	DEF_TIMERS;
+	/* Locks: Read configuration, write job, write node */
+	slurmctld_lock_t job_write_lock = {
+		READ_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
+	epilog_complete_msg_t *epilog_msg = msg->data;
+	job_record_t *job_ptr;
+	bool run_scheduler = false;
+
+	START_TIMER;
+	if (!validate_slurm_user(msg->auth_uid)) {
+		error("Security violation, EPILOG_COMPLETE RPC from uid=%u",
+		      msg->auth_uid);
+		return;
+	}
+
+	/* Only throttle on non-composite messages, the lock should
+	 * already be set earlier. */
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
+		if (config_update != slurm_conf.last_update) {
+			defer_sched = (xstrcasestr(slurm_conf.sched_params,
+						   "defer"));
+			config_update = slurm_conf.last_update;
+		}
+
+		_throttle_start(&active_rpc_cnt);
+		lock_slurmctld(job_write_lock);
+	}
+
+	log_flag(ROUTE, "%s: node_name = %s, JobId=%u",
+		 __func__, epilog_msg->node_name, epilog_msg->job_id);
+
+	// if (job_epilog_complete(epilog_msg->job_id, epilog_msg->node_name,
+	// 			epilog_msg->return_code))
+	// 	run_scheduler = true;
+
+	job_ptr = find_job_record(epilog_msg->job_id);
+	if (!job_ptr) {
+		error("The job_ptr of job %u does not exist", comp_msg->job_id);
+		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+		return;
+	}
+
+	if (epilog_msg->bb_return_code) {
+		if(job_ptr->bb_ready) {
+			if (epilog_msg->bb_return_code == ESLURM_BB_RESOURCE_SI_FAIL ) {
+				bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+				bb_job_error->bb_clean_status = 0x01;
+				bb_job_error->job_id = comp_msg->job_id;
+				list_append(bb_job_error_list, bb_job_error);
+				job_ptr->bb_clean_status = 0x01;
+			} else if (epilog_msg->bb_return_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
+				job_ptr->bb_clean_status = 0x02;//不在线程中单独处理
+			}
+			/* 防止杀作业流程先于该流程触发，导致在terminal_job中job_ptr->bb_ready=fasle，而在本流程中设置job_ptr->bb_ready=true，导致两边都为做清理*/
+			if(job_ptr->bb_kill_flag == true && job_ptr->bb_ready) {
+				job_ptr->bb_clean_status = 0x02; //不在线程中单独处理
+			}	
+		}
+	} 
+	
+	if(job_ptr->bb_clean_status == 0x02 || job_ptr->bb_enable_pb && 
+				job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
+		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
+		(void) bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
+	}	   	
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
+		unlock_slurmctld(job_write_lock);
+		_throttle_fini(&active_rpc_cnt);
+	}
+
+	END_TIMER2(__func__);
+
+	// /* Functions below provide their own locking */
+	// if (!(msg->flags & CTLD_QUEUE_PROCESSING) && run_scheduler) {
+	// 	/*
+	// 	 * In defer mode, avoid triggering the scheduler logic
+	// 	 * for every epilog complete message.
+	// 	 * As one epilog message is sent from every node of each
+	// 	 * job at termination, the number of simultaneous schedule
+	// 	 * calls can be very high for large machine or large number
+	// 	 * of managed jobs.
+	// 	 */
+	// 	if (!LOTS_OF_AGENTS && !defer_sched)
+	// 		schedule(false);	/* Has own locking */
+	// 	else
+	// 		queue_job_scheduler();
+	// 	schedule_node_save();		/* Has own locking */
+	// 	schedule_job_save();		/* Has own locking */
+	// }
+
+	/*
+	 * Pre-24.05 no response was expected by the sender, and an error
+	 * would be printed if we attempted to send one here.
+	 * Simplify this once 23.11 is no longer supported.
+	 */
+	if (msg->protocol_version >= SLURM_24_05_PROTOCOL_VERSION)
+		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+
+}
+#endif
+
 /* _slurm_rpc_epilog_complete - process RPC noting the completion of
  * the epilog denoting the completion of a job it its entirety */
 static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
@@ -2448,7 +2558,6 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		debug2("%s: %pJ Node=%s %s",
 		       __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 #ifdef __METASTACK_NEW_BURSTBUFFER4	
-   
 	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 		(void) bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
@@ -7929,7 +8038,7 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 		.msg_type = REQUEST_COMPLETE_JOB_ALLOCATION,
 		.func = _slurm_rpc_complete_job_allocation,
 	},{
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 		.msg_type = REQUEST_COMPLETE_CREATE_BB,
 		.func =_slurm_rpc_complete_create_bb,
 		.queue_enabled = true,
@@ -7937,6 +8046,16 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 			.job = WRITE_LOCK,
 		},
 	},{
+		.msg_type = REQUEST_COMPLETE_TERMINATE_BB,
+		.max_per_cycle = 256,
+		.func = _slurm_rpc_epilog_complete,
+		.queue_enabled = true,
+		.locks = {
+			.conf = READ_LOCK,
+			.job = WRITE_LOCK,
+			.node = WRITE_LOCK,
+		},
+	},{	
 #endif
 		.msg_type = REQUEST_COMPLETE_PROLOG,
 		.func = _slurm_rpc_complete_prolog,

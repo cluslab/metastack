@@ -2588,7 +2588,40 @@ static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, ho
 	bb_state.bb_config.used_datasets -= free_dataset_cnt;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 	//BINBIN:子豪进行bit_map处理，free_hl为需要释放的节点
+	if (free_hl) {
+		char *host = NULL;
+		node_record_t *node_ptr = NULL;
 
+		hostlist_iterator_t itr = hostlist_iterator_create(free_hl);
+
+		while ((host = hostlist_next(itr))) {
+			// 根据主机名查找全局节点记录
+			node_ptr = find_node_record(host);
+
+			if (node_ptr) {
+				// 安全扣减计数，防止下溢 (Underflow Protection)
+				if (node_ptr->bb_cache_grp_cnt > 0) {
+					node_ptr->bb_cache_grp_cnt--;
+					debug3("Teardown(Abort): Node %s BB count decremented to %u for job %pJ",
+						   node_ptr->name, node_ptr->bb_cache_grp_cnt, job_ptr);
+				} else {
+					// 逻辑异常记录：本来是0还在减
+					error("Error: Teardown(Abort): Node %s BB count underflow attempt for job %pJ",
+						  node_ptr->name, job_ptr);
+				}
+			} else {
+				// 异常：调度器分配了节点，但该节点不在系统表中
+				debug("Teardown(Abort): Host %s in free_hl not found in node record table for job %pJ", 
+					  host, job_ptr);
+			}
+
+			// hostlist_next 返回的字符串必须释放
+			free(host); 
+		}
+
+		// 销毁迭代器
+		hostlist_iterator_destroy(itr);
+	}
 #endif
 	//不能走bb_job，会释放掉bb作业结构体
 	// if (bb_job)

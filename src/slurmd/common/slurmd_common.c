@@ -142,6 +142,38 @@ fini:
 }
 
 
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int rc, int bb_rc)
+{
+	slurm_msg_t msg;
+	epilog_complete_msg_t req;
+	int ctld_rc;
+	if(!node_list)
+		return SLURM_ERROR;
+	_sync_messages_kill(node_list);
+	slurm_msg_t_init(&msg);
+	memset(&req, 0, sizeof(req));	
+	req.bb_return_code = bb_rc;
+	req.node_name = conf->node_name;
+	msg.msg_type = REQUEST_COMPLETE_TERMINATE_BB;
+	msg.data = &req;
+	/*
+	 * Note: Return code is only used within the communication layer
+	 * to back off the send. No other return code should be seen here.
+	 * slurmctld will resend TERMINATE_JOB request if message send fails.
+	 */
+	if (slurm_send_recv_controller_rc_msg(&msg, &ctld_rc,
+					      working_cluster_rec) < 0) {
+		error("Unable to send bb complete message: %m");
+		return SLURM_ERROR;
+	}
+
+	debug("JobId=%u: sent bb complete msg: rc = %d", jobid, rc);
+
+	return SLURM_SUCCESS;	
+
+}
+#endif
 /*
  * Send epilog complete message to currently active controller.
  * Returns SLURM_SUCCESS if message sent successfully,
