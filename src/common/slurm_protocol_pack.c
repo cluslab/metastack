@@ -4027,6 +4027,45 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
+
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+static void _pack_bb_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
+		      uint16_t protocol_version)
+{
+	xassert(msg);
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		pack32((uint32_t)msg->job_id, buffer);
+		pack32((uint32_t)msg->bb_return_code, buffer);
+	} 
+#endif
+}
+
+static int
+_unpack_bb_comp_msg(epilog_complete_msg_t ** msg, buf_t *buffer,
+			uint16_t protocol_version)
+{
+	epilog_complete_msg_t *tmp_ptr;
+	/* alloc memory for structure */
+	xassert(msg);
+	tmp_ptr = xmalloc(sizeof(epilog_complete_msg_t));
+	*msg = tmp_ptr;
+#ifdef __META_PROTOCOL
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		safe_unpack32(&(tmp_ptr->job_id), buffer);
+		safe_unpack32(&(tmp_ptr->return_code), buffer);
+	} 
+#endif
+	return SLURM_SUCCESS;
+
+unpack_error:
+	slurm_free_bb_complete_msg(tmp_ptr);
+	*msg = NULL;
+	return SLURM_ERROR;
+}
+#endif
+
+
 static void
 _pack_epilog_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
 		      uint16_t protocol_version)
@@ -4062,6 +4101,9 @@ _unpack_epilog_comp_msg(epilog_complete_msg_t ** msg, buf_t *buffer,
 		safe_unpack32(&(tmp_ptr->job_id), buffer);
 		safe_unpack32(&(tmp_ptr->return_code), buffer);
 		safe_unpackstr(&(tmp_ptr->node_name), buffer);
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+		safe_unpack32(&(tmp_ptr->bb_return_code), buffer);
+#endif
 	} else if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 		safe_unpack32(&(tmp_ptr->job_id), buffer);
 		safe_unpack32(&(tmp_ptr->return_code), buffer);
@@ -21915,7 +21957,7 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 	case REQUEST_LAUNCH_PROLOG:
 		_pack_prolog_launch_msg(msg, buffer);
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		_pack_create_bb_launch_msg(msg, buffer);
 		break;
@@ -21923,6 +21965,11 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 		_pack_complete_create_bb_msg(
 			(complete_create_bb_msg_t *)msg->data, buffer,
 			msg->protocol_version);
+		break;
+	case REQUEST_COMPLETE_TERMINATE_BB:
+		_pack_bb_comp_msg((epilog_complete_msg_t *) msg->data,
+				buffer,
+				msg->protocol_version);
 		break;
 #endif
 	
@@ -22657,7 +22704,7 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 	case REQUEST_LAUNCH_PROLOG:
 		rc = _unpack_prolog_launch_msg(msg, buffer);
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		rc = _unpack_create_bb_launch_msg(msg, buffer);
 		break;
@@ -22666,6 +22713,12 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 			(complete_create_bb_msg_t **)&msg->data, buffer,
 			msg->protocol_version);
 		break;
+	case: REQUEST_COMPLETE_TERMINATE_BB:
+		rc = _unpack_bb_comp_msg((epilog_complete_msg_t **)
+			& (msg->data), buffer,
+			msg->protocol_version);
+		break;
+
 #endif
 	case RESPONSE_CONTAINER_PTY:
 	case RESPONSE_CONTAINER_KILL:

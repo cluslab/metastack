@@ -2365,6 +2365,16 @@ extern void slurm_free_epilog_complete_msg(epilog_complete_msg_t * msg)
 	}
 }
 
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+extern void slurm_free_bb_complete_msg(epilog_complete_msg_t * msg)
+{
+	if (msg) {
+		xfree(msg->node_name);
+		xfree(msg);
+	}
+}
+#endif
+
 extern void slurm_free_srun_job_complete_msg(
 		srun_job_complete_msg_t * msg)
 {
@@ -5216,12 +5226,15 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case REQUEST_LAUNCH_PROLOG:
 		slurm_free_prolog_launch_msg(data);
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		slurm_free_create_bb_launch_msg(data);
 		break;
 	case REQUEST_COMPLETE_CREATE_BB:
 		slurm_free_complete_create_bb_launch_msg(data);
+		break;
+	case REQUEST_COMPLETE_TERMINATE_BB:
+		slurm_free_bb_complete_msg(data);
 		break;
 #endif
 
@@ -5663,6 +5676,11 @@ extern uint32_t slurm_get_return_code(slurm_msg_type_t type, void *data)
 	case MESSAGE_EPILOG_COMPLETE:
 		rc = ((epilog_complete_msg_t *)data)->return_code;
 		break;
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+	case REQUEST_COMPLETE_TERMINATE_BB:
+		rc = ((epilog_complete_msg_t *)data)->bb_return_code;
+		break;
+#endif
 	case RESPONSE_JOB_STEP_STAT:
 		rc = ((job_step_stat_t *)data)->return_code;
 		break;
