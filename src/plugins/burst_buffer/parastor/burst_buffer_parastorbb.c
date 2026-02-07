@@ -59,7 +59,7 @@
 #include "src/slurmctld/slurmscriptd.h"
 #include "src/slurmctld/trigger_mgr.h"
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
-
+#include "src/common/hostlist.h"
 #include "bb_curl_wrapper.h"
 #include "bb_api.h"
 /* Script directive */
@@ -2591,7 +2591,7 @@ static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, ho
 		char *host = NULL;
 		node_record_t *node_ptr = NULL;
 
-		hostlist_iterator_t itr = hostlist_iterator_create(free_hl);
+		hostlist_iterator_t *itr = hostlist_iterator_create(free_hl);
 
 		while ((host = hostlist_next(itr))) {
 			// 根据主机名查找全局节点记录

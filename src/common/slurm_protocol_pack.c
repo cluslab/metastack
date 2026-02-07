@@ -22713,7 +22713,7 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 			(complete_create_bb_msg_t **)&msg->data, buffer,
 			msg->protocol_version);
 		break;
-	case: REQUEST_COMPLETE_TERMINATE_BB:
+	case REQUEST_COMPLETE_TERMINATE_BB:
 		rc = _unpack_bb_comp_msg((epilog_complete_msg_t **)
 			& (msg->data), buffer,
 			msg->protocol_version);
