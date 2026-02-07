@@ -6942,7 +6942,10 @@ done:
 	} else {  
 		//如果epilog_complete触发向slurmctld发送信息的流程，那么这里就不需要再发送信息了
 		if(req->bb_enable_pb && req->real_used_bb) {
-			
+			if(req->bb_enable_pb && req->real_used_bb) {
+				debug("No jobs may be running on the current node");
+				bb_clean_complete_send(req->step_id.job_id, req->nodes, rc, bb_rc);
+			}
 		}
 	}
 #endif
