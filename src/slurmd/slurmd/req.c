@@ -3128,7 +3128,7 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 	case BB_JOB_TASKS_SUBMITED:
 		/* 不知道任务状态，全部取消 */
 		if(is_print){
-			debug("BB-----作业%u创建bb阶段取消(当前已完成任务提交)，取消所有任务", job_id);
+			debug("BB-----作业%u创建bb阶段取消(当前已完成预热任务提交)，取消所有任务", job_id);
 			is_print = false;
 		}
 		for (int i = 0; i < dataset_cnt; i++) {
@@ -3138,7 +3138,7 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 
 	case BB_JOB_PREFETCH_FINISHED:
 		if (is_print) {
-			debug("BB-----作业%u创建bb阶段取消(当前已完成预热或取消所有任务)，进行回收任务", job_id);
+			debug("BB-----作业%u创建bb阶段取消(当前已完成数据预热)，进行回收任务", job_id);
 			is_print = false;
 		}
 		if (_submit_bb_task(dataset_cnt, BB_RECYCLE_TAKS_TYPE, dataset_ids, clean_task_ids) == SLURM_SUCCESS) {
@@ -3558,18 +3558,18 @@ static int _submit_bb_task(uint32_t dataset_count, BB_TASK_TYPE task_type, uint3
 		uint32_t tmp_task_id = 0;
 		uint32_t tmp_dataset_id = dataset_ids[dataset_idx];
 		if (task_type == BB_PREFETCH_TAKS_TYPE) {
-			debug("BB-----开始提交数据集%u的预热任务: ", tmp_dataset_id);
+			debug("BB-----开始提交预热任务(数据集%u): ", tmp_dataset_id);
 		} else if (task_type == BB_RECYCLE_TAKS_TYPE) {
-			debug("BB-----开始提交数据集%u的回收任务: ", tmp_dataset_id);
+			debug("BB-----开始提交回收任务: ", tmp_dataset_id);
 		}
 		if (tmp_dataset_id == 0)
 			continue;
 		int bb_rc = bb_g_submit_bb_task(tmp_dataset_id, task_type, &tmp_task_id);
 		if (bb_rc == 0 && tmp_task_id > 0) {
-			debug("BB-----提交数据集%u任务成功, 任务ID=%u", tmp_dataset_id, tmp_task_id);
+			debug("BB-----提交任务成功(数据集%u), 任务ID=%u", tmp_dataset_id, tmp_task_id);
 			task_ids[dataset_idx] = tmp_task_id;
 		} else {
-			error("BB-----提交数据集%u任务失败, return code=%d", tmp_dataset_id, bb_rc);
+			error("BB-----提交任务失败(数据集%u), return code=%d", tmp_dataset_id, bb_rc);
 			all_success = false;
 		}
 	}
