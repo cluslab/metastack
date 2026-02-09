@@ -66,7 +66,7 @@ typedef struct slurm_bb_ops {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	int		(*state_pack)	(uid_t uid, buf_t *buffer,
 					 uint16_t protocol_version, bool parastor);
-	int		(*free_allocated_resources)	(uint32_t job_id);
+	int		(*free_allocated_resources)	(job_record_t *job_ptr);
 #endif
 	int		(*reconfig)	(void);
 	int		(*job_validate)	(job_desc_msg_t *job_desc,
@@ -851,7 +851,7 @@ extern uint32_t bb_g_free_allocated_resources(job_record_t *job_ptr)
 		/* 如果该插件实现了 free_allocated_resources 函数 */
 		if (ops[i].free_allocated_resources) {
 			/* 调用插件内部实现并获取结果 */
-			rc = (*(ops[i].free_allocated_resources))(job_ptr->job_id);
+			rc = (*(ops[i].free_allocated_resources))(job_ptr);
 			/* 既然我们只需要一个配额值，拿到第一个有效插件的值就可以跳出循环了 */
 			break;
 		}
