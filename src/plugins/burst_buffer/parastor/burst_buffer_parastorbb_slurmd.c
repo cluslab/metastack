@@ -342,7 +342,7 @@ extern int bb_p_submit_bb_task(uint32_t dataset_id, int task_type, uint32_t *tas
 	rc = submit_bb_task(create_params, task_id, &bb_state.bb_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	if (rc == 0) {
-		debug("提交任务成功,任务ID:%d", rc);
+		debug("提交任务成功,任务ID:%d", *task_id);
 	} else if (rc == -1) {
 		error("提交任务错误");
 	} else if (rc == -2) {
