@@ -4192,7 +4192,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 	DEF_TIMERS;
 	/* Locks: Read config and job */
 	slurmctld_lock_t job_write_lock = {
-		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 	
 	now = time(NULL);
 	while (1) {
@@ -4229,7 +4229,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 						job_ptr->group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
 						job_ptr->dataset_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
 
-						cur_groupid_arr = bb_g_query_bb_groupid_by_sn(job_ptr);
+						cur_groupid_arr = bb_g_query_bb_groupid_by_sn(job_ptr); //这里需要设置超时函数，防止一直卡着拿锁
 						if (!cur_groupid_arr) {
 							error("bb_g_query_bb_groupid_by_sn return NULL");
 							bb_job_error->bb_clean_status = ELSURM_BB_RESOURCE_ERROR;

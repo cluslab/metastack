@@ -2918,7 +2918,7 @@ static void _notify_result_rpc_prolog(prolog_launch_msg_t *req, int rc)
 static int _notify_slurmctld_create_bb_fini(bb_return_message_t *bb_rc_msg)
 {
 	int rc, ret_c;
-	slurm_msg_t req_msg;
+	//slurm_msg_t req_msg;
 	complete_create_bb_msg_t req;
 
 	slurm_msg_t_init(&req_msg);
@@ -2934,20 +2934,28 @@ static int _notify_slurmctld_create_bb_fini(bb_return_message_t *bb_rc_msg)
 		for (uint32_t i = 0; i < req.groups_cnt; i++) {
 			req.group_ids[i] = bb_rc_msg->group_ids[i];
 		}
+	} else {
+		req.groups_cnt  = 0;
 	}
+
 	if (req.datasets_cnt > 0 && bb_rc_msg->dataset_ids) {
 		req.dataset_ids = xmalloc(req.datasets_cnt * sizeof(uint32_t));
 		for (uint32_t i = 0; i < req.datasets_cnt; i++)
 			req.dataset_ids[i] = bb_rc_msg->dataset_ids[i];
+	} else {
+		req.datasets_cnt = 0;
 	}
 	if (req.datasets_cnt > 0 && bb_rc_msg->task_ids) {
 		req.task_ids = xmalloc(req.datasets_cnt * sizeof(uint32_t));
 		for (uint32_t i = 0; i < req.datasets_cnt; i++)
 			req.task_ids[i] = bb_rc_msg->task_ids[i];
+		req.tasks_cnt =  req.datasets_cnt;
+	} else {
+		req.tasks_cnt = 0;
 	}
 
-	req_msg.msg_type = REQUEST_COMPLETE_CREATE_BB;
-	req_msg.data = &req;
+	req.msg_type = REQUEST_COMPLETE_CREATE_BB;
+	req.data = &req;
 
 	/*
 	 * Here we only care about the return code of
