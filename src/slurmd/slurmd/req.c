@@ -3693,6 +3693,7 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 {
 	int bb_rc = SLURM_ERROR;
 	int alt_rc = SLURM_ERROR;
+	int num_cnt = 0;
 	bb_return_message_t *bb_rc_msg = NULL;
 	if (!req) {
 		error("BB-----参数为空");
@@ -3807,11 +3808,12 @@ bb_cleanup:
 	bb_rc_msg->dataset_ids = dataset_ids;
 	bb_rc_msg->task_ids = recycle_task_ids;
 
-	while (alt_rc != SLURM_SUCCESS) {
+	while (alt_rc != SLURM_SUCCESS && num_cnt < 3) {
 		alt_rc = bb_clean_complete_send(bb_rc_msg);
 		if (alt_rc != SLURM_SUCCESS) {
 			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]", __func__, job_id, RETRY_DELAY);
 			sleep(RETRY_DELAY);
+			num_cnt++;
 		}
 	}
 
