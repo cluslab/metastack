@@ -2370,6 +2370,9 @@ extern void slurm_free_bb_complete_msg(epilog_complete_msg_t * msg)
 {
 	if (msg) {
 		xfree(msg->node_name);
+		xfree(msg->group_ids);
+		xfree(msg->dataset_ids);
+		xfree(msg->task_ids);
 		xfree(msg);
 	}
 }

@@ -4233,7 +4233,6 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 						if (!cur_groupid_arr) {
 							error("bb_g_query_bb_groupid_by_sn return NULL");
 							bb_job_error->bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
-							xfree(job_ptr->state_reason);
 							continue;
 						}
 						/* cur_groupid_arr[0] 为 0，说明当前作业没有占用缓存组，视为清理成功，直接从异常链表中移除。 */

@@ -3662,6 +3662,7 @@ static int _delete_bb_group_by_id(uint32_t group_count, uint32_t *group_id_array
 static int _rpc_clean_bb(kill_job_msg_t *req)
 {
 	int bb_rc = SLURM_ERROR;
+	int alt_rc = SLURM_ERROR;
 	if (!req) {
 		error("BB-----参数为空");
 		return SLURM_ERROR;
@@ -3723,9 +3724,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	bb_rc = _wait_bb_task_complete(recycle_task_ids, BB_RECYCLE_TAKS_TYPE, dataset_count);
 	if (bb_rc == SLURM_SUCCESS) {
 		debug("BB-----job_id=%u, 所有回收任务完成", job_id);
-		slurm_mutex_lock(&bb_job_list_mutex);
-		bb_job_ptr->status = BB_JOB_RECYCLE_FINISHED;
-		slurm_mutex_unlock(&bb_job_list_mutex);
+		// slurm_mutex_lock(&bb_job_list_mutex);
+		// bb_job_ptr->status = BB_JOB_RECYCLE_FINISHED;
+		// slurm_mutex_unlock(&bb_job_list_mutex);
 
 	} else {
 		error("BB-----job_id=%u, 回收任务失败", job_id);
@@ -3737,9 +3738,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	bb_rc = _delete_bb_dataset_by_groupid_path(group_count, group_ids, pfs_cnt, pfs_array, NULL);
 	if (bb_rc == SLURM_SUCCESS) {
 		debug("BB-----job_id=%u, 成功删除所有数据集规则（%u 个）", job_id, dataset_count);
-		slurm_mutex_lock(&bb_job_list_mutex);
-		bb_job_ptr->status = BB_JOB_DATASETS_CREATED;
-		slurm_mutex_unlock(&bb_job_list_mutex);
+		// slurm_mutex_lock(&bb_job_list_mutex);
+		// bb_job_ptr->status = BB_JOB_DATASETS_CREATED;
+		// slurm_mutex_unlock(&bb_job_list_mutex);
 	} else {
 		error("BB-----job_id=%u, 删除数据集规则失败", job_id);
 		goto bb_cleanup;
@@ -3751,21 +3752,27 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	bb_rc = _delete_bb_group_by_id(group_count, group_ids);
 	if (bb_rc == SLURM_SUCCESS) {
 		debug("BB-----job_id=%u, 成功删除所有缓存组（%u 个）", job_id, group_count);
-		slurm_mutex_lock(&bb_job_list_mutex);
-		bb_job_ptr->status = BB_JOB_GROUPS_CLEANED;
-		slurm_mutex_unlock(&bb_job_list_mutex);
+		// slurm_mutex_lock(&bb_job_list_mutex);
+		// bb_job_ptr->status = BB_JOB_GROUPS_CLEANED;
+		// slurm_mutex_unlock(&bb_job_list_mutex);
 	} else {
 		error("BB-----job_id=%u, 删除缓存组失败", job_id);
 		goto bb_cleanup;
 	}
 
 
-
-	if (bb_rc == SLURM_SUCCESS)
-		remove_alloc_bb_jobid(job_id);
 bb_cleanup:
 
-	//BINBIN: 待改造为返回RPC版本
+	//BINBIN: 成功或失败都删除，因为不失败了不会重新调用slurmd处理,无论如何都移除，暂时注释掉对bb_job_ptr的更改
+	remove_alloc_bb_jobid(job_id);
+
+	while (alt_rc != SLURM_SUCCESS) {
+		alt_rc = bb_clean_complete_send(job_id, req->nodes, bb_rc, group_count, dataset_count, group_ids, dataset_ids,  recycle_task_ids);
+		if (alt_rc != SLURM_SUCCESS) {
+			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]", __func__, job_id, RETRY_DELAY);
+			sleep(RETRY_DELAY);
+		}
+	}
 
 	/* 释放所有临时分配的数组 */
 	if (group_sn_array) {
@@ -6997,7 +7004,8 @@ _rpc_terminate_job(slurm_msg_t *msg)
 
 			if(req->bb_enable_pb && req->real_used_bb) {
 				debug("No jobs may be running on the current node");
-				bb_clean_complete_send(req->step_id.job_id, req->nodes, rc, bb_rc);
+				//BINBIN: 不应该在这里发，在清理函数中发
+				//bb_clean_complete_send(req->step_id.job_id, req->nodes, rc, bb_rc);
 			}
 		}
 #endif

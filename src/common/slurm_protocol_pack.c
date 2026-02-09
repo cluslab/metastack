@@ -4035,8 +4035,28 @@ static void _pack_bb_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
 	xassert(msg);
 #ifdef __META_PROTOCOL
 	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
-		pack32((uint32_t)msg->job_id, buffer);
-		pack32((uint32_t)msg->bb_return_code, buffer);
+		pack32(msg->job_id, buffer);
+		pack32(msg->return_code, buffer);
+		packstr(msg->node_name, buffer);
+		pack32(msg->bb_return_code, buffer);
+		pack32(msg->groups_cnt, buffer);
+		pack32(msg->datasets_cnt, buffer);
+		if (msg->groups_cnt > 0 && msg->group_ids) {
+			for (uint32_t i = 0; i < msg->groups_cnt; i++) {
+				pack32(msg->group_ids[i], buffer);
+			}
+		}
+
+		if (msg->datasets_cnt > 0 && msg->dataset_ids) {
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
+				pack32(msg->dataset_ids[i], buffer);
+			}
+		}
+		if (msg->datasets_cnt > 0 && msg->task_ids) {
+			for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
+				pack32(msg->task_ids[i], buffer);
+			}
+		}
 	} 
 #endif
 }
@@ -4054,6 +4074,26 @@ _unpack_bb_comp_msg(epilog_complete_msg_t ** msg, buf_t *buffer,
 	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
 		safe_unpack32(&(tmp_ptr->job_id), buffer);
 		safe_unpack32(&(tmp_ptr->return_code), buffer);
+		safe_unpackstr(&(tmp_ptr->node_name), buffer);
+		safe_unpack32(&(tmp_ptr->bb_return_code), buffer);
+		safe_unpack32(&tmp_ptr->groups_cnt, buffer);
+		safe_unpack32(&tmp_ptr->datasets_cnt, buffer);
+		if (tmp_ptr->groups_cnt > 0) {
+			tmp_ptr->group_ids = xmalloc(tmp_ptr->groups_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < tmp_ptr->groups_cnt; i++) {
+				safe_unpack32(&tmp_ptr->group_ids[i], buffer);
+			}
+		}
+		if (tmp_ptr->datasets_cnt > 0) {
+			tmp_ptr->dataset_ids = xmalloc(tmp_ptr->datasets_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < tmp_ptr->datasets_cnt; i++) {
+				safe_unpack32(&tmp_ptr->dataset_ids[i], buffer);
+			}
+			tmp_ptr->task_ids = xmalloc(tmp_ptr->datasets_cnt * sizeof(uint32_t));
+			for (uint32_t i = 0; i < tmp_ptr->datasets_cnt; i++) {
+				safe_unpack32(&tmp_ptr->task_ids[i], buffer);
+			}
+		}
 	} 
 #endif
 	return SLURM_SUCCESS;
@@ -22713,7 +22753,7 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 			(complete_create_bb_msg_t **)&msg->data, buffer,
 			msg->protocol_version);
 		break;
-	case: REQUEST_COMPLETE_TERMINATE_BB:
+	case REQUEST_COMPLETE_TERMINATE_BB:
 		rc = _unpack_bb_comp_msg((epilog_complete_msg_t **)
 			& (msg->data), buffer,
 			msg->protocol_version);

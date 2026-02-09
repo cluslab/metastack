@@ -549,10 +549,15 @@ typedef struct signal_tasks_msg {
 typedef struct epilog_complete_msg {
 	uint32_t job_id;
 	uint32_t return_code;
+	char *node_name;
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	uint32_t bb_return_code;
+	uint32_t groups_cnt;
+	uint32_t datasets_cnt;
+	uint32_t *group_ids;
+	uint32_t *dataset_ids;
+	uint32_t *task_ids;
 #endif
-	char    *node_name;
 } epilog_complete_msg_t;
 
 #define REBOOT_FLAGS_ASAP 0x0001	/* Drain to reboot ASAP */

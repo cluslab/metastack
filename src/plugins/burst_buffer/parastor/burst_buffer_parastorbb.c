@@ -2592,7 +2592,7 @@ static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, ho
 		char *host = NULL;
 		node_record_t *node_ptr = NULL;
 
-		hostlist_iterator_t itr = hostlist_iterator_create(free_hl);
+		hostlist_iterator_t *itr = hostlist_iterator_create(free_hl);
 
 		while ((host = hostlist_next(itr))) {
 			// 根据主机名查找全局节点记录
@@ -3198,8 +3198,8 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 {
 	bb_job_t *bb_job = NULL;
 	int rc = SLURM_SUCCESS;
-	if (!job_ptr || job_ptr->bb_clean_finish) {
-		error("job_ptr is NULL");
+	if (!job_ptr || !job_ptr->group_ids || !job_ptr->dataset_ids) {
+		error("job_ptr or group/dataset_arr is NULL");
 		return SLURM_ERROR;
 	}
 	if (job_ptr->bb_clean_finish) {

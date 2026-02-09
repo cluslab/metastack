@@ -143,7 +143,7 @@ fini:
 
 
 #ifdef __METASTACK_NEW_BURSTBUFFER6
-extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int rc, int bb_rc)
+extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int bb_rc, uint32_t groups_cnt, uint32_t dataset_cnt ,uint32_t group_ids, uint32_t dataset_ids, uint32_t task_ids)
 {
 	slurm_msg_t msg;
 	epilog_complete_msg_t req;
@@ -152,9 +152,20 @@ extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int rc, int b
 		return SLURM_ERROR;
 	_sync_messages_kill(node_list);
 	slurm_msg_t_init(&msg);
+
 	memset(&req, 0, sizeof(req));	
-	req.bb_return_code = bb_rc;
+	req.job_id = jobid;
+	//req.return_code = 1 ;
 	req.node_name = conf->node_name;
+	req.bb_return_code = bb_rc;
+	req.groups_cnt = groups_cnt ;
+	req.datasets_cnt = dataset_cnt;
+	req.group_ids = xmalloc(groups_cnt * sizeof(uint32_t));
+	memcpy(req.group_ids, group_ids, groups_cnt * sizeof(uint32_t));
+	req.dataset_ids = xmalloc(dataset_cnt * sizeof(uint32_t));
+	memcpy(req.dataset_ids, dataset_ids, dataset_cnt * sizeof(uint32_t));
+	req.task_ids = xmalloc(dataset_cnt * sizeof(uint32_t));
+	memcpy(req.task_ids, task_ids, dataset_cnt * sizeof(uint32_t));
 	msg.msg_type = REQUEST_COMPLETE_TERMINATE_BB;
 	msg.data = &req;
 	/*
@@ -167,11 +178,8 @@ extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int rc, int b
 		error("Unable to send bb complete message: %m");
 		return SLURM_ERROR;
 	}
-
-	debug("JobId=%u: sent bb complete msg: rc = %d", jobid, rc);
-
+	debug("JobId=%u: sent bb complete msg: bb rc = %d", jobid, bb_rc);
 	return SLURM_SUCCESS;	
-
 }
 #endif
 /*
