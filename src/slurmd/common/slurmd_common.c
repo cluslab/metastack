@@ -143,29 +143,30 @@ fini:
 
 
 #ifdef __METASTACK_NEW_BURSTBUFFER6
-extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int bb_rc, uint32_t groups_cnt, uint32_t dataset_cnt ,uint32_t group_ids, uint32_t dataset_ids, uint32_t task_ids)
+extern int bb_clean_complete_send(bb_return_message_t *bb_rc_msg)
 {
 	slurm_msg_t msg;
 	epilog_complete_msg_t req;
 	int ctld_rc;
-	if(!node_list)
+	if (!bb_rc_msg || !bb_rc_msg->node_list)
 		return SLURM_ERROR;
-	_sync_messages_kill(node_list);
+	_sync_messages_kill(bb_rc_msg->node_list);
 	slurm_msg_t_init(&msg);
 
-	memset(&req, 0, sizeof(req));	
-	req.job_id = jobid;
+	memset(&req, 0, sizeof(req));
+	req.job_id = bb_rc_msg->job_id;
 	//req.return_code = 1 ;
 	req.node_name = conf->node_name;
-	req.bb_return_code = bb_rc;
-	req.groups_cnt = groups_cnt ;
-	req.datasets_cnt = dataset_cnt;
-	req.group_ids = xmalloc(groups_cnt * sizeof(uint32_t));
-	memcpy(req.group_ids, group_ids, groups_cnt * sizeof(uint32_t));
-	req.dataset_ids = xmalloc(dataset_cnt * sizeof(uint32_t));
-	memcpy(req.dataset_ids, dataset_ids, dataset_cnt * sizeof(uint32_t));
-	req.task_ids = xmalloc(dataset_cnt * sizeof(uint32_t));
-	memcpy(req.task_ids, task_ids, dataset_cnt * sizeof(uint32_t));
+	req.bb_return_code = bb_rc_msg->bb_rc;
+	req.groups_cnt = bb_rc_msg->groups_cnt;
+	req.datasets_cnt = bb_rc_msg->groups_cnt * bb_rc_msg->pfs_cnt;
+
+	req.group_ids = xmalloc(req.groups_cnt * sizeof(uint32_t));
+	memcpy(req.group_ids, bb_rc_msg->group_ids, req.groups_cnt * sizeof(uint32_t));
+	req.dataset_ids = xmalloc(req.datasets_cnt * sizeof(uint32_t));
+	memcpy(req.dataset_ids, bb_rc_msg->dataset_ids, req.datasets_cnt * sizeof(uint32_t));
+	req.task_ids = xmalloc(req.datasets_cnt * sizeof(uint32_t));
+	memcpy(req.task_ids, bb_rc_msg->task_ids, req.datasets_cnt * sizeof(uint32_t));
 	msg.msg_type = REQUEST_COMPLETE_TERMINATE_BB;
 	msg.data = &req;
 	/*
@@ -174,12 +175,12 @@ extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int bb_rc, ui
 	 * slurmctld will resend TERMINATE_JOB request if message send fails.
 	 */
 	if (slurm_send_recv_controller_rc_msg(&msg, &ctld_rc,
-					      working_cluster_rec) < 0) {
+		working_cluster_rec) < 0) {
 		error("Unable to send bb complete message: %m");
 		return SLURM_ERROR;
 	}
-	debug("JobId=%u: sent bb complete msg: bb rc = %d", jobid, bb_rc);
-	return SLURM_SUCCESS;	
+	debug("JobId=%u: sent bb complete msg: bb rc = %d", bb_rc_msg->job_id, bb_rc_msg->bb_rc);
+	return SLURM_SUCCESS;
 }
 #endif
 /*

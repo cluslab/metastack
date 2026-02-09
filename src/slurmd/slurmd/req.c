@@ -269,6 +269,7 @@ static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_node
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str);
 static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list);
 static int _delete_bb_group_by_id(uint32_t group_count, uint32_t *group_id_array);
+static int _notify_slurmctld_create_bb_fini(bb_return_message_t *bb_rc_msg);
 pthread_mutex_t bb_job_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 List bb_job_list = NULL;
 typedef struct bb_job_msg{
@@ -583,7 +584,7 @@ static int clean_bb_job_process(uint32_t job_id)
 	} else {
 		bb_job_ptr->terminal = 0;
 		rc = -1;
-		remove_alloc_bb_jobid(job_id);
+		//remove_alloc_bb_jobid(job_id);
 	}
 	
 	//slurm_mutex_unlock(&bb_job_list_mutex);	
@@ -2914,10 +2915,7 @@ static void _notify_result_rpc_prolog(prolog_launch_msg_t *req, int rc)
 	}
 }
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-static int _notify_slurmctld_create_bb_fini(
-	uint32_t job_id, uint32_t bb_return_code,
-	uint32_t group_count, uint32_t *group_ids,
-	uint32_t pfs_count, uint32_t *dataset_ids, uint32_t *task_ids)
+static int _notify_slurmctld_create_bb_fini(bb_return_message_t *bb_rc_msg)
 {
 	int rc, ret_c;
 	slurm_msg_t req_msg;
@@ -2925,27 +2923,27 @@ static int _notify_slurmctld_create_bb_fini(
 
 	slurm_msg_t_init(&req_msg);
 	memset(&req, 0, sizeof(req));
-	req.job_id = job_id;
+	req.job_id = bb_rc_msg->job_id;
 	req.node_name = conf->node_name;
-	req.bb_rc = bb_return_code;
-	req.groups_cnt = group_count;
-	req.datasets_cnt = pfs_count * group_count;
+	req.bb_rc = bb_rc_msg->bb_rc;
+	req.groups_cnt = bb_rc_msg->groups_cnt;
+	req.datasets_cnt = bb_rc_msg->pfs_cnt * bb_rc_msg->groups_cnt;
 
-	if (req.groups_cnt > 0 && group_ids) {
-		req.group_ids = xmalloc(group_count * sizeof(uint32_t));
-		for (uint32_t i = 0; i < group_count; i++) {
-			req.group_ids[i] = group_ids[i];
+	if (req.groups_cnt > 0 && bb_rc_msg->group_ids) {
+		req.group_ids = xmalloc(req.groups_cnt * sizeof(uint32_t));
+		for (uint32_t i = 0; i < req.groups_cnt; i++) {
+			req.group_ids[i] = bb_rc_msg->group_ids[i];
 		}
 	}
-	if (req.datasets_cnt > 0 && dataset_ids) {
+	if (req.datasets_cnt > 0 && bb_rc_msg->dataset_ids) {
 		req.dataset_ids = xmalloc(req.datasets_cnt * sizeof(uint32_t));
 		for (uint32_t i = 0; i < req.datasets_cnt; i++)
-			req.dataset_ids[i] = dataset_ids[i];
+			req.dataset_ids[i] = bb_rc_msg->dataset_ids[i];
 	}
-	if (req.datasets_cnt > 0 && task_ids) {
+	if (req.datasets_cnt > 0 && bb_rc_msg->task_ids) {
 		req.task_ids = xmalloc(req.datasets_cnt * sizeof(uint32_t));
 		for (uint32_t i = 0; i < req.datasets_cnt; i++)
-			req.task_ids[i] = task_ids[i];
+			req.task_ids[i] = bb_rc_msg->task_ids[i];
 	}
 
 	req_msg.msg_type = REQUEST_COMPLETE_CREATE_BB;
@@ -3238,6 +3236,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	int alt_rc = SLURM_ERROR;
 	int ret_rc = SLURM_ERROR;
 	int  continue_flag = 0;
+	bb_return_message_t *bb_rc_msg = NULL;
 
 	uint32_t job_id = 0;  
 	uint32_t node_count = 0;
@@ -3429,6 +3428,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	}
 
 cleanup:
+	bb_rc_msg = xmalloc(sizeof(bb_return_message_t));
 	/*
 	rc(bb_rc)取值:
 	创建成功:SLURM_SUCCESS
@@ -3454,7 +3454,15 @@ cleanup:
 			while (alt_rc != SLURM_SUCCESS) {
 				//考虑非成功情况下打包、解包、传值问题
 				slurm_mutex_lock(&bb_job_list_mutex);
-				alt_rc = _notify_slurmctld_create_bb_fini(job_id, ret_rc, bb_job_ptr->group_cnt, bb_job_ptr->group_ids, bb_job_ptr->pfs_cnt, bb_job_ptr->dataset_ids, bb_job_ptr->task_ids);
+				bb_rc_msg->job_id = job_id;
+				bb_rc_msg->bb_rc = ret_rc;
+				bb_rc_msg->groups_cnt = bb_job_ptr->group_cnt;
+				bb_rc_msg->pfs_cnt = bb_job_ptr->pfs_cnt;
+				bb_rc_msg->group_ids = bb_job_ptr->group_ids;
+				bb_rc_msg->dataset_ids = bb_job_ptr->dataset_ids;
+				bb_rc_msg->task_ids = bb_job_ptr->task_ids;
+
+				alt_rc = _notify_slurmctld_create_bb_fini(bb_rc_msg);
 				slurm_mutex_unlock(&bb_job_list_mutex);
 				if (alt_rc != SLURM_SUCCESS) {
 					info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]",
@@ -3474,27 +3482,31 @@ cleanup:
 			ret_rc = ESLURM_BB_RESOURCE_SI_FAIL;
 		}
 		while (alt_rc != SLURM_SUCCESS) {
-		//考虑非成功情况下打包、解包、传值问题
-		alt_rc = _notify_slurmctld_create_bb_fini(job_id, ret_rc, group_count, groupids_arr, pfs_count, datasets_arr, tasks_arr);
-		if (alt_rc != SLURM_SUCCESS) {
-			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]",
-				__func__, req->job_id, RETRY_DELAY);
-			sleep(RETRY_DELAY);
+			bb_rc_msg->job_id = job_id;
+			bb_rc_msg->bb_rc = ret_rc;
+			bb_rc_msg->groups_cnt = group_count;
+			bb_rc_msg->pfs_cnt = pfs_count;
+			bb_rc_msg->group_ids = groupids_arr;
+			bb_rc_msg->dataset_ids = datasets_arr;
+			bb_rc_msg->task_ids = tasks_arr;
+			alt_rc = _notify_slurmctld_create_bb_fini(bb_rc_msg);
+			if (alt_rc != SLURM_SUCCESS) {
+				info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]",
+					__func__, req->job_id, RETRY_DELAY);
+				sleep(RETRY_DELAY);
 		}
 	}
 	}
 	// remove_alloc_bb_jobid(job_id);
 	/*  释放变量内存  */
-
-	if (groupids_arr) {
+	if (bb_rc_msg)
+		xfree(bb_rc_msg);
+	if (groupids_arr)
 		xfree(groupids_arr);
-	}
-	if (tasks_arr) {
+	if (tasks_arr)
 		xfree(tasks_arr);
-	}
 	if (datasets_arr)
 		xfree(datasets_arr);
-
 	if (node_array) {
 		for (int i = 0; i < node_count; i++) {
 			if (node_array[i]) {
@@ -3663,6 +3675,7 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 {
 	int bb_rc = SLURM_ERROR;
 	int alt_rc = SLURM_ERROR;
+	bb_return_message_t *bb_rc_msg = NULL;
 	if (!req) {
 		error("BB-----参数为空");
 		return SLURM_ERROR;
@@ -3766,15 +3779,28 @@ bb_cleanup:
 	//BINBIN: 成功或失败都删除，因为不失败了不会重新调用slurmd处理,无论如何都移除，暂时注释掉对bb_job_ptr的更改
 	remove_alloc_bb_jobid(job_id);
 
+	bb_rc_msg = xmalloc(sizeof(bb_return_message_t));
+	bb_rc_msg->job_id = job_id;
+	bb_rc_msg->node_list = req->nodes;
+	bb_rc_msg->bb_rc = bb_rc;
+	bb_rc_msg->groups_cnt = group_count;
+	bb_rc_msg->pfs_cnt = pfs_cnt;
+	bb_rc_msg->group_ids = group_ids;
+	bb_rc_msg->dataset_ids = dataset_ids;
+	bb_rc_msg->task_ids = recycle_task_ids;
+
 	while (alt_rc != SLURM_SUCCESS) {
-		alt_rc = bb_clean_complete_send(job_id, req->nodes, bb_rc, group_count, dataset_count, group_ids, dataset_ids,  recycle_task_ids);
+		alt_rc = bb_clean_complete_send(bb_rc_msg);
 		if (alt_rc != SLURM_SUCCESS) {
 			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]", __func__, job_id, RETRY_DELAY);
 			sleep(RETRY_DELAY);
 		}
 	}
 
-	/* 释放所有临时分配的数组 */
+	/* 释放内存*/
+	if (bb_rc_msg) {
+		xfree(bb_rc_msg);
+	}
 	if (group_sn_array) {
 		for (int i = 0; i < group_count; i++) {
 			xfree(group_sn_array[i]);
@@ -7104,14 +7130,14 @@ done:
 #ifdef __METASTACK_NEW_BURSTBUFFER6
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
 		epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
-	} else {  
-		//如果epilog_complete触发向slurmctld发送信息的流程，那么这里就不需要再发送信息了
-		if(req->bb_enable_pb && req->real_used_bb) {
-			if(req->bb_enable_pb && req->real_used_bb) {
-				debug("No jobs may be running on the current node");
-				bb_clean_complete_send(req->step_id.job_id, req->nodes, rc, bb_rc);
-			}
-		}
+	} else {
+		if (req->bb_enable_pb && req->real_used_bb) {
+			slurm_mutex_lock(&bb_job_list_mutex);
+			if ((clean_bb_job_process(req->step_id.job_id) == -1) || req->bb_ready)
+				bb_rc = _rpc_clean_bb(req);
+			slurm_mutex_unlock(&bb_job_list_mutex);
+		} else
+			bb_rc = SLURM_SUCCESS;
 	}
 #endif
 }
