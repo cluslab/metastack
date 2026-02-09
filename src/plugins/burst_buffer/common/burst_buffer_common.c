@@ -1935,6 +1935,13 @@ static void _bb_job_del2(bb_job_t *bb_job)
 		xfree(bb_job->memfd_path);
 		xfree(bb_job->partition);
 		xfree(bb_job->qos);
+		#ifdef __METASTACK_NEW_BURSTBUFFER	
+		xfree(bb_job->pfs);
+		xfree(bb_job->bb_group_ids);
+		xfree(bb_job->bb_dataset_ids);
+		xfree(bb_job->bb_task_ids);
+		#endif
+
 		xfree(bb_job);
 	}
 }

@@ -39,6 +39,19 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __METASTACK_NEW_BURSTBUFFER6
+typedef struct bb_return_message {
+    uint32_t job_id;
+    char *node_list;
+    int bb_rc;
+    uint32_t groups_cnt;
+	uint32_t pfs_cnt;
+    uint32_t *group_ids;
+    uint32_t *dataset_ids;
+    uint32_t *task_ids;
+}bb_return_message_t;
+#endif
+
 /*
  *  Send epilog complete message to currently active controller.
  *   Returns SLURM_SUCCESS if message sent successfully,
@@ -66,9 +79,9 @@ extern bool pause_for_job_completion(uint32_t job_id, int max_time,
  */
 extern int terminate_all_steps(uint32_t jobid, bool batch, bool extern_step);
 #ifdef  __METASTACK_NEW_BURSTBUFFER6
-extern int run_burst_buffer_create(prolog_launch_msg_t *req);
-extern int run_burst_buffer_release(job_env_t *job_env);
-extern int bb_clean_complete_send(uint32_t jobid, char *node_list, int rc, int bb_rc);
+// extern int run_burst_buffer_create(prolog_launch_msg_t *req);
+// extern int run_burst_buffer_release(job_env_t *job_env);
+extern int bb_clean_complete_send(bb_return_message_t *bb_rc_msg);
 #endif
 
 extern int run_prolog(job_env_t *job_env, slurm_cred_t *cred);

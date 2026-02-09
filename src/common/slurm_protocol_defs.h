@@ -549,10 +549,15 @@ typedef struct signal_tasks_msg {
 typedef struct epilog_complete_msg {
 	uint32_t job_id;
 	uint32_t return_code;
+	char *node_name;
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	uint32_t bb_return_code;
+	uint32_t groups_cnt;
+	uint32_t datasets_cnt;
+	uint32_t *group_ids;
+	uint32_t *dataset_ids;
+	uint32_t *task_ids;
 #endif
-	char    *node_name;
 } epilog_complete_msg_t;
 
 #define REBOOT_FLAGS_ASAP 0x0001	/* Drain to reboot ASAP */
@@ -880,15 +885,15 @@ typedef struct kill_job_msg {
 	char *work_dir;
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	/* Burst buffer cleanup fields */
-	char **group_sn;		/* 缓存组SN数组 */
-	uint32_t group_count;		/* 缓存组数量 */
-	uint32_t *group_ids;		/* 缓存组ID数组 */
-	uint32_t *dataset_ids;		/* 数据集ID数组 */
-	uint32_t *task_ids;		/* 任务ID数组 */
-	uint32_t dataset_count;		/* 数据集数量 */
-	char *pfs;			/* 后端存储路径 */
-	uint32_t pfs_cnt;		/* 加速路径个数 */
-	char *job_nodes; /* 作业分配的节点. */
+	// char **group_sn;		/* 缓存组SN数组 */
+	// uint32_t group_count;		/* 缓存组数量 */
+	// uint32_t *group_ids;		/* 缓存组ID数组 */
+	// uint32_t *dataset_ids;		/* 数据集ID数组 */
+	// uint32_t *task_ids;		/* 任务ID数组 */
+	// uint32_t dataset_count;		/* 数据集数量 */
+	// char *pfs;			/* 后端存储路径 */
+	// uint32_t pfs_cnt;		/* 加速路径个数 */
+	//char *job_nodes; /* 作业分配的节点. */
 	bool bb_enable_pb; 		 //是否是bb作业
 	bool real_used_bb;		// 最终是否必须要使用bb，受bb_enable_pb参数的影响	
 	bool     bb_ready;       //计算节点的burstbuffer是否已经准备好
