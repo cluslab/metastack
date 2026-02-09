@@ -2444,6 +2444,10 @@ static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
 	if (!job_ptr) {
 		error("The job_ptr of job %u does not exist", epilog_msg->job_id);
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
+		unlock_slurmctld(job_write_lock);
+		_throttle_fini(&active_rpc_cnt);
+	}
 		return;
 	}
 
@@ -2465,8 +2469,8 @@ static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
 		}
 	} 
 	
-	if(job_ptr->bb_clean_status == 0x02 || job_ptr->bb_enable_pb && 
-				job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
+	if(job_ptr->bb_clean_status == 0x02 || (job_ptr->bb_enable_pb && 
+				job_ptr->real_used_bb && job_ptr->bb_ready)) { //需要设置是否创建缓存组标志位，还有error状态处理
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 		(void) bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
 	}	   	
@@ -8118,7 +8122,7 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 	},{
 		.msg_type = REQUEST_COMPLETE_TERMINATE_BB,
 		.max_per_cycle = 256,
-		.func = _slurm_rpc_epilog_complete,
+		.func = _slurm_rpc_bb_complete,
 		.queue_enabled = true,
 		.locks = {
 			.conf = READ_LOCK,

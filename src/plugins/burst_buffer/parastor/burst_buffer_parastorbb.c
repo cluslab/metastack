@@ -59,7 +59,7 @@
 #include "src/slurmctld/slurmscriptd.h"
 #include "src/slurmctld/trigger_mgr.h"
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
-
+#include "src/common/hostlist.h"
 #include "bb_curl_wrapper.h"
 #include "bb_api.h"
 /* Script directive */
