@@ -108,8 +108,8 @@ static const char *syms[] = {
 	"bb_p_state_pack",
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	"bb_p_free_allocated_resources",
-	"bb_p_query_bb_groupid_by_sn"
-	"bb_p_query_bb_datasetid_by_sn"
+	"bb_p_query_bb_groupid_by_sn",
+	"bb_p_query_bb_datasetid_by_sn",
 #endif
 	"bb_p_reconfig",
 	"bb_p_job_validate",
@@ -127,7 +127,7 @@ static const char *syms[] = {
 	"bb_p_run_script",
 	"bb_p_xlate_bb_2_tres_str",
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	"bb_p_get_node_quota"
+	"bb_p_get_node_quota",
 #endif
 };
 
