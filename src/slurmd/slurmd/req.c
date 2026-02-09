@@ -503,20 +503,20 @@ static int update_bb_job_datasets(uint32_t job_id, uint32_t dataset_count, uint3
 		return SLURM_ERROR;
 	}
 	int rc = -1;
-	bb_job_msg_t* bb_job_ptr = NULL;
+	bb_job_msg_t *bb_job_ptr = NULL;
 
 	//slurm_mutex_lock(&bb_job_list_mutex);
 	bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
-	if(!bb_job_ptr) {
+	if (!bb_job_ptr) {
 		alloc_bb_jobid(job_id);
 		bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
 	}
 	bb_job_ptr->dataset_cnt = dataset_count;
-	if(bb_job_ptr->dataset_ids)
+	if (bb_job_ptr->dataset_ids)
 		xfree(bb_job_ptr->dataset_ids);
 	bb_job_ptr->dataset_ids = xmalloc(bb_job_ptr->dataset_cnt * sizeof(uint32_t));
-	memcpy(bb_job_ptr->dataset_ids, dataset_ids, bb_job_ptr->dataset_cnt);
-	bb_job_ptr->status	  = BB_JOB_DATASETS_CREATED;
+	memcpy(bb_job_ptr->dataset_ids, dataset_ids, bb_job_ptr->dataset_cnt * sizeof(uint32_t));
+	bb_job_ptr->status = BB_JOB_DATASETS_CREATED;
 	rc = bb_job_ptr->terminal;
 	//slurm_mutex_unlock(&bb_job_list_mutex);	
 	return rc;
@@ -3557,13 +3557,17 @@ static int _submit_bb_task(uint32_t dataset_count, BB_TASK_TYPE task_type, uint3
 	for (uint32_t dataset_idx = 0; dataset_idx < dataset_count; dataset_idx++) {
 		uint32_t tmp_task_id = 0;
 		uint32_t tmp_dataset_id = dataset_ids[dataset_idx];
+		if (tmp_dataset_id == 0) {
+			debug("数据集id为%u,跳过", tmp_dataset_id);
+			continue;
+		}
+
 		if (task_type == BB_PREFETCH_TAKS_TYPE) {
 			debug("BB-----开始提交预热任务(数据集%u): ", tmp_dataset_id);
 		} else if (task_type == BB_RECYCLE_TAKS_TYPE) {
-			debug("BB-----开始提交回收任务: ", tmp_dataset_id);
+			debug("BB-----开始提交回收任务(数据集%u)", tmp_dataset_id);
 		}
-		if (tmp_dataset_id == 0)
-			continue;
+
 		int bb_rc = bb_g_submit_bb_task(tmp_dataset_id, task_type, &tmp_task_id);
 		if (bb_rc == 0 && tmp_task_id > 0) {
 			debug("BB-----提交任务成功(数据集%u), 任务ID=%u", tmp_dataset_id, tmp_task_id);
