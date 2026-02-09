@@ -2917,7 +2917,7 @@ static void _notify_result_rpc_prolog(prolog_launch_msg_t *req, int rc)
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 static int _notify_slurmctld_create_bb_fini(bb_return_message_t *bb_rc_msg)
 {
-	int rc, ret_c;
+int rc, ret_c;
 	slurm_msg_t req_msg;
 	complete_create_bb_msg_t req;
 
@@ -2948,7 +2948,6 @@ static int _notify_slurmctld_create_bb_fini(bb_return_message_t *bb_rc_msg)
 
 	req_msg.msg_type = REQUEST_COMPLETE_CREATE_BB;
 	req_msg.data = &req;
-
 	/*
 	 * Here we only care about the return code of
 	 * slurm_send_recv_controller_rc_msg since it means there was a
@@ -3143,7 +3142,7 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 			is_print = false;
 		}
 		if (_submit_bb_task(dataset_cnt, BB_RECYCLE_TAKS_TYPE, dataset_ids, clean_task_ids) == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u创建BB中,提交回收任务成功", job_id);
+			debug("BB-----取消作业%u中,提交回收任务成功", job_id);
 			// 提交任务成功，更新bb_job_ptr->task_ids
 			slurm_mutex_lock(&bb_job_list_mutex);
 			bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
@@ -3152,15 +3151,15 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 			}
 			slurm_mutex_unlock(&bb_job_list_mutex);
 		} else {
-			error("BB-----取消作业%u创建BB中,提交回收任务失败", job_id);
+			error("BB-----取消作业%u中,提交回收任务失败", job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 
 		if (_wait_bb_task_complete(clean_task_ids, BB_RECYCLE_TAKS_TYPE, dataset_cnt) == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u创建BB中,回收任务执行成功", job_id);
+			debug("BB-----取消作业%u中,回收任务执行成功", job_id);
 		} else {
-			error("BB-----取消作业%u创建BB中,回收任务执行失败", job_id);
+			error("BB-----取消作业%u中,回收任务执行失败", job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
@@ -3180,9 +3179,9 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 		slurm_mutex_unlock(&bb_job_list_mutex);
 		
 		if (dataset_rc == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u创建BB中,清理数据集规则成功", job_id);
+			debug("BB-----取消作业%u中,清理数据集规则成功", job_id);
 		} else {
-			error("BB-----取消作业%u创建BB中,清理数据集规则失败", job_id);
+			error("BB-----取消作业%u中,清理数据集规则失败", job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
@@ -3202,9 +3201,9 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 		slurm_mutex_unlock(&bb_job_list_mutex);
 		
 		if (group_rc == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u创建BB中,清理缓存组成功", job_id);
+			debug("BB-----取消作业%u中,清理缓存组成功", job_id);
 		} else {
-			error("BB-----取消作业%u创建BB中,清理缓存组失败", job_id);
+			error("BB-----取消作业%u中,清理缓存组失败", job_id);
 			rc = SLURM_ERROR;
 			break;
 		}

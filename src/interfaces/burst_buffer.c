@@ -127,7 +127,7 @@ static const char *syms[] = {
 	"bb_p_run_script",
 	"bb_p_xlate_bb_2_tres_str",
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	"bb_p_get_node_quota"
+	"bb_p_get_node_quota",
 #endif
 };
 

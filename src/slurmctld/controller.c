@@ -4192,7 +4192,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 	DEF_TIMERS;
 	/* Locks: Read config and job */
 	slurmctld_lock_t job_write_lock = {
-		READ_LOCK, WRITE_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK };
+		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 	
 	now = time(NULL);
 	while (1) {
