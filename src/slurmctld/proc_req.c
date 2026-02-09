@@ -2477,7 +2477,6 @@ static void _deal_bb_complete_failed(job_record_t *job_ptr)
  */
 static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
 {
-
 	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
 	if (!job_hl) {
 		error("Unable to parse hostlist: `%s'", job_ptr->nodes);
@@ -2867,6 +2866,8 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	if (!job_ptr) {
 		error("The job_ptr of job %u does not exist", comp_msg->job_id);
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+			unlock_slurmctld(job_write_lock);
 		return;
 	}
 	if (error_code == ESLURM_BB_RESOURCE_SI_FAIL) {
@@ -2911,8 +2912,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		job_ptr->task_ids = NULL;
 	}
 
-	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
-		unlock_slurmctld(job_write_lock);
+
 
 	/* 把job_ptr同步给bb_alloc和bb_job,其中bb_g_job_test_post_run中有job_ptr读锁 */
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
@@ -2944,6 +2944,9 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 			job_ptr->bb_ready = false;
 		}
 	}
+	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+		unlock_slurmctld(job_write_lock);
+
 	slurm_send_rc_msg(msg, SLURM_SUCCESS);
 }
 #endif
