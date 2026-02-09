@@ -3268,7 +3268,7 @@ free_end:
 
 /**
  * @brief 创建BB后的处理
- * @param job_ptr 函数中有读锁
+ * @param job_ptr 
  * @return 
  */
 extern int bb_p_job_test_post_run(job_record_t *job_ptr)
@@ -3281,8 +3281,6 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 	    (job_ptr->burst_buffer[0] == '\0'))
 		return 1;
 
-	slurmctld_lock_t job_read_lock = { .job = READ_LOCK };
-	lock_slurmctld(job_read_lock);
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	log_flag(BURST_BUF, "%pJ", job_ptr);
 
@@ -3344,7 +3342,6 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 		// 	rc =  0;
 		// }
 	}
-	unlock_slurmctld(job_read_lock);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	return rc;
