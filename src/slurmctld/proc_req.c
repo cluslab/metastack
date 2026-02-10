@@ -2951,7 +2951,10 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		unlock_slurmctld(job_write_lock);
 
-	slurm_send_rc_msg(msg, SLURM_SUCCESS);
+	if (slurm_send_rc_msg(msg, SLURM_SUCCESS) < 0) {
+		error("%s: Failed to send response for JobId=%u: %m",
+			__func__, comp_msg->job_id);
+	}
 }
 #endif
 
