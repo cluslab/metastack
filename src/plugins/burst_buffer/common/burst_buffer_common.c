@@ -1623,10 +1623,14 @@ extern bb_alloc_t *bb_alloc_name_rec(bb_state_t *state_ptr, char *name,
 #ifdef __METASTACK_NEW_BURSTBUFFER	 
 extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool update)
 {
-	
+
+	//初始化
+	bb_alloc->index_groups			= 0;
+	bb_alloc->index_datasets        = 0;
+	bb_alloc->index_tasks           = 0;
 	bb_alloc->type 					= bb_job->type; //缓存类型，可以支持持久及临时。temporary|persistent
 	//bb_alloc->cache_tmp 			= bb_job->cache_tmp;
-	bb_alloc->enforce_bb_flag 		 = bb_job->enforce_bb_flag;
+	bb_alloc->enforce_bb_flag 		= bb_job->enforce_bb_flag;
 	bb_alloc->metadata_acceleration = bb_job->metadata_acceleration;
 	bb_alloc->bb_task 				= bb_job->bb_task;     //当前缓存组最大并行的任务数
 	bb_alloc->req_space 			= bb_job->req_space;		//当前作业请求的空间
@@ -1645,13 +1649,14 @@ extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool 
 		// xfree(bb_alloc->bb_state);
 		// bb_alloc->bb_state 			 	= xstrdup(bb_job->bb_state);         //缓存组状态，启用，禁用,失败成功
 		bb_alloc->metadata_acceleration = bb_job->metadata_acceleration; //是否开启元数据加速
-		bb_alloc->index_groups 			= bb_job->index_groups; /* 作业中包含的缓存组个数 */
-		bb_alloc->index_datasets 		= bb_job->index_datasets; /* 作业中包含的数据集个数 */
-		bb_alloc->index_tasks			= bb_job->index_tasks; /* 作业中包含的任务个数 */
+	
+
+
 		bb_alloc->groups_nodes 			= bb_job->groups_nodes; //当前缓存组包含的节点数
 		if (bb_alloc->bb_create_finished) {
 			xfree(bb_alloc->bb_group_ids);
 			if (bb_job->bb_group_ids && bb_job->index_groups > 0) { /* 作业中包含的缓存组id */
+				bb_alloc->index_groups 			= bb_job->index_groups; /* 作业中包含的缓存组个数 */
 				bb_alloc->bb_group_ids = xmalloc(sizeof(int) * bb_job->index_groups);
 				memcpy(bb_alloc->bb_group_ids, bb_job->bb_group_ids, sizeof(int) * bb_job->index_groups);
 			} else {
@@ -1659,6 +1664,7 @@ extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool 
 			}
 			xfree(bb_alloc->bb_dataset_ids);
 			if (bb_job->bb_dataset_ids && bb_job->index_datasets > 0) { /*  作业中包含的数据集id  */
+				bb_alloc->index_datasets 		= bb_job->index_datasets; /* 作业中包含的数据集个数 */
 				bb_alloc->bb_dataset_ids = xmalloc(sizeof(int) * bb_job->index_datasets);
 				memcpy(bb_alloc->bb_dataset_ids, bb_job->bb_dataset_ids, sizeof(int) * bb_job->index_datasets);
 			} else {
@@ -1666,6 +1672,7 @@ extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool 
 			}
 			xfree(bb_alloc->bb_task_ids);
 			if (bb_job->bb_task_ids && bb_job->index_tasks > 0) { /* 作业中包含的任务id */
+				bb_alloc->index_tasks			= bb_job->index_tasks; /* 作业中包含的任务个数 */
 				bb_alloc->bb_task_ids = xmalloc(sizeof(int) * bb_job->index_tasks);
 				memcpy(bb_alloc->bb_task_ids, bb_job->bb_task_ids, sizeof(int) * bb_job->index_tasks);
 			} else {

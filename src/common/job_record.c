@@ -969,9 +969,15 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 		packbool(dump_job_ptr->bb_ready, buffer);
 		/* BB创建完成才有id */
 		if (dump_job_ptr->bb_ready) {
-			pack32_array(dump_job_ptr->group_ids, dump_job_ptr->need_group_counts, buffer);
-			pack32_array(dump_job_ptr->dataset_ids, dump_job_ptr->need_database_counts, buffer);
-			pack32_array(dump_job_ptr->task_ids, dump_job_ptr->need_database_counts, buffer);
+			if(dump_job_ptr->need_group_counts > 0) {
+				pack32_array(dump_job_ptr->group_ids, dump_job_ptr->need_group_counts, buffer);
+				
+			}
+			if(dump_job_ptr->need_database_counts) {
+				pack32_array(dump_job_ptr->dataset_ids, dump_job_ptr->need_database_counts, buffer);
+				pack32_array(dump_job_ptr->task_ids, dump_job_ptr->need_database_counts, buffer);
+			}
+
 		}
 		packbool(dump_job_ptr->bb_clean_finish,		    buffer);
 		packbool(dump_job_ptr->bb_kill_flag,		    buffer);
@@ -2952,18 +2958,23 @@ extern int job_record_unpack(job_record_t **out,
 		/* bb创建完成才存在id */
 		uint32_t tmp_count = 0;
 		if (&job_ptr->bb_ready) {
-			if (unpack32_array(&job_ptr->group_ids, &tmp_count, buffer) != SLURM_SUCCESS)
-				goto unpack_error;
-			if (tmp_count != job_ptr->need_group_counts)
-				goto unpack_error;
-			if (unpack32_array(&job_ptr->dataset_ids, &tmp_count, buffer) != SLURM_SUCCESS)
-				goto unpack_error;
-			if (tmp_count != job_ptr->need_database_counts)
-				goto unpack_error;
-			if (unpack32_array(&job_ptr->task_ids, &tmp_count, buffer) != SLURM_SUCCESS)
-				goto unpack_error;
-			if (tmp_count != job_ptr->need_database_counts)
-				goto unpack_error;
+			if(job_ptr->need_group_counts) {
+				if (unpack32_array(&job_ptr->group_ids, &tmp_count, buffer) != SLURM_SUCCESS)
+					goto unpack_error;
+			}
+
+			// if (tmp_count != job_ptr->need_group_counts)
+			// 	goto unpack_error;
+			if(job_ptr->need_database_counts) {
+				if (unpack32_array(&job_ptr->dataset_ids, &tmp_count, buffer) != SLURM_SUCCESS)
+					goto unpack_error;
+				// if (tmp_count != job_ptr->need_database_counts)
+				// 	goto unpack_error;
+				if (unpack32_array(&job_ptr->task_ids, &tmp_count, buffer) != SLURM_SUCCESS)
+					goto unpack_error;
+				// if (tmp_count != job_ptr->need_database_counts)
+				// 	goto unpack_error;
+			}
 		}
 		safe_unpackbool(&job_ptr->bb_clean_finish,			 buffer);
 		safe_unpackbool(&job_ptr->bb_kill_flag,			 buffer);
