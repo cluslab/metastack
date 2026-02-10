@@ -2909,10 +2909,6 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	} else {
 		job_ptr->task_ids = NULL;
 	}
-
-
-
-	/* 把job_ptr同步给bb_alloc和bb_job,其中bb_g_job_test_post_run中有job_ptr读锁 */
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
 		error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
 	}
