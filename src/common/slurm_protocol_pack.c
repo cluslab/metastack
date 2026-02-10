@@ -16181,8 +16181,8 @@ static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *b
 			// }
 			pack32_array(msg->dataset_ids, msg->datasets_cnt, buffer);
 		}
-		pack32(msg->tasks_cnt, buffer);
-		if (msg->datasets_cnt > 0 && msg->tasks_cnt && msg->task_ids) {
+		// pack32(msg->tasks_cnt, buffer);
+		if (msg->datasets_cnt > 0 && msg->task_ids) {
 			// for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
 			// 	pack32(msg->task_ids[i], buffer);
 			// }
@@ -16470,35 +16470,15 @@ static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_
 		safe_unpackstr(&msg->node_name, buffer);
 		safe_unpack32(&msg->bb_rc, buffer);
 		safe_unpack32(&msg->groups_cnt, buffer);
-		if (msg->groups_cnt > 0) {
-			///msg->group_ids = xmalloc(msg->groups_cnt * sizeof(uint32_t));
-			// for (uint32_t i = 0; i < msg->groups_cnt; i++) {
-			// 	safe_unpack32(&msg->group_ids[i], buffer);
-			// }
+		if (msg->groups_cnt > 0)
 			safe_unpack32_array(&msg->group_ids, &uint32_tmp, buffer);
-		}
 		safe_unpack32(&msg->datasets_cnt, buffer);
 		if (msg->datasets_cnt > 0) {
-			// msg->dataset_ids = xmalloc(msg->datasets_cnt * sizeof(uint32_t));
-			// for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
-			// 	safe_unpack32(&msg->dataset_ids[i], buffer);
-			// }
-			safe_unpack32_array(&msg->group_ids, &uint32_tmp, buffer);
-			// msg->task_ids = xmalloc(msg->datasets_cnt * sizeof(uint32_t));
-			// for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
-			// 	safe_unpack32(&msg->task_ids[i], buffer);
-			// }
-			
+			safe_unpack32_array(&msg->dataset_ids, &uint32_tmp, buffer);
+			safe_unpack32_array(&msg->task_ids, &uint32_tmp, buffer);
 		}
-		safe_unpack32(&msg->tasks_cnt,  buffer);
-		if(msg->tasks_cnt) {
-			 safe_unpack32_array(&msg->task_ids, &uint32_tmp, buffer);
-		}
-
 	}
-
 	return SLURM_SUCCESS;
-
 unpack_error:
 	slurm_free_complete_create_bb_launch_msg(msg);
 	*msg_ptr = NULL;
