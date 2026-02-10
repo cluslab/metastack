@@ -544,7 +544,7 @@ struct job_record {
 #ifdef __METASTACK_NEW_PENDING_ORDER
 	uint32_t pending_order;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER3
+#ifdef __METASTACK_NEW_BURSTBUFFER6
 	uint32_t need_group_counts; 
 	uint32_t need_database_counts;
 	uint64_t req_space;		   		 //当前作业请求的空间
@@ -567,6 +567,7 @@ struct job_record {
 	bool     bb_clean_finish;           //是否完成清理，作业完成（terminal job）后执行清理完成后置位
 	bool   	 bb_kill_flag; 			 //当作业收到kill信号时，该位置位为true，即使未创建作业步（可能缓存组已经创建完成），也不再触发srun_allocate、launch_prolog、launch_job
     uint32_t bb_clean_status;        //作业或节点异常情况下，根据不同流程设置不同的标志位。
+	uint32_t pack_status;            //用于标识pack、unpack的标识。0x01，只需要打包缓存组；0x02，打包缓存组、数据集；0x03，打包缓存组、数据集、任务
 #endif
 
 };

@@ -2557,27 +2557,33 @@ static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
 	}
 	xassert(job_ptr->group_ids &&job_ptr->dataset_ids &&job_ptr->task_ids);
 
-	job_ptr->need_group_counts = epilog_msg->groups_cnt;
-	job_ptr->need_database_counts = epilog_msg->datasets_cnt;
+	//job_ptr->need_group_counts = epilog_msg->groups_cnt;
+	//job_ptr->need_database_counts = epilog_msg->datasets_cnt;
 	if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
 		bb_clean_status = SLURM_SUCCESS;
 	} else {
 		bb_clean_status = ESLURM_BB_RESOURCE_SO_FAIL;
 	}
 	if (epilog_msg->groups_cnt > 0 && epilog_msg->group_ids) {
+		job_ptr->need_group_counts = epilog_msg->groups_cnt;
+		job_ptr->pack_status = 0x01;
 		memcpy(job_ptr->group_ids, epilog_msg->group_ids, epilog_msg->groups_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
 		bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
 	}
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->dataset_ids) {
+		job_ptr->need_database_counts = epilog_msg->datasets_cnt;
 		memcpy(job_ptr->dataset_ids, epilog_msg->dataset_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
+		job_ptr->pack_status = 0x02;
+		//memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
 		bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
 	}
-	if (epilog_msg->datasets_cnt > 0 && epilog_msg->task_ids) {
+	if (epilog_msg->datasets_cnt > 0  && epilog_msg->task_ids ) {
 		memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
+		job_ptr->pack_status = 0x03;
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
 		bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
@@ -2881,7 +2887,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	}
 	/* 防止杀作业流程先于该流程触发，导致在terminal_job中job_ptr->bb_ready=fasle，而在本流程中设置job_ptr->bb_ready=true，导致两边都为做清理*/
 	/*  发送kill作业时已经收到创建已经完成，直接走bb_g_cancel流程*/
-	if(job_ptr->bb_kill_flag == true && job_ptr->bb_ready) {
+	if(job_ptr->bb_kill_flag == true) {
 		job_ptr->bb_clean_status = ESLURM_BB_RESOURCE_SI_CANCEL; //不在线程中单独处理
 	}
 
@@ -2891,28 +2897,32 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	xfree(job_ptr->group_ids);
 	xfree(job_ptr->dataset_ids);
 	xfree(job_ptr->task_ids);
+	job_ptr->pack_status = 0;
 	if (comp_msg->groups_cnt > 0 && comp_msg->group_ids) {
 		job_ptr->group_ids = xmalloc(comp_msg->groups_cnt * sizeof(uint32_t));
 		memcpy(job_ptr->group_ids, comp_msg->group_ids, comp_msg->groups_cnt * sizeof(uint32_t));
+		job_ptr->pack_status = 0x01;
 	} else {
 		job_ptr->group_ids = NULL;
 	}
 	if (comp_msg->datasets_cnt > 0 && comp_msg->dataset_ids) {
 		job_ptr->dataset_ids = xmalloc(comp_msg->datasets_cnt * sizeof(uint32_t));
 		memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids, comp_msg->datasets_cnt * sizeof(uint32_t));
+		job_ptr->pack_status = 0x02;
 	} else {
 		job_ptr->dataset_ids = NULL;
 	}
 	if (comp_msg->datasets_cnt > 0 && comp_msg->task_ids) {
 		job_ptr->task_ids = xmalloc(comp_msg->datasets_cnt * sizeof(uint32_t));
 		memcpy(job_ptr->task_ids, comp_msg->task_ids, comp_msg->datasets_cnt * sizeof(uint32_t));
+		job_ptr->pack_status = 0x03;
 	} else {
 		job_ptr->task_ids = NULL;
 	}
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
 		error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
 	}
-
+    job_ptr->bb_ready = true;
 	END_TIMER2(__func__);
 
 	/* 
