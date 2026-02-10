@@ -3697,6 +3697,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	int alt_rc = SLURM_ERROR;
 	int num_cnt = 0;
 	uint32_t job_id = 0;
+	uint32_t group_count = 0;
+	uint32_t dataset_count = 0;
+	uint32_t pfs_cnt = 0;
 	bb_return_message_t *bb_rc_msg = NULL;
 	if (!req) {
 		error("BB-----参数为空");
@@ -3714,10 +3717,10 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 		debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr",req->step_id.job_id);
 		return SLURM_SUCCESS;
 	}
-	uint32_t job_id = req->step_id.job_id;
-	uint32_t group_count = bb_job_ptr->group_cnt;
-	uint32_t dataset_count = bb_job_ptr->dataset_cnt;
-	uint32_t pfs_cnt = bb_job_ptr->pfs_cnt;
+	job_id = req->step_id.job_id;
+	group_count = bb_job_ptr->group_cnt;
+	dataset_count = bb_job_ptr->dataset_cnt;
+	pfs_cnt = bb_job_ptr->pfs_cnt;
 
 	if (group_count == 0 || dataset_count == 0 || pfs_cnt == 0) {
 		error("BB-----参数异常");
