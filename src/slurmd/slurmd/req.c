@@ -533,7 +533,7 @@ static int update_bb_job_task(uint32_t job_id, uint32_t task_count, uint32_t *ta
 	if (bb_job_ptr->task_ids)
 		xfree(bb_job_ptr->task_ids);
 	bb_job_ptr->task_ids = xmalloc(bb_job_ptr->dataset_cnt * sizeof(uint32_t));
-	memcpy(bb_job_ptr->task_ids, task_ids, bb_job_ptr->dataset_cnt);
+	memcpy(bb_job_ptr->task_ids, task_ids, bb_job_ptr->dataset_cnt * sizeof(uint32_t));
 	bb_job_ptr->status = BB_JOB_TASKS_SUBMITED;
 	rc = bb_job_ptr->terminal;
 	return rc;
@@ -3058,7 +3058,7 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 	}
 	
 	int rc = SLURM_SUCCESS;
-	bool is_print = true; 
+	bool is_print = true; //控制是否打印当前所处阶段
 	bb_job_msg_t *bb_job_ptr = NULL;
 	
 	// 临时变量存储需要的数据
@@ -3123,13 +3123,18 @@ static int _clean_canceled_bb_resources(uint32_t job_id, List bb_job_list)
 	switch (bb_stage) {
 	case BB_JOB_TASKS_SUBMITED:
 		/* 不知道任务状态，全部取消 */
-		if(is_print){
+		if (is_print) {
 			debug("BB-----作业%u创建bb阶段取消(当前已完成预热任务提交)，取消所有任务", job_id);
 			is_print = false;
 		}
 		for (int i = 0; i < dataset_cnt; i++) {
+			debug("BB-----预热任务列表为(0代表空):%u,", task_ids[i]);
+		}
+
+		for (int i = 0; i < dataset_cnt; i++) {
 			if (task_ids && task_ids[i] != 0)
-				bb_g_cancel_bb_task_by_id(task_ids[i]);
+				debug("BB-----取消预热任务%u", task_ids[i]);
+			bb_g_cancel_bb_task_by_id(task_ids[i]);
 		}
 
 	case BB_JOB_PREFETCH_FINISHED:
