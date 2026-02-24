@@ -3198,8 +3198,11 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 {
 	bb_job_t *bb_job = NULL;
 	int rc = SLURM_SUCCESS;
-	if (!job_ptr || !job_ptr->group_ids || !job_ptr->dataset_ids) {
+	if (!job_ptr) {
 		error("job_ptr or group/dataset_arr is NULL");
+		return SLURM_ERROR;
+	} else if (!job_ptr->group_ids || !job_ptr->dataset_ids) {
+		error("group/dataset_arr is NULL");
 		return SLURM_ERROR;
 	}
 	if (job_ptr->bb_clean_finish) {
