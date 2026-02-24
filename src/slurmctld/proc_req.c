@@ -2919,10 +2919,10 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	} else {
 		job_ptr->task_ids = NULL;
 	}
+	job_ptr->bb_ready = true; //一定要在bb_g_job_test_post_run函数前，否则该属性无法同步
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
 		error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
 	}
-    job_ptr->bb_ready = true;
 	END_TIMER2(__func__);
 
 	/* 
