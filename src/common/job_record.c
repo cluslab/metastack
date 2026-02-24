@@ -2957,7 +2957,7 @@ extern int job_record_unpack(job_record_t **out,
 		safe_unpackbool(&job_ptr->bb_ready,				 buffer);	
 		/* bb创建完成才存在id */
 		uint32_t tmp_count = 0;
-		if (&job_ptr->bb_ready) {
+		if (job_ptr->bb_ready) {
 			if(job_ptr->need_group_counts) {
 				if (unpack32_array(&job_ptr->group_ids, &tmp_count, buffer) != SLURM_SUCCESS)
 					goto unpack_error;
