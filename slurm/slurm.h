@@ -5812,6 +5812,7 @@ typedef struct {
 	uint32_t index_datasets; /* 作业中包含的数据集个数 */
 	uint32_t index_tasks; /* 作业中包含的数据集个数 */
 	bool bb_create_finished; //缓存组创建完成
+	uint32_t job_state; //job_ptr->job_state
 #endif
 } burst_buffer_resv_t;
 

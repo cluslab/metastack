@@ -17403,6 +17403,7 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 					} else 
 						xfree(bb_resv_ptr->bb_task_ids);	
 				}
+				safe_unpack32(&bb_resv_ptr->job_state, buffer);
 			}	
 		}
 	}
