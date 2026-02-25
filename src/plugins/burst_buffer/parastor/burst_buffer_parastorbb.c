@@ -3310,7 +3310,6 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 		bb_job->index_tasks = job_ptr->need_database_counts;
 		bb_alloc->index_tasks = job_ptr->need_database_counts;
 
-
 		xfree(bb_job->bb_group_ids);
 		xfree(bb_job->bb_dataset_ids);
 		xfree(bb_job->bb_task_ids);

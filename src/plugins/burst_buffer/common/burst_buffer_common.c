@@ -1155,12 +1155,17 @@ extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 	int i, rec_count = 0;
 	bb_alloc_t *bb_alloc;
 	int eof, offset;
+	job_record_t *job_ptr = NULL;
+	uint32_t job_state = 0;
+	slurmctld_lock_t job_read_lock = { NO_LOCK, READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 
 	xassert(state_ptr);
 	offset = get_buf_offset(buffer);
 	pack32(rec_count,  buffer);
 	if (!state_ptr->bb_ahash)
 		return rec_count;
+
+	lock_slurmctld(job_read_lock);
 
 	for (i = 0; i < BB_HASH_SIZE; i++) {
 		bb_alloc = state_ptr->bb_ahash[i];
@@ -1174,13 +1179,23 @@ extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 						bb_alloc->state = (uint16_t)bb_job->state;
 						bb_alloc->state_time = time(NULL);
 					}
+					job_ptr = find_job_record(bb_alloc->job_id);
+					if (job_ptr) {
+						job_state = job_ptr->job_state;
+					} else {
+						job_state = 0;  /* Job not found, use 0 */
+					}
+				}else {
+					job_state = 0;  /* No job_id, use 0 */
 				}
 				_pack_job_alloc(bb_alloc, buffer, protocol_version);
+				pack32(job_state, buffer);
 				rec_count++;
 			}
 			bb_alloc = bb_alloc->next;
 		}
 	}
+	unlock_slurmctld(job_read_lock);
 	if (rec_count != 0) {
 		eof = get_buf_offset(buffer);
 		set_buf_offset(buffer, offset);
