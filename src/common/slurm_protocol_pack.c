@@ -16168,24 +16168,15 @@ static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *b
 		pack32(msg->bb_rc, buffer);
 		pack32(msg->groups_cnt, buffer);
 		if (msg->groups_cnt > 0 && msg->group_ids) {
-			// for (uint32_t i = 0; i < msg->groups_cnt; i++) {
-			// 	pack32(msg->group_ids[i], buffer);
-			// }
 			pack32_array(msg->group_ids, msg->groups_cnt, buffer);
 
 		}
 		pack32(msg->datasets_cnt, buffer);
 		if (msg->datasets_cnt > 0 && msg->dataset_ids) {
-			// for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
-			// 	pack32(msg->dataset_ids[i], buffer);
-			// }
 			pack32_array(msg->dataset_ids, msg->datasets_cnt, buffer);
 		}
 		// pack32(msg->tasks_cnt, buffer);
 		if (msg->datasets_cnt > 0 && msg->task_ids) {
-			// for (uint32_t i = 0; i < msg->datasets_cnt; i++) {
-			// 	pack32(msg->task_ids[i], buffer);
-			// }
 			pack32_array(msg->task_ids, msg->datasets_cnt, buffer);
 		}
 	}
