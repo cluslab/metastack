@@ -399,21 +399,47 @@ static int bb_job_record_unpack(buf_t *buffer)
 {
 	bb_job_msg_t* bb_job_ptr = NULL;
 	time_t buf_time = 0;
-    uint16_t res_version = 0;
+	uint32_t tmp32  = 0;
+	uint16_t res_version = 0;
 	slurm_mutex_lock(&bb_job_list_mutex);
 	FREE_NULL_LIST(bb_job_list);
 	bb_job_ptr = xmalloc(sizeof(bb_job_msg_t));
 
 	safe_unpack16(&res_version, buffer);
 	safe_unpack_time(&buf_time, buffer);
-	if (res_version >= META_3_0_PROTOCOL_VERSION) { //后期需要更改版本号
-		
+	if (res_version > = META_3_0_PROTOCOL_VERSION) { //后期需要更改版本号
+		safe_unpack32(&bb_job_ptr->job_id,      buffer);
+		safe_unpack64(&bb_job_ptr->req_space,   buffer);
+		safe_unpack32(&bb_job_ptr->access_mode, buffer);
+		safe_unpack32(&bb_job_ptr->status,      buffer);
+		safe_unpack32(&bb_job_ptr->pfs_cnt,     buffer);
+		safe_unpack32(&bb_job_ptr->group_cnt,   buffer);
+		safe_unpack32(&bb_job_ptr->dataset_cnt, buffer);
+		safe_unpack32(&bb_job_ptr->task_cnt,    buffer);		
+		if(bb_job_ptr->group_cnt > 0 ) {
+			bb_job_ptr->group_sn = xmalloc(bb_job_ptr->group_cnt * sizeof(uint32_t));
+			for (int i = 0; i < bb_job_ptr->group_cnt; i++) {
+				safe_unpackstr_xmalloc(&bb_job_ptr->group_ids[i], &tmp32, buffer);
+			}
+		}
+
+		if(bb_job_ptr->group_cnt > 0 ) {
+			safe_unpack32_array(&bb_job_ptr->group_ids, &tmp32, buffer)
+		}
+
+		if(bb_job_ptr->dataset_cnt > 0 ) {
+			safe_unpack32_array(&bb_job_ptr->dataset_ids, &tmp32, buffer)
+		}
+
+		if(bb_job_ptr->task_cnt > 0 ) {
+			safe_unpack32_array(&bb_job_ptr->task_ids, &tmp32, buffer)
+		}
 	}
 
 	if (bb_job_list == NULL) {
 		bb_job_list = list_create(_bb_job_list_delete);
 	} 
-
+	list_append(bb_job_list, bb_job_ptr);
 	slurm_mutex_unlock(&bb_job_list_mutex);
 
 }
@@ -508,14 +534,14 @@ static int bb_job_record_pack(bb_job_msg_t* bb_job_ptr, buf_t *buffer, uint16_t 
 		pack32(bb_job_ptr->status,         buffer);
 		//pack32(bb_job_ptr->terminal,     buffer);
 		pack32(bb_job_ptr->pfs_cnt,        buffer);
+		pack32(bb_job_ptr->group_cnt,      buffer);
+		pack32(bb_job_ptr->dataset_cnt,    buffer);
+		pack32(bb_job_ptr->task_cnt,       buffer);		
 		if(bb_job_ptr->group_cnt > 0) {
 			for (int i = 0; i < bb_job_ptr->group_cnt; i++) {
 				packstr(bb_job_ptr->group_ids[i], buffer);
 			}
 		}
-
-		pack32(bb_job_ptr->group_cnt, buffer);
-		pack32(bb_job_ptr->dataset_cnt, buffer);
 
 		if (bb_job_ptr->group_cnt > 0 && bb_job_ptr->group_ids) {
 			pack32_array(bb_job_ptr->group_cnt, bb_job_ptr->group_ids, buffer);
@@ -937,12 +963,7 @@ slurmd_req(slurm_msg_t *msg)
 		}
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER7
-
-		slurm_mutex_lock(&bb_job_list_mutex);
-// 		if (bb_job_list) { //spool相关的写入
-// 			FREE_NULL_LIST(bb_job_list);
-// 		}
-		slurm_mutex_unlock(&bb_job_list_mutex);
+	bb_restore_state();
 #endif
 		return;
 	}
