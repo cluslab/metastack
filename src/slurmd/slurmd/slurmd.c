@@ -1350,7 +1350,9 @@ static void _try_to_reconfig(void)
 	conmgr_quiesce(true);
 
 	save_cred_state();
-
+#ifdef __METASTACK_NEW_BURSTBUFFER7
+	dump_bb_job_state(void);
+#endif
 	if (getrlimit(RLIMIT_NOFILE, &rlim) < 0) {
 		error("getrlimit(RLIMIT_NOFILE): %m");
 		rlim.rlim_cur = 4096;
@@ -2384,6 +2386,9 @@ _slurmd_fini(void)
 	jobacct_gather_fini();
 	acct_gather_profile_fini();
 	cred_state_fini();
+#ifdef __METASTACK_NEW_BURSTBUFFER7
+	bb_state_fini();
+#endif
 	switch_g_fini();
 	slurmd_task_fini();
 	slurm_conf_destroy();
