@@ -428,10 +428,19 @@ static int bb_job_record_unpack(buf_t *buffer)
 		safe_unpack32(&bb_job_ptr->group_cnt,   buffer);
 		safe_unpack32(&bb_job_ptr->dataset_cnt, buffer);
 		safe_unpack32(&bb_job_ptr->task_cnt,    buffer);		
+
+
 		if(bb_job_ptr->group_cnt > 0 ) {
-			bb_job_ptr->group_sn = xmalloc(bb_job_ptr->group_cnt * sizeof(uint32_t));
+			bb_job_ptr->group_sn = xmalloc(bb_job_ptr->group_cnt * sizeof(char *) + 1);
 			for (int i = 0; i < bb_job_ptr->group_cnt; i++) {
 				safe_unpackstr_xmalloc(&bb_job_ptr->group_sn[i], &tmp32, buffer);
+			}
+		}
+
+		if(bb_job_ptr->pfs_cnt > 0 ) {
+			bb_job_ptr->pfs = xmalloc(bb_job_ptr->pfs_cnt * sizeof(char *) + 1);
+			for (int i = 0; i < bb_job_ptr->pfs_cnt; i++) {
+				safe_unpackstr_xmalloc(&bb_job_ptr->pfs[i], &tmp32, buffer);
 			}
 		}
 
@@ -571,6 +580,11 @@ static int bb_job_record_pack(bb_job_msg_t* bb_job_ptr, buf_t *buffer, uint16_t 
 		if(bb_job_ptr->group_cnt > 0) {
 			for (int i = 0; i < bb_job_ptr->group_cnt; i++) {
 				packstr(bb_job_ptr->group_sn[i], buffer);
+			}
+		}
+		if(bb_job_ptr->pfs_cnt > 0) {
+			for (int i = 0; i < bb_job_ptr->pfs_cnt; i++) {
+				packstr(bb_job_ptr->pfs[i], buffer);
 			}
 		}
 
