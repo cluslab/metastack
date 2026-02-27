@@ -488,6 +488,12 @@ slurm_errtab_t slurm_errtab[] = {
 #ifdef __METASTACK_NEW_BURSTBUFFER2
 	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_LIMIT),
 	  "Max burst buffer resources reached" },
+	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SI_CANCEL),
+	  "Burst buffer assignment successfully canceled in SI phase" },
+	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SI_FAIL),
+	  "Burst buffer SI stage failure (create or cancel failed)" },
+	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SO_FAIL),
+	  "Burst buffer SO stage failure" },
 #endif
 	/* SPANK errors */
 	{ ERRTAB_ENTRY(ESPANK_ERROR),

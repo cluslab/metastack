@@ -66,7 +66,7 @@ typedef struct slurm_bb_ops {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	int		(*state_pack)	(uid_t uid, buf_t *buffer,
 		uint16_t protocol_version, bool parastor);
-	int		(*free_allocated_resources)	(uint32_t job_id);
+	int		(*free_allocated_resources)	(job_record_t *job_ptr);
 	uint32_t *(*query_bb_groupid_by_sn)(job_record_t *job_ptr);
 	uint32_t *(*query_bb_datasetid_by_sn)(job_record_t *job_ptr);
 #endif
