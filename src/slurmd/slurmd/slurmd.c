@@ -1350,9 +1350,6 @@ static void _try_to_reconfig(void)
 	conmgr_quiesce(true);
 
 	save_cred_state();
-#ifdef __METASTACK_NEW_BURSTBUFFER7
-	dump_bb_job_state(void);
-#endif
 	if (getrlimit(RLIMIT_NOFILE, &rlim) < 0) {
 		error("getrlimit(RLIMIT_NOFILE): %m");
 		rlim.rlim_cur = 4096;
