@@ -613,7 +613,7 @@ static void dump_bb_job_state(buf_t *buffer)
 	bb_job_msg_t* bb_job_ptr = NULL;
 	/* Save high-water mark to avoid buffer growth with copies */
 	time_t now = time(NULL);
-	uint32_t bb_job_count = list_count(bb_job_list)
+	uint32_t bb_job_count = list_count(bb_job_list);
 	pack16(SLURM_PROTOCOL_VERSION, buffer);
 	pack_time(now, buffer);
 	pack32(bb_job_count, buffer);
