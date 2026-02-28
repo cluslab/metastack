@@ -2477,6 +2477,8 @@ static void _deal_bb_complete_failed(job_record_t *job_ptr)
  */
 static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
 {
+	if (!job_ptr->group_ids || job_ptr->need_group_counts == 0)
+		return;
 	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
 	if (!job_hl) {
 		error("Unable to parse hostlist: `%s'", job_ptr->nodes);
@@ -2487,7 +2489,7 @@ static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
 	for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
 		uint32_t group_id = job_ptr->group_ids[i];
 		if (group_id != 0) {
-			for (int j = 0; j < job_ptr->max_clients_per_job; i++) {
+			for (int j = 0; j < job_ptr->max_clients_per_job; j++) {
 				char *hostname = hostlist_nth(job_hl, node_idx);
 				if (!hostname) {
 					error("获取hostname为空");

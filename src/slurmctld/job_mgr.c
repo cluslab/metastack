@@ -6223,7 +6223,7 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		return SLURM_SUCCESS;
 
 	if (bb_return_code) {
-		error("create launch failure, %pJ rc = %d", job_ptr, rc);
+		error("create launch failure, %pJ bb_return_code = %d", job_ptr, bb_return_code);
 		job_ptr->exit_code = bb_return_code;
 		//(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 		job_ptr->bb_ready = false;
