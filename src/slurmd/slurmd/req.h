@@ -56,10 +56,11 @@ extern int send_slurmd_conf_lite(int fd, slurmd_conf_t *cf);
 
 /* Add record for every launched job so we know they are ready for suspend */
 extern void record_launched_jobs(void);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER7
+extern void bb_state_fini();
+#endif
 void file_bcast_init(void);
 void file_bcast_purge(void);
-
 /*
  * ume_notify - Notify all jobs and steps on this node that a Uncorrectable
  *	Memory Error (UME) has occurred by sending SIG_UME (to log event in

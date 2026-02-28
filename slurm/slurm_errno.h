@@ -72,6 +72,7 @@ extern "C" {
 #define __METASTACK_NEW_BURSTBUFFER4 //epilog
 #define __METASTACK_NEW_BURSTBUFFER5 //rongcuo
 #define __METASTACK_NEW_BURSTBUFFER6 //新线程处理
+#define __METASTACK_NEW_BURSTBUFFER7 //spool
 #endif
 
 /* set errno to the specified value - then return -1 */
