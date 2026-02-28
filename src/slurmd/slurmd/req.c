@@ -410,14 +410,10 @@ static void bb_drain_node(char *reason)
 static int bb_job_record_unpack(buf_t *buffer)
 {
 	bb_job_msg_t* bb_job_ptr = NULL;
-	time_t buf_time = 0;
-	uint32_t tmp32  = 0, bb_job_count = 0;
-	uint16_t res_version = 0;
+	// time_t buf_time = 0;
+	uint32_t tmp32  = 0;
+	// uint16_t res_version = 0;
 
-	FREE_NULL_LIST(bb_job_list);
-	safe_unpack16(&res_version, buffer);
-	safe_unpack_time(&buf_time, buffer);
-	safe_unpack32(&bb_job_count, buffer);
 	#ifdef __META_PROTOCOL
 	if (res_version >= META_3_0_PROTOCOL_VERSION) { //后期需要更改版本号
 		if(bb_job_count > 0) {
@@ -472,13 +468,13 @@ static int bb_job_record_unpack(buf_t *buffer)
 
 	}
 	#endif
-	slurm_mutex_lock(&bb_job_list_mutex);
+	//slurm_mutex_lock(&bb_job_list_mutex);
 	if (bb_job_list == NULL) {
 		bb_job_list = list_create(_bb_job_list_delete);
 	} 
 	if(bb_job_ptr  && (bb_job_count > 0))
 	list_append(bb_job_list, bb_job_ptr);
-	slurm_mutex_unlock(&bb_job_list_mutex);
+	//slurm_mutex_unlock(&bb_job_list_mutex);
 	return SLURM_SUCCESS;
 unpack_error:
 	_bb_job_list_delete(bb_job_ptr);
@@ -491,15 +487,41 @@ static void bb_restore_state(void)
 {
 	char *file_name = NULL;
 	buf_t *buffer = NULL;
-
+	int bb_job_cnt = 0;
+	uint16_t res_version = 0;
+	uint32_t bb_job_count = 0;
+	time_t buf_time = 0;
+	int error_code = SLURM_SUCCESS;
 	file_name = xstrdup(conf->spooldir);
 	xstrcat(file_name, "/bb_joblist_state");
 
-	if (!(buffer = create_mmap_buf(file_name)))
+	if (!(buffer = create_mmap_buf(file_name))) {
+		info("No burst buffer job state file (%s) to recover", file_name);
 		goto cleanup;
+	}
+	//slurm_mutex_lock(&bb_job_list_mutex);
+	FREE_NULL_LIST(bb_job_list);
+	//slurm_mutex_unlock(&bb_job_list_mutex);
+	safe_unpack16(&res_version, buffer);
 
-	bb_job_record_unpack(buffer);
-
+	debug3("Version string in job_state header is %s", res_version);
+	if (res_version == NO_VAL16) {
+		error("***********************************************");
+		error("Can not recover burst buffer job state, incompatible version");
+		error("***********************************************");
+		FREE_NULL_BUFFER(buffer);
+		goto cleanup;
+	}
+	safe_unpack_time(&buf_time, buffer);
+	safe_unpack32(&bb_job_count, buffer);
+	while (remaining_buf(buffer) > 0) {
+		//slurm_mutex_lock(&bb_job_list_mutex);
+		error_code = bb_job_record_unpack(buffer);
+		//slurm_mutex_unlock(&bb_job_list_mutex);
+		if (error_code != SLURM_SUCCESS)
+			goto cleanup;
+		bb_job_cnt++;
+	}
 cleanup:
 	xfree(file_name);
 	FREE_NULL_BUFFER(buffer);
@@ -1013,7 +1035,9 @@ slurmd_req(slurm_msg_t *msg)
 		}
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER7
+	slurm_mutex_lock(&bb_job_list_mutex);
 	bb_restore_state();
+	slurm_mutex_unlock(&bb_job_list_mutex);
 #endif
 		return;
 	}
