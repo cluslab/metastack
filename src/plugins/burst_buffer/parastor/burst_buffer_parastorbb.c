@@ -288,10 +288,17 @@ static void _save_bb_state(void)
 	 * named burst buffers so we can preserve limits across restarts */
 	buffer = init_buf(high_buffer_size);
 	pack16(protocol_version, buffer);
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+    /* 全局计数写入spool */
+    pack32(bb_state.used_groups_cnt,    buffer);
+    pack32(bb_state.used_datasets_cnt,  buffer);
+    pack32(bb_state.free_groups_cnt,    buffer);
+    pack32(bb_state.free_datasets_cnt,  buffer);
+
 	count_offset = get_buf_offset(buffer);
 	pack32(rec_count, buffer);
 	if (bb_state.bb_ahash) {
-		slurm_mutex_lock(&bb_state.bb_mutex);
 		for (i = 0; i < BB_HASH_SIZE; i++) {
 			bb_alloc = bb_state.bb_ahash[i];
 			while (bb_alloc) {
@@ -344,13 +351,13 @@ static void _save_bb_state(void)
 				bb_alloc = bb_alloc->next;
 			}
 		}
-		save_time = time(NULL);
-		slurm_mutex_unlock(&bb_state.bb_mutex);
+		save_time = time(NULL);		
 		offset = get_buf_offset(buffer);
 		set_buf_offset(buffer, count_offset);
 		pack32(rec_count, buffer);
 		set_buf_offset(buffer, offset);
 	}
+	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	xstrfmtcat(old_file, "%s/%s", slurm_conf.state_save_location,
 	           "burst_buffer_parastor_state.old");
@@ -384,6 +391,10 @@ static void _recover_bb_state(void)
 	time_t create_time = 0;
 	bb_alloc_t *bb_alloc;
 	buf_t *buffer;
+	uint32_t used_groups_cnt    = 0;
+    uint32_t used_datasets_cnt  = 0;
+    uint32_t free_groups_cnt    = 0;
+    uint32_t free_datasets_cnt  = 0;
 
 	state_fd = bb_open_state_file("burst_buffer_parastor_state", &state_file);
 	if (state_fd < 0) {
@@ -422,6 +433,18 @@ static void _recover_bb_state(void)
 		error("**********************************************************************");
 		return;
 	}
+
+	/* 从spool恢复全局计数到bb_state */
+	slurm_mutex_lock(&bb_state.bb_mutex);
+    safe_unpack32(&used_groups_cnt,    buffer);
+    safe_unpack32(&used_datasets_cnt,  buffer);
+    safe_unpack32(&free_groups_cnt,    buffer);
+    safe_unpack32(&free_datasets_cnt,  buffer);
+    bb_state.used_groups_cnt   = used_groups_cnt;
+    bb_state.used_datasets_cnt = used_datasets_cnt;
+    bb_state.free_groups_cnt   = free_groups_cnt;
+    bb_state.free_datasets_cnt = free_datasets_cnt;
+	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	safe_unpack32(&rec_count, buffer);
 	for (i = 0; i < rec_count; i++) {
