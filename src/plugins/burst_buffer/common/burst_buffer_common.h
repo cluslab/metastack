@@ -101,12 +101,12 @@ typedef struct bb_config {
 	uint32_t validate_timeout;
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	uint32_t max_groups;
-	uint32_t used_groups;
-	uint32_t free_groups;
+	//uint32_t used_groups;
+	//uint32_t free_groups;
 
 	uint32_t max_datasets;
-	uint32_t used_datasets;
-	uint32_t free_datasets;
+	//uint32_t used_datasets;
+	//uint32_t free_datasets;
 	uint32_t max_clients_join;
 	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
 	// uint32_t max_node_per_groups;
@@ -462,6 +462,10 @@ typedef struct bb_state {
 	uint64_t	unfree_space;	/* Includes alloc_space (above) plus
 					 * drained, units are bytes */
 #ifdef __METASTACK_NEW_BURSTBUFFER	
+	uint32_t used_groups_cnt;
+	uint32_t free_groups_cnt;
+	uint32_t used_datasets_cnt;
+	uint32_t free_datasets_cnt;
 	// bb_response *resp_out;	//ParaStor BB信息
     List list_groups;     // bb cache group list
     List list_datasets;   // bb cache datasets list

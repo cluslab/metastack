@@ -3660,10 +3660,10 @@ extern void launch_prolog(job_record_t *job_ptr)
 	prolog_msg_ptr = xmalloc(sizeof(prolog_launch_msg_t));
 // #ifdef  __METASTACK_NEW_BURSTBUFFER1
 // 	if (job_ptr->bb_enable_pb == true){ 
-// 		prolog_msg_ptr->used_groups          = job_ptr->used_groups;
-// 		prolog_msg_ptr->used_datasets       = job_ptr->used_datasets;
+// 		prolog_msg_ptr->used_groups_cnt          = job_ptr->s_cnt;
+// 		prolog_msg_ptr->used_datasets_cnt       = job_ptr->used_datasets_cnt;
 // 		prolog_msg_ptr->max_clients_per_job  = job_ptr->max_clients_per_job;
-// 		prolog_msg_ptr->metadata_acceleration= job_ptr->used_groups;
+// 		prolog_msg_ptr->metadata_acceleration= job_ptr->used_groups_cnt;
 // 		prolog_msg_ptr->pfs  			     =  xstrdup(job_ptr->pfs);
 // 		prolog_msg_ptr->bb_enable_pb		 = true;
 // 	} else {

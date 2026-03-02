@@ -2601,7 +2601,6 @@ static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
 		debug2("%s: %pJ Node=%s %s", __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 
 	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
-		//BINBIN: 增加清理失败时的处理（仿照创建失败时的逻辑）
 		if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
 			//slurmd端删除成功
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
@@ -2721,7 +2720,6 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		debug2("%s: %pJ Node=%s %s",  __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 #ifdef __METASTACK_NEW_BURSTBUFFER4	
 	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
-		//BINBIN: 增加清理失败时的处理（仿照创建失败时的逻辑）
 		if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
 			//slurmd端删除成功
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);

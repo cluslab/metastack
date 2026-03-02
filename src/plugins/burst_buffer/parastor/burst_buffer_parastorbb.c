@@ -228,7 +228,7 @@ pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bb_job_t *_get_bb_job(job_record_t *job_ptr);
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr);
 static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
-	uint32_t free_group_cnt, uint32_t free_dataset_cnt);
+	uint32_t free_groups_cnt, uint32_t free_datasets_cnt);
 // static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
 // static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
 static int _bb_get_parastors_state(void);
@@ -1573,24 +1573,24 @@ static int _bb_get_parastors_state(void) {
 		bb_state.list_datasets      = tmp_list_datasets;
 
 	
-	bb_state.bb_config.used_groups = list_count(bb_state.list_groups);
+	bb_state.used_groups_cnt = list_count(bb_state.list_groups);
 	if (bb_state.bb_config.max_groups >= resp_out_group->group_count) {
-		bb_state.bb_config.free_groups = bb_state.bb_config.max_groups - bb_state.bb_config.used_groups;
+		bb_state.free_groups_cnt = bb_state.bb_config.max_groups - bb_state.used_groups_cnt;
 	} else {
-		bb_state.bb_config.free_groups = 0;
+		bb_state.free_groups_cnt = 0;
 	}
 
-	bb_state.bb_config.used_datasets = list_count(bb_state.list_datasets);
+	bb_state.used_datasets_cnt = list_count(bb_state.list_datasets);
 	if (bb_state.bb_config.max_datasets >= resp_out_dataset->dataset_count) {
-		bb_state.bb_config.free_datasets = bb_state.bb_config.max_datasets - bb_state.bb_config.used_datasets;
+		bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets - bb_state.used_datasets_cnt;
 	} else {
-		bb_state.bb_config.free_datasets = 0;
+		bb_state.free_datasets_cnt = 0;
 	}
 	
 	debug("the current system has total groups count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_groups,
-			bb_state.bb_config.used_groups, bb_state.bb_config.free_groups );
+			bb_state.used_groups_cnt, bb_state.free_groups_cnt );
 	debug("the current system has total datasets count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_datasets,
-			bb_state.bb_config.used_datasets, bb_state.bb_config.free_datasets );
+			bb_state.used_datasets_cnt, bb_state.free_datasets_cnt );
 	free_bb_response(resp_out_group);
 	free_bb_response(resp_out_dataset);
 	_bb_min_config_free(bb_min_config);
@@ -1735,10 +1735,10 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 	// 				bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &dataset_id_key);
 	// 			if (bb_dataset_tmp)
 	// 				free_bb_dataset(bb_dataset_tmp);
-	// 			if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
-	// 				bb_state.bb_config.free_datasets++;
-	// 			if (bb_state.bb_config.used_datasets > 0)
-	// 				bb_state.bb_config.used_datasets--;
+	// 			if (bb_state.bb_config.free_datasets_cnt < bb_state.bb_config.max_datasets)
+	// 				bb_state.bb_config.free_datasets_cnt++;
+	// 			if (bb_state.used_datasets_cnt > 0)
+	// 				bb_state.used_datasets_cnt--;
 	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
 	// 		}
 	// 		bb_response_free(resp_out);
@@ -1765,10 +1765,10 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 	// 				bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &group_id_key);
 	// 			if (bb_group_tmp)
 	// 				free_bb_group(bb_group_tmp);
-	// 			if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
-	// 				bb_state.bb_config.free_groups++;
-	// 			if (bb_state.bb_config.used_groups > 0)
-	// 				bb_state.bb_config.used_groups--;
+	// 			if (bb_state.free_groups_cnt < bb_state.bb_config.max_groups)
+	// 				bb_state.free_groups_cnt++;
+	// 			if (bb_state.used_groups_cnt > 0)
+	// 				bb_state.used_groups_cnt--;
 	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
 	// 		}
 	// 		bb_response_free(resp_out);
@@ -2503,10 +2503,10 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
 	if (!job_ptr || job_ptr->bb_clean_finish) {
 		return;
 	}
-	bb_state.bb_config.free_groups += bb_job->index_groups;
-	bb_state.bb_config.used_groups -= bb_job->index_groups;
-	bb_state.bb_config.free_datasets += bb_job->index_datasets;
-	bb_state.bb_config.used_datasets -= bb_job->index_datasets;
+	bb_state.free_groups_cnt += bb_job->index_groups;
+	bb_state.used_groups_cnt -= bb_job->index_groups;
+	bb_state.free_datasets_cnt += bb_job->index_datasets;
+	bb_state.used_datasets_cnt -= bb_job->index_datasets;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 	// 仅当传入了有效的 job_ptr 时才执行节点配额释放
 	if (job_ptr) {
@@ -2573,19 +2573,19 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
  * @param bb_job 
  * @param job_ptr 
  * @param free_hl 需要释放的节点列表（缓存组实际没有用到的BB节点）
- * @param free_group_cnt 需要释放的缓存组个数
- * @param free_dataset_cnt 需要释放的数据集规则个数
+ * @param free_groups_cnt 需要释放的缓存组个数
+ * @param free_datasets_cnt 需要释放的数据集规则个数
  */
 static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
-	uint32_t free_group_cnt, uint32_t free_dataset_cnt)
+	uint32_t free_groups_cnt, uint32_t free_datasets_cnt)
 {
 	if (!job_ptr || job_ptr->bb_clean_finish) {
 		return;
 	}
-	bb_state.bb_config.free_groups += free_group_cnt;
-	bb_state.bb_config.used_groups -= free_group_cnt;
-	bb_state.bb_config.free_datasets += free_dataset_cnt;
-	bb_state.bb_config.used_datasets -= free_dataset_cnt;
+	bb_state.free_groups_cnt += free_groups_cnt;
+	bb_state.used_groups_cnt -= free_groups_cnt;
+	bb_state.free_datasets_cnt += free_datasets_cnt;
+	bb_state.used_datasets_cnt -= free_datasets_cnt;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 	//BINBIN:子豪进行bit_map处理，free_hl为需要释放的节点
 	if (free_hl) {
@@ -3009,13 +3009,13 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
 	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
 
-	if (job_ptr->need_group_counts > bb_state.bb_config.free_groups 
-			|| job_ptr->need_database_counts > bb_state.bb_config.free_datasets ) {
+	if (job_ptr->need_group_counts > bb_state.free_groups_cnt 
+			|| job_ptr->need_database_counts > bb_state.free_datasets_cnt ) {
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		debug("free groups or datasets is not enough,requie groups count:%d,"
 			"free groups count:%d, require datasets count:%d, free datasets count:%d",
-			job_ptr->need_group_counts, bb_state.bb_config.free_groups, 
-			job_ptr->need_database_counts, bb_state.bb_config.free_datasets);
+			job_ptr->need_group_counts, bb_state.free_groups_cnt, 
+			job_ptr->need_database_counts, bb_state.free_datasets_cnt);
 			job_ptr->bb_need_wait = true;
 	} else {
 		job_ptr->bb_need_wait = false;
@@ -3040,10 +3040,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	} 
 
 	/* Handle count before creating cache */
-	bb_state.bb_config.free_groups		-= job_ptr->need_group_counts;
-	bb_state.bb_config.free_datasets	-= job_ptr->need_database_counts;
-	bb_state.bb_config.used_groups		+= job_ptr->need_group_counts;
-	bb_state.bb_config.used_datasets	+= job_ptr->need_database_counts;
+	bb_state.free_groups_cnt		-= job_ptr->need_group_counts;
+	bb_state.free_datasets_cnt	-= job_ptr->need_database_counts;
+	bb_state.used_groups_cnt		+= job_ptr->need_group_counts;
+	bb_state.used_datasets_cnt	+= job_ptr->need_database_counts;
 	bb_job->index_groups				=  job_ptr->need_group_counts;
 	bb_job->index_datasets				=  job_ptr->need_database_counts;
 	bb_job->index_tasks					=  job_ptr->need_database_counts;//暂时一个任务对应一个数据集
@@ -3213,7 +3213,7 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 	uint32_t dataset_count = job_ptr->need_database_counts;
 	uint32_t max_node_cnt_per_group = job_ptr->max_clients_per_job;
 	uint32_t node_idx = 0;
-	uint32_t free_group_cnt = 0;
+	uint32_t free_groups_cnt = 0;
 	uint32_t free_datasets_cnt = 0;
 	hostlist_t *free_hl = hostlist_create(NULL);
 	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
@@ -3238,7 +3238,7 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 					rc = SLURM_ERROR;
 					goto free_end;
 				}
-				free_group_cnt++;
+				free_groups_cnt++;
 				free(hostname);
 			}
 		} else {
@@ -3261,7 +3261,7 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	bb_job = _get_bb_job(job_ptr);
-	_queue_teardown_on_abort(bb_job, job_ptr, free_hl, free_group_cnt, free_datasets_cnt);
+	_queue_teardown_on_abort(bb_job, job_ptr, free_hl, free_groups_cnt, free_datasets_cnt);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 free_end:
 	hostlist_destroy(job_hl);

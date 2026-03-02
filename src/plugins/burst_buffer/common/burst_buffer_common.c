@@ -1222,12 +1222,12 @@ extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
 		pack32(config_ptr->validate_timeout, buffer);
 
 		pack32(config_ptr->max_groups,       buffer);
-		pack32(config_ptr->used_groups,      buffer);
-		pack32(config_ptr->free_groups,      buffer);
+		//pack32(config_ptr->used_groups_cnt,      buffer);
+		//pack32(config_ptr->free_groups_cnt,      buffer);
 
 		pack32(config_ptr->max_datasets,     buffer);
-		pack32(config_ptr->used_datasets,    buffer);
-		pack32(config_ptr->free_datasets,    buffer);
+		//pack32(config_ptr->used_datasets_cnt,    buffer);
+		//pack32(config_ptr->free_datasets_cnt,    buffer);
 
 		pack32(config_ptr->max_clients_join, buffer);
 		pack32(config_ptr->max_clients_per_job, buffer);

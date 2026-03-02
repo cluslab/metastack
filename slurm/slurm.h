@@ -5854,12 +5854,12 @@ typedef struct {
 	burst_buffer_use_t *burst_buffer_use_ptr;
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	uint32_t max_groups;
-	uint32_t used_groups;
-	uint32_t free_groups;
+	uint32_t used_groups_cnt;
+	uint32_t free_groups_cnt;
 
 	uint32_t max_datasets;
-	uint32_t used_datasets;
-	uint32_t free_datasets;
+	uint32_t used_datasets_cnt;
+	uint32_t free_datasets_cnt;
 	uint32_t max_clients_join;
 	// uint32_t max_node_per_groups;
 	// uint32_t used_node_per_groups;

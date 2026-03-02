@@ -3513,7 +3513,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	}
 
 	job_id = req->job_id;
-	group_count = req->used_groups;
+	group_count = req->used_groups_cnt;
 	group_sn_arr = req->group_sn;
 	pfs_count = req->pfs_cnt;
 	max_clients_per_job = req->max_clients_per_job;
@@ -4028,7 +4028,6 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 
 bb_cleanup:
 
-	//BINBIN: 成功或失败都删除，因为不失败了不会重新调用slurmd处理,无论如何都移除，暂时注释掉对bb_job_ptr的更改
 	remove_alloc_bb_jobid(job_id);
 
 	bb_rc_msg = xmalloc(sizeof(bb_return_message_t));
@@ -7283,7 +7282,6 @@ _rpc_terminate_job(slurm_msg_t *msg)
 
 			if(req->bb_enable_pb && req->real_used_bb) {
 				debug("No jobs may be running on the current node");
-				//BINBIN: 不应该在这里发，在清理函数中发
 				//bb_clean_complete_send(req->step_id.job_id, req->nodes, rc, bb_rc);
 			}
 		}

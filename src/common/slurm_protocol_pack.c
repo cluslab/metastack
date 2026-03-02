@@ -16193,13 +16193,13 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 		pack32(msg->job_id, 				buffer);
 		pack32(msg->user_id, 				buffer);
 		//pack32(msg->group_id, 			buffer);
-		pack32(msg->used_groups, 			buffer);
-		if(msg->used_groups > 0 ) {
-			for (int i = 0; i < msg->used_groups; i++) {
+		pack32(msg->used_groups_cnt, 			buffer);
+		if(msg->used_groups_cnt > 0 ) {
+			for (int i = 0; i < msg->used_groups_cnt; i++) {
 				packstr(msg->group_sn[i],	buffer);
 			}
 		}
-		pack32(msg->used_datasets, 		buffer);
+		pack32(msg->used_datasets_cnt, 		buffer);
 		pack64(msg->req_space, 				buffer);
 		pack32(msg->access_mode, 			buffer);	
 		packstr(msg->pfs, 					buffer);
@@ -16269,8 +16269,8 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 // #ifdef  __METASTACK_NEW_BURSTBUFFER2
 // 		packbool(msg->bb_enable_pb, buffer);
 // 		if(msg->bb_enable_pb) {
-// 			pack32(msg->used_groups,             buffer);
-// 			pack32(msg->used_datasets,          buffer);
+// 			pack32(msg->used_groups_cnt,             buffer);
+// 			pack32(msg->used_datasets_cnt,          buffer);
 // 			pack64(msg->req_space,               buffer);
 // 			pack32(msg->access_mode,             buffer);
 // 			packstr(msg->pfs,                    buffer);
@@ -16485,16 +16485,16 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		safe_unpack32(&msg->job_id, 				buffer);
 		safe_unpack32(&msg->user_id, 				buffer);
 		// safe_unpack32(&msg->group_id, 				buffer);
-		safe_unpack32(&msg->used_groups, 			buffer);
-		if (msg->used_groups > 0) {
-			msg->group_sn = xmalloc(msg->used_groups * sizeof(char *));
-			for (int i = 0; i < msg->used_groups; i++) {
+		safe_unpack32(&msg->used_groups_cnt, 			buffer);
+		if (msg->used_groups_cnt > 0) {
+			msg->group_sn = xmalloc(msg->used_groups_cnt * sizeof(char *));
+			for (int i = 0; i < msg->used_groups_cnt; i++) {
 				safe_unpackstr(&msg->group_sn[i], buffer);
 			}
 		} else {
 			msg->group_sn = NULL;
 		}
-		safe_unpack32(&msg->used_datasets, 		buffer);
+		safe_unpack32(&msg->used_datasets_cnt, 		buffer);
 		safe_unpack64(&msg->req_space, 				buffer);
 		safe_unpack32(&msg->access_mode, 			buffer);	
 		safe_unpackstr(&msg->pfs, 					buffer);
@@ -16579,8 +16579,8 @@ static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 // #ifdef  __METASTACK_NEW_BURSTBUFFER1
 // 		safe_unpackbool(&msg->bb_enable_pb, buffer); 
 // 		if(msg->bb_enable_pb) {
-// 			safe_unpack32(&msg->used_groups,				buffer);
-// 			safe_unpack32(&msg->used_datasets,				buffer);
+// 			safe_unpack32(&msg->used_groups_cnt,				buffer);
+// 			safe_unpack32(&msg->used_datasets_cnt,				buffer);
 // 			safe_unpack64(&msg->req_space,					buffer);
 // 			safe_unpack32(&msg->access_mode, 				buffer);
 // 			safe_unpackstr(&msg->pfs, 						buffer);
@@ -17331,12 +17331,12 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 			safe_unpack32(&bb_info_ptr->validate_timeout, buffer);
 			//资源剩余统计
 			safe_unpack32(&bb_info_ptr->max_groups,       buffer);
-			safe_unpack32(&bb_info_ptr->used_groups,      buffer);
-			safe_unpack32(&bb_info_ptr->free_groups,      buffer);
+			//safe_unpack32(&bb_info_ptr->used_groups_cnt,      buffer);
+			//safe_unpack32(&bb_info_ptr->free_groups_cnt,      buffer);
 
 			safe_unpack32(&bb_info_ptr->max_datasets,     buffer);
-			safe_unpack32(&bb_info_ptr->used_datasets,    buffer);
-			safe_unpack32(&bb_info_ptr->free_datasets,    buffer);
+			//safe_unpack32(&bb_info_ptr->used_datasets_cnt,    buffer);
+			//safe_unpack32(&bb_info_ptr->free_datasets_cnt,    buffer);
 
 			safe_unpack32(&bb_info_ptr->max_clients_join, buffer);
 			safe_unpack32(&bb_info_ptr->max_clients_per_job,  buffer);

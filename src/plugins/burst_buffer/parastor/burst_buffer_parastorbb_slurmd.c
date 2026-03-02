@@ -295,7 +295,7 @@ extern int bb_p_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char 
 			error("创建数据集规则代码错误");
 			break;
 		} else if (rc == BB_API_ERROR) {
-			error("创建数据集规则接口返回错误,重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
+			error("创建数据集规则接口返回错误");
 			break;
 		} else if (rc == BB_API_TIMEOUT) {
 			debug("创建数据集规则接口超时,查询是否已创建成功");
@@ -464,13 +464,13 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 			//info("预热任务完成,task_id=%ld, 总耗时=%ld秒", task_id, elapsed_time);
 			break;
 		} else if (bb_task->task_state == BB_TASK_STATE_FAILED || bb_task->task_state == BB_TASK_STATE_CANCELED) {
-			//error("预热任务失败或已取消,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
+			error("预热任务失败或已取消,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
 			free_bb_task(bb_task);
 			return rc;
 		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING || bb_task->task_state == BB_TASK_STATE_RUNNING) {
 			if (soft_timeout_reached) {
-				//info("预热任务仍在进行中,task_id=%u, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%ld秒",
-				//	task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, (long)elapsed_time);
+				info("预热任务仍在进行中,task_id=%u, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%ld秒",
+					task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, (long)elapsed_time);
 			} else {
 				//debug("预热任务仍在进行中,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
 			}
