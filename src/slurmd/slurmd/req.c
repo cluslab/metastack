@@ -407,7 +407,7 @@ static void bb_drain_node(char *reason)
 	(void) slurm_update_node(&update_node_msg);
 }
 
-static int bb_job_record_unpack(buf_t *buffer)
+static int bb_job_record_unpack(buf_t *buffer, uint16_t res_version)
 {
 	bb_job_msg_t* bb_job_ptr = NULL;
 	// time_t buf_time = 0;
@@ -416,64 +416,61 @@ static int bb_job_record_unpack(buf_t *buffer)
 
 	#ifdef __META_PROTOCOL
 	if (res_version >= META_3_0_PROTOCOL_VERSION) { //后期需要更改版本号
-		if(bb_job_count > 0) {
-			bb_job_ptr = xmalloc(sizeof(bb_job_msg_t));
-			safe_unpack32(&bb_job_ptr->job_id,      buffer);
-			safe_unpack64(&bb_job_ptr->req_space,   buffer);
-			safe_unpack32(&bb_job_ptr->access_mode, buffer);
-			safe_unpack32(&bb_job_ptr->status,      buffer);
-			safe_unpack32(&bb_job_ptr->pfs_cnt,     buffer);
-			safe_unpack32(&bb_job_ptr->group_cnt,   buffer);
-			safe_unpack32(&bb_job_ptr->dataset_cnt, buffer);
-			safe_unpack32(&bb_job_ptr->task_cnt,    buffer);		
+		bb_job_ptr = xmalloc(sizeof(bb_job_msg_t));
+		safe_unpack32(&bb_job_ptr->job_id,      buffer);
+		safe_unpack64(&bb_job_ptr->req_space,   buffer);
+		safe_unpack32(&bb_job_ptr->access_mode, buffer);
+		safe_unpack32(&bb_job_ptr->status,      buffer);
+		safe_unpack32(&bb_job_ptr->pfs_cnt,     buffer);
+		safe_unpack32(&bb_job_ptr->group_cnt,   buffer);
+		safe_unpack32(&bb_job_ptr->dataset_cnt, buffer);
+		safe_unpack32(&bb_job_ptr->task_cnt,    buffer);		
 
 
-			if(bb_job_ptr->group_cnt > 0 ) {
-				bb_job_ptr->group_sn = xmalloc(bb_job_ptr->group_cnt * sizeof(char *) + 1);
-				for (int i = 0; i < bb_job_ptr->group_cnt; i++) {
-					safe_unpackstr_xmalloc(&bb_job_ptr->group_sn[i], &tmp32, buffer);
-				}
-			}
-
-			if(bb_job_ptr->pfs_cnt > 0 ) {
-				bb_job_ptr->pfs = xmalloc(bb_job_ptr->pfs_cnt * sizeof(char *) + 1);
-				for (int i = 0; i < bb_job_ptr->pfs_cnt; i++) {
-					safe_unpackstr_xmalloc(&bb_job_ptr->pfs[i], &tmp32, buffer);
-				}
-			}
-
-			if(bb_job_ptr->group_cnt > 0 ) {
-				safe_unpack32_array(&bb_job_ptr->group_ids, &tmp32, buffer);
-				if (bb_job_ptr->group_cnt != tmp32) {
-					goto unpack_error;
-				}
-					
-			}
-
-			if(bb_job_ptr->dataset_cnt > 0 ) {
-				safe_unpack32_array(&bb_job_ptr->dataset_ids, &tmp32, buffer);
-				if (bb_job_ptr->dataset_cnt != tmp32) {
-					goto unpack_error;
-				}
-					
-			}
-
-			if(bb_job_ptr->task_cnt > 0 ) {
-				safe_unpack32_array(&bb_job_ptr->task_ids, &tmp32, buffer);
-				if (bb_job_ptr->task_cnt != tmp32) {
-					goto unpack_error;
-				}
+		if(bb_job_ptr->group_cnt > 0 ) {
+			bb_job_ptr->group_sn = xmalloc(bb_job_ptr->group_cnt * sizeof(char *) + 1);
+			for (int i = 0; i < bb_job_ptr->group_cnt; i++) {
+				safe_unpackstr_xmalloc(&bb_job_ptr->group_sn[i], &tmp32, buffer);
 			}
 		}
 
+		if(bb_job_ptr->pfs_cnt > 0 ) {
+			bb_job_ptr->pfs = xmalloc(bb_job_ptr->pfs_cnt * sizeof(char *) + 1);
+			for (int i = 0; i < bb_job_ptr->pfs_cnt; i++) {
+				safe_unpackstr_xmalloc(&bb_job_ptr->pfs[i], &tmp32, buffer);
+			}
+		}
+
+		if(bb_job_ptr->group_cnt > 0 ) {
+			safe_unpack32_array(&bb_job_ptr->group_ids, &tmp32, buffer);
+			if (bb_job_ptr->group_cnt != tmp32) {
+				goto unpack_error;
+			}
+				
+		}
+
+		if(bb_job_ptr->dataset_cnt > 0 ) {
+			safe_unpack32_array(&bb_job_ptr->dataset_ids, &tmp32, buffer);
+			if (bb_job_ptr->dataset_cnt != tmp32) {
+				goto unpack_error;
+			}
+				
+		}
+
+		if(bb_job_ptr->task_cnt > 0 ) {
+			safe_unpack32_array(&bb_job_ptr->task_ids, &tmp32, buffer);
+			if (bb_job_ptr->task_cnt != tmp32) {
+				goto unpack_error;
+			}
+		}
 	}
 	#endif
 	//slurm_mutex_lock(&bb_job_list_mutex);
 	if (bb_job_list == NULL) {
 		bb_job_list = list_create(_bb_job_list_delete);
 	} 
-	if(bb_job_ptr  && (bb_job_count > 0))
-	list_append(bb_job_list, bb_job_ptr);
+	if(bb_job_ptr)
+		list_append(bb_job_list, bb_job_ptr);
 	//slurm_mutex_unlock(&bb_job_list_mutex);
 	return SLURM_SUCCESS;
 unpack_error:
@@ -497,32 +494,33 @@ static void bb_restore_state(void)
 
 	if (!(buffer = create_mmap_buf(file_name))) {
 		info("No burst buffer job state file (%s) to recover", file_name);
-		goto cleanup;
+		goto unpack_error;
 	}
 	//slurm_mutex_lock(&bb_job_list_mutex);
 	FREE_NULL_LIST(bb_job_list);
 	//slurm_mutex_unlock(&bb_job_list_mutex);
 	safe_unpack16(&res_version, buffer);
-
-	debug3("Version string in job_state header is %s", res_version);
+	debug3("Version string in job_state header is %d", res_version);
 	if (res_version == NO_VAL16) {
 		error("***********************************************");
 		error("Can not recover burst buffer job state, incompatible version");
 		error("***********************************************");
 		FREE_NULL_BUFFER(buffer);
-		goto cleanup;
+		goto unpack_error;
 	}
 	safe_unpack_time(&buf_time, buffer);
 	safe_unpack32(&bb_job_count, buffer);
-	while (remaining_buf(buffer) > 0) {
+	if (bb_job_count > NO_VAL)
+		goto unpack_error;
+	while (remaining_buf(buffer) > 0 && (bb_job_count > 0)) {
 		//slurm_mutex_lock(&bb_job_list_mutex);
-		error_code = bb_job_record_unpack(buffer);
+		error_code = bb_job_record_unpack(buffer, res_version);
 		//slurm_mutex_unlock(&bb_job_list_mutex);
 		if (error_code != SLURM_SUCCESS)
-			goto cleanup;
+			goto unpack_error;
 		bb_job_cnt++;
 	}
-cleanup:
+unpack_error:
 	xfree(file_name);
 	FREE_NULL_BUFFER(buffer);
 }
@@ -572,12 +570,14 @@ cleanup:
 }
 
 extern void bb_state_fini()
-{
-	static int high_buffer_size = (1024 * 1024);
-	buf_t *buffer = init_buf(high_buffer_size);
+{	
 	slurm_mutex_lock(&bb_job_list_mutex);
-	dump_bb_job_state(buffer);
-	bb_save_state(buffer);
+	if(bb_job_list  &&  list_count(bb_job_list) > 0) {
+		static int high_buffer_size = (1024 * 1024);
+		buf_t *buffer = init_buf(high_buffer_size);
+		dump_bb_job_state(buffer);
+		bb_save_state(buffer);
+	}
 	FREE_NULL_LIST(bb_job_list);
 	slurm_mutex_unlock(&bb_job_list_mutex);
 }
