@@ -2587,7 +2587,6 @@ static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, ho
 	bb_state.free_datasets_cnt += free_datasets_cnt;
 	bb_state.used_datasets_cnt -= free_datasets_cnt;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	//BINBIN:子豪进行bit_map处理，free_hl为需要释放的节点
 	if (free_hl) {
 		char *host = NULL;
 		node_record_t *node_ptr = NULL;
@@ -3223,28 +3222,37 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 	}
 	hostlist_sort(job_hl);
 	/* 缓存组id为0即为没有使用，记录对应hostname和数量用于释放 */
-	for (uint32_t i = 0; i < group_count; i++) {
-		uint32_t group_id = job_ptr->group_ids[i];
-		if (group_id == 0) {
-			for (int i = 0; i < max_node_cnt_per_group; i++) {
-				char *hostname = hostlist_nth(job_hl, node_idx);
-				if (!hostname) {
-					error("获取hostname为空");
-					rc = SLURM_ERROR;
-					goto free_end;
-				}
-				if (hostlist_push(free_hl, hostname) == 0) {
-					error("push hostname into hostlist_t failed");
-					rc = SLURM_ERROR;
-					goto free_end;
-				}
-				free_groups_cnt++;
-				free(hostname);
-			}
-		} else {
-			node_idx += max_node_cnt_per_group;
-		}
-	}
+	uint32_t total_nodes = hostlist_count(job_hl);  /* job_hl 实际节点数 */
+
+for (uint32_t i = 0; i < group_count; i++) {
+    uint32_t group_id = job_ptr->group_ids[i];
+    if (group_id == 0) {
+        if (node_idx >= total_nodes) {
+            break;
+        }
+        /* 本组实际可用节点数 = 剩余节点数 与 max_node_cnt_per_group 的较小值 */
+        uint32_t remain = total_nodes - node_idx;
+        uint32_t nodes_this_group = (remain < max_node_cnt_per_group) ? remain : max_node_cnt_per_group;
+        for (uint32_t j = 0; j < nodes_this_group; j++) {
+            char *hostname = hostlist_nth(job_hl, node_idx + j);
+            if (!hostname) {
+                /* 这里再返回 NULL 就说明 hostlist 有问题，可视为异常 */
+                error("获取hostname为空 (idx=%u)", node_idx + j);
+                rc = SLURM_ERROR;
+                goto free_end;
+            }
+            if (hostlist_push(free_hl, hostname) == 0) {
+                error("push hostname into hostlist_t failed");
+                rc = SLURM_ERROR;
+                free(hostname);
+                goto free_end;
+            }
+            free_groups_cnt++;
+            free(hostname);
+        }
+    }
+    node_idx += max_node_cnt_per_group;
+}
 	/* 数据集规则id为0即为没有使用，记录对应数量用于释放 */
 	for (uint32_t i = 0; i < dataset_count; i++) {
 		uint32_t dataset_id = job_ptr->dataset_ids[i];

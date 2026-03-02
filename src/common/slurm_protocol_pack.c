@@ -17331,12 +17331,12 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 			safe_unpack32(&bb_info_ptr->validate_timeout, buffer);
 			//资源剩余统计
 			safe_unpack32(&bb_info_ptr->max_groups,       buffer);
-			//safe_unpack32(&bb_info_ptr->used_groups_cnt,      buffer);
-			//safe_unpack32(&bb_info_ptr->free_groups_cnt,      buffer);
+			safe_unpack32(&bb_info_ptr->used_groups_cnt,      buffer);
+			safe_unpack32(&bb_info_ptr->free_groups_cnt,      buffer);
 
 			safe_unpack32(&bb_info_ptr->max_datasets,     buffer);
-			//safe_unpack32(&bb_info_ptr->used_datasets_cnt,    buffer);
-			//safe_unpack32(&bb_info_ptr->free_datasets_cnt,    buffer);
+			safe_unpack32(&bb_info_ptr->used_datasets_cnt,    buffer);
+			safe_unpack32(&bb_info_ptr->free_datasets_cnt,    buffer);
 
 			safe_unpack32(&bb_info_ptr->max_clients_join, buffer);
 			safe_unpack32(&bb_info_ptr->max_clients_per_job,  buffer);

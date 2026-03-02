@@ -2477,33 +2477,46 @@ static void _deal_bb_complete_failed(job_record_t *job_ptr)
  */
 static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
 {
-	if (!job_ptr->group_ids || job_ptr->need_group_counts == 0)
-		return;
-	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
-	if (!job_hl) {
-		error("Unable to parse hostlist: `%s'", job_ptr->nodes);
-		return;
-	}
-	hostlist_sort(job_hl);
-	uint32_t node_idx = 0;
-	for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
-		uint32_t group_id = job_ptr->group_ids[i];
-		if (group_id != 0) {
-			for (int j = 0; j < job_ptr->max_clients_per_job; j++) {
-				char *hostname = hostlist_nth(job_hl, node_idx);
-				if (!hostname) {
-					error("获取hostname为空");
-					continue;;
-				}
-				drain_nodes(hostname, "Failed during the SI phase(create or cancel); manual cleanup may be required", slurm_conf.slurm_user_id);
-				free(hostname);
-				node_idx++;
-			}
-		} else {
-			node_idx += job_ptr->max_clients_per_job;
-		}
-	}
-	return;
+    if (!job_ptr->group_ids || job_ptr->need_group_counts == 0)
+        return;
+    hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
+    if (!job_hl) {
+        error("Unable to parse hostlist: `%s'", job_ptr->nodes);
+        return;
+    }
+    hostlist_sort(job_hl);
+    uint32_t total_nodes = hostlist_count(job_hl);  /* 实际节点数 */
+    uint32_t node_idx = 0;
+    for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
+        uint32_t group_id = job_ptr->group_ids[i];
+
+        if (group_id != 0) {
+            if (node_idx >= total_nodes) 
+                break;            
+            uint32_t remain = total_nodes - node_idx;
+            uint32_t nodes_this_group =
+                (remain < job_ptr->max_clients_per_job)
+                    ? remain
+                    : job_ptr->max_clients_per_job;
+
+            for (uint32_t j = 0; j < nodes_this_group; j++) {
+                char *hostname = hostlist_nth(job_hl, node_idx + j);
+                if (!hostname) {
+                    error("获取hostname为空 (idx=%u)", node_idx + j);
+                    continue;
+                }
+                drain_nodes(
+                    hostname,
+                    "Failed during the SI phase(create or cancel); manual cleanup may be required",
+                    slurm_conf.slurm_user_id);
+
+                free(hostname);
+            }
+        }
+        node_idx += job_ptr->max_clients_per_job;
+    }
+
+    hostlist_destroy(job_hl);
 }
 
 /* _slurm_rpc_bb_complete - process RPC noting the completion of
