@@ -5305,10 +5305,11 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_ptr->bit_flags |= JOB_KILL_HURRY;
 		return bb_g_job_cancel(job_ptr);
 	}
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER8
 	if(!(job_ptr->bb_status == BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 	}
+	if()
 #endif
 
 	if (IS_JOB_FINISHED(job_ptr))

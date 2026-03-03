@@ -3914,7 +3914,7 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 		/* Unpack burst buffer cleanup fields */
 		safe_unpackbool(&tmp_ptr->bb_enable_pb, buffer);
 		safe_unpackbool(&tmp_ptr->real_used_bb,    buffer);
-		safe_unpack32(&tmp_ptr->bb_status,        buffer)
+		safe_unpack32(&tmp_ptr->bb_status,        buffer);
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		safe_unpack8(&uint8_tmp, buffer);
