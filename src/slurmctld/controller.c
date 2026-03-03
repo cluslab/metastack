@@ -4222,7 +4222,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 						error("%s could not find job_ptr of JobId=%u", __func__, bb_job_error->job_id);
 						continue;
 					}
-					if (bb_job_error->bb_clean_status == ELSURM_BB_RESOURCE_UNKNOW) { //节点失联
+					if (bb_job_error->bb_status == ELSURM_BB_RESOURCE_UNKNOW) { //节点失联
 						xfree(job_ptr->group_ids);
 						xfree(job_ptr->dataset_ids);
 
@@ -4232,7 +4232,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 						cur_groupid_arr = bb_g_query_bb_groupid_by_sn(job_ptr);
 						if (!cur_groupid_arr) {
 							error("bb_g_query_bb_groupid_by_sn return NULL");
-							bb_job_error->bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
+							bb_job_error->bb_status = ELSURM_BB_RESOURCE_ERROR;
 							continue;
 						}
 						/* cur_groupid_arr[0] 为 0，说明当前作业没有占用缓存组，视为清理成功，直接从异常链表中移除。 */
@@ -4254,7 +4254,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 							cur_datasetid_arr = bb_g_query_bb_datasetid_by_sn(job_ptr);
 							if (!cur_datasetid_arr) {
 								error("bb_g_query_bb_datasetid_by_sn return NULL");
-								bb_job_error->bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
+								bb_job_error->bb_status = ELSURM_BB_RESOURCE_ERROR;
 								continue;
 							}
 							memcpy(job_ptr->dataset_ids, cur_datasetid_arr,
@@ -4263,7 +4263,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 						}
 						/* 走到这里说明缓存组/数据集仍然占用，标记为 BB 资源异常，
 						 * 后续需要人工处理，因此不从 bb_job_error_list 中移除。 */
-						bb_job_error->bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
+						bb_job_error->bb_status = ESLURM_BB_STATE_PENDING_MANUAL;
 						/* 查询后更新bb资源计数 */
 						bb_g_free_allocated_resources(job_ptr);
 					}

@@ -716,10 +716,10 @@ static int _add_job_record(job_record_t *job_ptr, int num_jobs)
 	last_job_update = time(NULL);
 	list_append(job_list, job_ptr);
 #ifdef __METASTACK_NEW_BURSTBUFFER8
-	if(bb_job_error_list && (job_ptr->bb_clean_status == ESLURM_BB_RESOURCE_SI_FAIL)) {
+	if(bb_job_error_list && (job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL)) {
 		bb_job_error_msg_t *bb_job_error     = NULL;
 		bb_job_error                         = xmalloc(sizeof(bb_job_error_msg_t));
-		bb_job_error->bb_clean_status        = ESLURM_BB_RESOURCE_SO_FAIL;
+		bb_job_error->bb_status       		 = ESLURM_BB_STATE_PENDING_MANUAL;
 		bb_job_error->job_id 				 = job_ptr->job_id;
 		list_append(bb_job_error_list, bb_job_error);
 	}
@@ -3244,9 +3244,9 @@ extern int kill_running_job_by_node_name(char *node_name)
 				//bb_g_free_allocated_resources(job_ptr);
 				//设置清理标志位在后台线程中进行处理,设置BB状态
 				//job_ptr->bb_free_flag = true;
-				job_ptr->bb_clean_status = ELSURM_BB_RESOURCE_UNKNOW;//BB资源需要删除校验，
+				job_ptr->bb_status = ELSURM_BB_RESOURCE_UNKNOW;//BB资源需要删除校验，
 				bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-				bb_job_error->bb_clean_status = ELSURM_BB_RESOURCE_UNKNOW;
+				bb_job_error->bb_status = ELSURM_BB_RESOURCE_UNKNOW;
 				bb_job_error->job_id = job_ptr->job_id;
 				list_append(bb_job_error_list, bb_job_error);
 #endif
@@ -5306,9 +5306,17 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		return bb_g_job_cancel(job_ptr);
 	}
 #ifdef __METASTACK_NEW_BURSTBUFFER8
-	if(!(job_ptr->bb_status == BB_STATE_READY) && job_ptr->real_used_bb) {
+	if(!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
-		return bb_g_job_cancel(job_ptr);
+		if((flags & KILL_HURRY)) {
+			if(job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
+				///return bb_g_job_cancel(job_ptr); //移除部分
+			} else if(job_ptr->bb_status == ELSURM_BB_RESOURCE_ERROR) {
+				///return bb_g_job_cancel(job_ptr); //移除全部
+			}
+				
+		}
+
 	}
 #endif
 
@@ -6237,11 +6245,11 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		//(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
 		
 		if(bb_return_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
-			job_ptr->bb_status = BB_STATE_CLEANUP; //已成功自动在slurmd中释放资源
+			job_ptr->bb_status = ESLURM_BB_STATE_CLEANUP; //已成功自动在slurmd中释放资源
 			return ESLURM_BB_RESOURCE_SI_CANCEL;
-		} else if(bb_return_code == ESLURM_BB_RESOURCE_SI_FAIL) {
-			job_ptr->bb_status = BB_STATE_PENDING_MANUAL; //手动处理
-			return ESLURM_BB_RESOURCE_SI_FAIL;
+		} else if(bb_return_code == ESLURM_BB_STATE_PENDING_MANUAL) {
+			job_ptr->bb_status = ESLURM_BB_STATE_PENDING_MANUAL; //手动处理
+			return ESLURM_BB_STATE_PENDING_MANUAL;
 		}
 	}
 	/*
@@ -7906,7 +7914,7 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	if (part_ptr->flags & PART_FLAG_BURSTBUFFER) {   /* add partition burstbuffer flags to job flags */
 		job_ptr->bit_flags |= JOB_FLAG_PART_BURSTBUFFER;
 	}
-	job_ptr->bb_status = BB_STATE_INIT; /* Initialize cleanup status as false */
+	job_ptr->bb_status = ESLURM_BB_STATE_INIT; /* Initialize cleanup status as false */
 	job_ptr->bb_enable_pb = false; /* Initialize bb_enable_pb  as false, after parastorbb vestiage set true */
 #endif
 	job_ptr->part_ptr_list = part_ptr_list;
@@ -9720,7 +9728,7 @@ void job_time_limit(void)
 		}
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-		if((job_ptr->bb_status == BB_STATE_READY) && !(job_ptr->bb_kill_flag)) {
+		if((job_ptr->bb_status == ESLURM_BB_STATE_READY) && !(job_ptr->bb_kill_flag)) {
 			log_flag(BURST_BUF, "JobId=%u has created burstbuffer job", job_ptr->job_id);
 			if(IS_JOB_STAGING(job_ptr)){
 				job_create_fini(job_ptr);
@@ -16865,7 +16873,7 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 	msg->real_used_bb = job_ptr->real_used_bb;
 	msg->bb_status    = job_ptr->bb_status;
 
-	if(job_ptr->bb_enable_pb && (job_ptr->bb_status == BB_STATE_READY)) {
+	if(job_ptr->bb_enable_pb && (job_ptr->bb_status == ESLURM_BB_STATE_READY)) {
 		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 	}
 		//msg->job_nodes = xstrdup(job_ptr->nodes);
