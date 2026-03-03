@@ -66,6 +66,19 @@ extern list_t *purge_files_list; /* job files to delete, only used by ctld */
 	((_X->details->whole_node & WHOLE_TOPO) || \
 	 (_X->part_ptr && (_X->part_ptr->flags & PART_FLAG_EXCLUSIVE_TOPO)))
 
+#ifdef __METASTACK_NEW_BURSTBUFFER
+enum {
+    BB_STATE_INIT = 0,      // 初始状态：还未进行创建/预热操作
+    BB_STATE_READY,         // 成功状态：创建缓存组、数据集、预热操作成功
+    BB_ERR_TIMEOUT,         // 异常状态：API 调用超时失败
+    BB_ERR_INTERFACE,       // 异常状态：API 接口调用错误
+    BB_STATE_CLEANUP,       // 处理状态：清理缓存组、数据集、停止预热中
+    BB_STATE_PENDING_MANUAL,// 挂起状态：节点 Down 导致失败，需手动处理
+	//BB_STATE_RELEASED, 		//“作业BB资源已释放”状态
+    BB_STATE_MAX            // 边界标识
+};
+#endif
+
 /* job_details - specification of a job's constraints */
 typedef struct {
 	uint32_t magic;			/* magic cookie for data integrity */
@@ -563,10 +576,11 @@ struct job_record {
 	bool     bb_need_wait; 			 //是否等待bb完成，当bb资源用尽时，判断是否可以直接运行，受bb_enable_pb参数的影响
 	bool     real_used_bb;		     // 最终是否必须要使用bb，受bb_enable_pb参数的影响
 
-	bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好,slurmd创建缓存组后置位
-	bool     bb_clean_finish;           //是否完成清理，作业完成（terminal job）后执行清理完成后置位
+	//bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好,slurmd创建缓存组后置位
+	//bool     bb_clean_finish;        //是否完成清理，作业完成（terminal job）后执行清理完成后置位
+	uint32_t bb_status; 			 //标识作业的bb创建状态，成功失败等，对应枚举类型BB_STATE_INIT，BB_STATE_READY .......
 	bool   	 bb_kill_flag; 			 //当作业收到kill信号时，该位置位为true，即使未创建作业步（可能缓存组已经创建完成），也不再触发srun_allocate、launch_prolog、launch_job
-    uint32_t bb_clean_status;        //作业或节点异常情况下，根据不同流程设置不同的标志位。
+    uint32_t bb_clean_status;        //作业或节点异常情况下，根据不同流程设置不同的标志位。用于spool中恢复异常作业标志
 	uint32_t pack_status;            //用于标识pack、unpack的标识。0x01，只需要打包缓存组；0x02，打包缓存组、数据集；0x03，打包缓存组、数据集、任务
 #endif
 

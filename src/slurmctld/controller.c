@@ -4216,7 +4216,7 @@ static void *slurmctld_bb_exception_handler(void *no_data)
 				bb_job_error_msg_t *bb_job_error = NULL;
 				list_itr_t *itr = list_iterator_create(bb_job_error_list);
 				//每次处理5个作业，防止长期拿锁影响其他流程，这里后续可以设置成可配置参数
-				while ((bb_job_error = (bb_job_error_msg_t *)list_next(itr)) && num < 5) {
+				while ((bb_job_error = (bb_job_error_msg_t *)list_next(itr)) && num < 3) {
 					num++;
 					if ((job_ptr = find_job_record(bb_job_error->job_id)) == NULL) {
 						error("%s could not find job_ptr of JobId=%u", __func__, bb_job_error->job_id);

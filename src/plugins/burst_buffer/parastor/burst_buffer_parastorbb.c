@@ -1929,7 +1929,7 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 	case BB_STATE_STAGING_IN:
 	case BB_STATE_STAGED_IN:
 		/* parastor中stage_in不做暂存操作 */
-		// if(job_ptr->bb_ready && (!bb_alloc->bb_ready)) { //update
+		// if(job_ptr->bb_status && (!bb_alloc->bb_status)) { //update
 		// 	bb_alloc->
 		// }
 		break;
@@ -2298,7 +2298,7 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 
 
 	job_ptr->max_clients_per_job  = bb_state.bb_config.max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
-	job_ptr->bb_ready			  = false;     //计算节点的burstbuffer是否已经准备好
+	job_ptr->bb_status			  = BB_STATE_INIT;     //计算节点的burstbuffer是否已经准备好
 	job_ptr->bb_enable_pb = true;	
 	// job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
 	log_flag(BURST_BUF, "%pJ", job_ptr);
@@ -2528,7 +2528,7 @@ static void *_start_teardown(void *x)
 
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
 {
-	if (!job_ptr || job_ptr->bb_clean_finish) {
+	if (!job_ptr || (job_ptr->bb_status == BB_STATE_CLEANUP)) {
 		return;
 	}
 	bb_state.free_groups_cnt += bb_job->index_groups;
@@ -2592,7 +2592,7 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
 #endif
 	if (bb_job)
 		slurm_thread_create_detached(_start_teardown, bb_job);
-	job_ptr->bb_clean_finish = true;
+	job_ptr->bb_status = BB_STATE_CLEANUP;
 }
 
 
@@ -2607,7 +2607,7 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
 static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
 	uint32_t free_groups_cnt, uint32_t free_datasets_cnt)
 {
-	if (!job_ptr || job_ptr->bb_clean_finish) {
+	if (!job_ptr || job_ptr->bb_status) {
 		return;
 	}
 	bb_state.free_groups_cnt += free_groups_cnt;
@@ -3232,7 +3232,7 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 		error("group/dataset_arr is NULL");
 		return SLURM_ERROR;
 	}
-	if (job_ptr->bb_clean_finish) {
+	if (job_ptr->bb_status == BB_STATE_CLEANUP) {
 		return SLURM_SUCCESS;
 	}
 
@@ -3478,7 +3478,7 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 		return SLURM_SUCCESS;
 	}
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-	if(!job_ptr->bb_ready && job_ptr->real_used_bb) {
+	if(!(job_ptr->bb_status == BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 	}
 #endif

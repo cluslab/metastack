@@ -3820,19 +3820,7 @@ _pack_kill_job_msg(kill_job_msg_t *msg, buf_t *buffer, uint16_t protocol_version
 		/* Pack burst buffer cleanup fields */
 		packbool(msg->bb_enable_pb, buffer);
 		packbool(msg->real_used_bb, buffer);
-		packbool(msg->bb_ready, buffer);
-		//if (msg->bb_enable_pb && msg->real_used_bb && msg->bb_ready) {
-			// pack32(msg->group_count, buffer);
-			// packstr_array(msg->group_sn, msg->group_count, buffer);
-			// pack32_array(msg->group_ids, msg->group_count, buffer);
-			// pack32(msg->dataset_count, buffer);
-			// pack32_array(msg->dataset_ids, msg->dataset_count, buffer);
-			// pack32_array(msg->task_ids, msg->dataset_count, buffer);
-			// packstr(msg->pfs, buffer);
-			// pack32(msg->pfs_cnt, buffer);
-			//packstr(msg->job_nodes, buffer);
-
-		//}
+		pack32(msg->bb_status, buffer);
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		if (msg->cred) {
@@ -3926,37 +3914,7 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 		/* Unpack burst buffer cleanup fields */
 		safe_unpackbool(&tmp_ptr->bb_enable_pb, buffer);
 		safe_unpackbool(&tmp_ptr->real_used_bb,    buffer);
-		safe_unpackbool(&tmp_ptr->bb_ready,        buffer);
-		//if(tmp_ptr->bb_enable_pb && tmp_ptr->real_used_bb && tmp_ptr->bb_ready) {
-			// safe_unpack32(&tmp_ptr->group_count, buffer);
-			// uint32_t group_ids_count = 0;
-			// safe_unpackstr_array(&tmp_ptr->group_sn, &group_ids_count, buffer);
-			// safe_unpack32_array(&tmp_ptr->group_ids, &group_ids_count, buffer);
-			// if (tmp_ptr->group_count > 0 && group_ids_count != tmp_ptr->group_count)
-			// 	goto unpack_error;
-			// if (tmp_ptr->group_count == 0 && group_ids_count != 0)
-			// 	goto unpack_error;
-
-			// safe_unpack32(&tmp_ptr->dataset_count, buffer);
-			// uint32_t dataset_ids_count = 0;
-			// safe_unpack32_array(&tmp_ptr->dataset_ids, &dataset_ids_count, buffer);
-			// if (tmp_ptr->dataset_count > 0 && dataset_ids_count != tmp_ptr->dataset_count)
-			// 	goto unpack_error;
-			// if (tmp_ptr->dataset_count == 0 && dataset_ids_count != 0)
-			// 	goto unpack_error;
-
-			// uint32_t task_ids_count = 0;
-			// safe_unpack32_array(&tmp_ptr->task_ids, &task_ids_count, buffer);
-			// if (tmp_ptr->dataset_count > 0 && task_ids_count != tmp_ptr->dataset_count)
-			// 	goto unpack_error;
-			// if (tmp_ptr->dataset_count == 0 && task_ids_count != 0)
-			// 	goto unpack_error;
-
-			// safe_unpackstr(&tmp_ptr->pfs, buffer);
-			// safe_unpack32(&tmp_ptr->pfs_cnt, buffer);
-			//safe_unpackstr(&tmp_ptr->job_nodes, buffer);
-		//}
-
+		safe_unpack32(&tmp_ptr->bb_status,        buffer)
 #endif
 	} else if (protocol_version >= SLURM_23_02_PROTOCOL_VERSION) {
 		safe_unpack8(&uint8_tmp, buffer);

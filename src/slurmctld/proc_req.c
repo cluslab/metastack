@@ -2596,6 +2596,7 @@ static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
 		bb_clean_status = ELSURM_BB_RESOURCE_ERROR;
 	}
+	
 	if (epilog_msg->datasets_cnt > 0  && epilog_msg->task_ids ) {
 		memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
 		job_ptr->pack_status = 0x03;
@@ -2613,7 +2614,7 @@ static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
 	else
 		debug2("%s: %pJ Node=%s %s", __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 
-	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
+	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == BB_STATE_READY)) { //需要设置是否创建缓存组标志位，还有error状态处理
 		if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
 			//slurmd端删除成功
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
@@ -2732,7 +2733,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 	else
 		debug2("%s: %pJ Node=%s %s",  __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 #ifdef __METASTACK_NEW_BURSTBUFFER4	
-	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) { //需要设置是否创建缓存组标志位，还有error状态处理
+	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == BB_STATE_READY)) { //需要设置是否创建缓存组标志位，还有error状态处理
 		if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
 			//slurmd端删除成功
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
@@ -2932,7 +2933,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 	} else {
 		job_ptr->task_ids = NULL;
 	}
-	job_ptr->bb_ready = true; //一定要在bb_g_job_test_post_run函数前，否则该属性无法同步
+	job_ptr->bb_status = BB_STATE_READY; //一定要在bb_g_job_test_post_run函数前，否则该属性无法同步
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
 		error("%s JobId=%u: burst buffer post run test failed", __func__, comp_msg->job_id);
 	}
@@ -2958,7 +2959,7 @@ static void _slurm_rpc_complete_create_bb(slurm_msg_t *msg)
 		else if (job_ptr->bb_clean_status == ESLURM_BB_RESOURCE_SI_CANCEL) {
 			debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
 			bb_g_job_cancel(job_ptr);
-			job_ptr->bb_ready = false;
+			//job_ptr->bb_status = BB_STATE_CLEANUP;
 		}
 	}
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))

@@ -897,7 +897,7 @@ typedef struct kill_job_msg {
 	//char *job_nodes; /* 作业分配的节点. */
 	bool bb_enable_pb; 		 //是否是bb作业
 	bool real_used_bb;		// 最终是否必须要使用bb，受bb_enable_pb参数的影响	
-	bool     bb_ready;       //计算节点的burstbuffer是否已经准备好
+	uint32_t  bb_status;       //计算节点的burstbuffer是否已经准备好
 #endif
 } kill_job_msg_t;
 
@@ -984,7 +984,7 @@ typedef struct burst_buffer_launch_msg {
 	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
 
 	bool	 bb_enable_pb; //是否开启pb
-	bool     bb_ready;     //计算节点的burstbuffer是否已经准备好
+	uint32_t bb_status;     //计算节点的burstbuffer是否已经准备好
 	uint32_t flag;       //3:launch_prolog 2:launch_job(job_ptr) 1: srun_allocate
 	time_t   bb_launch_time;	/* When the prolog was launched from the
 					 * controller -- PrologFlags=alloc */
