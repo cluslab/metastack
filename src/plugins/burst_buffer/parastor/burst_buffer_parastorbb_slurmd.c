@@ -55,12 +55,6 @@ extern int init(void)
 	}
 	//bb_alloc_cache(&bb_state);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
-	
-    // if( _bb_get_parastors_state() != SLURM_SUCCESS) {
-	// 	error("failed to get parastor burst buffer state");
-	// 	return SLURM_ERROR;
-	// }
-	// slurm_thread_create(&bb_state.bb_thread, _bb_agent, NULL); 
 	return SLURM_SUCCESS;
 }
 

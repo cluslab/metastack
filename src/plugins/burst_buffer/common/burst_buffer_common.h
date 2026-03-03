@@ -467,10 +467,10 @@ typedef struct bb_state {
 	uint32_t used_datasets_cnt;
 	uint32_t free_datasets_cnt;
 	// bb_response *resp_out;	//ParaStor BB信息
-    List list_groups;     // bb cache group list
-    List list_datasets;   // bb cache datasets list
-    List list_clients;   // bb cache client list
-    List list_tasks; // bb task list
+    // List list_groups;     // bb cache group list
+    // List list_datasets;   // bb cache datasets list
+    // List list_clients;   // bb cache client list
+    // List list_tasks; // bb task list
 #endif
 } bb_state_t;
 
