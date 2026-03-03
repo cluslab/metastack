@@ -7190,7 +7190,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	if(req->bb_enable_pb && req->real_used_bb) {
 		//slurm_mutex_lock(&bb_job_list_mutex);
-		if((clean_bb_job_process(req->step_id.job_id)== -1) || req->bb_ready)
+		if((clean_bb_job_process(req->step_id.job_id)== -1) || (req->bb_status == BB_STATE_READY))
 		bb_rc = _rpc_clean_bb(req);
 		//slurm_mutex_unlock(&bb_job_list_mutex);	
 	}  else
@@ -7410,7 +7410,7 @@ done:
 	} else {
 		if (req->bb_enable_pb && req->real_used_bb) {
 			// slurm_mutex_lock(&bb_job_list_mutex);
-			if ((clean_bb_job_process(req->step_id.job_id) == -1) || req->bb_ready)
+			if ((clean_bb_job_process(req->step_id.job_id) == -1) || (req->bb_status == BB_STATE_READY))
 				bb_rc = _rpc_clean_bb(req);
 			// slurm_mutex_unlock(&bb_job_list_mutex);
 		} else

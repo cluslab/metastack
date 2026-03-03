@@ -715,7 +715,15 @@ static int _add_job_record(job_record_t *job_ptr, int num_jobs)
 	job_count += num_jobs;
 	last_job_update = time(NULL);
 	list_append(job_list, job_ptr);
-
+#ifdef __METASTACK_NEW_BURSTBUFFER8
+	if(bb_job_error_list && (job_ptr->bb_clean_status == ESLURM_BB_RESOURCE_SI_FAIL)) {
+		bb_job_error_msg_t *bb_job_error     = NULL;
+		bb_job_error                         = xmalloc(sizeof(bb_job_error_msg_t));
+		bb_job_error->bb_clean_status        = ESLURM_BB_RESOURCE_SO_FAIL;
+		bb_job_error->job_id 				 = job_ptr->job_id;
+		list_append(bb_job_error_list, bb_job_error);
+	}
+#endif
 	return SLURM_SUCCESS;
 }
 
@@ -5298,7 +5306,7 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		return bb_g_job_cancel(job_ptr);
 	}
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-	if(!job_ptr->bb_ready && job_ptr->real_used_bb) {
+	if(!(job_ptr->bb_status == BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 	}
 #endif
@@ -6226,11 +6234,14 @@ extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
 		error("create launch failure, %pJ bb_return_code = %d", job_ptr, bb_return_code);
 		job_ptr->exit_code = bb_return_code;
 		//(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
-		job_ptr->bb_ready = false;
-		if(bb_return_code == ESLURM_BB_RESOURCE_SI_CANCEL)
+		
+		if(bb_return_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
+			job_ptr->bb_status = BB_STATE_CLEANUP; //已成功自动在slurmd中释放资源
 			return ESLURM_BB_RESOURCE_SI_CANCEL;
-		else if(bb_return_code == ESLURM_BB_RESOURCE_SI_FAIL)
+		} else if(bb_return_code == ESLURM_BB_RESOURCE_SI_FAIL) {
+			job_ptr->bb_status = BB_STATE_PENDING_MANUAL; //手动处理
 			return ESLURM_BB_RESOURCE_SI_FAIL;
+		}
 	}
 	/*
 	 * job_ptr->node_bitmap_pr is always NULL for front end systems
@@ -7894,7 +7905,7 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	if (part_ptr->flags & PART_FLAG_BURSTBUFFER) {   /* add partition burstbuffer flags to job flags */
 		job_ptr->bit_flags |= JOB_FLAG_PART_BURSTBUFFER;
 	}
-	job_ptr->bb_clean_finish = false; /* Initialize cleanup status as false */
+	job_ptr->bb_status = BB_STATE_INIT; /* Initialize cleanup status as false */
 	job_ptr->bb_enable_pb = false; /* Initialize bb_enable_pb  as false, after parastorbb vestiage set true */
 #endif
 	job_ptr->part_ptr_list = part_ptr_list;
@@ -9708,7 +9719,7 @@ void job_time_limit(void)
 		}
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-		if(job_ptr->bb_ready && !(job_ptr->bb_kill_flag)) {
+		if((job_ptr->bb_status == BB_STATE_READY) && !(job_ptr->bb_kill_flag)) {
 			log_flag(BURST_BUF, "JobId=%u has created burstbuffer job", job_ptr->job_id);
 			if(IS_JOB_STAGING(job_ptr)){
 				job_create_fini(job_ptr);
@@ -16849,59 +16860,15 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	/* Copy burst buffer cleanup fields */
-	// msg->group_count = 0;
-	// msg->dataset_count = 0;
-	// msg->group_sn = NULL;
-	// msg->group_ids = NULL;
-	// msg->dataset_ids = NULL;
-	// msg->task_ids = NULL;
-	// msg->pfs = NULL;
-	// msg->pfs_cnt = 0;
 	msg->bb_enable_pb = job_ptr->bb_enable_pb;
 	msg->real_used_bb = job_ptr->real_used_bb;
-	msg->bb_ready = job_ptr->bb_ready;
+	msg->bb_status    = job_ptr->bb_status;
 
-	//if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && job_ptr->bb_ready) {
-		// if (job_ptr->need_group_counts > 0 && job_ptr->group_sn) {
-		// 	msg->group_count = job_ptr->need_group_counts;
-		// 	msg->group_sn = xmalloc(msg->group_count * sizeof(char *));
-		// 	for (uint32_t i = 0; i < msg->group_count; i++) {
-		// 		if (job_ptr->group_sn[i])
-		// 			msg->group_sn[i] = xstrdup(job_ptr->group_sn[i]);
-		// 		else
-		// 			msg->group_sn[i] = NULL;
-		// 	}
-		// }
-
-		// if (job_ptr->need_group_counts > 0 && job_ptr->group_ids) {
-		// 	msg->group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
-		// 	memcpy(msg->group_ids, job_ptr->group_ids,
-		// 		job_ptr->need_group_counts * sizeof(uint32_t));
-		// }
-
-		// if (job_ptr->need_database_counts > 0 && job_ptr->dataset_ids) {
-		// 	msg->dataset_count = job_ptr->need_database_counts;
-		// 	msg->dataset_ids = xmalloc(msg->dataset_count * sizeof(uint32_t));
-		// 	memcpy(msg->dataset_ids, job_ptr->dataset_ids,
-		// 		msg->dataset_count * sizeof(uint32_t));
-		// }
-
-		// if (job_ptr->need_database_counts > 0 && job_ptr->task_ids) {
-		// 	msg->task_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
-		// 	memcpy(msg->task_ids, job_ptr->task_ids,
-		// 		job_ptr->need_database_counts * sizeof(uint32_t));
-		// }
-
-		// if (job_ptr->pfs) {
-		// 	msg->pfs = xstrdup(job_ptr->pfs);
-		// 	msg->pfs_cnt = job_ptr->pfs_cnt;
-		// }
-		if(job_ptr->bb_enable_pb && job_ptr->bb_ready) {
-			job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
-		}
+	if(job_ptr->bb_enable_pb && (job_ptr->bb_status == BB_STATE_READY)) {
+		job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
+	}
 		//msg->job_nodes = xstrdup(job_ptr->nodes);
 	//}
-
 #endif
 
 	return msg;
