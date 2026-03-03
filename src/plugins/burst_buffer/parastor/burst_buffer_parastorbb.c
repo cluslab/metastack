@@ -3339,9 +3339,10 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 		error("%pJ bb job record not found", job_ptr);
 		rc =  -1;
 	} else {
-		bb_job->bb_create_finished = job_ptr->bb_status;
-		bb_alloc->bb_create_finished = job_ptr->bb_status;
-
+		if(job_ptr->bb_status == BB_STATE_READY) {
+			bb_job->bb_create_finished = true;
+			bb_alloc->bb_create_finished = true;
+		}
 		bb_job->index_groups = job_ptr->need_group_counts;
 		bb_alloc->index_groups = job_ptr->need_group_counts;
 		bb_job->index_datasets = job_ptr->need_database_counts;
