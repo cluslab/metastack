@@ -228,10 +228,10 @@ pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bb_job_t *_get_bb_job(job_record_t *job_ptr);
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr);
 static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
-	uint32_t free_group_cnt, uint32_t free_dataset_cnt);
+	uint32_t free_groups_cnt, uint32_t free_datasets_cnt);
 // static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
 // static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
-static int _bb_get_parastors_state(void);
+// static int _bb_get_parastors_state(void);
 static void *_start_stage_out(void *x);
 // static void *_start_teardown(void *x);
 // static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_tasks, bb_minimal_config_t *bb_min_config);
@@ -288,10 +288,17 @@ static void _save_bb_state(void)
 	 * named burst buffers so we can preserve limits across restarts */
 	buffer = init_buf(high_buffer_size);
 	pack16(protocol_version, buffer);
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+    /* 全局计数写入spool */
+    pack32(bb_state.used_groups_cnt,    buffer);
+    pack32(bb_state.used_datasets_cnt,  buffer);
+    pack32(bb_state.free_groups_cnt,    buffer);
+    pack32(bb_state.free_datasets_cnt,  buffer);
+
 	count_offset = get_buf_offset(buffer);
 	pack32(rec_count, buffer);
 	if (bb_state.bb_ahash) {
-		slurm_mutex_lock(&bb_state.bb_mutex);
 		for (i = 0; i < BB_HASH_SIZE; i++) {
 			bb_alloc = bb_state.bb_ahash[i];
 			while (bb_alloc) {
@@ -344,13 +351,13 @@ static void _save_bb_state(void)
 				bb_alloc = bb_alloc->next;
 			}
 		}
-		save_time = time(NULL);
-		slurm_mutex_unlock(&bb_state.bb_mutex);
+		save_time = time(NULL);		
 		offset = get_buf_offset(buffer);
 		set_buf_offset(buffer, count_offset);
 		pack32(rec_count, buffer);
 		set_buf_offset(buffer, offset);
 	}
+	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	xstrfmtcat(old_file, "%s/%s", slurm_conf.state_save_location,
 	           "burst_buffer_parastor_state.old");
@@ -384,6 +391,10 @@ static void _recover_bb_state(void)
 	time_t create_time = 0;
 	bb_alloc_t *bb_alloc;
 	buf_t *buffer;
+	uint32_t used_groups_cnt    = 0;
+    uint32_t used_datasets_cnt  = 0;
+    uint32_t free_groups_cnt    = 0;
+    uint32_t free_datasets_cnt  = 0;
 
 	state_fd = bb_open_state_file("burst_buffer_parastor_state", &state_file);
 	if (state_fd < 0) {
@@ -422,6 +433,18 @@ static void _recover_bb_state(void)
 		error("**********************************************************************");
 		return;
 	}
+
+	/* 从spool恢复全局计数到bb_state */
+	slurm_mutex_lock(&bb_state.bb_mutex);
+    safe_unpack32(&used_groups_cnt,    buffer);
+    safe_unpack32(&used_datasets_cnt,  buffer);
+    safe_unpack32(&free_groups_cnt,    buffer);
+    safe_unpack32(&free_datasets_cnt,  buffer);
+    bb_state.used_groups_cnt   = used_groups_cnt;
+    bb_state.used_datasets_cnt = used_datasets_cnt;
+    bb_state.free_groups_cnt   = free_groups_cnt;
+    bb_state.free_datasets_cnt = free_datasets_cnt;
+	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	safe_unpack32(&rec_count, buffer);
 	for (i = 0; i < rec_count; i++) {
@@ -1518,86 +1541,85 @@ static void _test_config()
 		bb_state.bb_config.max_clients_per_job = max_node_per_groups;
 	}
 }
-
 	
-static int _bb_get_parastors_state(void) {
+// static int _bb_get_parastors_state(void) {
 
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-	slurm_mutex_unlock(&bb_state.bb_mutex);
-	int rc = SLURM_SUCCESS;
+// 	slurm_mutex_lock(&bb_state.bb_mutex);
+// 	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
+// 	slurm_mutex_unlock(&bb_state.bb_mutex);
+// 	int rc = SLURM_SUCCESS;
 
-	//slurm_mutex_unlock(&bb_state.bb_mutex);
-	query_params_request *params  =  xmalloc(sizeof(query_params_request));
-	bb_response *resp_out_group   =  xmalloc(sizeof(bb_response));
-	bb_response *resp_out_dataset =  xmalloc(sizeof(bb_response));
-	memset(params, 0, sizeof(query_params_request));
-	params->start =   0;
-	params->limit = 100;
+// 	//slurm_mutex_unlock(&bb_state.bb_mutex);
+// 	query_params_request *params  =  xmalloc(sizeof(query_params_request));
+// 	bb_response *resp_out_group   =  xmalloc(sizeof(bb_response));
+// 	bb_response *resp_out_dataset =  xmalloc(sizeof(bb_response));
+// 	memset(params, 0, sizeof(query_params_request));
+// 	params->start =   0;
+// 	params->limit = 100;
 
-	//缓存组
-	List tmp_list_groups = get_groups_burst_buffer(params, bb_min_config, resp_out_group);
-	if (!resp_out_group || resp_out_group->err_no != 0) { //不能用tmp_list_groups为NULL判断，因为可能没有缓存组
-		error("get groups returned error, the detail message is %s",
-			resp_out_group->detail_err_msg ? resp_out_group->detail_err_msg : "unknown");
-		return SLURM_ERROR;
-	}
-	debug("burst group_count=%d , list_count(tmp_list_groups)=%d", resp_out_group->group_count, list_count(tmp_list_groups));
+// 	//缓存组
+// 	List tmp_list_groups = get_groups_burst_buffer(params, bb_min_config, resp_out_group);
+// 	if (!resp_out_group || resp_out_group->err_no != 0) { //不能用tmp_list_groups为NULL判断，因为可能没有缓存组
+// 		error("get groups returned error, the detail message is %s",
+// 			resp_out_group->detail_err_msg ? resp_out_group->detail_err_msg : "unknown");
+// 		return SLURM_ERROR;
+// 	}
+// 	debug("burst group_count=%d , list_count(tmp_list_groups)=%d", resp_out_group->group_count, list_count(tmp_list_groups));
 
-	// 数据集
-	List tmp_list_datasets = get_datasets_burst_buffer(params, bb_min_config, resp_out_dataset);
-	if (!resp_out_dataset || resp_out_dataset->err_no != 0) { //不能用tmp_list_datasets为NULL判断，因为可能没有数据集
-		error("get datasets returned error, the detail message is %s",
-			resp_out_dataset->detail_err_msg ? resp_out_dataset->detail_err_msg : "unknown");
-		return SLURM_ERROR;
-	}
-	debug("burst datasets=%d , list_count(datasets)=%d", resp_out_dataset->dataset_count, list_count(tmp_list_datasets));
+// 	// 数据集
+// 	List tmp_list_datasets = get_datasets_burst_buffer(params, bb_min_config, resp_out_dataset);
+// 	if (!resp_out_dataset || resp_out_dataset->err_no != 0) { //不能用tmp_list_datasets为NULL判断，因为可能没有数据集
+// 		error("get datasets returned error, the detail message is %s",
+// 			resp_out_dataset->detail_err_msg ? resp_out_dataset->detail_err_msg : "unknown");
+// 		return SLURM_ERROR;
+// 	}
+// 	debug("burst datasets=%d , list_count(datasets)=%d", resp_out_dataset->dataset_count, list_count(tmp_list_datasets));
 
-	free_query_params(params);
-	// xfree(params);
+// 	free_query_params(params);
+// 	// xfree(params);
 
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	/* load the bb information from parastor resrful*/
-	if(!bb_state.list_clients)
-		bb_state.list_clients       = list_create(free_bb_client);//需要释放
-	if(!bb_state.list_tasks)
-		bb_state.list_tasks         = list_create(free_bb_task);
-	if(!tmp_list_groups)
-		bb_state.list_groups        = list_create(free_bb_group);//需要释放
-	else
-		bb_state.list_groups        = tmp_list_groups;
+// 	slurm_mutex_lock(&bb_state.bb_mutex);
+// 	/* load the bb information from parastor resrful*/
+// 	if(!bb_state.list_clients)
+// 		bb_state.list_clients       = list_create(free_bb_client);//需要释放
+// 	if(!bb_state.list_tasks)
+// 		bb_state.list_tasks         = list_create(free_bb_task);
+// 	if(!tmp_list_groups)
+// 		bb_state.list_groups        = list_create(free_bb_group);//需要释放
+// 	else
+// 		bb_state.list_groups        = tmp_list_groups;
 		
-	if(!tmp_list_datasets)
-		bb_state.list_datasets      = list_create(free_bb_dataset);//需要释放
-	else
-		bb_state.list_datasets      = tmp_list_datasets;
+// 	if(!tmp_list_datasets)
+// 		bb_state.list_datasets      = list_create(free_bb_dataset);//需要释放
+// 	else
+// 		bb_state.list_datasets      = tmp_list_datasets;
 
 	
-	bb_state.bb_config.used_groups = list_count(bb_state.list_groups);
-	if (bb_state.bb_config.max_groups >= resp_out_group->group_count) {
-		bb_state.bb_config.free_groups = bb_state.bb_config.max_groups - bb_state.bb_config.used_groups;
-	} else {
-		bb_state.bb_config.free_groups = 0;
-	}
+// 	bb_state.used_groups_cnt = list_count(bb_state.list_groups);
+// 	if (bb_state.bb_config.max_groups >= resp_out_group->group_count) {
+// 		bb_state.free_groups_cnt = bb_state.bb_config.max_groups - bb_state.used_groups_cnt;
+// 	} else {
+// 		bb_state.free_groups_cnt = 0;
+// 	}
 
-	bb_state.bb_config.used_datasets = list_count(bb_state.list_datasets);
-	if (bb_state.bb_config.max_datasets >= resp_out_dataset->dataset_count) {
-		bb_state.bb_config.free_datasets = bb_state.bb_config.max_datasets - bb_state.bb_config.used_datasets;
-	} else {
-		bb_state.bb_config.free_datasets = 0;
-	}
+// 	bb_state.used_datasets_cnt = list_count(bb_state.list_datasets);
+// 	if (bb_state.bb_config.max_datasets >= resp_out_dataset->dataset_count) {
+// 		bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets - bb_state.used_datasets_cnt;
+// 	} else {
+// 		bb_state.free_datasets_cnt = 0;
+// 	}
 	
-	debug("the current system has total groups count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_groups,
-			bb_state.bb_config.used_groups, bb_state.bb_config.free_groups );
-	debug("the current system has total datasets count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_datasets,
-			bb_state.bb_config.used_datasets, bb_state.bb_config.free_datasets );
-	free_bb_response(resp_out_group);
-	free_bb_response(resp_out_dataset);
-	_bb_min_config_free(bb_min_config);
-	slurm_mutex_unlock(&bb_state.bb_mutex);
+// 	debug("the current system has total groups count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_groups,
+// 			bb_state.used_groups_cnt, bb_state.free_groups_cnt );
+// 	debug("the current system has total datasets count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_datasets,
+// 			bb_state.used_datasets_cnt, bb_state.free_datasets_cnt );
+// 	free_bb_response(resp_out_group);
+// 	free_bb_response(resp_out_dataset);
+// 	_bb_min_config_free(bb_min_config);
+// 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
-	return rc;
-}
+// 	return rc;
+// }
 /*
  * init() is called when the plugin is loaded, before any other functions
  * are called.  Put global initialization here.
@@ -1640,10 +1662,16 @@ extern int init(void)
 	bb_alloc_cache(&bb_state);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	
-    if( _bb_get_parastors_state() != SLURM_SUCCESS) {
-		error("failed to get parastor burst buffer state");
-		return SLURM_ERROR;
-	}
+    // if( _bb_get_parastors_state() != SLURM_SUCCESS) {
+	// 	error("failed to get parastor burst buffer state");
+	// 	return SLURM_ERROR;
+	// }
+	//初始化全局变量，后续由spool覆盖
+	bb_state.used_groups_cnt = 0;
+	bb_state.free_groups_cnt = bb_state.bb_config.max_groups;
+	bb_state.used_datasets_cnt = 0;
+	bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets;
+
 	slurm_thread_create(&bb_state.bb_thread, _bb_agent, NULL); 
 	return SLURM_SUCCESS;
 }
@@ -1735,10 +1763,10 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 	// 				bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &dataset_id_key);
 	// 			if (bb_dataset_tmp)
 	// 				free_bb_dataset(bb_dataset_tmp);
-	// 			if (bb_state.bb_config.free_datasets < bb_state.bb_config.max_datasets)
-	// 				bb_state.bb_config.free_datasets++;
-	// 			if (bb_state.bb_config.used_datasets > 0)
-	// 				bb_state.bb_config.used_datasets--;
+	// 			if (bb_state.bb_config.free_datasets_cnt < bb_state.bb_config.max_datasets)
+	// 				bb_state.bb_config.free_datasets_cnt++;
+	// 			if (bb_state.used_datasets_cnt > 0)
+	// 				bb_state.used_datasets_cnt--;
 	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
 	// 		}
 	// 		bb_response_free(resp_out);
@@ -1765,10 +1793,10 @@ static void *_cleanup_bb_resources_from_alloc(void *x)
 	// 				bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &group_id_key);
 	// 			if (bb_group_tmp)
 	// 				free_bb_group(bb_group_tmp);
-	// 			if (bb_state.bb_config.free_groups < bb_state.bb_config.max_groups)
-	// 				bb_state.bb_config.free_groups++;
-	// 			if (bb_state.bb_config.used_groups > 0)
-	// 				bb_state.bb_config.used_groups--;
+	// 			if (bb_state.free_groups_cnt < bb_state.bb_config.max_groups)
+	// 				bb_state.free_groups_cnt++;
+	// 			if (bb_state.used_groups_cnt > 0)
+	// 				bb_state.used_groups_cnt--;
 	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
 	// 		}
 	// 		bb_response_free(resp_out);
@@ -2503,10 +2531,10 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
 	if (!job_ptr || (job_ptr->bb_status == BB_STATE_CLEANUP)) {
 		return;
 	}
-	bb_state.bb_config.free_groups += bb_job->index_groups;
-	bb_state.bb_config.used_groups -= bb_job->index_groups;
-	bb_state.bb_config.free_datasets += bb_job->index_datasets;
-	bb_state.bb_config.used_datasets -= bb_job->index_datasets;
+	bb_state.free_groups_cnt += bb_job->index_groups;
+	bb_state.used_groups_cnt -= bb_job->index_groups;
+	bb_state.free_datasets_cnt += bb_job->index_datasets;
+	bb_state.used_datasets_cnt -= bb_job->index_datasets;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 	// 仅当传入了有效的 job_ptr 时才执行节点配额释放
 	if (job_ptr) {
@@ -2573,21 +2601,20 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
  * @param bb_job 
  * @param job_ptr 
  * @param free_hl 需要释放的节点列表（缓存组实际没有用到的BB节点）
- * @param free_group_cnt 需要释放的缓存组个数
- * @param free_dataset_cnt 需要释放的数据集规则个数
+ * @param free_groups_cnt 需要释放的缓存组个数
+ * @param free_datasets_cnt 需要释放的数据集规则个数
  */
 static void _queue_teardown_on_abort(bb_job_t *bb_job, job_record_t *job_ptr, hostlist_t *free_hl,
-	uint32_t free_group_cnt, uint32_t free_dataset_cnt)
+	uint32_t free_groups_cnt, uint32_t free_datasets_cnt)
 {
 	if (!job_ptr || job_ptr->bb_status) {
 		return;
 	}
-	bb_state.bb_config.free_groups += free_group_cnt;
-	bb_state.bb_config.used_groups -= free_group_cnt;
-	bb_state.bb_config.free_datasets += free_dataset_cnt;
-	bb_state.bb_config.used_datasets -= free_dataset_cnt;
+	bb_state.free_groups_cnt += free_groups_cnt;
+	bb_state.used_groups_cnt -= free_groups_cnt;
+	bb_state.free_datasets_cnt += free_datasets_cnt;
+	bb_state.used_datasets_cnt -= free_datasets_cnt;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	//BINBIN:子豪进行bit_map处理，free_hl为需要释放的节点
 	if (free_hl) {
 		char *host = NULL;
 		node_record_t *node_ptr = NULL;
@@ -3009,13 +3036,13 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
 	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
 
-	if (job_ptr->need_group_counts > bb_state.bb_config.free_groups 
-			|| job_ptr->need_database_counts > bb_state.bb_config.free_datasets ) {
+	if (job_ptr->need_group_counts > bb_state.free_groups_cnt 
+			|| job_ptr->need_database_counts > bb_state.free_datasets_cnt ) {
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		debug("free groups or datasets is not enough,requie groups count:%d,"
 			"free groups count:%d, require datasets count:%d, free datasets count:%d",
-			job_ptr->need_group_counts, bb_state.bb_config.free_groups, 
-			job_ptr->need_database_counts, bb_state.bb_config.free_datasets);
+			job_ptr->need_group_counts, bb_state.free_groups_cnt, 
+			job_ptr->need_database_counts, bb_state.free_datasets_cnt);
 			job_ptr->bb_need_wait = true;
 	} else {
 		job_ptr->bb_need_wait = false;
@@ -3040,10 +3067,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	} 
 
 	/* Handle count before creating cache */
-	bb_state.bb_config.free_groups		-= job_ptr->need_group_counts;
-	bb_state.bb_config.free_datasets	-= job_ptr->need_database_counts;
-	bb_state.bb_config.used_groups		+= job_ptr->need_group_counts;
-	bb_state.bb_config.used_datasets	+= job_ptr->need_database_counts;
+	bb_state.free_groups_cnt		-= job_ptr->need_group_counts;
+	bb_state.free_datasets_cnt	-= job_ptr->need_database_counts;
+	bb_state.used_groups_cnt		+= job_ptr->need_group_counts;
+	bb_state.used_datasets_cnt	+= job_ptr->need_database_counts;
 	bb_job->index_groups				=  job_ptr->need_group_counts;
 	bb_job->index_datasets				=  job_ptr->need_database_counts;
 	bb_job->index_tasks					=  job_ptr->need_database_counts;//暂时一个任务对应一个数据集
@@ -3213,7 +3240,7 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 	uint32_t dataset_count = job_ptr->need_database_counts;
 	uint32_t max_node_cnt_per_group = job_ptr->max_clients_per_job;
 	uint32_t node_idx = 0;
-	uint32_t free_group_cnt = 0;
+	uint32_t free_groups_cnt = 0;
 	uint32_t free_datasets_cnt = 0;
 	hostlist_t *free_hl = hostlist_create(NULL);
 	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
@@ -3223,27 +3250,36 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 	}
 	hostlist_sort(job_hl);
 	/* 缓存组id为0即为没有使用，记录对应hostname和数量用于释放 */
+	uint32_t total_nodes = hostlist_count(job_hl);  /* job_hl 实际节点数 */
+
 	for (uint32_t i = 0; i < group_count; i++) {
 		uint32_t group_id = job_ptr->group_ids[i];
 		if (group_id == 0) {
-			for (int i = 0; i < max_node_cnt_per_group; i++) {
-				char *hostname = hostlist_nth(job_hl, node_idx);
+			if (node_idx >= total_nodes) {
+				break;
+			}
+			/* 本组实际可用节点数 = 剩余节点数 与 max_node_cnt_per_group 的较小值 */
+			uint32_t remain = total_nodes - node_idx;
+			uint32_t nodes_this_group = (remain < max_node_cnt_per_group) ? remain : max_node_cnt_per_group;
+			for (uint32_t j = 0; j < nodes_this_group; j++) {
+				char *hostname = hostlist_nth(job_hl, node_idx + j);
 				if (!hostname) {
-					error("获取hostname为空");
+					/* 这里再返回 NULL 就说明 hostlist 有问题，可视为异常 */
+					error("获取hostname为空 (idx=%u)", node_idx + j);
 					rc = SLURM_ERROR;
 					goto free_end;
 				}
 				if (hostlist_push(free_hl, hostname) == 0) {
 					error("push hostname into hostlist_t failed");
 					rc = SLURM_ERROR;
+					free(hostname);
 					goto free_end;
 				}
-				free_group_cnt++;
+				free_groups_cnt++;
 				free(hostname);
 			}
-		} else {
-			node_idx += max_node_cnt_per_group;
 		}
+		node_idx += max_node_cnt_per_group;
 	}
 	/* 数据集规则id为0即为没有使用，记录对应数量用于释放 */
 	for (uint32_t i = 0; i < dataset_count; i++) {
@@ -3253,15 +3289,18 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 		}
 	}
 
-	char *str = hostlist_ranged_string_xmalloc(free_hl);
-	if (str) {
-		debug("BB-----释放没有占用节点: %s\n", str);
+	uint32_t free_nodes_cnt = hostlist_count(free_hl); 
+	if (free_nodes_cnt) {
+		char *str = hostlist_ranged_string_xmalloc(free_hl);
+		debug("BB-----BB失败后,需要更新计数的节点列表: %s\n", str);
 		xfree(str);
+	}else{
+		debug("BB-----BB失败后,没有需要更新计数的节点");
 	}
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	bb_job = _get_bb_job(job_ptr);
-	_queue_teardown_on_abort(bb_job, job_ptr, free_hl, free_group_cnt, free_datasets_cnt);
+	_queue_teardown_on_abort(bb_job, job_ptr, free_hl, free_groups_cnt, free_datasets_cnt);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 free_end:
 	hostlist_destroy(job_hl);

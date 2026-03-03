@@ -2477,33 +2477,46 @@ static void _deal_bb_complete_failed(job_record_t *job_ptr)
  */
 static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
 {
-	if (!job_ptr->group_ids || job_ptr->need_group_counts == 0)
-		return;
-	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
-	if (!job_hl) {
-		error("Unable to parse hostlist: `%s'", job_ptr->nodes);
-		return;
-	}
-	hostlist_sort(job_hl);
-	uint32_t node_idx = 0;
-	for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
-		uint32_t group_id = job_ptr->group_ids[i];
-		if (group_id != 0) {
-			for (int j = 0; j < job_ptr->max_clients_per_job; j++) {
-				char *hostname = hostlist_nth(job_hl, node_idx);
-				if (!hostname) {
-					error("获取hostname为空");
-					continue;;
-				}
-				drain_nodes(hostname, "Failed during the SI phase(create or cancel); manual cleanup may be required", slurm_conf.slurm_user_id);
-				free(hostname);
-				node_idx++;
-			}
-		} else {
-			node_idx += job_ptr->max_clients_per_job;
-		}
-	}
-	return;
+    if (!job_ptr->group_ids || job_ptr->need_group_counts == 0)
+        return;
+    hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
+    if (!job_hl) {
+        error("Unable to parse hostlist: `%s'", job_ptr->nodes);
+        return;
+    }
+    hostlist_sort(job_hl);
+    uint32_t total_nodes = hostlist_count(job_hl);  /* 实际节点数 */
+    uint32_t node_idx = 0;
+    for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
+        uint32_t group_id = job_ptr->group_ids[i];
+
+        if (group_id != 0) {
+            if (node_idx >= total_nodes) 
+                break;            
+            uint32_t remain = total_nodes - node_idx;
+            uint32_t nodes_this_group =
+                (remain < job_ptr->max_clients_per_job)
+                    ? remain
+                    : job_ptr->max_clients_per_job;
+
+            for (uint32_t j = 0; j < nodes_this_group; j++) {
+                char *hostname = hostlist_nth(job_hl, node_idx + j);
+                if (!hostname) {
+                    error("获取hostname为空 (idx=%u)", node_idx + j);
+                    continue;
+                }
+                drain_nodes(
+                    hostname,
+                    "Failed during the SI phase(create or cancel); manual cleanup may be required",
+                    slurm_conf.slurm_user_id);
+
+                free(hostname);
+            }
+        }
+        node_idx += job_ptr->max_clients_per_job;
+    }
+
+    hostlist_destroy(job_hl);
 }
 
 /* _slurm_rpc_bb_complete - process RPC noting the completion of
@@ -2602,7 +2615,6 @@ static void _slurm_rpc_bb_complete(slurm_msg_t *msg)
 		debug2("%s: %pJ Node=%s %s", __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 
 	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == BB_STATE_READY)) { //需要设置是否创建缓存组标志位，还有error状态处理
-		//BINBIN: 增加清理失败时的处理（仿照创建失败时的逻辑）
 		if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
 			//slurmd端删除成功
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
@@ -2722,7 +2734,6 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		debug2("%s: %pJ Node=%s %s",  __func__, job_ptr, epilog_msg->node_name, TIME_STR);
 #ifdef __METASTACK_NEW_BURSTBUFFER4	
 	if(job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == BB_STATE_READY)) { //需要设置是否创建缓存组标志位，还有error状态处理
-		//BINBIN: 增加清理失败时的处理（仿照创建失败时的逻辑）
 		if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
 			//slurmd端删除成功
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);

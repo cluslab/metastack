@@ -363,14 +363,14 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 	xstrcat(out_buf, line_end);
 	xstrfmtcat(out_buf, "MaxGroups=%u UsedGroups=%u FreeGroups=%u",
 		burst_buffer_ptr->max_groups,
-		burst_buffer_ptr->used_groups,
-		burst_buffer_ptr->free_groups);
+		burst_buffer_ptr->used_groups_cnt,
+		burst_buffer_ptr->free_groups_cnt);
 
 	xstrcat(out_buf, line_end);
 	xstrfmtcat(out_buf, "MaxDatasets=%u UsedDatasets=%u FreeDatasets=%u",
 		burst_buffer_ptr->max_datasets,
-		burst_buffer_ptr->used_datasets,
-		burst_buffer_ptr->free_datasets);
+		burst_buffer_ptr->used_datasets_cnt,
+		burst_buffer_ptr->free_datasets_cnt);
 
 	xstrcat(out_buf, line_end);
 	xstrfmtcat(out_buf, "MaxClientsJoin=%u MaxClientsPerJob=%u",
