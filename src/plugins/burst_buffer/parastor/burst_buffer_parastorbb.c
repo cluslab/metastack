@@ -3289,8 +3289,8 @@ extern uint32_t bb_p_free_allocated_resources(job_record_t *job_ptr)
 		}
 	}
 
-	uint32_t total_nodes = hostlist_count(free_hl); 
-	if (total_nodes) {
+	uint32_t free_nodes_cnt = hostlist_count(free_hl); 
+	if (free_nodes_cnt) {
 		char *str = hostlist_ranged_string_xmalloc(free_hl);
 		debug("BB-----BB失败后,需要更新计数的节点列表: %s\n", str);
 		xfree(str);
@@ -3339,8 +3339,8 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 		error("%pJ bb job record not found", job_ptr);
 		rc =  -1;
 	} else {
-		bb_job->bb_create_finished = job_ptr->bb_ready;
-		bb_alloc->bb_create_finished = job_ptr->bb_ready;
+		bb_job->bb_create_finished = job_ptr->bb_status;
+		bb_alloc->bb_create_finished = job_ptr->bb_status;
 
 		bb_job->index_groups = job_ptr->need_group_counts;
 		bb_alloc->index_groups = job_ptr->need_group_counts;
