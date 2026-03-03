@@ -3714,7 +3714,7 @@ cleanup:
 			ret_rc = ESLURM_BB_RESOURCE_SI_CANCEL;
 		} else {
 			error("BB-----job_id=%u,取消的bb作业清理失败", job_id);
-			ret_rc = ESLURM_BB_RESOURCE_SI_FAIL;
+			ret_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		}
 
 		bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
@@ -3750,7 +3750,7 @@ cleanup:
 			ret_rc = SLURM_SUCCESS;
 		} else {
 			error("BB-----job_id=%u,创建BB资源失败", job_id);
-			ret_rc = ESLURM_BB_RESOURCE_SI_FAIL;
+			ret_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		}
 		bb_rc_msg->job_id = job_id;
 		bb_rc_msg->bb_rc = ret_rc;
@@ -7184,7 +7184,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	if(req->bb_enable_pb && req->real_used_bb) {
 		//slurm_mutex_lock(&bb_job_list_mutex);
-		if((clean_bb_job_process(req->step_id.job_id)== -1) || (req->bb_status == BB_STATE_READY))
+		if((clean_bb_job_process(req->step_id.job_id)== -1) || (req->bb_status == ESLURM_BB_STATE_READY))
 		bb_rc = _rpc_clean_bb(req);
 		//slurm_mutex_unlock(&bb_job_list_mutex);	
 	}  else
@@ -7403,7 +7403,7 @@ done:
 	} else {
 		if (req->bb_enable_pb && req->real_used_bb) {
 			// slurm_mutex_lock(&bb_job_list_mutex);
-			if ((clean_bb_job_process(req->step_id.job_id) == -1) || (req->bb_status == BB_STATE_READY))
+			if ((clean_bb_job_process(req->step_id.job_id) == -1) || (req->bb_status == ESLURM_BB_STATE_READY))
 				bb_rc = _rpc_clean_bb(req);
 			// slurm_mutex_unlock(&bb_job_list_mutex);
 		} else

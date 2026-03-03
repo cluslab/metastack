@@ -427,11 +427,17 @@ typedef enum {
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	ESLURMD_INVALID_WATCH_DOG,
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER8
 	ESLURM_BB_RESOURCE_LIMIT = 20000,
+    ESLURM_BB_STATE_INIT = 20001,      // 初始状态：还未进行创建/预热操作
+    ESLURM_BB_STATE_READY,         // 成功状态：创建缓存组、数据集、预热操作成功
+    ESLURM_BB_ERR_TIMEOUT,         // 异常状态：API 调用超时失败
+    ESLURM_BB_ERR_INTERFACE,       // 异常状态：API 接口调用错误
+    ESLURM_BB_STATE_CLEANUP,       // 处理状态：清理缓存组、数据集、停止预热中
 	ESLURM_BB_RESOURCE_SI_CANCEL, /* Successfully canceled the assignment in the SI phase  */
-	ESLURM_BB_RESOURCE_SI_FAIL, /* SI stage failure (failed to create or cancel job) */
 	ELSURM_BB_RESOURCE_UNKNOW,  /* 节点失联的作业 */
+	//ESLURM_BB_RESOURCE_SI_FAIL, /* SI stage failure (failed to create or cancel job) */
+	ESLURM_BB_STATE_PENDING_MANUAL,// 挂起状态：节点 Down 导致失败，需手动处理
 	ESLURM_BB_RESOURCE_SO_FAIL, 
 	ELSURM_BB_RESOURCE_ERROR //无法查询or无法获取数值，不更改计数
 #endif

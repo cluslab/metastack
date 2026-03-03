@@ -490,7 +490,7 @@ slurm_errtab_t slurm_errtab[] = {
 	  "Max burst buffer resources reached" },
 	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SI_CANCEL),
 	  "Burst buffer assignment successfully canceled in SI phase" },
-	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SI_FAIL),
+	{ ERRTAB_ENTRY(ESLURM_BB_STATE_PENDING_MANUAL),
 	  "Burst buffer SI stage failure (create or cancel failed)" },
 	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SO_FAIL),
 	  "Burst buffer SO stage failure" },

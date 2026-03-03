@@ -970,7 +970,7 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 			packbool(dump_job_ptr->real_used_bb,		   buffer);
 			pack32(dump_job_ptr->bb_status, buffer);
 			/* BB创建完成才有id */
-			if (dump_job_ptr->bb_status == BB_STATE_READY) {
+			if (dump_job_ptr->bb_status == ESLURM_BB_STATE_READY) {
 				if(dump_job_ptr->need_group_counts > 0) {
 					pack32_array(dump_job_ptr->group_ids, dump_job_ptr->need_group_counts, buffer);
 					
@@ -2961,7 +2961,7 @@ extern int job_record_unpack(job_record_t **out,
 		safe_unpack32(&job_ptr->bb_status,				 buffer);	
 		/* bb创建完成才存在id */
 		uint32_t tmp_count = 0;
-		if (job_ptr->bb_status == BB_STATE_READY) {
+		if (job_ptr->bb_status == ESLURM_BB_STATE_READY) {
 			if(job_ptr->need_group_counts) {
 				if (unpack32_array(&job_ptr->group_ids, &tmp_count, buffer) != SLURM_SUCCESS)
 					goto unpack_error;
