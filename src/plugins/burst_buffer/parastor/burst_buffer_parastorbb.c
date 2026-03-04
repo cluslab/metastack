@@ -2597,7 +2597,7 @@ static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr)
 
 
 /**
- * @brief 根据参数释放BB资源
+ * @brief 根据参数释放BB资源，不执行_start_teardown，不设置ESLURM_BB_STATE_CLEANUP
  * @param job_ptr 
  * @param free_hl 需要释放的节点列表
  * @param free_groups_cnt 需要释放的缓存组个数
@@ -3447,164 +3447,80 @@ extern int bb_p_job_test_stage_out(job_record_t *job_ptr)
 	return rc;
 }
 
-/*
- * Terminate any file staging and completely release burst buffer resources
- *
- * Returns a Slurm errno.
+/**
+ * @brief ESLURM_BB_STATE_PENDING_MANUAL作业走_queue_teardown_on_abort，其余作业走_queue_teardown
+ * @param job_ptr 
+ * @return 
  */
 extern int bb_p_job_cancel(job_record_t *job_ptr)
 {
 	bb_job_t *bb_job;
 	bb_alloc_t *bb_alloc;
-
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	log_flag(BURST_BUF, "%pJ", job_ptr);
-
-	if (bb_state.last_load_time == 0) {
-		info("Burst buffer down, can not cancel %pJ",
-			job_ptr);
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-		return SLURM_ERROR;
-	}
-
-	bb_job = _get_bb_job(job_ptr);
-	if (!bb_job) {
-		/* Nothing ever allocated, nothing to clean up */
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-		return SLURM_SUCCESS;
-	}
-#ifdef __METASTACK_NEW_BURSTBUFFER4
-	if(!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
-		job_ptr->bb_kill_flag = true;
-	}
-#endif
-	if (bb_job->state == BB_STATE_PENDING) {
-		/* No resources allocated yet, just mark as complete */
-		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_COMPLETE);
-		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
-		if (bb_alloc) {
-			bb_limit_rem(bb_alloc->user_id, bb_alloc->req_space,
-				bb_alloc->pool, &bb_state);
-			(void)bb_free_alloc_rec(&bb_state, bb_alloc);
-		}
-		bb_job_del(&bb_state, bb_job->job_id);
-	} else if (bb_job->state == BB_STATE_COMPLETE) {
-		/* Teardown already done. */
-	} else {
-		/* Resources allocated, trigger teardown */
-		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
-		if (bb_alloc) {
-			bb_alloc->state = BB_STATE_TEARDOWN;
-			bb_alloc->state_time = time(NULL);
-			bb_state.last_update_time = time(NULL);
-		}
-		_queue_teardown(bb_job, job_ptr);
-	}
-	slurm_mutex_unlock(&bb_state.bb_mutex);
-
-	return SLURM_SUCCESS;
-}
-
-extern int bb_p_abnormal_job_cancel(job_record_t *job_ptr)
-{
-	bb_job_t *bb_job;
-	bb_alloc_t *bb_alloc;
 	int rc = SLURM_SUCCESS;
-	uint32_t group_count = job_ptr->need_group_counts;
-	uint32_t dataset_count = job_ptr->need_database_counts;
-	uint32_t max_node_cnt_per_group = job_ptr->max_clients_per_job;
-	uint32_t node_idx = 0;
+
+	/* 判断是否走ESLURM_BB_STATE_PENDING_MANUAL作业 */
+	bool do_abnormal = (job_ptr && (job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL));
+
+	hostlist_t *free_hl = NULL;
+	hostlist_t *job_hl = NULL;
 	uint32_t free_groups_cnt = 0;
 	uint32_t free_datasets_cnt = 0;
-	hostlist_t *free_hl = hostlist_create(NULL);
-	hostlist_t *job_hl = hostlist_create(job_ptr->nodes);
-	if (!job_hl) {
-		error("Unable to parse hostlist: `%s'", job_ptr->nodes);
-		goto free_end;;
-	}
-	hostlist_sort(job_hl);
 
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	log_flag(BURST_BUF, "%pJ", job_ptr);
+	if (do_abnormal) {
+		uint32_t group_count = job_ptr->need_group_counts;
+		uint32_t dataset_count = job_ptr->need_database_counts;
+		uint32_t max_node_cnt_per_grp = job_ptr->max_clients_per_job;
+		uint32_t node_idx = 0;
 
-	if (bb_state.last_load_time == 0) {
-		info("Burst buffer down, can not cancel %pJ",
-			job_ptr);
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-		rc = SLURM_ERROR;
-		goto free_end;
-	}
-
-	bb_job = _get_bb_job(job_ptr);
-	if (!bb_job) {
-		/* Nothing ever allocated, nothing to clean up */
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-		rc = SLURM_SUCCESS;
-		goto free_end;
-	}
-#ifdef __METASTACK_NEW_BURSTBUFFER4
-	if (!(job_ptr->bb_status == BB_STATE_READY) && job_ptr->real_used_bb) {
-		job_ptr->bb_kill_flag = true;
-	}
-#endif
-	if (bb_job->state == BB_STATE_PENDING) {
-		/* No resources allocated yet, just mark as complete */
-		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_COMPLETE);
-		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
-		if (bb_alloc) {
-			bb_limit_rem(bb_alloc->user_id, bb_alloc->req_space,
-				bb_alloc->pool, &bb_state);
-			(void)bb_free_alloc_rec(&bb_state, bb_alloc);
+		free_hl = hostlist_create(NULL);
+		job_hl = hostlist_create(job_ptr->nodes);
+		if (!job_hl) {
+			error("Unable to parse hostlist: `%s'", job_ptr->nodes);
+			rc = SLURM_ERROR;
+			goto cleanup;
 		}
-		bb_job_del(&bb_state, bb_job->job_id);
-	} else if (bb_job->state == BB_STATE_COMPLETE) {
-		/* Teardown already done. */
-	} else {
-		/* Resources allocated, trigger teardown */
-		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
-		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
-		if (bb_alloc) {
-			bb_alloc->state = BB_STATE_TEARDOWN;
-			bb_alloc->state_time = time(NULL);
-			bb_state.last_update_time = time(NULL);
-		}
-		
-		uint32_t total_nodes = hostlist_count(job_hl);  /* job_hl 实际节点数 */
-		for (uint32_t i = 0; i < group_count; i++) {
-			uint32_t group_id = job_ptr->group_ids[i];
-			if (group_id != 0) {
-				if (node_idx >= total_nodes) {
-					break;
-				}
-				/* 本组实际可用节点数 = 剩余节点数 与 max_node_cnt_per_group 的较小值 */
-				uint32_t remain = total_nodes - node_idx;
-				uint32_t nodes_this_group = (remain < max_node_cnt_per_group) ? remain : max_node_cnt_per_group;
-				for (uint32_t j = 0; j < nodes_this_group; j++) {
-					char *hostname = hostlist_nth(job_hl, node_idx + j);
-					if (!hostname) {
-						/* 这里再返回 NULL 就说明 hostlist 有问题，可视为异常 */
-						error("获取hostname为空 (idx=%u)", node_idx + j);
-						rc = SLURM_ERROR;
-						goto free_end;
-					}
-					if (hostlist_push(free_hl, hostname) == 0) {
-						error("push hostname into hostlist_t failed");
-						rc = SLURM_ERROR;
+		hostlist_sort(job_hl);
+
+		/* 实际分配BB资源 = 实际占用 + 实际没占用， 实际没占用BB资源在接收RPC时已经调用bb_g_free_allocated_resources更新计数，因此只释放实际占用资源 */
+		if (group_count && job_ptr->group_ids) {
+			uint32_t total_nodes = hostlist_count(job_hl);
+			for (uint32_t i = 0; i < group_count; i++) {
+				uint32_t group_id = job_ptr->group_ids[i];
+				if (group_id != 0) {
+					if (node_idx >= total_nodes)
+						break;
+					uint32_t remain = total_nodes - node_idx;
+					uint32_t nodes_this_grp = (remain < max_node_cnt_per_grp) ? remain : max_node_cnt_per_grp;
+					for (uint32_t j = 0; j < nodes_this_grp; j++) {
+						char *hostname =
+							hostlist_nth(job_hl, node_idx + j);
+						if (!hostname) {
+							/* hostlist 异常 */
+							error("获取hostname为空 (idx=%u)",
+								node_idx + j);
+							rc = SLURM_ERROR;
+							goto cleanup;
+						}
+						if (hostlist_push(free_hl, hostname) == 0) {
+							error("push hostname into hostlist_t failed");
+							rc = SLURM_ERROR;
+							free(hostname);
+							goto cleanup;
+						}
+						free_groups_cnt++;
 						free(hostname);
-						goto free_end;
 					}
-					free_groups_cnt++;
-					free(hostname);
 				}
+				node_idx += max_node_cnt_per_grp;
 			}
-			node_idx += max_node_cnt_per_group;
 		}
-		/* 数据集规则id为0即为没有使用，记录对应数量用于释放 */
-		for (uint32_t i = 0; i < dataset_count; i++) {
-			uint32_t dataset_id = job_ptr->dataset_ids[i];
-			if (dataset_id != 0) {
-				free_datasets_cnt++;
+
+		/* 数据集规则 id != 0 参与释放计数 */
+		if (dataset_count && job_ptr->dataset_ids) {
+			for (uint32_t i = 0; i < dataset_count; i++) {
+				uint32_t dataset_id = job_ptr->dataset_ids[i];
+				if (dataset_id != 0)
+					free_datasets_cnt++;
 			}
 		}
 
@@ -3616,16 +3532,73 @@ extern int bb_p_abnormal_job_cancel(job_record_t *job_ptr)
 		} else {
 			debug("BB-----BB失败后,没有需要更新计数的节点");
 		}
-		_queue_teardown_on_abort(job_ptr, free_hl, free_groups_cnt, free_datasets_cnt);
-		if (bb_job)
-			slurm_thread_create_detached(_start_teardown, bb_job);
-		job_ptr->bb_status = BB_STATE_CLEANUP;	
 	}
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	log_flag(BURST_BUF, "%pJ", job_ptr);
+
+	if (bb_state.last_load_time == 0) {
+		info("Burst buffer down, can not cancel %pJ", job_ptr);
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+		rc = SLURM_ERROR;
+		goto cleanup;
+	}
+
+	bb_job = _get_bb_job(job_ptr);
+	if (!bb_job) {
+		/* Nothing ever allocated, nothing to clean up */
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+		rc = SLURM_SUCCESS;
+		goto cleanup;
+	}
+
+#ifdef __METASTACK_NEW_BURSTBUFFER4
+	if (!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
+		job_ptr->bb_kill_flag = true;
+	}
+#endif
+
+	if (bb_job->state == BB_STATE_PENDING) {
+		/* No resources allocated yet, just mark as complete */
+		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_COMPLETE);
+		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
+		if (bb_alloc) {
+			bb_limit_rem(bb_alloc->user_id, bb_alloc->req_space,
+				bb_alloc->pool, &bb_state);
+			(void)bb_free_alloc_rec(&bb_state, bb_alloc);
+		}
+		bb_job_del(&bb_state, bb_job->job_id);
+	} else if (bb_job->state == BB_STATE_COMPLETE) {
+		/* Teardown already done. */
+	} else {
+		/* Resources allocated, trigger teardown */
+		bb_set_job_bb_state(job_ptr, bb_job, BB_STATE_TEARDOWN);
+		bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
+		if (bb_alloc) {
+			bb_alloc->state = BB_STATE_TEARDOWN;
+			bb_alloc->state_time = time(NULL);
+			bb_state.last_update_time = time(NULL);
+		}
+
+		if (do_abnormal) {
+			/* 原 bb_p_abnormal_job_cancel 的核心逻辑 */
+			_queue_teardown_on_abort(job_ptr, free_hl,
+				free_groups_cnt, free_datasets_cnt);
+			if (bb_job)
+				slurm_thread_create_detached(_start_teardown, bb_job);
+			job_ptr->bb_status = ESLURM_BB_STATE_CLEANUP;
+		} else {
+			/* 原正常 cancel 逻辑 */
+			_queue_teardown(bb_job, job_ptr);
+		}
+	}
+
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
-free_end:
-	hostlist_destroy(job_hl);
-	hostlist_destroy(free_hl);
+cleanup:
+	if (job_hl)
+		hostlist_destroy(job_hl);
+	if (free_hl)
+		hostlist_destroy(free_hl);
 	return rc;
 }
 

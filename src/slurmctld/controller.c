@@ -303,7 +303,7 @@ static bool         _verify_clustername(void);
 static bool         _wait_for_server_thread(void);
 static void *       _wait_primary_prog(void *arg);
 #ifdef __METASTACK_NEW_BURSTBUFFER6
-static void *slurmctld_bb_exception_handler(void *no_data);
+// static void *slurmctld_bb_exception_handler(void *no_data);
 #endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -748,13 +748,13 @@ int main(int argc, char **argv)
 		slurm_thread_create(&slurmctld_config.thread_id_copy,
 					slurmctld_state_copy, NULL);
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER6
-		debug("print bb type = %s  slurm_conf.bb_type = %s",bb_tmp,  slurm_conf.bb_type);
-		if (!xstrcmp(bb_tmp, slurm_conf.bb_type)) {
-			slurm_thread_create(&slurmctld_config.thread_id_bb_error,
-										slurmctld_bb_exception_handler, NULL);
-		}
-#endif
+// #ifdef __METASTACK_NEW_BURSTBUFFER6
+// 		debug("print bb type = %s  slurm_conf.bb_type = %s",bb_tmp,  slurm_conf.bb_type);
+// 		if (!xstrcmp(bb_tmp, slurm_conf.bb_type)) {
+// 			slurm_thread_create(&slurmctld_config.thread_id_bb_error,
+// 										slurmctld_bb_exception_handler, NULL);
+// 		}
+// #endif
 		/*
 		 * create attached thread for node power management
   		 */
@@ -4177,111 +4177,114 @@ static void *_acct_update_thread(void *no_data)
 	return NULL;
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER6
-static void *slurmctld_bb_exception_handler(void *no_data) 
-{
-	time_t now = 0;
-	static time_t last_timelimit_time = 0;
+// #ifdef __METASTACK_NEW_BURSTBUFFER6
+// static void *slurmctld_bb_exception_handler(void *no_data) 
+//{
+	// time_t now = 0;
+	// static time_t last_timelimit_time = 0;
 
-	int num = 0;
-	job_record_t *job_ptr = NULL;
-	uint32_t *cur_groupid_arr = NULL;
-	uint32_t *cur_datasetid_arr = NULL;
+	// int num = 0;
+	// job_record_t *job_ptr = NULL;
+	// uint32_t *cur_groupid_arr = NULL;
+	// uint32_t *cur_datasetid_arr = NULL;
 
 
-	DEF_TIMERS;
-	/* Locks: Read config and job */
-	slurmctld_lock_t job_write_lock = {
-		NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	// DEF_TIMERS;
+	// /* Locks: Read config and job */
+	// slurmctld_lock_t job_write_lock = {
+	// 	NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 	
-	now = time(NULL);
-	while (1) {
-		slurm_mutex_lock(&shutdown_mutex);
-		if (!slurmctld_config.shutdown_time) {
-			struct timespec ts = {0, 0};
-			ts.tv_sec = time(NULL) + 1;
-			slurm_cond_timedwait(&shutdown_cond, &shutdown_mutex,
-					     &ts);
-		}
-		slurm_mutex_unlock(&shutdown_mutex);
-		if (slurmctld_config.shutdown_time) {
-			debug("Start shutting down slurmctld_bb_exception_handler thread");
-			break;
-		}
+	// now = time(NULL);
+	// while (1) {
+	// 	slurm_mutex_lock(&shutdown_mutex);
+	// 	if (!slurmctld_config.shutdown_time) {
+	// 		struct timespec ts = {0, 0};
+	// 		ts.tv_sec = time(NULL) + 1;
+	// 		slurm_cond_timedwait(&shutdown_cond, &shutdown_mutex,
+	// 				     &ts);
+	// 	}
+	// 	slurm_mutex_unlock(&shutdown_mutex);
+	// 	if (slurmctld_config.shutdown_time) {
+	// 		debug("Start shutting down slurmctld_bb_exception_handler thread");
+	// 		break;
+	// 	}
 
-		START_TIMER;
-		if (difftime(now, last_timelimit_time) >= PERIODIC_TIMEOUT * 10) {
-			lock_slurmctld(job_write_lock);
-			if (bb_job_error_list != NULL && list_count(bb_job_error_list) > 0) {
-				bb_job_error_msg_t *bb_job_error = NULL;
-				list_itr_t *itr = list_iterator_create(bb_job_error_list);
-				//每次处理5个作业，防止长期拿锁影响其他流程，这里后续可以设置成可配置参数
-				while ((bb_job_error = (bb_job_error_msg_t *)list_next(itr)) && num < 3) {
-					num++;
-					if ((job_ptr = find_job_record(bb_job_error->job_id)) == NULL) {
-						error("%s could not find job_ptr of JobId=%u", __func__, bb_job_error->job_id);
-						continue;
-					}
-					if (bb_job_error->bb_status == ELSURM_BB_RESOURCE_UNKNOW) { //节点失联
-						xfree(job_ptr->group_ids);
-						xfree(job_ptr->dataset_ids);
+	// 	START_TIMER;
+	// 	if (difftime(now, last_timelimit_time) >= PERIODIC_TIMEOUT * 10) {
+	// 		lock_slurmctld(job_write_lock);
+	// 		if (bb_job_error_list != NULL && list_count(bb_job_error_list) > 0) {
+	// 			bb_job_error_msg_t *bb_job_error = NULL;
+	// 			list_itr_t *itr = list_iterator_create(bb_job_error_list);
+	// 			//每次处理5个作业，防止长期拿锁影响其他流程，这里后续可以设置成可配置参数
+	// 			while ((bb_job_error = (bb_job_error_msg_t *)list_next(itr)) && num < 3) {
+	// 				num++;
+	// 				if ((job_ptr = find_job_record(bb_job_error->job_id)) == NULL) {
+	// 					error("%s could not find job_ptr of JobId=%u", __func__, bb_job_error->job_id);
+	// 					continue;
+	// 				}
+	// 				if (bb_job_error->bb_status == ELSURM_BB_RESOURCE_UNKNOW) { //节点失联
+						
+	// 					xfree(job_ptr->group_ids);
+	// 					xfree(job_ptr->dataset_ids);
 
-						job_ptr->group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
-						job_ptr->dataset_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
+	// 					job_ptr->group_ids = xmalloc(job_ptr->need_group_counts * sizeof(uint32_t));
+	// 					job_ptr->dataset_ids = xmalloc(job_ptr->need_database_counts * sizeof(uint32_t));
 
-						cur_groupid_arr = bb_g_query_bb_groupid_by_sn(job_ptr);
-						if (!cur_groupid_arr) {
-							error("bb_g_query_bb_groupid_by_sn return NULL");
-							bb_job_error->bb_status = ELSURM_BB_RESOURCE_ERROR;
-							continue;
-						}
-						/* cur_groupid_arr[0] 为 0，说明当前作业没有占用缓存组，视为清理成功，直接从异常链表中移除。 */
-						if (cur_groupid_arr[0] == 0) {
-							xfree(cur_groupid_arr);
-							/* 成功清理的作业不再保留在异常链表中 */
-							list_remove(itr);
-							continue;
-						}
-						/* 作业仍然占用缓存组，记录当前 group_ids 信息 */
-						memcpy(job_ptr->group_ids, cur_groupid_arr, job_ptr->need_group_counts * sizeof(uint32_t));
+	// 					cur_groupid_arr = bb_g_query_bb_groupid_by_sn(job_ptr);
+	// 					if (!cur_groupid_arr) {
+	// 						error("bb_g_query_bb_groupid_by_sn return NULL");
+	// 						bb_job_error->bb_status = ELSURM_BB_RESOURCE_ERROR;
+	// 						continue;
+	// 					}
+	// 					uint32_t last_groupid_idx = job_ptr->need_group_counts - 1;
+	// 					uint32_t last_groupid = cur_groupid_arr[last_groupid_idx];
+	// 					uint32_t first_groupid = cur_groupid_arr[0];
+	// 					/* 说明当前作业没有占用缓存组，视为清理成功。 */
+	// 					if (last_groupid == 0 && first_groupid == 0) {
+	// 						xfree(cur_groupid_arr);
+	// 						list_remove(itr);
+	// 						continue;
+	// 					}
+	// 					/* 作业仍然占用缓存组，记录当前 group_ids 信息 */
+	// 					memcpy(job_ptr->group_ids, cur_groupid_arr, job_ptr->need_group_counts * sizeof(uint32_t));
 
-						uint32_t last_groupid_idx = job_ptr->need_group_counts - 1;
-						uint32_t last_groupid = cur_groupid_arr[last_groupid_idx];
-						xfree(cur_groupid_arr);
+	// 					uint32_t last_groupid_idx = job_ptr->need_group_counts - 1;
+	// 					uint32_t last_groupid = cur_groupid_arr[last_groupid_idx];
+	// 					xfree(cur_groupid_arr);
 
-						if (last_groupid != 0) {
-							/* 只有最后一个 group_id 不为 0 时，才去查询数据集规则 */
-							cur_datasetid_arr = bb_g_query_bb_datasetid_by_sn(job_ptr);
-							if (!cur_datasetid_arr) {
-								error("bb_g_query_bb_datasetid_by_sn return NULL");
-								bb_job_error->bb_status = ELSURM_BB_RESOURCE_ERROR;
-								continue;
-							}
-							memcpy(job_ptr->dataset_ids, cur_datasetid_arr,
-							       job_ptr->need_database_counts * sizeof(uint32_t));
-							xfree(cur_datasetid_arr);
-						}
-						/* 走到这里说明缓存组/数据集仍然占用，标记为 BB 资源异常，
-						 * 后续需要人工处理，因此不从 bb_job_error_list 中移除。 */
-						bb_job_error->bb_status = ESLURM_BB_STATE_PENDING_MANUAL;
-						/* 查询后更新bb资源计数 */
-						bb_g_free_allocated_resources(job_ptr);
-					}
-				}
-			num = 0;
-			list_iterator_destroy(itr);
-		}
-			unlock_slurmctld(job_write_lock);
-			now = time(NULL);
-			last_timelimit_time = now;
-		}
+	// 					if (last_groupid != 0) {
+	// 						/* 只有最后一个 group_id 不为 0 时，才去查询数据集规则 */
+	// 						cur_datasetid_arr = bb_g_query_bb_datasetid_by_sn(job_ptr);
+	// 						if (!cur_datasetid_arr) {
+	// 							error("bb_g_query_bb_datasetid_by_sn return NULL");
+	// 							bb_job_error->bb_status = ELSURM_BB_RESOURCE_ERROR;
+	// 							continue;
+	// 						}
+	// 						memcpy(job_ptr->dataset_ids, cur_datasetid_arr,
+	// 						       job_ptr->need_database_counts * sizeof(uint32_t));
+	// 						xfree(cur_datasetid_arr);
+	// 					}
+	// 					/* 走到这里说明缓存组/数据集仍然占用，标记为 BB 资源异常，
+	// 					 * 后续需要人工处理，因此不从 bb_job_error_list 中移除。 */
+	// 					bb_job_error->bb_status = ESLURM_BB_STATE_PENDING_MANUAL;
+	// 					/* 查询后更新bb资源计数 */
+	// 					bb_g_free_allocated_resources(job_ptr);
+	// 				}
+	// 			}
+	// 		num = 0;
+	// 		list_iterator_destroy(itr);
+	// 	}
+	// 		unlock_slurmctld(job_write_lock);
+	// 		now = time(NULL);
+	// 		last_timelimit_time = now;
+	// 	}
 
-		END_TIMER2(__func__);
-	}
-	debug3("slurmctld_bb_exception_handler shutting down");
-	return NULL;	
-}
-#endif
+	// 	END_TIMER2(__func__);
+	// }
+	// debug3("slurmctld_bb_exception_handler shutting down");
+	// return NULL;	
+//}
+//#endif
 
 
 static void _get_fed_updates(void)
