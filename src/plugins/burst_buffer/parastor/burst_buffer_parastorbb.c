@@ -3852,3 +3852,86 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 	xfree(path_copy);
 	return path_array;
 }
+
+
+
+
+static int _bb_get_parastors_state(uint32_t *used_groups_cnt, uint32_t*used_datasets_cnt)
+{
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+	int rc = SLURM_SUCCESS;
+
+	//slurm_mutex_unlock(&bb_state.bb_mutex);
+	query_params_request *params = xmalloc(sizeof(query_params_request));
+	bb_response *resp_out_group = xmalloc(sizeof(bb_response));
+	bb_response *resp_out_dataset = xmalloc(sizeof(bb_response));
+	memset(params, 0, sizeof(query_params_request));
+	params->start = 0;
+	params->limit = 100;
+
+	//缓存组
+	List tmp_list_groups = get_groups_burst_buffer(params, bb_min_config, resp_out_group);
+	if (!resp_out_group || resp_out_group->err_no != 0) { //不能用tmp_list_groups为NULL判断，因为可能没有缓存组
+		error("get groups returned error, the detail message is %s",
+			resp_out_group->detail_err_msg ? resp_out_group->detail_err_msg : "unknown");
+		return SLURM_ERROR;
+	}
+	debug("burst group_count=%d , list_count(tmp_list_groups)=%d", resp_out_group->group_count, list_count(tmp_list_groups));
+
+	// 数据集
+	List tmp_list_datasets = get_datasets_burst_buffer(params, bb_min_config, resp_out_dataset);
+	if (!resp_out_dataset || resp_out_dataset->err_no != 0) { //不能用tmp_list_datasets为NULL判断，因为可能没有数据集
+		error("get datasets returned error, the detail message is %s",
+			resp_out_dataset->detail_err_msg ? resp_out_dataset->detail_err_msg : "unknown");
+		return SLURM_ERROR;
+	}
+	debug("burst datasets=%d , list_count(datasets)=%d", resp_out_dataset->dataset_count, list_count(tmp_list_datasets));
+
+	free_query_params(params);
+	// xfree(params);
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	/* load the bb information from parastor resrful*/
+	if (!bb_state.list_clients)
+		bb_state.list_clients = list_create(free_bb_client);//需要释放
+	if (!bb_state.list_tasks)
+		bb_state.list_tasks = list_create(free_bb_task);
+	if (!tmp_list_groups)
+		bb_state.list_groups = list_create(free_bb_group);//需要释放
+	else
+		bb_state.list_groups = tmp_list_groups;
+
+	if (!tmp_list_datasets)
+		bb_state.list_datasets = list_create(free_bb_dataset);//需要释放
+	else
+		bb_state.list_datasets = tmp_list_datasets;
+
+
+	bb_state.used_groups_cnt = list_count(bb_state.list_groups);
+	if (bb_state.bb_config.max_groups >= resp_out_group->group_count) {
+		bb_state.free_groups_cnt = bb_state.bb_config.max_groups - bb_state.used_groups_cnt;
+	} else {
+		bb_state.free_groups_cnt = 0;
+	}
+
+	bb_state.used_datasets_cnt = list_count(bb_state.list_datasets);
+	if (bb_state.bb_config.max_datasets >= resp_out_dataset->dataset_count) {
+		bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets - bb_state.used_datasets_cnt;
+	} else {
+		bb_state.free_datasets_cnt = 0;
+	}
+
+	debug("the current system has total groups count is %d, %d in use, and %d remaining.", bb_state.bb_config.max_groups,
+		bb_state.used_groups_cnt, bb_state.free_groups_cnt);
+	debug("the current system has total datasets count is %d, %d in use, and %d remaining.", bb_state.bb_config.max_datasets,
+		bb_state.used_datasets_cnt, bb_state.free_datasets_cnt);
+	free_bb_response(resp_out_group);
+	free_bb_response(resp_out_dataset);
+	_bb_min_config_free(bb_min_config);
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+	return rc;
+}

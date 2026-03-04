@@ -4016,6 +4016,7 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 		debug("BB-----job_id=%u, 回收任务提交成功", job_id);
 	} else {
 		error("BB-----job_id=%u, 回收任务提交失败", job_id);
+		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
 	/* 等待回收任务完成 */
@@ -4023,9 +4024,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	bb_rc = _wait_bb_task_complete(recycle_task_ids, BB_RECYCLE_TAKS_TYPE, dataset_count);
 	if (bb_rc == SLURM_SUCCESS) {
 		debug("BB-----job_id=%u, 所有回收任务完成", job_id);
-
 	} else {
 		error("BB-----job_id=%u, 回收任务失败", job_id);
+		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
 	/* 删除所有数据集规则 */
@@ -4035,6 +4036,7 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 		debug("BB-----job_id=%u, 成功删除所有数据集规则（%u 个）", job_id, dataset_count);
 	} else {
 		error("BB-----job_id=%u, 删除数据集规则失败", job_id);
+		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
 	/* 删除所有缓存组 */
@@ -4044,6 +4046,7 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 		debug("BB-----job_id=%u, 成功删除所有缓存组（%u 个）", job_id, group_count);
 	} else {
 		error("BB-----job_id=%u, 删除缓存组失败", job_id);
+		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
 

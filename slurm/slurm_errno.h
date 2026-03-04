@@ -437,8 +437,8 @@ typedef enum {
 	ESLURM_BB_RESOURCE_SI_CANCEL, 	   // 创建过程中成功取消
 	ELSURM_BB_RESOURCE_UNKNOW,  	   // 无法明确BB资源状态的作业（节点失联的作业，查询不到资源状态的作业）
 	//ESLURM_BB_RESOURCE_SI_FAIL,      // SI 阶段失败 
-	ESLURM_BB_STATE_PENDING_MANUAL,    // 挂起状态：节点 Down 导致失败，需手动处理
-	ESLURM_BB_RESOURCE_SO_FAIL, 	   // SO阶段失败，转换为ELSURM_BB_RESOURCE_UNKNOW或者ESLURM_BB_STATE_PENDING_MANUAL
+	ESLURM_BB_STATE_PENDING_MANUAL,    // 创建/清理BB失败，需要手动处理
+	//ESLURM_BB_RESOURCE_SO_FAIL, 	   // SO阶段失败，转换为ELSURM_BB_RESOURCE_UNKNOW或者ESLURM_BB_STATE_PENDING_MANUAL
 #endif
 } slurm_err_t;
 
