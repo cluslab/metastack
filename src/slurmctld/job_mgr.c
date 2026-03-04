@@ -5309,14 +5309,8 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 	if(!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 		if((flags & KILL_HURRY)) {
-			if(job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
-				///return bb_g_job_cancel(job_ptr); //移除部分
-			} else if(job_ptr->bb_status == ELSURM_BB_RESOURCE_ERROR) {
-				///return bb_g_job_cancel(job_ptr); //移除全部
-			}
-				
+			bb_g_job_cancel(job_ptr);		
 		}
-
 	}
 #endif
 
@@ -6213,79 +6207,6 @@ static void _signal_batch_job(job_record_t *job_ptr, uint16_t signal,
 	set_agent_arg_r_uid(agent_args, SLURM_AUTH_UID_ANY);
 	agent_queue_request(agent_args);
 }
-
-
-#ifdef __METASTACK_NEW_BURSTBUFFER2
-/*
- * prolog_complete - note the normal termination of the prolog
- * IN job_id - id of the job which completed
- * IN prolog_return_code - prolog's return code,
- *    if set then set job state to FAILED
- * RET - 0 on success, otherwise ESLURM error code
- * global: job_list - pointer global job list
- *	last_job_update - time of last job table update
- */
-extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
-			   char *node_name)
-{
-	job_record_t *job_ptr;
-    int rc = SLURM_SUCCESS;
-	job_ptr = find_job_record(job_id);
-	if (job_ptr == NULL) {
-		info("create_bb_complete: invalid JobId=%u", job_id);
-		return ESLURM_INVALID_JOB_ID;
-	}
-
-	if (IS_JOB_COMPLETING(job_ptr))
-		return SLURM_SUCCESS;
-
-	if (bb_return_code) {
-		error("create launch failure, %pJ bb_return_code = %d", job_ptr, bb_return_code);
-		job_ptr->exit_code = bb_return_code;
-		//(void) bb_g_free_allocated_resources(job_ptr); //这里已经将从bb中分配的资源释放了
-		
-		if(bb_return_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
-			job_ptr->bb_status = ESLURM_BB_STATE_CLEANUP; //已成功自动在slurmd中释放资源
-			return ESLURM_BB_RESOURCE_SI_CANCEL;
-		} else if(bb_return_code == ESLURM_BB_STATE_PENDING_MANUAL) {
-			job_ptr->bb_status = ESLURM_BB_STATE_PENDING_MANUAL; //手动处理
-			return ESLURM_BB_STATE_PENDING_MANUAL;
-		}
-	}
-	/*
-	 * job_ptr->node_bitmap_pr is always NULL for front end systems
-	 */
-	if (job_ptr->node_bitmap_pr) {
-		node_record_t *node_ptr = NULL;
-
-		if (node_name)
-			node_ptr = find_node_record(node_name);
-
-		if (node_ptr) {
-			bit_clear(job_ptr->node_bitmap_pr, node_ptr->index);
-		} else {
-			if (node_name)
-				error("%s: can't find node:%s",
-				      __func__, node_name);
-			bit_clear_all(job_ptr->node_bitmap_pr);
-		}
-	}
-	if (!job_ptr->node_bitmap_pr ||
-	    (bit_ffs(job_ptr->node_bitmap_pr) == -1))
-	{
-		job_ptr->state_reason = WAIT_NO_REASON;
-		agent_trigger(999, false, true);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif
-	}
-
-	last_job_update = time(NULL);
-
-	return SLURM_SUCCESS;
-}
-#endif
-
 
 /*
  * prolog_complete - note the normal termination of the prolog

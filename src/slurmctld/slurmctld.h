@@ -2119,8 +2119,6 @@ extern bool partition_in_use(char *part_name);
 extern int pick_batch_host(job_record_t *job_ptr);
 
 #ifdef __METASTACK_NEW_BURSTBUFFER2
-extern int create_bb_complete(uint32_t job_id, uint32_t bb_return_code,
-			   char *node_name);
 #endif
 /*
  * prolog_complete - note the normal termination of the prolog

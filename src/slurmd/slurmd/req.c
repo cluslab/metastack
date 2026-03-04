@@ -3640,6 +3640,9 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		goto  cleanup; 
 	}
 	/* 3. 为所有数据集规则提交预热任务 */
+	debug("BB-----防止parastor burstbuffer添加数据集在预热任务之后的情况,sleep 5秒");
+	sleep(5);
+	debug("BB-----sleep 结束");
 	debug("BB-----job_id=%u,开始为所有数据集规则提交预热任务", job_id);
 	for (uint32_t group_idx = 0; group_idx < group_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
