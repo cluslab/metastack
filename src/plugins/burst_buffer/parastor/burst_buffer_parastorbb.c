@@ -442,7 +442,11 @@ static void _recover_bb_state(void)
     safe_unpack32(&free_datasets_cnt,  buffer);
     bb_state.used_groups_cnt   = used_groups_cnt;
     bb_state.used_datasets_cnt = used_datasets_cnt;
-    bb_state.free_groups_cnt   = free_groups_cnt;
+	if(bb_state.bb_config.max_groups ==  used_groups_cnt) {
+		bb_state.free_groups_cnt = free_groups_cnt;
+	}
+
+
     bb_state.free_datasets_cnt = free_datasets_cnt;
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
@@ -1660,18 +1664,16 @@ extern int init(void)
 		return rc;
 	}
 	bb_alloc_cache(&bb_state);
-	slurm_mutex_unlock(&bb_state.bb_mutex);
-	
-    // if( _bb_get_parastors_state() != SLURM_SUCCESS) {
-	// 	error("failed to get parastor burst buffer state");
-	// 	return SLURM_ERROR;
-	// }
 	//初始化全局变量，后续由spool覆盖
 	bb_state.used_groups_cnt = 0;
 	bb_state.free_groups_cnt = bb_state.bb_config.max_groups;
 	bb_state.used_datasets_cnt = 0;
 	bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets;
-
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+    // if( _bb_get_parastors_state() != SLURM_SUCCESS) {
+	// 	error("failed to get parastor burst buffer state");
+	// 	return SLURM_ERROR;
+	// }
 	slurm_thread_create(&bb_state.bb_thread, _bb_agent, NULL); 
 	return SLURM_SUCCESS;
 }
