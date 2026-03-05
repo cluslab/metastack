@@ -1,36 +1,5 @@
 /*****************************************************************************\
  *  burst_buffer_parastorbb.c - Plugin for managing burst buffers with parastor
- *****************************************************************************
- *  Copyright (C) SchedMD LLC.
- *
- *  This file is part of Slurm, a resource management program.
- *  For details, see <https://slurm.schedmd.com/>.
- *  Please also read the included file: DISCLAIMER.
- *
- *  Slurm is free software; you can redistribute it and/or modify it under
- *  the terms of the GNU General Public License as published by the Free
- *  Software Foundation; either version 2 of the License, or (at your option)
- *  any later version.
- *
- *  In addition, as a special exception, the copyright holders give permission
- *  to link the code of portions of this program with the OpenSSL library under
- *  certain conditions as described in each individual source file, and
- *  distribute linked combinations including the two. You must obey the GNU
- *  General Public License in all respects for all of the code used other than
- *  OpenSSL. If you modify file(s) with this exception, you may extend this
- *  exception to your version of the file(s), but you are not obligated to do
- *  so. If you do not wish to do so, delete this exception statement from your
- *  version.  If you delete this exception statement from all source files in
- *  the program, then also delete it here.
- *
- *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
- *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- *  details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with Slurm; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
 #define _GNU_SOURCE
@@ -50,7 +19,6 @@
 #include "src/common/xsignal.h"
 #include "src/common/xstring.h"
 #include "src/interfaces/serializer.h"
-// #include "src/parastor/slurm_parastor.h"
 #include "src/slurmctld/agent.h"
 #include "src/slurmctld/job_scheduler.h"
 #include "src/slurmctld/locks.h"
@@ -127,26 +95,6 @@ static bb_state_t bb_state;
 // static bool bb_state_init = false;
 static char *directive_str;
 static int directive_len = 0;
-
-// static char *parastor_script_path;
-// static const char *req_fxns[] = {
-// 	"slurm_bb_job_process",
-// 	"slurm_bb_pools",
-// 	"slurm_bb_job_teardown",
-// 	"slurm_bb_setup",
-// 	"slurm_bb_data_in",
-// 	"slurm_bb_test_data_in",
-// 	"slurm_bb_real_size",
-// 	"slurm_bb_paths",
-// 	"slurm_bb_pre_run",
-// 	"slurm_bb_post_run",
-// 	"slurm_bb_data_out",
-// 	"slurm_bb_test_data_out",
-// 	"slurm_bb_get_status",
-// 	NULL
-// };
-
-/* Keep this in sync with req_fxns */
 typedef enum {
 	SLURM_BB_JOB_PROCESS = 0,
 	SLURM_BB_POOLS,
@@ -227,19 +175,13 @@ pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 /* Function prototypes */
 static bb_job_t *_get_bb_job(job_record_t *job_ptr);
 static void _queue_teardown(bb_job_t *bb_job, job_record_t *job_ptr);
-static void _queue_teardown_on_abort(job_record_t *job_ptr, hostlist_t *free_hl,
-	uint32_t free_groups_cnt, uint32_t free_datasets_cnt);
-// static void _fail_stage(stage_args_t *stage_args, const char *op, int rc, char *resp_msg);
-// static void _init_data_in_argv(stage_args_t *stage_args, int *argc_p, char ***argv_p);
-// static int _bb_get_parastors_state(void);
+static void _queue_teardown_on_abort(job_record_t *job_ptr, hostlist_t *free_hl, uint32_t free_groups_cnt, uint32_t free_datasets_cnt);
 static void *_start_stage_out(void *x);
-// static void *_start_teardown(void *x);
-// static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_tasks, bb_minimal_config_t *bb_min_config);
 static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config);
 static void _bb_min_config_free(bb_minimal_config_t * config);
-static void *_cleanup_bb_resources_from_alloc(void *x);
-static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc);
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str);
+static int _cmp_uint32(const void *a, const void *b);
+static int _bb_get_used_resources_global_cnt(uint32_t *used_groups_cnt, uint32_t*used_datasets_cnt);
 static int _get_parastor_thread_cnt(void)
 {
 	int cnt;
@@ -290,11 +232,6 @@ static void _save_bb_state(void)
 	pack16(protocol_version, buffer);
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
-    /* 全局计数写入spool */
-    pack32(bb_state.used_groups_cnt,    buffer);
-    pack32(bb_state.used_datasets_cnt,  buffer);
-    pack32(bb_state.free_groups_cnt,    buffer);
-    pack32(bb_state.free_datasets_cnt,  buffer);
 
 	count_offset = get_buf_offset(buffer);
 	pack32(rec_count, buffer);
@@ -391,10 +328,10 @@ static void _recover_bb_state(void)
 	time_t create_time = 0;
 	bb_alloc_t *bb_alloc;
 	buf_t *buffer;
-	uint32_t used_groups_cnt    = 0;
-    uint32_t used_datasets_cnt  = 0;
-    uint32_t free_groups_cnt    = 0;
-    uint32_t free_datasets_cnt  = 0;
+	// uint32_t used_groups_cnt    = 0;
+    // uint32_t used_datasets_cnt  = 0;
+    // uint32_t free_groups_cnt    = 0;
+    // uint32_t free_datasets_cnt  = 0;
 
 	state_fd = bb_open_state_file("burst_buffer_parastor_state", &state_file);
 	if (state_fd < 0) {
@@ -433,18 +370,6 @@ static void _recover_bb_state(void)
 		error("**********************************************************************");
 		return;
 	}
-
-	/* 从spool恢复全局计数到bb_state */
-	slurm_mutex_lock(&bb_state.bb_mutex);
-    safe_unpack32(&used_groups_cnt,    buffer);
-    safe_unpack32(&used_datasets_cnt,  buffer);
-    safe_unpack32(&free_groups_cnt,    buffer);
-    safe_unpack32(&free_datasets_cnt,  buffer);
-    bb_state.used_groups_cnt   = used_groups_cnt;
-    bb_state.used_datasets_cnt = used_datasets_cnt;
-    bb_state.free_groups_cnt   = free_groups_cnt;
-    bb_state.free_datasets_cnt = free_datasets_cnt;
-	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	safe_unpack32(&rec_count, buffer);
 	for (i = 0; i < rec_count; i++) {
@@ -562,7 +487,6 @@ static void _recover_bb_state(void)
 			}
 		}
 
-
 		/* Assign recovered values to bb_alloc */
 		bb_alloc->state = state; 
 		//bb_alloc->bb_group_id = bb_group_id;
@@ -639,26 +563,6 @@ static void _set_assoc_mgr_ptrs(bb_alloc_t *bb_alloc)
 
 }
 
-
-// static int _run_post_run(stage_args_t *stage_args, init_argv_f_t init_argv,
-// 			 const char *op, uint32_t job_id, uint32_t timeout,
-// 			 char **resp_msg)
-// {
-
-
-// 	return SLURM_SUCCESS;
-// }
-
-// static int _run_test_data_inout(stage_args_t *stage_args,
-// 				init_argv_f_t init_argv, const char *op,
-// 				uint32_t job_id, uint32_t timeout,
-// 				char **resp_msg)
-// {
-
-// 	return SLURM_SUCCESS;
-// }
-// TODO:待命中率进一步处理
-/*  打印缓存组命中率（注意：必须在删除缓存组前(teardown)打印，否则查询不到） */
 static void *_start_stage_out(void *x)
 {
 	bb_job_t *bb_job = (bb_job_t *)x;
@@ -666,71 +570,6 @@ static void *_start_stage_out(void *x)
 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 	job_record_t *job_ptr = NULL;
 	bb_alloc_t *bb_alloc = NULL;
-	
-	/* 拿min_config，并把需要查询到缓存组给临时变量以提前释放锁 */
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-	if (!bb_job->bb_group_ids || bb_job->index_groups < 1) {
-		error("BB-----Job %u has no cache groups to query hit rate ", bb_job->job_id);
-		slurm_mutex_lock(&bb_state.bb_mutex);
-		return NULL;
-	}
-	uint32_t tmp_job_id = bb_job->job_id;
-	int tmp_index_groups = bb_job->index_groups;
-	int *tmp_groups_arr = xmalloc(sizeof(int) * tmp_index_groups);
-	if (bb_job->bb_group_ids)
-		memcpy(tmp_groups_arr, bb_job->bb_group_ids, sizeof(int) * tmp_index_groups);
-	slurm_mutex_unlock(&bb_state.bb_mutex);
-
-	DEF_TIMERS
-	_incr_parastor_thread_cnt();
-	track_script_rec_add(tmp_job_id, 0, pthread_self());
-	START_TIMER;
-
-	/* 设置查询参数，拼接缓存组ID */
-	query_params_request query_params = { 0 };
-	query_params.start = 0;
-	query_params.limit = 100; /* FIXME:确定分页数后更改 */
-	for (int i = 0; i < tmp_index_groups; i++) {
-		if (query_params.ids) {
-			xstrfmtcat(query_params.ids, ",%d", tmp_groups_arr[i]);
-		} else {
-			xstrfmtcat(query_params.ids, "%d", tmp_groups_arr[i]);
-		}
-	}
-	bb_response *resp_out = xmalloc(sizeof(bb_response));
-	/* 获取作业运行完成后的group状态 */
-	List tmp_groups_list = get_groups_burst_buffer(&query_params, bb_min_config, resp_out);
-	if ( !tmp_groups_list || !resp_out || resp_out->err_no != 0) {
-		error("BB-----query cache group ids %s for JobId=%u failed, the retail message \" %s \" ",
-			query_params.ids ? query_params.ids : "NULL",
-			tmp_job_id,
-			(resp_out && resp_out->detail_err_msg) ? resp_out->detail_err_msg : "unknown");
-		rc = SLURM_ERROR;
-	} else {
-		/* 打印命中率 */
-		for (int i = 0; i < tmp_index_groups; i++) {
-			bb_attribute_group *bb_group = { 0 };
-			bb_group = (bb_attribute_group *)list_find_first_ro(tmp_groups_list, _find_group_key, &tmp_groups_arr[i]);
-			if (bb_group) {
-				info("BB-----Job %u cache hit rate in cache group %d: hit_bytes_rate=%f, hit_io_num_rate=%f, meta_hit_io_num_rate=%f",
-					tmp_job_id, bb_group->id,
-					bb_group->hit_bytes_rate,
-					bb_group->hit_io_num_rate,
-					bb_group->meta_hit_io_num_rate);
-				free_bb_group(bb_group);
-			} else {
-				error("BB-----query cache group %d of job job %u is NULL ",
-					tmp_groups_arr[i], tmp_job_id);
-			}
-		}
-	}
-	xfree(resp_out);
-	xfree(query_params.ids);
-	xfree(tmp_groups_arr);
-	_bb_min_config_free(bb_min_config);
-	END_TIMER;
-
 
 	/* 更新作业与分配状态，并触发 teardown */
 	lock_slurmctld(job_write_lock);
@@ -1542,84 +1381,6 @@ static void _test_config()
 	}
 }
 	
-// static int _bb_get_parastors_state(void) {
-
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-// 	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-// 	int rc = SLURM_SUCCESS;
-
-// 	//slurm_mutex_unlock(&bb_state.bb_mutex);
-// 	query_params_request *params  =  xmalloc(sizeof(query_params_request));
-// 	bb_response *resp_out_group   =  xmalloc(sizeof(bb_response));
-// 	bb_response *resp_out_dataset =  xmalloc(sizeof(bb_response));
-// 	memset(params, 0, sizeof(query_params_request));
-// 	params->start =   0;
-// 	params->limit = 100;
-
-// 	//缓存组
-// 	List tmp_list_groups = get_groups_burst_buffer(params, bb_min_config, resp_out_group);
-// 	if (!resp_out_group || resp_out_group->err_no != 0) { //不能用tmp_list_groups为NULL判断，因为可能没有缓存组
-// 		error("get groups returned error, the detail message is %s",
-// 			resp_out_group->detail_err_msg ? resp_out_group->detail_err_msg : "unknown");
-// 		return SLURM_ERROR;
-// 	}
-// 	debug("burst group_count=%d , list_count(tmp_list_groups)=%d", resp_out_group->group_count, list_count(tmp_list_groups));
-
-// 	// 数据集
-// 	List tmp_list_datasets = get_datasets_burst_buffer(params, bb_min_config, resp_out_dataset);
-// 	if (!resp_out_dataset || resp_out_dataset->err_no != 0) { //不能用tmp_list_datasets为NULL判断，因为可能没有数据集
-// 		error("get datasets returned error, the detail message is %s",
-// 			resp_out_dataset->detail_err_msg ? resp_out_dataset->detail_err_msg : "unknown");
-// 		return SLURM_ERROR;
-// 	}
-// 	debug("burst datasets=%d , list_count(datasets)=%d", resp_out_dataset->dataset_count, list_count(tmp_list_datasets));
-
-// 	free_query_params(params);
-// 	// xfree(params);
-
-// 	slurm_mutex_lock(&bb_state.bb_mutex);
-// 	/* load the bb information from parastor resrful*/
-// 	if(!bb_state.list_clients)
-// 		bb_state.list_clients       = list_create(free_bb_client);//需要释放
-// 	if(!bb_state.list_tasks)
-// 		bb_state.list_tasks         = list_create(free_bb_task);
-// 	if(!tmp_list_groups)
-// 		bb_state.list_groups        = list_create(free_bb_group);//需要释放
-// 	else
-// 		bb_state.list_groups        = tmp_list_groups;
-		
-// 	if(!tmp_list_datasets)
-// 		bb_state.list_datasets      = list_create(free_bb_dataset);//需要释放
-// 	else
-// 		bb_state.list_datasets      = tmp_list_datasets;
-
-	
-// 	bb_state.used_groups_cnt = list_count(bb_state.list_groups);
-// 	if (bb_state.bb_config.max_groups >= resp_out_group->group_count) {
-// 		bb_state.free_groups_cnt = bb_state.bb_config.max_groups - bb_state.used_groups_cnt;
-// 	} else {
-// 		bb_state.free_groups_cnt = 0;
-// 	}
-
-// 	bb_state.used_datasets_cnt = list_count(bb_state.list_datasets);
-// 	if (bb_state.bb_config.max_datasets >= resp_out_dataset->dataset_count) {
-// 		bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets - bb_state.used_datasets_cnt;
-// 	} else {
-// 		bb_state.free_datasets_cnt = 0;
-// 	}
-	
-// 	debug("the current system has total groups count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_groups,
-// 			bb_state.used_groups_cnt, bb_state.free_groups_cnt );
-// 	debug("the current system has total datasets count is %d, %d in use, and %d remaining.",bb_state.bb_config.max_datasets,
-// 			bb_state.used_datasets_cnt, bb_state.free_datasets_cnt );
-// 	free_bb_response(resp_out_group);
-// 	free_bb_response(resp_out_dataset);
-// 	_bb_min_config_free(bb_min_config);
-// 	slurm_mutex_unlock(&bb_state.bb_mutex);
-
-// 	return rc;
-// }
 /*
  * init() is called when the plugin is loaded, before any other functions
  * are called.  Put global initialization here.
@@ -1661,18 +1422,23 @@ extern int init(void)
 	}
 	bb_alloc_cache(&bb_state);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
-	
-    // if( _bb_get_parastors_state() != SLURM_SUCCESS) {
-	// 	error("failed to get parastor burst buffer state");
-	// 	return SLURM_ERROR;
-	// }
-	//初始化全局变量，后续由spool覆盖
-	bb_state.used_groups_cnt = 0;
-	bb_state.free_groups_cnt = bb_state.bb_config.max_groups;
-	bb_state.used_datasets_cnt = 0;
-	bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets;
 
-	slurm_thread_create(&bb_state.bb_thread, _bb_agent, NULL); 
+	uint32_t used_groups_cnt;
+	uint32_t used_datasets_cnt;
+	if (_bb_get_used_resources_global_cnt(&used_groups_cnt, &used_datasets_cnt) == 0) {
+		info("BB-----%s : 获取已用缓存组数量为%u,已用数据集数量为%u", __func__, used_groups_cnt, used_datasets_cnt);
+		slurm_mutex_lock(&bb_state.bb_mutex);
+		bb_state.used_groups_cnt = used_groups_cnt;
+		bb_state.free_groups_cnt = bb_state.bb_config.max_groups - bb_state.used_groups_cnt;
+		bb_state.used_datasets_cnt = used_datasets_cnt;
+		bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets - bb_state.used_datasets_cnt;
+		slurm_mutex_unlock(&bb_state.bb_mutex);
+	} else {
+		error("%s : 初始化parastor资源全局计数失败", __func__);
+		return SLURM_ERROR;
+	}
+
+	slurm_thread_create(&bb_state.bb_thread, _bb_agent, NULL);
 	return SLURM_SUCCESS;
 }
 
@@ -1716,105 +1482,6 @@ static void _free_orphan_alloc_rec(void *x)
 	bb_alloc_t *rec = (bb_alloc_t *)x;
 	(void) bb_free_alloc_rec(&bb_state, rec);
 
-}
-static void *_cleanup_bb_resources_from_alloc(void *x)
-{
-	// bb_alloc_t *bb_alloc = (bb_alloc_t *)x;
-
-	// /* 拿锁，把数据赋值给临时变量，减少持锁时间 */
-	// slurm_mutex_lock(&bb_state.bb_mutex);
-	// bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
-	// uint32_t tmp_job_id = bb_alloc->job_id;
-	// int tmp_index_tasks = bb_alloc->index_tasks;
-	// int *tmp_task_arr = xmalloc(sizeof(int) * tmp_index_tasks);
-	// if (bb_alloc->bb_task_ids)
-	// 	memcpy(tmp_task_arr, bb_alloc->bb_task_ids, sizeof(int) * tmp_index_tasks);
-	// int tmp_index_datasets = bb_alloc->index_datasets;
-	// int *tmp_dataset_arr = xmalloc(sizeof(int) * tmp_index_datasets);
-	// if (bb_alloc->bb_dataset_ids)
-	// 	memcpy(tmp_dataset_arr, bb_alloc->bb_dataset_ids, sizeof(int) * tmp_index_datasets);
-	// int tmp_index_groups = bb_alloc->index_groups;
-	// int *tmp_group_arr = xmalloc(sizeof(int) * tmp_index_groups);
-	// if (bb_alloc->bb_group_ids)
-	// 	memcpy(tmp_group_arr, bb_alloc->bb_group_ids, sizeof(int) * tmp_index_groups);
-	// slurm_mutex_unlock(&bb_state.bb_mutex);
-
-
-	// if (bb_min_config == NULL) {
-	// 	error("failed to get bb minimal config for JobId=%u", tmp_job_id);
-	// 	return NULL;
-	// }
-
-	// /* 1) 删除数据集 */
-	// if (tmp_dataset_arr && tmp_index_datasets > 0) {
-	// 	for (int i = 0; i < tmp_index_datasets; i++) {
-	// 		delete_params_request delete_params = { 0 };
-	// 		delete_params.dataset_id = (uint32_t)tmp_dataset_arr[i];
-	// 		bb_response *resp_out = xmalloc(sizeof(bb_response));
-	// 		int ret = delete_burst_buffer_dataset(&delete_params, bb_min_config, resp_out);
-	// 		if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-	// 			error("delete dataset %u for JobId=%u failed",
-	// 				delete_params.dataset_id, tmp_job_id);
-	// 		} else {
-	// 			bb_attribute_dataset *bb_dataset_tmp = NULL;
-	// 			int dataset_id_key = (int)delete_params.dataset_id;
-	// 			slurm_mutex_lock(&bb_state.bb_mutex);
-	// 			if (bb_state.list_datasets)
-	// 				bb_dataset_tmp = list_remove_first(bb_state.list_datasets, _find_dataset_key, &dataset_id_key);
-	// 			if (bb_dataset_tmp)
-	// 				free_bb_dataset(bb_dataset_tmp);
-	// 			if (bb_state.bb_config.free_datasets_cnt < bb_state.bb_config.max_datasets)
-	// 				bb_state.bb_config.free_datasets_cnt++;
-	// 			if (bb_state.used_datasets_cnt > 0)
-	// 				bb_state.used_datasets_cnt--;
-	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
-	// 		}
-	// 		bb_response_free(resp_out);
-	// 	}
-	// } else {
-	// 	info("no dataset to delete for JobId=%u", tmp_job_id);
-	// }
-
-	// /* 2) 删除缓存组（必须在数据集清理完成后） */
-	// if (tmp_group_arr && tmp_index_groups > 0) {
-	// 	for (int i = 0; i < tmp_index_groups; i++) {
-	// 		delete_params_request delete_params = { 0 };
-	// 		delete_params.group_id = (uint32_t)tmp_group_arr[i];
-	// 		bb_response *resp_out = xmalloc(sizeof(bb_response));
-	// 		int ret = delete_burst_buffer_group(&delete_params, bb_min_config, resp_out);
-	// 		if (ret != SLURM_SUCCESS || (resp_out && resp_out->err_no != 0)) {
-	// 			error("delete group %u for JobId=%u failed",
-	// 				delete_params.group_id, tmp_job_id);
-	// 		} else {
-	// 			bb_attribute_group *bb_group_tmp = NULL;
-	// 			int group_id_key = (int)delete_params.group_id;
-	// 			slurm_mutex_lock(&bb_state.bb_mutex);
-	// 			if (bb_state.list_groups)
-	// 				bb_group_tmp = list_remove_first(bb_state.list_groups, _find_group_key, &group_id_key);
-	// 			if (bb_group_tmp)
-	// 				free_bb_group(bb_group_tmp);
-	// 			if (bb_state.free_groups_cnt < bb_state.bb_config.max_groups)
-	// 				bb_state.free_groups_cnt++;
-	// 			if (bb_state.used_groups_cnt > 0)
-	// 				bb_state.used_groups_cnt--;
-	// 			slurm_mutex_unlock(&bb_state.bb_mutex);
-	// 		}
-	// 		bb_response_free(resp_out);
-	// 	}
-	// } else {
-	// 	info("no group to delete for JobId=%u", tmp_job_id);
-	// }
-
-	// _bb_min_config_free(bb_min_config);
-	// xfree(tmp_task_arr);
-	// xfree(tmp_dataset_arr);
-	// xfree(tmp_group_arr);
-	return NULL;
-}
-
-static void _clean_by_bb_alloc(bb_alloc_t *bb_alloc)
-{
-	slurm_thread_create_detached(_cleanup_bb_resources_from_alloc, bb_alloc);
 }
 
 /*
@@ -1995,7 +1662,6 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
  * the matching job is either gone or completed OR we have a job buffer and a
  * pending job, but don't know the status of stage-in)
  */
-//TODO: 清理流程修改，_clean_by_bb_alloc
 static void _purge_vestigial_bufs(void)
 {
 	List orphan_rec_list = list_create(_free_orphan_alloc_rec);
@@ -2022,7 +1688,6 @@ static void _purge_vestigial_bufs(void)
 					/* No bb_job found, use bb_alloc to clean up resources */
 					info("Job and bb_job not found for JobId=%u, cleaning up resources from bb_alloc",
 						bb_alloc->job_id);
-					_clean_by_bb_alloc(bb_alloc);
 					bb_limit_rem(bb_alloc->user_id, bb_alloc->req_space,
 						bb_alloc->pool, &bb_state);
 					(void)bb_free_alloc_rec(&bb_state, bb_alloc);
@@ -2826,45 +2491,11 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 	}
 	return rc;
 }
-
-// static int _calibrate_task_state(uint32_t job_id, int *bb_task_ids, int index_tasks, bb_minimal_config_t *bb_min_config)
-// {
-// 	if (bb_min_config == NULL) {
-// 		error("failed to get bb minimal config for JobId=%u", job_id);
-// 		return SLURM_ERROR;
-// 	}
-// 	bb_response *resp_out = xmalloc(sizeof(bb_response));
-// 	for (int i = 0; i < index_tasks; i++) {
-// 		bb_attribute_task *bb_task = xmalloc(sizeof(bb_attribute_task)) ;
-
-// 		int rc = get_single_burst_buffer_tasks(bb_task_ids[i], bb_task, bb_min_config, resp_out);
-// 		if (rc != 0) {
-// 			error("BB-----can't get task %d", bb_task_ids[i]);
-// 			_bb_min_config_free(bb_min_config);
-// 			free_bb_response(resp_out);
-// 			return SLURM_ERROR;
-// 		}
-// 		/* 任务状态非完成（作业运行完时），则预热失败 */
-// 		debug("BB-----the state of task %d of job %u is %s", bb_task_ids[i], job_id, bb_task->task_state);
-// 		// TODO:预热失败信息需要进一步处理
-// 		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
-// 			debug("BB-----the task %d of job %u haven't finish cache prefetch", bb_task_ids[i], job_id);
-// 			_bb_min_config_free(bb_min_config);
-// 			free_bb_response(resp_out);
-// 			return SLURM_ERROR;
-// 		}
-// 		free_bb_task(bb_task);
-// 	}
-// 	free_bb_response(resp_out);
-// 	return SLURM_SUCCESS;
-// }
-
 /*
  * Attempt to allocate resources and begin file staging for pending jobs.
  */
 extern int bb_p_job_try_stage_in(List job_queue)
 {
-
 	return SLURM_SUCCESS;
 }
 
@@ -3853,85 +3484,94 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 	return path_array;
 }
 
-
-
-
-static int _bb_get_parastors_state(uint32_t *used_groups_cnt, uint32_t*used_datasets_cnt)
+static int _cmp_uint32(const void *a, const void *b)
 {
+	const uint32_t va = *(const uint32_t *)a;
+	const uint32_t vb = *(const uint32_t *)b;
+
+	if (va < vb)
+		return -1;
+	if (va > vb)
+		return 1;
+	return 0;
+}
+
+/**
+ * @brief 获取parastor中slurm作业已使用缓存组和数据集数（使用bb_state.bb_mutex锁）（以j开头的缓存组作为统计）
+ * @param used_groups_cnt 
+ * @param used_datasets_cnt 
+ * @return 0成功
+ */
+static int _bb_get_used_resources_global_cnt(uint32_t *used_groups_cnt, uint32_t*used_datasets_cnt)
+{
+	if (!used_groups_cnt || !used_datasets_cnt) {
+		error("%s : param is illegal", __func__);
+		return SLURM_ERROR;
+	}
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	bb_minimal_config_t *bb_min_config = _create_bb_min_config(&bb_state.bb_config);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	int rc = SLURM_SUCCESS;
+	int tmp_ret = SLURM_SUCCESS;
 
-	//slurm_mutex_unlock(&bb_state.bb_mutex);
-	query_params_request *params = xmalloc(sizeof(query_params_request));
-	bb_response *resp_out_group = xmalloc(sizeof(bb_response));
-	bb_response *resp_out_dataset = xmalloc(sizeof(bb_response));
-	memset(params, 0, sizeof(query_params_request));
-	params->start = 0;
-	params->limit = 100;
+	uint32_t *used_grpid_arr = NULL;
+	uint32_t used_grps_cnt = 0;
+	uint32_t *grpid_of_ds_arr = NULL;
+	uint32_t grpid_of_ds_cnt = 0;
 
-	//缓存组
-	List tmp_list_groups = get_groups_burst_buffer(params, bb_min_config, resp_out_group);
-	if (!resp_out_group || resp_out_group->err_no != 0) { //不能用tmp_list_groups为NULL判断，因为可能没有缓存组
-		error("get groups returned error, the detail message is %s",
-			resp_out_group->detail_err_msg ? resp_out_group->detail_err_msg : "unknown");
+	if (!bb_min_config) {
+		error("%s : _create_bb_min_config failed", __func__);
 		return SLURM_ERROR;
 	}
-	debug("burst group_count=%d , list_count(tmp_list_groups)=%d", resp_out_group->group_count, list_count(tmp_list_groups));
 
-	// 数据集
-	List tmp_list_datasets = get_datasets_burst_buffer(params, bb_min_config, resp_out_dataset);
-	if (!resp_out_dataset || resp_out_dataset->err_no != 0) { //不能用tmp_list_datasets为NULL判断，因为可能没有数据集
-		error("get datasets returned error, the detail message is %s",
-			resp_out_dataset->detail_err_msg ? resp_out_dataset->detail_err_msg : "unknown");
-		return SLURM_ERROR;
-	}
-	debug("burst datasets=%d , list_count(datasets)=%d", resp_out_dataset->dataset_count, list_count(tmp_list_datasets));
-
-	free_query_params(params);
-	// xfree(params);
-
-	slurm_mutex_lock(&bb_state.bb_mutex);
-	/* load the bb information from parastor resrful*/
-	if (!bb_state.list_clients)
-		bb_state.list_clients = list_create(free_bb_client);//需要释放
-	if (!bb_state.list_tasks)
-		bb_state.list_tasks = list_create(free_bb_task);
-	if (!tmp_list_groups)
-		bb_state.list_groups = list_create(free_bb_group);//需要释放
-	else
-		bb_state.list_groups = tmp_list_groups;
-
-	if (!tmp_list_datasets)
-		bb_state.list_datasets = list_create(free_bb_dataset);//需要释放
-	else
-		bb_state.list_datasets = tmp_list_datasets;
-
-
-	bb_state.used_groups_cnt = list_count(bb_state.list_groups);
-	if (bb_state.bb_config.max_groups >= resp_out_group->group_count) {
-		bb_state.free_groups_cnt = bb_state.bb_config.max_groups - bb_state.used_groups_cnt;
-	} else {
-		bb_state.free_groups_cnt = 0;
+	tmp_ret = get_used_groupid_arr(bb_min_config, &used_grpid_arr, &used_grps_cnt);
+	if (tmp_ret != 0) {
+		error("%s : 获取已使用缓存组信息失败, ret=%d", __func__, tmp_ret);
+		rc = SLURM_ERROR;
+		goto cleanup;
 	}
 
-	bb_state.used_datasets_cnt = list_count(bb_state.list_datasets);
-	if (bb_state.bb_config.max_datasets >= resp_out_dataset->dataset_count) {
-		bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets - bb_state.used_datasets_cnt;
-	} else {
-		bb_state.free_datasets_cnt = 0;
+	tmp_ret = get_groupid_of_all_datasets(bb_min_config, &grpid_of_ds_arr, &grpid_of_ds_cnt);
+	if (tmp_ret != 0) {
+		error("%s : 获取数据集所属缓存组信息失败, ret=%d", __func__, tmp_ret);
+		rc = SLURM_ERROR;
+		goto cleanup;
 	}
 
-	debug("the current system has total groups count is %d, %d in use, and %d remaining.", bb_state.bb_config.max_groups,
-		bb_state.used_groups_cnt, bb_state.free_groups_cnt);
-	debug("the current system has total datasets count is %d, %d in use, and %d remaining.", bb_state.bb_config.max_datasets,
-		bb_state.used_datasets_cnt, bb_state.free_datasets_cnt);
-	free_bb_response(resp_out_group);
-	free_bb_response(resp_out_dataset);
+	/* 已使用缓存组数量，直接取 used_grps_cnt */
+	*used_groups_cnt = used_grps_cnt;
+
+	if (used_grps_cnt == 0 || grpid_of_ds_cnt == 0) {
+		*used_datasets_cnt = 0;
+		goto cleanup;
+	}
+
+	qsort(used_grpid_arr, used_grps_cnt, sizeof(uint32_t), _cmp_uint32);
+	qsort(grpid_of_ds_arr, grpid_of_ds_cnt, sizeof(uint32_t), _cmp_uint32);
+
+	uint32_t i = 0;
+	uint32_t j = 0;
+	uint32_t used_ds_cnt = 0;
+
+	while (i < grpid_of_ds_cnt && j < used_grps_cnt) {
+		if (grpid_of_ds_arr[i] < used_grpid_arr[j]) {
+			i++;
+		} else if (grpid_of_ds_arr[i] > used_grpid_arr[j]) {
+			j++;
+		} else {
+			/* 匹配到一个 dataset，其 group_id 属于已使用缓存组 */
+			used_ds_cnt++;
+			i++;	/* dataset 继续往后找，允许重复统计 */
+		}
+	}
+
+	*used_datasets_cnt = used_ds_cnt;
+
+cleanup:
+	xfree(used_grpid_arr);
+	xfree(grpid_of_ds_arr);
 	_bb_min_config_free(bb_min_config);
-	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	return rc;
 }

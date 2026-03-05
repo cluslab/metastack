@@ -164,21 +164,12 @@ typedef struct {
     uint32_t task_id;
 } delete_params_request;
 
-/* get permanent token */
+/**
+ * @brief 获取永久token
+ * @param bb_config 
+ * @return 
+ */
 extern int get_permanent_token(bb_config_t *bb_config);
-/* get groups list */
-extern List get_groups_burst_buffer(query_params_request* query_params, bb_minimal_config_t *bb_min_config, bb_response *resp_out);
-/* get datasets list */
-extern List get_datasets_burst_buffer(query_params_request *query_params, bb_minimal_config_t *bb_min_config, bb_response *resp_out);
-/* get set burst buffer clients and task list */
-extern int get_set_burst_buffer_clients_and_tasks(query_params_request *query_params,  bb_minimal_config_t *bb_min_config, result_type type, bb_response *resp_out);
-
-/* get single task,return data of task into bb_task */
-extern int get_single_burst_buffer_tasks( uint32_t task_id, bb_attribute_task *bb_task,  bb_minimal_config_t *bb_min_config, bb_response *resp_out);
-/* Create a cache group by client ids */
-extern int create_burst_buffer_group(create_params_request *create_params,  bb_minimal_config_t *bb_min_config, bb_response *resp_out);
-
-
 
 /** 
  * @brief 通过SN创建缓存组
@@ -288,23 +279,51 @@ extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config);
 extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config);
 
 
-/* 
-* delete a cache group by client ids 
-* NOTE: before deleting the cache group, make sure to delete the datasets under this group first.
-*/
-extern int delete_burst_buffer_group(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
+/**
+ * @brief 查询parastor中slurm使用的缓存组（sn以j开头的缓存组）
+ * @param bb_min_config 
+ * @param used_groupid_arr 出参，会重新分配内存
+ * @param used_groupid_arr 出参，个数
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int get_used_groupid_arr(bb_minimal_config_t *bb_min_config, uint32_t **used_groupid_arr, uint32_t *used_groups_cnt);
 
-/* Create a cache dataset */
-extern int create_burst_buffer_dataset(create_params_request *create_params, bb_minimal_config_t *bb_min_config, bb_response *resp_out);
+/**
+ * @brief 查询parastor中所有dataset对应的数据集id
+ * @param bb_min_config 
+ * @param groupid_arr 出参，会重新分配内存
+ * @param groups_cnt 出参，个数
+ * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ */
+extern int get_groupid_of_all_datasets(bb_minimal_config_t *bb_min_config, uint32_t **groupid_arr, uint32_t *groups_cnt);
 
-/* Delete a cache dataset by dataset_id */
-extern int delete_burst_buffer_dataset(delete_params_request *delete_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
-
-/* Submit bb task, include prefetch and recycle*/
-extern int submit_burst_buffer_task(create_params_request *create_params, bb_minimal_config_t *bb_config, bb_response *resp_out);
 
 
-/* Not yet implemented: POSIX BB cache group immediate adjustment mapping */
+
+/* 释放响应体 */
+extern void free_bb_response(bb_response *resp);
+/* 释放缓存组 */
+extern void free_bb_group(void *object);
+/* 释放数据集机 */
+extern void free_bb_dataset(void *object);
+/* 释放客户端 */
+extern void free_bb_client(void *object);
+/* 释放任务 */
+extern void free_bb_task(void *object);
+
+extern int _find_group_key(void *x, void *key);
+
+extern int _find_dataset_key(void *x, void *key);
+
+/* 接口参数结构体清理函数 */
+extern void free_query_params(query_params_request *query_params);
+extern void free_create_params(create_params_request *create_params);
+extern void free_delete_params(delete_params_request *delete_params);
+
+
+
+
+/*  Not yet implemented: POSIX BB cache group immediate adjustment mapping         */
 extern int remap_burst_buffer_group();
 /* Not yet implemented: Add client to the cache group */
 extern int add_burst_buffer_client_to_group();
@@ -315,26 +334,5 @@ extern int lock_burst_buffer_dataset();
 /* Not yet implemented: Unlock dataset */
 extern int unlock_burst_buffer_dataset();
 
-
-extern void free_bb_response(bb_response *resp);
-/* 释放缓存组 */
-extern void free_bb_group(void *object);
-/* 释放数据集机 */
-extern void free_bb_dataset(void *object);
-/* 释放客户端 */
-extern void free_bb_client(void *object);
-/* 释放任务 */
-extern void free_bb_task(void *object);
-/* list_find_first 查找函数 */
-extern int _find_client_key(void *x, void *key);
-
-extern int _find_group_key(void *x, void *key);
-
-extern int _find_dataset_key(void *x, void *key);
-
-/* 接口参数结构体清理函数 */
-extern void free_query_params(query_params_request *query_params);
-extern void free_create_params(create_params_request *create_params);
-extern void free_delete_params(delete_params_request *delete_params);
 
 #endif
