@@ -2454,6 +2454,7 @@ static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
     hostlist_destroy(job_hl);
 }
 
+
 /**
  * @brief 处理slurmd清理BB后发回的RPC
  * @param msg 
