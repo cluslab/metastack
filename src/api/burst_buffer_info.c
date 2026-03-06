@@ -436,26 +436,11 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 
 		user_name = uid_to_string(bb_resv_ptr->user_id);
 
-		/* Enhance explanation of the 'stage' phase */
-		if (bb_resv_ptr->job_state) {
-			if ((bb_resv_ptr->job_state & JOB_BURSTBUFFER_STAGING) && !(bb_resv_ptr->job_state & JOB_CONFIGURING))
-				job_state_str = "staging-in";
-			else if (bb_resv_ptr->job_state & JOB_BURSTBUFFER_STAGE_OUT && (bb_resv_ptr->job_state & JOB_COMPLETING))
-				job_state_str = "staging-out";
-			else if ((bb_resv_ptr->job_state & JOB_STATE_BASE) == JOB_RUNNING)
-				job_state_str = "running";
-			else
-				job_state_str = job_state_string_compact(bb_resv_ptr->job_state);
-		} else {
-			job_state_str = "N/A";
-		}
-
-		xstrfmtcat(out_buf, "    Account=%s CreateTime=%s Partition=%s Size=%s State=%s UserID=%s(%u)",
+		xstrfmtcat(out_buf, "    Account=%s CreateTime=%s Partition=%s Size=%s UserID=%s(%u)",
 			bb_resv_ptr->account ? bb_resv_ptr->account : "N/A",
 			time_buf,
 			bb_resv_ptr->partition ? bb_resv_ptr->partition : "N/A",
 			sz_buf,
-			job_state_str,
 			user_name, bb_resv_ptr->user_id);
 
 		xfree(user_name);
