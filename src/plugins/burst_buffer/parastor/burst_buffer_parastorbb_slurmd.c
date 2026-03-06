@@ -299,7 +299,7 @@ extern int bb_p_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char 
 				break;
 			}
 			if (query_rc == BB_SUCCESS_NO_DATA) {
-				debug("缓存组未创建成功,重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
+				debug("数据集未创建成功,重试 %d/%d", retry_count + 1, bb_state.bb_config.retry_count);
 				continue;
 			}
 			if (query_rc == BB_SUCCESS) {

@@ -2842,8 +2842,13 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		return;
 	}
 
-	if (IS_JOB_COMPLETING(job_ptr))
+	if (IS_JOB_COMPLETING(job_ptr)) {
+
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+			unlock_slurmctld(job_write_lock);
 		return SLURM_SUCCESS;
+	}
+		
 
 	if (bb_rc_code == ESLURM_BB_STATE_PENDING_MANUAL) {
 		bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
