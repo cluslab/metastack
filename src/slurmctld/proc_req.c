@@ -2454,6 +2454,7 @@ static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
     hostlist_destroy(job_hl);
 }
 
+
 /**
  * @brief 处理slurmd清理BB后发回的RPC
  * @param msg 
@@ -2509,13 +2510,8 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 	}
 	xassert(job_ptr->group_ids && job_ptr->dataset_ids && job_ptr->task_ids);
 
-	//job_ptr->need_group_counts = epilog_msg->groups_cnt;
-	//job_ptr->need_database_counts = epilog_msg->datasets_cnt;
-	if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
-		bb_status = SLURM_SUCCESS;
-	} else {
-		bb_status = ESLURM_BB_RESOURCE_SO_FAIL;
-	}
+	bb_status = epilog_msg->bb_return_code ;
+	
 	if (epilog_msg->groups_cnt > 0 && epilog_msg->group_ids) {
 		job_ptr->need_group_counts = epilog_msg->groups_cnt;
 		job_ptr->pack_status = 0x01;
@@ -2556,20 +2552,20 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 			job_ptr->bb_status = SLURM_SUCCESS;
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 			(void)bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
-		} else if (bb_status == ESLURM_BB_RESOURCE_SO_FAIL) {
-			job_ptr->bb_status = ESLURM_BB_STATE_PENDING_MANUAL;
+		} else if (bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
+			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			/* 更新bb资源数量 */
 			bb_g_free_allocated_resources(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = ESLURM_BB_RESOURCE_SO_FAIL;
+			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
 			list_append(bb_job_error_list, bb_job_error);
 		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
-			job_ptr->bb_status = ELSURM_BB_RESOURCE_UNKNOW;
-			_drain_nodes_of_failed_bb(job_ptr);
+			job_ptr->bb_status = bb_status;
+			//_drain_nodes_of_failed_bb(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
 			list_append(bb_job_error_list, bb_job_error);
 		}
@@ -2640,63 +2636,64 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		}
 		return;
 	}
+#ifdef __METASTACK_NEW_BURSTBUFFER4	
 	xassert(job_ptr->group_ids && job_ptr->dataset_ids && job_ptr->task_ids);
+	bb_status = epilog_msg->bb_return_code;
 
-	job_ptr->need_group_counts = epilog_msg->groups_cnt;
-	job_ptr->need_database_counts = epilog_msg->datasets_cnt;
-	if (epilog_msg->bb_return_code == SLURM_SUCCESS) {
-		bb_status = SLURM_SUCCESS;
-	} else {
-		bb_status = ESLURM_BB_RESOURCE_SO_FAIL;
-	}
 	if (epilog_msg->groups_cnt > 0 && epilog_msg->group_ids) {
+		job_ptr->need_group_counts = epilog_msg->groups_cnt;
+		job_ptr->pack_status = 0x01;
 		memcpy(job_ptr->group_ids, epilog_msg->group_ids, epilog_msg->groups_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
 		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
 	}
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->dataset_ids) {
+		job_ptr->need_database_counts = epilog_msg->datasets_cnt;
 		memcpy(job_ptr->dataset_ids, epilog_msg->dataset_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
+		job_ptr->pack_status = 0x02;
+		//memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
 		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
 	}
+
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->task_ids) {
 		memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
+		job_ptr->pack_status = 0x03;
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
 		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
 	}
-	//更新到bb结构体
+	//同步
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
 		error("%s JobId=%u: burst buffer post run test failed", __func__, epilog_msg->job_id);
 	}
-
 	if (epilog_msg->return_code)
 		error("%s: epilog error %pJ Node=%s Err=%s %s", __func__, job_ptr, epilog_msg->node_name, slurm_strerror(epilog_msg->return_code), TIME_STR);
 	else
 		debug2("%s: %pJ Node=%s %s", __func__, job_ptr, epilog_msg->node_name, TIME_STR);
-#ifdef __METASTACK_NEW_BURSTBUFFER4	
-	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == ESLURM_BB_STATE_READY)) { //需要设置是否创建缓存组标志位，还有error状态处理
+
+	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == ESLURM_BB_STATE_READY)) {
 		if (bb_status == SLURM_SUCCESS) {
 			//slurmd端删除成功
 			job_ptr->bb_status = SLURM_SUCCESS;
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 			(void)bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
-		} else if (bb_status == ESLURM_BB_RESOURCE_SO_FAIL) {
-			job_ptr->bb_status = ESLURM_BB_STATE_PENDING_MANUAL;
+		} else if (bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
+			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			/* 更新bb资源数量 */
 			bb_g_free_allocated_resources(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = ESLURM_BB_RESOURCE_SO_FAIL;
+			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
 			list_append(bb_job_error_list, bb_job_error);
 		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
-			job_ptr->bb_status = ELSURM_BB_RESOURCE_UNKNOW;
-			_drain_nodes_of_failed_bb(job_ptr);
+			job_ptr->bb_status = bb_status;
+			//_drain_nodes_of_failed_bb(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
 			list_append(bb_job_error_list, bb_job_error);
 		}
