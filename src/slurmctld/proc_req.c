@@ -2839,6 +2839,7 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 			unlock_slurmctld(job_write_lock);
+		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 		return;
 	}
 
@@ -2846,7 +2847,7 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 			unlock_slurmctld(job_write_lock);
-		return SLURM_SUCCESS;
+		return ;
 	}
 		
 

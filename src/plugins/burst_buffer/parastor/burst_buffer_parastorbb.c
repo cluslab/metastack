@@ -2657,10 +2657,13 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		job_ptr->group_sn[i] = xstrdup_printf("j%un%d", job_ptr->job_id, i); // sn 最长存储限制16位，第一个字符是字目作业id为uint32_t类型，最大值为4294 9672 95
 	}
 #endif
-	job_ptr->req_space            = bb_job->req_space;  	//当前作业请求的空间
-	job_ptr->access_mode          = bb_job->access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	job_ptr->pfs				  = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
-	job_ptr->metadata_acceleration= bb_job->metadata_acceleration;   //是否开启元数据加速
+	job_ptr->group_ids 			   = NULL;							 //防止野指针
+	job_ptr->dataset_ids 		   = NULL;
+	job_ptr->task_ids			   = NULL;
+	job_ptr->req_space             = bb_job->req_space;  	          //当前作业请求的空间
+	job_ptr->access_mode           = bb_job->access_mode;             //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	job_ptr->pfs				   = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
+	job_ptr->metadata_acceleration = bb_job->metadata_acceleration;   //是否开启元数据加速
 
 	if (job_ptr->need_group_counts > bb_state.free_groups_cnt 
 			|| job_ptr->need_database_counts > bb_state.free_datasets_cnt ) {
