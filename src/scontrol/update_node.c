@@ -143,10 +143,10 @@ scontrol_update_node (int argc, char **argv)
 			}
 			update_cnt++;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-		} else if (xstrncasecmp(tag, "bb_cache_grp_cnt", MAX(tag_len, 8)) == 0) {
+		} else if (xstrncasecmp(tag, "BBCacheGrpCnt", MAX(tag_len, 10)) == 0) {
 			if (parse_uint32(val, &node_msg.bb_cache_grp_cnt)) {
 				exit_code = 1;
-				error("Invalid value %s for bb_cache_grp_cnt", argv[i]);
+				error("Invalid value %s for BBCacheGrpCnt", argv[i]);
 				return -1;
 			}
 			update_cnt++;
