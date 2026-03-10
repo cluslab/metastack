@@ -60,7 +60,9 @@
 #include "src/common/xstring.h"
 #include "src/common/xmalloc.h"
 #include "src/scancel/scancel.h"
-
+#ifdef __METASTACK_NEW_BURSTBUFFER8
+#include "src/interfaces/burst_buffer_slurmd.h"
+#endif
 #define MAX_CANCEL_RETRY 10
 #define MAX_THREADS 10
 
@@ -115,7 +117,36 @@ main (int argc, char **argv)
 		log_opts.stderr_level += opt.verbose;
 		log_alter (log_opts, SYSLOG_FACILITY_DAEMON, NULL);
 	}
+#ifdef __METASTACK_NEW_BURSTBUFFER8
+    char result[64]; // 缓冲区大小
+    if(opt.hurry) { // 处理
+        for(int i = 0; i < opt.job_cnt; i++) {
+            if(opt.job_list[i] != NULL) {
+                // 1. 先计算需要的长度
+                // 格式是 "j" + 数字 + "n" + '\0'
+                // snprintf 返回的是如果不截断情况下需要的字符串长度（不包括结束符）
+                int needed_len = snprintf(NULL, 0, "j%dn", opt.job_id[i]);
 
+                // 2. 检查长度是否超出缓冲区大小
+                // needed_len + 1 是为了包含 '\0'
+                if (needed_len + 1 > sizeof(result)) {
+                    error("Job ID %d is too long for buffer (size %d)", opt.job_id[i], (int)sizeof(result));
+                    // 这里直接退出，符合你的要求：溢出报错，不持续运行
+                    exit(-1);
+                }
+
+                // 3. 长度安全，执行写入
+                snprintf(result, sizeof(result), "j%dn", opt.job_id[i]);
+                
+                rc = bb_g_release_resources(result);
+                if(rc != SLURM_SUCCESS) {
+                    error("bb_g_release_resources failed for job %s", result);
+                    exit(-1);
+                }
+            }
+        }
+    }
+#endif
 	if (opt.clusters)
 		rc = _multi_cluster(opt.clusters);
 	else
