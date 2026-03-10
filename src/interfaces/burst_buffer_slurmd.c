@@ -68,7 +68,7 @@ static const char *syms[] = {
 	"bb_p_delete_bb_dataset_by_id",
 	"bb_p_delete_bb_dataset_by_groupid_path",
 	"bb_p_cancel_bb_task_by_id",
-	"bb_g_release_resources",
+	"bb_p_release_resources",
 };
 
 

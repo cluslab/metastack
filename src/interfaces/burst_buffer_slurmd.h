@@ -98,8 +98,5 @@ extern int bb_g_cancel_bb_task_by_id(uint32_t task_id);
  */
 extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t group_id, char *path);
 
-
-#ifdef __METASTACK_NEW_BURSTBUFFER9
 extern int bb_g_release_resources(char *groups_sn);
-#endif
 #endif
