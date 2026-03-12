@@ -2556,7 +2556,6 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			/* 更新bb资源数量 */
-			bb_g_free_allocated_resources(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
 			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
@@ -2684,7 +2683,6 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			/* 更新bb资源数量 */
-			bb_g_free_allocated_resources(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
 			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
@@ -2919,7 +2917,6 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		/* drain掉缓存组已占用的节点 */
 		_drain_nodes_of_failed_bb(job_ptr);
 		/* 更新bb资源数量 */
-		bb_g_free_allocated_resources(job_ptr);
 	} else if (job_ptr->bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
 		//不应该出现的情况:不知道缓存组状况，无法drain
 		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(ELSURM_BB_RESOURCE_UNKNOW));

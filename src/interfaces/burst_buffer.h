@@ -245,7 +245,6 @@ extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer);
 extern uint32_t bb_g_get_node_quota(void);
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-extern uint32_t bb_g_free_allocated_resources(job_record_t *job_ptr);
 extern uint32_t *bb_g_query_bb_groupid_by_sn(job_record_t *job_ptr);
 extern uint32_t *bb_g_query_bb_datasetid_by_sn(job_record_t *job_ptr);
 

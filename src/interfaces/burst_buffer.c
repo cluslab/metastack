@@ -66,7 +66,6 @@ typedef struct slurm_bb_ops {
 #ifdef __METASTACK_NEW_BURSTBUFFER4
 	int		(*state_pack)	(uid_t uid, buf_t *buffer,
 		uint16_t protocol_version, bool parastor);
-	int		(*free_allocated_resources)	(job_record_t *job_ptr);
 	uint32_t *(*query_bb_groupid_by_sn)(job_record_t *job_ptr);
 	uint32_t *(*query_bb_datasetid_by_sn)(job_record_t *job_ptr);
 #endif
@@ -107,7 +106,6 @@ static const char *syms[] = {
 	"bb_p_get_status",
 	"bb_p_state_pack",
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-	"bb_p_free_allocated_resources",
 	"bb_p_query_bb_groupid_by_sn",
 	"bb_p_query_bb_datasetid_by_sn",
 #endif
@@ -843,27 +841,6 @@ extern uint32_t bb_g_get_node_quota(void)
 }
 #endif
 
-#ifdef __METASTACK_NEW_BURSTBUFFER4
-extern uint32_t bb_g_free_allocated_resources(job_record_t *job_ptr)
-{
-	int i;
-	int rc = SLURM_SUCCESS;
-
-	slurm_mutex_lock(&g_context_lock);
-	/* 遍历所有已加载的插件上下文 */
-	for (i = 0; i < g_context_cnt; i++) {
-		/* 如果该插件实现了 free_allocated_resources 函数 */
-		if (ops[i].free_allocated_resources) {
-			/* 调用插件内部实现并获取结果 */
-			rc = (*(ops[i].free_allocated_resources))(job_ptr);
-			/* 既然我们只需要一个配额值，拿到第一个有效插件的值就可以跳出循环了 */
-			break;
-		}
-	}
-	slurm_mutex_unlock(&g_context_lock);
-
-	return rc;
-}
 
 extern uint32_t *bb_g_query_bb_groupid_by_sn(job_record_t *job_ptr)
 {
