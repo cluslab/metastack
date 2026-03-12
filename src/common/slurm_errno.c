@@ -491,7 +491,9 @@ slurm_errtab_t slurm_errtab[] = {
 	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SI_CANCEL),
 	  "Burst buffer assignment successfully canceled in SI phase" },
 	{ ERRTAB_ENTRY(ESLURM_BB_STATE_PENDING_MANUAL),
-	  "Burst buffer SI/SO stage failure (create or cancel failed)" },
+	  "Burst buffer SI/SO stage failure (include cancel failed while creating)" },
+	{ ERRTAB_ENTRY(ELSURM_BB_RESOURCE_UNKNOW),
+	"Burst buffer state unknow" },
 #endif
 	/* SPANK errors */
 	{ ERRTAB_ENTRY(ESPANK_ERROR),
