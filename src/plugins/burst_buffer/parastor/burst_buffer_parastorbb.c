@@ -2204,55 +2204,52 @@ static void _queue_teardown(job_record_t *job_ptr)
 	bb_state.free_datasets_cnt += job_ptr->need_database_counts;
 	bb_state.used_datasets_cnt -= job_ptr->need_database_counts;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	// 仅当传入了有效的 job_ptr 时才执行节点配额释放
-	if (job_ptr) {
-		uint32_t bb_quota = bb_state.bb_config.max_clients_join; // 默认值
-		bitstr_t *node_bitmap = NULL;
-		// 1. 获取配额配置
-		if (bb_state.bb_config.max_clients_join > 0) {
-			bb_quota = bb_state.bb_config.max_clients_join;
-			debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
-		} else {
-			debug3("max_clients_join not set, using default bb_quota: 4");
-		}
-		// 2. 确定使用哪个节点位图 
-		// 优先使用 job_resrcs 中的位图(在作业清理阶段最稳定)，如果没有则尝试使用 job_ptr 自带的位图
-		if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
-			node_bitmap = job_ptr->job_resrcs->node_bitmap;
-		} else if (job_ptr->node_bitmap) {
-			node_bitmap = job_ptr->node_bitmap;
-		}
-		// 3. 遍历节点并释放计数
-		if (node_bitmap) {
-			int i, i_first, i_last;
-			i_first = bit_ffs(node_bitmap);
-			i_last = bit_fls(node_bitmap);
-			if (i_first != -1) {
-				for (i = i_first; i <= i_last; i++) {
-					if (!bit_test(node_bitmap, i)) {
-						continue;
-					}
-					node_record_t *node_ptr = node_record_table_ptr[i];
-					// 节点有效性检查
-					if (!node_ptr || !node_ptr->name) {
-						continue;
-					}
-					// 计数递减 (防止下溢)
-					if (node_ptr->bb_cache_grp_cnt > 0) {
-						node_ptr->bb_cache_grp_cnt--;
-						debug3("Teardown: Node %s (idx %d) BB count decremented to %u (quota=%u) for job %pJ",
-							node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
-					} else {
-						// 如果已经是0还在减，说明逻辑有误，打印错误但不崩溃
-						debug("Error: Node %s (idx %d) BB count underflow attempt for job %pJ",
-							node_ptr->name, i, job_ptr);
-					}
+	uint32_t bb_quota = bb_state.bb_config.max_clients_join; // 默认值
+	bitstr_t *node_bitmap = NULL;
+	// 1. 获取配额配置
+	if (bb_state.bb_config.max_clients_join > 0) {
+		bb_quota = bb_state.bb_config.max_clients_join;
+		debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
+	} else {
+		debug3("max_clients_join not set, using default bb_quota: 4");
+	}
+	// 2. 确定使用哪个节点位图 
+	// 优先使用 job_resrcs 中的位图(在作业清理阶段最稳定)，如果没有则尝试使用 job_ptr 自带的位图
+	if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
+		node_bitmap = job_ptr->job_resrcs->node_bitmap;
+	} else if (job_ptr->node_bitmap) {
+		node_bitmap = job_ptr->node_bitmap;
+	}
+	// 3. 遍历节点并释放计数
+	if (node_bitmap) {
+		int i, i_first, i_last;
+		i_first = bit_ffs(node_bitmap);
+		i_last = bit_fls(node_bitmap);
+		if (i_first != -1) {
+			for (i = i_first; i <= i_last; i++) {
+				if (!bit_test(node_bitmap, i)) {
+					continue;
 				}
+				node_record_t *node_ptr = node_record_table_ptr[i];
+				// 节点有效性检查
+				if (!node_ptr || !node_ptr->name) {
+					continue;
+				}
+				// 计数递减 (防止下溢)
+				if (node_ptr->bb_cache_grp_cnt > 0) {
+					node_ptr->bb_cache_grp_cnt--;
+					debug3("Teardown: Node %s (idx %d) BB count decremented to %u (quota=%u) for job %pJ",
+						node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
+				} else {
+					// 如果已经是0还在减，说明逻辑有误，打印错误但不崩溃
+					debug("Error: Node %s (idx %d) BB count underflow attempt for job %pJ",
+						node_ptr->name, i, job_ptr);
+				}
+			}
 			}
 		} else {
 			debug("Teardown: No node bitmap found for job %pJ, skipping quota release", job_ptr);
 		}
-	}
 #endif
 	slurm_thread_create_detached(_start_teardown, job_ptr->job_id);
 	job_ptr->bb_status = ESLURM_BB_STATE_CLEANUP;
