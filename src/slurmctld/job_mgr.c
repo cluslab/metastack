@@ -3253,7 +3253,6 @@ extern int kill_running_job_by_node_name(char *node_name)
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
 #ifdef __METASTACK_NEW_BURSTBUFFER6
-				//bb_g_free_allocated_resources(job_ptr);
 				//设置清理标志位在后台线程中进行处理,设置BB状态
 				//job_ptr->bb_free_flag = true;
 				job_ptr->bb_status = ELSURM_BB_RESOURCE_UNKNOW;//BB资源需要删除校验，

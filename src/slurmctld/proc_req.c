@@ -2556,7 +2556,6 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			/* 更新bb资源数量 */
-			bb_g_free_allocated_resources(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
 			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
@@ -2684,7 +2683,6 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			/* 更新bb资源数量 */
-			bb_g_free_allocated_resources(job_ptr);
 			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
 			bb_job_error->bb_status = bb_status;
 			bb_job_error->job_id = epilog_msg->job_id;
@@ -2827,8 +2825,7 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 	bb_job_error_msg_t *bb_job_error = NULL;
 	/* init */
 	START_TIMER;
-	debug3("Processing RPC details: REQUEST_COMPLETE_CREATE_BB from JobId=%u",
-		comp_msg->job_id);
+	debug("Processing RPC details: REQUEST_COMPLETE_CREATE_BB from JobId=%u", comp_msg->job_id);
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 		lock_slurmctld(job_write_lock);
@@ -2839,24 +2836,17 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 			unlock_slurmctld(job_write_lock);
+		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 		return;
 	}
 
-	if (IS_JOB_COMPLETING(job_ptr))
-		return SLURM_SUCCESS;
+	if (IS_JOB_COMPLETING(job_ptr)) {
 
-	if (bb_rc_code == ESLURM_BB_STATE_PENDING_MANUAL) {
-		bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-		bb_job_error->bb_status = ESLURM_BB_STATE_PENDING_MANUAL;
-		bb_job_error->job_id = comp_msg->job_id;
-		list_append(bb_job_error_list, bb_job_error);
-		job_ptr->bb_status = ESLURM_BB_STATE_PENDING_MANUAL;
-	} else if (bb_rc_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
-		job_ptr->bb_status = ESLURM_BB_RESOURCE_SI_CANCEL;//取消成功，不在线程中单独处理
-	} else if (bb_rc_code == SLURM_SUCCESS) {
-		job_ptr->bb_status = ESLURM_BB_STATE_READY; //一定要在bb_g_job_test_post_run函数前，否则该属性无法同步
+		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
+			unlock_slurmctld(job_write_lock);
+		return ;
 	}
-
+	
 	/* 1. 解析响应结果到job_ptr中 */
 	job_ptr->need_group_counts = comp_msg->groups_cnt;
 	job_ptr->need_database_counts = comp_msg->datasets_cnt;
@@ -2916,7 +2906,7 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		job_ptr->bb_status = fin_bb_rc_code;
 		list_append(bb_job_error_list, bb_job_error);
 	} else if (fin_bb_rc_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
-		job_ptr->bb_status = ESLURM_BB_RESOURCE_SI_CANCEL;//取消成功，不在线程中单独处理
+		job_ptr->bb_status = fin_bb_rc_code;//取消成功，不在线程中单独处理
 	} else if (bb_rc_code == SLURM_SUCCESS) {
 		job_ptr->bb_status = ESLURM_BB_STATE_READY; //一定要在bb_g_job_test_post_run函数前，否则该属性无法同步
 	}
@@ -2927,12 +2917,12 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		/* drain掉缓存组已占用的节点 */
 		_drain_nodes_of_failed_bb(job_ptr);
 		/* 更新bb资源数量 */
-		bb_g_free_allocated_resources(job_ptr);
 	} else if (job_ptr->bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
 		//不应该出现的情况:不知道缓存组状况，无法drain
 		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(ELSURM_BB_RESOURCE_UNKNOW));
 	} else if (job_ptr->bb_status == ESLURM_BB_RESOURCE_SI_CANCEL) {
 		/* 失败场景2:创建时成功被取消 */
+		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(ESLURM_BB_RESOURCE_SI_CANCEL));
 		debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
 		bb_g_job_cancel(job_ptr);
 	}
