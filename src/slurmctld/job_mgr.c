@@ -235,7 +235,7 @@ bool purge_old_cache_job = false;
 /* Global variables */
 List   job_list = NULL;		/* job_record list */
 time_t last_job_update;		/* time of last update to job records */
-#ifdef __METASTACK_NEW_BURSTBUFFER8
+#ifdef __METASTACK_NEW_BURSTBUFFER7
 //这里借用job_ptr的锁，这里会和job_ptr同时使用因此不需要额外新增锁
 List bb_job_error_list = NULL; /* burst buffer exception job list */
 
@@ -726,7 +726,7 @@ static int _add_job_record(job_record_t *job_ptr, int num_jobs)
 	job_count += num_jobs;
 	last_job_update = time(NULL);
 	list_append(job_list, job_ptr);
-#ifdef __METASTACK_NEW_BURSTBUFFER8
+#ifdef __METASTACK_NEW_BURSTBUFFER7
 	if(bb_job_error_list && (job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL 
 								|| job_ptr->bb_status == ELSURM_BB_RESOURCE_UNKNOW)) {
 		bb_job_error_msg_t *bb_job_error     = NULL;
@@ -5316,7 +5316,7 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_ptr->bit_flags |= JOB_KILL_HURRY;
 		return bb_g_job_cancel(job_ptr);
 	}
-#ifdef __METASTACK_NEW_BURSTBUFFER8
+#ifdef __METASTACK_NEW_BURSTBUFFER7
      /* 针对异常作业通过scancel -H 将异常作业删除后，应该从链表bb_job_error_list中删除 */
 	if(!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;

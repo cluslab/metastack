@@ -841,7 +841,7 @@ extern uint32_t bb_g_get_node_quota(void)
 }
 #endif
 
-
+#ifdef __METASTACK_NEW_BURSTBUFFER
 extern uint32_t *bb_g_query_bb_groupid_by_sn(job_record_t *job_ptr)
 {
 	DEF_TIMERS;
