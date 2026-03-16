@@ -2511,10 +2511,12 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 	xassert(job_ptr->group_ids && job_ptr->dataset_ids && job_ptr->task_ids);
 
 	bb_status = epilog_msg->bb_return_code ;
-	
+
 	if (epilog_msg->groups_cnt > 0 && epilog_msg->group_ids) {
 		job_ptr->need_group_counts = epilog_msg->groups_cnt;
 		job_ptr->pack_status = 0x01;
+		if (!job_ptr->group_ids)
+			job_ptr->group_ids = xmalloc(epilog_msg->groups_cnt * sizeof(uint32_t));
 		memcpy(job_ptr->group_ids, epilog_msg->group_ids, epilog_msg->groups_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
@@ -2522,6 +2524,8 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 	}
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->dataset_ids) {
 		job_ptr->need_database_counts = epilog_msg->datasets_cnt;
+		if (!job_ptr->dataset_ids)
+			job_ptr->dataset_ids = xmalloc(epilog_msg->datasets_cnt * sizeof(uint32_t));
 		memcpy(job_ptr->dataset_ids, epilog_msg->dataset_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
 		job_ptr->pack_status = 0x02;
 		//memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
@@ -2531,6 +2535,8 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 	}
 
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->task_ids) {
+		if (!job_ptr->task_ids)
+			job_ptr->task_ids = xmalloc(epilog_msg->datasets_cnt * sizeof(uint32_t));
 		memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
 		job_ptr->pack_status = 0x03;
 	} else {
