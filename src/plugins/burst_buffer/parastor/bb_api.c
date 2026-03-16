@@ -1261,7 +1261,11 @@ static int parse_json_of_usedgroupid_to_arr(const char *json_str, bb_response *r
             int page_group_count = json_array_size(groups);
             for (int i = 0; i < page_group_count; i++) {
                 json_t *group_obj = json_array_get(groups, i);
-                const char *tmp = json_string_value(json_object_get(group_obj, "sn"));
+                json_t *sn_obj = json_object_get(group_obj, "sn");
+                if (!sn_obj || !json_is_string(sn_obj)) {
+                    continue;
+                }
+                const char *tmp = json_string_value(sn_obj);
                 if (!tmp || tmp[0] == '\0') {
                     json_decref(root);
                     error("%s : get group sn error", __func__);
