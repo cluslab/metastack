@@ -51,7 +51,7 @@ typedef struct slurm_bb_ops {
 	/* 根据task_id取消BB任务 */
 	int (*bb_p_cancel_bb_task_by_id) (uint32_t task_id);
 	/* 根据SN删除所有资源 */
-    int (*bb_g_release_resources) (char *group_sn);
+    int (*bb_p_release_resources) (char *group_sn);
 } slurm_bb_slurmd_ops_t;
 
 /*

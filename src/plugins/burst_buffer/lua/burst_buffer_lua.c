@@ -4222,17 +4222,6 @@ extern char *bb_p_xlate_bb_2_tres_str(char *burst_buffer)
 	return result;
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER4
-
-extern uint32_t *bb_p_query_bb_groupid_by_sn(job_record_t *job_ptr)
-{
-	return 0;
-}
-extern uint32_t *bb_p_query_bb_datasetid_by_sn(job_record_t *job_ptr)
-{
-	return 0;
-}
-#endif
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 extern uint32_t bb_p_get_node_quota(void)
 {
