@@ -73,8 +73,8 @@ extern "C" {
 #define __METASTACK_NEW_BURSTBUFFER5 //rongcuo
 #define __METASTACK_NEW_BURSTBUFFER6 //新线程处理
 #define __METASTACK_NEW_BURSTBUFFER7 //spool
-#define __METASTACK_NEW_BURSTBUFFER8 //状态标志位调整
-#define __METASTACK_NEW_BURSTBUFFER9 //删除残留资源
+// #define __METASTACK_NEW_BURSTBUFFER8 //状态标志位调整
+// #define __METASTACK_NEW_BURSTBUFFER9 //删除残留资源
 #endif
 
 /* set errno to the specified value - then return -1 */
@@ -428,7 +428,7 @@ typedef enum {
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	ESLURMD_INVALID_WATCH_DOG,
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER8
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	ESLURM_BB_RESOURCE_LIMIT = 20000,
     ESLURM_BB_STATE_INIT = 20001,      // 初始状态：还未进行创建/预热操作
     ESLURM_BB_STATE_READY,             // 成功状态：创建缓存组、数据集、预热操作成功
