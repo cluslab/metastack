@@ -2562,17 +2562,17 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			/* 更新bb资源数量 */
-			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = bb_status;
-			bb_job_error->job_id = epilog_msg->job_id;
-			list_append(bb_job_error_list, bb_job_error);
+			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+			// bb_job_error->bb_status = bb_status;
+			// bb_job_error->job_id = epilog_msg->job_id;
+			// list_append(bb_job_error_list, bb_job_error);
 		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
 			job_ptr->bb_status = bb_status;
 			//_drain_nodes_of_failed_bb(job_ptr);
-			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = bb_status;
-			bb_job_error->job_id = epilog_msg->job_id;
-			list_append(bb_job_error_list, bb_job_error);
+			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+			// bb_job_error->bb_status = bb_status;
+			// bb_job_error->job_id = epilog_msg->job_id;
+			// list_append(bb_job_error_list, bb_job_error);
 		}
 	}
 
@@ -2688,18 +2688,20 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		} else if (bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
-			/* 更新bb资源数量 */
-			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = bb_status;
-			bb_job_error->job_id = epilog_msg->job_id;
-			list_append(bb_job_error_list, bb_job_error);
+			(void)bb_g_job_start_stage_out(job_ptr); //作业非正常完成时也要进行清理，即使para存在残留
+			// /* 更新bb资源数量 */
+			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+			// bb_job_error->bb_status = bb_status;
+			// bb_job_error->job_id = epilog_msg->job_id;
+			// list_append(bb_job_error_list, bb_job_error);
 		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
 			job_ptr->bb_status = bb_status;
+			(void)bb_g_job_start_stage_out(job_ptr); //作业非正常完成时也要进行清理，即使para存在残留
 			//_drain_nodes_of_failed_bb(job_ptr);
-			bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			bb_job_error->bb_status = bb_status;
-			bb_job_error->job_id = epilog_msg->job_id;
-			list_append(bb_job_error_list, bb_job_error);
+			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+			// bb_job_error->bb_status = bb_status;
+			// bb_job_error->job_id = epilog_msg->job_id;
+			// list_append(bb_job_error_list, bb_job_error);
 		}
 	}
 #endif
@@ -2906,11 +2908,11 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 	}
 
 	if (fin_bb_rc_code == ESLURM_BB_STATE_PENDING_MANUAL || fin_bb_rc_code == ELSURM_BB_RESOURCE_UNKNOW) {
-		bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-		bb_job_error->job_id = comp_msg->job_id;
-		bb_job_error->bb_status = fin_bb_rc_code;
+		// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
+		// bb_job_error->job_id = comp_msg->job_id;
+		// bb_job_error->bb_status = fin_bb_rc_code;
 		job_ptr->bb_status = fin_bb_rc_code;
-		list_append(bb_job_error_list, bb_job_error);
+		// list_append(bb_job_error_list, bb_job_error);
 	} else if (fin_bb_rc_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
 		job_ptr->bb_status = fin_bb_rc_code;//取消成功，不在线程中单独处理
 	} else if (bb_rc_code == SLURM_SUCCESS) {
