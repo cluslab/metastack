@@ -391,106 +391,74 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 
 	while (!task_completed) {
 		time_t current_time = time(NULL);
-		if (current_time < start_time) {
-			error("系统时间回退，重置开始时间");
-			start_time = current_time;
-			soft_timeout_time = start_time + SOFT_TIMEOUT_SEC;
-			hard_timeout_time = start_time + HARD_TIMEOUT_SEC;
-		}
 		time_t elapsed_time = current_time - start_time;
 
-		if (elapsed_time >= HARD_TIMEOUT_SEC) {
-			// error("等待预热任务完成超时（硬超时：%ld秒),task_id=%ld,已等待%ld秒",
-			// 	HARD_TIMEOUT_SEC, task_id, elapsed_time);
-			free_bb_task(bb_task);
-			return SLURM_ERROR;
-		}
-
-		// 检查是否到达检查间隔时间,或者在软/硬超时时间点需要单独检查
+		// 检查是否到达检查间隔时间
 		bool need_check = false;
 		if (current_time - last_check_time >= CHECK_INTERVAL_SEC) {
 			need_check = true;
-		} else if (current_time >= soft_timeout_time && !soft_timeout_reached) {
-			// 到达软超时时间点,单独检查一次
-			need_check = true;
-			soft_timeout_reached = true;
 		} else if (current_time >= hard_timeout_time) {
 			// 到达硬超时时间点,单独检查一次
 			need_check = true;
 		}
 
 		if (!need_check) {
-			// 未到检查时间,等待一小段时间后继续循环
 			sleep(1);
 			continue;
 		}
 
-		// 执行状态查询
 		slurm_mutex_lock(&bb_state.bb_mutex);
 		query_rc = query_bb_task_by_taskid(task_id, &bb_state.bb_config, bb_task);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
-		// 查询失败,直接返回
+
 		if (query_rc != BB_SUCCESS) {
-			//error("查询预热任务状态失败,task_id=%u, 错误码=%d", task_id, query_rc);
-			free_bb_task(bb_task);
-			return rc;
+			if (query_rc == BB_SUCCESS_NO_DATA) {
+				task_completed = true;
+				rc = BB_SUCCESS;
+				break;
+			} else if (query_rc < 0) {
+				last_check_time = current_time;
+				sleep(1);
+				continue;
+			}
 		}
 
-		// 根据是否超过软超时时间
-		if (soft_timeout_reached) {
-			// 超过软超时时间后,使用info级别输出日志
-			//debug("查询预热任务状态（已超过OtherTimeout时间%ld秒）,task_id=%u, 查询结果=%d, 任务状态=%d, 已等待%ld秒",
-			//	(long)SOFT_TIMEOUT_SEC, task_id, query_rc, bb_task->task_state, (long)elapsed_time);
-		} 
-
-		// 检查任务是否存在
-		if (query_rc == 1) {
-			// 任务不存在
-			error("预热任务不存在,task_id=%u", task_id);
-			free_bb_task(bb_task);
-			return rc;
-		}
-
-		// 检查任务状态
 		if (bb_task->task_state == BB_TASK_STATE_COMPLETED) {
 			task_completed = true;
 			rc = BB_SUCCESS;
-			//info("预热任务完成,task_id=%ld, 总耗时=%ld秒", task_id, elapsed_time);
 			break;
-		} else if (bb_task->task_state == BB_TASK_STATE_FAILED || bb_task->task_state == BB_TASK_STATE_CANCELED) {
-			error("预热任务失败或已取消,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
+		} else if (bb_task->task_state == BB_TASK_STATE_FAILED ||
+			bb_task->task_state == BB_TASK_STATE_CANCELED) {
+			error("BB-----预热任务失败或已取消,task_id=%u, 任务状态=%d",
+				task_id, bb_task->task_state);
 			free_bb_task(bb_task);
 			return rc;
-		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING || bb_task->task_state == BB_TASK_STATE_RUNNING) {
-			if (soft_timeout_reached) {
-				info("预热任务仍在进行中,task_id=%u, 任务状态=%d (SUBMITTING=%d, RUNNING=%d), 已等待%ld秒",
-					task_id, bb_task->task_state, BB_TASK_STATE_SUBMITTING, BB_TASK_STATE_RUNNING, (long)elapsed_time);
-			} else {
-				//debug("预热任务仍在进行中,task_id=%u, 任务状态=%d, 已等待%ld秒", task_id, bb_task->task_state, (long)elapsed_time);
-			}
+		} else if (bb_task->task_state == BB_TASK_STATE_SUBMITTING ||
+			bb_task->task_state == BB_TASK_STATE_RUNNING) {
+			debug("BB-----预热任务仍在进行中,task_id=%u, 任务状态=%d",
+				task_id, bb_task->task_state);
 		} else {
-			// 未知状态,视为异常,直接返回
-			//error("预热任务状态未知,task_id=%u, 任务状态=%d, 已等待%ld秒",
-			//	task_id, bb_task->task_state, (long)elapsed_time);
+			error("BB-----预热任务状态未知,task_id=%u, 任务状态=%d", task_id, bb_task->task_state);
 			free_bb_task(bb_task);
 			return rc;
 		}
 
-		last_check_time = current_time;
-
-		// 计算下次检查前的等待时间
-		time_t next_check_time = last_check_time + CHECK_INTERVAL_SEC;
-		time_t wait_until = next_check_time;
-
-		// 如果软超时或硬超时时间更早到达,则等待到那个时间点
-		if (!soft_timeout_reached && soft_timeout_time < wait_until) {
-			wait_until = soft_timeout_time;
-		}
-		if (hard_timeout_time < wait_until) {
-			wait_until = hard_timeout_time;
+		elapsed_time = time(NULL) - start_time;
+		if (elapsed_time >= HARD_TIMEOUT_SEC) {
+			error("等待任务完成超时,task_id=%u, 已等待%ld秒",
+				task_id, (long)elapsed_time);
+			free_bb_task(bb_task);
+			return SLURM_ERROR;
 		}
 
-		time_t sleep_time = wait_until - current_time;
+		last_check_time = time(NULL);
+
+		// 计算等待时间
+		time_t sleep_time = CHECK_INTERVAL_SEC;
+		time_t remain_time = HARD_TIMEOUT_SEC - (last_check_time - start_time);
+		if (remain_time < sleep_time) {
+			sleep_time = remain_time;
+		}
 		if (sleep_time > 0) {
 			sleep(sleep_time);
 		}

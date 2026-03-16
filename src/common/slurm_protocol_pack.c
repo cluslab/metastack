@@ -16438,12 +16438,13 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 {
 	burst_buffer_launch_msg_t *msg = xmalloc(sizeof(*msg));
 	smsg->data = msg;
-	if(smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
-		safe_unpackstr(&msg->nodes, 				buffer);
-		safe_unpack32(&msg->job_id, 				buffer);
-		safe_unpack32(&msg->user_id, 				buffer);
+#ifdef __META_PROTOCOL
+	if (smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+		safe_unpackstr(&msg->nodes, buffer);
+		safe_unpack32(&msg->job_id, buffer);
+		safe_unpack32(&msg->user_id, buffer);
 		// safe_unpack32(&msg->group_id, 				buffer);
-		safe_unpack32(&msg->used_groups_cnt, 			buffer);
+		safe_unpack32(&msg->used_groups_cnt, buffer);
 		if (msg->used_groups_cnt > 0) {
 			msg->group_sn = xmalloc(msg->used_groups_cnt * sizeof(char *));
 			for (int i = 0; i < msg->used_groups_cnt; i++) {
@@ -16452,20 +16453,20 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		} else {
 			msg->group_sn = NULL;
 		}
-		safe_unpack32(&msg->used_datasets_cnt, 		buffer);
-		safe_unpack64(&msg->req_space, 				buffer);
-		safe_unpack32(&msg->access_mode, 			buffer);	
-		safe_unpackstr(&msg->pfs, 					buffer);
-		safe_unpackbool(&msg->metadata_acceleration,buffer);
-		safe_unpack32(&msg->max_clients_per_job, 	buffer);	
-		safe_unpack32(&msg->pfs_cnt, 				buffer);	
-		safe_unpackbool(&msg->bb_enable_pb,			buffer);
-		safe_unpack32(&msg->flag, 					buffer);	
-		safe_unpack32(&msg->het_job_id, 			buffer);	
+		safe_unpack32(&msg->used_datasets_cnt, buffer);
+		safe_unpack64(&msg->req_space, buffer);
+		safe_unpack32(&msg->access_mode, buffer);
+		safe_unpackstr(&msg->pfs, buffer);
+		safe_unpackbool(&msg->metadata_acceleration, buffer);
+		safe_unpack32(&msg->max_clients_per_job, buffer);
+		safe_unpack32(&msg->pfs_cnt, buffer);
+		safe_unpackbool(&msg->bb_enable_pb, buffer);
+		safe_unpack32(&msg->flag, buffer);
+		safe_unpack32(&msg->het_job_id, buffer);
 	} else {
 		goto unpack_error;
-	} 
-
+	}
+#endif
 	return SLURM_SUCCESS;
 unpack_error:
 	slurm_free_create_bb_launch_msg(msg);
