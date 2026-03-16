@@ -3654,6 +3654,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 			} else {
 				error("BB-----提交数据集%u预热任务失败,return code=%d", dataset_id, bb_rc);
 				tasks_arr[group_idx * pfs_count + pfs_idx] = 0;
+				continue_flag = BB_JOB_FAIL;
 				goto cleanup;
 			}
 		}
