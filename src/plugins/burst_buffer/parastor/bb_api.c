@@ -1484,7 +1484,6 @@ static int call_bb_api_of_task(bb_config_t *bb_config, void *params, call_type t
         /*assemble the full query for tasks*/
         xstrfmtcat(url_api, "https://%s:%d/burst-buffer/tasks?%s",
             bb_config->para_stor_addr, bb_config->para_stor_port, tmp_params_str);
-        debug("the query task url is :%s", url_api);
         ret = call_rest_api_with_token_timeout(url_api, "GET", NULL, bb_config->token, bb_config->other_timeout, &json_string);
         if (ret != 0) {
             error("API call failed");
