@@ -3508,6 +3508,7 @@ static int _clean_canceled_bb_resources(bb_job_msg_t *bb_job_ptr)
  */
 static void _rpc_create_bb(slurm_msg_t *msg)
 {
+	int rc = SLURM_SUCCESS;
 	burst_buffer_launch_msg_t *req = msg->data;
 	int bb_rc = SLURM_ERROR;
 	int clean_rc = SLURM_ERROR;
@@ -3546,6 +3547,26 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		return;
 	}
 
+	/*
+	 * Send message back to the slurmctld so it knows we got the rpc.  A
+	 * SI could easily run way longer than a MessageTimeout or we would
+	 * just wait.
+	 */
+	if (slurm_send_rc_msg(msg, rc) < 0) {
+		error("%s: Error talking to slurmctld: %m", __func__);
+	}
+
+	slurm_mutex_lock(&bb_job_list_mutex);
+	if(bb_job_list) {
+		bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &(req->job_id));
+		if (!bb_job_ptr) {
+			slurm_mutex_unlock(&bb_job_list_mutex);
+			debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr",req->job_id);
+			return SLURM_SUCCESS;
+		}
+	}
+	slurm_mutex_unlock(&bb_job_list_mutex);
+	
 	job_id = req->job_id;
 	group_count = req->used_groups_cnt;
 	group_sn_arr = req->group_sn;
