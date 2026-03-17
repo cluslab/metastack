@@ -342,9 +342,6 @@ int main(int argc, char **argv)
 	stepmgr_ops.job_config_fini = job_config_fini;
 	stepmgr_ops.last_job_update = &last_job_update;
 	stepmgr_init(&stepmgr_ops);
-#ifdef __METASTACK_NEW_BURSTBUFFER6
-	char bb_tmp[] = "burst_buffer/parastorbb";
-#endif
 	main_argc = argc;
 	main_argv = argv;
 

@@ -235,27 +235,6 @@ bool purge_old_cache_job = false;
 /* Global variables */
 List   job_list = NULL;		/* job_record list */
 time_t last_job_update;		/* time of last update to job records */
-#ifdef __METASTACK_NEW_BURSTBUFFER7
-//这里借用job_ptr的锁，这里会和job_ptr同时使用因此不需要额外新增锁
-// List bb_job_error_list = NULL; /* burst buffer exception job list */
-
-static void _bb_job_error_list_delete(void *jobinfo)
-{
-	bb_job_error_msg_t *bb_job_error_msg = (bb_job_error_msg_t *)jobinfo;
-	xfree(bb_job_error_msg);
-}
-
-extern int slurm_find_bb_error_in_list(void *x, void *key)
-{
-	bb_job_error_msg_t *bb_job_error_msg = (bb_job_error_msg_t *)x;
-	uint32_t joid_id = *(uint32_t *)key;
-	if (bb_job_error_msg->job_id == joid_id) {
-		return 1;
-	}
-	return 0;
-}
-
-#endif
 
 list_t *purge_jobs_list = NULL;	/* job_record_t entries to free */
 
@@ -3094,9 +3073,6 @@ extern int kill_running_job_by_node_name(char *node_name)
 	node_record_t *node_ptr;
 	bitstr_t *orig_job_node_bitmap;
 	int kill_job_cnt = 0;
-#ifdef __METASTACK_NEW_BURSTBUFFER6
-	bb_job_error_msg_t *bb_job_error = NULL;
-#endif
 	time_t now = time(NULL);
 
 	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
@@ -3253,13 +3229,8 @@ extern int kill_running_job_by_node_name(char *node_name)
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
 #ifdef __METASTACK_NEW_BURSTBUFFER6
-				//设置清理标志位在后台线程中进行处理,设置BB状态
-				//job_ptr->bb_free_flag = true;
+				//设置BB状态
 				job_ptr->bb_status = ELSURM_BB_RESOURCE_UNKNOW;//BB资源需要删除校验，
-				// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-				// bb_job_error->bb_status = ELSURM_BB_RESOURCE_UNKNOW;
-				// bb_job_error->job_id = job_ptr->job_id;
-				// list_append(bb_job_error_list, bb_job_error);
 #endif
 			}
 		}
@@ -5309,7 +5280,6 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 {
 	uint16_t job_term_state;
 	time_t now = time(NULL);
-	bb_job_error_msg_t *bb_job_error = NULL;
 	log_flag(TRACE_JOBS, "%s: enter %pJ", __func__, job_ptr);
 
 	if (IS_JOB_STAGE_OUT(job_ptr) && (flags & KILL_HURRY)) {
@@ -5321,11 +5291,6 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 	if(!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 		if((flags & KILL_HURRY)) {
-			// bb_job_error = list_find_first(bb_job_error_list, slurm_find_bb_error_in_list, &job_ptr->job_id);
-			// if(bb_job_error) {
-			// 	list_delete_all(bb_job_error_list, slurm_find_bb_error_in_list, &job_ptr->job_id);
-			// 	bb_g_job_cancel(job_ptr);
-			// }
 			bb_g_job_cancel(job_ptr);
 		}
 		

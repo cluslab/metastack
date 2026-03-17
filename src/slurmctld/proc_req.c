@@ -2400,12 +2400,6 @@ static void _slurm_rpc_dump_partitions(slurm_msg_t *msg)
 
 #ifdef __METASTACK_NEW_BURSTBUFFER6
 
-
-static void _deal_bb_complete_failed(job_record_t *job_ptr)
-{
-
-}
-
 /**
  * @brief 根据job_ptr中的group_ids中数值（group_ids[i]为被作业占用），drain掉被占用节点
  * @param job_ptr 
@@ -2463,8 +2457,6 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 {
 	static int active_rpc_cnt = 0;
 	static time_t config_update = 0;
-	static bool defer_sched = false;
-	bb_job_error_msg_t *bb_job_error = NULL;
 	uint32_t bb_status = 0;
 	DEF_TIMERS;
 	/* Locks: Read configuration, write job, write node */
@@ -2472,7 +2464,6 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
 	epilog_complete_msg_t *epilog_msg = msg->data;
 	job_record_t *job_ptr;
-	bool run_scheduler = false;
 
 	START_TIMER;
 	if (!validate_slurm_user(msg->auth_uid)) {
@@ -2594,7 +2585,6 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 	static int active_rpc_cnt = 0;
 	static time_t config_update = 0;
 	static bool defer_sched = false;
-	bb_job_error_msg_t *bb_job_error = NULL;
 	uint32_t bb_status = 0;
 	DEF_TIMERS;
 	/* Locks: Read configuration, write job, write node */
@@ -2830,7 +2820,6 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 	job_record_t *job_ptr = NULL;
 	/* Locks: Write job, write node */
 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
-	bb_job_error_msg_t *bb_job_error = NULL;
 	/* init */
 	START_TIMER;
 	debug("Processing RPC details: REQUEST_COMPLETE_CREATE_BB from JobId=%u", comp_msg->job_id);

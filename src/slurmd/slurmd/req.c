@@ -149,6 +149,22 @@ typedef enum {
 	BB_RECYCLE_TAKS_TYPE = 2
 } BB_TASK_TYPE;
 
+typedef struct bb_job_msg{
+	uint32_t job_id;
+	uint64_t req_space;		   		 //当前作业请求的空间
+	uint32_t access_mode;      		 //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
+	uint32_t status;                 //0:创建结构体 1：完成创建缓存组，2：完成创建数据集 3：完成预热任务 
+	int      terminal;                 //-1：失败, 0不做处理
+	uint32_t group_cnt; 
+	uint32_t dataset_cnt;			//dataset与task个数相同
+	uint32_t task_cnt;			//dataset与task个数相同
+	uint32_t pfs_cnt;			 //加速路径个数
+	char     **group_sn;   			 //缓存组唯一sn码，作业可能有多个缓存组
+	uint32_t *group_ids;             //缓存组ID数组，从slurmd返回
+	uint32_t *dataset_ids;           //数据集ID数组，从slurmd返回
+	uint32_t *task_ids;              //任务ID数组，与dataset_ids一一对应，从slurmd返回
+	char     **pfs;            		 //后端存储路径,可能有多个
+} bb_job_msg_t;
 
 #endif
 
@@ -283,22 +299,6 @@ static void dump_bb_job_state(buf_t *buffer);
 static int is_job_terminated(uint32_t job_id);
 pthread_mutex_t bb_job_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 List bb_job_list = NULL;
-typedef struct bb_job_msg{
-	uint32_t job_id;
-	uint64_t req_space;		   		 //当前作业请求的空间
-	uint32_t access_mode;      		 //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	uint32_t status;                 //0:创建结构体 1：完成创建缓存组，2：完成创建数据集 3：完成预热任务 
-	int      terminal;                 //-1：失败, 0不做处理
-	uint32_t group_cnt; 
-	uint32_t dataset_cnt;			//dataset与task个数相同
-	uint32_t task_cnt;			//dataset与task个数相同
-	uint32_t pfs_cnt;			 //加速路径个数
-	char     **group_sn;   			 //缓存组唯一sn码，作业可能有多个缓存组
-	uint32_t *group_ids;             //缓存组ID数组，从slurmd返回
-	uint32_t *dataset_ids;           //数据集ID数组，从slurmd返回
-	uint32_t *task_ids;              //任务ID数组，与dataset_ids一一对应，从slurmd返回
-	char     **pfs;            		 //后端存储路径,可能有多个
-} bb_job_msg_t;
 
 static void _bb_job_list_delete(void *jobinfo)
 {
@@ -713,7 +713,7 @@ static int is_job_terminated(uint32_t job_id)
 {
 	bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
 	if (!bb_job_ptr) {
-		error("BB-----job%u do not exsit in slurmd bb list");
+		error("BB-----job%u do not exsit in slurmd bb list", job_id);
 		return BB_ABORT;
 	}
 	return bb_job_ptr->terminal;
@@ -721,7 +721,6 @@ static int is_job_terminated(uint32_t job_id)
 
 static void update_bb_job_pfs(bb_job_msg_t *bb_job_ptr, uint32_t pfs_count, char **pfs, BB_JOB_STATUS_TYPE status)
 {
-	bb_job_msg_t *bb_job_ptr = NULL;
 	bb_job_ptr->pfs_cnt = pfs_count;
 	if (bb_job_ptr->pfs) {
 		for (uint32_t pfs_idx = 0; pfs_idx < bb_job_ptr->pfs_cnt; pfs_idx++) {
@@ -3996,7 +3995,7 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 
 	uint32_t *dataset_ids = xmalloc(dataset_count * sizeof(uint32_t));
 	memcpy(dataset_ids, bb_job_ptr->dataset_ids, dataset_count * sizeof(uint32_t));
-	
+
 	char **pfs_array = xmalloc(pfs_cnt * sizeof(char *));
 	for (int i = 0; i < pfs_cnt;i++) {
 		pfs_array[i] = xstrdup(bb_job_ptr->pfs[i]);
