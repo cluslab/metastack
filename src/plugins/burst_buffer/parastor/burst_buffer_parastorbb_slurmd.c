@@ -381,9 +381,7 @@ extern int bb_p_wait_task_complete(uint32_t task_id, int task_type)
 	
 	time_t start_time		  = time(NULL);         			// 记录开始检查的时间
 	time_t last_check_time	  = start_time;    				    // 上次检查的时间
-	time_t soft_timeout_time  = start_time + SOFT_TIMEOUT_SEC;  // 软超时时间点
-	time_t hard_timeout_time  = start_time + HARD_TIMEOUT_SEC;  // 硬超时时间点
-	bool soft_timeout_reached = false;     						// 是否已超过软超时时间
+	time_t hard_timeout_time  = start_time + HARD_TIMEOUT_SEC;  // 超时时间点
 	bool task_completed 	  = false;           
 	int query_rc 			  = 0;                    
 	bb_attribute_task *bb_task = xmalloc(sizeof(bb_attribute_task));  // 任务属性结构体指针

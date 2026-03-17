@@ -169,7 +169,6 @@ typedef struct {
 
 static uint32_t		last_persistent_id = 1;
 
-static int parastor_thread_cnt = 0;
 pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Function prototypes */
@@ -181,30 +180,6 @@ static void _bb_min_config_free(bb_minimal_config_t * config);
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str);
 static int _cmp_uint32(const void *a, const void *b);
 static int _bb_get_used_resources_global_cnt(uint32_t *used_groups_cnt, uint32_t*used_datasets_cnt);
-static int _get_parastor_thread_cnt(void)
-{
-	int cnt;
-
-	slurm_mutex_lock(&parastor_thread_mutex);
-	cnt = parastor_thread_cnt;
-	slurm_mutex_unlock(&parastor_thread_mutex);
-
-	return cnt;
-}
-
-static void _incr_parastor_thread_cnt(void)
-{
-	slurm_mutex_lock(&parastor_thread_mutex);
-	parastor_thread_cnt++;
-	slurm_mutex_unlock(&parastor_thread_mutex);
-}
-
-static void _decr_parastor_thread_cnt(void)
-{
-	slurm_mutex_lock(&parastor_thread_mutex);
-	parastor_thread_cnt--;
-	slurm_mutex_unlock(&parastor_thread_mutex);
-}
 
 /* Write current burst buffer state to a file so that we can preserve account,
  * partition, and QOS information of persistent burst buffers as there is no
@@ -601,9 +576,7 @@ static void *_start_stage_out(void *x)
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 	}
 	unlock_slurmctld(job_write_lock);
-
 	track_script_remove(pthread_self());
-	_decr_parastor_thread_cnt();
 	return NULL;
 }
 
@@ -663,11 +636,6 @@ static void *_bb_agent(void *args)
 		}
 		_save_bb_state();	/* Has own locks excluding file write */
 	}
-
-	/* Wait for lua threads to finish, then save state once more. */
-	while (_get_parastor_thread_cnt())
-		usleep(100000); /* 100 ms */
-	////后续再打开
 	_save_bb_state();
 
 	return NULL;
@@ -2149,12 +2117,12 @@ static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
 
 /**
  * @brief 清理bb结构体
- * @param x 
- * @return 
+ * @param x
+ * @return
  */
 static void *_start_teardown(void *x)
 {
-	uint32_t job_id = (uint32_t *)x;
+	uint32_t job_id = *(uint32_t *)x;
 	slurmctld_lock_t job_write_lock = { NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
 	job_record_t *job_ptr = NULL;
 	bb_alloc_t *bb_alloc = NULL;
@@ -2177,16 +2145,12 @@ static void *_start_teardown(void *x)
 		job_state_unset_flag(job_ptr, JOB_STAGE_OUT);
 		if (!IS_JOB_PENDING(job_ptr) &&	/* No email if requeue */
 			(job_ptr->mail_type & MAIL_JOB_STAGE_OUT)) {
-			/*
-			 * NOTE: If a job uses multiple burst buffer
-			 * plugins, the message will be sent after the
-			 * teardown completes in the first plugin
-			 */
 			mail_job_info(job_ptr, MAIL_JOB_STAGE_OUT);
 			job_ptr->mail_type &= (~MAIL_JOB_STAGE_OUT);
 		}
 	}
 	unlock_slurmctld(job_write_lock);
+	track_script_remove(pthread_self());
 	return NULL;
 }
 
@@ -2251,51 +2215,16 @@ static void _queue_teardown(job_record_t *job_ptr)
 			debug("Teardown: No node bitmap found for job %pJ, skipping quota release", job_ptr);
 		}
 #endif
-	slurm_thread_create_detached(_start_teardown, job_ptr->job_id);
+	slurm_thread_create_detached(_start_teardown, &job_ptr->job_id);
 	job_ptr->bb_status = ESLURM_BB_STATE_CLEANUP;
 }
 
 static void *_start_stage_in(void *x)
 {
 	stage_args_t *stage_in_args = x;
-	//uint64_t real_size = 0;
-	// uint64_t orig_real_size = stage_in_args->bb_size;
 	job_record_t *job_ptr;
 	slurmctld_lock_t job_write_lock = { .job = WRITE_LOCK };
-
-	// bb_func_t stage_in_ops[] = {
-	// 	{
-	// 		.init_argv = _init_setup_argv,
-	// 		.op_type = SLURM_BB_SETUP,
-	// 		.run_func = _run_lua_stage_script,
-	// 		.timeout = bb_state.bb_config.other_timeout,
-	// 	},
-	// 	{
-	// 		.init_argv = _init_data_in_argv,
-	// 		.op_type = SLURM_BB_DATA_IN,
-	// 		.run_func = _run_lua_stage_script,
-	// 		.timeout = bb_state.bb_config.stage_in_timeout,
-	// 	},
-	// 	{
-	// 		.init_argv = _init_data_in_argv, /* Same as data in */
-	// 		.op_type = SLURM_BB_TEST_DATA_IN,
-	// 		.run_func = _run_test_data_inout,
-	// 		.timeout = bb_state.bb_config.stage_in_timeout,
-	// 	},
-	// 	{
-	// 		.init_argv = _init_real_size_argv,
-	// 		.op_type = SLURM_BB_REAL_SIZE,
-	// 		.run_func = _run_real_size,
-	// 		.timeout = bb_state.bb_config.stage_in_timeout,
-	// 	},
-	// };
-
 	stage_in_args->hurry = true;
-	// if (_run_stage_ops(stage_in_ops, ARRAY_SIZE(stage_in_ops),
-	// 		   stage_in_args) != SLURM_SUCCESS)
-	// 	goto fini;
-	//real_size = stage_in_args->bb_size; /* Updated by _run_real_size */
-
 	lock_slurmctld(job_write_lock);
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	job_ptr = find_job_record(stage_in_args->job_id);
@@ -2309,39 +2238,12 @@ static void *_start_stage_in(void *x)
 		bb_job = bb_job_find(&bb_state, stage_in_args->job_id);
 		if (bb_job)
 			bb_set_job_bb_state(job_ptr, bb_job,
-					    BB_STATE_STAGING_IN);
+				BB_STATE_STAGING_IN);
 		if (bb_job && bb_job->total_size) {
-			/*
-			 * Adjust total size to real size if real size
-			 * returns something bigger.
-			 */
-			// if (real_size > bb_job->req_size) {
-			// 	log_flag(BURST_BUF, "%pJ total_size increased from %"PRIu64" to %"PRIu64,
-			// 		 job_ptr, bb_job->req_size, real_size);
-			// 	bb_job->total_size = real_size;
-			// 	bb_limit_rem(stage_in_args->uid,
-			// 		     orig_real_size,
-			// 		     stage_in_args->pool, &bb_state);
-			// 	/* Restore limit based upon actual size. */
-			// 	bb_limit_add(stage_in_args->uid,
-			// 		     bb_job->total_size,
-			// 		     stage_in_args->pool, &bb_state,
-			// 		     true);
-			// }
+
 			bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
 			if (bb_alloc) {
-			// 	if (bb_alloc->size != bb_job->total_size) {
-			// 		/*
-			// 		 * bb_alloc is state saved, so we need
-			// 		 * to update bb_alloc in case slurmctld
-			// 		 * restarts.
-			// 		 */
-			// 		// bb_alloc->size = bb_job->total_size;
-					bb_state.last_update_time = time(NULL);
-			// 	}
-			// } else {
-			// 	error("unable to find bb_alloc record for %pJ",
-			// 	      job_ptr);
+				bb_state.last_update_time = time(NULL);
 			}
 		}
 		log_flag(BURST_BUF, "Setup/stage-in complete for %pJ", job_ptr);
@@ -2350,11 +2252,10 @@ static void *_start_stage_in(void *x)
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	unlock_slurmctld(job_write_lock);
 
-//fini:
 	xfree(stage_in_args->job_script);
 	xfree(stage_in_args->pool);
 	xfree(stage_in_args);
-
+	track_script_remove(pthread_self());
 	return NULL;
 }
 
@@ -2365,7 +2266,6 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 	char *hash_dir = NULL, *job_dir = NULL;
 	int hash_inx = job_ptr->job_id % 10;
 	stage_args_t *stage_in_args;
-	//bb_alloc_t *bb_alloc = NULL;
 	xstrfmtcat(hash_dir, "%s/hash.%d",
 		   slurm_conf.state_save_location, hash_inx);
 	(void) mkdir(hash_dir, 0700);
@@ -2375,28 +2275,7 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 	stage_in_args->job_id = job_ptr->job_id;
 	stage_in_args->uid = job_ptr->user_id;
 	stage_in_args->gid = job_ptr->group_id;
-	// if (bb_job->job_pool)
-	// 	stage_in_args->pool = xstrdup(bb_job->job_pool);
-	// else
-	// 	stage_in_args->pool = NULL;
-	// stage_in_args->bb_size = bb_job->total_size;
 	stage_in_args->job_script = bb_handle_job_script(job_ptr, bb_job);
-	/*
-	 * Create bb allocation for the job now. Check if it has already been
-	 * created (perhaps it was created but then slurmctld restarted).
-	 * bb_alloc is the structure that is state saved.
-	 * If we wait until the _start_stage_in thread to create bb_alloc,
-	 * we introduce a race condition where the thread could be killed
-	 * (if slurmctld is shut down) before the thread creates
-	 * bb_alloc. That race would mean the burst buffer isn't state saved.
-	 */
-	// if (!(bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr))) {
-	// 	bb_alloc = bb_alloc_job(&bb_state, job_ptr, bb_job);
-	// 	bb_alloc->create_time = time(NULL);
-	// }
-
-	// bb_limit_add(job_ptr->user_id, bb_job->total_size, bb_job->job_pool,
-	// 	     &bb_state, true);
 	slurm_thread_create_detached(_start_stage_in, stage_in_args);
 
 	xfree(hash_dir);
@@ -2936,8 +2815,6 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 
 	hostlist_t *free_hl = NULL;
 	hostlist_t *job_hl = NULL;
-	uint32_t free_groups_cnt = 0;
-	uint32_t free_datasets_cnt = 0;
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	log_flag(BURST_BUF, "%pJ", job_ptr);

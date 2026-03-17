@@ -143,7 +143,7 @@ fini:
 
 
 #ifdef __METASTACK_NEW_BURSTBUFFER6
-extern int bb_clean_complete_send(bb_return_message_t *bb_rc_msg)
+extern int _notify_slurmctld_clean_bb_fini(bb_return_message_t *bb_rc_msg)
 {
 	slurm_msg_t msg;
 	epilog_complete_msg_t req;

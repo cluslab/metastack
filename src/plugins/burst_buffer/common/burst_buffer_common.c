@@ -1155,8 +1155,6 @@ extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 	int i, rec_count = 0;
 	bb_alloc_t *bb_alloc;
 	int eof, offset;
-	job_record_t *job_ptr = NULL;
-	uint32_t job_state = 0;
 
 	xassert(state_ptr);
 	offset = get_buf_offset(buffer);

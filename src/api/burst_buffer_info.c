@@ -345,7 +345,6 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 	int i, j;
 	char sz_buf[32], time_buf[256];
 	char *user_name;
-	char *job_state_str;
 
 	/****** Line - Basic Info ******/
 	xstrfmtcat(out_buf, "Name=%s",

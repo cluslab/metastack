@@ -107,8 +107,8 @@ extern int bb_g_init(void)
 			sizeof(plugin_context_t *));
 		if (xstrncmp(type, "burst_buffer/", 13) == 0)
 			type += 13; /* backward compatibility */
-			type = xstrdup_printf("burst_buffer/%s_slurmd", type);
-			if (xstrcmp(type, "burst_buffer/parastorbb_slurmd") == 0) {
+		type = xstrdup_printf("burst_buffer/%s_slurmd", type);
+		if (xstrcmp(type, "burst_buffer/parastorbb_slurmd") == 0) {
 			g_context[g_context_cnt] = plugin_context_create(
 				plugin_type, type, (void **)&ops[g_context_cnt],
 				syms, sizeof(syms));
