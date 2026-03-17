@@ -3559,14 +3559,14 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	slurm_mutex_lock(&bb_job_list_mutex);
 	if(bb_job_list) {
 		bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &(req->job_id));
-		if (!bb_job_ptr) {
+		if (bb_job_ptr) {
 			slurm_mutex_unlock(&bb_job_list_mutex);
-			debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr",req->job_id);
+			debug("BB-----bb_job_list中已存在作业号为%u的bb_job_ptr",req->job_id);
 			return SLURM_SUCCESS;
 		}
 	}
 	slurm_mutex_unlock(&bb_job_list_mutex);
-	
+
 	job_id = req->job_id;
 	group_count = req->used_groups_cnt;
 	group_sn_arr = req->group_sn;
