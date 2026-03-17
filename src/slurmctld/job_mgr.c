@@ -18172,15 +18172,11 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 
 	acct_policy_remove_job_submit(job_ptr, false);
 	if (job_ptr->nodes && ((job_ptr->bit_flags & JOB_KILL_HURRY) == 0)
-	    && !IS_JOB_RESIZING(job_ptr)) {
-#ifdef __METASTACK_NEW_BURSTBUFFER4	
-		if(!job_ptr->bb_enable_pb) {
-			(void) bb_g_job_start_stage_out(job_ptr);
-		}
-#endif
-	} else if (job_ptr->nodes && IS_JOB_RESIZING(job_ptr)){
+		&& !IS_JOB_RESIZING(job_ptr)) {
+		(void)bb_g_job_start_stage_out(job_ptr);
+	} else if (job_ptr->nodes && IS_JOB_RESIZING(job_ptr)) {
 		debug("%s: %pJ resizing, skipping bb stage_out",
-		      __func__, job_ptr);
+			__func__, job_ptr);
 	} else {
 		/*
 		 * Never allocated compute nodes.
