@@ -169,7 +169,6 @@ typedef struct {
 
 static uint32_t		last_persistent_id = 1;
 
-static int parastor_thread_cnt = 0;
 pthread_mutex_t parastor_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Function prototypes */

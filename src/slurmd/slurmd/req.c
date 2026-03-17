@@ -4064,7 +4064,7 @@ bb_cleanup:
 	bb_rc_msg->task_ids = recycle_task_ids;
 
 	while (alt_rc != SLURM_SUCCESS && num_cnt < 3) {
-		alt_rc = bb_clean_complete_send(bb_rc_msg);
+		alt_rc = _notify_slurmctld_clean_bb_fini(bb_rc_msg);
 		if (alt_rc != SLURM_SUCCESS) {
 			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]", __func__, job_id, RETRY_DELAY);
 			sleep(RETRY_DELAY);
@@ -7305,7 +7305,6 @@ _rpc_terminate_job(slurm_msg_t *msg)
 
 			if(req->bb_enable_pb && req->real_used_bb) {
 				debug("No jobs may be running on the current node");
-				//bb_clean_complete_send(req->step_id.job_id, req->nodes, rc, bb_rc);
 			}
 		}
 #endif

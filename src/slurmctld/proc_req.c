@@ -2450,13 +2450,12 @@ static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
 
 
 /**
- * @brief 处理slurmd清理BB后发回的RPC
+ * @brief 处理slurmd清理BB后发回的RPC,与_slurm_rpc_epilog_complete中处理一致
  * @param msg 
  */
 static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 {
 	static int active_rpc_cnt = 0;
-	static time_t config_update = 0;
 	uint32_t bb_status = 0;
 	DEF_TIMERS;
 	/* Locks: Read configuration, write job, write node */
@@ -2464,30 +2463,7 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 		READ_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
 	epilog_complete_msg_t *epilog_msg = msg->data;
 	job_record_t *job_ptr;
-
 	START_TIMER;
-	if (!validate_slurm_user(msg->auth_uid)) {
-		error("Security violation, EPILOG_COMPLETE RPC from uid=%u",
-			msg->auth_uid);
-		return;
-	}
-
-	/* Only throttle on non-composite messages, the lock should
-	 * already be set earlier. */
-	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
-		if (config_update != slurm_conf.last_update) {
-			defer_sched = (xstrcasestr(slurm_conf.sched_params,
-				"defer"));
-			config_update = slurm_conf.last_update;
-		}
-
-		_throttle_start(&active_rpc_cnt);
-		lock_slurmctld(job_write_lock);
-	}
-
-	log_flag(ROUTE, "%s: node_name = %s, JobId=%u",
-		__func__, epilog_msg->node_name, epilog_msg->job_id);
-
 
 	job_ptr = find_job_record(epilog_msg->job_id);
 	if (!job_ptr) {
@@ -2552,27 +2528,13 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 		} else if (bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
-			/* 更新bb资源数量 */
-			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			// bb_job_error->bb_status = bb_status;
-			// bb_job_error->job_id = epilog_msg->job_id;
-			// list_append(bb_job_error_list, bb_job_error);
 		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
 			job_ptr->bb_status = bb_status;
-			//_drain_nodes_of_failed_bb(job_ptr);
-			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			// bb_job_error->bb_status = bb_status;
-			// bb_job_error->job_id = epilog_msg->job_id;
-			// list_append(bb_job_error_list, bb_job_error);
 		}
 	}
 
-	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
-		unlock_slurmctld(job_write_lock);
-		_throttle_fini(&active_rpc_cnt);
-	}
 	END_TIMER2(__func__);
-	if (msg->protocol_version >= SLURM_24_05_PROTOCOL_VERSION)
+	if (msg->protocol_version >= META_3_0_PROTOCOL_VERSION)
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 
 }
@@ -2679,19 +2641,10 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
 			(void)bb_g_job_start_stage_out(job_ptr); //作业非正常完成时也要进行清理，即使para存在残留
-			// /* 更新bb资源数量 */
-			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			// bb_job_error->bb_status = bb_status;
-			// bb_job_error->job_id = epilog_msg->job_id;
-			// list_append(bb_job_error_list, bb_job_error);
 		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
 			job_ptr->bb_status = bb_status;
 			(void)bb_g_job_start_stage_out(job_ptr); //作业非正常完成时也要进行清理，即使para存在残留
-			//_drain_nodes_of_failed_bb(job_ptr);
-			// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
-			// bb_job_error->bb_status = bb_status;
-			// bb_job_error->job_id = epilog_msg->job_id;
-			// list_append(bb_job_error_list, bb_job_error);
+
 		}
 	}
 #endif
