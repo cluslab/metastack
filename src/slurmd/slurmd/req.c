@@ -3904,32 +3904,6 @@ static int _delete_bb_dataset_by_groupid_path(uint32_t group_count, uint32_t *gr
 	return 0;
 }
 
-// static int _delete_bb_group_by_sn(uint32_t group_count, char **group_sn_array)
-// {
-// 	if (!group_sn_array || group_count == 0)
-// 		return -1;
-// 	int bb_rc = 0;
-// 	bool all_success = true;
-// 	for (uint32_t i = 0; i < group_count; i++) {
-// 		char *group_sn = group_sn_array[i];
-// 		if (!group_sn) {
-// 			error("BB-----缓存组SN为空");
-// 			return -1;
-// 		}
-// 		debug("BB-----删除缓存组%s", group_sn);
-// 		bb_rc = bb_g_delete_bb_group_by_sn(group_sn);
-// 		if (bb_rc == SLURM_SUCCESS) {
-// 			debug("BB-----成功删除缓存组%s", group_sn);
-// 		} else {
-// 			error("BB-----删除缓存组%s失败, return code=%d", group_sn, bb_rc);
-// 			all_success = false;
-// 		}
-// 	}
-// 	if (!all_success)
-// 		return -1;
-// 	return 0;
-// }
-
 static int _delete_bb_group_by_id(uint32_t group_count, uint32_t *group_id_array)
 {
 	if (!group_id_array || group_count == 0)
