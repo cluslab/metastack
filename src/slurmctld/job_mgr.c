@@ -17139,8 +17139,12 @@ static void _purge_missing_jobs(int node_inx, time_t now)
 			xfree(job_ptr->failed_node);
 			job_ptr->failed_node = xstrdup(job_ptr->batch_host);
 			job_ptr->exit_code = 1;
+#ifdef __METASTACK_NEW_BURSTBUFFER
+			if (job_ptr->bb_enable_pb)
+				job_ptr->bb_status = ELSURM_BB_STATE_BATCH_START_TIMEOUT;
+#endif
 			job_complete(job_ptr->job_id, slurm_conf.slurm_user_id,
-			             requeue, true, NO_VAL);
+				requeue, true, NO_VAL);
 		} else {
 			_notify_srun_missing_step(job_ptr, node_inx,
 						  now, node_boot_time);
@@ -18138,7 +18142,14 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 	acct_policy_remove_job_submit(job_ptr, false);
 	if (job_ptr->nodes && ((job_ptr->bit_flags & JOB_KILL_HURRY) == 0)
 		&& !IS_JOB_RESIZING(job_ptr)) {
-		(void)bb_g_job_start_stage_out(job_ptr);
+#ifdef __METASTACK_NEW_BURSTBUFFER4 
+		if (!job_ptr->bb_enable_pb) {
+			(void)bb_g_job_start_stage_out(job_ptr);
+		}
+		if (job_ptr->bb_status == ELSURM_BB_STATE_BATCH_START_TIMEOUT) {
+			(void)bb_g_job_start_stage_out(job_ptr);
+		}
+#endif
 	} else if (job_ptr->nodes && IS_JOB_RESIZING(job_ptr)) {
 		debug("%s: %pJ resizing, skipping bb stage_out",
 			__func__, job_ptr);

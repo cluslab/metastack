@@ -2524,7 +2524,7 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 			//slurmd端删除成功
 			job_ptr->bb_status = SLURM_SUCCESS;
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
-			(void)bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
+			(void)bb_g_job_start_stage_out(job_ptr); 
 		} else if (bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
