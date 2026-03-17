@@ -3987,20 +3987,16 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	dataset_count = bb_job_ptr->dataset_cnt;
 	pfs_cnt = bb_job_ptr->pfs_cnt;
 
-	if (group_count == 0 || dataset_count == 0 || pfs_cnt == 0) {
-		error("BB-----参数异常");
-		slurm_mutex_unlock(&bb_job_list_mutex);
-		return SLURM_ERROR;
-	}
-
 	char **group_sn_array = xmalloc(group_count * sizeof(char *));
 	for (int i = 0; i < group_count;i++) {
 		group_sn_array[i] = xstrdup(bb_job_ptr->group_sn[i]);
 	}
 	uint32_t *group_ids = xmalloc(group_count * sizeof(uint32_t));
 	memcpy(group_ids, bb_job_ptr->group_ids, group_count * sizeof(uint32_t));
+
 	uint32_t *dataset_ids = xmalloc(dataset_count * sizeof(uint32_t));
 	memcpy(dataset_ids, bb_job_ptr->dataset_ids, dataset_count * sizeof(uint32_t));
+	
 	char **pfs_array = xmalloc(pfs_cnt * sizeof(char *));
 	for (int i = 0; i < pfs_cnt;i++) {
 		pfs_array[i] = xstrdup(bb_job_ptr->pfs[i]);
