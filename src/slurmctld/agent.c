@@ -804,8 +804,14 @@ static void _notify_slurmctld_nodes(agent_info_t *agent_ptr,
 				  .fed  = READ_LOCK };
 
 			lock_slurmctld(job_write_lock);
-			job_complete(job_id, slurm_conf.slurm_user_id,
-				     true, false, 0);
+#ifdef __METASTACK_NEW_BURSTBUFFER
+			job_record_t *job_ptr = find_job_record(job_id);
+			if (job_ptr && job_ptr->bb_enable_pb)
+				job_complete(job_id, slurm_conf.slurm_user_id, false, false, 0);
+			else
+#endif
+				job_complete(job_id, slurm_conf.slurm_user_id,
+					true, false, 0);
 			unlock_slurmctld(job_write_lock);
 		}
 	}

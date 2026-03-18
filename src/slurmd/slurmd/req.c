@@ -3964,8 +3964,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 		error("BB-----参数为空");
 		return SLURM_ERROR;
 	}
+	job_id = req->step_id.job_id;
 	if (!bb_job_list) {
-		debug("BB-----bb_job_list为空");
+		debug("BB-----bb_job_list为空,作业%u或已执行过%s函数", job_id, __func__);
 		return SLURM_SUCCESS;
 	}
 
@@ -3973,10 +3974,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &(req->step_id.job_id));
 	if (!bb_job_ptr) {
 		slurm_mutex_unlock(&bb_job_list_mutex);
-		debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr",req->step_id.job_id);
+		debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr,该作业或已执行过%s函数", req->step_id.job_id, __func__);
 		return SLURM_SUCCESS;
 	}
-	job_id = req->step_id.job_id;
 	group_count = bb_job_ptr->group_cnt;
 	dataset_count = bb_job_ptr->dataset_cnt;
 	pfs_cnt = bb_job_ptr->pfs_cnt;
@@ -3996,7 +3996,13 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 		pfs_array[i] = xstrdup(bb_job_ptr->pfs[i]);
 	}
 	slurm_mutex_unlock(&bb_job_list_mutex);
-	
+
+	/*
+	 * 在实际清理操作之前移除作业，防止重复执行导致失败
+	 * 此时所有需要的数据已经从 bb_job_ptr 复制到本地变量，后续不再使用 bb_job_ptr
+	 */
+	remove_alloc_bb_jobid(job_id);
+
 	uint32_t *recycle_task_ids = NULL;
 	recycle_task_ids = xmalloc(dataset_count * sizeof(uint32_t));
 
@@ -4045,8 +4051,6 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 
 
 bb_cleanup:
-
-	remove_alloc_bb_jobid(job_id);
 
 	bb_rc_msg = xmalloc(sizeof(bb_return_message_t));
 	bb_rc_msg->job_id = job_id;
@@ -7181,13 +7185,13 @@ _rpc_terminate_job(slurm_msg_t *msg)
 	}
 
 #ifdef __METASTACK_NEW_BURSTBUFFER4
-	if(req->bb_enable_pb && req->real_used_bb) {
+	if (req->bb_enable_pb && req->real_used_bb) {
 		//slurm_mutex_lock(&bb_job_list_mutex);
-		if((clean_bb_job_process(req->step_id.job_id)== -1) || (req->bb_status == ESLURM_BB_STATE_READY))
-		bb_rc = _rpc_clean_bb(req);
+		if ((clean_bb_job_process(req->step_id.job_id) == -1) || (req->bb_status == ESLURM_BB_STATE_READY))
+			bb_rc = _rpc_clean_bb(req);
 		//slurm_mutex_unlock(&bb_job_list_mutex);	
-	}  else
-		bb_rc = SLURM_SUCCESS; 
+	} else
+		bb_rc = SLURM_SUCCESS;
 #endif
 	if (_prolog_is_running(req->step_id.job_id)) {
 		if (msg->conn_fd >= 0) {
