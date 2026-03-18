@@ -5293,7 +5293,6 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		if((flags & KILL_HURRY)) {
 			bb_g_job_cancel(job_ptr);
 		}
-		
 	}
 #endif
 
