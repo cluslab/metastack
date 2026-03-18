@@ -3943,8 +3943,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 		error("BB-----参数为空");
 		return SLURM_ERROR;
 	}
+	job_id = req->step_id.job_id;
 	if (!bb_job_list) {
-		debug("BB-----bb_job_list为空");
+		debug("BB-----bb_job_list为空,作业%u或已执行过%s函数", job_id, __func__);
 		return SLURM_SUCCESS;
 	}
 
@@ -3952,10 +3953,9 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &(req->step_id.job_id));
 	if (!bb_job_ptr) {
 		slurm_mutex_unlock(&bb_job_list_mutex);
-		debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr,或该作业已执行过%s", req->step_id.job_id, __func__);
+		debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr,该作业或已执行过%s函数", req->step_id.job_id, __func__);
 		return SLURM_SUCCESS;
 	}
-	job_id = req->step_id.job_id;
 	group_count = bb_job_ptr->group_cnt;
 	dataset_count = bb_job_ptr->dataset_cnt;
 	pfs_cnt = bb_job_ptr->pfs_cnt;
