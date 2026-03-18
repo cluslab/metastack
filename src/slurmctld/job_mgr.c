@@ -5288,7 +5288,7 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 	}
 #ifdef __METASTACK_NEW_BURSTBUFFER7
      /* 针对异常作业通过scancel -H 将异常作业删除后，应该从链表bb_job_error_list中删除 */
-	if(!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
+	if(job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 		if((flags & KILL_HURRY)) {
 			bb_g_job_cancel(job_ptr);
@@ -18145,8 +18145,7 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 #ifdef __METASTACK_NEW_BURSTBUFFER4 
 		if (!job_ptr->bb_enable_pb) {
 			(void)bb_g_job_start_stage_out(job_ptr);
-		}
-		if (job_ptr->bb_status == ELSURM_BB_STATE_BATCH_START_TIMEOUT) {
+		}else if (job_ptr->bb_status == ELSURM_BB_STATE_BATCH_START_TIMEOUT) {
 			(void)bb_g_job_start_stage_out(job_ptr);
 		}
 #endif
