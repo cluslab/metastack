@@ -102,7 +102,7 @@
 	(_X->job_state & JOB_POWER_UP_NODE)
 
 /* Derived job states */
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 #define IS_JOB_STAGING(_X)		\
 	(_X->job_state & JOB_BURSTBUFFER_STAGING)
 #define IS_JOB_STAGE_OUT_2(_X)		\
@@ -241,7 +241,7 @@ extern __thread bool drop_priv;
 #  define __job_record_t_defined
 typedef struct job_record job_record_t;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 #define  LAUNCH_JOB_BIT    0x0001
 #define  LAUNCH_PROLOG_BIT 0x0010
 #define  SRUN_ALLOCATE_BIT 0x0100
@@ -504,7 +504,7 @@ typedef struct complete_prolog {
 	uint32_t prolog_rc;
 } complete_prolog_msg_t;
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 typedef struct complete_create_bb {
 	uint32_t job_id;
 	char *node_name;
@@ -551,7 +551,7 @@ typedef struct epilog_complete_msg {
 	uint32_t job_id;
 	uint32_t return_code;
 	char *node_name;
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	uint32_t bb_return_code;
 	uint32_t groups_cnt;
 	uint32_t datasets_cnt;
@@ -884,20 +884,10 @@ typedef struct kill_job_msg {
 	slurm_step_id_t step_id;
 	time_t   time;		/* slurmctld's time of request */
 	char *work_dir;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
-	/* Burst buffer cleanup fields */
-	// char **group_sn;		/* 缓存组SN数组 */
-	// uint32_t group_count;		/* 缓存组数量 */
-	// uint32_t *group_ids;		/* 缓存组ID数组 */
-	// uint32_t *dataset_ids;		/* 数据集ID数组 */
-	// uint32_t *task_ids;		/* 任务ID数组 */
-	// uint32_t dataset_count;		/* 数据集数量 */
-	// char *pfs;			/* 后端存储路径 */
-	// uint32_t pfs_cnt;		/* 加速路径个数 */
-	//char *job_nodes; /* 作业分配的节点. */
-	bool bb_enable_pb; 		 //是否是bb作业
-	bool real_used_bb;		// 最终是否必须要使用bb，受bb_enable_pb参数的影响	
-	uint32_t  bb_status;       //计算节点的burstbuffer是否已经准备好
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	bool bb_enable_pb;       /* Whether it is a Burst Buffer (BB) job */
+    bool real_used_bb;       /* Final determination if BB is mandatory (influenced by bb_enable_pb) */
+    uint32_t bb_status;      /* Status indicating if the compute node's Burst Buffer is ready */
 #endif
 } kill_job_msg_t;
 
@@ -967,28 +957,28 @@ typedef struct prolog_launch_msg {
 #endif
 } prolog_launch_msg_t;
 
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 typedef struct burst_buffer_launch_msg {
-	char *nodes;			/* list of nodes allocated to job */
-	uint32_t job_id;		/* job ID */
-	uint32_t user_id;		/* user the job runs as */	
-	//uint32_t group_id;		/* group submitted under */
-	char **group_sn;       /* 缓存组SN */
-	uint32_t used_groups_cnt; 
-	uint32_t used_datasets_cnt;
-	uint32_t pfs_cnt;
-	uint64_t req_space;		   //当前作业请求的空间
-	uint32_t access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	char     *pfs;             //后端存储路径,可能有多个
-	bool     metadata_acceleration; //是否开启元数据加速
-	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
+    char *nodes;                /* List of nodes allocated to job */
+    uint32_t job_id;            /* Job ID */
+    uint32_t user_id;           /* User the job runs as */  
+    //uint32_t group_id;        /* Group submitted under */
+    char **group_sn;            /* Cache group SN(s) */
+    uint32_t used_groups_cnt; 
+    uint32_t used_datasets_cnt;
+    uint32_t pfs_cnt;
+    uint64_t req_space;         /* Total space requested by the current job */
+    uint32_t access_mode;       /* Storage type (striped/private). 0: Shared, 1: Local */
+    char     *pfs;              /* Backend storage path(s), potentially multiple */
+    bool     metadata_acceleration; /* Whether to enable metadata acceleration */
+    uint32_t max_clients_per_job;   /* Cache group granularity: clients per cache group */
 
-	bool	 bb_enable_pb; //是否开启pb
-	uint32_t bb_status;     //计算节点的burstbuffer是否已经准备好
-	uint32_t flag;       //3:launch_prolog 2:launch_job(job_ptr) 1: srun_allocate
-	time_t   bb_launch_time;	/* When the prolog was launched from the
-					 * controller -- PrologFlags=alloc */
-	uint32_t het_job_id;		/* HetJob id or NO_VAL */
+    bool     bb_enable_pb;      /* Whether to enable PB (Private Buffer/Burst) */
+    uint32_t bb_status;         /* Whether the compute node's Burst Buffer is ready */
+    uint32_t flag;              /* 3: launch_prolog, 2: launch_job(job_ptr), 1: srun_allocate */
+    time_t   bb_launch_time;    /* When the prolog was launched from the
+                                 * controller -- PrologFlags=alloc */
+    uint32_t het_job_id;        /* HetJob ID or NO_VAL */
 } burst_buffer_launch_msg_t;
 #endif
 
@@ -1682,7 +1672,7 @@ extern void slurm_free_complete_batch_script_msg(
 		complete_batch_script_msg_t * msg);
 extern void slurm_free_complete_prolog_msg(
 		complete_prolog_msg_t * msg);
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg);
 extern void slurm_free_complete_create_bb_launch_msg(complete_create_bb_msg_t * msg);
 extern void slurm_free_bb_complete_msg(epilog_complete_msg_t * msg);

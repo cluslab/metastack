@@ -456,10 +456,6 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 
 #ifndef __METASTACK_NEW_BURSTBUFFER
 #define __METASTACK_NEW_BURSTBUFFER
-#define __METASTACK_NEW_BURSTBUFFER1
-#define __METASTACK_NEW_BURSTBUFFER2
-#define __METASTACK_NEW_BURSTBUFFER3
-#define __METASTACK_NEW_BURSTBUFFER4
 #endif
 /*****************************************************************************\
  *	DEFINITIONS FOR INPUT VALUES
@@ -658,7 +654,7 @@ enum job_states {
 #ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
 #define JOB_PROLOG_MAXREQUEUE_HOLD  SLURM_BIT(27) /* Requeue jobs in hold when failed to run prologue for much times */
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 #define JOB_BURSTBUFFER_STAGING  SLURM_BIT(28) /* Job is using burst buffer 2 */
 #define JOB_BURSTBUFFER_STAGE_OUT  SLURM_BIT(29) /* Job is using burst buffer 2 */
 #endif
@@ -1007,9 +1003,6 @@ enum job_state_reason {
 					    * (Unknown) */
 	WAIT_MAX_POWERED_NODES,            /* max_powered_nodes reached */
 	WAIT_MPI_PORTS_BUSY,		   /* MPI resv_ports busy */
-// #ifdef __METASTACK_NEW_BURSTBUFFER2
-// 	WAIT_BB_RESOURCES,
-// #endif
 	REASON_END, /* end of table */
 };
 
@@ -3753,9 +3746,6 @@ typedef struct {
 	uint16_t cache_query; /*High Performance Query Switch*/
 	uint16_t cachedup_abs_realtime; /*Real-time cache data update*/ 
 #endif
-// #ifdef  __METASTACK_NEW_BURSTBUFFER1
-// 	uint16_t bb_msg_timeout;	/* burst buffer message timeout */
-// #endif
 } slurm_conf_t;
 
 typedef struct slurmd_status_msg {
@@ -5787,7 +5777,7 @@ typedef struct {
 	uint64_t size;		/* In bytes by default */
 	uint16_t state;		/* See BB_STATE_* */
 	uint32_t user_id;
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	//uint64_t bb_group_id; //缓存组id
 	uint32_t type; //缓存类型，可以支持持久及临时。temporary|persistent
 	// bool  cache_tmp;
@@ -5861,9 +5851,6 @@ typedef struct {
 	uint32_t used_datasets_cnt;
 	uint32_t free_datasets_cnt;
 	uint32_t max_clients_join;
-	// uint32_t max_node_per_groups;
-	// uint32_t used_node_per_groups;
-	// uint32_t free_node_per_groups;
 	uint32_t max_clients_per_job; //每个作业客户端分组粒度
 
 	char    *para_stor_addr;	/* IP address */

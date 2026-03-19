@@ -546,25 +546,17 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		{"RetryCount", S_P_UINT32},
 		{"MaxGroups", S_P_UINT32},	
 		{"MaxDatasets", S_P_UINT32},	
-		//{"MaxNodePerGroups", S_P_UINT32},	
 		{"MaxGroupsPerClients", S_P_UINT32},
 		{"MaxClientsPerJob", S_P_UINT32},
-
 		{"MaxAccDirsPerJob", S_P_UINT32},
 		{"MaxAccDirLen", S_P_UINT32},
 		{"FileSystemCount", S_P_UINT32},
 		{"FileSystem", S_P_STRING},
 		{"FileSystemMount", S_P_STRING},
-
 		{"ParaStorAddr", S_P_STRING},	
 		{"ParaStorAddrPort", S_P_UINT32},	
 		{"ParaStorUserName", S_P_STRING},
 		{"ParaStorUserPasswd", S_P_STRING},	
-		
-		// {"ParaStorAddr", S_P_STRING},	
-		// {"ParaStorAddrPort", S_P_UINT32},	
-		// {"ParaStorUserName", S_P_STRING},
-		// {"ParaStorUserPasswd", S_P_STRING},	
 		{NULL}
 	};
 
@@ -1117,12 +1109,9 @@ static void _pack_job_alloc(struct bb_alloc *bb_alloc, buf_t *buffer,
 		pack32(bb_alloc->job_id,        buffer);
 		packstr(bb_alloc->name,         buffer);
 		packstr(bb_alloc->partition,    buffer);
-		//packstr(bb_alloc->pool,   	buffer);
-		//packstr(bb_alloc->qos,          buffer);
 		pack64(bb_alloc->size,          buffer);
 		pack16(bb_alloc->state,         buffer);
 		pack32(bb_alloc->user_id,       buffer);
-        ////////////////
 		pack32(bb_alloc->type,          buffer);
 		pack32(bb_alloc->access_mode,   buffer);
 		packbool(bb_alloc->enforce_bb_flag, buffer);
@@ -1618,59 +1607,54 @@ extern bb_alloc_t *bb_alloc_name_rec(bb_state_t *state_ptr, char *name,
 
 	return bb_alloc;
 }
-#ifdef __METASTACK_NEW_BURSTBUFFER	 
+#ifdef __METASTACK_NEW_BURSTBUFFER   
 extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool update)
 {
 
-	//初始化
-	bb_alloc->index_groups			= 0;
-	bb_alloc->index_datasets        = 0;
-	bb_alloc->index_tasks           = 0;
-	bb_alloc->type 					= bb_job->type; //缓存类型，可以支持持久及临时。temporary|persistent
-	//bb_alloc->cache_tmp 			= bb_job->cache_tmp;
-	bb_alloc->enforce_bb_flag 		= bb_job->enforce_bb_flag;
-	bb_alloc->metadata_acceleration = bb_job->metadata_acceleration;
-	bb_alloc->bb_task 				= bb_job->bb_task;     //当前缓存组最大并行的任务数
-	bb_alloc->req_space 			= bb_job->req_space;		//当前作业请求的空间
-	bb_alloc->access_mode 			= bb_job->access_mode;      //存储类型，本地共享
+	/* Initialization */ 
+	bb_alloc->index_groups           = 0;
+	bb_alloc->index_datasets         = 0;
+	bb_alloc->index_tasks            = 0;
+	bb_alloc->type                   = bb_job->type; // Cache type: supports temporary or persistent
+	bb_alloc->enforce_bb_flag        = bb_job->enforce_bb_flag;
+	bb_alloc->metadata_acceleration  = bb_job->metadata_acceleration;
+	bb_alloc->bb_task                = bb_job->bb_task;     // Max concurrent tasks for the current cache group
+	bb_alloc->req_space              = bb_job->req_space;        // Space requested by the current job
+	bb_alloc->access_mode            = bb_job->access_mode;      // Storage type: Local or Shared
 	if (bb_job->pfs) {
-		bb_alloc->pfs = xstrdup(bb_job->pfs);     //后端存储路径,可能有多个
+		bb_alloc->pfs = xstrdup(bb_job->pfs);     // Backend storage path(s), potentially multiple
 	} else {
 		xfree(bb_alloc->pfs);
 		bb_alloc->pfs = NULL;
 	}
 
-	bb_alloc->pfs_cnt		        = bb_job->pfs_cnt;          //后端存储路径个数
-	bb_alloc->state = (uint16_t)bb_job->state;  // 从 bb_job 获取 state
-	bb_alloc->bb_create_finished = bb_job->bb_create_finished; //缓存创建是否完成
+	bb_alloc->pfs_cnt               = bb_job->pfs_cnt;          // Number of backend storage paths
+	bb_alloc->state = (uint16_t)bb_job->state;  // Get state from bb_job
+	bb_alloc->bb_create_finished = bb_job->bb_create_finished; // Whether cache creation is complete
 	if(update) {
-		// xfree(bb_alloc->bb_state);
-		// bb_alloc->bb_state 			 	= xstrdup(bb_job->bb_state);         //缓存组状态，启用，禁用,失败成功
-		bb_alloc->metadata_acceleration = bb_job->metadata_acceleration; //是否开启元数据加速
-	
 
-
-		bb_alloc->groups_nodes 			= bb_job->groups_nodes; //当前缓存组包含的节点数
+		bb_alloc->metadata_acceleration = bb_job->metadata_acceleration; // Whether to enable metadata acceleration
+		bb_alloc->groups_nodes          = bb_job->groups_nodes; // Number of nodes included in the current cache group
 		if (bb_alloc->bb_create_finished) {
 			xfree(bb_alloc->bb_group_ids);
-			if (bb_job->bb_group_ids && bb_job->index_groups > 0) { /* 作业中包含的缓存组id */
-				bb_alloc->index_groups 			= bb_job->index_groups; /* 作业中包含的缓存组个数 */
+			if (bb_job->bb_group_ids && bb_job->index_groups > 0) { /* Cache group IDs included in the job */
+				bb_alloc->index_groups          = bb_job->index_groups; /* Count of cache groups included in the job */
 				bb_alloc->bb_group_ids = xmalloc(sizeof(int) * bb_job->index_groups);
 				memcpy(bb_alloc->bb_group_ids, bb_job->bb_group_ids, sizeof(int) * bb_job->index_groups);
 			} else {
 				bb_alloc->bb_group_ids = NULL;
 			}
 			xfree(bb_alloc->bb_dataset_ids);
-			if (bb_job->bb_dataset_ids && bb_job->index_datasets > 0) { /*  作业中包含的数据集id  */
-				bb_alloc->index_datasets 		= bb_job->index_datasets; /* 作业中包含的数据集个数 */
+			if (bb_job->bb_dataset_ids && bb_job->index_datasets > 0) { /* Dataset IDs included in the job */
+				bb_alloc->index_datasets        = bb_job->index_datasets; /* Count of datasets included in the job */
 				bb_alloc->bb_dataset_ids = xmalloc(sizeof(int) * bb_job->index_datasets);
 				memcpy(bb_alloc->bb_dataset_ids, bb_job->bb_dataset_ids, sizeof(int) * bb_job->index_datasets);
 			} else {
 				bb_alloc->bb_dataset_ids = NULL;
 			}
 			xfree(bb_alloc->bb_task_ids);
-			if (bb_job->bb_task_ids && bb_job->index_tasks > 0) { /* 作业中包含的任务id */
-				bb_alloc->index_tasks			= bb_job->index_tasks; /* 作业中包含的任务个数 */
+			if (bb_job->bb_task_ids && bb_job->index_tasks > 0) { /* Task IDs included in the job */
+				bb_alloc->index_tasks           = bb_job->index_tasks; /* Count of tasks included in the job */
 				bb_alloc->bb_task_ids = xmalloc(sizeof(int) * bb_job->index_tasks);
 				memcpy(bb_alloc->bb_task_ids, bb_job->bb_task_ids, sizeof(int) * bb_job->index_tasks);
 			} else {
@@ -1681,7 +1665,7 @@ extern void alter_bb_alloc_job_rec(bb_alloc_t *bb_alloc, bb_job_t *bb_job, bool 
 
 	}
 }
-#endif 
+#endif
 
 /* Allocate a per-job burst buffer record for a specific job.
  * Return a pointer to that record.

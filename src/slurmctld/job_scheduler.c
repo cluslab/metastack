@@ -2988,7 +2988,7 @@ skip_start:
 #endif
 			continue;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		} else if (error_code == ESLURM_BURST_BUFFER_WAIT || error_code == ESLURM_BB_RESOURCE_LIMIT) {
 #else
 		} else if (error_code == ESLURM_BURST_BUFFER_WAIT) {
@@ -3092,7 +3092,7 @@ skip_start:
 				   job_ptr, job_ptr->nodes,
 				   job_ptr->total_cpus,
 				   job_ptr->part_ptr->name);
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 			if(!IS_JOB_STAGING(job_ptr)) {
 				if (job_ptr->batch_flag == 0)
 					srun_allocate(job_ptr);
@@ -4116,7 +4116,7 @@ static void _set_het_job_env(job_record_t *het_job_leader,
 		;
 	launch_msg_ptr->envc = i;
 }
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 {
 	
@@ -6269,7 +6269,7 @@ extern void prolog_running_decr(job_record_t *job_ptr)
 		info("%s: Configuration for %pJ is complete",
 		     __func__, job_ptr);
 		job_config_fini(job_ptr);
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		if(!(IS_JOB_STAGING(job_ptr))) {
 			if (job_ptr->batch_flag && 
 				(IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr))) {

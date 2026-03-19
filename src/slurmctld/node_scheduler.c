@@ -2784,7 +2784,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			bool submission, uint32_t scheduler_type, bool sched, int index)
 #endif	
 {
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	int return_code   = SLURM_SUCCESS;
 	bool is_create_bb = false;
 #endif
@@ -3243,7 +3243,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	tmp_job = job_array_post_sched(job_ptr);
 	if (tmp_job && (tmp_job != job_ptr) && (orig_resv_port_cnt == NO_VAL16))
 		tmp_job->resv_port_cnt = orig_resv_port_cnt;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	return_code = bb_g_job_begin(job_ptr);
 	if(job_ptr->bb_enable_pb) {
 		is_create_bb = true;
@@ -3430,7 +3430,7 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 	}
 #endif
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	/*
 	 * Request asynchronous launch of a prolog for a
 	 * non-batch job as long as the node is not configuring for

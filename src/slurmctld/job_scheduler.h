@@ -177,7 +177,7 @@ extern bool job_is_completing(bitstr_t *eff_cg_bitmap);
 extern int job_start_data(job_record_t *job_ptr,
 			  will_run_response_msg_t **resp);
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 /* 
  * After node allocation, slurmctld requests slurmd to create the corresponding
  * cache group.

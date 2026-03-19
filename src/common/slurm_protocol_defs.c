@@ -1711,7 +1711,7 @@ extern void slurm_free_dep_update_origin_msg(dep_update_origin_msg_t *msg)
 	}
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 extern void slurm_free_create_bb_launch_msg(burst_buffer_launch_msg_t * msg)
 {
 	if (msg) {
@@ -2206,19 +2206,6 @@ extern void slurm_free_kill_job_msg(kill_job_msg_t * msg)
 			xfree(msg->spank_job_env);
 		}
 		xfree(msg->work_dir);
-#ifdef __METASTACK_NEW_BURSTBUFFER4
-		/* Free burst buffer cleanup fields */
-		// if (msg->group_sn) {
-		// 	for (i = 0; i < msg->group_count; i++)
-		// 		xfree(msg->group_sn[i]);
-		// 	xfree(msg->group_sn);
-		// }
-		// xfree(msg->group_ids);
-		// xfree(msg->dataset_ids);
-		// xfree(msg->task_ids);
-		// xfree(msg->pfs);
-		// xfree(msg->job_nodes);
-#endif
 		xfree(msg);
 	}
 }
@@ -2365,7 +2352,7 @@ extern void slurm_free_epilog_complete_msg(epilog_complete_msg_t * msg)
 	}
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 extern void slurm_free_bb_complete_msg(epilog_complete_msg_t * msg)
 {
 	if (msg) {
@@ -2776,7 +2763,7 @@ extern char *job_state_string(uint32_t inx)
 		return "STAGE_OUT";
 	if (inx & JOB_CONFIGURING)
 		return "CONFIGURING";
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (inx & JOB_BURSTBUFFER_STAGING)
 		return "STAGE_IN";
 	if (inx & JOB_BURSTBUFFER_STAGE_OUT)
@@ -2835,7 +2822,7 @@ extern char *job_state_string(uint32_t inx)
 extern char *job_state_string_compact(uint32_t inx)
 {
 	/* Process JOB_STATE_FLAGS */
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (inx & JOB_BURSTBUFFER_STAGE_OUT && (inx & JOB_COMPLETING))
 		return "SO_CG";
 #endif
@@ -2843,7 +2830,7 @@ extern char *job_state_string_compact(uint32_t inx)
 		return "CG";
 	if (inx & JOB_STAGE_OUT)
 		return "SO";
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if ((inx & JOB_BURSTBUFFER_STAGING) && !(inx & JOB_CONFIGURING))
 		return "SI_BB";
 #endif
@@ -2959,7 +2946,7 @@ extern char *job_state_string_complete(uint32_t state)
 		xstrcat(state_str, ",LAUNCH_FAILED");
 	if (state & JOB_UPDATE_DB)
 		xstrcat(state_str, ",UPDATE_DB");
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (state & JOB_BURSTBUFFER_STAGE_OUT)
 		xstrcat(state_str, ",STAGE_OUT");
 #endif
@@ -2967,7 +2954,7 @@ extern char *job_state_string_complete(uint32_t state)
 		xstrcat(state_str, ",COMPLETING");
 	if (state & JOB_CONFIGURING)
 		xstrcat(state_str, ",CONFIGURING");
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (state & JOB_BURSTBUFFER_STAGING)
 		xstrcat(state_str, ",STAGING");
 #endif
@@ -3020,7 +3007,7 @@ extern uint32_t job_state_num(const char *state_name)
 		return JOB_COMPLETING;
 	if (_job_name_test(JOB_CONFIGURING, state_name))
 		return JOB_CONFIGURING;
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (_job_name_test(JOB_BURSTBUFFER_STAGE_OUT, state_name))
 		return JOB_BURSTBUFFER_STAGE_OUT;
 	if (_job_name_test(JOB_BURSTBUFFER_STAGING, state_name))
@@ -5229,7 +5216,7 @@ extern int slurm_free_msg_data(slurm_msg_type_t type, void *data)
 	case REQUEST_LAUNCH_PROLOG:
 		slurm_free_prolog_launch_msg(data);
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		slurm_free_create_bb_launch_msg(data);
 		break;
@@ -5679,7 +5666,7 @@ extern uint32_t slurm_get_return_code(slurm_msg_type_t type, void *data)
 	case MESSAGE_EPILOG_COMPLETE:
 		rc = ((epilog_complete_msg_t *)data)->return_code;
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	case REQUEST_COMPLETE_TERMINATE_BB:
 		rc = ((epilog_complete_msg_t *)data)->bb_return_code;
 		break;
@@ -6653,7 +6640,7 @@ extern void purge_agent_args(agent_arg_t *agent_arg_ptr)
 			xfree(agent_arg_ptr->msg_args);
 		}
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		else if (agent_arg_ptr->msg_type == REQUEST_CREATE_BB_JOB_LAUNCH)
 			slurm_free_create_bb_launch_msg(agent_arg_ptr->msg_args);
 #endif

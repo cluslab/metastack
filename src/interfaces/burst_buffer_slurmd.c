@@ -324,20 +324,3 @@ extern int bb_g_cancel_bb_task_by_id(uint32_t task_id)
 	END_TIMER2(__func__);
 	return rc;
 }
-
-// #ifdef __METASTACK_NEW_BURSTBUFFER9
-// extern int bb_g_release_resources(char *groups_sn) 
-// {
-// 	DEF_TIMERS;
-// 	START_TIMER;
-// 	int rc = 0;
-// 	xassert(g_context_cnt >= 0);
-// 	//slurm_mutex_lock(&g_context_lock);
-// 	for (int i = 0; i < g_context_cnt; i++) {
-// 		rc = (*(ops[i].bb_p_release_resources))(groups_sn);
-// 	}
-// 	//slurm_mutex_unlock(&g_context_lock);
-// 	END_TIMER2(__func__);
-// 	return rc;	
-// }
-// #endif

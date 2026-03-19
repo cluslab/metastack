@@ -66,15 +66,6 @@ extern "C" {
 
 #ifndef __METASTACK_NEW_BURSTBUFFER
 #define __METASTACK_NEW_BURSTBUFFER
-#define __METASTACK_NEW_BURSTBUFFER1
-#define __METASTACK_NEW_BURSTBUFFER2
-#define __METASTACK_NEW_BURSTBUFFER3
-#define __METASTACK_NEW_BURSTBUFFER4 //epilog
-#define __METASTACK_NEW_BURSTBUFFER5 //rongcuo
-#define __METASTACK_NEW_BURSTBUFFER6 //新线程处理
-#define __METASTACK_NEW_BURSTBUFFER7 //spool
-// #define __METASTACK_NEW_BURSTBUFFER8 //状态标志位调整
-// #define __METASTACK_NEW_BURSTBUFFER9 //删除残留资源
 #endif
 
 /* set errno to the specified value - then return -1 */
@@ -430,17 +421,16 @@ typedef enum {
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	ESLURM_BB_RESOURCE_LIMIT = 20000,
-    ESLURM_BB_STATE_INIT = 20001,       // 初始状态：还未进行创建/预热操作
-    ESLURM_BB_STATE_READY,              // 成功状态：创建缓存组、数据集、预热操作成功
-    ESLURM_BB_ERR_TIMEOUT,              // 异常状态：API 调用超时失败
-    ESLURM_BB_ERR_INTERFACE,            // 异常状态：API 接口调用错误
-    ESLURM_BB_STATE_CLEANUP,      	    // 作业已经清理完成BB资源
-	ESLURM_BB_RESOURCE_SI_CANCEL, 	    // 创建过程中成功取消
-	ELSURM_BB_RESOURCE_UNKNOW,  	    // 无法明确BB资源状态的作业（节点失联的作业，查询不到资源状态的作业）
-	ESLURM_BB_STATE_PENDING_MANUAL,     // 创建/清理BB失败，需要手动处理
-	ELSURM_BB_STATE_BATCH_START_TIMEOUT, //触发BatchStartTimeout超时
-	
-#endif
+    ESLURM_BB_STATE_INIT = 20001,      // 初始状态：还未进行创建/预热操作
+    ESLURM_BB_STATE_READY,             // 成功状态：创建缓存组、数据集、预热操作成功
+    ESLURM_BB_ERR_TIMEOUT,             // 异常状态：API 调用超时失败
+    ESLURM_BB_ERR_INTERFACE,           // 异常状态：API 接口调用错误
+    ESLURM_BB_STATE_CLEANUP,      	   // 作业已经清理完成BB资源
+	ESLURM_BB_RESOURCE_SI_CANCEL, 	   // 创建过程中成功取消
+	ELSURM_BB_RESOURCE_UNKNOW,  	   // 无法明确BB资源状态的作业（节点失联的作业，查询不到资源状态的作业）
+	//ESLURM_BB_RESOURCE_SI_FAIL,      // SI 阶段失败 
+	ESLURM_BB_STATE_PENDING_MANUAL,    // 创建/清理BB失败，需要手动处理
+	#endif
 } slurm_err_t;
 
 /* Type for error string table entries */
