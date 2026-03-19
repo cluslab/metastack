@@ -251,7 +251,7 @@ extern void job_record_delete(void *job_entry)
 	xfree(job_ptr->batch_features);
 	xfree(job_ptr->batch_host);
 	xfree(job_ptr->burst_buffer);
-#ifdef  __METASTACK_NEW_BURSTBUFFER3
+#ifdef  __METASTACK_NEW_BURSTBUFFER
 	xfree(job_ptr->pfs);	
 	if (job_ptr->group_sn && job_ptr->need_group_counts > 0) {
 		for (uint32_t i = 0; i < job_ptr->need_group_counts; i++) {
@@ -748,7 +748,7 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 		return 0;
 
 #ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER
 		/* Dump basic job info */
 		pack32(dump_job_ptr->array_job_id, buffer);
 		pack32(dump_job_ptr->array_task_id, buffer);
@@ -948,7 +948,7 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 #ifdef __METASTACK_NEW_TIME_PREDICT
 		pack16(dump_job_ptr->predict_job, buffer);
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		packbool(dump_job_ptr->bb_enable_pb,  		   buffer);
 		if(dump_job_ptr->bb_enable_pb){
 			// packstr(dump_job_ptr->burst_buffer2, buffer);
@@ -2700,7 +2700,7 @@ extern int job_record_unpack(job_record_t **out,
 	*out = job_ptr;
 
 #ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER2
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER
 		safe_unpack32(&job_ptr->array_job_id, buffer);
 		safe_unpack32(&job_ptr->array_task_id, buffer);
 
@@ -2940,7 +2940,7 @@ extern int job_record_unpack(job_record_t **out,
 #ifdef __METASTACK_NEW_TIME_PREDICT
 		safe_unpack16(&job_ptr->predict_job, buffer);
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	safe_unpackbool(&job_ptr->bb_enable_pb,			 buffer);
 	if(job_ptr->bb_enable_pb) {
 		safe_unpack32(&job_ptr->need_group_counts, 	  	 buffer);
@@ -2966,21 +2966,13 @@ extern int job_record_unpack(job_record_t **out,
 				if (unpack32_array(&job_ptr->group_ids, &tmp_count, buffer) != SLURM_SUCCESS)
 					goto unpack_error;
 			}
-
-			// if (tmp_count != job_ptr->need_group_counts)
-			// 	goto unpack_error;
 			if(job_ptr->need_database_counts) {
 				if (unpack32_array(&job_ptr->dataset_ids, &tmp_count, buffer) != SLURM_SUCCESS)
 					goto unpack_error;
-				// if (tmp_count != job_ptr->need_database_counts)
-				// 	goto unpack_error;
 				if (unpack32_array(&job_ptr->task_ids, &tmp_count, buffer) != SLURM_SUCCESS)
 					goto unpack_error;
-				// if (tmp_count != job_ptr->need_database_counts)
-				// 	goto unpack_error;
 			}
 		}
-		//safe_unpackbool(&job_ptr->bb_clean_finish,			 buffer);
 		safe_unpackbool(&job_ptr->bb_kill_flag,			 buffer);
 	}
 #endif

@@ -3816,7 +3816,7 @@ _pack_kill_job_msg(kill_job_msg_t *msg, buf_t *buffer, uint16_t protocol_version
 		pack_time(msg->start_time, buffer);
 		pack_time(msg->time, buffer);
 		packstr(msg->work_dir, buffer);
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		/* Pack burst buffer cleanup fields */
 		packbool(msg->bb_enable_pb, buffer);
 		packbool(msg->real_used_bb, buffer);
@@ -3910,7 +3910,7 @@ _unpack_kill_job_msg(kill_job_msg_t ** msg, buf_t *buffer,
 		safe_unpack_time(&tmp_ptr->start_time, buffer);
 		safe_unpack_time(&tmp_ptr->time, buffer);
 		safe_unpackstr(&tmp_ptr->work_dir, buffer);
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		/* Unpack burst buffer cleanup fields */
 		safe_unpackbool(&tmp_ptr->bb_enable_pb, buffer);
 		safe_unpackbool(&tmp_ptr->real_used_bb,    buffer);
@@ -3986,7 +3986,7 @@ unpack_error:
 }
 
 
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static void _pack_bb_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
 		      uint16_t protocol_version)
 {
@@ -4074,7 +4074,7 @@ _pack_epilog_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
 		pack32((uint32_t)msg->job_id, buffer);
 		pack32((uint32_t)msg->return_code, buffer);
 		packstr(msg->node_name, buffer);
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		pack32(msg->bb_return_code, buffer);
 		pack32(msg->groups_cnt, buffer);
 		pack32(msg->datasets_cnt, buffer);
@@ -4116,7 +4116,7 @@ _unpack_epilog_comp_msg(epilog_complete_msg_t ** msg, buf_t *buffer,
 		safe_unpack32(&(tmp_ptr->job_id), buffer);
 		safe_unpack32(&(tmp_ptr->return_code), buffer);
 		safe_unpackstr(&(tmp_ptr->node_name), buffer);
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		safe_unpack32(&(tmp_ptr->bb_return_code), buffer);
 		safe_unpack32(&tmp_ptr->groups_cnt, buffer);
 		safe_unpack32(&tmp_ptr->datasets_cnt, buffer);
@@ -16116,7 +16116,7 @@ unpack_error:
 	return SLURM_ERROR;
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *buffer,
 	uint16_t protocol_version)
 {
@@ -16224,19 +16224,6 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		packstr(msg->apptype, buffer);
 #endif
-// #ifdef  __METASTACK_NEW_BURSTBUFFER2
-// 		packbool(msg->bb_enable_pb, buffer);
-// 		if(msg->bb_enable_pb) {
-// 			pack32(msg->used_groups_cnt,             buffer);
-// 			pack32(msg->used_datasets_cnt,          buffer);
-// 			pack64(msg->req_space,               buffer);
-// 			pack32(msg->access_mode,             buffer);
-// 			packstr(msg->pfs,                    buffer);
-// 			packbool(msg->metadata_acceleration, buffer);
-// 			pack32(msg->max_clients_per_job,     buffer);
-// 			packbool(msg->bb_enable_pb,          buffer);
-// 		}
-// #endif
 	} else if (smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		gres_prep_pack(msg->job_gres_prep, buffer,
 				smsg->protocol_version);
@@ -16405,7 +16392,7 @@ static void _pack_prolog_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 #endif
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_ptr,
 	buf_t *buffer, uint16_t protocol_version)
 {
@@ -16535,18 +16522,6 @@ static int _unpack_prolog_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		safe_unpackstr(&msg->apptype, buffer);
 #endif
-// #ifdef  __METASTACK_NEW_BURSTBUFFER1
-// 		safe_unpackbool(&msg->bb_enable_pb, buffer); 
-// 		if(msg->bb_enable_pb) {
-// 			safe_unpack32(&msg->used_groups_cnt,				buffer);
-// 			safe_unpack32(&msg->used_datasets_cnt,				buffer);
-// 			safe_unpack64(&msg->req_space,					buffer);
-// 			safe_unpack32(&msg->access_mode, 				buffer);
-// 			safe_unpackstr(&msg->pfs, 						buffer);
-// 			safe_unpackbool(&msg->metadata_acceleration,	buffer);
-// 			safe_unpack32(&msg->max_clients_per_job, 		buffer);
-// 		}
-// #endif
 	} else if(smsg->protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		if (gres_prep_unpack(&msg->job_gres_prep, buffer,
 			smsg->protocol_version))
@@ -21976,7 +21951,7 @@ pack_msg(slurm_msg_t const *msg, buf_t *buffer)
 	case REQUEST_LAUNCH_PROLOG:
 		_pack_prolog_launch_msg(msg, buffer);
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		_pack_create_bb_launch_msg(msg, buffer);
 		break;
@@ -22723,7 +22698,7 @@ unpack_msg(slurm_msg_t * msg, buf_t *buffer)
 	case REQUEST_LAUNCH_PROLOG:
 		rc = _unpack_prolog_launch_msg(msg, buffer);
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		rc = _unpack_create_bb_launch_msg(msg, buffer);
 		break;

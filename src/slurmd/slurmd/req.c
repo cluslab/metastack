@@ -113,7 +113,7 @@
 #include "src/slurmd/slurmd/get_mach_stat.h"
 #include "src/slurmd/slurmd/slurmd.h"
 
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 #include "src/interfaces/burst_buffer_slurmd.h"
 // #define BB_JOB_MEM_ALLOC 0
 // #define BB_JOB_GROUPS_CREATED    1
@@ -222,7 +222,7 @@ static int  _step_limits_match(void *x, void *key);
 static void _rpc_launch_tasks(slurm_msg_t *);
 static void _rpc_abort_job(slurm_msg_t *);
 static void _rpc_batch_job(slurm_msg_t *msg);
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static void _rpc_create_bb(slurm_msg_t *msg);
 static int _rpc_clean_bb(kill_job_msg_t *req);
 #endif
@@ -285,7 +285,7 @@ static void _wait_for_job_running_prolog(uint32_t job_id);
 static int _wait_for_request_launch_prolog(uint32_t job_id,
 					    bool *first_job_run);
 static bool _requeue_setup_env_fail(void);
-#ifdef __METASTACK_NEW_BURSTBUFFER7
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static int _submit_bb_task(uint32_t dataset_count, BB_TASK_TYPE task_type, uint32_t *dataset_ids, uint32_t *task_ids);
 static int _wait_bb_task_complete(uint32_t *task_ids, BB_TASK_TYPE task_type, uint32_t task_count);
 static int _delete_bb_dataset_by_groupid_path(uint32_t group_count, uint32_t *group_ids, uint32_t pfs_count, char **pfs_array, uint32_t *dataset_ids);
@@ -404,7 +404,7 @@ typedef enum {
 	RELAY_AUTH_PRIVATE_DATA
 } relay_auth_type_t;
 
-#ifdef __METASTACK_NEW_BURSTBUFFER7
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static void bb_drain_node(char *reason)
 {
 	update_node_msg_t update_node_msg;
@@ -604,7 +604,7 @@ static int bb_job_record_pack(bb_job_msg_t* bb_job_ptr, buf_t *buffer, uint16_t 
 	}
 	//bb_jobs_start = get_buf_offset(buffer);
 	#ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER7
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER
 		pack32(bb_job_ptr->job_id,         buffer);
 		pack64(bb_job_ptr->req_space,      buffer);
 		pack32(bb_job_ptr->access_mode,    buffer);
@@ -1001,7 +1001,7 @@ slurmd_req(slurm_msg_t *msg)
 			slurm_mutex_unlock(&job_list_mutex);
 		}
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER7
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	slurm_mutex_lock(&bb_job_list_mutex);
 	bb_restore_state();
 	slurm_mutex_unlock(&bb_job_list_mutex);
@@ -1028,7 +1028,7 @@ slurmd_req(slurm_msg_t *msg)
 		_rpc_prolog(msg);
 		last_slurmctld_msg = time(NULL);
 		break;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	case REQUEST_CREATE_BB_JOB_LAUNCH:
 		_rpc_create_bb(msg);
 		last_slurmctld_msg = time(NULL);
@@ -3132,7 +3132,7 @@ static void _notify_result_rpc_prolog(prolog_launch_msg_t *req, int rc)
 		}
 	}
 }
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static int _notify_slurmctld_create_bb_fini(bb_return_message_t *bb_rc_msg)
 {
 int rc, ret_c;
@@ -7129,7 +7129,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 	kill_job_msg_t *req    = msg->data;
 	int             nsteps = 0;
 	int		delay;
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	int bb_rc = SLURM_SUCCESS;
 #endif
 
@@ -7184,7 +7184,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 		debug("credential for job %u revoked", req->step_id.job_id);
 	}
 
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (req->bb_enable_pb && req->real_used_bb) {
 		//slurm_mutex_lock(&bb_job_list_mutex);
 		if ((clean_bb_job_process(req->step_id.job_id) == -1) || (req->bb_status == ESLURM_BB_STATE_READY))
@@ -7294,7 +7294,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 		 * could remain "completing" unnecessarily, until the request
 		 * to terminate is resent.
 		 */
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		if (msg->conn_fd < 0) {
 			/* The epilog complete message processing on
 			 * slurmctld is equivalent to that of a
@@ -7399,7 +7399,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 done:
 	_wait_state_completed(req->step_id.job_id, 5);
 	_waiter_complete(req->step_id.job_id);
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (!(slurm_conf.prolog_flags & PROLOG_FLAG_RUN_IN_JOB)) {
 		epilog_complete(req->step_id.job_id, req->nodes, rc, bb_rc);
 	} else {

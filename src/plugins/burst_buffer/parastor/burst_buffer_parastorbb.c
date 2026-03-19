@@ -2387,7 +2387,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	// pre_run_bb_args_t *pre_run_args;
 	uint32_t bb_node_cnt = 0;
 	int ret = SLURM_SUCCESS;
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	int i = 0 ;
 	bb_alloc_t *bb_alloc = NULL;
 #endif
@@ -2457,7 +2457,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	//job_ptr->req_space                 = bb_job->req_space;
 	//job_ptr->access_mode 	   		   = bb_job->access_mode;
 	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
-#ifdef __METASTACK_NEW_BURSTBUFFER3
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	job_ptr->pfs_cnt				= bb_job->pfs_cnt;
 	job_ptr->group_sn 				= xmalloc(job_ptr->need_group_counts * sizeof(char *));
 	for (i = 0; i < job_ptr->need_group_counts; i++) {
@@ -2834,7 +2834,7 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 		goto cleanup;
 	}
 
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (!(job_ptr->bb_status == ESLURM_BB_STATE_READY) && job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 	}

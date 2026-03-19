@@ -41,7 +41,7 @@
 
 #include "src/slurmd/common/slurmd_common.h"
 #include "src/slurmd/slurmd/slurmd.h"
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
+#ifdef  __METASTACK_NEW_BURSTBUFFER
 #include "src/interfaces/burst_buffer_slurmd.h"
 #endif
 
@@ -54,7 +54,7 @@ typedef struct {
 	pthread_mutex_t *timer_mutex;
 } timer_struct_t;
 
-#ifdef  __METASTACK_NEW_BURSTBUFFER1
+#ifdef  __METASTACK_NEW_BURSTBUFFER
 typedef struct {
 	uint32_t job_id;
 	uint16_t bb_msg_timeout;
@@ -142,7 +142,7 @@ fini:
 }
 
 
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 extern int _notify_slurmctld_clean_bb_fini(bb_return_message_t *bb_rc_msg)
 {
 	slurm_msg_t msg;

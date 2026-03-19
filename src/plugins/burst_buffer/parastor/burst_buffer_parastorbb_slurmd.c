@@ -692,7 +692,7 @@ extern int bb_p_cancel_bb_task_by_id(uint32_t task_id)
 	return rc;
 }
 
-// #ifdef __METASTACK_NEW_BURSTBUFFER9
+// #ifdef __METASTACK_NEW_BURSTBUFFER
 // extern int bb_p_release_resources(char *groups_sn)
 // {
 // 	int rc = SLURM_ERROR;

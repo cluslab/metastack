@@ -705,7 +705,7 @@ static int _add_job_record(job_record_t *job_ptr, int num_jobs)
 	job_count += num_jobs;
 	last_job_update = time(NULL);
 	list_append(job_list, job_ptr);
-// #ifdef __METASTACK_NEW_BURSTBUFFER7
+// #ifdef __METASTACK_NEW_BURSTBUFFER
 // 	if(bb_job_error_list && (job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL 
 // 								|| job_ptr->bb_status == ELSURM_BB_RESOURCE_UNKNOW)) {
 // 		bb_job_error_msg_t *bb_job_error     = NULL;
@@ -3228,7 +3228,7 @@ extern int kill_running_job_by_node_name(char *node_name)
 				job_completion_logger(job_ptr, false);
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 				//设置BB状态
 				job_ptr->bb_status = ELSURM_BB_RESOURCE_UNKNOW;//BB资源需要删除校验，
 #endif
@@ -3519,7 +3519,7 @@ void init_job_conf(void)
 		cache_job_list = list_create(_move_to_purge_cache_jobs_list);
 	}
 #endif
-// #ifdef __METASTACK_NEW_BURSTBUFFER6
+// #ifdef __METASTACK_NEW_BURSTBUFFER
 // 	if (bb_job_error_list == NULL) {
 // 		bb_job_error_list = list_create(_bb_job_error_list_delete);
 // 	}
@@ -4233,7 +4233,7 @@ static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
 		job_ptr->state_reason = WAIT_QOS_THRES;
 	else if (rc == ESLURM_REQUESTED_PART_CONFIG_UNAVAILABLE)
 		job_ptr->state_reason = WAIT_PART_CONFIG;
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	else if (rc == ESLURM_BURST_BUFFER_WAIT || rc == ESLURM_BB_RESOURCE_LIMIT )
 		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;	
 #else
@@ -5286,7 +5286,7 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		job_ptr->bit_flags |= JOB_KILL_HURRY;
 		return bb_g_job_cancel(job_ptr);
 	}
-#ifdef __METASTACK_NEW_BURSTBUFFER7
+#ifdef __METASTACK_NEW_BURSTBUFFER
      /* 针对异常作业通过scancel -H 将异常作业删除后，应该从链表bb_job_error_list中删除 */
 	if(job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
@@ -9417,7 +9417,7 @@ static void _het_job_time_limit_incr(job_record_t *job_ptr,
 	list_iterator_destroy(iter);
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 /* Clear job's SI flag and advance end time as needed */
 extern void job_create_fini(job_record_t *job_ptr) {
 	time_t now = time(NULL);
@@ -9460,7 +9460,7 @@ extern void job_config_fini(job_record_t *job_ptr)
 	 * Request asynchronous launch of a prolog for a non-batch job.
 	 * PROLOG_FLAG_CONTAIN also turns on PROLOG_FLAG_ALLOC.
 	 */
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (slurm_conf.prolog_flags & PROLOG_FLAG_ALLOC) {
 		if(IS_JOB_STAGING(job_ptr)){
 			uint32_t launch_flag = 3;
@@ -9610,7 +9610,7 @@ void job_time_limit(void)
 		    test_job_nodes_ready(job_ptr)) {
 			info("%s: Configuration for %pJ complete",
 			     __func__, job_ptr);
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 			job_config_fini(job_ptr);
 			if(!IS_JOB_STAGING(job_ptr)) {
 				if (job_ptr->batch_flag)
@@ -9630,7 +9630,7 @@ void job_time_limit(void)
 #endif
 		}
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		if((job_ptr->bb_status == ESLURM_BB_STATE_READY) && !(job_ptr->bb_kill_flag)) {
 			log_flag(BURST_BUF, "JobId=%u has created burstbuffer job", job_ptr->job_id);
 			if(IS_JOB_STAGING(job_ptr)){
@@ -16770,7 +16770,7 @@ extern kill_job_msg_t *create_kill_job_msg(job_record_t *job_ptr,
 	msg->time = time(NULL);
 	msg->work_dir = xstrdup(job_ptr->details->work_dir);
 
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	/* Copy burst buffer cleanup fields */
 	msg->bb_enable_pb = job_ptr->bb_enable_pb;
 	msg->real_used_bb = job_ptr->real_used_bb;
@@ -18031,7 +18031,7 @@ void batch_requeue_fini(job_record_t *job_ptr)
 /* job_fini - free all memory associated with job records */
 void job_fini (void)
 {
-// #ifdef __METASTACK_NEW_BURSTBUFFER6
+// #ifdef __METASTACK_NEW_BURSTBUFFER
 // 	FREE_NULL_LIST(bb_job_error_list);
 // #endif
 
@@ -18141,7 +18141,7 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 	acct_policy_remove_job_submit(job_ptr, false);
 	if (job_ptr->nodes && ((job_ptr->bit_flags & JOB_KILL_HURRY) == 0)
 		&& !IS_JOB_RESIZING(job_ptr)) {
-#ifdef __METASTACK_NEW_BURSTBUFFER4 
+#ifdef __METASTACK_NEW_BURSTBUFFER 
 		if (!job_ptr->bb_enable_pb) {
 			(void)bb_g_job_start_stage_out(job_ptr);
 		}else if (job_ptr->bb_status == ELSURM_BB_STATE_BATCH_START_TIMEOUT) {
@@ -18174,7 +18174,7 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 		/* Remove configuring state just to make sure it isn't there
 		 * since it will throw off displays of the job. */
 		job_state_unset_flag(job_ptr, JOB_CONFIGURING);
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
 #endif
 		/* make sure all parts of the job are notified

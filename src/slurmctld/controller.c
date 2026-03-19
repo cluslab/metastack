@@ -302,7 +302,7 @@ static void _usage(void);
 static bool         _verify_clustername(void);
 static bool         _wait_for_server_thread(void);
 static void *       _wait_primary_prog(void *arg);
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 // static void *slurmctld_bb_exception_handler(void *no_data);
 #endif
 
@@ -745,7 +745,7 @@ int main(int argc, char **argv)
 		slurm_thread_create(&slurmctld_config.thread_id_copy,
 					slurmctld_state_copy, NULL);
 #endif
-// #ifdef __METASTACK_NEW_BURSTBUFFER6
+// #ifdef __METASTACK_NEW_BURSTBUFFER
 // 		debug("print bb type = %s  slurm_conf.bb_type = %s",bb_tmp,  slurm_conf.bb_type);
 // 		if (!xstrcmp(bb_tmp, slurm_conf.bb_type)) {
 // 			slurm_thread_create(&slurmctld_config.thread_id_bb_error,
@@ -808,7 +808,7 @@ int main(int argc, char **argv)
 		slurm_thread_join(slurmctld_config.thread_id_query);
 		slurm_thread_join(slurmctld_config.thread_id_copy);
 #endif		
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		slurm_thread_join(slurmctld_config.thread_id_bb_error);
 #endif
 		slurm_mutex_lock(&slurmctld_config.acct_update_lock);

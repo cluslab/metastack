@@ -126,7 +126,7 @@
 #include "src/slurmd/slurmd/req.h"
 #include "src/slurmd/slurmd/slurmd.h"
 
-#ifdef __METASTACK_NEW_BURSTBUFFER3
+#ifdef __METASTACK_NEW_BURSTBUFFER
 #include "src/interfaces/burst_buffer.h"	
 #endif
 decl_static_data(usage_txt);
@@ -356,7 +356,7 @@ main (int argc, char **argv)
 	}
 
 	cred_state_init();
-#ifdef __METASTACK_NEW_BURSTBUFFER3
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	if (bb_g_init() != SLURM_SUCCESS)
 		fatal("Unable to initialize burst_buffer.conf");	
 #endif
@@ -1350,7 +1350,7 @@ static void _try_to_reconfig(void)
 	conmgr_quiesce(true);
 
 	save_cred_state();
-#ifdef __METASTACK_NEW_BURSTBUFFER7
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	bb_state_fini();
 #endif
 	if (getrlimit(RLIMIT_NOFILE, &rlim) < 0) {
@@ -2386,7 +2386,7 @@ _slurmd_fini(void)
 	jobacct_gather_fini();
 	acct_gather_profile_fini();
 	cred_state_fini();
-#ifdef __METASTACK_NEW_BURSTBUFFER7
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	bb_state_fini();
 #endif
 	switch_g_fini();

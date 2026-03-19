@@ -154,7 +154,7 @@ extern int             persist_acct_update_count;
 extern pthread_mutex_t persist_count_lock;
 extern pthread_cond_t  persist_count_cond;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 static void _drain_nodes_of_failed_bb(job_record_t *job_ptr);
 #endif
 typedef struct {
@@ -447,7 +447,7 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->mpi_default         = xstrdup(conf->mpi_default);
 	conf_ptr->mpi_params          = xstrdup(conf->mpi_params);
 	conf_ptr->msg_timeout         = conf->msg_timeout;
-// #ifdef  __METASTACK_NEW_BURSTBUFFER1
+// #ifdef  __METASTACK_NEW_BURSTBUFFER
 // 	conf_ptr->bb_msg_timeout      = conf->bb_msg_timeout;
 // #endif
 
@@ -2398,7 +2398,7 @@ static void _slurm_rpc_dump_partitions(slurm_msg_t *msg)
 	}
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 
 /**
  * @brief 根据job_ptr中的group_ids中数值（group_ids[i]为被作业占用），drain掉被占用节点
@@ -2593,7 +2593,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		}
 		return;
 	}
-#ifdef __METASTACK_NEW_BURSTBUFFER4	
+#ifdef __METASTACK_NEW_BURSTBUFFER	
 	xassert(job_ptr->group_ids && job_ptr->dataset_ids && job_ptr->task_ids);
 	bb_status = epilog_msg->bb_return_code;
 
@@ -2757,7 +2757,7 @@ static void _slurm_rpc_complete_job_allocation(slurm_msg_t *msg)
 	log_flag(TRACE_JOBS, "%s: return %pJ", __func__, job_ptr);
 }
 
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 
 
 /**
@@ -8120,7 +8120,7 @@ slurmctld_rpc_t slurmctld_rpcs[] =
 		.msg_type = REQUEST_COMPLETE_JOB_ALLOCATION,
 		.func = _slurm_rpc_complete_job_allocation,
 	},{
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 		.msg_type = REQUEST_COMPLETE_CREATE_BB,
 		.func =_slurm_rpc_deal_creation_bb,
 		.queue_enabled = true,

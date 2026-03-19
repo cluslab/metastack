@@ -545,37 +545,34 @@ struct job_record {
 #ifdef __METASTACK_NEW_PENDING_ORDER
 	uint32_t pending_order;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	uint32_t need_group_counts; 
-	uint32_t need_database_counts;
-	uint64_t req_space;		   		 //当前作业请求的空间
-	uint32_t access_mode;      		 //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	char     *pfs;            		 //后端存储路径,可能有多个
-	uint32_t max_clients_per_job; 	 /* 缓存组粒度：几个客户端划分为一个缓存组 */
-	bool	 bb_enable_pb; 			 //作业是bb类型作业
-	bool 	 enforce_bb_flag; 		 //是否强制等待创建缓存组完成
-	bool     metadata_acceleration;  //是否开启元数据加速
-	uint32_t create_step;			 //对应作业
-	uint32_t pfs_cnt; 				 //加速路径个数
-	char **group_sn;   				 //缓存组唯一sn码，作业可能有多个缓存组
-	uint32_t *group_ids;             //缓存组ID数组，从slurmd返回
-	uint32_t *dataset_ids;           //数据集ID数组，从slurmd返回
-	uint32_t *task_ids;              //任务ID数组，与dataset_ids一一对应，从slurmd返回
-	bool     bb_need_wait; 			 //是否等待bb完成，当bb资源用尽时，判断是否可以直接运行，受bb_enable_pb参数的影响
-	bool     real_used_bb;		     // 最终是否必须要使用bb，受bb_enable_pb参数的影响
-
-	//bool     bb_ready;     			 //计算节点的burstbuffer是否已经准备好,slurmd创建缓存组后置位
-	//bool     bb_clean_finish;        //是否完成清理，作业完成（terminal job）后执行清理完成后置位
-	uint32_t bb_status; 			 //标识作业的bb创建状态，成功失败等，对应枚举类型BB_STATE_INIT，BB_STATE_READY .......
-	bool   	 bb_kill_flag; 			 //当作业收到kill信号时，该位置位为true，即使未创建作业步（可能缓存组已经创建完成），也不再触发srun_allocate、launch_prolog、launch_job
-    //uint32_t bb_clean_status;        //作业或节点异常情况下，根据不同流程设置不同的标志位。用于spool中恢复异常作业标志
-	uint32_t pack_status;            //用于标识pack、unpack的标识。0x01，只需要打包缓存组；0x02，打包缓存组、数据集；0x03，打包缓存组、数据集、任务
+    uint32_t need_database_counts;
+    uint64_t req_space;               // Space requested by the current job
+    uint32_t access_mode;             // Storage type (striped/private). 0: Shared, 1: Local
+    char     *pfs;                    // Backend storage path(s) (may contain multiple paths)
+    uint32_t max_clients_per_job;     /* Cache group granularity: number of clients per cache group */
+    bool     bb_enable_pb;            // Indicates if the job is a Burst Buffer (BB) type job
+    bool     enforce_bb_flag;         // Whether to force wait until cache group creation is complete
+    bool     metadata_acceleration;   // Whether to enable metadata acceleration
+    uint32_t create_step;             // Corresponding job step
+    uint32_t pfs_cnt;                 // Number of acceleration paths
+    char     **group_sn;              // Unique SN codes for cache groups (a job may have multiple groups)
+    uint32_t *group_ids;              // Array of cache group IDs returned from slurmd
+    uint32_t *dataset_ids;            // Array of dataset IDs returned from slurmd
+    uint32_t *task_ids;               // Array of task IDs mapping 1:1 with dataset_ids, returned from slurmd
+    bool     bb_need_wait;            // Whether to wait for BB; if resources are exhausted, determines if job can run (dependent on bb_enable_pb)
+    bool     real_used_bb;            // Final flag indicating if BB must be used (dependent on bb_enable_pb)
+    uint32_t bb_status;               // BB creation status (e.g., BB_STATE_INIT, BB_STATE_READY, etc.)
+    bool     bb_kill_flag;            // Set to true if job receives a kill signal; prevents further srun/launch triggers even if cache group exists
+    uint32_t pack_status;             // Flags for pack/unpack: 0x01: group only; 0x02: group + dataset; 0x03: group + dataset + task
 #endif
-
 };
 
-#ifdef __METASTACK_NEW_BURSTBUFFER6
-//这里借用job_ptr的锁，这里会和job_ptr同时使用因此不需要额外新增锁
+#ifdef __METASTACK_NEW_BURSTBUFFER
+/* Reuses the lock from job_ptr; since this is used concurrently 
+ * with job_ptr, no additional lock is required. 
+ */
 typedef struct bb_job_error_msg_t{
 	uint32_t job_id;
 	uint32_t bb_status;

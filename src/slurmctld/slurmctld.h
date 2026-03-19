@@ -166,7 +166,7 @@ typedef struct slurmctld_config {
 	pthread_t thread_id_copy;
 	pthread_t thread_id_query;
 #endif
-#ifdef __METASTACK_NEW_BURSTBUFFER6
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	pthread_t thread_id_bb_error;
 #endif
 } slurmctld_config_t;
@@ -466,7 +466,7 @@ extern bool purge_old_cache_job;
 extern List job_list;			/* list of job_record entries */
 extern list_t *purge_jobs_list;		/* list of job_record_t to free */
 
-// #ifdef __METASTACK_NEW_BURSTBUFFER6
+// #ifdef __METASTACK_NEW_BURSTBUFFER
 // //这里借用job_ptr的锁，这里会和job_ptr同时使用因此不需要额外新增锁
 // extern List bb_job_error_list; /* burst buffer exception job list */
 // #endif
@@ -1316,7 +1316,7 @@ extern void job_array_start(job_record_t *job_ptr);
 /* Return true if a job array task can be started */
 extern bool job_array_start_test(job_record_t *job_ptr);
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 /* Clear job's SI flag and advance end time as needed */
 extern void job_create_fini(job_record_t *job_ptr);
 #endif
@@ -2118,7 +2118,7 @@ extern bool partition_in_use(char *part_name);
  */
 extern int pick_batch_host(job_record_t *job_ptr);
 
-#ifdef __METASTACK_NEW_BURSTBUFFER2
+#ifdef __METASTACK_NEW_BURSTBUFFER
 #endif
 /*
  * prolog_complete - note the normal termination of the prolog
