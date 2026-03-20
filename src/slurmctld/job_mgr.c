@@ -17126,7 +17126,7 @@ static void _purge_missing_jobs(int node_inx, time_t now)
 			job_ptr->exit_code = 1;
 #ifdef __METASTACK_NEW_BURSTBUFFER
 			if (job_ptr->bb_enable_pb)
-				job_ptr->bb_status = ELSURM_BB_STATE_BATCH_START_TIMEOUT;
+				job_ptr->bb_status = ESLURM_BB_STATE_BATCH_START_TIMEOUT;
 #endif
 			job_complete(job_ptr->job_id, slurm_conf.slurm_user_id,
 				requeue, true, NO_VAL);
@@ -18127,7 +18127,7 @@ extern void job_completion_logger(job_record_t *job_ptr, bool requeue)
 #ifdef __METASTACK_NEW_BURSTBUFFER 
 		if (!job_ptr->bb_enable_pb) {
 			(void)bb_g_job_start_stage_out(job_ptr);
-		}else if (job_ptr->bb_status == ELSURM_BB_STATE_BATCH_START_TIMEOUT) {
+		}else if (job_ptr->bb_status == ESLURM_BB_STATE_BATCH_START_TIMEOUT) {
 			(void)bb_g_job_start_stage_out(job_ptr);
 		}
 #endif

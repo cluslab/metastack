@@ -27227,7 +27227,7 @@ printf %s "checking for whether we can link to jansson (parastor)... " >&6; }
 int
 main (void)
 {
-    json_t *root = json_object();  // 调用库函数
+    json_t *root = json_object();  
     if (!root)
         return 1;
     json_decref(root);

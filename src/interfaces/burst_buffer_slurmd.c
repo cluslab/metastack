@@ -17,46 +17,48 @@
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
-#include "src/common/read_config.h" 
+#include "src/common/read_config.h"
+#include "src/common/log.h"
 
 extern int bb_g_init(void);
 extern int bb_g_fini(void);
 /*
  * ============================================================================
- * 操作结构体：定义 bb_api 库中所有函数的函数指针
- * 
- * 添加新函数步骤：
- * 1. 在 slurm_bb_slurmd_ops_t 结构体中添加函数指针
- * 2. 在 bb_slurmd_api_syms 数组中添加对应的符号名称（必须与库中函数名完全一致）
- * 3. 在文件末尾添加对应的包装函数
+ * slurm_bb_slurmd_ops_t — function pointers resolved from the bb_api shared
+ * library (Parastor slurmd burst buffer plugin).
+ *
+ * To add an entry point:
+ * 1. Add a member here in the same order as dlsym resolution expects.
+ * 2. Append the exported symbol name to syms[] (must match the library).
+ * 3. Add a bb_g_* wrapper at the end of this file.
  * ============================================================================
  */
-typedef struct slurm_bb_ops {	
-	/* 通过SN创建缓存组 */
+typedef struct slurm_bb_ops {
+	/* Create a cache group identified by group serial name (group_sn) */
 	int (*bb_p_create_bb_group_by_sn) (char *group_sn, int client_cnt, char **client_hostname_arr, uint32_t *group_id);
-	/* 通过SN创建数据集规则 */
+	/* Create a dataset rule under the group (by group_sn) */
 	int (*bb_p_create_bb_dataset_by_sn) (char *group_sn, int group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id);
-	/* 提交任务（通过数据集ID） */
+	/* Submit a burst buffer task (prefetch / recycle) for dataset_id */
 	int (*bb_p_submit_bb_task) (uint32_t dataset_id, int task_type, uint32_t *task_id);
-	/* 等待任务完成 */
+	/* Block until the task completes */
 	int (*bb_p_wait_task_complete) (uint32_t task_id, int task_type);
-	/* 根据group_sn删除缓存组 */
+	/* Delete cache group by group_sn */
 	int (*bb_p_delete_bb_group_by_sn) (char *group_sn);
-	/* 根据group_id删除缓存组 */
+	/* Delete cache group by numeric group_id */
 	int (*bb_p_delete_bb_group_by_id) (uint32_t group_id);
-	/* 根据dataset_id删除数据集规则 */
+	/* Delete dataset rule by dataset_id (group_id and path aid recovery on timeout) */
 	int (*bb_p_delete_bb_dataset_by_id) (uint32_t dataset_id, uint32_t group_id, char * path);
-	/* 根据group_id和path删除数据集规则 */
+	/* Delete dataset rule by group_id and accelerated path */
 	int (*bb_p_delete_bb_dataset_by_groupid_path) (uint32_t group_id, char * path);
-	/* 根据task_id取消BB任务 */
+	/* Cancel a burst buffer task by task_id */
 	int (*bb_p_cancel_bb_task_by_id) (uint32_t task_id);
-	/* 根据SN删除所有资源 */
-    int (*bb_p_release_resources) (char *group_sn);
+	/* Release all resources for group_sn (optional; not currently wired in syms[]) */
+	int (*bb_p_release_resources) (char *group_sn);
 } slurm_bb_slurmd_ops_t;
 
 /*
- * 符号表：必须与 slurm_bb_slurmd_ops_t 结构体中的函数指针顺序完全一致
- * 每个符号名称必须与 bb_api 库中导出的函数名完全一致
+ * Symbol table for dlsym: order must match slurm_bb_slurmd_ops_t members.
+ * Each string must match an exported symbol in the bb_api library.
  */
 static const char *syms[] = {
 	"bb_p_create_bb_group_by_sn",
@@ -68,7 +70,6 @@ static const char *syms[] = {
 	"bb_p_delete_bb_dataset_by_id",
 	"bb_p_delete_bb_dataset_by_groupid_path",
 	"bb_p_cancel_bb_task_by_id",
-	// "bb_p_release_resources",
 };
 
 
@@ -113,12 +114,13 @@ extern int bb_g_init(void)
 				plugin_type, type, (void **)&ops[g_context_cnt],
 				syms, sizeof(syms));
 			if (!g_context[g_context_cnt]) {
-				error("cannot create %s context for %s",
-					plugin_type, type);
+				error("unable to create %s plugin context for %s",
+				      plugin_type, type);
 				rc = SLURM_ERROR;
 				xfree(type);
 				break;
 			}
+			log_flag(BURST_BUF, "%s: loaded %s", __func__, type);
 
 		}
 
@@ -134,7 +136,7 @@ extern int bb_g_init(void)
 	 * now, do not allow multiple burst buffer plugins to be configured.
 	 */
 	if (g_context_cnt > 1) {
-		error("%d burst buffer plugins configured; can not run with more than one burst buffer plugin",
+		error("%d burst buffer plugins configured; only one slurmd burst buffer plugin is supported",
 		      g_context_cnt);
 		rc = SLURM_ERROR;
 	}
@@ -175,13 +177,8 @@ fini:	slurm_mutex_unlock(&g_context_lock);
 
 /*
  * ============================================================================
- * bb_api 库函数包装器
- * 
- * 每个包装函数遵循相同的模式：
- * 1. 检查插件是否已初始化,如果没有则初始化
- * 2. 使用互斥锁保护
- * 3. 通过函数指针调用库中的函数
- * 4. 返回结果
+ * bb_api wrappers -- each forwards to the loaded plugin's function pointer.
+ * (Locking around ops[] was historically optional; xassert ensures init.)
  * ============================================================================
  */
 

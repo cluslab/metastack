@@ -430,6 +430,7 @@ typedef enum {
 	ESLURM_BB_RESOURCE_SI_CANCEL, /* Stage-in canceled (e.g. job killed during setup) */
 	ESLURM_BB_RESOURCE_UNKNOWN, /* Resource state indeterminate (node down, query failed) */
 	ESLURM_BB_STATE_PENDING_MANUAL, /* Stage-in/out or teardown failed; operator action required */
+	ESLURM_BB_STATE_BATCH_START_TIMEOUT, /* Batch start timeout */
 #endif
 } slurm_err_t;
 

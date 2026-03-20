@@ -24,77 +24,98 @@ extern int bb_g_fini(void);
  */
 
 /**
- * @brief 根据缓存组SN创建缓存组
- * @param group_sn 
- * @param client_cnt 缓存组中客户端数量
- * @param client_hostname_arr  客户端hostname数组
- * @param group_id 返回创建成功的缓存组ID
- * @return 0:成功；-1:代码错误; -2:接口错误; -3:接口超时
+ * Create a Parastor cache group keyed by group serial name (group_sn).
+ *
+ * @param group_sn		Group serial identifier from the backend
+ * @param client_cnt		Number of client hosts in the group
+ * @param client_hostname_arr	Array of client host names
+ * @param group_id		Filled with assigned cache group id on success
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_create_bb_group_by_sn(char *group_sn, uint32_t client_cnt, char **client_hostname_arr, uint32_t *group_id);
 
 /**
- * @brief 创建数据集规则
- * @param group_sn 缓存组sn
- * @param group_id 缓存组ID
- * @param path 加速路径
- * @param is_use_metadata 元数据是否加速 
- * @param is_share_cache 缓存方式（true为共享缓存,false为本地缓存）
- * @return 0>表示成功且返回数据集规则ID，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ * Create a dataset (staging) rule under a cache group.
+ *
+ * @param group_sn		Group serial name (must match existing group)
+ * @param group_id		Numeric cache group id
+ * @param path			Accelerated / PFS path backing this dataset
+ * @param is_use_metadata	Whether metadata acceleration is enabled
+ * @param is_share_cache	true = shared cache mode; false = local cache mode
+ * @param dataset_id		Filled with new dataset rule id on success
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_create_bb_dataset_by_sn(char *group_sn, uint32_t group_id ,char *path, bool is_use_metadata, bool is_share_cache, uint32_t *dataset_id);
 
 /**
- * @brief 提交任务
- * @param dataset_id 数据集规则ID
- * @param task_type 1:预热; 2:回收
- * @param task_id 返回创建成功的任务ID
- * @return 0:成功提交；-1:代码错误; -2:接口错误; -3:接口超时
+ * Submit a burst-buffer task (e.g. prefetch or recycle) for a dataset.
+ *
+ * @param dataset_id	Dataset rule id from bb_g_create_bb_dataset_by_sn()
+ * @param task_type	Task kind (plugin-defined; e.g. prefetch vs recycle)
+ * @param task_id	Filled with new task id on success
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_submit_bb_task(uint32_t dataset_id, int task_type, uint32_t *task_id);
 
 /**
- * @brief 阻塞等待任务完成
- * @param task_id 任务ID
- * @param task_type 1:预热; 2:回收
- * @return 0:任务完成；-1:代码错误; -2:接口错误; -3:接口超时
+ * Wait until a burst-buffer task finishes.
+ *
+ * @param task_id	Task id returned by bb_g_submit_bb_task()
+ * @param task_type	Must match the task type used at submit time
+ *
+ * @return bb_api status: 0 success (task completed); -1 internal; -2 API; -3 timeout
  */
 extern int bb_g_wait_task_complete(uint32_t task_id, int task_type);
 
 /**
- * @brief 根据group_sn删除缓存组
- * @param group_sn 
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * Destroy a cache group by serial name.
+ *
+ * @param group_sn	Group serial identifier
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_delete_bb_group_by_sn(char *group_sn);
 
 /**
- * @brief 根据group_id删除缓存组
- * @param group_id 
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * Destroy a cache group by numeric id.
+ *
+ * @param group_id	Cache group id
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_delete_bb_group_by_id(uint32_t group_id);
 
 /**
- * @brief 根据dataset_id删除数据集规则
- * @param dataset_id 数据集ID
- * @param group_id 用于超时后查询数据集规则
- * @param path 用于超时后查询数据集规则
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * Delete a dataset rule by id; group_id and path help the backend recover if
+ * the primary delete times out or needs reconciliation.
+ *
+ * @param dataset_id	Dataset rule id
+ * @param group_id	Associated cache group id
+ * @param path		Accelerated path for the dataset rule
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_delete_bb_dataset_by_id(uint32_t dataset_id, uint32_t group_id, char * path);
 
 /**
- * @brief 根据task_id取消BB任务
- * @param task_id 任务ID
- * @return 0:成功取消；-1:代码错误; -2:接口错误; -3:接口超时
+ * Cancel a submitted burst-buffer task.
+ *
+ * @param task_id	Task id to cancel
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_cancel_bb_task_by_id(uint32_t task_id);
+
 /**
- * @brief 根据group_id和path删除数据集规则
- * @param group_id 
- * @param path
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * Delete a dataset rule by cache group id and accelerated path.
+ *
+ * @param group_id	Cache group id
+ * @param path		Dataset path under that group
+ *
+ * @return bb_api status: 0 success; -1 internal error; -2 API error; -3 timeout
  */
 extern int bb_g_delete_bb_dataset_by_groupid_path(uint32_t group_id, char *path);
 

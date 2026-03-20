@@ -512,7 +512,7 @@ typedef struct complete_create_bb {
 	uint32_t datasets_cnt;
 	uint32_t *group_ids;
 	uint32_t *dataset_ids;
-	uint32_t *task_ids;          /* 任务ID数组，与dataset_ids一一对应 */
+	uint32_t *task_ids;          /* task_ids array, corresponding to dataset_ids */
 	uint32_t bb_rc;
 	//uint32_t tasks_cnt;
 } complete_create_bb_msg_t;
