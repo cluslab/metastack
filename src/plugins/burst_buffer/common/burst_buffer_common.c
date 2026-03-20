@@ -693,13 +693,11 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 		error("ParaStorUserPasswd is not configured in burst_buffer.conf");
 		fatal("%s: ParaStorUserPasswd is not configured in burst_buffer.conf %s: %m", __func__, bb_conf);
 	}
-	(void) s_p_get_uint32(&state_ptr->bb_config.file_system_count,
-			     "FileSystemCount", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
-	// if (state_ptr->bb_config.max_acc_dirs_per_job <= 0) {
-	// 	state_ptr->bb_config.max_acc_dirs_per_job = 4;
-	// }
+	if (state_ptr->bb_config.max_acc_dirs_per_job <= 0) {
+		state_ptr->bb_config.max_acc_dirs_per_job = 4;
+	}
 	if (state_ptr->bb_config.max_acc_dirs_per_job > 8)  {
 		state_ptr->bb_config.max_acc_dirs_per_job = 8;
 	}

@@ -104,7 +104,6 @@ typedef struct bb_config {
 	uint32_t max_datasets;
 	uint32_t max_clients_join;
 	uint32_t max_clients_per_job;	/* Cache group sizing: clients per group */
-	uint32_t file_system_count;	/* Number of configured backing storage systems */
 	uint32_t max_acc_dir_len;	/* Max path length for one access (stage) directory */
 	uint32_t max_acc_dirs_per_job;	/* Max access directories to stage per job */
 	char    *file_system;		/* Storage backend / filesystem name */

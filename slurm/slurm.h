@@ -5838,7 +5838,6 @@ typedef struct {
 	char    *para_stor_password;	/* backend authentication secret */
 	char    *token;			/* session or API token */
 
-	uint32_t file_system_count;	/* number of supported backing file systems */
 	uint32_t max_acc_dir_len;	/* max length of one preload directory path */
 	uint32_t max_acc_dirs_per_job;	/* max preload directories per job */
 	char    *file_system;		/* file system name or descriptor */
