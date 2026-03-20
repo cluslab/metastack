@@ -876,7 +876,7 @@ static const char *_job_state_list(void)
 	xstrcat(state_names, job_state_string(JOB_COMPLETING));
 	xstrcat(state_names, ",");
 	xstrcat(state_names, job_state_string(JOB_CONFIGURING));
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	xstrcat(state_names, ",");
 	xstrcat(state_names, job_state_string(JOB_BURSTBUFFER_STAGING));
 	xstrcat(state_names, ",");

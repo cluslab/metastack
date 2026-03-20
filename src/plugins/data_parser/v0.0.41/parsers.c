@@ -8829,7 +8829,7 @@ static const flag_bit_t PARSER_FLAG_ARRAY(JOB_STATE)[] = {
 	add_flag(JOB_SPECIAL_EXIT, JOB_STATE_FLAGS, "SPECIAL_EXIT", false, "Requeue an exit job in hold"),
 	add_flag(JOB_RESIZING, JOB_STATE_FLAGS, "RESIZING", false, "Size of job about to change, flag set before calling accounting functions immediately before job changes size"),
 	add_flag(JOB_CONFIGURING, JOB_STATE_FLAGS, "CONFIGURING", false, "Allocated nodes booting"),
-#ifdef __METASTACK_NEW_BURSTBUFFER4
+#ifdef __METASTACK_NEW_BURSTBUFFER
 	add_flag(JOB_BURSTBUFFER_STAGING, JOB_STATE_FLAGS, "STAGING", false, "Creating  burst buffer"),
 	add_flag(JOB_BURSTBUFFER_STAGE_OUT, JOB_STATE_FLAGS, "STAGOUT", false, "Deleting burst buffer"),
 #endif
