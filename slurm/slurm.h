@@ -1960,24 +1960,6 @@ typedef struct {
 
 #define CORE_SPEC_THREAD 0x8000	/* If set, this is a thread count not core count */
 
-#ifdef __METASTACK_NEW_BURSTBUFFER
-/* Description of each group entry */
-typedef struct bb_groups {
-	//uint64_t bb_group_id; //缓存组id
-	char *flags; //缓存类型，可以支持持久及临时。DisablePersistent，Persistent
-	uint64_t total_space; //缓存组总空间容量大小。
-	uint64_t free_space;  //剩余可用的缓存组数量
-	uint64_t used_space;  //缓存组已用总空间容量大小。
-	uint32_t bb_task;     //当前缓存组最大并行的任务数
-	uint32_t groups_nodes; //当前缓存组包含的节点数
-	uint32_t nodes_clients; //当前缓存组中节点及每个节点加入的缓存组数量。
-	uint64_t req_space;		//当前作业请求的空间
-
-	char *access_mode;      //存储类型，本地共享
-	char *pfs;          //后端存储路径,可能有多个
-	char *state;         //缓存组状态，启用，禁用,失败成功
-} bb_groups_job_t;
-#endif
 
 /*
  * Update:

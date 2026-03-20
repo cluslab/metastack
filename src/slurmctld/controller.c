@@ -302,9 +302,6 @@ static void _usage(void);
 static bool         _verify_clustername(void);
 static bool         _wait_for_server_thread(void);
 static void *       _wait_primary_prog(void *arg);
-#ifdef __METASTACK_NEW_BURSTBUFFER
-// static void *slurmctld_bb_exception_handler(void *no_data);
-#endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 pthread_mutex_t query_mgr_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -745,16 +742,7 @@ int main(int argc, char **argv)
 		slurm_thread_create(&slurmctld_config.thread_id_copy,
 					slurmctld_state_copy, NULL);
 #endif
-// #ifdef __METASTACK_NEW_BURSTBUFFER
-// 		debug("print bb type = %s  slurm_conf.bb_type = %s",bb_tmp,  slurm_conf.bb_type);
-// 		if (!xstrcmp(bb_tmp, slurm_conf.bb_type)) {
-// 			slurm_thread_create(&slurmctld_config.thread_id_bb_error,
-// 										slurmctld_bb_exception_handler, NULL);
-// 		}
-// #endif
-		/*
-		 * create attached thread for node power management
-  		 */
+
 		power_save_init();
 
 		/*

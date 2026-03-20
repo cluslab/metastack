@@ -226,7 +226,7 @@ char *_slurm_sprint_partition_info ( partition_info_t * part_ptr,
 	xstrcat(out, line_end);
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
-	/* 分区级 BurstBuffer 状态 */
+	/* partition level BurstBuffer status */
 	if (part_ptr->flags & PART_FLAG_BURSTBUFFER)
 		xstrcat(out, "BurstBuffer=enable");
 	else
@@ -695,7 +695,7 @@ char *slurm_sprint_partition_info ( partition_info_t * part_ptr,
 
 	xstrcat(out, line_end);
 #ifdef __METASTACK_NEW_BURSTBUFFER
-	/* Add：Partition BurstBuffer Status */
+	/* Add: Partition BurstBuffer Status */
 	if (part_ptr->flags & PART_FLAG_BURSTBUFFER)
 		xstrcat(out, "BurstBuffer=ENABLE");
 	else

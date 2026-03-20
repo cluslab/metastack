@@ -101,29 +101,21 @@ typedef struct bb_config {
 	uint32_t validate_timeout;
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	uint32_t max_groups;
-	//uint32_t used_groups;
-	//uint32_t free_groups;
-
 	uint32_t max_datasets;
-	//uint32_t used_datasets;
-	//uint32_t free_datasets;
 	uint32_t max_clients_join;
-	uint32_t max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
-	// uint32_t max_node_per_groups;
-	// uint32_t used_node_per_groups;
-	// uint32_t free_node_per_groups;
-	uint32_t file_system_count;      // 支持的存储系统数量，现在上线是2
-	uint32_t max_acc_dir_len;        // 单个作业支持的最大目录长度
-	uint32_t max_acc_dirs_per_job;   // 单个作业支持的最大加载目录数量
-	char    *file_system;        // 文件系统名称
-	char    *file_system_mount;  // 文件系统挂载点
+	uint32_t max_clients_per_job;	/* Cache group sizing: clients per group */
+	uint32_t file_system_count;	/* Number of configured backing storage systems */
+	uint32_t max_acc_dir_len;	/* Max path length for one access (stage) directory */
+	uint32_t max_acc_dirs_per_job;	/* Max access directories to stage per job */
+	char    *file_system;		/* Storage backend / filesystem name */
+	char    *file_system_mount;	/* Mount point for the filesystem */
 
 	char    *para_stor_addr;	/* IP address */
 	uint32_t para_stor_port;	/* port number */
 	char    *para_stor_user_name;	/* user name */
 	char    *para_stor_password;	/* password */
-	char    *token;	/* password */
-	uint32_t retry_count; /* 超时重试次数 */
+	char    *token;			/* API or session authentication token */
+	uint32_t retry_count;		/* Retries after timeout on backend calls */
 #endif
 } bb_config_t;
 
@@ -158,30 +150,23 @@ typedef struct bb_alloc {
 	time_t state_time;	/* Time of last state change */
 	time_t use_time;	/* Expected time when use will begin */
 	uint32_t user_id;
-#ifdef __METASTACK_NEW_BURSTBUFFER	
-	//uint64_t bb_group_id; //缓存组id
-	uint32_t type;			 //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
-	//bool  cache_tmp;
-	bool  enforce_bb_flag; //是否强制加速
-	// uint64_t total_space; //缓存组总空间容量大小。
-	// uint64_t free_space;  //剩余可用的缓存组数量
-	// uint64_t used_space;  //缓存组已用总空间容量大小。
-
-	uint32_t bb_task;     //当前缓存组最大并行的任务数
-	uint32_t groups_nodes; //当前缓存组包含的节点数
-	uint64_t req_space;		//当前作业请求的空间
-	uint32_t access_mode;     //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	char *pfs;          //后端存储路径,可能有多个
-	uint32_t pfs_cnt;          //后端存储路径个数
-	bool metadata_acceleration; //是否开启元数据加速
-	// char	*default_workdir; 	/* default work directory */
-	uint32_t *bb_group_ids; /* 作业中包含的缓存组id */
-	uint32_t *bb_dataset_ids; /*  作业中包含的数据集id  */
-	uint32_t *bb_task_ids; /* 作业中包含的任务id */
-	uint32_t index_groups; /* 作业中包含的缓存组个数 */
-	uint32_t index_datasets; /* 作业中包含的数据集个数 */
-	uint32_t index_tasks; /* 作业中包含的任务个数 */
-	bool bb_create_finished; //是否已经完成缓存组分配
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	uint32_t type;			/* 0=temporary, 1=persistent cache group */
+	bool  enforce_bb_flag;		/* Require burst buffer (enforce acceleration) */
+	uint32_t bb_task;		/* Max concurrent burst buffer tasks on this group */
+	uint32_t groups_nodes;		/* Nodes participating in this cache group */
+	uint64_t req_space;		/* Burst buffer space requested for the job */
+	uint32_t access_mode;		/* 0=shared/striped, 1=private/local */
+	char *pfs;			/* Backend PFS path list */
+	uint32_t pfs_cnt;		/* Number of entries in pfs */
+	bool metadata_acceleration;	/* Enable metadata acceleration */
+	uint32_t *bb_group_ids;		/* Cache group IDs for this job */
+	uint32_t *bb_dataset_ids;	/* Dataset IDs for this job */
+	uint32_t *bb_task_ids;		/* Backend task IDs for this job */
+	uint32_t index_groups;		/* Count of cache groups (bb_group_ids) */
+	uint32_t index_datasets;	/* Count of datasets (bb_dataset_ids) */
+	uint32_t index_tasks;		/* Count of tasks (bb_task_ids) */
+	bool bb_create_finished;	/* Cache group provisioning completed */
 #endif
 } bb_alloc_t;
 
@@ -246,31 +231,25 @@ typedef struct bb_job {
 	bool       use_job_buf;	/* True if uses job buffer,
 				 * false if uses persistent buffer only */
 	uint32_t   user_id;	/* user the job runs as */
-#ifdef __METASTACK_NEW_BURSTBUFFER	
-	//uint64_t bb_group_id; //缓存组id
-	uint32_t  type; //缓存类型，可以支持持久及临时。temporary|persistent, 0:临时缓存组，1:持久缓存组
-	bool  enforce_bb_flag; //是否强制加速
-	//bool  cache_tmp;
-	// uint64_t total_space; //缓存组总空间容量大小。
-	// uint64_t free_space;  //剩余可用的缓存组数量
-	// uint64_t used_space;  //缓存组已用总空间容量大小。
-
-	uint32_t bb_task;     //当前缓存组最大并行的任务数
-	uint32_t groups_nodes; //当前缓存组包含的节点数
-	uint64_t req_space;		//当前作业请求的空间
-	uint32_t access_mode;      //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	char *pfs;          //后端存储路径,可能有多个
-	uint32_t pfs_cnt;          //后端存储路径个数
-	bool metadata_acceleration; //是否开启元数据加速
-	// char	*default_workdir; 	/* default work directory */
-	uint32_t *bb_group_ids; /* 作业中包含的缓存组id */
-	uint32_t *bb_dataset_ids; /*  作业中包含的数据集id  */
-	uint32_t *bb_task_ids; /* 作业中包含的任务id */
-	uint32_t index_groups; /* 作业中包含的缓存组个数 */
-	uint32_t index_datasets; /* 作业中包含的数据集个数 */
-	uint32_t index_tasks; /* 作业中包含的任务个数 */
-	bool bb_create_finished; //是否已经完成缓存组分配
-	uint32_t parastor_inx; /* 使用的存储系统代号 ,1第一套存储系统，2 第二套存储系统 */
+#ifdef __METASTACK_NEW_BURSTBUFFER
+	uint32_t type;			/* 0=temporary, 1=persistent cache group */
+	bool  enforce_bb_flag;		/* Require burst buffer (enforce acceleration) */
+	uint32_t bb_task;		/* Max concurrent burst buffer tasks on this group */
+	uint32_t groups_nodes;		/* Nodes participating in this cache group */
+	uint64_t req_space;		/* Burst buffer space requested for the job */
+	uint32_t access_mode;		/* 0=shared/striped, 1=private/local */
+	char *pfs;			/* Backend PFS path list */
+	uint32_t pfs_cnt;		/* Number of entries in pfs */
+	bool metadata_acceleration;	/* Enable metadata acceleration */
+	/* char *default_workdir;	 default work directory (reserved) */
+	uint32_t *bb_group_ids;		/* Cache group IDs for this job */
+	uint32_t *bb_dataset_ids;	/* Dataset IDs for this job */
+	uint32_t *bb_task_ids;		/* Backend task IDs for this job */
+	uint32_t index_groups;		/* Count of cache groups (bb_group_ids) */
+	uint32_t index_datasets;	/* Count of datasets (bb_dataset_ids) */
+	uint32_t index_tasks;		/* Count of tasks (bb_task_ids) */
+	bool bb_create_finished;	/* Cache group provisioning completed */
+	uint32_t parastor_inx;		/* Backend storage index (1=first system, 2=second, ...) */
 #endif
 } bb_job_t;
 
@@ -290,51 +269,51 @@ struct preempt_bb_recs {
 	uint32_t user_id;
 };
 
-#ifdef __METASTACK_NEW_BURSTBUFFER  
+#ifdef __METASTACK_NEW_BURSTBUFFER
 
-
+/* Subset of burst buffer config for lightweight RPC / client use */
 typedef struct bb_minimal_config {
 	char    *para_stor_addr;	/* IP address */
 	uint32_t para_stor_port;	/* port number */
 	char    *para_stor_user_name;	/* user name */
 	char    *para_stor_password;	/* password */
-	char    *token;	/* password */
-	uint32_t	other_timeout;
-	uint32_t	stagein_timeout;
-	uint32_t	stageout_timeout;
-	uint32_t	poll_interval;
-	uint32_t	retry_count;
+	char    *token;			/* API or session authentication token */
+	uint32_t	other_timeout;		/* General operation timeout (seconds) */
+	uint32_t	stagein_timeout;	/* Stage-in timeout (seconds) */
+	uint32_t	stageout_timeout;	/* Stage-out timeout (seconds) */
+	uint32_t	poll_interval;		/* Poll interval (seconds) */
+	uint32_t	retry_count;		/* Retries after timeout on backend calls */
 } bb_minimal_config_t;
 
 typedef enum {
-    BURST_BUFFER_TASK_TYPE_NULL = 0, /* set this type if not need this param */
-    BURST_BUFFER_TASK_TYPE_PREFETCH, /* 预热 */
-    BURST_BUFFER_TASK_TYPE_RECYCLE /* 回收 */
+	BURST_BUFFER_TASK_TYPE_NULL = 0,   /* Unused; omit task type */
+	BURST_BUFFER_TASK_TYPE_PREFETCH,   /* Warm-up / prefetch */
+	BURST_BUFFER_TASK_TYPE_RECYCLE	/* Reclaim / recycle */
 } bb_task_type;
 
 typedef enum {
-    BB_TASK_STATE_NULL = 0,/* set this type if not need this param */
-    BB_TASK_STATE_SUBMITTING,
-    BB_TASK_STATE_RUNNING,
-    BB_TASK_STATE_COMPLETED,
-    BB_TASK_STATE_FAILED,
-    BB_TASK_STATE_CANCELED
+	BB_TASK_STATE_NULL = 0,	    /* Unused; omit task state */
+	BB_TASK_STATE_SUBMITTING,
+	BB_TASK_STATE_RUNNING,
+	BB_TASK_STATE_COMPLETED,
+	BB_TASK_STATE_FAILED,
+	BB_TASK_STATE_CANCELED
 } bb_task_state_type;
 
-/* 定义缓存组结构体 bb_cache_group */
+/* Cache group attributes (backend / Parastor API shape) */
 typedef struct {
-    uint32_t id;                    // 缓存组ID
-    uint32_t client_num;            // 客户端数量
-    uint32_t *client_ids;           // 客户端ID数组指针
-    time_t del_delay_time;        // 删除延迟时间
-    time_t fault_delay_time;      // 故障延迟时间
-    double hit_bytes_rate;     // 命中字节率
-    double hit_io_num_rate;    // 命中IO数量率
-    double meta_hit_io_num_rate; // 元数据命中IO数量率
-	char* group_sn;		// 缓存组唯一标识符
+	uint32_t id;			/* Cache group ID */
+	uint32_t client_num;		/* Number of clients */
+	uint32_t *client_ids;		/* Client ID list */
+	time_t del_delay_time;		/* Deletion deferral time */
+	time_t fault_delay_time;	/* Fault-handling delay */
+	double hit_bytes_rate;		/* Byte hit ratio */
+	double hit_io_num_rate;		/* I/O operation hit ratio */
+	double meta_hit_io_num_rate;	/* Metadata I/O hit ratio */
+	char *group_sn;			/* Cache group serial / unique name */
 } bb_attribute_group;
 
-/* response info of datasets */
+/* Dataset fields in backend JSON response */
 typedef struct {
     char *burstBufferDataSetCacheMode;
     char *burstBufferDataSetCacheType;
@@ -360,56 +339,58 @@ typedef struct {
     int version;
 } bb_attribute_dataset;
 
-/* ip info of bb_attribute_client */
+/* Client (node) attributes from backend */
 typedef struct {
-   uint32_t id;       // 客户端ID,对应client_id
-   char *hostname;
-   char *ip;
-   uint32_t total_size;/* bytes */
-   uint32_t used_size; /* bytes */
-   int version;
-   int ips_count;
-   uint32_t devices_count;
-   uint32_t groups_count; // 节点当前加入缓存组数量
-   uint32_t *groups_ids;;
-   char *cap_dev_name;
+	uint32_t id;			/* Client ID */
+	char *hostname;
+	char *ip;
+	uint32_t total_size;		/* bytes */
+	uint32_t used_size;		/* bytes */
+	int version;
+	int ips_count;
+	uint32_t devices_count;
+	uint32_t groups_count;		/* Cache groups this node has joined */
+	uint32_t *groups_ids;
+	char *cap_dev_name;
 } bb_attribute_client;
 
+/* Task record from backend (prefetch / recycle, etc.) */
 typedef struct {
-    uint32_t task_id;
-    uint32_t dataset_id;
-    uint32_t group_id;
+	uint32_t task_id;
+	uint32_t dataset_id;
+	uint32_t group_id;
 	bb_task_type task_type;
 	bb_task_state_type task_state;
-    time_t begin_time;
-    time_t end_time;
-    time_t completed_bytes;
-    uint32_t total_node_num;
-    uint32_t completed_node_num;
-    uint32_t canceled_node_num;
-    char *error_action_type;
-    uint32_t failed_node_num;
-    char **failed_node_infos;
-    int exit_code;
+	time_t begin_time;
+	time_t end_time;
+	time_t completed_bytes;
+	uint32_t total_node_num;
+	uint32_t completed_node_num;
+	uint32_t canceled_node_num;
+	char *error_action_type;
+	uint32_t failed_node_num;
+	char **failed_node_infos;
+	int exit_code;
 } bb_attribute_task;
-/* top response */
 
-
-/* 
-响应结构体
-1. 通用响应字段
-  - err_no            错误码，0表示成功，非0表示失败
-  - sync              同步标志，暂未使用
-  - time_stamp       时间戳，单位毫秒
-  - time_zone_offset 时区偏移，单位分钟
-  - trace_id		 跟踪ID，用于请求跟踪
-  - err_msg          错误信息，简要描述错误原因	
-  - detail_err_msg   详细错误信息，提供更具体的错误描述
-2.创建缓存组
-  - group_id 接收创建成功后返回的缓存组ID
-3.创建数据集规则
-  - dataset_id 接收创建成功后返回的数据集ID
-*/
+/*
+ * Aggregated backend response (bb_response)
+ *
+ * Common envelope:
+ *   err_no           0 = success, non-zero = failure
+ *   sync             Synchronization flag (reserved / unused)
+ *   time_stamp       Timestamp (milliseconds)
+ *   time_zone_offset Offset from UTC (minutes)
+ *   trace_id         Request correlation ID
+ *   err_msg          Short error summary
+ *   detail_err_msg   Verbose error text
+ *
+ * Create cache group:
+ *   group_id         Assigned cache group ID on success
+ *
+ * Create dataset:
+ *   dataset_id       Assigned dataset ID on success
+ */
 
 typedef struct {
     int err_no;
@@ -420,8 +401,8 @@ typedef struct {
     char* err_msg;
     char* detail_err_msg;
 
-    uint32_t group_count;      // 存储当前缓存组数量
-    uint32_t dataset_count;    // 存储当前数据集规则数量
+    uint32_t group_count;      
+    uint32_t dataset_count;   
     uint32_t client_count;
     uint32_t task_count;
 
@@ -430,7 +411,7 @@ typedef struct {
     uint32_t group_id;
     uint32_t dataset_id; 
     uint32_t task_id;
-	uint32_t last_client_id;  // Record the IDs of the current node.
+	uint32_t last_client_id;	/* Client ID for this node in the response */
 	bb_attribute_group   *bb_group;
 	bb_attribute_client  *bb_client;
 	bb_attribute_dataset *bb_dataset;
@@ -466,11 +447,6 @@ typedef struct bb_state {
 	uint32_t free_groups_cnt;
 	uint32_t used_datasets_cnt;
 	uint32_t free_datasets_cnt;
-	// bb_response *resp_out;	//ParaStor BB信息
-    // List list_groups;     // bb cache group list
-    // List list_datasets;   // bb cache datasets list
-    // List list_clients;   // bb cache client list
-    // List list_tasks; // bb task list
 #endif
 } bb_state_t;
 

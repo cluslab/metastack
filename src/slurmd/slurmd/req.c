@@ -115,12 +115,6 @@
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
 #include "src/interfaces/burst_buffer_slurmd.h"
-// #define BB_JOB_MEM_ALLOC 0
-// #define BB_JOB_GROUPS_CREATED    1
-// #define BB_JOB_DATASETS_CREATED  2
-// #define BB_JOB_TASKS_SUBMITED     3
-// #define BB_JOB_PREFETCH_FINISHED  4
-// #define BB_ABORT      -1
 
 typedef enum {
 	BB_ABORT = -1,

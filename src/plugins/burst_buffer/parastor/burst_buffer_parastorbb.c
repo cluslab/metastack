@@ -114,12 +114,6 @@ typedef enum {
 } bb_op_e;
 
 typedef struct {
-	int i;
-	int groups_pools;
-	bb_groups_job_t *pools;
-} data_pools_arg_t;
-
-typedef struct {
 	uint64_t bb_size;
 	uint32_t gid;
 	bool hurry;
@@ -2387,7 +2381,6 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		job_ptr->state_desc =
 			xstrdup("Could not find burst buffer record");
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-		//_queue_teardown(bb_job);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
@@ -2421,9 +2414,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		log_flag(BURST_BUF, "%s: %pJ enforces burst buffer; will queue if resources missing", __func__, job_ptr);
 	else
 		log_flag(BURST_BUF, "%s: %pJ does not enforce burst buffer; may run without BB resources", __func__, job_ptr);
-	//job_ptr->req_space                 = bb_job->req_space;
-	//job_ptr->access_mode 	   		   = bb_job->access_mode;
-	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
+
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	job_ptr->pfs_cnt				= bb_job->pfs_cnt;
 	job_ptr->group_sn 				= xmalloc(job_ptr->need_group_counts * sizeof(char *));

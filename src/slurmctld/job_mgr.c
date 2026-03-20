@@ -705,16 +705,7 @@ static int _add_job_record(job_record_t *job_ptr, int num_jobs)
 	job_count += num_jobs;
 	last_job_update = time(NULL);
 	list_append(job_list, job_ptr);
-// #ifdef __METASTACK_NEW_BURSTBUFFER
-// 	if(bb_job_error_list && (job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL 
-// 								|| job_ptr->bb_status == ELSURM_BB_RESOURCE_UNKNOW)) {
-// 		bb_job_error_msg_t *bb_job_error     = NULL;
-// 		bb_job_error                         = xmalloc(sizeof(bb_job_error_msg_t));
-// 		bb_job_error->bb_status       		 = ESLURM_BB_STATE_PENDING_MANUAL;
-// 		bb_job_error->job_id 				 = job_ptr->job_id;
-// 		list_append(bb_job_error_list, bb_job_error);
-// 	}
-// #endif
+
 	return SLURM_SUCCESS;
 }
 
@@ -3229,8 +3220,7 @@ extern int kill_running_job_by_node_name(char *node_name)
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
 #ifdef __METASTACK_NEW_BURSTBUFFER
-				//设置BB状态
-				job_ptr->bb_status = ELSURM_BB_RESOURCE_UNKNOW;//BB资源需要删除校验，
+				job_ptr->bb_status = ESLURM_BB_RESOURCE_UNKNOWN; /* verify BB resource teardown */
 #endif
 			}
 		}
@@ -3519,11 +3509,7 @@ void init_job_conf(void)
 		cache_job_list = list_create(_move_to_purge_cache_jobs_list);
 	}
 #endif
-// #ifdef __METASTACK_NEW_BURSTBUFFER
-// 	if (bb_job_error_list == NULL) {
-// 		bb_job_error_list = list_create(_bb_job_error_list_delete);
-// 	}
-// #endif
+
 	last_job_update = time(NULL);
 
 	if (!purge_files_list) {
@@ -5287,7 +5273,7 @@ extern int job_signal(job_record_t *job_ptr, uint16_t signal,
 		return bb_g_job_cancel(job_ptr);
 	}
 #ifdef __METASTACK_NEW_BURSTBUFFER
-     /* 针对异常作业通过scancel -H 将异常作业删除后，应该从链表bb_job_error_list中删除 */
+     /* After deleting abnormal jobs through scancel -H, they should be removed from the bb_job_error_list list */
 	if(job_ptr->real_used_bb) {
 		job_ptr->bb_kill_flag = true;
 		if((flags & KILL_HURRY)) {
@@ -18031,9 +18017,6 @@ void batch_requeue_fini(job_record_t *job_ptr)
 /* job_fini - free all memory associated with job records */
 void job_fini (void)
 {
-// #ifdef __METASTACK_NEW_BURSTBUFFER
-// 	FREE_NULL_LIST(bb_job_error_list);
-// #endif
 
 	FREE_NULL_LIST(job_list);
 	xfree(job_hash);

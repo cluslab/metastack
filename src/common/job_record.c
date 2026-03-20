@@ -748,7 +748,7 @@ extern int job_record_pack(job_record_t *dump_job_ptr,
 		return 0;
 
 #ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { 
 		/* Dump basic job info */
 		pack32(dump_job_ptr->array_job_id, buffer);
 		pack32(dump_job_ptr->array_task_id, buffer);
@@ -2700,7 +2700,7 @@ extern int job_record_unpack(job_record_t **out,
 	*out = job_ptr;
 
 #ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		safe_unpack32(&job_ptr->array_job_id, buffer);
 		safe_unpack32(&job_ptr->array_task_id, buffer);
 

@@ -487,13 +487,13 @@ slurm_errtab_t slurm_errtab[] = {
 	  "Max powered up nodes reached" },
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_LIMIT),
-	  "Max burst buffer resources reached" },
+	  "Burst buffer resource limit reached" },
 	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_SI_CANCEL),
-	  "Burst buffer assignment successfully canceled in SI phase" },
+	  "Burst buffer stage-in canceled" },
 	{ ERRTAB_ENTRY(ESLURM_BB_STATE_PENDING_MANUAL),
-	  "Burst buffer SI/SO stage failure (include cancel failed while creating)" },
-	{ ERRTAB_ENTRY(ELSURM_BB_RESOURCE_UNKNOW),
-	"Burst buffer state unknow" },
+	  "Burst buffer stage-in/out failed; manual intervention required" },
+	{ ERRTAB_ENTRY(ESLURM_BB_RESOURCE_UNKNOWN),
+	  "Burst buffer resource state unavailable or indeterminate" },
 #endif
 	/* SPANK errors */
 	{ ERRTAB_ENTRY(ESPANK_ERROR),

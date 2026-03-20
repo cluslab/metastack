@@ -447,9 +447,7 @@ static void _fill_ctld_conf(slurm_conf_t *conf_ptr)
 	conf_ptr->mpi_default         = xstrdup(conf->mpi_default);
 	conf_ptr->mpi_params          = xstrdup(conf->mpi_params);
 	conf_ptr->msg_timeout         = conf->msg_timeout;
-// #ifdef  __METASTACK_NEW_BURSTBUFFER
-// 	conf_ptr->bb_msg_timeout      = conf->bb_msg_timeout;
-// #endif
+
 
 	conf_ptr->next_job_id         = next_job_id;
 	conf_ptr->node_features_conf  = node_features_g_get_config();
@@ -2487,7 +2485,7 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 		memcpy(job_ptr->group_ids, epilog_msg->group_ids, epilog_msg->groups_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
-		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+		bb_status = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->dataset_ids) {
 		job_ptr->need_database_counts = epilog_msg->datasets_cnt;
@@ -2498,7 +2496,7 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 		//memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
-		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+		bb_status = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
 
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->task_ids) {
@@ -2508,9 +2506,9 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 		job_ptr->pack_status = 0x03;
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
-		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+		bb_status = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
-	//同步
+	/* Sync burst buffer metadata with plugin state */
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
 		error("%s JobId=%u: burst buffer post run test failed", __func__, epilog_msg->job_id);
 	}
@@ -2521,14 +2519,14 @@ static void _slurm_rpc_deal_cleanup_bb(slurm_msg_t *msg)
 
 	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == ESLURM_BB_STATE_READY)) {
 		if (bb_status == SLURM_SUCCESS) {
-			//slurmd端删除成功
+			/* slurmd reported successful burst buffer teardown */
 			job_ptr->bb_status = SLURM_SUCCESS;
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
 			(void)bb_g_job_start_stage_out(job_ptr); 
 		} else if (bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
-		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
+		} else if (bb_status == ESLURM_BB_RESOURCE_UNKNOWN) {
 			job_ptr->bb_status = bb_status;
 		}
 	}
@@ -2603,7 +2601,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		memcpy(job_ptr->group_ids, epilog_msg->group_ids, epilog_msg->groups_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
-		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+		bb_status = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->dataset_ids) {
 		job_ptr->need_database_counts = epilog_msg->datasets_cnt;
@@ -2612,7 +2610,7 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		//memcpy(job_ptr->task_ids, epilog_msg->task_ids, epilog_msg->datasets_cnt * sizeof(uint32_t));
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
-		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+		bb_status = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
 
 	if (epilog_msg->datasets_cnt > 0 && epilog_msg->task_ids) {
@@ -2620,9 +2618,9 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 		job_ptr->pack_status = 0x03;
 	} else {
 		error("%s: can't update job_ptr value from epilog_msg", __func__);
-		bb_status = ELSURM_BB_RESOURCE_UNKNOW;
+		bb_status = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
-	//同步
+	/* Sync burst buffer metadata with plugin state */
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
 		error("%s JobId=%u: burst buffer post run test failed", __func__, epilog_msg->job_id);
 	}
@@ -2633,17 +2631,17 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 
 	if (job_ptr->bb_enable_pb && job_ptr->real_used_bb && (job_ptr->bb_status == ESLURM_BB_STATE_READY)) {
 		if (bb_status == SLURM_SUCCESS) {
-			//slurmd端删除成功
+			/* slurmd reported successful burst buffer teardown */
 			job_ptr->bb_status = SLURM_SUCCESS;
 			job_state_unset_flag(job_ptr, JOB_BURSTBUFFER_STAGE_OUT);
-			(void)bb_g_job_start_stage_out(job_ptr); //作业正常完成时使用该函数进行清理
+			(void)bb_g_job_start_stage_out(job_ptr); /* normal job completion cleanup */
 		} else if (bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
 			job_ptr->bb_status = bb_status;
 			_drain_nodes_of_failed_bb(job_ptr);
-			(void)bb_g_job_start_stage_out(job_ptr); //作业非正常完成时也要进行清理，即使para存在残留
-		} else if (bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
+			(void)bb_g_job_start_stage_out(job_ptr); /* teardown even on failure; backend may leave orphans */
+		} else if (bb_status == ESLURM_BB_RESOURCE_UNKNOWN) {
 			job_ptr->bb_status = bb_status;
-			(void)bb_g_job_start_stage_out(job_ptr); //作业非正常完成时也要进行清理，即使para存在残留
+			(void)bb_g_job_start_stage_out(job_ptr); /* same: attempt cleanup when state is unclear */
 
 		}
 	}
@@ -2760,10 +2758,7 @@ static void _slurm_rpc_complete_job_allocation(slurm_msg_t *msg)
 #ifdef __METASTACK_NEW_BURSTBUFFER
 
 
-/**
- * @brief 处理slurmd创建BB后发回的RPC
- * @param msg 
- */
+/* Handle REQUEST_COMPLETE_CREATE_BB RPC from slurmd after burst buffer setup */
 static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 {
 	DEF_TIMERS;
@@ -2786,7 +2781,6 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 		if (!(msg->flags & CTLD_QUEUE_PROCESSING))
 			unlock_slurmctld(job_write_lock);
-		slurm_send_rc_msg(msg, SLURM_SUCCESS);
 		return;
 	}
 
@@ -2797,7 +2791,7 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		return ;
 	}
 	
-	/* 1. 解析响应结果到job_ptr中 */
+	/* Parse burst buffer metadata from RPC into job record */
 	job_ptr->need_group_counts = comp_msg->groups_cnt;
 	job_ptr->need_database_counts = comp_msg->datasets_cnt;
 
@@ -2808,9 +2802,9 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		memcpy(job_ptr->group_ids, comp_msg->group_ids, comp_msg->groups_cnt * sizeof(uint32_t));
 		job_ptr->pack_status = 0x01;
 	} else {
-		//不应该出现的情况
+		/* Unexpected: creation RPC missing group IDs */
 		error("job %u, failed to get burst buffer info from creation burst buffer rpc", comp_msg->job_id);
-		fin_bb_rc_code = ELSURM_BB_RESOURCE_UNKNOW;
+		fin_bb_rc_code = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
 	if (comp_msg->datasets_cnt > 0 && comp_msg->dataset_ids) {
 		xfree(job_ptr->dataset_ids);
@@ -2818,9 +2812,9 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		memcpy(job_ptr->dataset_ids, comp_msg->dataset_ids, comp_msg->datasets_cnt * sizeof(uint32_t));
 		job_ptr->pack_status = 0x02;
 	} else {
-		//不应该出现的情况
+		/* Unexpected: creation RPC missing dataset IDs */
 		error("job %u, failed to get burst buffer info from creation burst buffer rpc", comp_msg->job_id);
-		fin_bb_rc_code = ELSURM_BB_RESOURCE_UNKNOW;
+		fin_bb_rc_code = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
 	if (comp_msg->datasets_cnt > 0 && comp_msg->task_ids) {
 		xfree(job_ptr->task_ids);
@@ -2828,9 +2822,9 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 		memcpy(job_ptr->task_ids, comp_msg->task_ids, comp_msg->datasets_cnt * sizeof(uint32_t));
 		job_ptr->pack_status = 0x03;
 	} else {
-		//不应该出现的情况
+		/* Unexpected: creation RPC missing task IDs */
 		error("job %u, failed to get burst buffer info from creation burst buffer rpc", comp_msg->job_id);
-		fin_bb_rc_code = ELSURM_BB_RESOURCE_UNKNOW;
+		fin_bb_rc_code = ESLURM_BB_RESOURCE_UNKNOWN;
 	}
 
 	if (bb_g_job_test_post_run(job_ptr) != 1) {
@@ -2838,42 +2832,39 @@ static void _slurm_rpc_deal_creation_bb(slurm_msg_t *msg)
 	}
 	END_TIMER2(__func__);
 	/*
-	2. 根据bb_return_code进行处理
-		a.取消成功直接更新资源
-		b.失败了也调用更新资源
-		c.成功创建，不用处理，正常流程
-	*/
-
-	/*  发送kill作业时已经收到创建已经完成，直接走bb_g_cancel流程*/
+	 * Apply bb_return_code: failures and indeterminate states persist on the job;
+	 * SLURM_SUCCESS from slurmd marks stage-in ready unless the job was killed
+	 * during setup (bb_kill_flag -> treat as stage-in canceled).
+	 */
 	if (job_ptr->bb_kill_flag == true) {
 		fin_bb_rc_code = ESLURM_BB_RESOURCE_SI_CANCEL;
 	}
 
-	if (fin_bb_rc_code == ESLURM_BB_STATE_PENDING_MANUAL || fin_bb_rc_code == ELSURM_BB_RESOURCE_UNKNOW) {
+	if (fin_bb_rc_code == ESLURM_BB_STATE_PENDING_MANUAL || fin_bb_rc_code == ESLURM_BB_RESOURCE_UNKNOWN) {
 		// bb_job_error = xmalloc(sizeof(bb_job_error_msg_t));
 		// bb_job_error->job_id = comp_msg->job_id;
 		// bb_job_error->bb_status = fin_bb_rc_code;
 		job_ptr->bb_status = fin_bb_rc_code;
 		// list_append(bb_job_error_list, bb_job_error);
 	} else if (fin_bb_rc_code == ESLURM_BB_RESOURCE_SI_CANCEL) {
-		job_ptr->bb_status = fin_bb_rc_code;//取消成功，不在线程中单独处理
+		job_ptr->bb_status = fin_bb_rc_code; /* canceled in SI; handled here, not in worker thread */
 	} else if (bb_rc_code == SLURM_SUCCESS) {
-		job_ptr->bb_status = ESLURM_BB_STATE_READY; //一定要在bb_g_job_test_post_run函数前，否则该属性无法同步
+		/* Must run before bb_g_job_test_post_run sync path */
+		job_ptr->bb_status = ESLURM_BB_STATE_READY;
 	}
 
 	if (job_ptr->bb_status == ESLURM_BB_STATE_PENDING_MANUAL) {
-		/* 失败场景1:创建BB失败（创建失败或者取消失败） */
-		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(ESLURM_BB_STATE_PENDING_MANUAL));
-		/* drain掉缓存组已占用的节点 */
+		error("%s: JobId=%u: %s", __func__, comp_msg->job_id,
+		      slurm_strerror(ESLURM_BB_STATE_PENDING_MANUAL));
 		_drain_nodes_of_failed_bb(job_ptr);
-		/* 更新bb资源数量 */
-	} else if (job_ptr->bb_status == ELSURM_BB_RESOURCE_UNKNOW) {
-		//不应该出现的情况:不知道缓存组状况，无法drain
-		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(ELSURM_BB_RESOURCE_UNKNOW));
+	} else if (job_ptr->bb_status == ESLURM_BB_RESOURCE_UNKNOWN) {
+		warning("%s: JobId=%u: %s", __func__, comp_msg->job_id,
+			slurm_strerror(ESLURM_BB_RESOURCE_UNKNOWN));
 	} else if (job_ptr->bb_status == ESLURM_BB_RESOURCE_SI_CANCEL) {
-		/* 失败场景2:创建时成功被取消 */
-		info("%s JobId=%u: %s ", __func__, comp_msg->job_id, slurm_strerror(ESLURM_BB_RESOURCE_SI_CANCEL));
-		debug2("%s JobId=%u %s 作业在SI阶段被取消", __func__, comp_msg->job_id, TIME_STR);
+		info("%s: JobId=%u: %s", __func__, comp_msg->job_id,
+		     slurm_strerror(ESLURM_BB_RESOURCE_SI_CANCEL));
+		debug2("%s: JobId=%u burst buffer stage-in canceled %s", __func__,
+		       comp_msg->job_id, TIME_STR);
 		bb_g_job_cancel(job_ptr);
 	}
 
