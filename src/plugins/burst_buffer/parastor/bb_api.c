@@ -825,14 +825,14 @@ static int parse_json_of_usedgroupid_to_arr(const char *json_str, bb_response *r
                 const char *tmp = json_string_value(sn_obj);
                 if (!tmp || tmp[0] == '\0') {
                     json_decref(root);
-                    error("%s: get group sn error", __func__);
+                    error("%s: empty group serial number in API response", __func__);
                     return BB_CODE_ERROR;
                 }
                 /* Slurm cache groups use SN starting with 'j' */
                 if (tmp[0] == 'j') {
                     if (_json_uint32_t_value(json_object_get(group_obj, "id"), &tmp_groupid) == SLURM_ERROR) {
                         json_decref(root);
-                        error("%s: get group id error", __func__);
+                        error("%s: failed to parse group id in API response", __func__);
                         return BB_CODE_ERROR;
                     }
                     used_groupid_arr[*arr_cnt] = tmp_groupid;
@@ -841,12 +841,12 @@ static int parse_json_of_usedgroupid_to_arr(const char *json_str, bb_response *r
             }
         } else {
             json_decref(root);
-            error("%s: groups is NULL", __func__);
+            error("%s: missing or invalid cache_groups array in API response", __func__);
             return BB_CODE_ERROR;
         }
     } else {
         json_decref(root);
-        error("%s: json result is NULL", __func__);
+        error("%s: missing result object in API response", __func__);
         return BB_CODE_ERROR;
     }
     json_decref(root);
@@ -891,8 +891,9 @@ extern int get_used_groupid_arr(bb_minimal_config_t *bb_min_config, uint32_t **u
         ret = call_bb_api_to_get_all_groups(bb_min_config, start_idx, page_size, &json_string);
         if (ret != 0) {
             if (ret == BB_API_TIMEOUT)
-                error("%s: API call timeout", __func__);
-            error("%s: failed to call get all bb group API", __func__);
+                error("%s: burst buffer API call timed out", __func__);
+            else
+                error("%s: failed to list burst buffer groups", __func__);
             xfree(json_string);
             free_bb_response(resp_out);
             return ret;
@@ -900,14 +901,14 @@ extern int get_used_groupid_arr(bb_minimal_config_t *bb_min_config, uint32_t **u
 
         ret = parse_json_of_usedgroupid_to_arr(json_string, resp_out, *used_groupid_arr, used_groups_cnt);
         if (ret != 0) {
-            error("%s: failed to parse json string to response", __func__);
+            error("%s: failed to parse burst buffer API JSON response", __func__);
             xfree(json_string);
             free_bb_response(resp_out);
             return ret;
         }
 
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                      __func__, resp_out->err_msg, resp_out->detail_err_msg);
             xfree(json_string);
             free_bb_response(resp_out);
@@ -1021,7 +1022,7 @@ static int parse_json_groupid_of_datasets_to_arr(const char *json_str, bb_respon
                 json_t *dataset_obj = json_array_get(data_sets, i);
                 if (_json_uint32_t_value(json_object_get(dataset_obj, "group_id"), &tmp_groupid) == SLURM_ERROR) {
                     json_decref(root);
-                    error("%s: get group id error", __func__);
+                    error("%s: failed to parse group_id in dataset API response", __func__);
                     return BB_CODE_ERROR;
                 }
                 groupid_arr[*arr_cnt] = tmp_groupid;
@@ -1029,12 +1030,12 @@ static int parse_json_groupid_of_datasets_to_arr(const char *json_str, bb_respon
             }
         } else {
             json_decref(root);
-            error("%s: data_sets is NULL", __func__);
+            error("%s: missing or invalid data_sets array in API response", __func__);
             return BB_CODE_ERROR;
         }
     } else {
         json_decref(root);
-        error("%s: json result is NULL", __func__);
+        error("%s: missing result object in API response", __func__);
         return BB_CODE_ERROR;
     }
     json_decref(root);
@@ -1079,8 +1080,9 @@ extern int get_groupid_of_all_datasets(bb_minimal_config_t *bb_min_config, uint3
         ret = call_bb_api_to_get_all_datasets(bb_min_config, start_idx, page_size, &json_string);
         if (ret != 0) {
             if (ret == BB_API_TIMEOUT)
-                error("%s: API call timeout", __func__);
-            error("%s: failed to call get all bb dataset API", __func__);
+                error("%s: burst buffer API call timed out", __func__);
+            else
+                error("%s: failed to list burst buffer datasets", __func__);
             xfree(json_string);
             free_bb_response(resp_out);
             return ret;
@@ -1088,14 +1090,14 @@ extern int get_groupid_of_all_datasets(bb_minimal_config_t *bb_min_config, uint3
 
         ret = parse_json_groupid_of_datasets_to_arr(json_string, resp_out, *groupid_arr, groups_cnt);
         if (ret != 0) {
-            error("%s: failed to parse json string to response", __func__);
+            error("%s: failed to parse burst buffer API JSON response", __func__);
             xfree(json_string);
             free_bb_response(resp_out);
             return ret;
         }
 
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                      __func__, resp_out->err_msg, resp_out->detail_err_msg);
             xfree(json_string);
             free_bb_response(resp_out);
@@ -1696,10 +1698,10 @@ static int parse_single_json_of_dataset(const char* json_str, bb_attribute_datas
     resp_out->time_zone_offset = json_integer_value(json_object_get(root, "time_zone_offset"));
     resp_out->trace_id = xstrdup(json_string_value(json_object_get(root, "trace_id")));
 
-    /* get result*/
+    /* Parse top-level result object */
     json_t *result = json_object_get(root, "result");
     if (result) {
-        /* analysis result to bb_attribute_dataset */
+        /* Populate bb_attribute_dataset from the first data_sets entry */
         json_t *data_sets = json_object_get(result, "data_sets");
         resp_out->dataset_count = json_integer_value(json_object_get(result, "total"));
         if (resp_out->dataset_count == 0) {
@@ -1726,7 +1728,7 @@ static int parse_single_json_of_dataset(const char* json_str, bb_attribute_datas
 extern int create_bb_group_by_sn(create_params_request *create_params, uint32_t *group_id, bb_config_t *bb_config)
 {
     if (!bb_config || !create_params || !group_id) {
-        log_flag(BURST_BUF, "%s: invalid parameter", __func__);
+        error("%s: invalid arguments", __func__);
         return BB_CODE_ERROR;
     }
     bb_response *resp_out = xmalloc(sizeof(bb_response));
@@ -1735,20 +1737,21 @@ extern int create_bb_group_by_sn(create_params_request *create_params, uint32_t 
     ret = call_bb_api_of_group(bb_config, create_params, CREATE_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to create burst buffer group", __func__);
         free_bb_response(resp_out);
         return ret;
     }
     ret = parse_json_to_response(json_string, resp_out, GROUP_CREATE);
     xfree(json_string);
     if (ret != 0) {
-        error("%s: failed to parse json string to response", __func__);
+        error("%s: failed to parse burst buffer API JSON response", __func__);
         free_bb_response(resp_out);
         return ret;
     }
     if (resp_out->err_no != 0) {
-        error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+        error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
         free_bb_response(resp_out);
         return BB_API_ERROR;
@@ -1761,7 +1764,7 @@ extern int create_bb_group_by_sn(create_params_request *create_params, uint32_t 
 extern int create_bb_dataset_by_sn(create_params_request *create_params, uint32_t *dataset_id, bb_config_t *bb_config)
 {
     if (!bb_config || !create_params || !dataset_id) {
-        error("%s: invalid parameter", __func__);
+        error("%s: invalid arguments", __func__);
         return BB_CODE_ERROR;
     }
     int ret = BB_SUCCESS;
@@ -1770,20 +1773,21 @@ extern int create_bb_dataset_by_sn(create_params_request *create_params, uint32_
     ret = call_bb_api_of_dataset(bb_config, create_params, CREATE_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to create burst buffer dataset", __func__);
         free_bb_response(resp_out);
         return ret;
     }
     ret = parse_json_to_response(json_string, resp_out, DATASET_CREATE);
     xfree(json_string);
     if (ret != 0) {
-        error("%s: failed to parse json string to response", __func__);
+        error("%s: failed to parse burst buffer API JSON response", __func__);
         free_bb_response(resp_out);
         return ret;
     }
     if (resp_out->err_no != 0) {
-        error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+        error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
         free_bb_response(resp_out);
         return BB_API_ERROR;
@@ -1796,7 +1800,7 @@ extern int create_bb_dataset_by_sn(create_params_request *create_params, uint32_
 extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_t *bb_min_config)
 {
     if (! bb_min_config || !group_sn || !group_id) {
-        log_flag(BURST_BUF, "%s: invalid parameters", __func__);
+        error("%s: invalid arguments", __func__);
         return BB_CODE_ERROR;
     }
     int ret = 0;
@@ -1811,8 +1815,9 @@ extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_
     xfree(query_params.group_sn);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call query group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to query burst buffer group", __func__);
         free_bb_group(bb_group);
         free_bb_response(resp_out);
         return ret;
@@ -1821,12 +1826,12 @@ extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
         if (bb_group->group_sn && xstrcmp(bb_group->group_sn, group_sn) != 0) {
-            error("%s: get group sn error, expected %s, got %s",
+            error("%s: group serial number mismatch (expected %s, received %s)",
                      __func__, group_sn, bb_group->group_sn);
             ret = SLURM_ERROR;
         } else {
@@ -1841,7 +1846,7 @@ extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_
 extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config)
 {
     if (!bb_min_config || group_id == 0) {
-        log_flag(BURST_BUF, "%s: invalid parameters", __func__);
+        error("%s: invalid arguments", __func__);
         return BB_CODE_ERROR;
     }
     int ret = 0;
@@ -1856,8 +1861,9 @@ extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config)
 
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call query group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to query burst buffer group", __func__);
         free_bb_group(bb_group);
         free_bb_response(resp_out);
         return ret;
@@ -1866,12 +1872,12 @@ extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config)
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
         if (bb_group->group_sn && bb_group->id != group_id) {
-            error("%s: get group id error, expected %d, got %d",
+            error("%s: group id mismatch (expected %u, received %u)",
                      __func__, group_id, bb_group->id);
             ret = SLURM_ERROR;
         }
@@ -1885,7 +1891,7 @@ extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config)
 extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, uint32_t *dataset_id, bb_config_t *bb_config)
 {
     if (!bb_config || group_id <= 0 || !path || !dataset_id) {
-        error("%s: invalid parameters", __func__);
+        error("%s: invalid arguments", __func__);
         return BB_CODE_ERROR;
     }
     int ret = 0;
@@ -1903,24 +1909,27 @@ extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, 
     xfree(query_params.path);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to query burst buffer dataset", __func__);
         free_bb_dataset(bb_dataset);
+        free_bb_response(resp_out);
         return ret;
     }
     ret = parse_single_json_of_dataset(json_string, bb_dataset, resp_out);
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
         if ((bb_dataset->path && xstrcmp(bb_dataset->path, path) != 0) ||
             (bb_dataset->group_id > 0 && bb_dataset->group_id != group_id)) {
-            error("%s: get dataset id error, expected path=%s, got %s",
-                     __func__, path, bb_dataset->path);
-            error("%s: get dataset id error, expected group_id=%u, got %u",
+            error("%s: dataset path mismatch (expected %s, received %s)",
+                     __func__, path,
+                     (bb_dataset->path && bb_dataset->path[0]) ? bb_dataset->path : "(null)");
+            error("%s: dataset group_id mismatch (expected %u, received %u)",
                      __func__, group_id, bb_dataset->group_id);
             ret = SLURM_ERROR;
         } else {
@@ -1935,7 +1944,7 @@ extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, 
 extern int submit_bb_task(create_params_request *create_params, uint32_t *task_id, bb_config_t *bb_config)
 {
     if (!bb_config || !create_params || !task_id) {
-        error("%s: invalid parameters to submit_bb_task", __func__);
+        error("%s: invalid arguments", __func__);
         return BB_CODE_ERROR;
     }
     int ret = 0;
@@ -1944,20 +1953,21 @@ extern int submit_bb_task(create_params_request *create_params, uint32_t *task_i
     ret = call_bb_api_of_task(bb_config, create_params, CREATE_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to submit burst buffer task", __func__);
         free_bb_response(resp_out);
         return ret;
     }
     ret = parse_json_to_response(json_string, resp_out, TASK_SUBMIT);
     xfree(json_string);
     if (ret != 0) {
-        error("%s: failed to parse json string to response", __func__);
+        error("%s: failed to parse burst buffer API JSON response", __func__);
         free_bb_response(resp_out);
         return ret;
     }
     if (resp_out->err_no != 0) {
-        error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+        error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
         free_bb_response(resp_out);
         return BB_API_ERROR;
@@ -1970,7 +1980,7 @@ extern int submit_bb_task(create_params_request *create_params, uint32_t *task_i
 extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_attribute_task *bb_task)
 {
     if (bb_config == NULL || bb_task == NULL) {
-        error("%s: invalid parameters", __func__);
+        error("%s: invalid arguments", __func__);
         return SLURM_ERROR;
     }
     int ret = 0;
@@ -1985,8 +1995,9 @@ extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_
     ret = call_bb_api_of_task(bb_config, &query_params, QUERY_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to query burst buffer task", __func__);
         free_bb_response(resp_out);
         return ret;
     }
@@ -1994,12 +2005,12 @@ extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
         if (bb_task->task_id > 0 && bb_task->task_id != task_id) {
-            error("%s: get task id error, expected %d, got %d",
+            error("%s: task id mismatch (expected %u, received %u)",
                      __func__, task_id, bb_task->task_id);
             ret = SLURM_ERROR;
         }
@@ -2011,7 +2022,7 @@ extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_
 extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id, bb_config_t *bb_config)
 {
     if (bb_config == NULL || hostname == NULL) {
-        error("%s: invalid parameters", __func__);
+        error("%s: invalid arguments", __func__);
         return SLURM_ERROR;
     }
     int ret = 0;
@@ -2026,8 +2037,9 @@ extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id,
     free_query_params(query_params);
     if (ret != BB_SUCCESS) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to query burst buffer client", __func__);
         free_bb_response(resp_out);
         return ret;
     }
@@ -2036,16 +2048,12 @@ extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id,
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                      __func__, resp_out->err_msg, resp_out->detail_err_msg);
-            if (xstrcmp(resp_out->detail_err_msg, "Token expired") == 0 ||
-                xstrcmp(resp_out->err_msg, "TOKEN_AUTHENTICATION_FAILED") == 0) {
-                error("%s: token expired, token=%s", __func__, bb_config->token);
-            }
             ret = BB_API_ERROR;
         }
         if (bb_client->hostname && xstrcmp(bb_client->hostname, hostname) != 0) {
-            error("%s: get client id error, expected hostname=%s, got %s",
+            error("%s: client hostname mismatch (expected %s, received %s)",
                      __func__, hostname, bb_client->hostname);
             ret = SLURM_ERROR;
         } else {
@@ -2072,8 +2080,9 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
     xfree(delete_params.group_sn);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to delete burst buffer group", __func__);
         free_bb_response(resp_out);
         return ret;
     }
@@ -2081,7 +2090,7 @@ extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config)
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
@@ -2104,8 +2113,9 @@ extern int delete_bb_group_by_id(uint32_t group_id, bb_config_t *bb_config)
     ret = call_bb_api_of_group(bb_config, &delete_params, DELETE_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to delete burst buffer group", __func__);
         free_bb_response(resp_out);
         return ret;
     }
@@ -2113,7 +2123,7 @@ extern int delete_bb_group_by_id(uint32_t group_id, bb_config_t *bb_config)
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
@@ -2138,8 +2148,9 @@ extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config)
     ret = call_bb_api_of_dataset(bb_config, &delete_params, DELETE_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to delete burst buffer dataset", __func__);
         free_bb_response(resp_out);
         return ret;
     }
@@ -2147,7 +2158,7 @@ extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config)
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
@@ -2170,8 +2181,9 @@ extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config)
     ret = call_bb_api_of_task(bb_config, &delete_params, CANCEL_CALL, &json_string);
     if (ret != 0) {
         if (ret == BB_API_TIMEOUT)
-            error("%s: API call timeout", __func__);
-        error("%s: failed to call create bb group API", __func__);
+            error("%s: burst buffer API call timed out", __func__);
+        else
+            error("%s: failed to cancel burst buffer task", __func__);
         free_bb_response(resp_out);
         return ret;
     }
@@ -2179,7 +2191,7 @@ extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config)
     xfree(json_string);
     if (ret == BB_SUCCESS) {
         if (resp_out->err_no != 0) {
-            error("%s: resp_out err_msg:%s, detail_err_msg:%s",
+            error("%s: burst buffer API returned error: err_msg=%s detail_err_msg=%s",
                  __func__, resp_out->err_msg, resp_out->detail_err_msg);
             ret = BB_API_ERROR;
         }
