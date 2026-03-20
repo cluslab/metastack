@@ -1,7 +1,11 @@
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
+#include "slurm/slurm.h"
+#include "src/common/log.h"
+#include "src/common/read_config.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 #include "bb_curl_wrapper.h"
@@ -40,9 +44,9 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *us
     size_t total_size = size * nitems;
     char *token_buf = (char *)userdata;
 
-    /*  Assume there is a line in the header that reads: Token: xxxxxxx */
+    /* Expect a response header line: Token: <value> */
     if (xstrncasecmp(buffer, "Token:", 6) == 0) {
-        /* Remove the “Token:” prefix and spaces */
+        /* Strip the "Token:" prefix and leading whitespace */
         const char *value = buffer + 6;
         while (*value == ' ' || *value == '\t')
             value++;
@@ -84,7 +88,7 @@ extern int rest_login(const char *url, const char *user, const char *password, c
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        debug("curl POST failed: %s", curl_easy_strerror(res));
+        log_flag(BURST_BUF, "%s: curl POST failed: %s", __func__, curl_easy_strerror(res));
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return -1;
@@ -92,7 +96,7 @@ extern int rest_login(const char *url, const char *user, const char *password, c
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     if (token_buf[0] == '\0') {
-        debug("Token not found in headers");
+        log_flag(BURST_BUF, "%s: token not found in response headers", __func__);
         return -1;
     }
     return 0;
@@ -110,7 +114,7 @@ extern int permanent_rest_login(const char *url, const char *user, const char *p
         "{\"username\":\"%s\",\"password\":\"%s\",\"permanentTokenFlag\":true,\"clientType\":\"REST\"}",
         user, password);
     if (n < 0 || n >= sizeof(post_data)) {
-        error("get token post data too long than 512B or encoding error");
+        error("%s: login POST body exceeds buffer or snprintf failed", __func__);
         curl_easy_cleanup(curl);
         return -1;
     }
@@ -137,7 +141,7 @@ extern int permanent_rest_login(const char *url, const char *user, const char *p
 
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        debug("curl POST failed: %s", curl_easy_strerror(res));
+        log_flag(BURST_BUF, "%s: curl POST failed: %s", __func__, curl_easy_strerror(res));
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return -1;
@@ -147,7 +151,7 @@ extern int permanent_rest_login(const char *url, const char *user, const char *p
     curl_easy_cleanup(curl);
 
     if (token_buf[0] == '\0') {
-        error("Token not found in headers");
+        error("%s: token not found in response headers", __func__);
         return -1;
     }
 
@@ -198,13 +202,13 @@ int call_rest_api_with_token(const char *url, const char *method, const char *bo
 
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        debug("curl perform failed: %s", curl_easy_strerror(res));
+        log_flag(BURST_BUF, "%s: curl perform failed: %s", __func__, curl_easy_strerror(res));
         xfree(chunk.response);
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return -1;
     }
-    *response_out = chunk.response;/*  DONT FORGET FREE */
+    *response_out = chunk.response; /* caller must xfree */
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     return 0;
@@ -213,15 +217,10 @@ int call_rest_api_with_token(const char *url, const char *method, const char *bo
 
 
 
-/** 
- * @brief 通过CURL调用RESTful API
- * @param url
- * @param method
- * @param body
- * @param token
- * @param timeout
- * @param response_out 出参：返回JSON格式响应体
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+/**
+ * @brief Perform a REST call via libcurl with Bearer-style token header and timeout.
+ * @param response_out Out: JSON body; caller must free
+ * @return BB_SUCCESS, BB_CODE_ERROR, BB_API_ERROR, or BB_API_TIMEOUT
  */
 extern int call_rest_api_with_token_timeout(const char *url, const char *method, const char *body,
     const char *token, uint32_t timeout, char **response_out)
@@ -241,14 +240,16 @@ extern int call_rest_api_with_token_timeout(const char *url, const char *method,
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     
-    /* 设置超时控制 */
     if (timeout > 0 && timeout <= LONG_MAX) {
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)timeout);
     } else if (timeout > 0 && timeout > LONG_MAX) {
-        debug("timeout exceeds the maximum value of long type and is set to maximum value of long");
+        log_flag(BURST_BUF, "%s: timeout exceeds long max; clamping to LONG_MAX", __func__);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)LONG_MAX);
     } else if (timeout < 0) {
-        error("timeout is less than 0");
+        error("%s: invalid timeout (< 0)", __func__);
+        xfree(chunk.response);
+        curl_easy_cleanup(curl);
+        return BB_CODE_ERROR;
     }
     
     /* set method, default GET */
@@ -278,18 +279,18 @@ extern int call_rest_api_with_token_timeout(const char *url, const char *method,
 
     if (res != CURLE_OK) {
         int ret_code = BB_API_ERROR;
-        /* 判断是否为超时错误 */
         if (res == CURLE_OPERATION_TIMEDOUT) {
-            debug("curl request timeout: %s", curl_easy_strerror(res));
-            ret_code = BB_API_TIMEOUT;  // 整体请求超时
+            log_flag(BURST_BUF, "%s: curl request timed out: %s", __func__, curl_easy_strerror(res));
+            ret_code = BB_API_TIMEOUT;
+        } else {
+            log_flag(BURST_BUF, "%s: curl perform failed: %s", __func__, curl_easy_strerror(res));
         }
-        debug("curl perform failed: %s", curl_easy_strerror(res));
         xfree(chunk.response);
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return ret_code;
     }
-    *response_out = chunk.response;/*  DONT FORGET FREE */
+    *response_out = chunk.response; /* caller must xfree */
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     return BB_SUCCESS;
