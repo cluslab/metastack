@@ -420,17 +420,18 @@ typedef enum {
 	ESLURMD_INVALID_WATCH_DOG,
 #endif
 #ifdef __METASTACK_NEW_BURSTBUFFER
+	/* Burst buffer plugin status / return codes (Parastor and related) */
 	ESLURM_BB_RESOURCE_LIMIT = 20000,
-    ESLURM_BB_STATE_INIT = 20001,      // 初始状态：还未进行创建/预热操作
-    ESLURM_BB_STATE_READY,             // 成功状态：创建缓存组、数据集、预热操作成功
-    ESLURM_BB_ERR_TIMEOUT,             // 异常状态：API 调用超时失败
-    ESLURM_BB_ERR_INTERFACE,           // 异常状态：API 接口调用错误
-    ESLURM_BB_STATE_CLEANUP,      	   // 作业已经清理完成BB资源
-	ESLURM_BB_RESOURCE_SI_CANCEL, 	   // 创建过程中成功取消
-	ELSURM_BB_RESOURCE_UNKNOW,  	   // 无法明确BB资源状态的作业（节点失联的作业，查询不到资源状态的作业）
-	//ESLURM_BB_RESOURCE_SI_FAIL,      // SI 阶段失败 
-	ESLURM_BB_STATE_PENDING_MANUAL,    // 创建/清理BB失败，需要手动处理
-	#endif
+	ESLURM_BB_STATE_INIT = 20001, /* No stage-in / warm-up yet */
+	ESLURM_BB_STATE_READY, /* Stage-in complete: cache group, datasets, warm-up OK */
+	ESLURM_BB_ERR_TIMEOUT, /* Backend API call timed out */
+	ESLURM_BB_ERR_INTERFACE, /* Backend API returned an interface/protocol error */
+	ESLURM_BB_STATE_CLEANUP, /* Job released burst buffer resources */
+	ESLURM_BB_RESOURCE_SI_CANCEL, /* Stage-in canceled (e.g. job killed during setup) */
+	ESLURM_BB_RESOURCE_UNKNOWN, /* Resource state indeterminate (node down, query failed) */
+	ESLURM_BB_STATE_PENDING_MANUAL, /* Stage-in/out or teardown failed; operator action required */
+	ESLURM_BB_STATE_BATCH_START_TIMEOUT, /* Batch start timeout */
+#endif
 } slurm_err_t;
 
 /* Type for error string table entries */

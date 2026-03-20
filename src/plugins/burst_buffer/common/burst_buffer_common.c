@@ -1154,7 +1154,7 @@ extern int bb_pack_job_bufs(uid_t uid, bb_state_t *state_ptr, buf_t *buffer,
 		bb_alloc = state_ptr->bb_ahash[i];
 		while (bb_alloc) {
 			if ((uid == 0) || (uid == bb_alloc->user_id)) {
-				/* 当前只在在打包前同步更新 bb_alloc->state */
+				/* Update bb_alloc->state only before packing to ensure consistency */
 				if (bb_alloc->job_id > 0) {
 					bb_job_t *bb_job = bb_job_find(state_ptr, bb_alloc->job_id);
 					if (bb_job && (bb_job->state != (int)bb_alloc->state)) {
@@ -1185,7 +1185,7 @@ extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
 	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) {
 		packstr(config_ptr->allow_users_str, buffer);
 		packstr(config_ptr->deny_users_str,  buffer);
-		// packstr(config_ptr->get_sys_state,   buffer); //用于存放parastor系统的状态
+		// packstr(config_ptr->get_sys_state,   buffer); 
 		// packstr(config_ptr->get_sys_status,  buffer);
 		pack32(config_ptr->other_timeout,    buffer);
 		pack32(config_ptr->stage_in_timeout, buffer);
@@ -2643,7 +2643,6 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 
 	while (str_split) {
 		count++;
-		/* TODO：后续恢复检查 */
 		int len = strlen(str_split);
 		debug("xxxxx: pfs dir is %s, len=%d", str_split, len);
 		if(strlen(str_split) > state_ptr->bb_config.max_acc_dir_len) {
@@ -2994,17 +2993,6 @@ static int _is_the_dir_nested(const char *path_arry, uint32_t dir_number)
 		// xfree(tmp_path_cnt);
 		return -1;
 	}
-	// if (*tmp_path_cnt != dir_number) {
-	// 	error("number of path in pfs is error");
-	// 	// 释放 dir_list 及其内部字符串
-	// 	for (int i = 0; i < *tmp_path_cnt; i++) {
-	// 		xfree(dir_list[i]);
-	// 	}
-	// 	xfree(dir_list); 
-	// 	xfree(tmp_path_cnt);
-	// 	return -1;
-	// }
-	// xfree(tmp_path_cnt);
 
 	bool has_nested = false;
 	for (int i = 0; i < dir_number; i++) {
@@ -3064,7 +3052,7 @@ static char *convert_paths_str(const char *dirs, const char *mount_point, const 
         if (!is_parent_path(mount_point, token)) {
             xfree(result);
             xfree(dirs_copy);
-            return NULL; // 有一个不匹配就返回 NULL
+            return NULL; 
         }
 
         size_t remain_len = strlen(token) - strlen(mount_point);

@@ -1960,24 +1960,6 @@ typedef struct {
 
 #define CORE_SPEC_THREAD 0x8000	/* If set, this is a thread count not core count */
 
-#ifdef __METASTACK_NEW_BURSTBUFFER
-/* Description of each group entry */
-typedef struct bb_groups {
-	//uint64_t bb_group_id; //缓存组id
-	char *flags; //缓存类型，可以支持持久及临时。DisablePersistent，Persistent
-	uint64_t total_space; //缓存组总空间容量大小。
-	uint64_t free_space;  //剩余可用的缓存组数量
-	uint64_t used_space;  //缓存组已用总空间容量大小。
-	uint32_t bb_task;     //当前缓存组最大并行的任务数
-	uint32_t groups_nodes; //当前缓存组包含的节点数
-	uint32_t nodes_clients; //当前缓存组中节点及每个节点加入的缓存组数量。
-	uint64_t req_space;		//当前作业请求的空间
-
-	char *access_mode;      //存储类型，本地共享
-	char *pfs;          //后端存储路径,可能有多个
-	char *state;         //缓存组状态，启用，禁用,失败成功
-} bb_groups_job_t;
-#endif
 
 /*
  * Update:
@@ -5778,31 +5760,28 @@ typedef struct {
 	uint16_t state;		/* See BB_STATE_* */
 	uint32_t user_id;
 #ifdef __METASTACK_NEW_BURSTBUFFER
-	//uint64_t bb_group_id; //缓存组id
-	uint32_t type; //缓存类型，可以支持持久及临时。temporary|persistent
-	// bool  cache_tmp;
-	bool enforce_bb_flag; //是否强制使用缓存
-	// uint64_t total_space; //缓存组总空间容量大小。
-	// uint64_t free_space;  //剩余可用的缓存组数量
-	// uint64_t used_space;  //缓存组已用总空间容量大小。
+	uint32_t type;			/* BB type: temporary or persistent */
+	bool enforce_bb_flag;		/* require burst buffer for this job */
+	/* uint64_t total_space; per-group total capacity (unused) */
+	/* uint64_t free_space;  unused group slots or free capacity (unused) */
+	/* uint64_t used_space;  allocated capacity in group (unused) */
 
-	uint32_t bb_task;     //当前缓存组最大并行的任务数
-	uint32_t groups_nodes; //当前缓存组包含的节点数
-	uint64_t req_space;		//当前作业请求的空间
-	uint32_t access_mode;      //存储类型，本地共享
-	char *pfs;          //后端存储路径,可能有多个
-	uint32_t pfs_cnt;          //后端存储路径个数
-	int bb_state;         //缓存组状态，启用，禁用,失败成功
-	bool metadata_acceleration; //是否开启元数据加速
-	// char	*default_workdir; 	/* default work directory */
-	uint32_t *bb_group_ids; /* 作业中包含的缓存组id */
-	uint32_t *bb_dataset_ids; /*  作业中包含的数据集id  */
-	uint32_t *bb_task_ids; /* 作业中包含的任务id */
-	uint32_t index_groups; /* 作业中包含的缓存组个数 */
-	uint32_t index_datasets; /* 作业中包含的数据集个数 */
-	uint32_t index_tasks; /* 作业中包含的数据集个数 */
-	bool bb_create_finished; //缓存组创建完成
-	uint32_t job_state; //job_ptr->job_state
+	uint32_t bb_task;		/* max concurrent tasks for this cache group */
+	uint32_t groups_nodes;		/* nodes belonging to this cache group */
+	uint64_t req_space;		/* space requested by job (bytes) */
+	uint32_t access_mode;		/* data access mode (e.g. local vs shared) */
+	char *pfs;			/* backend PFS path spec (plugin-defined; may span several paths) */
+	uint32_t pfs_cnt;		/* number of distinct PFS paths represented */
+	int bb_state;			/* cache group status: enabled, disabled, error, etc. */
+	bool metadata_acceleration;	/* enable metadata acceleration */
+	uint32_t *bb_group_ids;		/* cache group IDs associated with job */
+	uint32_t *bb_dataset_ids;	/* dataset rule IDs associated with job */
+	uint32_t *bb_task_ids;		/* burst buffer task IDs associated with job */
+	uint32_t index_groups;		/* length of bb_group_ids */
+	uint32_t index_datasets;	/* length of bb_dataset_ids */
+	uint32_t index_tasks;		/* length of bb_task_ids */
+	bool bb_create_finished;	/* cache group setup completed */
+	uint32_t job_state;		/* copy of job record state (job_ptr->job_state) */
 #endif
 } burst_buffer_resv_t;
 
@@ -5851,19 +5830,19 @@ typedef struct {
 	uint32_t used_datasets_cnt;
 	uint32_t free_datasets_cnt;
 	uint32_t max_clients_join;
-	uint32_t max_clients_per_job; //每个作业客户端分组粒度
+	uint32_t max_clients_per_job;	/* client grouping width per job */
 
-	char    *para_stor_addr;	/* IP address */
-	uint32_t para_stor_port;	/* port number */
-	char    *para_stor_user_name;	/* user name */
-	char    *para_stor_password;	/* password */
-	char    *token;	/* password */
-	
-	uint32_t file_system_count;      // 支持的存储系统数量，现在上线是2
-	uint32_t max_acc_dir_len;        // 单个作业支持的最大目录长度
-	uint32_t max_acc_dirs_per_job;   // 单个作业支持的最大加载目录数量
-	char    *file_system;        // 文件系统名称
-	char    *file_system_mount;  // 文件系统挂载点	
+	char    *para_stor_addr;	/* backend (Parastor) service address */
+	uint32_t para_stor_port;	/* backend service port */
+	char    *para_stor_user_name;	/* backend authentication user */
+	char    *para_stor_password;	/* backend authentication secret */
+	char    *token;			/* session or API token */
+
+	uint32_t file_system_count;	/* number of supported backing file systems */
+	uint32_t max_acc_dir_len;	/* max length of one preload directory path */
+	uint32_t max_acc_dirs_per_job;	/* max preload directories per job */
+	char    *file_system;		/* file system name or descriptor */
+	char    *file_system_mount;	/* mount point for the file system */
 #endif
 } burst_buffer_info_t;
 

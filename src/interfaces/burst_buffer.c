@@ -814,16 +814,12 @@ extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer)
 extern uint32_t bb_g_get_node_quota(void)
 {
 	int i;
-	uint32_t quota = 4; // 默认值
+	uint32_t quota = 0; 
 
 	slurm_mutex_lock(&g_context_lock);
-	/* 遍历所有已加载的插件上下文 */
 	for (i = 0; i < g_context_cnt; i++) {
-		/* 如果该插件实现了 get_node_quota 函数 */
 		if (ops[i].get_node_quota) {
-			/* 调用插件内部实现并获取结果 */
 			quota = (*(ops[i].get_node_quota))();
-			/* 既然我们只需要一个配额值，拿到第一个有效插件的值就可以跳出循环了 */
 			break;
 		}
 	}

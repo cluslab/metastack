@@ -115,12 +115,6 @@
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
 #include "src/interfaces/burst_buffer_slurmd.h"
-// #define BB_JOB_MEM_ALLOC 0
-// #define BB_JOB_GROUPS_CREATED    1
-// #define BB_JOB_DATASETS_CREATED  2
-// #define BB_JOB_TASKS_SUBMITED     3
-// #define BB_JOB_PREFETCH_FINISHED  4
-// #define BB_ABORT      -1
 
 typedef enum {
 	BB_ABORT = -1,
@@ -151,19 +145,19 @@ typedef enum {
 
 typedef struct bb_job_msg{
 	uint32_t job_id;
-	uint64_t req_space;		   		 //当前作业请求的空间
-	uint32_t access_mode;      		 //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	uint32_t status;                 //0:创建结构体 1：完成创建缓存组，2：完成创建数据集 3：完成预热任务 
-	int      terminal;                 //-1：失败, 0不做处理
+	uint64_t req_space;		   		 /* Bytes requested for this job */
+	uint32_t access_mode;      		 /* I/O mode: shared vs private (0 = shared, 1 = local/private) */
+	uint32_t status;                 /* BB_JOB_STATUS_TYPE: creation / groups / datasets / prefetch / … */
+	int      terminal;                 /* BB_ABORT (-1) on cancel; 0 = no action */
 	uint32_t group_cnt; 
-	uint32_t dataset_cnt;			//dataset与task个数相同
-	uint32_t task_cnt;			//dataset与task个数相同
-	uint32_t pfs_cnt;			 //加速路径个数
-	char     **group_sn;   			 //缓存组唯一sn码，作业可能有多个缓存组
-	uint32_t *group_ids;             //缓存组ID数组，从slurmd返回
-	uint32_t *dataset_ids;           //数据集ID数组，从slurmd返回
-	uint32_t *task_ids;              //任务ID数组，与dataset_ids一一对应，从slurmd返回
-	char     **pfs;            		 //后端存储路径,可能有多个
+	uint32_t dataset_cnt;			/* Same cardinality as task_cnt */
+	uint32_t task_cnt;			/* Same cardinality as dataset_cnt */
+	uint32_t pfs_cnt;			 /* Number of backend (PFS) paths */
+	char     **group_sn;   			 /* Per-cache-group serial/name; job may use several groups */
+	uint32_t *group_ids;             /* Cache group IDs (from slurmd) */
+	uint32_t *dataset_ids;           /* Dataset IDs (from slurmd) */
+	uint32_t *task_ids;              /* Task IDs, parallel to dataset_ids */
+	char     **pfs;            		 /* Backend storage paths (one or more) */
 } bb_job_msg_t;
 
 #endif
@@ -425,7 +419,7 @@ static int bb_job_record_unpack(buf_t *buffer, uint16_t res_version)
 	// uint16_t res_version = 0;
 
 	#ifdef __META_PROTOCOL
-	if (res_version >= META_3_0_PROTOCOL_VERSION) { //后期需要更改版本号
+	if (res_version >= META_3_0_PROTOCOL_VERSION) { 
 		bb_job_ptr = xmalloc(sizeof(bb_job_msg_t));
 		safe_unpack32(&bb_job_ptr->job_id,      buffer);
 		safe_unpack64(&bb_job_ptr->req_space,   buffer);
@@ -486,7 +480,8 @@ static int bb_job_record_unpack(buf_t *buffer, uint16_t res_version)
 unpack_error:
 	_bb_job_list_delete(bb_job_ptr);
 	if(bb_job_ptr)
-		error(" Failure recovering burst buffer of  %d  from spool. ", bb_job_ptr->job_id);
+		error("Failure recovering burst buffer job %u from spool",
+		      bb_job_ptr->job_id);
 	return SLURM_ERROR;
 }
 
@@ -506,9 +501,7 @@ static void bb_restore_state(void)
 		info("No burst buffer job state file (%s) to recover", file_name);
 		goto unpack_error;
 	}
-	//slurm_mutex_lock(&bb_job_list_mutex);
 	FREE_NULL_LIST(bb_job_list);
-	//slurm_mutex_unlock(&bb_job_list_mutex);
 	safe_unpack16(&res_version, buffer);
 	debug3("Version string in job_state header is %d", res_version);
 	if (res_version == NO_VAL16) {
@@ -595,16 +588,15 @@ extern void bb_state_fini()
 static int bb_job_record_pack(bb_job_msg_t* bb_job_ptr, buf_t *buffer, uint16_t protocol_version)
 {
 	int rc = SLURM_SUCCESS;
-	//char *old_file = NULL, *new_file = NULL, *reg_file = NULL;
-	//uint32_t bb_jobs_start = 0, bb_jobs_end = 0; //记录开始位置
+	
 	if(bb_job_ptr == NULL) {
-		debug("The structure in the BB job list is empty and cannot be written to the spool");
+		log_flag(BURST_BUF, "skipping spool pack: null burst buffer job entry");
 		rc = SLURM_ERROR;
 		return rc;
 	}
 	//bb_jobs_start = get_buf_offset(buffer);
 	#ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号 #ifdef __METASTACK_NEW_BURSTBUFFER
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { /* META protocol: bump when layout changes */
 		pack32(bb_job_ptr->job_id,         buffer);
 		pack64(bb_job_ptr->req_space,      buffer);
 		pack32(bb_job_ptr->access_mode,    buffer);
@@ -661,9 +653,9 @@ static void dump_bb_job_state(buf_t *buffer)
 }
 
 /**
- * @brief 创建并初始化bb_job_ptr
- * @param job_id 
- * @return 
+ * Allocate or return the per-job burst buffer record (bb_job_msg_t) on bb_job_list.
+ * @param job_id Slurm job ID
+ * @return Job record; never NULL on success
  */
 static bb_job_msg_t *alloc_bb_jobid(uint32_t job_id)
 {
@@ -705,15 +697,15 @@ static bool remove_alloc_bb_jobid(uint32_t job_id)
 }
 
 /**
- * @brief 
- * @param job_id 
- * @return 0为没有收到terminate，BB_ABORT(-1)为收到terminate
+ * @param job_id Slurm job ID
+ * @return 0 if not cancelled; BB_ABORT (-1) if cancellation was requested
  */
 static int is_job_terminated(uint32_t job_id)
 {
 	bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &job_id);
 	if (!bb_job_ptr) {
-		error("BB-----job%u do not exsit in slurmd bb list", job_id);
+		warning("%s: job %u not in burst buffer job list; treating as cancelled",
+			__func__, job_id);
 		return BB_ABORT;
 	}
 	return bb_job_ptr->terminal;
@@ -783,7 +775,11 @@ static void update_bb_job_prefetch(bb_job_msg_t *bb_job_ptr, uint32_t task_count
 }
 
 
- //如果返回-1，走正常作业完成的清理流程，如果返回0，在创建的过程中的清理流程
+/*
+ * Returns 0 if the job is still in the burst buffer setup phase (prefetch not finished)
+ * and should use creation-path cleanup; -1 if prefetch already finished or job is absent
+ * (normal completion teardown).
+ */
 static int clean_bb_job_process(uint32_t job_id) 
 {
 	int rc = 0;
@@ -3173,9 +3169,10 @@ int rc, ret_c;
 	 */
 	if ((ret_c = slurm_send_recv_controller_rc_msg(
 		&req_msg, &rc, working_cluster_rec)))
-		error("Error sending create bb completion notification: %m");
+		error("%s: failed to send burst buffer create-complete notification: %m",
+		      __func__);
 
-	// 清理临时分配的内存
+	/* Free packed RPC buffers */
 	xfree(req.group_ids);
 	xfree(req.dataset_ids);
 	xfree(req.task_ids);
@@ -3188,7 +3185,7 @@ static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_node
 {
 	*node_count = 0;
 	if (!slurm_nodes) {
-		error("BB------node list is null");
+		error("%s: node list is NULL", __func__);
 		return NULL;
 	}
 	char **node_array = NULL;
@@ -3216,7 +3213,7 @@ static char **_convert_slurm_nodes_to_arr(uint32_t *node_count, char *slurm_node
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 {
 	if (!path_str || *path_count == 0) {
-		error("params error");
+		error("%s: invalid path list parameters", __func__);
 		return NULL;
 	}
 	char **path_array = NULL;
@@ -3226,7 +3223,7 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 	uint32_t count = 0;
 	
 	while (token) {
-		// 跳过空字符串
+		/* Skip leading whitespace in each token */
 		while (*token == ' ') token++;
 		if (*token != '\0') {
 			count++;
@@ -3239,7 +3236,8 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 			*path_count = 0;
 		return NULL;
 	} else if (count != *path_count) {
-		error("	The entered count does not match the actual calculated count, set entered count from %u to %u", *path_count, count);
+		error("%s: path count mismatch: adjusting from %u to %u",
+		      __func__, *path_count, count);
 		*path_count = count;
 	}
 	
@@ -3267,21 +3265,22 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 
 
 /**
- * @brief 信息清理BB资源，并更新bb_job_ptr，函数中带bb_job_list_mutex锁，不能在外部重复加锁
- * @param bb_job_ptr 
- * @return
+ * Tear down burst buffer state for a cancelled job and mirror results into bb_job_ptr.
+ * Must not hold bb_job_list_mutex across bb_g_* calls; do not nest this with outer locks.
+ * @param bb_job_ptr Job record (updated under mutex where needed)
+ * @return SLURM_SUCCESS or SLURM_ERROR
  */
 static int _clean_canceled_bb_resources(bb_job_msg_t *bb_job_ptr)
 {
 	if (!bb_job_list) {
-		error("BB-----_clean_canceled_bb_job: bb_job_list is NULL");
+		error("%s: bb_job_list is NULL", __func__);
 		return SLURM_ERROR;
 	}
 	
 	int rc = SLURM_SUCCESS;
-	bool is_print = true; //控制是否打印当前所处阶段
-	
-	// 临时变量存储需要的数据
+	bool is_print = true; /* Log the first matching stage only */
+
+	/* Local snapshot of fields */
 	uint32_t bb_stage = 0;
 	uint32_t dataset_cnt = 0;
 	uint32_t group_cnt = 0;
@@ -3291,17 +3290,15 @@ static int _clean_canceled_bb_resources(bb_job_msg_t *bb_job_ptr)
 	uint32_t *group_ids = NULL;
 	char **pfs = NULL;
 	
-	// 加锁，查找并复制数据
 	slurm_mutex_lock(&bb_job_list_mutex);
 
-	// 复制基本字段
+	/* Copy scalar fields */
 	uint32_t job_id = bb_job_ptr->job_id;
 	bb_stage = bb_job_ptr->status;
 	dataset_cnt = bb_job_ptr->dataset_cnt;
 	group_cnt = bb_job_ptr->group_cnt;
 	pfs_cnt = bb_job_ptr->pfs_cnt;
 
-	// 复制数组数据
 	if (dataset_cnt > 0) {
 		if (bb_job_ptr->task_ids) {
 			task_ids = xmalloc(dataset_cnt * sizeof(uint32_t));
@@ -3329,104 +3326,116 @@ static int _clean_canceled_bb_resources(bb_job_msg_t *bb_job_ptr)
 		}
 	}
 	
-	// 解锁，准备调用 bb 接口
 	slurm_mutex_unlock(&bb_job_list_mutex);
-	// 使用临时变量分配 clean_task_ids
 	uint32_t *clean_task_ids = xmalloc(dataset_cnt * sizeof(uint32_t));
 	
 	switch (bb_stage) {
 	case BB_JOB_TASKS_SUBMITING:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前正在提交预热任务中)，取消所有任务", job_id);
+			log_flag(BURST_BUF, "job %u cancelled during burst buffer setup (submitting prefetch tasks); cancelling tasks",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_TASKS_FAIL:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前提交预热任务失败)，取消所有任务", job_id);
+			log_flag(BURST_BUF, "job %u cancelled during burst buffer setup (prefetch submit failed); cancelling tasks",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_TASKS_SUBMITED:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前已完成预热任务提交)，取消所有任务", job_id);
+			log_flag(BURST_BUF, "job %u cancelled during burst buffer setup (prefetch tasks submitted); cancelling tasks",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_PREFETCH_WAITTING:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前正在等待预热任务完成)，取消所有任务", job_id);
+			log_flag(BURST_BUF, "job %u cancelled during burst buffer setup (waiting for prefetch); cancelling tasks",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_PREFETCH_FAIL:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前预热任务失败)，取消所有任务", job_id);
+			log_flag(BURST_BUF, "job %u cancelled during burst buffer setup (prefetch failed); cancelling tasks",
+			      job_id);
 			is_print = false;
 		}
-		/* 不知道任务状态，全部取消 */
+		/* Cancel all prefetch tasks (state may be inconsistent) */
 		if (!task_ids) {
-			error("BB-----task_ids为空,SI阶段清理失败");
+			error("%s: task_ids is NULL; cleanup after cancel failed for job %u",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 		for (int i = 0; i < dataset_cnt; i++) {
 			if (task_ids[i] != 0) {
-				debug("BB-----取消预热任务%u", task_ids[i]);
+				log_flag(BURST_BUF, "cancelling prefetch task %u", task_ids[i]);
 				bb_g_cancel_bb_task_by_id(task_ids[i]);
 			}
 		}
 
 	case BB_JOB_PREFETCH_FINISHED:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前已完成数据预热)，进行回收任务", job_id);
+			log_flag(BURST_BUF, "job %u cancelled after prefetch finished; submitting recycle tasks",
+			      job_id);
 			is_print = false;
 		}
 		if (!dataset_ids) {
-			error("BB-----dataset_ids为空,SI阶段清理失败");
+			error("%s: dataset_ids is NULL; cleanup after cancel failed for job %u",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 		if (_submit_bb_task(dataset_cnt, BB_RECYCLE_TAKS_TYPE, dataset_ids, clean_task_ids) == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u中,提交回收任务成功", job_id);
-			// 提交任务成功，更新bb_job_ptr->task_ids
+			log_flag(BURST_BUF, "while cancelling job %u, recycle tasks submitted successfully",
+			      job_id);
 			slurm_mutex_lock(&bb_job_list_mutex);
 			if ( bb_job_ptr->task_ids) {
 				memcpy(bb_job_ptr->task_ids, clean_task_ids, dataset_cnt * sizeof(uint32_t));
 			}
 			slurm_mutex_unlock(&bb_job_list_mutex);
 		} else {
-			error("BB-----取消作业%u中,提交回收任务失败", job_id);
+			error("%s: while cancelling job %u, failed to submit recycle tasks",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 
 		if (_wait_bb_task_complete(clean_task_ids, BB_RECYCLE_TAKS_TYPE, dataset_cnt) == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u中,回收任务执行成功", job_id);
+			log_flag(BURST_BUF, "while cancelling job %u, recycle tasks completed successfully",
+			      job_id);
 		} else {
-			error("BB-----取消作业%u中,回收任务执行失败", job_id);
+			error("%s: while cancelling job %u, recycle tasks failed",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 	case BB_JOB_DATASETS_CREATING:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前正在创建数据集规则)，进行数据集规则删除", job_id);
+			log_flag(BURST_BUF, "job %u cancelled while creating dataset rules; deleting dataset rules",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_DATASETS_FAIL:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前创建数据集规则失败)，进行数据集规则删除", job_id);
+			log_flag(BURST_BUF, "job %u cancelled after dataset rule creation failed; deleting dataset rules",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_DATASETS_CREATED:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前已完成数据集规则创建)，进行数据集规则删除", job_id);
+			log_flag(BURST_BUF, "job %u cancelled after dataset rules were created; deleting dataset rules",
+			      job_id);
 			is_print = false;
 		}
-		/* 成功删除的数据集id会被置为0 */
+		/* Deleted dataset IDs are zeroed in dataset_ids on success */
 		if (!group_ids || !pfs) {
-			error("BB-----group_ids或pfs为空,无法检索数据集规则,SI阶段清理失败");
+			error("%s: group_ids or PFS path list is NULL; cannot resolve dataset rules for job %u",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 		int dataset_rc = _delete_bb_dataset_by_groupid_path(group_cnt, group_ids, pfs_cnt, pfs, dataset_ids);
-		// 无论成功失败，都要更新bb_job_ptr->dataset_ids
 		slurm_mutex_lock(&bb_job_list_mutex);
 		if (bb_job_ptr->dataset_ids) {
 			memcpy(bb_job_ptr->dataset_ids, dataset_ids, dataset_cnt * sizeof(uint32_t));
@@ -3434,35 +3443,40 @@ static int _clean_canceled_bb_resources(bb_job_msg_t *bb_job_ptr)
 		slurm_mutex_unlock(&bb_job_list_mutex);
 		
 		if (dataset_rc == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u中,清理数据集规则成功", job_id);
+			log_flag(BURST_BUF, "while cancelling job %u, dataset rules removed successfully",
+			      job_id);
 		} else {
-			error("BB-----取消作业%u中,清理数据集规则失败", job_id);
+			error("%s: while cancelling job %u, failed to remove dataset rules",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 
 	case BB_JOB_GROUPS_CREATING:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前正在创建缓存组)，进行缓存组删除", job_id);
+			log_flag(BURST_BUF, "job %u cancelled while creating cache groups; deleting cache groups",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_GROUPS_FAIL:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前创建缓存组失败)，进行缓存组删除", job_id);
+			log_flag(BURST_BUF, "job %u cancelled after cache group creation failed; deleting cache groups",
+			      job_id);
 			is_print = false;
 		}
 	case BB_JOB_GROUPS_CREATED:
 		if (is_print) {
-			debug("BB-----作业%u在创建bb阶段被取消(当前已完成缓存组创建)，进行缓存组删除", job_id);
+			log_flag(BURST_BUF, "job %u cancelled after cache groups were created; deleting cache groups",
+			      job_id);
 			is_print = false;
 		}
 		if (!group_ids) {
-			error("BB-----group_ids为空,SI阶段清理失败");
+			error("%s: group_ids is NULL; cleanup after cancel failed for job %u",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 		int group_rc = _delete_bb_group_by_id(group_cnt, group_ids);
-		// 无论成功失败，都要更新bb_job_ptr->group_ids
 		slurm_mutex_lock(&bb_job_list_mutex);
 		if (bb_job_ptr->group_ids) {
 			memcpy(bb_job_ptr->group_ids, group_ids, group_cnt * sizeof(uint32_t));
@@ -3470,25 +3484,29 @@ static int _clean_canceled_bb_resources(bb_job_msg_t *bb_job_ptr)
 		slurm_mutex_unlock(&bb_job_list_mutex);
 		
 		if (group_rc == SLURM_SUCCESS) {
-			debug("BB-----取消作业%u中,清理缓存组成功", job_id);
+			log_flag(BURST_BUF, "while cancelling job %u, cache groups removed successfully",
+			      job_id);
 		} else {
-			error("BB-----取消作业%u中,清理缓存组失败", job_id);
+			error("%s: while cancelling job %u, failed to remove cache groups",
+			      __func__, job_id);
 			rc = SLURM_ERROR;
 			break;
 		}
 	case BB_JOB_MEM_ALLOC:
 		if (is_print) {
-			debug("BB-----作业%u创建bb阶段取消(当前未开始创建)，无需清理", job_id);
+			log_flag(BURST_BUF, "job %u cancelled before burst buffer setup started; nothing to clean up",
+			      job_id);
 			is_print = false;
 		}
 		break;
 	default:
-		error("BB-----作业%u创建bb阶段取消,未知阶段 %u", job_id, bb_stage);
+		error("%s: job %u cancelled in burst buffer setup with unknown status %u",
+		      __func__, job_id, bb_stage);
 		rc = SLURM_ERROR;
 		break;
 	}
 
-	// 清理临时变量
+	/* Free local snapshots */
 	xfree(clean_task_ids);
 	xfree(task_ids);
 	xfree(dataset_ids);
@@ -3503,8 +3521,9 @@ static int _clean_canceled_bb_resources(bb_job_msg_t *bb_job_ptr)
 
 
 /**
- * @brief 处理创建 Burst Buffer 的 RPC 请求
- * @param msg 
+ * Handle REQUEST_CREATE_BB_JOB_LAUNCH: set up Parastor burst buffer (cache groups,
+ * datasets, prefetch) for a job.
+ * @param msg RPC containing burst_buffer_launch_msg_t
  */
 static void _rpc_create_bb(slurm_msg_t *msg)
 {
@@ -3538,7 +3557,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	bool metadata_acceleration = false;
 
 	if (!req){
-		error("%s: req is null, can't create parastor burstbuffer", __func__);
+		error("%s: null request; cannot create Parastor burst buffer", __func__);
 		return;
 	}
 		
@@ -3561,7 +3580,8 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &(req->job_id));
 		if (bb_job_ptr) {
 			slurm_mutex_unlock(&bb_job_list_mutex);
-			debug("BB-----bb_job_list中已存在作业号为%u的bb_job_ptr",req->job_id);
+			log_flag(BURST_BUF, "job %u already has a burst buffer record; skipping duplicate create",
+			      req->job_id);
 			return SLURM_SUCCESS;
 		}
 	}
@@ -3576,38 +3596,38 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	metadata_acceleration = req->metadata_acceleration;
 
 	if (group_count == 0 || pfs_count == 0 || max_clients_per_job == 0 || !group_sn_arr) {
-		error("%s: params of job%u are null , can't create parastor burstbuffer", __func__, job_id);
+		error("%s: invalid burst buffer parameters for job %u; cannot create Parastor burst buffer",
+		      __func__, job_id);
 		return;
 	}
 
-	/* 获取数值 */
 	node_array = _convert_slurm_nodes_to_arr(&node_count, req->nodes);
 	if (!node_array || node_count <= 0) {
-		error("%s: job%u get node array error, can't create parastor burstbuffer", __func__, job_id);
+		error("%s: failed to build node host list for job %u; cannot create Parastor burst buffer",
+		      __func__, job_id);
 		return;
 	}
 	pfs_array = _convert_path_string_to_arr(&pfs_count, req->pfs);
 	if (!pfs_array || pfs_count <= 0) {
-		error("%s: job%u get pfs array error, can't create parastor burstbuffer", __func__, job_id);
+		error("%s: failed to parse PFS path list for job %u; cannot create Parastor burst buffer",
+		      __func__, job_id);
 		return;
 	}
 	dataset_task_count = group_count * pfs_count;
-	/* 创建全局变量（链表） */
 	bb_job_msg_t *bb_job_ptr = alloc_bb_jobid(job_id);
 	if (!bb_job_ptr) {
-		error("%s: job%u create bb_job_ptr error, can't create parastor burstbuffer", __func__, job_id);
+		error("%s: failed to allocate burst buffer job state for job %u; cannot create Parastor burst buffer",
+		      __func__, job_id);
 		return;
 	}
 	if (req->het_job_id && (req->het_job_id != NO_VAL))
 		job_id = req->het_job_id;
 
-	/* 申请内存 */
 	groupids_arr = xmalloc(group_count * sizeof(uint32_t));
 	datasets_arr = xmalloc(dataset_task_count * sizeof(uint32_t));
 	tasks_arr = xmalloc(dataset_task_count * sizeof(uint32_t));
 
 	int job_status = BB_JOB_MEM_ALLOC;
-	/* 存储信息,检测作业是否取消 */
 	slurm_mutex_lock(&bb_job_list_mutex);
 	update_bb_job_pfs(bb_job_ptr, pfs_count, pfs_array, job_status);
 	continue_flag = is_job_terminated(job_id);
@@ -3616,8 +3636,8 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		goto  cleanup; 
 
 
-	/* 1. 创建缓存组 */
-	debug("BB-----job_id=%u, 开始创建 %u 个缓存组", job_id, group_count);
+	/* 1. Create cache groups */
+	log_flag(BURST_BUF, "JobId=%u: creating %u cache group(s)", job_id, group_count);
 	job_status = BB_JOB_GROUPS_CREATING;
 	for (uint32_t group_idx = 0; group_idx < group_count; group_idx++) {
 		uint32_t start_node = group_idx * max_clients_per_job;
@@ -3628,10 +3648,12 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 		bb_rc = bb_g_create_bb_group_by_sn(group_sn_arr[group_idx], node_num, hostname_arr, &groupids_arr[group_idx]);
 		if (bb_rc != SLURM_SUCCESS) {
 			job_status = BB_JOB_GROUPS_FAIL;
-			error("BB-----创建缓存组%s失败, rc=%d", group_sn_arr[group_idx], bb_rc);
+			error("burst_buffer: failed to create cache group %s (rc=%d)",
+			      group_sn_arr[group_idx], bb_rc);
 			break;
 		}
-		debug("BB-----创建缓存组%s成功,缓存组为ID=%u", group_sn_arr[group_idx], groupids_arr[group_idx]);
+		log_flag(BURST_BUF, "cache group %s created, group_id=%u",
+		      group_sn_arr[group_idx], groupids_arr[group_idx]);
 
 		slurm_mutex_lock(&bb_job_list_mutex);
 		continue_flag = is_job_terminated(job_id);
@@ -3646,11 +3668,11 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	slurm_mutex_unlock(&bb_job_list_mutex);
 	if (job_status != BB_JOB_GROUPS_CREATED || continue_flag == BB_ABORT)
 		goto cleanup;
-	debug("BB-----job_id=%u, 所有缓存组创建成功", job_id);
+	log_flag(BURST_BUF, "JobId=%u: all cache groups created successfully", job_id);
 
 
-	/* 2. 创建数据集规则 */
-	debug("BB-----job_id=%u, 开始创建数据集规则", job_id);
+	/* 2. Create dataset rules */
+	log_flag(BURST_BUF, "JobId=%u: creating dataset rules", job_id);
 	job_status = BB_JOB_DATASETS_CREATING;
 	bool is_share_cache = (access_mode == 0);
 
@@ -3661,11 +3683,11 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 
 			if (bb_rc != SLURM_SUCCESS) {
 				job_status = BB_JOB_DATASETS_FAIL;
-				error("BB-----创建数据集规则(缓存组ID=%u, PFS=%s)失败,return code=%d",
-					groupids_arr[group_idx], pfs_array[pfs_idx], bb_rc);
+				error("burst_buffer: failed to create dataset rule (group_id=%u, PFS=%s) rc=%d",
+				groupids_arr[group_idx], pfs_array[pfs_idx], bb_rc);
 				goto step2_out;
 			}
-			debug("BB-----创建数据集规则(缓存组ID=%u, PFS=%s)成功,数据集ID为%u",
+			log_flag(BURST_BUF, "dataset rule created (group_id=%u, PFS=%s) dataset_id=%u",
 				groupids_arr[group_idx], pfs_array[pfs_idx], datasets_arr[group_idx * pfs_count + pfs_idx]);
 
 			slurm_mutex_lock(&bb_job_list_mutex);
@@ -3683,14 +3705,14 @@ step2_out:
 	slurm_mutex_unlock(&bb_job_list_mutex);
 	if (job_status != BB_JOB_DATASETS_CREATED || continue_flag == BB_ABORT)
 		goto cleanup;
-	debug("BB-----job_id=%u, 所有数据集规则创建成功", job_id);
+	log_flag(BURST_BUF, "JobId=%u: all dataset rules created successfully", job_id);
 
 
-	/* 3. 提交预热任务 */
-	debug("BB-----防止parastor burstbuffer添加数据集在预热任务之后的情况,sleep 5秒");
+	/* 3. Submit prefetch (warm-up) tasks */
+	log_flag(BURST_BUF, "JobId=%u: delaying %ds before prefetch submit (ordering workaround for Parastor burst buffer)",
+	      job_id, 5);
 	sleep(5);
-	debug("BB-----sleep 结束");
-	debug("BB-----job_id=%u,开始为所有数据集规则提交预热任务", job_id);
+	log_flag(BURST_BUF, "JobId=%u: submitting prefetch tasks for all dataset rules", job_id);
 	job_status = BB_JOB_TASKS_SUBMITING;
 	for (uint32_t group_idx = 0; group_idx < group_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
@@ -3699,10 +3721,12 @@ step2_out:
 
 			if (bb_rc != SLURM_SUCCESS) {
 				job_status = BB_JOB_TASKS_FAIL;
-				error("BB-----提交数据集%u预热任务失败,return code=%d", dataset_id, bb_rc);
+				error("burst_buffer: failed to submit prefetch task for dataset_id=%u (rc=%d)",
+				      dataset_id, bb_rc);
 				goto step3_out;
 			}
-			debug("BB-----提交数据集%u预热任务成功,任务ID=%u", dataset_id, tasks_arr[group_idx * pfs_count + pfs_idx]);
+			log_flag(BURST_BUF, "prefetch task submitted for dataset_id=%u, task_id=%u",
+			      dataset_id, tasks_arr[group_idx * pfs_count + pfs_idx]);
 
 			slurm_mutex_lock(&bb_job_list_mutex);
 			continue_flag = is_job_terminated(job_id);
@@ -3719,28 +3743,28 @@ step3_out:
 	slurm_mutex_unlock(&bb_job_list_mutex);
 	if (job_status != BB_JOB_TASKS_SUBMITED || continue_flag == BB_ABORT)
 		goto cleanup;
-	debug("BB-----job_id=%u, 所有预热任务提交成功", job_id);
+	log_flag(BURST_BUF, "JobId=%u: all prefetch tasks submitted successfully", job_id);
 
 
-	/* 4. 等待预热任务完成 */
-	debug("BB-----job_id=%u,开始等待所有预热任务完成", job_id);
+	/* 4. Wait for prefetch tasks to complete */
+	log_flag(BURST_BUF, "JobId=%u: waiting for prefetch tasks to complete", job_id);
 	job_status = BB_JOB_PREFETCH_WAITTING;
 	for (uint32_t group_idx = 0; group_idx < group_count; group_idx++) {
 		for (int pfs_idx = 0; pfs_idx < pfs_count; pfs_idx++) {
 			uint32_t task_id = tasks_arr[group_idx * pfs_count + pfs_idx];
 			if (task_id == 0) {
 				job_status = BB_JOB_PREFETCH_FAIL;
-				error("BB-----数据集id不能为0");
+				error("burst_buffer: invalid prefetch task id 0 for job %u", job_id);
 				goto step4_out;
 			}
 			bb_rc = bb_g_wait_task_complete((int)task_id, BB_PREFETCH_TAKS_TYPE);
 			if (bb_rc != SLURM_SUCCESS) {
 				job_status = BB_JOB_PREFETCH_FAIL;
-				error("BB-----预热任务%u失败(缓存组%s, 加速路径%s)",
+				error("burst_buffer: prefetch task %u failed (cache group %s, PFS path %s)",
 					task_id, group_sn_arr[group_idx], pfs_array[pfs_idx]);
 				goto step4_out;
 			}
-			debug("BB-----预热任务%u完成(缓存组%s, 加速路径%s)",
+			log_flag(BURST_BUF, "prefetch task %u completed (cache group %s, PFS path %s)",
 				task_id, group_sn_arr[group_idx], pfs_array[pfs_idx]);
 			slurm_mutex_lock(&bb_job_list_mutex);
 			continue_flag = is_job_terminated(job_id);
@@ -3757,8 +3781,8 @@ step4_out:
 	slurm_mutex_unlock(&bb_job_list_mutex);
 	if (job_status != BB_JOB_PREFETCH_FINISHED || continue_flag == BB_ABORT)
 		goto cleanup;
-	debug("BB-----job_id=%u, 所有预热任务预热成功", job_id);
-	debug("BB-----job_id=%u, 创建缓冲区完成", job_id);
+	log_flag(BURST_BUF, "JobId=%u: prefetch completed successfully", job_id);
+	log_flag(BURST_BUF, "JobId=%u: burst buffer setup complete", job_id);
 
 cleanup:
 	bb_rc_msg = xmalloc(sizeof(bb_return_message_t));
@@ -3771,10 +3795,12 @@ cleanup:
 	if (continue_flag == BB_ABORT || job_status != BB_JOB_PREFETCH_FINISHED) {
 		clean_rc = _clean_canceled_bb_resources(bb_job_ptr);
 		if (clean_rc == SLURM_SUCCESS) {
-			debug("BB-----job_id=%u,取消的bb作业清理成功", job_id);
+			log_flag(BURST_BUF, "JobId=%u: cancelled burst buffer job cleaned up successfully",
+			      job_id);
 			ret_rc = ESLURM_BB_RESOURCE_SI_CANCEL;
 		} else {
-			error("BB-----job_id=%u,取消的bb作业清理失败", job_id);
+			error("burst_buffer: JobId=%u: failed to clean up cancelled burst buffer job",
+			      job_id);
 			ret_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		}
 		slurm_mutex_lock(&bb_job_list_mutex);
@@ -3825,12 +3851,9 @@ cleanup:
 }
 
 /**
- * @brief 提交BB任务
- * @param dataset_count 
- * @param task_type 
- * @param dataset_ids 
- * @param task_ids 
- * @return 成功返回0，失败返回-1;task_ids数组中存放对应的任务ID,失败则为0
+ * Submit burst buffer tasks (prefetch or recycle) for each dataset ID.
+ * @param task_ids Out: task id per dataset; 0 on failure for that slot
+ * @return 0 on full success, -1 if any submit failed
  */
 static int _submit_bb_task(uint32_t dataset_count, BB_TASK_TYPE task_type, uint32_t *dataset_ids, uint32_t *task_ids)
 {
@@ -3842,22 +3865,24 @@ static int _submit_bb_task(uint32_t dataset_count, BB_TASK_TYPE task_type, uint3
 		uint32_t tmp_task_id = 0;
 		uint32_t tmp_dataset_id = dataset_ids[dataset_idx];
 		if (tmp_dataset_id == 0) {
-			debug("数据集id为%u,跳过", tmp_dataset_id);
+			log_flag(BURST_BUF, "skipping dataset_id 0");
 			continue;
 		}
 
 		if (task_type == BB_PREFETCH_TAKS_TYPE) {
-			debug("BB-----开始提交预热任务(数据集%u): ", tmp_dataset_id);
+			log_flag(BURST_BUF, "submitting prefetch task for dataset_id=%u", tmp_dataset_id);
 		} else if (task_type == BB_RECYCLE_TAKS_TYPE) {
-			debug("BB-----开始提交回收任务(数据集%u)", tmp_dataset_id);
+			log_flag(BURST_BUF, "submitting recycle task for dataset_id=%u", tmp_dataset_id);
 		}
 
 		int bb_rc = bb_g_submit_bb_task(tmp_dataset_id, task_type, &tmp_task_id);
 		if (bb_rc == 0 && tmp_task_id > 0) {
-			debug("BB-----提交任务成功(数据集%u), 任务ID=%u", tmp_dataset_id, tmp_task_id);
+			log_flag(BURST_BUF, "task submitted for dataset_id=%u, task_id=%u",
+			      tmp_dataset_id, tmp_task_id);
 			task_ids[dataset_idx] = tmp_task_id;
 		} else {
-			error("BB-----提交任务失败(数据集%u), return code=%d", tmp_dataset_id, bb_rc);
+			error("burst_buffer: failed to submit task for dataset_id=%u (rc=%d)",
+			      tmp_dataset_id, bb_rc);
 			all_success = false;
 		}
 	}
@@ -3873,14 +3898,14 @@ static int _wait_bb_task_complete(uint32_t *task_ids, BB_TASK_TYPE task_type, ui
 	int bb_rc = 0;
 	for (uint32_t task_idx = 0; task_idx < task_count; task_idx++) {
 		uint32_t tmp_task_id = task_ids[task_idx];
-		debug("BB-----等待任务%u完成", tmp_task_id);
+		log_flag(BURST_BUF, "waiting for task_id=%u to complete", tmp_task_id);
 		if (tmp_task_id == 0)
 			continue;
 		bb_rc = bb_g_wait_task_complete(tmp_task_id, task_type);
 		if (bb_rc == SLURM_SUCCESS) {
-			debug("BB-----任务%u完成", tmp_task_id);
+			log_flag(BURST_BUF, "task_id=%u completed", tmp_task_id);
 		} else {
-			error("BB-----任务%u失败, return code=%d", tmp_task_id, bb_rc);
+			error("burst_buffer: task_id=%u failed (rc=%d)", tmp_task_id, bb_rc);
 			return -1;
 		}
 	}
@@ -3888,13 +3913,9 @@ static int _wait_bb_task_complete(uint32_t *task_ids, BB_TASK_TYPE task_type, ui
 }
 
 /**
- * @brief 删除数据集
- * @param group_count
- * @param group_ids
- * @param pfs_count
- * @param pfs_array
- * @param dataset_ids 如果非NULL，成功删除后置dataset_ids为0，存储规范：datasets_ids[group_idx * pfs_count + pfs_idx],其大小必须为pfs_count*group_count
- * @return
+ * Delete dataset rules by cache group id and PFS path.
+ * @param dataset_ids If non-NULL, successful deletions clear the entry to 0;
+ *        layout: dataset_ids[group_idx * pfs_count + pfs_idx], length group_count * pfs_count
  */
 static int _delete_bb_dataset_by_groupid_path(uint32_t group_count, uint32_t *group_ids, uint32_t pfs_count, char **pfs_array, uint32_t *dataset_ids)
 {
@@ -3908,14 +3929,15 @@ static int _delete_bb_dataset_by_groupid_path(uint32_t group_count, uint32_t *gr
 			char *path = pfs_array[j];
 			if (group_id == 0 || !path)
 				continue;
-			debug("BB-----删除数据集规则(缓存组ID=%u, 路径=%s)", group_id, path);
+			log_flag(BURST_BUF, "deleting dataset rule (group_id=%u, path=%s)",
+			      group_id, path);
 			bb_rc = bb_g_delete_bb_dataset_by_groupid_path(group_id, path);
 			if (bb_rc == SLURM_SUCCESS) {
-				debug("BB-----成功删除数据集规则");
+				log_flag(BURST_BUF, "dataset rule deleted (group_id=%u)", group_id);
 				if (dataset_ids)
 					dataset_ids[i * pfs_count + j] = 0;
 			} else {
-				error("BB-----删除数据集规则失败, return code=%d", bb_rc);
+				error("burst_buffer: failed to delete dataset rule (rc=%d)", bb_rc);
 				all_success = false;
 			}
 		}
@@ -3933,15 +3955,16 @@ static int _delete_bb_group_by_id(uint32_t group_count, uint32_t *group_id_array
 	bool all_success = true;
 	for (uint32_t i = 0; i < group_count; i++) {
 		uint32_t group_id = group_id_array[i];
-		if (group_id_array == 0)
+		if (group_id == 0)
 			continue;
-		debug("BB-----删除缓存组%d", group_id);
+		log_flag(BURST_BUF, "deleting cache group group_id=%u", group_id);
 		bb_rc = bb_g_delete_bb_group_by_id(group_id);
 		if (bb_rc == SLURM_SUCCESS) {
-			debug("BB-----成功删除缓存组%d", group_id);
+			log_flag(BURST_BUF, "cache group group_id=%u deleted", group_id);
 			group_id_array[i] = 0;
 		} else {
-			error("BB-----删除缓存组%d失败, return code=%d", group_id, bb_rc);
+			error("burst_buffer: failed to delete cache group group_id=%u (rc=%d)",
+			      group_id, bb_rc);
 			all_success = false;
 		}
 	}
@@ -3961,12 +3984,13 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	uint32_t pfs_cnt = 0;
 	bb_return_message_t *bb_rc_msg = NULL;
 	if (!req) {
-		error("BB-----参数为空");
+		error("%s: null request", __func__);
 		return SLURM_ERROR;
 	}
 	job_id = req->step_id.job_id;
 	if (!bb_job_list) {
-		debug("BB-----bb_job_list为空,作业%u或已执行过%s函数", job_id, __func__);
+		log_flag(BURST_BUF, "no burst buffer jobs tracked; job %u may already be cleaned up (%s)",
+		      job_id, __func__);
 		return SLURM_SUCCESS;
 	}
 
@@ -3974,7 +3998,8 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	bb_job_msg_t *bb_job_ptr = list_find_first(bb_job_list, _list_find_bb_job, &(req->step_id.job_id));
 	if (!bb_job_ptr) {
 		slurm_mutex_unlock(&bb_job_list_mutex);
-		debug("BB-----bb_job_list中不存在作业号为%u的bb_job_ptr,该作业或已执行过%s函数", req->step_id.job_id, __func__);
+		log_flag(BURST_BUF, "job %u has no burst buffer record; may already be cleaned up (%s)",
+		      req->step_id.job_id, __func__);
 		return SLURM_SUCCESS;
 	}
 	group_count = bb_job_ptr->group_cnt;
@@ -3998,53 +4023,49 @@ static int _rpc_clean_bb(kill_job_msg_t *req)
 	slurm_mutex_unlock(&bb_job_list_mutex);
 
 	/*
-	 * 在实际清理操作之前移除作业，防止重复执行导致失败
-	 * 此时所有需要的数据已经从 bb_job_ptr 复制到本地变量，后续不再使用 bb_job_ptr
+	 * Drop the job from the list before teardown so a retry does not duplicate work.
+	 * Local copies below replace bb_job_ptr.
 	 */
 	remove_alloc_bb_jobid(job_id);
 
 	uint32_t *recycle_task_ids = NULL;
 	recycle_task_ids = xmalloc(dataset_count * sizeof(uint32_t));
 
-	debug("BB-----开始清理 burst buffer: job_id=%u, group_count=%u, dataset_count=%u, pfs_cnt=%u",
+	log_flag(BURST_BUF, "JobId=%u: starting teardown (groups=%u, datasets=%u, pfs=%u)",
 		job_id, group_count, dataset_count, pfs_cnt);
-	/* 为每个数据集提交回收任务 */
-	debug("BB-----job_id=%u, 开始提交(%u 个)回收任务", job_id, dataset_count);
+	log_flag(BURST_BUF, "JobId=%u: submitting %u recycle task(s)", job_id, dataset_count);
 	bb_rc = _submit_bb_task(dataset_count, BB_RECYCLE_TAKS_TYPE, dataset_ids, recycle_task_ids);
 	if (bb_rc == SLURM_SUCCESS) {
-		debug("BB-----job_id=%u, 回收任务提交成功", job_id);
+		log_flag(BURST_BUF, "JobId=%u: recycle tasks submitted successfully", job_id);
 	} else {
-		error("BB-----job_id=%u, 回收任务提交失败", job_id);
+		error("burst_buffer: JobId=%u: failed to submit recycle tasks", job_id);
 		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
-	/* 等待回收任务完成 */
-	debug("BB-----job_id=%u, 开始等待所有回收任务完成", job_id);
+	log_flag(BURST_BUF, "JobId=%u: waiting for recycle tasks to complete", job_id);
 	bb_rc = _wait_bb_task_complete(recycle_task_ids, BB_RECYCLE_TAKS_TYPE, dataset_count);
 	if (bb_rc == SLURM_SUCCESS) {
-		debug("BB-----job_id=%u, 所有回收任务完成", job_id);
+		log_flag(BURST_BUF, "JobId=%u: all recycle tasks completed", job_id);
 	} else {
-		error("BB-----job_id=%u, 回收任务失败", job_id);
+		error("burst_buffer: JobId=%u: one or more recycle tasks failed", job_id);
 		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
-	/* 删除所有数据集规则 */
-	debug("BB-----job_id=%u, 开始删除数据集规则（%u 个）", job_id, dataset_count);
+	log_flag(BURST_BUF, "JobId=%u: deleting %u dataset rule(s)", job_id, dataset_count);
 	bb_rc = _delete_bb_dataset_by_groupid_path(group_count, group_ids, pfs_cnt, pfs_array, NULL);
 	if (bb_rc == SLURM_SUCCESS) {
-		debug("BB-----job_id=%u, 成功删除所有数据集规则（%u 个）", job_id, dataset_count);
+		log_flag(BURST_BUF, "JobId=%u: removed all %u dataset rule(s)", job_id, dataset_count);
 	} else {
-		error("BB-----job_id=%u, 删除数据集规则失败", job_id);
+		error("burst_buffer: JobId=%u: failed to remove dataset rules", job_id);
 		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
-	/* 删除所有缓存组 */
-	debug("BB-----job_id=%u, 开始删除缓存组（%u 个缓存组）", job_id, group_count);
+	log_flag(BURST_BUF, "JobId=%u: deleting %u cache group(s)", job_id, group_count);
 	bb_rc = _delete_bb_group_by_id(group_count, group_ids);
 	if (bb_rc == SLURM_SUCCESS) {
-		debug("BB-----job_id=%u, 成功删除所有缓存组（%u 个）", job_id, group_count);
+		log_flag(BURST_BUF, "JobId=%u: removed all %u cache group(s)", job_id, group_count);
 	} else {
-		error("BB-----job_id=%u, 删除缓存组失败", job_id);
+		error("burst_buffer: JobId=%u: failed to remove cache groups", job_id);
 		bb_rc = ESLURM_BB_STATE_PENDING_MANUAL;
 		goto bb_cleanup;
 	}
@@ -4065,13 +4086,13 @@ bb_cleanup:
 	while (alt_rc != SLURM_SUCCESS && num_cnt < 3) {
 		alt_rc = _notify_slurmctld_clean_bb_fini(bb_rc_msg);
 		if (alt_rc != SLURM_SUCCESS) {
-			info("%s: Retrying create burst buffer complete RPC for JobId=%u [sleeping %us]", __func__, job_id, RETRY_DELAY);
+			info("%s: Retrying burst buffer cleanup complete RPC for JobId=%u [sleeping %us]",
+			     __func__, job_id, RETRY_DELAY);
 			sleep(RETRY_DELAY);
 			num_cnt++;
 		}
 	}
 
-	/* 释放内存*/
 	if (bb_rc_msg) {
 		xfree(bb_rc_msg);
 	}

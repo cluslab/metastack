@@ -1010,7 +1010,7 @@ slurm_sprint_job_info ( job_info_t * job_ptr, int one_liner )
 
 			xfree(enforce_bb_val);
 		} else if (strstr(job_ptr->burst_buffer, "#PB")) {
-			/* 如果包含 #PB 但没有明确指定 enforce_bb，默认为 yes */
+			/* If #PB is present but enforce_bb is not specified, default to yes */
 			xstrcat(out, line_end);
 			xstrfmtcat(out, "EnforceBB=yes(default)");
 		}

@@ -10,6 +10,8 @@
 #include <unistd.h>
 
 #include "slurm/slurm.h"
+#include "src/common/log.h"
+#include "src/common/read_config.h"
 
 #include "src/common/assoc_mgr.h"
 #include "src/common/data.h"
@@ -37,16 +39,15 @@
 #define LINE_BB    1
 #define LINE_DW    2
 #define LINE_PB    3
-//define GROUP_SIZE 100 //设置缓存组包含的最大节点数量
 /* Hold job if pre_run fails more times than MAX_RETRY_CNT */
 #define MAX_RETRY_CNT 2
 /* Used for the polling hooks "test_data_{in|out}" */
 #define SLURM_BB_BUSY "BUSY"
-#define GROUP_TYPE_TEMPORARY 0  /* 作业申请缓存组类型，0：临时 */
-#define GROUP_TYPE_PERSISTENT 1 /* 作业申请缓存组类型，1：持久 */
-#define DATASET_TYPE_STRIPED 0 /* 数据集加速类型，0:共享方式 */
-#define DATASET_TYPE_PRIVATE 1 /* 数据集加速类型，1:本地方式 */
-#define GROUP_SIZE  20         /* 默认缓存组大小 */
+#define GROUP_TYPE_TEMPORARY 0  /* Job requests a temporary cache group */
+#define GROUP_TYPE_PERSISTENT 1 /* Job requests a persistent cache group */
+#define DATASET_TYPE_STRIPED 0 /* Dataset layout: shared (striped) */
+#define DATASET_TYPE_PRIVATE 1 /* Dataset layout: private (local) */
+#define GROUP_SIZE  20         /* Default max clients per cache group */
 /*
  * Limit the number of burst buffers APIs allowed to run in parallel so that we
  * don't exceed process or system resource limits (such as number of processes
@@ -111,12 +112,6 @@ typedef enum {
 	SLURM_BB_GET_STATUS,
 	SLURM_BB_OP_MAX
 } bb_op_e;
-
-typedef struct {
-	int i;
-	int groups_pools;
-	bb_groups_job_t *pools;
-} data_pools_arg_t;
 
 typedef struct {
 	uint64_t bb_size;
@@ -545,7 +540,7 @@ static void *_start_stage_out(void *x)
 	job_record_t *job_ptr = NULL;
 	bb_alloc_t *bb_alloc = NULL;
 
-	/* 更新作业与分配状态，并触发 teardown */
+	/* Update job/alloc state and queue teardown */
 	lock_slurmctld(job_write_lock);
 	job_ptr = find_job_record(bb_job->job_id);
 	if (job_ptr) {
@@ -583,8 +578,8 @@ static void *_start_stage_out(void *x)
 static int _queue_stage_out(job_record_t *job_ptr, bb_job_t *bb_job)
 {
 	if (!bb_job) {
-		debug("bb_job为空");
-			return SLURM_ERROR;
+		error("%s: bb_job is NULL, cannot queue stage-out", __func__);
+		return SLURM_ERROR;
 	}
 	slurm_thread_create_detached(_start_stage_out, bb_job);
 	return SLURM_SUCCESS;
@@ -608,8 +603,8 @@ static void _load_state(bool init_config)
 	uint32_t timeout;
 
 	timeout = bb_state.bb_config.other_timeout;
-	debug("BB-----load_state timeout=%u", timeout);
-	// 不涉及pool概念
+	debug("%s: load_state other_timeout=%u", __func__, timeout);
+	/* Parastor plugin does not use pool objects */
 	// if (_load_pools(timeout) != SLURM_SUCCESS)
 	// 	return;
 	bb_state.last_load_time = time(NULL);
@@ -628,7 +623,7 @@ static void _load_state(bool init_config)
 /* Perform periodic background activities */
 static void *_bb_agent(void *args)
 {
-	log_flag(BURST_BUF, "start 	bb_agent");
+	log_flag(BURST_BUF, "%s: background bb_agent thread started", __func__);
 	while (!bb_state.term_flag) {
 		bb_sleep(&bb_state, AGENT_INTERVAL+30);
 		if (!bb_state.term_flag) {
@@ -936,7 +931,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	char *bb_specs  = NULL;
 	char *save_ptr = NULL, *sub_tok, *tok = NULL;
 	bool have_bb = false, have_status = false;
-	char *error_param = NULL;  /* 记录出错的参数名 */
+	char *error_param = NULL;  /* Parameter name that failed validation */
 	// uint64_t tmp_cnt;
 	int inx;
 	bb_job_t *bb_job;
@@ -988,10 +983,10 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 
 		if (bb_flag == BB_FLAG_PB_OP) {
 			if (!xstrncmp(tok, "jobpara", 7)) {
-				/* 解析 capacity= 参数 */
+				/* Parse capacity= */
 				if ((sub_tok = strstr(tok, "capacity="))) {
 					char *capacity_val = sub_tok + 9;
-					/* 检查 capacity= 后面是否有值 */
+					/* Require a value after capacity= */
 					if (capacity_val[0] == '\0' || isspace(capacity_val[0])) {
 						error_param = "capacity";
 						have_status = true;
@@ -999,7 +994,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						continue;
 					}
 					bb_job->req_space = bb_get_size_num(capacity_val, 1);
-					/* 验证 capacity 解析是否成功 */
+					/* Parsed size must be non-zero */
 					if (bb_job->req_space == 0) {
 						error_param = "capacity";
 						have_status = true;
@@ -1007,31 +1002,25 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						continue;
 					}
 				}
-				//暂时不做容量必须设置的校验 
-				// else {
-				// 	error_param = "capacity";
-				// 	have_status = true;
-				// 	tok = strtok_r(NULL, "\n", &save_ptr);
-				// 	continue;
-				// }
+				/* Optional: require capacity= to be present */
 
-				/* 解析 pfslist= 参数 */
+
+				/* Parse pfslist= */
 				if ((sub_tok = strstr(tok, "pfslist="))) {
 					char *pfs_val = sub_tok + 8;
-					/* 检查 pfslist= 后面是否有值 */
+					/* Require a value after pfslist= */
 					if (pfs_val[0] == '\0' || isspace(pfs_val[0])) {
 						error_param = "pfslist";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
-					/* 先复制到临时变量进行处理 */
 					char *tmp_pfs = xstrdup(pfs_val);
-					/* 移除空格后的内容 */
+					/* Truncate at first whitespace */
 					sub_tok = strchr(tmp_pfs, ' ');
 					if (sub_tok)
 						sub_tok[0] = '\0';
-					/* 验证路径不为空 */
+					/* Path must be non-empty */
 					if (tmp_pfs[0] == '\0') {
 						xfree(tmp_pfs);
 						error_param = "pfslist";
@@ -1039,13 +1028,12 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
-					/* 验证通过后，再赋值给 bb_job->pfs */
-					bb_job->pfs = tmp_pfs;  /* 直接赋值，不需要再次 xstrdup */
+					bb_job->pfs = tmp_pfs;
 				}
-				/* 解析 type= 参数 */
+				/* Parse type= */
 				if ((sub_tok = strstr(tok, "type="))) {
 					char *type_val = sub_tok + 5;
-					/* 检查 type= 后面是否有值 */
+					/* Require a value after type= */
 					if (type_val[0] == '\0' || isspace(type_val[0])) {
 						error_param = "type";
 						have_status = true;
@@ -1061,7 +1049,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					} else if (xstrcmp(tmp_type, "temporary") == 0) {
 						bb_job->type = GROUP_TYPE_TEMPORARY;
 					} else {
-						/* 无效的类型值 */
+						/* Invalid type= value */
 						error_param = "type";
 						have_status = true;
 						xfree(tmp_type);
@@ -1070,14 +1058,14 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					}
 					xfree(tmp_type);
 				} else {
-					/* 默认类型为temporary临时类型 */
+					/* Default: temporary cache group */
 					bb_job->type = GROUP_TYPE_TEMPORARY;
 				}
 
-				/* 解析 enforce_bb= 参数 */
+				/* Parse enforce_bb= */
 				if ((sub_tok = strstr(tok, "enforce_bb="))) {
 					char *enforce_val = sub_tok + 11;
-					/* 检查 enforce_bb= 后面是否有值 */
+					/* Require a value after enforce_bb= */
 					if (enforce_val[0] == '\0' || isspace(enforce_val[0])) {
 						error_param = "enforce_bb";
 						have_status = true;
@@ -1093,7 +1081,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						xstrcasecmp(enforce_val, "1") == 0) {
 						bb_job->enforce_bb_flag = true;
 					} else {
-						/* 无效的 enforce_bb 值 */
+						/* Invalid enforce_bb= value */
 						error_param = "enforce_bb";
 						have_status = true;
 						//xfree(tmp_enforce);
@@ -1102,7 +1090,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					}
 					//xfree(tmp_enforce);
 				} else {
-					/* 默认强制加速（资源不足等待资源） */
+					/* Default: enforce burst buffer (wait for resources) */
 					bb_job->enforce_bb_flag = true;
 				}
 
@@ -1114,14 +1102,14 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				bb_job->buf_ptr[inx].flags = bb_flag;
 				bb_job->buf_ptr[inx].size = bb_job->req_space;
 				bb_job->buf_ptr[inx].state = BB_STATE_PENDING;
-				/* 校验请求的条件是否满足，如果满足，先将缓存组和数据集进行减减操作 */
+				/* Validate capacity against configured limits */
 				have_bb = bb_valid_groups_test_2(bb_job, &bb_state);
 			}
 			if (!xstrncmp(tok, "pstage_in", 9)) {
-				/* 解析 access_mode= 参数 */
+				/* Parse access_mode= */
 				if ((sub_tok = strstr(tok, "access_mode="))) {
 					char *access_val = sub_tok + 12;
-					/* 检查 access_mode= 后面是否有值 */
+					/* Require a value after access_mode= */
 					if (access_val[0] == '\0' || isspace(access_val[0])) {
 						error_param = "access_mode";
 						have_status = true;
@@ -1132,7 +1120,6 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					sub_tok = xstrchr(tmp_access, ' ');
 					if (sub_tok)
 						sub_tok[0] = '\0';
-					/* 转换为小写进行比较 */
 					for (char *p = tmp_access; *p; p++)
 						*p = tolower(*p);
 					if (xstrcmp(tmp_access, "private") == 0) {
@@ -1140,7 +1127,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					} else if (xstrcmp(tmp_access, "striped") == 0) {
 						bb_job->access_mode = DATASET_TYPE_STRIPED;
 					} else {
-						/* 无效的 access_mode 值 */
+						/* Invalid access_mode= value */
 						error_param = "access_mode";
 						have_status = true;
 						xfree(tmp_access);
@@ -1149,14 +1136,14 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					}
 					xfree(tmp_access);
 				} else {
-					/* 默认使用 striped 方式 */
+					/* Default: striped (shared) */
 					bb_job->access_mode = DATASET_TYPE_STRIPED;
 				}
 
-				/* 解析 metadata_acceleration= 参数 */
+				/* Parse metadata_acceleration= */
 				if ((sub_tok = strstr(tok, "metadata_acceleration="))) {
 					char *meta_val = sub_tok + 22;
-					/* 检查 metadata_acceleration= 后面是否有值 */
+					/* Require a value after metadata_acceleration= */
 					if (meta_val[0] == '\0' || isspace(meta_val[0])) {
 						error_param = "metadata_acceleration";
 						have_status = true;
@@ -1167,7 +1154,6 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					sub_tok = xstrchr(tmp_meta, ' ');
 					if (sub_tok)
 						sub_tok[0] = '\0';
-					/* 转换为小写进行比较 */
 					for (char *p = tmp_meta; *p; p++)
 						*p = tolower(*p);
 					if (xstrcmp(tmp_meta, "enable") == 0 ||
@@ -1181,7 +1167,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						xstrcmp(tmp_meta, "0") == 0) {
 						bb_job->metadata_acceleration = false;
 					} else {
-						/* 无效的 metadata_acceleration 值 */
+						/* Invalid metadata_acceleration= value */
 						error_param = "metadata_acceleration";
 						have_status = true;
 						xfree(tmp_meta);
@@ -1261,24 +1247,21 @@ static void _test_config()
  	uint32_t max_datasets = 8096;
 	uint32_t max_node_per_groups = 1024;
 	if (bb_state.bb_config.get_sys_state) {
-		error("%s: found get_sys_state which is unused in this plugin, unsetting",
-		      plugin_type);
+		info("%s: get_sys_state is unused in this plugin, unsetting", plugin_type);
 		xfree(bb_state.bb_config.get_sys_state);
 	}
 	if (bb_state.bb_config.get_sys_status) {
-		error("%s: found get_sys_status which is unused in this plugin, unsetting",
-		      plugin_type);
+		info("%s: get_sys_status is unused in this plugin, unsetting", plugin_type);
 		xfree(bb_state.bb_config.get_sys_status);
 	}
 	if (bb_state.bb_config.flags & BB_FLAG_ENABLE_PERSISTENT) {
-		error("%s: found flags=EnablePersistent: persistent burst buffers don't exist in this plugin, setting DisablePersistent",
-		      plugin_type);
+		warning("%s: EnablePersistent is unsupported; forcing DisablePersistent",
+			plugin_type);
 		bb_state.bb_config.flags &= (~BB_FLAG_ENABLE_PERSISTENT);
 		bb_state.bb_config.flags |= BB_FLAG_DISABLE_PERSISTENT;
 	}
 	if (bb_state.bb_config.flags & BB_FLAG_EMULATE_CRAY) {
-		error("%s: found flags=EmulateCray which is invalid for this plugin, unsetting",
-		      plugin_type);
+		info("%s: flags=EmulateCray is invalid for this plugin, unsetting", plugin_type);
 		bb_state.bb_config.flags &= (~BB_FLAG_EMULATE_CRAY);
 	}
 	if (bb_state.bb_config.directive_str)
@@ -1287,8 +1270,8 @@ static void _test_config()
 	directive_len = strlen(directive_str);
 
 	if (bb_state.bb_config.default_pool) {
-		error("%s: found DefaultPool=%s, but DefaultPool is unused for this plugin, unsetting",
-		      plugin_type, bb_state.bb_config.default_pool);
+		info("%s: DefaultPool=%s is unused for this plugin, unsetting",
+		     plugin_type, bb_state.bb_config.default_pool);
 		xfree(bb_state.bb_config.default_pool);
 	}
 
@@ -1311,39 +1294,34 @@ static void _test_config()
 	 * 2073600 * 1000 is still less than the maximum 32-bit signed integer.
 	 */
 	if (bb_state.bb_config.other_timeout > max_timeout) {
-		error("%s: OtherTimeout=%u exceeds maximum allowed timeout=%u, setting OtherTimeout to maximum",
-		      plugin_type, bb_state.bb_config.other_timeout,
-		      max_timeout);
+		warning("%s: OtherTimeout=%u exceeds maximum %u, clamping",
+			plugin_type, bb_state.bb_config.other_timeout, max_timeout);
 		bb_state.bb_config.other_timeout = max_timeout;
 	}
 	if (bb_state.bb_config.stage_in_timeout > max_timeout) {
-		error("%s: StageInTimeout=%u exceeds maximum allowed timeout=%u, setting StageInTimeout to maximum",
-		      plugin_type, bb_state.bb_config.stage_in_timeout,
-		      max_timeout);
+		warning("%s: StageInTimeout=%u exceeds maximum %u, clamping",
+			plugin_type, bb_state.bb_config.stage_in_timeout, max_timeout);
 		bb_state.bb_config.stage_in_timeout = max_timeout;
 	}
 	if (bb_state.bb_config.stage_out_timeout > max_timeout) {
-		error("%s: StageOutTimeout=%u exceeds maximum allowed timeout=%u, setting StageOutTimeout to maximum",
-		      plugin_type, bb_state.bb_config.stage_out_timeout,
-		      max_timeout);
+		warning("%s: StageOutTimeout=%u exceeds maximum %u, clamping",
+			plugin_type, bb_state.bb_config.stage_out_timeout, max_timeout);
 		bb_state.bb_config.stage_out_timeout = max_timeout;
 	}
 	if (bb_state.bb_config.max_groups > max_groups) {
-		error("%s: MaxGroups=%u exceeds maximum allowed %u, setting MaxGroups to maximum",
-		      plugin_type, bb_state.bb_config.max_groups,
-		      max_groups);
+		warning("%s: MaxGroups=%u exceeds maximum %u, clamping",
+			plugin_type, bb_state.bb_config.max_groups, max_groups);
 		bb_state.bb_config.max_groups = max_groups;
-	}	
+	}
 	if (bb_state.bb_config.max_datasets > max_datasets) {
-		error("%s: MaxDatasets=%u exceeds maximum allowed %u, setting MaxDatasets to maximum",
-		      plugin_type, bb_state.bb_config.max_datasets,
-		      max_datasets);
+		warning("%s: MaxDatasets=%u exceeds maximum %u, clamping",
+			plugin_type, bb_state.bb_config.max_datasets, max_datasets);
 		bb_state.bb_config.max_datasets = max_datasets;
-	}	
-	if(bb_state.bb_config.max_clients_per_job > max_node_per_groups) {
-		error("%s: MaxClientsPerJob=%u exceeds maximum allowed %u, setting MaxClientsPerJob to maximum",
-		      plugin_type, bb_state.bb_config.max_clients_per_job,
-		      max_node_per_groups);
+	}
+	if (bb_state.bb_config.max_clients_per_job > max_node_per_groups) {
+		warning("%s: MaxClientsPerJob=%u exceeds maximum %u, clamping",
+			plugin_type, bb_state.bb_config.max_clients_per_job,
+			max_node_per_groups);
 		bb_state.bb_config.max_clients_per_job = max_node_per_groups;
 	}
 }
@@ -1382,8 +1360,8 @@ extern int init(void)
 			delay = 30;
 		sleep(delay);
 	}
-	if(rc == SLURM_ERROR) {
-		error("dailed to get permanent token");
+	if (rc != SLURM_SUCCESS) {
+		error("%s: failed to obtain permanent API token after retries", __func__);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		return rc;
 	}
@@ -1393,7 +1371,8 @@ extern int init(void)
 	uint32_t used_groups_cnt;
 	uint32_t used_datasets_cnt;
 	if (_bb_get_used_resources_global_cnt(&used_groups_cnt, &used_datasets_cnt) == 0) {
-		info("BB-----%s : 获取已用缓存组数量为%u,已用数据集数量为%u", __func__, used_groups_cnt, used_datasets_cnt);
+		info("%s: Parastor usage at startup: used_groups=%u used_datasets=%u",
+		     __func__, used_groups_cnt, used_datasets_cnt);
 		slurm_mutex_lock(&bb_state.bb_mutex);
 		bb_state.used_groups_cnt = used_groups_cnt;
 		bb_state.free_groups_cnt = bb_state.bb_config.max_groups - bb_state.used_groups_cnt;
@@ -1401,7 +1380,7 @@ extern int init(void)
 		bb_state.free_datasets_cnt = bb_state.bb_config.max_datasets - bb_state.used_datasets_cnt;
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 	} else {
-		error("%s : 初始化parastor资源全局计数失败", __func__);
+		error("%s: failed to initialize Parastor resource counters", __func__);
 		return SLURM_ERROR;
 	}
 
@@ -1426,7 +1405,7 @@ extern int fini(void)
 	}
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	log_flag(BURST_BUF, "");
+	log_flag(BURST_BUF, "%s: parastor burst_buffer plugin shutting down", __func__);
 
 	slurm_mutex_lock(&bb_state.term_mutex);
 	bb_state.term_flag = true;
@@ -1506,7 +1485,7 @@ static void _restore_bb_job_from_alloc(bb_job_t *bb_job, bb_alloc_t *bb_alloc,
 		bb_job->pfs = xstrdup(bb_alloc->pfs);
 	}
 	bb_job->pfs_cnt = bb_alloc->pfs_cnt;
-	bb_job->state = (int)bb_alloc->state;  // 从 bb_alloc 恢复 state 到 bb_job
+	bb_job->state = (int)bb_alloc->state;
 	bb_job->metadata_acceleration = bb_alloc->metadata_acceleration;
 }
 
@@ -1562,10 +1541,6 @@ static void _recover_job_bb(job_record_t *job_ptr, bb_alloc_t *bb_alloc,
 		/* Pending states for jobs: */
 	case BB_STATE_STAGING_IN:
 	case BB_STATE_STAGED_IN:
-		/* parastor中stage_in不做暂存操作 */
-		// if(job_ptr->bb_status && (!bb_alloc->bb_status)) { //update
-		// 	bb_alloc->
-		// }
 		break;
 	case BB_STATE_ALLOC_REVOKE:
 		/*
@@ -1775,7 +1750,7 @@ extern int bb_p_state_pack(uid_t uid, buf_t *buffer, uint16_t protocol_version, 
 	if(!parastor)
 		return SLURM_SUCCESS;
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	packstr(bb_state.name, buffer); //插件名称
+	packstr(bb_state.name, buffer); /* plugin name */
 	bb_pack_state_parastor(&bb_state, buffer, protocol_version);
 	if (((bb_state.bb_config.flags & BB_FLAG_PRIVATE_DATA) == 0) ||
 	    validate_operator(uid))
@@ -1929,8 +1904,8 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 
 
 
-	job_ptr->max_clients_per_job  = bb_state.bb_config.max_clients_per_job; /* 缓存组粒度：几个客户端划分为一个缓存组 */
-	job_ptr->bb_status			  = ESLURM_BB_STATE_INIT;     //计算节点的burstbuffer是否已经准备好
+	job_ptr->max_clients_per_job  = bb_state.bb_config.max_clients_per_job;
+	job_ptr->bb_status			  = ESLURM_BB_STATE_INIT;
 	job_ptr->bb_enable_pb = true;	
 	// job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
 	log_flag(BURST_BUF, "%pJ", job_ptr);
@@ -2115,11 +2090,7 @@ static void _purge_bb_files(uint32_t job_id, job_record_t *job_ptr)
 }
 
 
-/**
- * @brief 清理bb结构体
- * @param x
- * @return
- */
+/* Teardown thread: purge files, free alloc, complete bb_job */
 static void *_start_teardown(void *x)
 {
 	uint32_t job_id = *(uint32_t *)x;
@@ -2154,10 +2125,7 @@ static void *_start_teardown(void *x)
 	return NULL;
 }
 
-/**
- * @brief 更改psbb计数，调用start_teardown
- * @param job_ptr
- */
+/* Return global group/dataset counts and spawn async teardown */
 static void _queue_teardown(job_record_t *job_ptr)
 {
 	if (!job_ptr || (job_ptr->bb_status == ESLURM_BB_STATE_CLEANUP)) {
@@ -2168,23 +2136,21 @@ static void _queue_teardown(job_record_t *job_ptr)
 	bb_state.free_datasets_cnt += job_ptr->need_database_counts;
 	bb_state.used_datasets_cnt -= job_ptr->need_database_counts;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	uint32_t bb_quota = bb_state.bb_config.max_clients_join; // 默认值
+	uint32_t bb_quota = bb_state.bb_config.max_clients_join;
 	bitstr_t *node_bitmap = NULL;
-	// 1. 获取配额配置
+
 	if (bb_state.bb_config.max_clients_join > 0) {
 		bb_quota = bb_state.bb_config.max_clients_join;
 		debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
 	} else {
 		debug3("max_clients_join not set, using default bb_quota: 4");
 	}
-	// 2. 确定使用哪个节点位图 
-	// 优先使用 job_resrcs 中的位图(在作业清理阶段最稳定)，如果没有则尝试使用 job_ptr 自带的位图
+	/* Prefer job_resrcs node map during cleanup; fall back to job_ptr */
 	if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
 		node_bitmap = job_ptr->job_resrcs->node_bitmap;
 	} else if (job_ptr->node_bitmap) {
 		node_bitmap = job_ptr->node_bitmap;
 	}
-	// 3. 遍历节点并释放计数
 	if (node_bitmap) {
 		int i, i_first, i_last;
 		i_first = bit_ffs(node_bitmap);
@@ -2195,24 +2161,21 @@ static void _queue_teardown(job_record_t *job_ptr)
 					continue;
 				}
 				node_record_t *node_ptr = node_record_table_ptr[i];
-				// 节点有效性检查
 				if (!node_ptr || !node_ptr->name) {
 					continue;
 				}
-				// 计数递减 (防止下溢)
 				if (node_ptr->bb_cache_grp_cnt > 0) {
 					node_ptr->bb_cache_grp_cnt--;
 					debug3("Teardown: Node %s (idx %d) BB count decremented to %u (quota=%u) for job %pJ",
 						node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
 				} else {
-					// 如果已经是0还在减，说明逻辑有误，打印错误但不崩溃
-					debug("Error: Node %s (idx %d) BB count underflow attempt for job %pJ",
+					warning("Node %s (index %d) burst-buffer group count already 0 during teardown for job %pJ",
 						node_ptr->name, i, job_ptr);
 				}
 			}
 			}
 		} else {
-			debug("Teardown: No node bitmap found for job %pJ, skipping quota release", job_ptr);
+			log_flag(BURST_BUF, "%s: %pJ has no node bitmap, skip per-node quota decrement", __func__, job_ptr);
 		}
 #endif
 	slurm_thread_create_detached(_start_teardown, &job_ptr->job_id);
@@ -2260,7 +2223,7 @@ static void *_start_stage_in(void *x)
 }
 
 
-/* 使能数据集 */
+/* Queue stage-in (dataset enablement path) */
 static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 {
 	char *hash_dir = NULL, *job_dir = NULL;
@@ -2320,10 +2283,8 @@ extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only)
 {
 	bb_job_t *bb_job = NULL;
 	int rc = 1;
-	debug("test ");
-	/* 校验作业所在分区是否启用了 burst buffer */
 	if (!(job_ptr->bit_flags & JOB_FLAG_PART_BURSTBUFFER)) {
-		/* 分区未启用 返回-1 */
+		/* Partition has burst buffer disabled */
 		return -1;
 	}
 	if ((job_ptr->burst_buffer == NULL) ||
@@ -2392,7 +2353,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	bb_alloc_t *bb_alloc = NULL;
 #endif
 	if ((job_ptr->burst_buffer == NULL) || (job_ptr->burst_buffer[0] == '\0')){
-		debug("BB-----jobid %d no need burst buffer", job_ptr->job_id);
+		log_flag(BURST_BUF, "%s: %pJ has no burst buffer spec", __func__, job_ptr);
 		return ret;
 	}
 
@@ -2420,7 +2381,6 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		job_ptr->state_desc =
 			xstrdup("Could not find burst buffer record");
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
-		//_queue_teardown(bb_job);
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_job_state_to_queue(job_ptr);
@@ -2429,7 +2389,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	}
 
 	if(job_ptr->node_bitmap)
-		bb_node_cnt = bit_set_count(job_ptr->node_bitmap);//计算分配的节点数量
+		bb_node_cnt = bit_set_count(job_ptr->node_bitmap);
 	else {
 		error("no job nodes for %pJ, node bitmap is %d", job_ptr, bb_node_cnt);
 		xfree(job_ptr->state_desc);
@@ -2451,35 +2411,34 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
 	log_flag(BURST_BUF, "required number of datasets %d", job_ptr->need_database_counts);
 	if(job_ptr->enforce_bb_flag)
-		log_flag(BURST_BUF, "forced use of BB acceleration; do not satisfied, queue up");
+		log_flag(BURST_BUF, "%s: %pJ enforces burst buffer; will queue if resources missing", __func__, job_ptr);
 	else
-		log_flag(BURST_BUF, "BB acceleration is not forced and BB resources are not available, the job will run directly");
-	//job_ptr->req_space                 = bb_job->req_space;
-	//job_ptr->access_mode 	   		   = bb_job->access_mode;
-	//job_ptr->metadata_acceleration     = bb_job->metadata_acceleration;
+		log_flag(BURST_BUF, "%s: %pJ does not enforce burst buffer; may run without BB resources", __func__, job_ptr);
+
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	job_ptr->pfs_cnt				= bb_job->pfs_cnt;
 	job_ptr->group_sn 				= xmalloc(job_ptr->need_group_counts * sizeof(char *));
 	for (i = 0; i < job_ptr->need_group_counts; i++) {
-		job_ptr->group_sn[i] = xstrdup_printf("j%un%d", job_ptr->job_id, i); // sn 最长存储限制16位，第一个字符是字目作业id为uint32_t类型，最大值为4294 9672 95
+		/* SN: leading 'j' + job_id + 'n' + index (fits typical 16-char SN limits) */
+		job_ptr->group_sn[i] = xstrdup_printf("j%un%d", job_ptr->job_id, i);
 	}
 #endif
-	job_ptr->group_ids 			   = NULL;							 //防止野指针
+	job_ptr->group_ids 			   = NULL;
 	job_ptr->dataset_ids 		   = NULL;
 	job_ptr->task_ids			   = NULL;
-	job_ptr->req_space             = bb_job->req_space;  	          //当前作业请求的空间
-	job_ptr->access_mode           = bb_job->access_mode;             //存储类型，本地共享 triped|private, 0：共享方式，1:本地方式
-	job_ptr->pfs				   = xstrdup(bb_job->pfs);            //后端存储路径,可能有多个
-	job_ptr->metadata_acceleration = bb_job->metadata_acceleration;   //是否开启元数据加速
+	job_ptr->req_space             = bb_job->req_space;
+	job_ptr->access_mode           = bb_job->access_mode;
+	job_ptr->pfs				   = xstrdup(bb_job->pfs);
+	job_ptr->metadata_acceleration = bb_job->metadata_acceleration;
 
-	if (job_ptr->need_group_counts > bb_state.free_groups_cnt 
-			|| job_ptr->need_database_counts > bb_state.free_datasets_cnt ) {
-		slurm_mutex_unlock(&bb_state.bb_mutex);
-		debug("free groups or datasets is not enough,requie groups count:%d,"
-			"free groups count:%d, require datasets count:%d, free datasets count:%d",
-			job_ptr->need_group_counts, bb_state.free_groups_cnt, 
-			job_ptr->need_database_counts, bb_state.free_datasets_cnt);
-			job_ptr->bb_need_wait = true;
+	if (job_ptr->need_group_counts > bb_state.free_groups_cnt
+			|| job_ptr->need_database_counts > bb_state.free_datasets_cnt) {
+		log_flag(BURST_BUF,
+			 "%s: %pJ needs groups=%u (free %u) datasets=%u (free %u), will wait",
+			 __func__, job_ptr, job_ptr->need_group_counts,
+			 bb_state.free_groups_cnt, job_ptr->need_database_counts,
+			 bb_state.free_datasets_cnt);
+		job_ptr->bb_need_wait = true;
 	} else {
 		job_ptr->bb_need_wait = false;
 	}
@@ -2490,7 +2449,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 
 	/* Check whether the task is forced to run */
 	if (job_ptr->bb_need_wait == true) {
-		/* enforce_bb_flag=true: 资源不足时不运行作业 */
+		/* enforce_bb: hold job when free pool is insufficient */
 		xfree(job_ptr->state_desc);
 		job_ptr->state_desc = xstrdup("insufficient datasets or groups.");
 		job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
@@ -2509,17 +2468,17 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	bb_state.used_datasets_cnt	+= job_ptr->need_database_counts;
 	bb_job->index_groups				=  job_ptr->need_group_counts;
 	bb_job->index_datasets				=  job_ptr->need_database_counts;
-	bb_job->index_tasks					=  job_ptr->need_database_counts;//暂时一个任务对应一个数据集
+	bb_job->index_tasks					=  job_ptr->need_database_counts;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 	/* * NOTE: job_ptr is guaranteed to be valid here based on previous code.
 	* bb_state is a global, no need to check address.
 	 */
-	if (job_ptr->node_bitmap) { // 仅当节点位图存在时执行
+	if (job_ptr->node_bitmap) {
 		int i, i_first, i_last;
 		node_record_t *node_ptr = NULL;
-		uint32_t bb_quota = 4; // 默认值
+		uint32_t bb_quota = 4;
 
-		// 获取配额配置
+		/* Per-node burst-buffer group quota from config */
 		if (bb_state.bb_config.max_clients_join > 0) {
 			bb_quota = bb_state.bb_config.max_clients_join;
 			debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
@@ -2530,28 +2489,23 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 		i_first = bit_ffs(job_ptr->node_bitmap);
 		i_last  = bit_fls(job_ptr->node_bitmap);
 
-		if (i_first != -1) { // 确保位图非空
+		if (i_first != -1) {
 			for (i = i_first; i <= i_last; i++) {
 				if (!bit_test(job_ptr->node_bitmap, i)) {
 					continue;
 				}
 
-				// 直接访问全局节点表
 				node_ptr = node_record_table_ptr[i];
 
-				// 安全检查
 				if (!node_ptr || !node_ptr->name) {
 					continue;
 				}
 
-				// 检查配额 (仅记录日志，若需阻断需在此处添加逻辑)
 				if (node_ptr->bb_cache_grp_cnt >= bb_quota) {
-					// 警告：当前仅仅是打印日志，作业仍会继续运行并占用配额
-					info("WARNING: Node %s (idx %d) BB quota reached (%u/%u) but job %pJ is proceeding.",
-						 node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
+					warning("Node %s (index %d) burst-buffer group quota reached (%u/%u); job %pJ still proceeding (soft check only)",
+						node_ptr->name, i, node_ptr->bb_cache_grp_cnt, bb_quota, job_ptr);
 				}
 
-				// 更新计数
 				if (node_ptr->bb_cache_grp_cnt < UINT32_MAX) {
 					node_ptr->bb_cache_grp_cnt++;
 					debug3("Node %s BB count incremented to %u for job %pJ", 
@@ -2560,8 +2514,7 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 			}
 		}
 	} else {
-		debug3("Job %pJ has no node map, skip BB quota update", job_ptr);
-		// 不可以直接 return，必须往下走去解锁！
+		debug3("%s: %pJ has no node_bitmap, skip per-node BB quota update", __func__, job_ptr);
 	}
 #endif
 	/*
@@ -2658,11 +2611,7 @@ extern int bb_p_job_start_stage_out(job_record_t *job_ptr)
 
 
 
-/**
- * @brief 创建BB后的处理
- * @param job_ptr 
- * @return 
- */
+/* Post-run hook: sync bb_alloc/bb_job ids after resources are created on nodes */
 extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 {
 	bb_job_t *bb_job;
@@ -2686,7 +2635,7 @@ extern int bb_p_job_test_post_run(job_record_t *job_ptr)
 	bb_alloc = bb_find_alloc_rec(&bb_state, job_ptr);
 	if (!bb_job || !bb_alloc) {
 		/* No job buffers. Assuming use of persistent buffers only */
-		error("%pJ bb job record not found", job_ptr);
+		warning("%pJ burst buffer job or alloc record missing in post_run", job_ptr);
 		rc =  -1;
 	} else {
 		if(job_ptr->bb_status == ESLURM_BB_STATE_READY) {
@@ -2802,11 +2751,6 @@ extern int bb_p_job_test_stage_out(job_record_t *job_ptr)
 	return rc;
 }
 
-/**
- * @brief 
- * @param job_ptr 
- * @return 
- */
 extern int bb_p_job_cancel(job_record_t *job_ptr)
 {
 	bb_job_t *bb_job;
@@ -2918,9 +2862,9 @@ static bb_minimal_config_t *_create_bb_min_config(bb_config_t *bb_config)
 		bb_min_config->para_stor_user_name = xstrdup(bb_config->para_stor_user_name);
 		bb_min_config->para_stor_password  = xstrdup(bb_config->para_stor_password);
 		bb_min_config->token			   = xstrdup(bb_config->token);
-		//TODO:增加超时配置读取
+		/* TODO: map bb_config timeout fields into bb_minimal_config_t if needed */
 	} else {
-		error("bb_config is NULL, can't get minimal config.");
+		error("%s: bb_config is NULL", __func__);
 		return NULL;
 	}
 	return bb_min_config;
@@ -2940,17 +2884,16 @@ static void _bb_min_config_free(bb_minimal_config_t * config)
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 extern uint32_t bb_p_get_node_quota(void)
 {
-	/* bb_state.bb_config.max_clients_join 是在 load_state 时解析出来的值 */
+	/* max_clients_join is loaded from burst_buffer.conf */
 	return bb_state.bb_config.max_clients_join;
 }
 #endif
 
 
 
-/**
- * @brief 根据job_ptr中group_sn数组和need_group_counts,查询group_id
- * @param job_ptr
- * @return 查询成功返回group_id数组,大小为need_group_counts,为0的值为缓存组不存在;失败则返回NULL
+/*
+ * Resolve cache group IDs from job_ptr->group_sn[] (size need_group_counts).
+ * On success returns an array; 0 means group not found for that SN. NULL on failure.
  */
 extern uint32_t *bb_p_query_bb_groupid_by_sn(job_record_t *job_ptr)
 {
@@ -2959,7 +2902,7 @@ extern uint32_t *bb_p_query_bb_groupid_by_sn(job_record_t *job_ptr)
 	uint32_t *ret_groupid_arr = NULL;
 
 	if (!job_ptr || job_ptr->need_group_counts <= 0) {
-		error("BB-----无效的参数: job_ptr为空或need_group_counts无效");
+		error("%s: invalid job_ptr or need_group_counts", __func__);
 		return NULL;
 	}
 
@@ -2971,8 +2914,8 @@ extern uint32_t *bb_p_query_bb_groupid_by_sn(job_record_t *job_ptr)
 			qry_rc = query_bb_groupid_by_sn(job_ptr->group_sn[i], &tmp_groupid, &bb_state.bb_config);
 			slurm_mutex_unlock(&bb_state.bb_mutex);
 			if (qry_rc == -3) {
-				/* 超时重试 */
-				debug("BB-----查询缓存组id超时,进行第%u次重试", j + 1);
+				log_flag(BURST_BUF, "%s: query_bb_groupid_by_sn timed out, retry %u",
+					 __func__, (unsigned int)(j + 1));
 				continue;
 			} else {
 				break;
@@ -2986,10 +2929,11 @@ extern uint32_t *bb_p_query_bb_groupid_by_sn(job_record_t *job_ptr)
 			ret_groupid_arr[i] = 0;
 			break;
 		case -3:
-			error("BB-----查询缓存组id超时,重试%d次后仍失败", bb_state.bb_config.retry_count);
+			error("%s: query_bb_groupid_by_sn still timed out after %u retries",
+			      __func__, bb_state.bb_config.retry_count);
 			goto cleanup_error;
 		default:
-			error("接口错误,return code为:%d", qry_rc);
+			error("%s: query_bb_groupid_by_sn API error, rc=%d", __func__, qry_rc);
 			goto cleanup_error;
 		}
 	}
@@ -3001,10 +2945,9 @@ cleanup_error:
 
 
 
-/**
- * @brief 根据job_ptr中group_ids数组和pfs,查询datasets_id
- * @param job_ptr 
- * @return 查询成功返回dataset_id数组,大小为缓存组个数*路径个数,为0的值为数据集规则不存在;失败则返回NULL
+/*
+ * Resolve dataset rule IDs from group_ids and comma-separated PFS paths.
+ * Returns array of size need_group_counts * path_count; 0 = no rule. NULL on failure.
  */
 extern uint32_t *bb_p_query_bb_datasetid_by_sn(job_record_t *job_ptr)
 {
@@ -3016,12 +2959,12 @@ extern uint32_t *bb_p_query_bb_datasetid_by_sn(job_record_t *job_ptr)
 	char **pfs_arr = NULL;
 
 	if (!job_ptr || job_ptr->need_group_counts == 0 || !job_ptr->pfs) {
-		error("BB-----无效的参数");
+		error("%s: invalid job_ptr, need_group_counts, or pfs", __func__);
 		return NULL;
 	}
 	pfs_arr = _convert_path_string_to_arr(&pfs_cnt, job_ptr->pfs);
 	if (!pfs_arr || pfs_cnt == 0) {
-		error("BB-----get pfs array  error");
+		error("%s: failed to parse PFS path list", __func__);
 		return NULL;
 	}
 
@@ -3041,8 +2984,8 @@ extern uint32_t *bb_p_query_bb_datasetid_by_sn(job_record_t *job_ptr)
 				}
 
 				if (qry_rc == -3) {
-					/* 超时重试 */
-					debug("BB-----查询dataset_id超时,进行第%u次重试", j + 1);
+					log_flag(BURST_BUF, "%s: query_datasetid_by_path_groupid timed out, retry %u",
+						 __func__, (unsigned int)(j + 1));
 					continue;
 				} else {
 					break;
@@ -3057,10 +3000,12 @@ extern uint32_t *bb_p_query_bb_datasetid_by_sn(job_record_t *job_ptr)
 				ret_datasetid_arr[grp_idx * pfs_cnt + pfs_idx] = 0;
 				break;
 			case -3:
-				error("BB-----查询缓存组id超时,重试%d次后仍失败", bb_state.bb_config.retry_count);
+				error("%s: query_datasetid_by_path_groupid still timed out after %u retries",
+				      __func__, bb_state.bb_config.retry_count);
 				goto cleanup_error;
 			default:
-				error("接口错误,return code为:%d", qry_rc);
+				error("%s: query_datasetid_by_path_groupid API error, rc=%d",
+				      __func__, qry_rc);
 				goto cleanup_error;
 			}
 		}
@@ -3077,7 +3022,7 @@ cleanup_error:
 static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 {
 	if (!path_str || *path_count == 0) {
-		error("params error");
+		error("%s: invalid path_str or path_count", __func__);
 		return NULL;
 	}
 	char **path_array = NULL;
@@ -3087,7 +3032,7 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 	uint32_t count = 0;
 	
 	while (token) {
-		// 跳过空字符串
+		/* Skip leading spaces on each token */
 		while (*token == ' ') token++;
 		if (*token != '\0') {
 			count++;
@@ -3100,7 +3045,8 @@ static char **_convert_path_string_to_arr(uint32_t *path_count, char *path_str)
 			*path_count = 0;
 		return NULL;
 	} else if (count != *path_count) {
-		error("	The entered count does not match the actual calculated count, set entered count from %u to %u", *path_count, count);
+		error("%s: path token count mismatch, adjusting %u -> %u",
+		      __func__, *path_count, count);
 		*path_count = count;
 	}
 	
@@ -3138,16 +3084,15 @@ static int _cmp_uint32(const void *a, const void *b)
 	return 0;
 }
 
-/**
- * @brief 获取parastor中slurm作业已使用缓存组和数据集数（使用bb_state.bb_mutex锁）（以j开头的缓存组作为统计）
- * @param used_groups_cnt 
- * @param used_datasets_cnt 
- * @return 0成功
+/*
+ * Count Parastor cache groups used by Slurm (SN prefix 'j') and matching datasets.
+ * Caller must not hold bb_mutex; this function locks briefly for config copy.
+ * Returns SLURM_SUCCESS (0) on success.
  */
 static int _bb_get_used_resources_global_cnt(uint32_t *used_groups_cnt, uint32_t*used_datasets_cnt)
 {
 	if (!used_groups_cnt || !used_datasets_cnt) {
-		error("%s : param is illegal", __func__);
+		error("%s: invalid output pointers", __func__);
 		return SLURM_ERROR;
 	}
 
@@ -3169,19 +3114,18 @@ static int _bb_get_used_resources_global_cnt(uint32_t *used_groups_cnt, uint32_t
 
 	tmp_ret = get_used_groupid_arr(bb_min_config, &used_grpid_arr, &used_grps_cnt);
 	if (tmp_ret != 0) {
-		error("%s : 获取已使用缓存组信息失败, ret=%d", __func__, tmp_ret);
+		error("%s: get_used_groupid_arr failed, rc=%d", __func__, tmp_ret);
 		rc = SLURM_ERROR;
 		goto cleanup;
 	}
 
 	tmp_ret = get_groupid_of_all_datasets(bb_min_config, &grpid_of_ds_arr, &grpid_of_ds_cnt);
 	if (tmp_ret != 0) {
-		error("%s : 获取数据集所属缓存组信息失败, ret=%d", __func__, tmp_ret);
+		error("%s: get_groupid_of_all_datasets failed, rc=%d", __func__, tmp_ret);
 		rc = SLURM_ERROR;
 		goto cleanup;
 	}
 
-	/* 已使用缓存组数量，直接取 used_grps_cnt */
 	*used_groups_cnt = used_grps_cnt;
 
 	if (used_grps_cnt == 0 || grpid_of_ds_cnt == 0) {
@@ -3202,9 +3146,8 @@ static int _bb_get_used_resources_global_cnt(uint32_t *used_groups_cnt, uint32_t
 		} else if (grpid_of_ds_arr[i] > used_grpid_arr[j]) {
 			j++;
 		} else {
-			/* 匹配到一个 dataset，其 group_id 属于已使用缓存组 */
 			used_ds_cnt++;
-			i++;	/* dataset 继续往后找，允许重复统计 */
+			i++; /* advance dataset side; duplicates in grpid list allowed */
 		}
 	}
 

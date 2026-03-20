@@ -318,7 +318,7 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			(*update_cnt_ptr)++;
 		}
 #ifdef __METASTACK_NEW_BURSTBUFFER
-		/* BurstBuffer=enable|disable 解析 */
+		/* Parse BurstBuffer=enable|disable */
 		else if (xstrncasecmp(tag, "BurstBuffer", MAX(taglen, 2)) == 0) {
 			if (xstrncasecmp(val, "disable", MAX(vallen, 1)) == 0 ||
 				xstrncasecmp(val, "no", MAX(vallen, 1)) == 0) {

@@ -4070,7 +4070,7 @@ _pack_epilog_comp_msg(epilog_complete_msg_t * msg, buf_t *buffer,
 {
 	xassert(msg);
 #ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { 
 		pack32((uint32_t)msg->job_id, buffer);
 		pack32((uint32_t)msg->return_code, buffer);
 		packstr(msg->node_name, buffer);
@@ -4112,7 +4112,7 @@ _unpack_epilog_comp_msg(epilog_complete_msg_t ** msg, buf_t *buffer,
 	tmp_ptr = xmalloc(sizeof(epilog_complete_msg_t));
 	*msg = tmp_ptr;
 #ifdef __META_PROTOCOL
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { //需要更改版本号
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) { 
 		safe_unpack32(&(tmp_ptr->job_id), buffer);
 		safe_unpack32(&(tmp_ptr->return_code), buffer);
 		safe_unpackstr(&(tmp_ptr->node_name), buffer);
@@ -16120,7 +16120,7 @@ unpack_error:
 static void _pack_complete_create_bb_msg(complete_create_bb_msg_t *msg, buf_t *buffer,
 	uint16_t protocol_version)
 {
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		pack32(msg->job_id, buffer);
 		packstr(msg->node_name, buffer);
 		pack32(msg->bb_rc, buffer);
@@ -16401,7 +16401,7 @@ static int _unpack_complete_create_bb_launch_msg(complete_create_bb_msg_t **msg_
 	*msg_ptr = msg;
 	memset(msg, 0, sizeof(*msg));
 
-	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {//需要更改版本号
+	if (protocol_version >= META_3_0_PROTOCOL_VERSION) {
 		safe_unpack32(&msg->job_id, buffer);
 		safe_unpackstr(&msg->node_name, buffer);
 		safe_unpack32(&msg->bb_rc, buffer);
@@ -17237,11 +17237,9 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 	uint16_t protocol_version)
 {
 	int i = 0, j = 0;
-	//uint32_t tmp32 = 0;
 	burst_buffer_info_msg_t *bb_msg_ptr = NULL;
 	burst_buffer_info_t *bb_info_ptr; //
 	burst_buffer_resv_t *bb_resv_ptr; // 
-	//burst_buffer_use_t  *bb_use_ptr;
 
 	bb_msg_ptr = xmalloc(sizeof(burst_buffer_info_msg_t));
 	safe_unpack32(&bb_msg_ptr->record_count, buffer);
@@ -17249,7 +17247,7 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 		goto unpack_error;
 	safe_xcalloc(bb_msg_ptr->burst_buffer_array, bb_msg_ptr->record_count,
 		     sizeof(burst_buffer_info_t));
-	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) { //需要改版本号
+	if (protocol_version >= SLURM_24_05_PROTOCOL_VERSION) { 
 		for (i = 0, bb_info_ptr = bb_msg_ptr->burst_buffer_array;
 			i < bb_msg_ptr->record_count; i++, bb_info_ptr++) {
 			safe_unpackstr(&bb_info_ptr->name,            buffer);
@@ -17263,7 +17261,7 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 			safe_unpack32(&bb_info_ptr->stage_in_timeout, buffer);
 			safe_unpack32(&bb_info_ptr->stage_out_timeout,buffer);
 			safe_unpack32(&bb_info_ptr->validate_timeout, buffer);
-			//资源剩余统计
+
 			safe_unpack32(&bb_info_ptr->max_groups,       buffer);
 			safe_unpack32(&bb_info_ptr->used_groups_cnt,      buffer);
 			safe_unpack32(&bb_info_ptr->free_groups_cnt,      buffer);
@@ -17274,8 +17272,7 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 
 			safe_unpack32(&bb_info_ptr->max_clients_join, buffer);
 			safe_unpack32(&bb_info_ptr->max_clients_per_job,  buffer);
-			///////////
-			//safe_unpack32(&bb_info_ptr->file_system_count,    buffer);
+
 			safe_unpack32(&bb_info_ptr->max_acc_dir_len,      buffer);
 			safe_unpack32(&bb_info_ptr->max_acc_dirs_per_job, buffer);
 
