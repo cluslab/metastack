@@ -4,14 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 // #include "slurm/slurm.h"
-// #include "slurm/slurm.h"
 #include "src/plugins/burst_buffer/common/burst_buffer_common.h"
 #include "bb_curl_wrapper.h"
 #include <string.h>
 #include <jansson.h>
 
 
-// URL最大长度
+/* Maximum URL length for REST calls */
 #define URL_MAX_LEN 10000
 #define TOKEN_MAX_LEN 10000
 
@@ -28,45 +27,40 @@ typedef enum {
 } result_type;
 
 /*
-struct bb_state;
-struct query_params_request;
-before call API,must initialize the structure,and set must params 
-1. 查询缓存组所需参数
-    - start: 查询起始记录数
-    - limit: 查询记录数
-    - group_sn: 缓存组唯一标识符,（优先级高于group_id）
-    - ids:缓存组id列表（暂未使用）
-    - group_id:单个缓存组id,使用时保证group_sn为NULL
-2. 查询数据集规则所需参数
-    - start: 查询起始记录数
-    - limit: 查询记录数
-    - path: 数据集路径，模糊匹配
-    - group_id: 缓存组ID，默认值为0，表示不限制
-    - task_type: 必填，设置为BURST_BUFFER_TASK_TYPE_NULL
-    - task_state： 必填，设置为BB_TASK_STATE_NULL
-3. 查询BB任务所需参数
-    - start: 查询起始记录数
-    - limit: 查询记录数
-    - group_id: 缓存组ID，默认值为0，表示不限制
-    - task_id: 任务ID
-    - task_type: 任务类型，设置为BURST_BUFFER_TASK_TYPE_NULL表示不
-    - task_state： 任务状态，设置为BB_TASK_STATE_NULL表示不限制
-4.查询client所需参数
-    - start: 查询起始记录数
-    - limit: 查询记录数
-    - client_ids:可选,格式为xxx1,xxx2
-    - client_ips:可选,客户端IP，目前接口只支持单个
-    - client_ip_match_mode:可选，0:精确查询，1:模糊查询
-    - host_name:可选,客户端hostname，目前接口只支持单个
-    - host_name_match_mode:选，0:精确查询，1:模糊查询
-    */
+ * query_params_request — filters for burst-buffer list/query APIs.
+ * Initialize the struct before use and set the fields relevant to the call.
+ *
+ * 1) Query cache groups
+ *    - start, limit: paging
+ *    - group_sn: serial number (takes precedence over group_id when both set)
+ *    - ids: group id list (reserved / unused)
+ *    - group_id: single group id; keep group_sn NULL when using id alone
+ *
+ * 2) Query datasets
+ *    - start, limit: paging
+ *    - path: dataset path (fuzzy match)
+ *    - group_id: cache group filter; 0 means no filter
+ *    - task_type, task_state: set to BURST_BUFFER_TASK_TYPE_NULL and BB_TASK_STATE_NULL
+ *
+ * 3) Query burst-buffer tasks
+ *    - start, limit: paging
+ *    - group_id: cache group filter; 0 means no filter
+ *    - task_id: task id
+ *    - task_type: BURST_BUFFER_TASK_TYPE_NULL to skip filter
+ *    - task_state: BB_TASK_STATE_NULL for no state filter
+ *
+ * 4) Query clients
+ *    - start, limit: paging
+ *    - client_ids: optional, comma-separated ids
+ *    - client_ips: optional; API accepts a single IP for now
+ *    - client_ip_match_mode: optional, 0 exact, 1 fuzzy
+ *    - host_name: optional; single hostname for now
+ *    - host_name_match_mode: optional, 0 exact, 1 fuzzy
+ */
 typedef struct { 
     uint32_t start; /* Query starting from which record */
     uint32_t limit; /* Number of records to query */
-    // int calc_count; /* Current page number */
-
-    /* groups para */
-    char* ids; /* Cache Group List */
+    char* ids; /* Cache group id list */
     char* client_ids;
     char* client_ips;
     char* host_name; 
@@ -78,14 +72,13 @@ typedef struct {
     uint32_t host_name_count;    
     int host_name_match_mode; /* 0: Exact match, 1: Fuzzy match */
 
-   /* datasets result */
-    const char *path;/* dataset path, fuzzy match*/
+    /* Dataset query fields */
+    const char *path; /* dataset path, fuzzy match */
     uint32_t group_id ;/* cache group id . Default value is 0, indicating no restriction */
     uint32_t max_clients_join;
 
-    uint32_t task_id; // 
-    uint32_t dataset_id; // dataset id
-    /* clients result */
+    uint32_t task_id;
+    uint32_t dataset_id;
     bb_task_type task_type;
     bb_task_state_type task_state;
 } query_params_request;
@@ -105,29 +98,22 @@ typedef enum {
 
 
 /*
-创建、提交操作参数的结构体
-参数说明
-1. 通过SN创建缓存组
- - group_sn     缓存组唯一标识符
- - clietn_count 客户端数量
- - client_ids   客户端ID数组指针
-2. 通过SN创建数据集规则
- - group_sn        缓存组唯一标识符
- - path            数据集路径
- - is_use_metadata 是否使用元数据缓存
- - data_cache_type 缓存类型
-3. 提交任务
- - dataset_id      数据集ID
- - task_type       任务类型
- - error_action_type 异常后执行行为类型,0:存在节点失败后中止; 1:存在节点失败后继续
-*/
+ * create_params_request — parameters for create/submit operations.
+ *
+ * 1) Create cache group by SN
+ *    - group_sn, client_count, client_ids
+ * 2) Create dataset rule (by SN)
+ *    - group_sn, path, is_use_metadata, data_cache_type
+ * 3) Submit task
+ *    - dataset_id, task_type, error_action_type (see field comment below)
+ */
 typedef struct {
     /* create group params */
     char *group_sn;
     uint32_t client_count; /*  The client_count and client_ids must be entered at the same time. */
     uint32_t *client_ids;
-    time_t del_delay_time; /* delay time for delete operation,defalut is 3600s */
-    time_t fault_delay_time; /* fault_delay_time: delay time for fault operation,defalut is 3600s */
+    time_t del_delay_time; /* delete delay; default 3600s */
+    time_t fault_delay_time; /* fault-handling delay; default 3600s */
 
     /* create datasets params */
     char *path;
@@ -148,14 +134,10 @@ typedef struct {
 }create_params_request;
 
 /**
- * @brief 创建、提交操作参数的结构体
- * 1. 删除缓存组(id、sn使用一个)
- *  - group_id 删除缓存组的group_id，使用id删除时，确保group_sn为NULL
- *  - group_sn 删除缓存组的SN，覆盖group_id参数，使用
- * 2. 删除数据集规则
- *  - dataset_id 删除数据集规则的ID
- * 3. 取消BB任务
- *  - task_id 取消任务的ID
+ * delete_params_request — delete/cancel operations (use one of group_id or group_sn for groups).
+ * - group_id / group_sn: delete cache group (SN overrides id when both set)
+ * - dataset_id: delete dataset rule
+ * - task_id: cancel burst-buffer task
  */
 typedef struct {
     uint32_t group_id;
@@ -165,157 +147,146 @@ typedef struct {
 } delete_params_request;
 
 /**
- * @brief 获取永久token
- * @param bb_config 
- * @return 
+ * @brief Obtain a long-lived API token from Parastor.
+ * @param bb_config Burst-buffer connection config
+ * @return 0 on success, negative codes on failure (see implementation)
  */
 extern int get_permanent_token(bb_config_t *bb_config);
 
-/** 
- * @brief 通过SN创建缓存组
- * @param create_params 参数，详细参考create_params_request结构体注释
- * @param group_id 返回创建成功的缓存组ID
- * @param bb_config 最小配置参数
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+/**
+ * @brief Create a cache group using the group serial number (SN).
+ * @param create_params See create_params_request
+ * @param group_id Out: new group id
+ * @param bb_config Minimal burst-buffer config
+ * @return 0 success, -1 code error, -2 API error, -3 timeout
  */
 extern int create_bb_group_by_sn(create_params_request *create_params, uint32_t *group_id, bb_config_t *bb_config);
 
 /**
- * @brief 通过SN创建数据集规则
- * @param create_params 参数，详细参考create_params_request结构体注释
- * @param dataset_id 通用响应体
- * @param bb_config 最小配置参数
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ * @brief Create a dataset rule (associates path with cache group via SN).
+ * @param create_params See create_params_request
+ * @param dataset_id Out: new dataset rule id
+ * @param bb_config Minimal burst-buffer config
+ * @return 0 success, -1 code error, -2 API error, -3 timeout
  */
 extern int create_bb_dataset_by_sn(create_params_request *create_params, uint32_t *dataset_id, bb_config_t *bb_config);
 
 /**
-* @brief 提交预热任务（通过数据集ID）
-* @param create_params 提交参数，详见create_params_request注释
-* @param task_id 返回创建成功的任务ID
-* @param bb_config 最小配置参数
-* @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
-*/
+ * @brief Submit a prefetch/recycle task for a dataset.
+ * @param create_params Submit parameters (dataset_id, task_type, etc.)
+ * @param task_id Out: new task id
+ * @param bb_config Minimal burst-buffer config
+ * @return 0 success, -1 code error, -2 API error, -3 timeout
+ */
 extern int submit_bb_task(create_params_request *create_params, uint32_t *task_id, bb_config_t *bb_config);
 
 /**
- * @brief 通过SN获取缓存组ID
- * @param group_sn 缓存组的SN
- * @param group_id 返回缓存组ID
- * @param bb_min_config bb最小配置
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
+ * @brief Resolve cache group id from serial number.
+ * @param group_sn Group SN string
+ * @param group_id Out: group id
+ * @param bb_min_config Burst-buffer config
+ * @return 0 success, 1 not found, other negative codes on error
  */
 extern int query_bb_groupid_by_sn(char *group_sn, uint32_t *group_id, bb_config_t *bb_min_config);
 
-
 /**
- * @brief 传入缓存组id查询缓存组是否存在
- * @param group_id 
- * @param bb_min_config bb最小配置
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
+ * @brief Check whether a cache group exists by id.
+ * @param group_id Group id to test
+ * @param bb_min_config Burst-buffer config
+ * @return 0 if exists, 1 if not, negative on transport/API errors
  */
 extern int has_bb_group_by_id(uint32_t group_id, bb_config_t *bb_min_config);
 
-
 /**
- * @brief 传入缓存组ID和数据集路径，查询数据集规则ID
- * @param group_id 缓存组ID
- * @param path 数据集路径
- * @param dataset_id 返回数据集规则ID
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
+ * @brief Look up dataset rule id by cache group and path.
+ * @param group_id Cache group id
+ * @param path Dataset path
+ * @param dataset_id Out: dataset rule id
+ * @return 0 success, 1 not found, negative on error
  */
 extern int query_datasetid_by_path_groupid(uint32_t group_id, const char *path, uint32_t *dataset_id, bb_config_t *bb_config);
 
-
 /**
- * @brief 根据group_id、path查询bb任务
- * @param task_id 
- * @param bb_config 
- * @param bb_task 返回查询到的bb_task结构体
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
+ * @brief Query a burst-buffer task by task id.
+ * @param task_id Task id
+ * @param bb_config Burst-buffer config
+ * @param bb_task Out: filled task attributes
+ * @return 0 success, 1 no data, negative on error
  */
 extern int query_bb_task_by_taskid(uint32_t task_id, bb_config_t *bb_config, bb_attribute_task *bb_task);
 
 /**
- * @brief 传入hostname获取对应client_id
- * @param hostname
- * @param client_id 返回客户端ID
- * @param bb_config
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时，1表示不存在
+ * @brief Resolve client id by host name.
+ * @param hostname Client hostname to match
+ * @param client_id Out: client id
+ * @param bb_config Burst-buffer config
+ * @return 0 success, 1 not found, negative on error
  */
 extern int query_clientid_by_hostname(const char *hostname, uint32_t *client_id, bb_config_t *bb_config);
 
 /**
- * @brief 根据group_sn删除缓存组
- * @param group_sn 入参：缓存组sn
- * @param bb_config 入参：最小配置
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * @brief Delete a cache group by serial number.
+ * @param group_sn Group SN
+ * @param bb_config Burst-buffer config
+ * @return 0 on success, negative codes on failure
  */
 extern int delete_bb_group_by_sn(char *group_sn, bb_config_t *bb_config);
 
 /**
- * @brief 根据group_id删除缓存组
- * @param group_id 
- * @param bb_config 入参：最小配置
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * @brief Delete a cache group by id.
+ * @param group_id Group id
+ * @param bb_config Burst-buffer config
+ * @return 0 on success, negative codes on failure
  */
 extern int delete_bb_group_by_id(uint32_t group_id, bb_config_t *bb_config);
 
 /**
- * @brief 根据dataset_id删除缓存组
- * @param dataset_id 
- * @param bb_config 
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * @brief Delete a dataset rule by id.
+ * @param dataset_id Dataset rule id
+ * @param bb_config Burst-buffer config
+ * @return 0 on success, negative codes on failure
  */
 extern int delete_bb_dataset_by_id(uint32_t dataset_id, bb_config_t *bb_config);
 
-
 /**
- * @brief 根据task_id删除BB任务
- * @param task_id 
- * @param bb_config 
- * @return 0:成功删除；-1:代码错误; -2:接口错误; -3:接口超时
+ * @brief Cancel a burst-buffer task by id.
+ * @param task_id Task id
+ * @param bb_config Burst-buffer config
+ * @return 0 on success, negative codes on failure
  */
 extern int cancel_bb_task_by_id(uint32_t task_id, bb_config_t *bb_config);
 
-
 /**
- * @brief 查询parastor中slurm使用的缓存组（sn以j开头的缓存组）
- * @param bb_min_config 
- * @param used_groupid_arr 出参，会重新分配内存
- * @param used_groupid_arr 出参，个数
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ * @brief List cache group ids used by Slurm (SN prefix 'j').
+ * @param bb_min_config Minimal Parastor config
+ * @param used_groupid_arr Out: reallocated id array
+ * @param used_groups_cnt Out: number of ids
+ * @return 0 success, negative on error
  */
 extern int get_used_groupid_arr(bb_minimal_config_t *bb_min_config, uint32_t **used_groupid_arr, uint32_t *used_groups_cnt);
 
 /**
- * @brief 查询parastor中所有dataset对应的数据集id
- * @param bb_min_config 
- * @param groupid_arr 出参，会重新分配内存
- * @param groups_cnt 出参，个数
- * @return 0表示成功，-1表示代码错误，-2表示接口错误，-3表示接口超时
+ * @brief Collect group_id from every dataset (paged Parastor scan).
+ * @param bb_min_config Minimal Parastor config
+ * @param groupid_arr Out: reallocated array of group ids
+ * @param groups_cnt Out: number of entries
+ * @return 0 success, negative on error
  */
 extern int get_groupid_of_all_datasets(bb_minimal_config_t *bb_min_config, uint32_t **groupid_arr, uint32_t *groups_cnt);
 
 
 
 
-/* 释放响应体 */
 extern void free_bb_response(bb_response *resp);
-/* 释放缓存组 */
 extern void free_bb_group(void *object);
-/* 释放数据集机 */
 extern void free_bb_dataset(void *object);
-/* 释放客户端 */
 extern void free_bb_client(void *object);
-/* 释放任务 */
 extern void free_bb_task(void *object);
 
 extern int _find_group_key(void *x, void *key);
 
 extern int _find_dataset_key(void *x, void *key);
 
-/* 接口参数结构体清理函数 */
 extern void free_query_params(query_params_request *query_params);
 extern void free_create_params(create_params_request *create_params);
 extern void free_delete_params(delete_params_request *delete_params);
