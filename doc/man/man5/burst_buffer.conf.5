@@ -65,6 +65,9 @@ The string that must be used by a job to request a burst buffer. This string
 must be immediately preceded by a single '#' character. This is currently only
 used by the lua plugin. For the lua plugin, the default value is "BB_LUA".
 See burst_buffer.html for more details.
+For the MetaStack ParaStor plugin (burst_buffer/parastor), Directive is
+ignored; job submission lines must use the fixed prefix #PB (see sbatch(1),
+srun(1), and salloc(1)).
 .IP
 
 .TP

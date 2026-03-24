@@ -202,8 +202,8 @@ plugins. See Slurm's burst buffer guide for more information and examples:
 .br
 https://slurm.schedmd.com/burst_buffer.html
 .br
-When \fBBurstBufferType\fR is \fBburst_buffer/parastor\fR, use \fB#PB\fR lines as described under
-\fBParaStor burst buffer\fR below. See \fBburst_buffer.conf\fR(5) for site configuration.
+When \fBBurstBufferType\fR is \fBburst_buffer/parastor\fR, MetaStack ParaStor job keywords and
+examples are under paraStor burst buffer below. See \fBburst_buffer.conf\fR(5) for site configuration.
 .IP
 
 .TP
@@ -215,16 +215,15 @@ See Slurm's burst buffer guide for more information and examples:
 .br
 https://slurm.schedmd.com/burst_buffer.html
 .br
-When \fBBurstBufferType\fR is \fBburst_buffer/parastor\fR, use \fB#PB\fR lines as described under
-\fBParaStor burst buffer\fR below. See \fBburst_buffer.conf\fR(5) for site configuration.
-.IP
-
+When \fBBurstBufferType\fR is \fBburst_buffer/parastor\fR, MetaStack ParaStor job keywords and
+examples are under paraStor burst buffer below. See \fBburst_buffer.conf\fR(5) for site configuration.
 .RS
 .SS "ParaStor burst buffer (\fBburst_buffer/parastor\fR)"
+.RS
 MetaStack ParaStor burst buffer job syntax. Site and daemon configuration is covered in
 \fBburst_buffer.conf\fR(5); this subsection lists submission keywords only.
 .PP
-Buffer setup and teardown for this integration run on compute nodes via
+Buffer setup and clean for this integration run on compute nodes via
 \fBslurmd\fR(8) (\fBburst_buffer/parastor_slurmd\fR); the controller records state and drives
 scheduling.
 .PP
@@ -236,20 +235,14 @@ a file of \fB#PB\fR lines.
 \fB#PB jobpara\fR line (keywords on one line, separated by whitespace):
 .TP
 \fBcapacity=\fISIZE\fR
-Optional. Reserved for future capacity\-based behavior; when present, \fISIZE\fR uses Slurm
-burst\-buffer size suffix rules: IEC \fBK\fR/\fBKiB\fR,
-\fBM\fR/\fBMiB\fR, \fBG\fR/\fBGiB\fR, \fBT\fR/\fBTiB\fR, \fBP\fR/\fBPiB\fR; SI \fBKB\fR, \fBMB\fR, \fBGB\fR, \fBTB\fR, \fBPB\fR; or \fBN\fR/\fBnode\fR/\fBnodes\fR; bytes if no suffix.
-Omitting \fBcapacity=\fR or supplying a zero value is allowed. The keyword must not be empty:
-\fBcapacity=\fR with no value is rejected.
+Reserved for future capacity\-based behavior.
 .IP
 
 .TP
 \fBpfslist=\fIPATHS\fR
-Required. Absolute path(s) to acceleration directories. In \fB#PB\fR lines, multiple
+Required. Absolute path(s) to acceleration directories. Multiple
 directories are comma\-separated without spaces (for example
-\fI/pfs/proj/a,/pfs/proj/b\fR). The \fB\-\-bb\fR string may only carry a single path for
-\fBpfslist=\fR because the option parser stops at the next comma; use \fB#PB\fR or \fB\-\-bbf\fR for
-several paths.
+\fIpfslist=/pfs/proj/a,/pfs/proj/b\fR).
 .IP
 
 .TP
@@ -277,19 +270,27 @@ Optional on the \fBpstage_in\fR line. Default \fIno\fR.
 .IP
 
 .PP
-\fB\-\-bb\fR may include \fBcapacity=\fR, \fBpfslist=\fR, \fBtype=\fR, and \fBenforce_bb=\fR. \fBpfs=\fR is a legacy
-alias for \fBpfslist=\fR. Extra text may be logged and ignored.
+\fB\-\-bb\fR may include \fBcapacity=\fR, \fBpfslist=\fR, \fBtype=\fR, and \fBenforce_bb=\fR. 
 .PP
-Example:
+Example (batch script with \fB#PB\fR):
 .RS
 .nf
 #!/bin/bash
 #SBATCH \-\-job\-name=psbb
 #PB jobpara capacity=1GiB pfslist=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
-#PB jobpara pfslist=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
 #PB pstage_in access_mode=striped metadata_acceleration=no
 srun ./a.out
 .fi
+.RE
+.PP
+Example (\fB\-\-bb\fR on the \fBsbatch\fR command line):
+.RS
+.nf
+sbatch \-\-job\-name=psbb \e
+  \-\-bb="capacity=1GiB pfslist=/pfs/project/a type=temporary enforce_bb=yes" job.sh
+sbatch \-\-bb="capacity=1GiB pfslist=/pfs/project/b type=temporary enforce_bb=no" job.sh
+.fi
+.RE
 .RE
 .RE
 .IP
