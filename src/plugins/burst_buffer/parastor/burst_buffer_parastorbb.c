@@ -676,9 +676,6 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 
 	if ((tok = strstr(bb_copy, "pfslist="))) {
 		pfs = xstrdup(tok + 8);
-		sep = strchr(pfs, ',');
-		if (sep)
-			sep[0] = '\0';
 		sep = strchr(pfs, ' ');
 		if (sep)
 			sep[0] = '\0';
@@ -686,9 +683,6 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 		memset(tok, ' ', tok_len);
 	} else if ((tok = strstr(bb_copy, "pfs="))) {
 		pfs = xstrdup(tok + 4);
-		sep = strchr(pfs, ',');
-		if (sep)
-			sep[0] = '\0';
 		sep = strchr(pfs, ' ');
 		if (sep)
 			sep[0] = '\0';
