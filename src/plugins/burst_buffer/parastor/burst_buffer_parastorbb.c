@@ -1254,10 +1254,7 @@ static void _test_config()
 		info("%s: flags=EmulateCray is invalid for this plugin, unsetting", plugin_type);
 		bb_state.bb_config.flags &= (~BB_FLAG_EMULATE_CRAY);
 	}
-	if (bb_state.bb_config.directive_str)
-		directive_str = bb_state.bb_config.directive_str;
-	else
-	directive_len = strlen(directive_str);
+
 
 	if (bb_state.bb_config.default_pool) {
 		info("%s: DefaultPool=%s is unused for this plugin, unsetting",
