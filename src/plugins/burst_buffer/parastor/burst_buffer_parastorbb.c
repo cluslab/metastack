@@ -674,7 +674,17 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 	}
 
 
-	if ((tok = strstr(bb_copy, "pfs="))) {
+	if ((tok = strstr(bb_copy, "pfslist="))) {
+		pfs = xstrdup(tok + 8);
+		sep = strchr(pfs, ',');
+		if (sep)
+			sep[0] = '\0';
+		sep = strchr(pfs, ' ');
+		if (sep)
+			sep[0] = '\0';
+		tok_len = strlen(pfs) + 8;
+		memset(tok, ' ', tok_len);
+	} else if ((tok = strstr(bb_copy, "pfs="))) {
 		pfs = xstrdup(tok + 4);
 		sep = strchr(pfs, ',');
 		if (sep)
@@ -736,7 +746,7 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 
 			if (pfs) {
 				xstrfmtcat(job_desc->burst_buffer,
-					   " pfs=%s", pfs);
+					   " pfslist=%s", pfs);
 			}
 			if (type) {
 				xstrfmtcat(job_desc->burst_buffer,
@@ -749,8 +759,7 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 		}
 	}
 
-fini:	xfree(access);
-	xfree(bb_copy);
+fini:	xfree(bb_copy);
 	xfree(capacity);
 	xfree(pfs);
 	xfree(type);
