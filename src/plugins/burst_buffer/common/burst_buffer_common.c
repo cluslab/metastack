@@ -2701,11 +2701,6 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
 			  "The configuration allows %d, but your job specifies %d accelerated directories.",
 			  state_ptr->bb_config.max_acc_dirs_per_job, bb_job->pfs_cnt);
 		return false;
-	} 
-
-	if(bb_job->req_space <= 0) {
-		error("Invalid req_size %ld", bb_job->req_space);
-		return false;
 	}
 
 	/* Convert the PFS path to a BB interface path */

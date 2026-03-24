@@ -236,9 +236,11 @@ a file of \fB#PB\fR lines.
 \fB#PB jobpara\fR line (keywords on one line, separated by whitespace):
 .TP
 \fBcapacity=\fISIZE\fR
-Reserved for future capacity\-based behavior; the current validation layer still
-requires a non\-zero value (Slurm burst\-buffer size suffix rules: IEC \fBK\fR/\fBKiB\fR,
-\fBM\fR/\fBMiB\fR, \fBG\fR/\fBGiB\fR, \fBT\fR/\fBTiB\fR, \fBP\fR/\fBPiB\fR; SI \fBKB\fR, \fBMB\fR, \fBGB\fR, \fBTB\fR, \fBPB\fR; or \fBN\fR/\fBnode\fR/\fBnodes\fR; bytes if no suffix).
+Optional. Reserved for future capacity\-based behavior; when present, \fISIZE\fR uses Slurm
+burst\-buffer size suffix rules: IEC \fBK\fR/\fBKiB\fR,
+\fBM\fR/\fBMiB\fR, \fBG\fR/\fBGiB\fR, \fBT\fR/\fBTiB\fR, \fBP\fR/\fBPiB\fR; SI \fBKB\fR, \fBMB\fR, \fBGB\fR, \fBTB\fR, \fBPB\fR; or \fBN\fR/\fBnode\fR/\fBnodes\fR; bytes if no suffix.
+Omitting \fBcapacity=\fR or supplying a zero value is allowed. The keyword must not be empty:
+\fBcapacity=\fR with no value is rejected.
 .IP
 
 .TP
@@ -284,6 +286,7 @@ Example:
 #!/bin/bash
 #SBATCH \-\-job\-name=psbb
 #PB jobpara capacity=1GiB pfslist=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
+#PB jobpara pfslist=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
 #PB pstage_in access_mode=striped metadata_acceleration=no
 srun ./a.out
 .fi

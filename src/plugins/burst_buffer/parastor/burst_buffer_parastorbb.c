@@ -657,18 +657,20 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 
 	bb_copy = xstrdup(job_desc->burst_buffer);
 	if ((tok = strstr(bb_copy, "capacity="))) {
-		buf_size = bb_get_size_num(tok + 9, 1);
-		if (buf_size == 0) {
+		char *cap_val = tok + 9;
+
+		if (cap_val[0] == '\0' || isspace((unsigned char) cap_val[0])) {
 			rc = ESLURM_INVALID_BURST_BUFFER_REQUEST;
 			goto fini;
 		}
-		capacity = xstrdup(tok + 9);
+		capacity = xstrdup(cap_val);
 		sep = strchr(capacity, ',');
 		if (sep)
 			sep[0] = '\0';
 		sep = strchr(capacity, ' ');
 		if (sep)
 			sep[0] = '\0';
+		buf_size = bb_get_size_num(capacity, 1);
 		tok_len = strlen(capacity) + 9;
 		memset(tok, ' ', tok_len);
 	}
@@ -729,28 +731,21 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 
 	if (rc == SLURM_SUCCESS)
 		xfree(job_desc->burst_buffer);
-	if ((rc == SLURM_SUCCESS) && (buf_size)) {
-
-		if (buf_size) {
-			if (job_desc->burst_buffer)
-				xstrfmtcat(job_desc->burst_buffer, "\n");
-			xstrfmtcat(job_desc->burst_buffer,
-				   "#PB jobpara capacity=%s",
+	if ((rc == SLURM_SUCCESS) &&
+	    (buf_size > 0 || pfs || type || enforce_bb)) {
+		if (job_desc->burst_buffer)
+			xstrfmtcat(job_desc->burst_buffer, "\n");
+		xstrfmtcat(job_desc->burst_buffer, "#PB jobpara");
+		if (buf_size > 0)
+			xstrfmtcat(job_desc->burst_buffer, " capacity=%s",
 				   bb_get_size_str(buf_size));
-
-			if (pfs) {
-				xstrfmtcat(job_desc->burst_buffer,
-					   " pfslist=%s", pfs);
-			}
-			if (type) {
-				xstrfmtcat(job_desc->burst_buffer,
-					   " type=%s", type);
-			}
-			if (enforce_bb) {
-				xstrfmtcat(job_desc->burst_buffer,
-					   " enforce_bb=%s", enforce_bb);
-			}
-		}
+		if (pfs)
+			xstrfmtcat(job_desc->burst_buffer, " pfslist=%s", pfs);
+		if (type)
+			xstrfmtcat(job_desc->burst_buffer, " type=%s", type);
+		if (enforce_bb)
+			xstrfmtcat(job_desc->burst_buffer, " enforce_bb=%s",
+				   enforce_bb);
 	}
 
 fini:	xfree(bb_copy);
@@ -986,7 +981,8 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 
 		if (bb_flag == BB_FLAG_PB_OP) {
 			if (!xstrncmp(tok, "jobpara", 7)) {
-				/* Parse capacity= */
+				bb_job->req_space = 0;
+				/* Parse capacity= (optional; zero means omitted or explicit zero) */
 				if ((sub_tok = strstr(tok, "capacity="))) {
 					char *capacity_val = sub_tok + 9;
 					/* Require a value after capacity= */
@@ -997,16 +993,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						continue;
 					}
 					bb_job->req_space = bb_get_size_num(capacity_val, 1);
-					/* Parsed size must be non-zero */
-					if (bb_job->req_space == 0) {
-						error_param = "capacity";
-						have_status = true;
-						tok = strtok_r(NULL, "\n", &save_ptr);
-						continue;
-					}
 				}
-				/* Optional: require capacity= to be present */
-
 
 				/* Parse pfslist= */
 				if ((sub_tok = strstr(tok, "pfslist="))) {
