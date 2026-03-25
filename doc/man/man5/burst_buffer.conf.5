@@ -243,21 +243,21 @@ Values less than or equal to 0 are raised to 4; values greater than 8 are reduce
 \fBMaxClientsPerJob\fR
 (ParaStor plugin.) Maximum number of clients per cache group.
 If omitted, the default is 4.
-\fBburst_buffer/parastor\fR and \fBburst_buffer/parastor_slurmd\fR clamp values greater than 1024 to 1024 at startup.
+\fBburst_buffer/parastor\fR clamp values greater than 1024 to 1024 at startup.
 .IP
 
 .TP
 \fBMaxDatasets\fR
 (ParaStor plugin.) Upper bound on datasets in the ParaStor burst buffer system.
 If omitted, the default is 8192.
-\fBburst_buffer/parastor\fR clamps values greater than 8096 to 8096; \fBburst_buffer/parastor_slurmd\fR clamps values greater than 8196 to 8196.
+\fBburst_buffer/parastor\fR clamps values greater than 8192 to 8192.
 .IP
 
 .TP
 \fBMaxGroups\fR
 (ParaStor plugin.) Upper bound on cache groups in the ParaStor burst buffer system.
 If omitted, the default is 2048.
-\fBburst_buffer/parastor\fR and \fBburst_buffer/parastor_slurmd\fR clamp values greater than 2048 to 2048 at startup.
+\fBburst_buffer/parastor\fR clamp values greater than 2048 to 2048 at startup.
 .IP
 
 .TP

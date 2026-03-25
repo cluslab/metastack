@@ -703,9 +703,6 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
 			     "MaxAccDirLen", bb_hashtbl);
-	// if (&state_ptr->bb_config.max_acc_dir_len <= 0) {
-	// 	state_ptr->bb_config.max_acc_dir_len = 512;
-	// }
 
 	(void) s_p_get_string(&state_ptr->bb_config.file_system,
 			     "FileSystem", bb_hashtbl);

@@ -1863,8 +1863,13 @@ Sibling was removed from cluster due to other cluster starting the job.
 .TP
 \fBSI  SIGNALING\fR
 Job is being signaled.
-Under the MetaStack ParaStor burst buffer plugin (burst_buffer/parastor), SI means
-slurmd on compute nodes is creating the burst buffer and preheating data.
+.IP
+
+.TP
+\fBSI  SI_BB\fR
+Job state when using the MetaStack ParaStor burst buffer plugin
+(burst_buffer/parastorbb).
+SI means slurmd on compute nodes is creating the burst buffer and preheating data.
 .IP
 
 .TP
@@ -1877,8 +1882,13 @@ a particular exit value.
 .TP
 \fBSO  STAGE_OUT\fR
 Job is staging out files.
-Under the MetaStack ParaStor burst buffer plugin (burst_buffer/parastor), SO means
-slurmd on compute nodes is reclaiming staged data and cleaning up the burst buffer.
+.IP
+
+.TP
+\fBSO  SO_CG\fR
+Job state when using the MetaStack ParaStor burst buffer plugin
+(burst_buffer/parastorbb).
+SO means slurmd on compute nodes is reclaiming staged data and cleaning up the burst buffer.
 .IP
 
 .TP

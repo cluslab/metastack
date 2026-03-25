@@ -1343,7 +1343,7 @@ static void _test_config()
 		/* 24-day max time limit. (2073600 seconds) */
 	static uint32_t max_timeout = (60 * 60 * 24 * 24);
 	uint32_t max_groups = 2048;
- 	uint32_t max_datasets = 8096;
+ 	uint32_t max_datasets = 8192;
 	uint32_t max_node_per_groups = 1024;
 	if (bb_state.bb_config.get_sys_state) {
 		info("%s: get_sys_state is unused in this plugin, unsetting", plugin_type);
