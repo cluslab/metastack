@@ -2812,7 +2812,7 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
 	}
 
 	if (!bb_job->pfs || bb_job->pfs[0] == '\0') {
-		em = xstrdup("pfslist= is missing or empty in #PB jobpara");
+		em = xstrdup("AccelDir= is missing or empty in #PB jobpara");
 		if (fail_msg_out) {
 			xfree(*fail_msg_out);
 			*fail_msg_out = em;
@@ -2862,7 +2862,7 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
 		if (stat(str_split, &buf) != 0 || !S_ISDIR(buf.st_mode) ||
 		    S_ISLNK(buf.st_mode)) {
 			em = xstrdup_printf(
-				"pfs path '%s' missing, not a directory, or symlink (pfslist=%s)",
+				"path '%s' missing, not a directory, or symlink (AccelDir=%s)",
 				str_split, bb_job->pfs);
 			if (fail_msg_out) {
 				xfree(*fail_msg_out);
@@ -2921,7 +2921,7 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
 
 	if (count == 0) {
 		em = xstrdup_printf(
-			"pfslist contains no valid paths (pfslist=%s)",
+			"AccelDir contains no valid paths (AccelDir=%s)",
 			bb_job->pfs);
 		if (fail_msg_out) {
 			xfree(*fail_msg_out);
@@ -2941,14 +2941,14 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
 	if (rc != 0) {
 		if (rc == 1) {
 			em = xstrdup_printf(
-				"pfs paths have forbidden nesting (pfslist=%s)",
+				" dir path have forbidden nesting (AccelDir=%s)",
 				bb_job->pfs);
 		} else if (rc == -1) {
 			em = xstrdup(
-				"pfslist nesting check failed (invalid parameters)");
+				"AccelDir nesting check failed (invalid parameters)");
 		} else {
 			em = xstrdup(
-				"pfslist nesting check failed (internal error)");
+				"AccelDir nesting check failed (internal error)");
 		}
 		if (fail_msg_out) {
 			xfree(*fail_msg_out);
@@ -3027,7 +3027,7 @@ extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
 			 conver_pfs ? conver_pfs : "(null)");
 	if (!conver_pfs) {
 		em = xstrdup_printf(
-			"cannot convert pfs paths to burst buffer layout (pfslist=%s)",
+			"cannot convert AccelDir paths to burst buffer layout (AccelDir=%s)",
 			bb_job->pfs);
 		if (fail_msg_out) {
 			xfree(*fail_msg_out);

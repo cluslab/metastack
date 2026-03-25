@@ -231,6 +231,8 @@ In batch scripts, burst buffer directives are \fB#PB\fR comment lines before the
 non\-comment line; a trailing \fB\\\fR continues a line. \fB\-\-bb\fR passes the same fields in
 compact \fIkeyword=value\fR form (separate fields with commas or spaces). \fB\-\-bbf\fR supplies
 a file of \fB#PB\fR lines.
+Keyword names on the \fBjobpara\fR line and in \fB\-\-bb\fR are matched case\-insensitively
+(for example \fBAccelDir=\fR or \fBacceldir=\fR).
 .PP
 \fB#PB jobpara\fR line (keywords on one line, separated by whitespace):
 .TP
@@ -239,10 +241,10 @@ Reserved for future capacity\-based behavior.
 .IP
 
 .TP
-\fBpfslist=\fIPATHS\fR
+\fBAccelDir=\fIPATHS\fR
 Required. Absolute path(s) to acceleration directories. Multiple
 directories are comma\-separated without spaces (for example
-\fIpfslist=/pfs/proj/a,/pfs/proj/b\fR).
+\fIAccelDir=/pfs/proj/a,/pfs/proj/b\fR).
 .IP
 
 .TP
@@ -270,14 +272,14 @@ Optional on the \fBpstage_in\fR line. Default \fIno\fR.
 .IP
 
 .PP
-\fB\-\-bb\fR may include \fBcapacity=\fR, \fBpfslist=\fR, \fBtype=\fR, and \fBenforce_bb=\fR. 
+\fB\-\-bb\fR may include \fBcapacity=\fR, \fBAccelDir=\fR, \fBtype=\fR, and \fBenforce_bb=\fR. 
 .PP
 Example (batch script with \fB#PB\fR):
 .RS
 .nf
 #!/bin/bash
 #SBATCH \-\-job\-name=psbb
-#PB jobpara capacity=1GiB pfslist=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
+#PB jobpara capacity=1GiB AccelDir=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
 #PB pstage_in access_mode=striped metadata_acceleration=no
 srun ./a.out
 .fi
@@ -287,8 +289,8 @@ Example (\fB\-\-bb\fR on the \fBsbatch\fR command line):
 .RS
 .nf
 sbatch \-\-job\-name=psbb \e
-  \-\-bb="capacity=1GiB pfslist=/pfs/project/a type=temporary enforce_bb=yes" job.sh
-sbatch \-\-bb="capacity=1GiB pfslist=/pfs/project/b type=temporary enforce_bb=no" job.sh
+  \-\-bb="capacity=1GiB AccelDir=/pfs/project/a type=temporary enforce_bb=yes" job.sh
+sbatch \-\-bb="capacity=1GiB AccelDir=/pfs/project/b type=temporary enforce_bb=no" job.sh
 .fi
 .RE
 .RE

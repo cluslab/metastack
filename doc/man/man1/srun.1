@@ -178,6 +178,8 @@ scheduling.
 For job allocations from \fBsrun\fR, pass requests with \fB\-\-bb\fR or \fB\-\-bbf\fR. \fB#PB\fR lines are
 used in batch scripts submitted with \fBsbatch\fR(1); the same keywords apply.
 \fB\-\-bb\fR uses compact \fIkeyword=value\fR form; \fB\-\-bbf\fR supplies a file of \fB#PB\fR lines.
+Keyword names on the \fBjobpara\fR line and in \fB\-\-bb\fR are matched case\-insensitively
+(for example \fBAccelDir=\fR or \fBacceldir=\fR).
 .PP
 \fB#PB jobpara\fR line (keywords on one line, separated by whitespace):
 .TP
@@ -186,10 +188,10 @@ Reserved for future capacity\-based behavior.
 .IP
 
 .TP
-\fBpfslist=\fIPATHS\fR
+\fBAccelDir=\fIPATHS\fR
 Required. Absolute path(s) to acceleration directories. Multiple
 directories are comma\-separated without spaces (for example
-\fIpfslist=/pfs/proj/a,/pfs/proj/b\fR).
+\fIAccelDir=/pfs/proj/a,/pfs/proj/b\fR).
 .IP
 
 .TP
@@ -217,14 +219,14 @@ Optional on the \fBpstage_in\fR line. Default \fIno\fR.
 .IP
 
 .PP
-\fB\-\-bb\fR may include \fBcapacity=\fR, \fBpfslist=\fR, \fBtype=\fR, and \fBenforce_bb=\fR. 
+\fB\-\-bb\fR may include \fBcapacity=\fR, \fBAccelDir=\fR, \fBtype=\fR, and \fBenforce_bb=\fR. 
 .PP
 Example (batch script with \fB#PB\fR, submit with \fBsbatch\fR(1)):
 .RS
 .nf
 #!/bin/bash
 #SBATCH \-\-job\-name=psbb
-#PB jobpara capacity=1GiB pfslist=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
+#PB jobpara capacity=1GiB AccelDir=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
 #PB pstage_in access_mode=striped metadata_acceleration=no
 srun ./a.out
 .fi
@@ -233,8 +235,8 @@ srun ./a.out
 Example (\fB\-\-bb\fR with \fBsrun\fR):
 .RS
 .nf
-srun \-N1 \-\-bb="capacity=1GiB pfslist=/pfs/project/a type=temporary enforce_bb=yes" ./a.out
-srun \-N1 \-\-bb="capacity=1GiB pfslist=/pfs/project/b type=temporary enforce_bb=no" ./a.out
+srun \-N1 \-\-bb="capacity=1GiB AccelDir=/pfs/project/a type=temporary enforce_bb=yes" ./a.out
+srun \-N1 \-\-bb="capacity=1GiB AccelDir=/pfs/project/b type=temporary enforce_bb=no" ./a.out
 .fi
 .RE
 .RE
