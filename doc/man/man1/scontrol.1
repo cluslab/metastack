@@ -547,11 +547,23 @@ Displays output from the current burst buffer plugin's status tool
 (slurm_bb_get_status for lua or dwstat for datawarp). Options following
 \fBbbstat\fR are passed directly to the status tool by the slurmctld daemon
 and the response returned to the user. Equivalent to \fBdwstat\fR.
+Not supported for \fBburst_buffer/parastor\fR ; use
+\fBshow parastorbb\fR instead.
 .IP
 
 .TP
 \fBburstbuffer\fR
-Displays the current status of the BurstBuffer plugin.
+Displays the current status of the BurstBuffer plugin (generic record layout).
+Not supported for \fBburst_buffer/parastor\fR; use \fBshow parastorbb\fR instead.
+.IP
+
+.TP
+\fBparastorbb\fR
+(MetaStack.) When BurstBufferType is burst_buffer/parastor, queries the
+controller and prints a ParaStor\-specific burst buffer report. The report includes
+configuration information and per\-job ParaStor burst buffer (\fBpsbb\fR) usage.
+See \fBburst_buffer.conf\fR(5). Job \fB#PB\fR and \fB\-\-bb\fR syntax is in \fBsbatch\fR(1),
+\fBsrun\fR(1), and \fBsalloc\fR(1).
 .IP
 
 .TP
@@ -572,6 +584,8 @@ Displays output from the current burst buffer plugin's status tool
 (slurm_bb_get_status for lua or dwstat for datawarp). Options following
 \fBdwstat\fR are passed directly to the status tool by the slurmctld daemon
 and the response returned to the user. Equivalent to \fBbbstat\fR.
+Not supported for \fBburst_buffer/parastor\fR ; use
+\fBshow parastorbb\fR instead.
 .IP
 
 .TP
@@ -3235,4 +3249,5 @@ details.
 \fBslurm_takeover\fR (3),
 \fBslurm_update_job\fR (3), \fBslurm_update_node\fR (3),
 \fBslurm_update_partition\fR (3),
+\fBburst_buffer.conf\fR(5),
 \fBslurm.conf\fR(5), \fBslurmctld\fR(8)

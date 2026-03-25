@@ -63,14 +63,24 @@
 #define DEFAULT_VALIDATE_TIMEOUT	5	/* 5 seconds */
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
-#define DEFAULT_RETRY_COUNT		3	/* 3 retries */
-#define DEFAULT_MAX_GROUPS 2048
-#define DEFAULT_MAX_DATASETS 8192
-#define DEFAULT_MAX_GROUPS_PER_CLIENTS 4
-#define DEFAULT_MAX_CLIENTS_PER_JOB 4
-#define DEFAULT_POLL_INTERVAL 5  /* 5 second */
-#define DEFAULT_MAX_ACC_DIRS_PER_JOB 8
-#define DEFAULT_MAX_ACC_DIR_LEN 512
+
+#define PSBB_DEFAULT_RETRY_COUNT		3U
+#define PSBB_DEFAULT_MAX_GROUPS			2048U
+#define PSBB_DEFAULT_MAX_DATASETS		8192U
+#define PSBB_DEFAULT_MAX_GROUPS_PER_CLIENTS	4U
+#define PSBB_DEFAULT_MAX_CLIENTS_PER_JOB	4U
+#define PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB	8U
+#define PSBB_DEFAULT_MAX_ACC_DIR_LEN		512U
+#define PSBB_MAX_TIMEOUT_SEC	(60U * 60U * 24U * 24U)
+#define PSBB_MAX_GROUPS			2048U
+#define PSBB_MAX_DATASETS		8192U
+#define PSBB_MAX_NODE_PER_GROUP		1024U
+#define PSBB_MIN_ACC_DIRS_PER_JOB	4U
+#define PSBB_MAX_ACC_DIRS_PER_JOB	8U
+#define PSBB_MAX_ACC_DIR_LEN		4096U 
+#define PSBB_MAX_POLL_INTERVAL_SEC	3600U
+#define PSBB_MAX_RETRY_COUNT		64U
+#define PSBB_MAX_TCP_PORT		65535U
 #endif
 
 /* Burst buffer configuration parameters */
@@ -104,7 +114,6 @@ typedef struct bb_config {
 	uint32_t max_datasets;
 	uint32_t max_clients_join;
 	uint32_t max_clients_per_job;	/* Cache group sizing: clients per group */
-	uint32_t file_system_count;	/* Number of configured backing storage systems */
 	uint32_t max_acc_dir_len;	/* Max path length for one access (stage) directory */
 	uint32_t max_acc_dirs_per_job;	/* Max access directories to stage per job */
 	char    *file_system;		/* Storage backend / filesystem name */
@@ -574,7 +583,7 @@ extern void bb_load_config(bb_state_t *state_ptr, char *plugin_type);
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
 /* Load and process configuration parameters */
-extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type);
+extern void parastorbb_load_config(bb_state_t *state_ptr, char *plugin_type);
 #endif
 /*
  * Open the state save file, or the backup if necessary.
@@ -677,7 +686,13 @@ extern bool bb_valid_pool_test(bb_state_t *state_ptr, char *pool_name);
 /* Determine if the specified pool name is valid on this system */
 extern bool bb_valid_groups_test(uint64_t tmp_cnt);
 
-extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr);
+/*
+ * IN fail_msg_out - if non-NULL, on failure *fail_msg_out is replaced with a
+ *     short user-facing reason (caller must xfree); ignored on success
+ * IN job_log     - if non-NULL, log_flag(BURST_BUF) includes %pJ for this job
+ */
+extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
+				   char **fail_msg_out, job_record_t *job_log);
 #endif
 
 /* Write an arbitrary string to an arbitrary file name */

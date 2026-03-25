@@ -1866,6 +1866,13 @@ Job is being signaled.
 .IP
 
 .TP
+\fBSI  SI_BB\fR
+Job state when using the MetaStack ParaStor burst buffer plugin
+(burst_buffer/parastorbb).
+SI means slurmd on compute nodes is creating the burst buffer and preheating data.
+.IP
+
+.TP
 \fBSE  SPECIAL_EXIT\fR
 The job was requeued in a special state. This state can be set by
 users, typically in EpilogSlurmctld, if the job has terminated with
@@ -1875,6 +1882,13 @@ a particular exit value.
 .TP
 \fBSO  STAGE_OUT\fR
 Job is staging out files.
+.IP
+
+.TP
+\fBSO  SO_CG\fR
+Job state when using the MetaStack ParaStor burst buffer plugin
+(burst_buffer/parastorbb).
+SO means slurmd on compute nodes is reclaiming staged data and cleaning up the burst buffer.
 .IP
 
 .TP
@@ -2101,6 +2115,7 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 .SH "SEE ALSO"
+\fBburst_buffer.conf\fR(5),
 \fBscancel\fR(1), \fBscontrol\fR(1), \fBsinfo\fR(1), \fBsrun\fR(1),
 \fBslurm_load_ctl_conf\fR (3), \fBslurm_load_jobs\fR (3),
 \fBslurm_load_node\fR (3),

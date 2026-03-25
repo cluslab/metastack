@@ -201,6 +201,9 @@ temporary burst buffer script file that is used internally by the burst buffer
 plugins. See Slurm's burst buffer guide for more information and examples:
 .br
 https://slurm.schedmd.com/burst_buffer.html
+.br
+When \fBBurstBufferType\fR is \fBburst_buffer/parastor\fR, MetaStack ParaStor job keywords and
+examples are under paraStor burst buffer below. See \fBburst_buffer.conf\fR(5) for site configuration.
 .IP
 
 .TP
@@ -211,6 +214,85 @@ These burst buffer directives will be inserted into the submitted batch script.
 See Slurm's burst buffer guide for more information and examples:
 .br
 https://slurm.schedmd.com/burst_buffer.html
+.br
+When \fBBurstBufferType\fR is \fBburst_buffer/parastor\fR, MetaStack ParaStor job keywords and
+examples are under paraStor burst buffer below. See \fBburst_buffer.conf\fR(5) for site configuration.
+.RS
+.SS "ParaStor burst buffer (\fBburst_buffer/parastor\fR)"
+.RS
+MetaStack ParaStor burst buffer job syntax. Site and daemon configuration is covered in
+\fBburst_buffer.conf\fR(5); this subsection lists submission keywords only.
+.PP
+Buffer setup and clean for this integration run on compute nodes via
+\fBslurmd\fR(8) (\fBburst_buffer/parastor_slurmd\fR); the controller records state and drives
+scheduling.
+.PP
+In batch scripts, burst buffer directives are \fB#PB\fR comment lines before the first
+non\-comment line; a trailing \fB\\\fR continues a line. \fB\-\-bb\fR passes the same fields in
+compact \fIkeyword=value\fR form (separate fields with commas or spaces). \fB\-\-bbf\fR supplies
+a file of \fB#PB\fR lines.
+.PP
+\fB#PB jobpara\fR line (keywords on one line, separated by whitespace):
+.TP
+\fBcapacity=\fISIZE\fR
+Reserved for future capacity\-based behavior.
+.IP
+
+.TP
+\fBpfslist=\fIPATHS\fR
+Required. Absolute path(s) to acceleration directories. Multiple
+directories are comma\-separated without spaces (for example
+\fIpfslist=/pfs/proj/a,/pfs/proj/b\fR).
+.IP
+
+.TP
+\fBtype=\fItemporary\fR
+Only \fItemporary\fR is supported today.
+.IP
+
+.TP
+\fBenforce_bb=\fIyes\fR|\fIno\fR
+\fIyes\fR (default): wait for burst buffer resources when the plugin requires them.
+\fIno\fR: if burst buffer resources are unavailable, run the job without using burst
+buffer resources instead of waiting or failing for lack of BB capacity.
+.IP
+
+.PP
+Optional separate \fB#PB pstage_in\fR line:
+.TP
+\fBaccess_mode=\fIstriped\fR|\fIprivate\fR
+Optional. \fIstriped\fR (default) or \fIprivate\fR; case\-insensitive.
+.IP
+
+.TP
+\fBmetadata_acceleration=\fIyes\fR|\fIno\fR
+Optional on the \fBpstage_in\fR line. Default \fIno\fR.
+.IP
+
+.PP
+\fB\-\-bb\fR may include \fBcapacity=\fR, \fBpfslist=\fR, \fBtype=\fR, and \fBenforce_bb=\fR. 
+.PP
+Example (batch script with \fB#PB\fR):
+.RS
+.nf
+#!/bin/bash
+#SBATCH \-\-job\-name=psbb
+#PB jobpara capacity=1GiB pfslist=/pfs/project/a,/pfs/project/b type=temporary enforce_bb=yes
+#PB pstage_in access_mode=striped metadata_acceleration=no
+srun ./a.out
+.fi
+.RE
+.PP
+Example (\fB\-\-bb\fR on the \fBsbatch\fR command line):
+.RS
+.nf
+sbatch \-\-job\-name=psbb \e
+  \-\-bb="capacity=1GiB pfslist=/pfs/project/a type=temporary enforce_bb=yes" job.sh
+sbatch \-\-bb="capacity=1GiB pfslist=/pfs/project/b type=temporary enforce_bb=no" job.sh
+.fi
+.RE
+.RE
+.RE
 .IP
 
 .TP
@@ -3892,4 +3974,4 @@ details.
 .SH "SEE ALSO"
 .LP
 \fBsinfo\fR(1), \fBsattach\fR(1), \fBsalloc\fR(1), \fBsqueue\fR(1), \fBscancel\fR(1), \fBscontrol\fR(1),
-\fBslurm.conf\fR(5), \fBsched_setaffinity\fR (2), \fBnuma\fR (3)
+\fBburst_buffer.conf\fR(5), \fBslurm.conf\fR(5), \fBsched_setaffinity\fR (2), \fBnuma\fR (3)

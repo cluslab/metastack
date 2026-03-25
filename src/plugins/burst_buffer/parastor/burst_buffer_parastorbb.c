@@ -297,10 +297,6 @@ static void _recover_bb_state(void)
 	time_t create_time = 0;
 	bb_alloc_t *bb_alloc;
 	buf_t *buffer;
-	// uint32_t used_groups_cnt    = 0;
-    // uint32_t used_datasets_cnt  = 0;
-    // uint32_t free_groups_cnt    = 0;
-    // uint32_t free_datasets_cnt  = 0;
 
 	state_fd = bb_open_state_file("burst_buffer_parastor_state", &state_file);
 	if (state_fd < 0) {
@@ -378,16 +374,13 @@ static void _recover_bb_state(void)
 		debug("BB-----recover BB state");
 		/* Recover parastorbb specific fields */
 		uint16_t state = 0;
-		//uint64_t bb_group_id = 0;
 		uint32_t type = 0;
-		//bool cache_tmp = false;
 		bool enforce_bb_flag = true;
 		uint32_t bb_task = 0;
 		uint32_t groups_nodes = 0;
 		uint64_t req_space = 0;
 		uint32_t access_mode = 0;
 		uint32_t pfs_cnt = 0;
-		// char *bb_state_str = NULL;
 		bool metadata_acceleration = false;
 		uint32_t index_groups = 0;
 		uint32_t index_datasets = 0;
@@ -396,9 +389,7 @@ static void _recover_bb_state(void)
 		int j;
 
 		safe_unpack16(&state, buffer);
-		//safe_unpack64(&bb_group_id, buffer);
 		safe_unpack32(&type, buffer);
-		//safe_unpackbool(&cache_tmp, buffer);
 		safe_unpackbool(&enforce_bb_flag, buffer);
 		safe_unpack32(&bb_task, buffer);
 		safe_unpack32(&groups_nodes, buffer);
@@ -458,9 +449,7 @@ static void _recover_bb_state(void)
 
 		/* Assign recovered values to bb_alloc */
 		bb_alloc->state = state; 
-		//bb_alloc->bb_group_id = bb_group_id;
 		bb_alloc->type = type;
-		//bb_alloc->cache_tmp = cache_tmp;
 		bb_alloc->enforce_bb_flag = enforce_bb_flag;
 		bb_alloc->bb_task = bb_task;
 		bb_alloc->groups_nodes = groups_nodes;
@@ -604,9 +593,6 @@ static void _load_state(bool init_config)
 
 	timeout = bb_state.bb_config.other_timeout;
 	debug("%s: load_state other_timeout=%u", __func__, timeout);
-	/* Parastor plugin does not use pool objects */
-	// if (_load_pools(timeout) != SLURM_SUCCESS)
-	// 	return;
 	bb_state.last_load_time = time(NULL);
 	
 	if (!init_config)
@@ -648,37 +634,36 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 	if (!job_desc->burst_buffer || (job_desc->burst_buffer[0] == '#'))
 		return rc;
 
-	// if (strstr(job_desc->burst_buffer, "create_persistent") ||
-	//     strstr(job_desc->burst_buffer, "destroy_persistent")) {
-	// 	/* Create or destroy of persistent burst buffers NOT supported
-	// 	 * via --bb option. Use --bbf or a batch script instead. */
-	// 	return ESLURM_INVALID_BURST_BUFFER_REQUEST;
-	// }
-
 	bb_copy = xstrdup(job_desc->burst_buffer);
 	if ((tok = strstr(bb_copy, "capacity="))) {
-		buf_size = bb_get_size_num(tok + 9, 1);
-		if (buf_size == 0) {
+		char *cap_val = tok + 9;
+
+		if (cap_val[0] == '\0' || isspace((unsigned char) cap_val[0])) {
 			rc = ESLURM_INVALID_BURST_BUFFER_REQUEST;
 			goto fini;
 		}
-		capacity = xstrdup(tok + 9);
+		capacity = xstrdup(cap_val);
 		sep = strchr(capacity, ',');
 		if (sep)
 			sep[0] = '\0';
 		sep = strchr(capacity, ' ');
 		if (sep)
 			sep[0] = '\0';
+		buf_size = bb_get_size_num(capacity, 1);
 		tok_len = strlen(capacity) + 9;
 		memset(tok, ' ', tok_len);
 	}
 
 
-	if ((tok = strstr(bb_copy, "pfs="))) {
-		pfs = xstrdup(tok + 4);
-		sep = strchr(pfs, ',');
+	if ((tok = strstr(bb_copy, "pfslist="))) {
+		pfs = xstrdup(tok + 8);
+		sep = strchr(pfs, ' ');
 		if (sep)
 			sep[0] = '\0';
+		tok_len = strlen(pfs) + 8;
+		memset(tok, ' ', tok_len);
+	} else if ((tok = strstr(bb_copy, "pfs="))) {
+		pfs = xstrdup(tok + 4);
 		sep = strchr(pfs, ' ');
 		if (sep)
 			sep[0] = '\0';
@@ -711,46 +696,34 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 	}	
 
 	if (rc == SLURM_SUCCESS) {
-		/* Look for vestigial content. Treating this as an error would
-		 * prevent backward compatibility. Just log it for now. */
 		for (i = 0; bb_copy[i]; i++) {
 			if (isspace(bb_copy[i]))
 				continue;
 			verbose("Unrecognized --bb content: %s",
 				bb_copy + i);
-//			rc = ESLURM_INVALID_BURST_BUFFER_REQUEST;
-//			goto fini;
 		}
 	}
 
 	if (rc == SLURM_SUCCESS)
 		xfree(job_desc->burst_buffer);
-	if ((rc == SLURM_SUCCESS) && (buf_size)) {
-
-		if (buf_size) {
-			if (job_desc->burst_buffer)
-				xstrfmtcat(job_desc->burst_buffer, "\n");
-			xstrfmtcat(job_desc->burst_buffer,
-				   "#PB jobpara capacity=%s",
+	if ((rc == SLURM_SUCCESS) &&
+	    (buf_size > 0 || pfs || type || enforce_bb)) {
+		if (job_desc->burst_buffer)
+			xstrfmtcat(job_desc->burst_buffer, "\n");
+		xstrfmtcat(job_desc->burst_buffer, "#PB jobpara");
+		if (buf_size > 0)
+			xstrfmtcat(job_desc->burst_buffer, " capacity=%s",
 				   bb_get_size_str(buf_size));
-
-			if (pfs) {
-				xstrfmtcat(job_desc->burst_buffer,
-					   " pfs=%s", pfs);
-			}
-			if (type) {
-				xstrfmtcat(job_desc->burst_buffer,
-					   " type=%s", type);
-			}
-			if (enforce_bb) {
-				xstrfmtcat(job_desc->burst_buffer,
-					   " enforce_bb=%s", enforce_bb);
-			}
-		}
+		if (pfs)
+			xstrfmtcat(job_desc->burst_buffer, " pfslist=%s", pfs);
+		if (type)
+			xstrfmtcat(job_desc->burst_buffer, " type=%s", type);
+		if (enforce_bb)
+			xstrfmtcat(job_desc->burst_buffer, " enforce_bb=%s",
+				   enforce_bb);
 	}
 
-fini:	xfree(access);
-	xfree(bb_copy);
+fini:	xfree(bb_copy);
 	xfree(capacity);
 	xfree(pfs);
 	xfree(type);
@@ -830,20 +803,6 @@ static int _xlate_batch(job_desc_msg_t *job_desc)
 	return rc;
 }
 
-
-/*
- * IN tok - a line in a burst buffer specification containing "capacity="
- * IN capacity_ptr - pointer to the first character after "capacity=" within tok
- * OUT pool - return a malloc'd string of the pool name, caller is responsible
- *            to free
- * OUT size - return the number specified after "capacity="
- */
-// static int _parse_capacity(char *tok, char *capacity_ptr, char **pool,
-// 			   uint64_t *size)
-// {
-// 	return SLURM_SUCCESS;
-// }
-
 /* Perform basic burst_buffer option validation */
 static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 			  uid_t submit_uid)
@@ -859,10 +818,6 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 
 	xassert(bb_size);
 	*bb_size = 0;
-
-	// if (validate_operator(submit_uid) ||
-	//     (bb_state.bb_config.flags & BB_FLAG_ENABLE_PERSISTENT))
-	// 	enable_persist = true;
 
 	if (job_desc->script)
 		rc = _xlate_batch(job_desc);
@@ -917,11 +872,6 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 	if (!have_bb)
 		rc = ESLURM_INVALID_BURST_BUFFER_REQUEST;
 
-	// if (!have_stage_out) {
-	// 	/* prevent sending stage out email */
-	// 	job_desc->mail_type &= (~MAIL_JOB_STAGE_OUT);
-	// }
-
 	return rc;
 }
 
@@ -931,6 +881,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	char *bb_specs  = NULL;
 	char *save_ptr = NULL, *sub_tok, *tok = NULL;
 	bool have_bb = false, have_status = false;
+	bool saw_pb_jobpara = false;
+	char *bb_grp_fail_msg = NULL;
+	char *pb_err_detail = NULL;
 	char *error_param = NULL;  /* Parameter name that failed validation */
 	// uint64_t tmp_cnt;
 	int inx;
@@ -970,11 +923,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 			bb_flag = BB_FLAG_DW_OP;
 		else if ((tok[1] == 'P') && (tok[2] == 'B'))
 			bb_flag = BB_FLAG_PB_OP;
-		/*
-		 * Effective Slurm v18.08 and CLE6.0UP06 the create_persistent
-		 * and destroy_persistent functions are directly supported by
-		 * dw_wlm_cli. Support "#BB" format for backward compatibility.
-		 */
+
 		if (bb_flag != 0) {
 			tok += 3;
 			while (isspace(tok[0]))
@@ -983,33 +932,36 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 
 		if (bb_flag == BB_FLAG_PB_OP) {
 			if (!xstrncmp(tok, "jobpara", 7)) {
-				/* Parse capacity= */
+				saw_pb_jobpara = true;
+				bb_job->req_space = 0;
+				/* Parse capacity= (optional; zero means omitted or explicit zero) */
 				if ((sub_tok = strstr(tok, "capacity="))) {
 					char *capacity_val = sub_tok + 9;
 					/* Require a value after capacity= */
 					if (capacity_val[0] == '\0' || isspace(capacity_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: capacity= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "capacity";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
 					bb_job->req_space = bb_get_size_num(capacity_val, 1);
-					/* Parsed size must be non-zero */
-					if (bb_job->req_space == 0) {
-						error_param = "capacity";
-						have_status = true;
-						tok = strtok_r(NULL, "\n", &save_ptr);
-						continue;
-					}
 				}
-				/* Optional: require capacity= to be present */
-
 
 				/* Parse pfslist= */
 				if ((sub_tok = strstr(tok, "pfslist="))) {
 					char *pfs_val = sub_tok + 8;
 					/* Require a value after pfslist= */
 					if (pfs_val[0] == '\0' || isspace(pfs_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: pfslist= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "pfslist";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1023,6 +975,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					/* Path must be non-empty */
 					if (tmp_pfs[0] == '\0') {
 						xfree(tmp_pfs);
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: pfslist= path is empty after parsing");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "pfslist";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1035,6 +992,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *type_val = sub_tok + 5;
 					/* Require a value after type= */
 					if (type_val[0] == '\0' || isspace(type_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: type= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "type";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1050,6 +1012,12 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->type = GROUP_TYPE_TEMPORARY;
 					} else {
 						/* Invalid type= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup_printf(
+							"#PB jobpara: type=%s is invalid (expected temporary or persistent)",
+							tmp_type);
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "type";
 						have_status = true;
 						xfree(tmp_type);
@@ -1059,6 +1027,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					xfree(tmp_type);
 				} else {
 					/* Default: temporary cache group */
+					/* Default: temporary cache group */
 					bb_job->type = GROUP_TYPE_TEMPORARY;
 				}
 
@@ -1067,6 +1036,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *enforce_val = sub_tok + 11;
 					/* Require a value after enforce_bb= */
 					if (enforce_val[0] == '\0' || isspace(enforce_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: enforce_bb= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "enforce_bb";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1082,14 +1056,19 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->enforce_bb_flag = true;
 					} else {
 						/* Invalid enforce_bb= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: enforce_bb= must be yes/no, true/false, or 0/1");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "enforce_bb";
 						have_status = true;
-						//xfree(tmp_enforce);
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
 					//xfree(tmp_enforce);
 				} else {
+					/* Default: enforce burst buffer (wait for resources) */
 					/* Default: enforce burst buffer (wait for resources) */
 					bb_job->enforce_bb_flag = true;
 				}
@@ -1103,7 +1082,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				bb_job->buf_ptr[inx].size = bb_job->req_space;
 				bb_job->buf_ptr[inx].state = BB_STATE_PENDING;
 				/* Validate capacity against configured limits */
-				have_bb = bb_valid_groups_test_2(bb_job, &bb_state);
+				have_bb = bb_valid_groups_test_2(bb_job, &bb_state,
+								  &bb_grp_fail_msg,
+								  job_ptr);
 			}
 			if (!xstrncmp(tok, "pstage_in", 9)) {
 				/* Parse access_mode= */
@@ -1111,6 +1092,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *access_val = sub_tok + 12;
 					/* Require a value after access_mode= */
 					if (access_val[0] == '\0' || isspace(access_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB pstage_in: access_mode= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "access_mode";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1128,6 +1114,12 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->access_mode = DATASET_TYPE_STRIPED;
 					} else {
 						/* Invalid access_mode= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup_printf(
+							"#PB pstage_in: access_mode=%s is invalid (expected private or striped)",
+							tmp_access);
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "access_mode";
 						have_status = true;
 						xfree(tmp_access);
@@ -1137,6 +1129,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					xfree(tmp_access);
 				} else {
 					/* Default: striped (shared) */
+					/* Default: striped (shared) */
 					bb_job->access_mode = DATASET_TYPE_STRIPED;
 				}
 
@@ -1145,6 +1138,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *meta_val = sub_tok + 22;
 					/* Require a value after metadata_acceleration= */
 					if (meta_val[0] == '\0' || isspace(meta_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB pstage_in: metadata_acceleration= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "metadata_acceleration";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1168,6 +1166,12 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->metadata_acceleration = false;
 					} else {
 						/* Invalid metadata_acceleration= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup_printf(
+							"#PB pstage_in: metadata_acceleration=%s is invalid",
+							tmp_meta);
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "metadata_acceleration";
 						have_status = true;
 						xfree(tmp_meta);
@@ -1188,17 +1192,50 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
 		if (error_param) {
+			if (pb_err_detail) {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: %s (%s)",
+					plugin_type, pb_err_detail,
+					job_ptr->burst_buffer);
+			} else {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: Invalid burst buffer parameter '%s' in spec (%s)",
+					plugin_type, error_param,
+					job_ptr->burst_buffer);
+			}
+			info("Invalid burst buffer spec for %pJ (%s)",
+				job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
+		} else if (bb_grp_fail_msg) {
 			xstrfmtcat(job_ptr->state_desc,
-				"%s: Invalid burst buffer parameter '%s' in spec (%s)",
-				plugin_type, error_param, job_ptr->burst_buffer);
-			info("Invalid burst buffer parameter '%s' for %pJ (%s)",
-				error_param, job_ptr, job_ptr->burst_buffer);
-		} else {
+				"%s: %s (%s)",
+				plugin_type, bb_grp_fail_msg, job_ptr->burst_buffer);
+			info("Invalid burst buffer spec for %pJ - %s (%s)",
+				job_ptr, bb_grp_fail_msg, job_ptr->burst_buffer);
+			xfree(bb_grp_fail_msg);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
+		} else if (!saw_pb_jobpara) {
 			xstrfmtcat(job_ptr->state_desc,
 				"%s: Invalid burst buffer spec - missing required 'jobpara' command (%s)",
 				plugin_type, job_ptr->burst_buffer);
 			info("Invalid burst buffer spec for %pJ - missing required 'jobpara' command (%s)",
 				job_ptr, job_ptr->burst_buffer);
+			log_flag(BURST_BUF, "%pJ missing required #PB jobpara (%s)",
+				 job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
+		} else {
+			xstrfmtcat(job_ptr->state_desc,
+				"%s: Invalid burst buffer spec after #PB jobpara (%s)",
+				plugin_type, job_ptr->burst_buffer);
+			info("Invalid burst buffer spec for %pJ after jobpara (%s)",
+				job_ptr, job_ptr->burst_buffer);
+			log_flag(BURST_BUF, "%pJ invalid burst buffer after #PB jobpara (%s)",
+				 job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
 		}
 		job_ptr->priority = 0;
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -1211,17 +1248,29 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
 		if (error_param) {
-			xstrfmtcat(job_ptr->state_desc,
-				"%s: Invalid burst buffer parameter '%s' value in spec (%s)",
-				plugin_type, error_param, job_ptr->burst_buffer);
-			info("Invalid burst buffer parameter '%s' value for %pJ (%s)",
-				error_param, job_ptr, job_ptr->burst_buffer);
+			if (pb_err_detail) {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: %s (%s)",
+					plugin_type, pb_err_detail,
+					job_ptr->burst_buffer);
+			} else {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: Invalid burst buffer parameter '%s' value in spec (%s)",
+					plugin_type, error_param,
+					job_ptr->burst_buffer);
+			}
+			info("Invalid burst buffer spec for %pJ (%s)",
+				job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
 		} else {
 			xstrfmtcat(job_ptr->state_desc,
 				"%s: Invalid burst buffer spec (%s)",
 				plugin_type, job_ptr->burst_buffer);
 			info("Invalid burst buffer spec for %pJ (%s)",
 				job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
 		}
 		job_ptr->priority = 0;
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -1235,97 +1284,10 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		bb_job->job_pool = xstrdup(bb_state.bb_config.default_pool);
 	if (slurm_conf.debug_flags & DEBUG_FLAG_BURST_BUF)
 		bb_job_log(&bb_state, bb_job);
+	xfree(pb_err_detail);
 	return bb_job;
 }
 
-/* Validate burst buffer configuration */
-static void _test_config()
-{
-		/* 24-day max time limit. (2073600 seconds) */
-	static uint32_t max_timeout = (60 * 60 * 24 * 24);
-	uint32_t max_groups = 2048;
- 	uint32_t max_datasets = 8096;
-	uint32_t max_node_per_groups = 1024;
-	if (bb_state.bb_config.get_sys_state) {
-		info("%s: get_sys_state is unused in this plugin, unsetting", plugin_type);
-		xfree(bb_state.bb_config.get_sys_state);
-	}
-	if (bb_state.bb_config.get_sys_status) {
-		info("%s: get_sys_status is unused in this plugin, unsetting", plugin_type);
-		xfree(bb_state.bb_config.get_sys_status);
-	}
-	if (bb_state.bb_config.flags & BB_FLAG_ENABLE_PERSISTENT) {
-		warning("%s: EnablePersistent is unsupported; forcing DisablePersistent",
-			plugin_type);
-		bb_state.bb_config.flags &= (~BB_FLAG_ENABLE_PERSISTENT);
-		bb_state.bb_config.flags |= BB_FLAG_DISABLE_PERSISTENT;
-	}
-	if (bb_state.bb_config.flags & BB_FLAG_EMULATE_CRAY) {
-		info("%s: flags=EmulateCray is invalid for this plugin, unsetting", plugin_type);
-		bb_state.bb_config.flags &= (~BB_FLAG_EMULATE_CRAY);
-	}
-	if (bb_state.bb_config.directive_str)
-		directive_str = bb_state.bb_config.directive_str;
-	else
-	directive_len = strlen(directive_str);
-
-	if (bb_state.bb_config.default_pool) {
-		info("%s: DefaultPool=%s is unused for this plugin, unsetting",
-		     plugin_type, bb_state.bb_config.default_pool);
-		xfree(bb_state.bb_config.default_pool);
-	}
-
-	/*
-	 * Burst buffer APIs that would use ValidateTimeout
-	 * (slurm_bb_job_process and slurm_bb_paths) are actually called
-	 * directly from slurmctld, not through SlurmScriptd. Because of this,
-	 * they cannot be killed, so there is no timeout for them. Therefore,
-	 * ValidateTimeout doesn't matter in this plugin.
-	 */
-	if (bb_state.bb_config.validate_timeout &&
-	    (bb_state.bb_config.validate_timeout != DEFAULT_VALIDATE_TIMEOUT))
-		info("%s: ValidateTimeout is not used in this plugin, ignoring",
-		     plugin_type);
-
-	/*
-	 * Test time limits. In order to prevent overflow when converting
-	 * the time limits in seconds to milliseconds (multiply by 1000),
-	 * the maximum value for time limits is 2073600 seconds (24 days).
-	 * 2073600 * 1000 is still less than the maximum 32-bit signed integer.
-	 */
-	if (bb_state.bb_config.other_timeout > max_timeout) {
-		warning("%s: OtherTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.other_timeout, max_timeout);
-		bb_state.bb_config.other_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.stage_in_timeout > max_timeout) {
-		warning("%s: StageInTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.stage_in_timeout, max_timeout);
-		bb_state.bb_config.stage_in_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.stage_out_timeout > max_timeout) {
-		warning("%s: StageOutTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.stage_out_timeout, max_timeout);
-		bb_state.bb_config.stage_out_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.max_groups > max_groups) {
-		warning("%s: MaxGroups=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_groups, max_groups);
-		bb_state.bb_config.max_groups = max_groups;
-	}
-	if (bb_state.bb_config.max_datasets > max_datasets) {
-		warning("%s: MaxDatasets=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_datasets, max_datasets);
-		bb_state.bb_config.max_datasets = max_datasets;
-	}
-	if (bb_state.bb_config.max_clients_per_job > max_node_per_groups) {
-		warning("%s: MaxClientsPerJob=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_clients_per_job,
-			max_node_per_groups);
-		bb_state.bb_config.max_clients_per_job = max_node_per_groups;
-	}
-}
-	
 /*
  * init() is called when the plugin is loaded, before any other functions
  * are called.  Put global initialization here.
@@ -1334,22 +1296,14 @@ extern int init(void)
 {
 	int rc = SLURM_SUCCESS;
 	int count = 3;
-	//parastor_script_path = get_extra_conf_path("burst_buffer.parastor");
-	//time_t parastor_script_last_loaded = (time_t) 0;
-	/*
-	 * slurmscriptd calls bb_g_init() and then bb_g_run_script(). We only
-	 * need to initialize lua to run the script. We don't want
-	 * slurmscriptd to read from or write to the state save location, nor
-	 * do we need slurmscriptd to load the configuration file.
-	 */
+
 	if (!running_in_slurmctld()) {
 		return SLURM_SUCCESS;
 	}
 	slurm_mutex_init(&parastor_thread_mutex);
 	slurm_mutex_init(&bb_state.bb_mutex);
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_load_config2(&bb_state, (char *)plugin_type); /* removes "const" */
-	_test_config();
+	parastorbb_load_config(&bb_state, (char *)plugin_type); /* removes "const" */
 	for (size_t i = 0; i < count; i++) {
 		rc = get_permanent_token(&bb_state.bb_config);
 		if(rc == SLURM_SUCCESS) {
@@ -1723,8 +1677,7 @@ extern int bb_p_reconfig(void)
 	int i;
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	log_flag(BURST_BUF, "");
-	bb_load_config2(&bb_state, (char *)plugin_type); /* Remove "const" */
-	_test_config();
+	parastorbb_load_config(&bb_state, (char *)plugin_type); /* Remove "const" */
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	/* reconfig is the place we make sure the pointers are correct */
 	for (i = 0; i < BB_HASH_SIZE; i++) {

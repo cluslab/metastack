@@ -670,6 +670,14 @@ plugin was developed to provide system administrators with a way to do any task
 .IP
 
 .TP
+\fBburst_buffer/parastor\fR
+This plugin is implemented by Metastack and provides BurstBuffer functionality based on the ParaStor storage system.
+Site and controller settings are in \fBburst_buffer.conf\fR(5).
+Job submission syntax (\fB#PB\fR, \fB\-\-bb\fR, \fB\-\-bbf\fR) is in \fBsbatch\fR(1),
+\fBsrun\fR(1), and \fBsalloc\fR(1).
+.IP
+
+.TP
 \fBburst_buffer/none\fR
 .RE
 .IP
@@ -7243,6 +7251,21 @@ is "DRAIN" or "INACTIVE."
 .IP
 
 .TP
+\fBBurstBuffer\fR
+Per\-partition switch used with the MetaStack ParaStor burst buffer integration.
+It is interpreted only when \fBBurstBufferType\fR in this file is
+\fBburst_buffer/parastor\fR; for any other \fBBurstBufferType\fR or when burst buffers are
+not in use, the keyword has no effect.
+When it applies, \fByes\fR allows jobs in this partition to use the ParaStor burst
+buffer workflow; \fBno\fR forbids it for jobs in this partition even though the
+cluster may still load the ParaStor plugin. Set on the partition line or with \fBscontrol update PartitionName=... BurstBuffer=yes\fR or
+\fB... BurstBuffer=no\fR.
+Jobs must still include a valid burst buffer request (for example \fB#PB\fR lines or
+\fB\-\-bb\fR); see \fBsbatch\fR(1), \fBsrun\fR(1), and \fBsalloc\fR(1) (\fBParaStor burst buffer\fR),
+and \fBburst_buffer.conf\fR(5) for controller settings.
+.IP
+
+.TP
 \fBCpuBind\fR
 If a job step request does not specify an option to control how tasks are bound
 to allocated CPUs (by using \-\-cpu\-bind) and all nodes allocated to the job
@@ -8738,8 +8761,8 @@ details.
 
 .SH "SEE ALSO"
 .LP
-\fBcgroup.conf\fR(5), \fBgetaddrinfo\fR(3),
+\fBburst_buffer.conf\fR(5), \fBcgroup.conf\fR(5), \fBgetaddrinfo\fR(3),
 \fBgetrlimit\fR(2), \fBgres.conf\fR(5), \fBgroup\fR(5), \fBhostname\fR(1),
-\fBscontrol\fR(1), \fBslurmctld\fR(8), \fBslurmd\fR(8),
-\fBslurmdbd\fR(8), \fBslurmdbd.conf\fR(5), \fBsrun\fR(1),
+\fBscontrol\fR(1), \fBslurmctld\fR(8),
+\fBslurmd\fR(8), \fBslurmdbd\fR(8), \fBslurmdbd.conf\fR(5), \fBsrun\fR(1),
 \fBspank\fR(8), \fBsyslog\fR(3), \fBtopology.conf\fR(5)

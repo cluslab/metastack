@@ -65,6 +65,9 @@ The string that must be used by a job to request a burst buffer. This string
 must be immediately preceded by a single '#' character. This is currently only
 used by the lua plugin. For the lua plugin, the default value is "BB_LUA".
 See burst_buffer.html for more details.
+For the MetaStack ParaStor plugin (burst_buffer/parastor), Directive is
+ignored; job submission lines must use the fixed prefix #PB (see sbatch(1),
+srun(1), and salloc(1)).
 .IP
 
 .TP
@@ -115,6 +118,8 @@ buffer state.
 For the DataWarp plugin, this should be the path of the \fIdw_wlm_cli\fR command
 and its default value is /opt/cray/dw_wlm/default/bin/dw_wlm_cli.
 This is not used by the lua plugin.
+.br
+Not used by burst_buffer/parastor.
 .IP
 
 .TP
@@ -124,6 +129,8 @@ buffer status.
 For the DataWarp plugin, this should be the path of the \fIdwstat\fR command
 and its default value is /opt/cray/dws/default/bin/dwstat.
 This is not used by the lua plugin.
+.br
+Not used by burst_buffer/parastor.
 .IP
 .\".TP
 .\"\fBGranularity\fR
@@ -143,14 +150,20 @@ By default there is a 300 second (5 minute) timeout for these operations.
 Also see \fBStageInTimeout\fR, \fBStageOutTimeout\fR, and \fBValidateTimeout\fR
 options.
 For the lua plugin, the maximum timeout value is 2073600 seconds (24 days).
+.br
+For \fBburst_buffer/parastor\fR, this value is the timeout in seconds for HTTP
+requests to the ParaStor BurstBuffer API.
 .IP
 
 .TP
 \fBPollInterval\fR
-This option only applies to the lua plugin.
-If the test_data_{in|out} hooks return success and "BUSY", then they will be
-called again after waiting for the specified number of seconds. The default
-value is 15 seconds.
+For the lua plugin, if the test_data_{in|out} hooks return success and "BUSY",
+then they will be called again after waiting for the specified number of seconds.
+The default value is 15 seconds.
+.br
+For \fBburst_buffer/parastor\fR on compute nodes, this is the interval in seconds
+between polls while waiting for prefetch (stage in) or recycle (stage out) tasks
+to complete.
 .IP
 
 .TP
@@ -168,6 +181,9 @@ the burst buffer will be released and the job will be placed in a held state.
 A Slurm administrator will be required to release the job.
 By default there is a one day timeout for the stage in process.
 For the lua plugin, the maximum timeout value is 2073600 seconds (24 days).
+.br
+For \fBburst_buffer/parastor\fR, this bounds the wait on compute nodes for prefetch
+(stage in) tasks against the ParaStor API.
 .IP
 
 .TP
@@ -176,6 +192,9 @@ If the stage out of files for a job takes more than this number of seconds,
 the burst buffer will be released and the job will be purged.
 By default there is a one day timeout for the stage out process.
 For the lua plugin, the maximum timeout value is 2073600 seconds (24 days).
+.br
+For \fBburst_buffer/parastor\fR, this bounds the wait on compute nodes for recycle
+(stage out) tasks against the ParaStor API.
 .IP
 
 .TP
@@ -188,6 +207,89 @@ requests may fail with a response timeout error.
 By default there is a 5 second timeout for the validation operations.
 In the lua plugin, because the validation operation cannot be killed, this
 option is not used.
+.br
+Not used by burst_buffer/parastor(validation of parastor runs in\-process).
+.IP
+
+.TP
+The parameters below apply only when \fBBurstBufferType\fR is \fBburst_buffer/parastor\fR in \fBslurm.conf\fR(5) (MetaStack). ParaStor job script
+syntax is documented in \fBsbatch\fR(1),\fBsrun\fR(1), and \fBsalloc\fR(1).
+.IP
+
+.TP
+\fBFileSystem\fR
+(ParaStor plugin.) Backend filesystem name of ParaStor. Set by the parastor filesystem administrator.
+.IP
+
+.TP
+\fBFileSystemMount\fR
+(ParaStor plugin.) Mount point of parastor burstbuffer filesystem. Set by the parastor filesystem administrator.
+.IP
+
+.TP
+\fBMaxAccDirLen\fR
+(ParaStor plugin.) Maximum length of accelerated directory path (characters).
+If omitted, the default is 512.
+.IP
+
+.TP
+\fBMaxAccDirsPerJob\fR
+(ParaStor plugin.) The maximum number of directories that can be accelerated for a single job.
+If omitted, the default is 8.
+Values less than or equal to 0 are raised to 4; values greater than 8 are reduced to 8.
+.IP
+
+.TP
+\fBMaxClientsPerJob\fR
+(ParaStor plugin.) Maximum number of clients per cache group.
+If omitted, the default is 4.
+\fBburst_buffer/parastor\fR clamp values greater than 1024 to 1024 at startup.
+.IP
+
+.TP
+\fBMaxDatasets\fR
+(ParaStor plugin.) Upper bound on datasets in the ParaStor burst buffer system.
+If omitted, the default is 8192.
+\fBburst_buffer/parastor\fR clamps values greater than 8192 to 8192.
+.IP
+
+.TP
+\fBMaxGroups\fR
+(ParaStor plugin.) Upper bound on cache groups in the ParaStor burst buffer system.
+If omitted, the default is 2048.
+\fBburst_buffer/parastor\fR clamp values greater than 2048 to 2048 at startup.
+.IP
+
+.TP
+\fBMaxGroupsPerClients\fR
+(ParaStor plugin.) Maximum number of cache groups a client can join.
+If omitted, the default is 4.
+.IP
+
+.TP
+\fBParaStorAddr\fR
+(ParaStor plugin.) IP address of the ParaStor burstbuffer restful API. Set by the parastor filesystem administrator.
+.IP
+
+.TP
+\fBParaStorAddrPort\fR
+(ParaStor plugin.) IP port of the ParaStor burstbuffer API. Set by the parastor filesystem administrator.
+.IP
+
+.TP
+\fBParaStorUserName\fR
+(ParaStor plugin.) Administrator name used to obtain an long\-term restfulAPI token(). Set by the parastor filesystem administrator.
+.IP
+
+.TP
+\fBParaStorUserPasswd\fR
+(ParaStor plugin.) Password of ParaStorUserName. Set by the parastor filesystem administrator.
+.IP
+
+.TP
+\fBRetryCount\fR
+(ParaStor plugin.) Retries after timeouts on ParaStor burst buffer API calls.
+If omitted, the default is 3.
 .IP
 
 .SH "COPYING"
@@ -208,4 +310,10 @@ details.
 
 .SH "SEE ALSO"
 .LP
-\fBslurm.conf\fR(5)
+\fBscancel\fR(1),
+\fBscontrol\fR(1),
+\fBslurm.conf\fR(5),
+\fBsbatch\fR(1),
+\fBsrun\fR(1),
+\fBsalloc\fR(1),
+\fBsqueue\fR(1)

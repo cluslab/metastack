@@ -19,7 +19,6 @@ const char plugin_name[]    = "burst_buffer parastor slurmd plugin";
 const char plugin_type[]    = "burst_buffer/parastor_slurmd";
 const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 
-static void _test_config();
 static bb_state_t bb_state;
 static char *directive_str;
 static int directive_len = 0;
@@ -37,8 +36,7 @@ extern int init(void)
 	//slurm_mutex_init(&parastor_thread_mutex);
 	slurm_mutex_init(&bb_state.bb_mutex);
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_load_config2(&bb_state, (char *)plugin_type); /* removes "const" */
-	_test_config();
+	parastorbb_load_config(&bb_state, (char *)plugin_type); /* removes "const" */
 	for (size_t i = 0; i < count; i++) {
 		rc = get_permanent_token(&bb_state.bb_config);
 		if(rc == SLURM_SUCCESS) {
@@ -54,7 +52,6 @@ extern int init(void)
 		slurm_mutex_unlock(&bb_state.bb_mutex);
 		return rc;
 	}
-	//bb_alloc_cache(&bb_state);
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	return SLURM_SUCCESS;
 }
@@ -82,89 +79,6 @@ extern int fini(void)
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	return SLURM_SUCCESS;
 }
-
-/* Validate burst buffer configuration */
-static void _test_config()
-{
-		/* 24-day max time limit. (2073600 seconds) */
-	static uint32_t max_timeout = (60 * 60 * 24 * 24);
-	uint32_t max_groups = 2048;
- 	uint32_t max_datasets = 8196;
-	uint32_t max_node_per_groups = 1024;
-	if (bb_state.bb_config.get_sys_state) {
-		info("%s: get_sys_state is unused in this plugin, unsetting", plugin_type);
-		xfree(bb_state.bb_config.get_sys_state);
-	}
-	if (bb_state.bb_config.get_sys_status) {
-		info("%s: get_sys_status is unused in this plugin, unsetting", plugin_type);
-		xfree(bb_state.bb_config.get_sys_status);
-	}
-	if (bb_state.bb_config.flags & BB_FLAG_EMULATE_CRAY) {
-		info("%s: flags=EmulateCray is invalid for this plugin, unsetting", plugin_type);
-		bb_state.bb_config.flags &= (~BB_FLAG_EMULATE_CRAY);
-	}
-	if (bb_state.bb_config.directive_str) {
-		directive_str = bb_state.bb_config.directive_str;
-		directive_len = strlen(directive_str);
-	}
-
-	if (bb_state.bb_config.default_pool) {
-		info("%s: DefaultPool=%s is unused for this plugin, unsetting",
-		     plugin_type, bb_state.bb_config.default_pool);
-		xfree(bb_state.bb_config.default_pool);
-	}
-
-	/*
-	 * Burst buffer APIs that would use ValidateTimeout
-	 * (slurm_bb_job_process and slurm_bb_paths) are actually called
-	 * directly from slurmctld, not through SlurmScriptd. Because of this,
-	 * they cannot be killed, so there is no timeout for them. Therefore,
-	 * ValidateTimeout doesn't matter in this plugin.
-	 */
-	if (bb_state.bb_config.validate_timeout &&
-	    (bb_state.bb_config.validate_timeout != DEFAULT_VALIDATE_TIMEOUT))
-		info("%s: ValidateTimeout is not used in this plugin, ignoring",
-		     plugin_type);
-
-	/*
-	 * Test time limits. In order to prevent overflow when converting
-	 * the time limits in seconds to milliseconds (multiply by 1000),
-	 * the maximum value for time limits is 2073600 seconds (24 days).
-	 * 2073600 * 1000 is still less than the maximum 32-bit signed integer.
-	 */
-	if (bb_state.bb_config.other_timeout > max_timeout) {
-		warning("%s: OtherTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.other_timeout, max_timeout);
-		bb_state.bb_config.other_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.stage_in_timeout > max_timeout) {
-		warning("%s: StageInTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.stage_in_timeout, max_timeout);
-		bb_state.bb_config.stage_in_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.stage_out_timeout > max_timeout) {
-		warning("%s: StageOutTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.stage_out_timeout, max_timeout);
-		bb_state.bb_config.stage_out_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.max_groups > max_groups) {
-		warning("%s: MaxGroups=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_groups, max_groups);
-		bb_state.bb_config.max_groups = max_groups;
-	}
-	if (bb_state.bb_config.max_datasets > max_datasets) {
-		warning("%s: MaxDatasets=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_datasets, max_datasets);
-		bb_state.bb_config.max_datasets = max_datasets;
-	}
-	if (bb_state.bb_config.max_clients_per_job > max_node_per_groups) {
-		warning("%s: MaxClientsPerJob=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_clients_per_job,
-			max_node_per_groups);
-		bb_state.bb_config.max_clients_per_job = max_node_per_groups;
-	}
-}
-
 
 /**
  * @brief Create a cache group by serial number (SN) and client hostnames.
