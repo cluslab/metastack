@@ -676,7 +676,13 @@ extern bool bb_valid_pool_test(bb_state_t *state_ptr, char *pool_name);
 /* Determine if the specified pool name is valid on this system */
 extern bool bb_valid_groups_test(uint64_t tmp_cnt);
 
-extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr);
+/*
+ * IN fail_msg_out - if non-NULL, on failure *fail_msg_out is replaced with a
+ *     short user-facing reason (caller must xfree); ignored on success
+ * IN job_log     - if non-NULL, log_flag(BURST_BUF) includes %pJ for this job
+ */
+extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
+				   char **fail_msg_out, job_record_t *job_log);
 #endif
 
 /* Write an arbitrary string to an arbitrary file name */

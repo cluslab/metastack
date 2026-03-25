@@ -929,6 +929,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	char *bb_specs  = NULL;
 	char *save_ptr = NULL, *sub_tok, *tok = NULL;
 	bool have_bb = false, have_status = false;
+	bool saw_pb_jobpara = false;
+	char *bb_grp_fail_msg = NULL;
+	char *pb_err_detail = NULL;
 	char *error_param = NULL;  /* Parameter name that failed validation */
 	// uint64_t tmp_cnt;
 	int inx;
@@ -981,12 +984,18 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 
 		if (bb_flag == BB_FLAG_PB_OP) {
 			if (!xstrncmp(tok, "jobpara", 7)) {
+				saw_pb_jobpara = true;
 				bb_job->req_space = 0;
 				/* Parse capacity= (optional; zero means omitted or explicit zero) */
 				if ((sub_tok = strstr(tok, "capacity="))) {
 					char *capacity_val = sub_tok + 9;
 					/* Require a value after capacity= */
 					if (capacity_val[0] == '\0' || isspace(capacity_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: capacity= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "capacity";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1000,6 +1009,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *pfs_val = sub_tok + 8;
 					/* Require a value after pfslist= */
 					if (pfs_val[0] == '\0' || isspace(pfs_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: pfslist= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "pfslist";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1013,6 +1027,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					/* Path must be non-empty */
 					if (tmp_pfs[0] == '\0') {
 						xfree(tmp_pfs);
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: pfslist= path is empty after parsing");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "pfslist";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1025,6 +1044,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *type_val = sub_tok + 5;
 					/* Require a value after type= */
 					if (type_val[0] == '\0' || isspace(type_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: type= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "type";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1040,6 +1064,12 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->type = GROUP_TYPE_TEMPORARY;
 					} else {
 						/* Invalid type= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup_printf(
+							"#PB jobpara: type=%s is invalid (expected temporary or persistent)",
+							tmp_type);
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "type";
 						have_status = true;
 						xfree(tmp_type);
@@ -1057,6 +1087,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *enforce_val = sub_tok + 11;
 					/* Require a value after enforce_bb= */
 					if (enforce_val[0] == '\0' || isspace(enforce_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: enforce_bb= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "enforce_bb";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1072,9 +1107,13 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->enforce_bb_flag = true;
 					} else {
 						/* Invalid enforce_bb= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB jobpara: enforce_bb= must be yes/no, true/false, or 0/1");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "enforce_bb";
 						have_status = true;
-						//xfree(tmp_enforce);
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
@@ -1093,7 +1132,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				bb_job->buf_ptr[inx].size = bb_job->req_space;
 				bb_job->buf_ptr[inx].state = BB_STATE_PENDING;
 				/* Validate capacity against configured limits */
-				have_bb = bb_valid_groups_test_2(bb_job, &bb_state);
+				have_bb = bb_valid_groups_test_2(bb_job, &bb_state,
+								  &bb_grp_fail_msg,
+								  job_ptr);
 			}
 			if (!xstrncmp(tok, "pstage_in", 9)) {
 				/* Parse access_mode= */
@@ -1101,6 +1142,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *access_val = sub_tok + 12;
 					/* Require a value after access_mode= */
 					if (access_val[0] == '\0' || isspace(access_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB pstage_in: access_mode= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "access_mode";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1118,6 +1164,12 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->access_mode = DATASET_TYPE_STRIPED;
 					} else {
 						/* Invalid access_mode= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup_printf(
+							"#PB pstage_in: access_mode=%s is invalid (expected private or striped)",
+							tmp_access);
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "access_mode";
 						have_status = true;
 						xfree(tmp_access);
@@ -1135,6 +1187,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					char *meta_val = sub_tok + 22;
 					/* Require a value after metadata_acceleration= */
 					if (meta_val[0] == '\0' || isspace(meta_val[0])) {
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup(
+							"#PB pstage_in: metadata_acceleration= requires a non-empty value");
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "metadata_acceleration";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
@@ -1158,6 +1215,12 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						bb_job->metadata_acceleration = false;
 					} else {
 						/* Invalid metadata_acceleration= value */
+						xfree(pb_err_detail);
+						pb_err_detail = xstrdup_printf(
+							"#PB pstage_in: metadata_acceleration=%s is invalid",
+							tmp_meta);
+						log_flag(BURST_BUF, "%pJ: %s",
+							 job_ptr, pb_err_detail);
 						error_param = "metadata_acceleration";
 						have_status = true;
 						xfree(tmp_meta);
@@ -1178,17 +1241,50 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
 		if (error_param) {
+			if (pb_err_detail) {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: %s (%s)",
+					plugin_type, pb_err_detail,
+					job_ptr->burst_buffer);
+			} else {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: Invalid burst buffer parameter '%s' in spec (%s)",
+					plugin_type, error_param,
+					job_ptr->burst_buffer);
+			}
+			info("Invalid burst buffer spec for %pJ (%s)",
+				job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
+		} else if (bb_grp_fail_msg) {
 			xstrfmtcat(job_ptr->state_desc,
-				"%s: Invalid burst buffer parameter '%s' in spec (%s)",
-				plugin_type, error_param, job_ptr->burst_buffer);
-			info("Invalid burst buffer parameter '%s' for %pJ (%s)",
-				error_param, job_ptr, job_ptr->burst_buffer);
-		} else {
+				"%s: %s (%s)",
+				plugin_type, bb_grp_fail_msg, job_ptr->burst_buffer);
+			info("Invalid burst buffer spec for %pJ - %s (%s)",
+				job_ptr, bb_grp_fail_msg, job_ptr->burst_buffer);
+			xfree(bb_grp_fail_msg);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
+		} else if (!saw_pb_jobpara) {
 			xstrfmtcat(job_ptr->state_desc,
 				"%s: Invalid burst buffer spec - missing required 'jobpara' command (%s)",
 				plugin_type, job_ptr->burst_buffer);
 			info("Invalid burst buffer spec for %pJ - missing required 'jobpara' command (%s)",
 				job_ptr, job_ptr->burst_buffer);
+			log_flag(BURST_BUF, "%pJ missing required #PB jobpara (%s)",
+				 job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
+		} else {
+			xstrfmtcat(job_ptr->state_desc,
+				"%s: Invalid burst buffer spec after #PB jobpara (%s)",
+				plugin_type, job_ptr->burst_buffer);
+			info("Invalid burst buffer spec for %pJ after jobpara (%s)",
+				job_ptr, job_ptr->burst_buffer);
+			log_flag(BURST_BUF, "%pJ invalid burst buffer after #PB jobpara (%s)",
+				 job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
 		}
 		job_ptr->priority = 0;
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -1201,17 +1297,29 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		xfree(job_ptr->state_desc);
 		job_ptr->state_reason = FAIL_BURST_BUFFER_OP;
 		if (error_param) {
-			xstrfmtcat(job_ptr->state_desc,
-				"%s: Invalid burst buffer parameter '%s' value in spec (%s)",
-				plugin_type, error_param, job_ptr->burst_buffer);
-			info("Invalid burst buffer parameter '%s' value for %pJ (%s)",
-				error_param, job_ptr, job_ptr->burst_buffer);
+			if (pb_err_detail) {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: %s (%s)",
+					plugin_type, pb_err_detail,
+					job_ptr->burst_buffer);
+			} else {
+				xstrfmtcat(job_ptr->state_desc,
+					"%s: Invalid burst buffer parameter '%s' value in spec (%s)",
+					plugin_type, error_param,
+					job_ptr->burst_buffer);
+			}
+			info("Invalid burst buffer spec for %pJ (%s)",
+				job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
 		} else {
 			xstrfmtcat(job_ptr->state_desc,
 				"%s: Invalid burst buffer spec (%s)",
 				plugin_type, job_ptr->burst_buffer);
 			info("Invalid burst buffer spec for %pJ (%s)",
 				job_ptr, job_ptr->burst_buffer);
+			xfree(pb_err_detail);
+			pb_err_detail = NULL;
 		}
 		job_ptr->priority = 0;
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -1225,6 +1333,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		bb_job->job_pool = xstrdup(bb_state.bb_config.default_pool);
 	if (slurm_conf.debug_flags & DEBUG_FLAG_BURST_BUF)
 		bb_job_log(&bb_state, bb_job);
+	xfree(pb_err_detail);
 	return bb_job;
 }
 

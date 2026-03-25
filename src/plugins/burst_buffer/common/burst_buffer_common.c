@@ -76,8 +76,8 @@
 
 #include "burst_buffer_common.h"
 #ifdef __METASTACK_NEW_BURSTBUFFER
-#include <stdio.h>
 #include <limits.h>
+#include <stdio.h>
 #endif
 /* Maximum poll wait time for child processes, in milliseconds */
 #define MAX_POLL_WAIT 500
@@ -2616,7 +2616,8 @@ extern bool bb_valid_pool_test(bb_state_t *state_ptr, char *pool_name)
 /* Determine if the specified pool name is valid on this system */
 extern bool bb_valid_groups_test(uint64_t tmp_cnt)
 {
-	debug("burst buffer tmp_cnt =%ld",tmp_cnt);
+	log_flag(BURST_BUF, "burst buffer tmp_cnt=%llu",
+		 (unsigned long long) tmp_cnt);
 	//groups_assoc->req_space = tmp_cnt;
 	// if (tmp_cnt == 0) {
 	// 	rc =ESLURM_INVALID_BURST_BUFFER_REQUEST;
@@ -2627,97 +2628,259 @@ extern bool bb_valid_groups_test(uint64_t tmp_cnt)
 }
 
 
-extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr)
+extern bool bb_valid_groups_test_2(bb_job_t *bb_job, bb_state_t *state_ptr,
+				   char **fail_msg_out, job_record_t *job_log)
 {
-	if( !bb_job || !state_ptr) {
+	char *em;
+
+	if (!bb_job || !state_ptr) {
+		em = xstrdup("burst buffer validation: internal error (null job or state)");
+		if (fail_msg_out) {
+			xfree(*fail_msg_out);
+			*fail_msg_out = em;
+		}
+		if (job_log)
+			log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+		else
+			log_flag(BURST_BUF, "%s", em);
+		if (!fail_msg_out)
+			xfree(em);
 		return false;
 	}
 
-	char *str_split,*save_ptr = NULL;
+	if (!bb_job->pfs || bb_job->pfs[0] == '\0') {
+		em = xstrdup("pfslist= is missing or empty in #PB jobpara");
+		if (fail_msg_out) {
+			xfree(*fail_msg_out);
+			*fail_msg_out = em;
+		}
+		if (job_log)
+			log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+		else
+			log_flag(BURST_BUF, "%s", em);
+		if (!fail_msg_out)
+			xfree(em);
+		return false;
+	}
+
+	char *str_split, *save_ptr = NULL;
 	char *pfs_copy = xstrdup(bb_job->pfs);
-	str_split = strtok_r(pfs_copy,",",&save_ptr);
+	str_split = strtok_r(pfs_copy, ",", &save_ptr);
 	int count = 0;
 	struct stat buf;
 
 	while (str_split) {
 		count++;
-		int len = strlen(str_split);
-		debug("xxxxx: pfs dir is %s, len=%d", str_split, len);
-		if(strlen(str_split) > state_ptr->bb_config.max_acc_dir_len) {
-			error("The length of the directory name exceeds the maximum length allowed. "
-				  "The configuration allows %d, but your job specifies %zu.",
-				  state_ptr->bb_config.max_acc_dir_len, strlen(str_split));
+		if (job_log)
+			log_flag(BURST_BUF,
+				 "%pJ: validating pfs path '%s' (len=%zu)",
+				 job_log, str_split, strlen(str_split));
+		else
+			log_flag(BURST_BUF, "validating pfs path '%s' (len=%zu)",
+				 str_split, strlen(str_split));
+		if (strlen(str_split) > state_ptr->bb_config.max_acc_dir_len) {
+			em = xstrdup_printf(
+				"pfs path '%s' exceeds max length (%d configured)",
+				str_split, state_ptr->bb_config.max_acc_dir_len);
+			if (fail_msg_out) {
+				xfree(*fail_msg_out);
+				*fail_msg_out = em;
+			}
+			if (job_log)
+				log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+			else
+				log_flag(BURST_BUF, "%s", em);
+			if (!fail_msg_out)
+				xfree(em);
 			xfree(pfs_copy);
 			return false;
 		}
 
-		if (stat(str_split, &buf) != 0 || !S_ISDIR(buf.st_mode) || S_ISLNK(buf.st_mode)) {
-			error("No %s path or not a directory, the acceleration process may fail", bb_job->pfs);
-			//str_split = strtok(NULL,",");
+		if (stat(str_split, &buf) != 0 || !S_ISDIR(buf.st_mode) ||
+		    S_ISLNK(buf.st_mode)) {
+			em = xstrdup_printf(
+				"pfs path '%s' missing, not a directory, or symlink (pfslist=%s)",
+				str_split, bb_job->pfs);
+			if (fail_msg_out) {
+				xfree(*fail_msg_out);
+				*fail_msg_out = em;
+			}
+			if (job_log)
+				log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+			else
+				log_flag(BURST_BUF, "%s", em);
+			if (!fail_msg_out)
+				xfree(em);
 			bb_job->pfs_cnt = count;
 			xfree(pfs_copy);
 			return false;
-		} 
+		}
 
-		int access_ret = access(str_split, R_OK);
-		debug("xxxxx: access ret r is %d", access_ret);
 		if (access(str_split, R_OK) < 0) {
-			error("%s: %s can not be read: %m", __func__, str_split);
+			em = xstrdup_printf(
+				"pfs path '%s' is not readable: %m", str_split);
+			if (fail_msg_out) {
+				xfree(*fail_msg_out);
+				*fail_msg_out = em;
+			}
+			if (job_log)
+				log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+			else
+				log_flag(BURST_BUF, "%s", em);
+			if (!fail_msg_out)
+				xfree(em);
 			bb_job->pfs_cnt = count;
 			xfree(pfs_copy);
 			return false;
-		} 
-		int access_ret_w = access(str_split, W_OK);
-		debug("xxxxx: access ret w is %d", access_ret_w);
+		}
 		if (access(str_split, W_OK) < 0) {
-			error("%s: %s can not be written: %m", __func__, str_split);
+			em = xstrdup_printf(
+				"pfs path '%s' is not writable: %m", str_split);
+			if (fail_msg_out) {
+				xfree(*fail_msg_out);
+				*fail_msg_out = em;
+			}
+			if (job_log)
+				log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+			else
+				log_flag(BURST_BUF, "%s", em);
+			if (!fail_msg_out)
+				xfree(em);
 			bb_job->pfs_cnt = count;
 			xfree(pfs_copy);
 			return false;
 		}
 
-		str_split = strtok_r(NULL,",",&save_ptr);
+		str_split = strtok_r(NULL, ",", &save_ptr);
 	}
 	bb_job->pfs_cnt = count;
 	xfree(pfs_copy);
+
+	if (count == 0) {
+		em = xstrdup_printf(
+			"pfslist contains no valid paths (pfslist=%s)",
+			bb_job->pfs);
+		if (fail_msg_out) {
+			xfree(*fail_msg_out);
+			*fail_msg_out = em;
+		}
+		if (job_log)
+			log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+		else
+			log_flag(BURST_BUF, "%s", em);
+		if (!fail_msg_out)
+			xfree(em);
+		return false;
+	}
 
 	/* Check if the directory has nesting */
 	int rc = _is_the_dir_nested(bb_job->pfs, bb_job->pfs_cnt);
 	if (rc != 0) {
 		if (rc == 1) {
-			error("pfs dir has nesting ");	
-			return false;
+			em = xstrdup_printf(
+				"pfs paths have forbidden nesting (pfslist=%s)",
+				bb_job->pfs);
 		} else if (rc == -1) {
-			error("params is error");	
-			return false;
+			em = xstrdup(
+				"pfslist nesting check failed (invalid parameters)");
 		} else {
-			error("other error in _is_the_dir_nested");
-			return false;
+			em = xstrdup(
+				"pfslist nesting check failed (internal error)");
 		}
+		if (fail_msg_out) {
+			xfree(*fail_msg_out);
+			*fail_msg_out = em;
+		}
+		if (job_log)
+			log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+		else
+			log_flag(BURST_BUF, "%s", em);
+		if (!fail_msg_out)
+			xfree(em);
+		return false;
 	}
 
-	if(bb_job->pfs_cnt > state_ptr->bb_config.max_acc_dirs_per_job) {
-		error("Exceeded the maximum number of directories supported for a single job. "
-			  "The configuration allows %d, but your job specifies %d accelerated directories.",
-			  state_ptr->bb_config.max_acc_dirs_per_job, bb_job->pfs_cnt);
+	if (bb_job->pfs_cnt > state_ptr->bb_config.max_acc_dirs_per_job) {
+		em = xstrdup_printf("too many pfs paths (%d); max %d per job",
+				    bb_job->pfs_cnt,
+				    state_ptr->bb_config.max_acc_dirs_per_job);
+		if (fail_msg_out) {
+			xfree(*fail_msg_out);
+			*fail_msg_out = em;
+		}
+		if (job_log)
+			log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+		else
+			log_flag(BURST_BUF, "%s", em);
+		if (!fail_msg_out)
+			xfree(em);
 		return false;
 	}
 
 	/* Convert the PFS path to a BB interface path */
-	debug("xxxxx: file system name:%s, mount: %s", state_ptr->bb_config.file_system, state_ptr->bb_config.file_system_mount);
-	if (!state_ptr->bb_config.file_system_mount || !state_ptr->bb_config.file_system) {
-		error("file system is NULL, cannot convert pfs path");
+	if (job_log)
+		log_flag(BURST_BUF,
+			 "%pJ: burst_buffer file_system=%s file_system_mount=%s",
+			 job_log,
+			 state_ptr->bb_config.file_system ?
+				 state_ptr->bb_config.file_system :
+				 "(null)",
+			 state_ptr->bb_config.file_system_mount ?
+				 state_ptr->bb_config.file_system_mount :
+				 "(null)");
+	else
+		log_flag(BURST_BUF,
+			 "burst_buffer file_system=%s file_system_mount=%s",
+			 state_ptr->bb_config.file_system ?
+				 state_ptr->bb_config.file_system :
+				 "(null)",
+			 state_ptr->bb_config.file_system_mount ?
+				 state_ptr->bb_config.file_system_mount :
+				 "(null)");
+	if (!state_ptr->bb_config.file_system_mount ||
+	    !state_ptr->bb_config.file_system) {
+		em = xstrdup(
+			"burst_buffer file_system or file_system_mount unset; cannot map pfs paths");
+		if (fail_msg_out) {
+			xfree(*fail_msg_out);
+			*fail_msg_out = em;
+		}
+		if (job_log)
+			log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+		else
+			log_flag(BURST_BUF, "%s", em);
+		if (!fail_msg_out)
+			xfree(em);
 		return false;
 	}
-	char *conver_pfs = convert_paths_str(bb_job->pfs, state_ptr->bb_config.file_system_mount, state_ptr->bb_config.file_system);
-	debug("xxxxx: new path is %s", conver_pfs);
-	if (!conver_pfs){
-		error("conver path failed or no convertible path");
+	char *conver_pfs = convert_paths_str(bb_job->pfs,
+					       state_ptr->bb_config.file_system_mount,
+					       state_ptr->bb_config.file_system);
+	if (job_log)
+		log_flag(BURST_BUF, "%pJ: converted pfs path: %s",
+			 job_log, conver_pfs ? conver_pfs : "(null)");
+	else
+		log_flag(BURST_BUF, "converted pfs path: %s",
+			 conver_pfs ? conver_pfs : "(null)");
+	if (!conver_pfs) {
+		em = xstrdup_printf(
+			"cannot convert pfs paths to burst buffer layout (pfslist=%s)",
+			bb_job->pfs);
+		if (fail_msg_out) {
+			xfree(*fail_msg_out);
+			*fail_msg_out = em;
+		}
+		if (job_log)
+			log_flag(BURST_BUF, "%pJ: %s", job_log, em);
+		else
+			log_flag(BURST_BUF, "%s", em);
+		if (!fail_msg_out)
+			xfree(em);
 		return false;
 	}
 	xfree(bb_job->pfs);
 	bb_job->pfs = conver_pfs;
-	
+
 	return true;
 }
 #endif
