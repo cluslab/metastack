@@ -1847,7 +1847,7 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 
 
 
-	job_ptr->max_clients_per_job  = bb_state.bb_config.max_clients_per_job;
+	job_ptr->max_clients_per_group  = bb_state.bb_config.max_clients_per_group;
 	job_ptr->bb_status			  = ESLURM_BB_STATE_INIT;
 	job_ptr->bb_enable_pb = true;	
 	// job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
@@ -2079,15 +2079,10 @@ static void _queue_teardown(job_record_t *job_ptr)
 	bb_state.free_datasets_cnt += job_ptr->need_database_counts;
 	bb_state.used_datasets_cnt -= job_ptr->need_database_counts;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	uint32_t bb_quota = bb_state.bb_config.max_clients_join;
+	uint32_t bb_quota = bb_state.bb_config.max_groups_per_client;
 	bitstr_t *node_bitmap = NULL;
 
-	if (bb_state.bb_config.max_clients_join > 0) {
-		bb_quota = bb_state.bb_config.max_clients_join;
-		debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
-	} else {
-		debug3("max_clients_join not set, using default bb_quota: 4");
-	}
+	debug3("Using max_groups_per_client from config as bb_quota: %u", bb_quota);
 	/* Prefer job_resrcs node map during cleanup; fall back to job_ptr */
 	if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
 		node_bitmap = job_ptr->job_resrcs->node_bitmap;
@@ -2344,11 +2339,11 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 #endif
 		return SLURM_ERROR;
 	}
-	if (bb_state.bb_config.max_clients_per_job <= 0) {
-		bb_state.bb_config.max_clients_per_job = GROUP_SIZE;
+	if (bb_state.bb_config.max_clients_per_group <= 0) {
+		bb_state.bb_config.max_clients_per_group = GROUP_SIZE;
 	}
 
-	job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_job + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_job; 
+	job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_group + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_group; 
 	job_ptr->need_database_counts = job_ptr->need_group_counts * bb_job->pfs_cnt;
 	job_ptr->enforce_bb_flag = bb_job->enforce_bb_flag;
 	log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
@@ -2419,15 +2414,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	if (job_ptr->node_bitmap) {
 		int i, i_first, i_last;
 		node_record_t *node_ptr = NULL;
-		uint32_t bb_quota = 4;
+		/* Per-node burst-buffer group quota from config (0 normalized at load) */
+		uint32_t bb_quota = bb_state.bb_config.max_groups_per_client;
 
-		/* Per-node burst-buffer group quota from config */
-		if (bb_state.bb_config.max_clients_join > 0) {
-			bb_quota = bb_state.bb_config.max_clients_join;
-			debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
-		} else {
-			debug3("max_clients_join not set, using default bb_quota: 4");
-		}
+		debug3("Using max_groups_per_client from config as bb_quota: %u", bb_quota);
 
 		i_first = bit_ffs(job_ptr->node_bitmap);
 		i_last  = bit_fls(job_ptr->node_bitmap);
@@ -2827,8 +2817,8 @@ static void _bb_min_config_free(bb_minimal_config_t * config)
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 extern uint32_t bb_p_get_node_quota(void)
 {
-	/* max_clients_join is loaded from burst_buffer.conf */
-	return bb_state.bb_config.max_clients_join;
+	/* max_groups_per_client from burst_buffer.conf (0 -> default at load) */
+	return bb_state.bb_config.max_groups_per_client;
 }
 #endif
 

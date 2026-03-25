@@ -16162,7 +16162,7 @@ static void _pack_create_bb_launch_msg(const slurm_msg_t *smsg, buf_t *buffer)
 		pack32(msg->access_mode, 			buffer);	
 		packstr(msg->pfs, 					buffer);
 		packbool(msg->metadata_acceleration,buffer);
-		pack32(msg->max_clients_per_job, 	buffer);	
+		pack32(msg->max_clients_per_group, 	buffer);	
 		pack32(msg->pfs_cnt, 				buffer);	
 		packbool(msg->bb_enable_pb,			buffer);
 		pack32(msg->flag, 					buffer);	
@@ -16445,7 +16445,7 @@ static int _unpack_create_bb_launch_msg(slurm_msg_t *smsg, buf_t *buffer)
 		safe_unpack32(&msg->access_mode, buffer);
 		safe_unpackstr(&msg->pfs, buffer);
 		safe_unpackbool(&msg->metadata_acceleration, buffer);
-		safe_unpack32(&msg->max_clients_per_job, buffer);
+		safe_unpack32(&msg->max_clients_per_group, buffer);
 		safe_unpack32(&msg->pfs_cnt, buffer);
 		safe_unpackbool(&msg->bb_enable_pb, buffer);
 		safe_unpack32(&msg->flag, buffer);
@@ -17270,8 +17270,8 @@ static int _unpack_burst_buffer_parastor_info_msg(burst_buffer_info_msg_t **burs
 			safe_unpack32(&bb_info_ptr->used_datasets_cnt,    buffer);
 			safe_unpack32(&bb_info_ptr->free_datasets_cnt,    buffer);
 
-			safe_unpack32(&bb_info_ptr->max_clients_join, buffer);
-			safe_unpack32(&bb_info_ptr->max_clients_per_job,  buffer);
+			safe_unpack32(&bb_info_ptr->max_groups_per_client, buffer);
+			safe_unpack32(&bb_info_ptr->max_clients_per_group,  buffer);
 
 			safe_unpack32(&bb_info_ptr->max_acc_dir_len,      buffer);
 			safe_unpack32(&bb_info_ptr->max_acc_dirs_per_job, buffer);

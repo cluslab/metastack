@@ -3552,7 +3552,7 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 
 	uint32_t *tasks_arr = NULL;
 
-	uint32_t max_clients_per_job = 0;
+	uint32_t max_clients_per_group = 0;
 	uint32_t access_mode = 0;
 	bool metadata_acceleration = false;
 
@@ -3591,11 +3591,11 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	group_count = req->used_groups_cnt;
 	group_sn_arr = req->group_sn;
 	pfs_count = req->pfs_cnt;
-	max_clients_per_job = req->max_clients_per_job;
+	max_clients_per_group = req->max_clients_per_group;
 	access_mode = req->access_mode;
 	metadata_acceleration = req->metadata_acceleration;
 
-	if (group_count == 0 || pfs_count == 0 || max_clients_per_job == 0 || !group_sn_arr) {
+	if (group_count == 0 || pfs_count == 0 || max_clients_per_group == 0 || !group_sn_arr) {
 		error("%s: invalid burst buffer parameters for job %u; cannot create Parastor burst buffer",
 		      __func__, job_id);
 		return;
@@ -3640,8 +3640,8 @@ static void _rpc_create_bb(slurm_msg_t *msg)
 	log_flag(BURST_BUF, "JobId=%u: creating %u cache group(s)", job_id, group_count);
 	job_status = BB_JOB_GROUPS_CREATING;
 	for (uint32_t group_idx = 0; group_idx < group_count; group_idx++) {
-		uint32_t start_node = group_idx * max_clients_per_job;
-		uint32_t end_node = (start_node + max_clients_per_job > node_count) ? node_count : (start_node + max_clients_per_job);
+		uint32_t start_node = group_idx * max_clients_per_group;
+		uint32_t end_node = (start_node + max_clients_per_group > node_count) ? node_count : (start_node + max_clients_per_group);
 		char **hostname_arr = &node_array[start_node];
 		uint32_t node_num = end_node - start_node;
 

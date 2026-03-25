@@ -5829,8 +5829,8 @@ typedef struct {
 	uint32_t max_datasets;
 	uint32_t used_datasets_cnt;
 	uint32_t free_datasets_cnt;
-	uint32_t max_clients_join;
-	uint32_t max_clients_per_job;	/* client grouping width per job */
+	uint32_t max_groups_per_client;
+	uint32_t max_clients_per_group;	
 
 	char    *para_stor_addr;	/* backend (Parastor) service address */
 	uint32_t para_stor_port;	/* backend service port */

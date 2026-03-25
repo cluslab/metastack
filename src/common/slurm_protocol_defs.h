@@ -971,7 +971,7 @@ typedef struct burst_buffer_launch_msg {
     uint32_t access_mode;       /* Storage type (striped/private). 0: Shared, 1: Local */
     char     *pfs;              /* Backend storage path(s), potentially multiple */
     bool     metadata_acceleration; /* Whether to enable metadata acceleration */
-    uint32_t max_clients_per_job;   /* Cache group granularity: clients per cache group */
+    uint32_t max_clients_per_group;   /* Cache group granularity: clients per cache group */
 
     bool     bb_enable_pb;      /* Whether to enable PB (Private Buffer/Burst) */
     uint32_t bb_status;         /* Whether the compute node's Burst Buffer is ready */

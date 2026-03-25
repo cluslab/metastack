@@ -4173,7 +4173,7 @@ extern void create_bb_job(job_record_t *job_ptr, uint32_t flag)
 	burst_buffer_msg_ptr->access_mode            = job_ptr->access_mode;
 	burst_buffer_msg_ptr->pfs			         = xstrdup(job_ptr->pfs);
 	burst_buffer_msg_ptr->metadata_acceleration = job_ptr->metadata_acceleration;
-	burst_buffer_msg_ptr->max_clients_per_job = job_ptr->max_clients_per_job;
+	burst_buffer_msg_ptr->max_clients_per_group = job_ptr->max_clients_per_group;
 	burst_buffer_msg_ptr->flag = flag;
 	if (job_ptr->group_sn && job_ptr->need_group_counts > 0) {
 		burst_buffer_msg_ptr->group_sn = xmalloc(job_ptr->need_group_counts * sizeof(char *));

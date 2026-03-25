@@ -2401,7 +2401,7 @@ static void _slurm_rpc_dump_partitions(slurm_msg_t *msg)
 /**
  * Drain compute nodes assigned burst-buffer cache groups after a failure.
  * Non-zero entries in job_ptr->group_ids indicate allocated groups; nodes are
- * mapped in hostlist order using max_clients_per_job as the group width.
+ * mapped in hostlist order using max_clients_per_group as the group width.
  *
  * @param job_ptr Job record with burst buffer group layout
  */
@@ -2425,9 +2425,9 @@ static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
                 break;            
             uint32_t remain = total_nodes - node_idx;
             uint32_t nodes_this_group =
-                (remain < job_ptr->max_clients_per_job)
+                (remain < job_ptr->max_clients_per_group)
                     ? remain
-                    : job_ptr->max_clients_per_job;
+                    : job_ptr->max_clients_per_group;
 
             for (uint32_t j = 0; j < nodes_this_group; j++) {
                 char *hostname = hostlist_nth(job_hl, node_idx + j);
@@ -2444,7 +2444,7 @@ static void _drain_nodes_of_failed_bb(job_record_t *job_ptr)
                 free(hostname);
             }
         }
-        node_idx += job_ptr->max_clients_per_job;
+        node_idx += job_ptr->max_clients_per_group;
     }
 
     hostlist_destroy(job_hl);

@@ -551,7 +551,7 @@ struct job_record {
     uint64_t req_space;               // Space requested by the current job
     uint32_t access_mode;             // Storage type (striped/private). 0: Shared, 1: Local
     char     *pfs;                    // Backend storage path(s) (may contain multiple paths)
-    uint32_t max_clients_per_job;     /* Cache group granularity: number of clients per cache group */
+    uint32_t max_clients_per_group;     /* Cache group granularity: number of clients per cache group */
     bool     bb_enable_pb;            // Indicates if the job is a Burst Buffer (BB) type job
     bool     enforce_bb_flag;         // Whether to force wait until cache group creation is complete
     bool     metadata_acceleration;   // Whether to enable metadata acceleration

@@ -567,12 +567,12 @@ static void _parastorbb_test_config(bb_state_t *state_ptr, char *plugin_type)
 		info("%s: ValidateTimeout is not used in this plugin, ignoring",
 		     pt);
 
-	/* MaxAccDirsPerJob: per-job access directory count (must be 4..8) */
+	/* MaxAccDirsPerJob: 0 uses default; clamp to maximum */
 	if (state_ptr->bb_config.max_acc_dirs_per_job == 0) {
-		warning("%s: MaxAccDirsPerJob=%u is invalid, setting to %u",
-			pt, state_ptr->bb_config.max_acc_dirs_per_job,
-			PSBB_MIN_ACC_DIRS_PER_JOB);
-		state_ptr->bb_config.max_acc_dirs_per_job = PSBB_MIN_ACC_DIRS_PER_JOB;
+		warning("%s: MaxAccDirsPerJob=0, using default %u",
+			pt, PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB);
+		state_ptr->bb_config.max_acc_dirs_per_job =
+			PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB;
 	} else if (state_ptr->bb_config.max_acc_dirs_per_job > PSBB_MAX_ACC_DIRS_PER_JOB) {
 		warning("%s: MaxAccDirsPerJob=%u exceeds maximum %u, clamping",
 			pt, state_ptr->bb_config.max_acc_dirs_per_job,
@@ -580,9 +580,9 @@ static void _parastorbb_test_config(bb_state_t *state_ptr, char *plugin_type)
 		state_ptr->bb_config.max_acc_dirs_per_job = PSBB_MAX_ACC_DIRS_PER_JOB;
 	}
 
-	/* MaxAccDirLen: path length check in validation; 0 disables useful checks */
+	/* MaxAccDirLen: 0 uses default; clamp to maximum */
 	if (state_ptr->bb_config.max_acc_dir_len == 0) {
-		warning("%s: MaxAccDirLen=0 is invalid, setting to %u",
+		warning("%s: MaxAccDirLen=0, using default %u",
 			pt, PSBB_DEFAULT_MAX_ACC_DIR_LEN);
 		state_ptr->bb_config.max_acc_dir_len = PSBB_DEFAULT_MAX_ACC_DIR_LEN;
 	} else if (state_ptr->bb_config.max_acc_dir_len > PSBB_MAX_ACC_DIR_LEN) {
@@ -651,43 +651,49 @@ static void _parastorbb_test_config(bb_state_t *state_ptr, char *plugin_type)
 		state_ptr->bb_config.stage_out_timeout = PSBB_MAX_TIMEOUT_SEC;
 	}
 
-	/* Quota caps: zero would underflow free_* counters */
+	/* Quota caps: 0 uses PSBB_DEFAULT_*; clamp to PSBB_MAX_* */
 	if (state_ptr->bb_config.max_groups == 0) {
-		warning("%s: MaxGroups=0 is invalid, setting to 1", pt);
-		state_ptr->bb_config.max_groups = 1;
+		warning("%s: MaxGroups=0, using default %u",
+			pt, PSBB_DEFAULT_MAX_GROUPS);
+		state_ptr->bb_config.max_groups = PSBB_DEFAULT_MAX_GROUPS;
 	} else if (state_ptr->bb_config.max_groups > PSBB_MAX_GROUPS) {
 		warning("%s: MaxGroups=%u exceeds maximum %u, clamping",
 			pt, state_ptr->bb_config.max_groups, PSBB_MAX_GROUPS);
 		state_ptr->bb_config.max_groups = PSBB_MAX_GROUPS;
 	}
 	if (state_ptr->bb_config.max_datasets == 0) {
-		warning("%s: MaxDatasets=0 is invalid, setting to 1", pt);
-		state_ptr->bb_config.max_datasets = 1;
+		warning("%s: MaxDatasets=0, using default %u",
+			pt, PSBB_DEFAULT_MAX_DATASETS);
+		state_ptr->bb_config.max_datasets = PSBB_DEFAULT_MAX_DATASETS;
 	} else if (state_ptr->bb_config.max_datasets > PSBB_MAX_DATASETS) {
 		warning("%s: MaxDatasets=%u exceeds maximum %u, clamping",
 			pt, state_ptr->bb_config.max_datasets, PSBB_MAX_DATASETS);
 		state_ptr->bb_config.max_datasets = PSBB_MAX_DATASETS;
 	}
-
-	/* MaxGroupsPerClients: 0 means use default quota in plugin; cap upper bound */
-	if (state_ptr->bb_config.max_clients_join > PSBB_MAX_NODE_PER_GROUP) {
-		warning("%s: MaxGroupsPerClients=%u exceeds maximum %u, clamping",
-			pt, state_ptr->bb_config.max_clients_join,
-			PSBB_MAX_NODE_PER_GROUP);
-		state_ptr->bb_config.max_clients_join = PSBB_MAX_NODE_PER_GROUP;
+	if (state_ptr->bb_config.max_groups_per_client == 0) {
+		warning("%s: MaxGroupsPerClient=0, using default %u",
+			pt, PSBB_DEFAULT_MAX_GROUPS_PER_CLIENT);
+		state_ptr->bb_config.max_groups_per_client =
+			PSBB_DEFAULT_MAX_GROUPS_PER_CLIENT;
+	} else if (state_ptr->bb_config.max_groups_per_client >
+		   PSBB_MAX_GROUPS_PER_CLIENT) {
+		warning("%s: MaxGroupsPerClient=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_groups_per_client,
+			PSBB_MAX_GROUPS_PER_CLIENT);
+		state_ptr->bb_config.max_groups_per_client = PSBB_MAX_GROUPS_PER_CLIENT;
 	}
 
-	if (state_ptr->bb_config.max_clients_per_job == 0) {
-		warning("%s: MaxClientsPerJob=0 is invalid, setting to %u",
-			pt, PSBB_DEFAULT_MAX_CLIENTS_PER_JOB);
-		state_ptr->bb_config.max_clients_per_job =
-			PSBB_DEFAULT_MAX_CLIENTS_PER_JOB;
-	} else if (state_ptr->bb_config.max_clients_per_job >
-		   PSBB_MAX_NODE_PER_GROUP) {
-		warning("%s: MaxClientsPerJob=%u exceeds maximum %u, clamping",
-			pt, state_ptr->bb_config.max_clients_per_job,
-			PSBB_MAX_NODE_PER_GROUP);
-		state_ptr->bb_config.max_clients_per_job = PSBB_MAX_NODE_PER_GROUP;
+	if (state_ptr->bb_config.max_clients_per_group == 0) {
+		warning("%s: MaxClientsPerGroup=0, using default %u",
+			pt, PSBB_DEFAULT_MAX_CLIENTS_PER_GROUP);
+		state_ptr->bb_config.max_clients_per_group =
+			PSBB_DEFAULT_MAX_CLIENTS_PER_GROUP;
+	} else if (state_ptr->bb_config.max_clients_per_group >
+		   PSBB_MAX_CLIENTS_PER_GROUP) {
+		warning("%s: MaxClientsPerGroup=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_clients_per_group,
+			PSBB_MAX_CLIENTS_PER_GROUP);
+		state_ptr->bb_config.max_clients_per_group = PSBB_MAX_CLIENTS_PER_GROUP;
 	}
 }
 
@@ -716,11 +722,10 @@ extern void parastorbb_load_config(bb_state_t *state_ptr, char *plugin_type)
 		{"RetryCount", S_P_UINT32},
 		{"MaxGroups", S_P_UINT32},	
 		{"MaxDatasets", S_P_UINT32},	
-		{"MaxGroupsPerClients", S_P_UINT32},
-		{"MaxClientsPerJob", S_P_UINT32},
+		{"MaxGroupsPerClient", S_P_UINT32},
+		{"MaxClientsPerGroup", S_P_UINT32},
 		{"MaxAccDirsPerJob", S_P_UINT32},
 		{"MaxAccDirLen", S_P_UINT32},
-		{"FileSystemCount", S_P_UINT32},
 		{"FileSystem", S_P_STRING},
 		{"FileSystemMount", S_P_STRING},
 		{"ParaStorAddr", S_P_STRING},	
@@ -751,8 +756,8 @@ extern void parastorbb_load_config(bb_state_t *state_ptr, char *plugin_type)
 	state_ptr->bb_config.retry_count = PSBB_DEFAULT_RETRY_COUNT;
 	state_ptr->bb_config.max_groups = PSBB_DEFAULT_MAX_GROUPS;
 	state_ptr->bb_config.max_datasets = PSBB_DEFAULT_MAX_DATASETS;
-	state_ptr->bb_config.max_clients_join = PSBB_DEFAULT_MAX_GROUPS_PER_CLIENTS;
-	state_ptr->bb_config.max_clients_per_job = PSBB_DEFAULT_MAX_CLIENTS_PER_JOB;
+	state_ptr->bb_config.max_groups_per_client = PSBB_DEFAULT_MAX_GROUPS_PER_CLIENT;
+	state_ptr->bb_config.max_clients_per_group = PSBB_DEFAULT_MAX_CLIENTS_PER_GROUP;
 	state_ptr->bb_config.max_acc_dirs_per_job = PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB;
 	state_ptr->bb_config.max_acc_dir_len = PSBB_DEFAULT_MAX_ACC_DIR_LEN;
 
@@ -835,10 +840,10 @@ extern void parastorbb_load_config(bb_state_t *state_ptr, char *plugin_type)
 			     "MaxGroups", bb_hashtbl);
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_datasets,
 			     "MaxDatasets", bb_hashtbl);
-	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_join,
-			     "MaxGroupsPerClients", bb_hashtbl);
-	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_per_job,
-			     "MaxClientsPerJob", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_groups_per_client,
+			     "MaxGroupsPerClient", bb_hashtbl);
+	(void) s_p_get_uint32(&state_ptr->bb_config.max_clients_per_group,
+			     "MaxClientsPerGroup", bb_hashtbl);
 	(void) s_p_get_string(&state_ptr->bb_config.para_stor_addr,
 			     "ParaStorAddr", bb_hashtbl);
 	if (!state_ptr->bb_config.para_stor_addr) {
@@ -925,10 +930,10 @@ extern void parastorbb_load_config(bb_state_t *state_ptr, char *plugin_type)
 			state_ptr->bb_config.max_groups);
 		info("MaxDatasets:%u",
 		     state_ptr->bb_config.max_datasets);
-		info("MaxGroupsPerClients:%u",
-		     state_ptr->bb_config.max_clients_join);
-		info("MaxClientsPerJob:%u",
-			 state_ptr->bb_config.max_clients_per_job);
+		info("MaxGroupsPerClient:%u",
+		     state_ptr->bb_config.max_groups_per_client);
+		info("MaxClientsPerGroup:%u",
+			 state_ptr->bb_config.max_clients_per_group);
 		info("ParaStorAddr:%s",
 		     state_ptr->bb_config.para_stor_addr);
 		info("ParaStorAddrPort:%u",
@@ -1362,8 +1367,8 @@ extern void bb_pack_state_parastor(bb_state_t *state_ptr, buf_t *buffer,
 		pack32(state_ptr->used_datasets_cnt,    buffer);
 		pack32(state_ptr->free_datasets_cnt,    buffer);
 
-		pack32(config_ptr->max_clients_join, buffer);
-		pack32(config_ptr->max_clients_per_job, buffer);
+		pack32(config_ptr->max_groups_per_client, buffer);
+		pack32(config_ptr->max_clients_per_group, buffer);
 		//pack32(config_ptr->pool_cnt,         buffer);// bb job list size
 		pack32(config_ptr->max_acc_dir_len,        buffer);
 		pack32(config_ptr->max_acc_dirs_per_job,   buffer);
