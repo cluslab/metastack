@@ -63,13 +63,24 @@
 #define DEFAULT_VALIDATE_TIMEOUT	5	/* 5 seconds */
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
-#define DEFAULT_RETRY_COUNT		3	/* 3 retries */
-#define DEFAULT_MAX_GROUPS 2048
-#define DEFAULT_MAX_DATASETS 8192
-#define DEFAULT_MAX_GROUPS_PER_CLIENTS 4
-#define DEFAULT_MAX_CLIENTS_PER_JOB 4
-#define DEFAULT_MAX_ACC_DIRS_PER_JOB 8
-#define DEFAULT_MAX_ACC_DIR_LEN 512
+
+#define PSBB_DEFAULT_RETRY_COUNT		3U
+#define PSBB_DEFAULT_MAX_GROUPS			2048U
+#define PSBB_DEFAULT_MAX_DATASETS		8192U
+#define PSBB_DEFAULT_MAX_GROUPS_PER_CLIENTS	4U
+#define PSBB_DEFAULT_MAX_CLIENTS_PER_JOB	4U
+#define PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB	8U
+#define PSBB_DEFAULT_MAX_ACC_DIR_LEN		512U
+#define PSBB_MAX_TIMEOUT_SEC	(60U * 60U * 24U * 24U)
+#define PSBB_MAX_GROUPS			2048U
+#define PSBB_MAX_DATASETS		8192U
+#define PSBB_MAX_NODE_PER_GROUP		1024U
+#define PSBB_MIN_ACC_DIRS_PER_JOB	4U
+#define PSBB_MAX_ACC_DIRS_PER_JOB	8U
+#define PSBB_MAX_ACC_DIR_LEN		4096U 
+#define PSBB_MAX_POLL_INTERVAL_SEC	3600U
+#define PSBB_MAX_RETRY_COUNT		64U
+#define PSBB_MAX_TCP_PORT		65535U
 #endif
 
 /* Burst buffer configuration parameters */
@@ -572,7 +583,7 @@ extern void bb_load_config(bb_state_t *state_ptr, char *plugin_type);
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
 /* Load and process configuration parameters */
-extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type);
+extern void parastorbb_load_config(bb_state_t *state_ptr, char *plugin_type);
 #endif
 /*
  * Open the state save file, or the backup if necessary.

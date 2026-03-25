@@ -297,10 +297,6 @@ static void _recover_bb_state(void)
 	time_t create_time = 0;
 	bb_alloc_t *bb_alloc;
 	buf_t *buffer;
-	// uint32_t used_groups_cnt    = 0;
-    // uint32_t used_datasets_cnt  = 0;
-    // uint32_t free_groups_cnt    = 0;
-    // uint32_t free_datasets_cnt  = 0;
 
 	state_fd = bb_open_state_file("burst_buffer_parastor_state", &state_file);
 	if (state_fd < 0) {
@@ -378,16 +374,13 @@ static void _recover_bb_state(void)
 		debug("BB-----recover BB state");
 		/* Recover parastorbb specific fields */
 		uint16_t state = 0;
-		//uint64_t bb_group_id = 0;
 		uint32_t type = 0;
-		//bool cache_tmp = false;
 		bool enforce_bb_flag = true;
 		uint32_t bb_task = 0;
 		uint32_t groups_nodes = 0;
 		uint64_t req_space = 0;
 		uint32_t access_mode = 0;
 		uint32_t pfs_cnt = 0;
-		// char *bb_state_str = NULL;
 		bool metadata_acceleration = false;
 		uint32_t index_groups = 0;
 		uint32_t index_datasets = 0;
@@ -396,9 +389,7 @@ static void _recover_bb_state(void)
 		int j;
 
 		safe_unpack16(&state, buffer);
-		//safe_unpack64(&bb_group_id, buffer);
 		safe_unpack32(&type, buffer);
-		//safe_unpackbool(&cache_tmp, buffer);
 		safe_unpackbool(&enforce_bb_flag, buffer);
 		safe_unpack32(&bb_task, buffer);
 		safe_unpack32(&groups_nodes, buffer);
@@ -458,9 +449,7 @@ static void _recover_bb_state(void)
 
 		/* Assign recovered values to bb_alloc */
 		bb_alloc->state = state; 
-		//bb_alloc->bb_group_id = bb_group_id;
 		bb_alloc->type = type;
-		//bb_alloc->cache_tmp = cache_tmp;
 		bb_alloc->enforce_bb_flag = enforce_bb_flag;
 		bb_alloc->bb_task = bb_task;
 		bb_alloc->groups_nodes = groups_nodes;
@@ -604,9 +593,6 @@ static void _load_state(bool init_config)
 
 	timeout = bb_state.bb_config.other_timeout;
 	debug("%s: load_state other_timeout=%u", __func__, timeout);
-	/* Parastor plugin does not use pool objects */
-	// if (_load_pools(timeout) != SLURM_SUCCESS)
-	// 	return;
 	bb_state.last_load_time = time(NULL);
 	
 	if (!init_config)
@@ -647,13 +633,6 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 
 	if (!job_desc->burst_buffer || (job_desc->burst_buffer[0] == '#'))
 		return rc;
-
-	// if (strstr(job_desc->burst_buffer, "create_persistent") ||
-	//     strstr(job_desc->burst_buffer, "destroy_persistent")) {
-	// 	/* Create or destroy of persistent burst buffers NOT supported
-	// 	 * via --bb option. Use --bbf or a batch script instead. */
-	// 	return ESLURM_INVALID_BURST_BUFFER_REQUEST;
-	// }
 
 	bb_copy = xstrdup(job_desc->burst_buffer);
 	if ((tok = strstr(bb_copy, "capacity="))) {
@@ -717,15 +696,11 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 	}	
 
 	if (rc == SLURM_SUCCESS) {
-		/* Look for vestigial content. Treating this as an error would
-		 * prevent backward compatibility. Just log it for now. */
 		for (i = 0; bb_copy[i]; i++) {
 			if (isspace(bb_copy[i]))
 				continue;
 			verbose("Unrecognized --bb content: %s",
 				bb_copy + i);
-//			rc = ESLURM_INVALID_BURST_BUFFER_REQUEST;
-//			goto fini;
 		}
 	}
 
@@ -828,20 +803,6 @@ static int _xlate_batch(job_desc_msg_t *job_desc)
 	return rc;
 }
 
-
-/*
- * IN tok - a line in a burst buffer specification containing "capacity="
- * IN capacity_ptr - pointer to the first character after "capacity=" within tok
- * OUT pool - return a malloc'd string of the pool name, caller is responsible
- *            to free
- * OUT size - return the number specified after "capacity="
- */
-// static int _parse_capacity(char *tok, char *capacity_ptr, char **pool,
-// 			   uint64_t *size)
-// {
-// 	return SLURM_SUCCESS;
-// }
-
 /* Perform basic burst_buffer option validation */
 static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 			  uid_t submit_uid)
@@ -857,10 +818,6 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 
 	xassert(bb_size);
 	*bb_size = 0;
-
-	// if (validate_operator(submit_uid) ||
-	//     (bb_state.bb_config.flags & BB_FLAG_ENABLE_PERSISTENT))
-	// 	enable_persist = true;
 
 	if (job_desc->script)
 		rc = _xlate_batch(job_desc);
@@ -915,11 +872,6 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 	if (!have_bb)
 		rc = ESLURM_INVALID_BURST_BUFFER_REQUEST;
 
-	// if (!have_stage_out) {
-	// 	/* prevent sending stage out email */
-	// 	job_desc->mail_type &= (~MAIL_JOB_STAGE_OUT);
-	// }
-
 	return rc;
 }
 
@@ -971,11 +923,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 			bb_flag = BB_FLAG_DW_OP;
 		else if ((tok[1] == 'P') && (tok[2] == 'B'))
 			bb_flag = BB_FLAG_PB_OP;
-		/*
-		 * Effective Slurm v18.08 and CLE6.0UP06 the create_persistent
-		 * and destroy_persistent functions are directly supported by
-		 * dw_wlm_cli. Support "#BB" format for backward compatibility.
-		 */
+
 		if (bb_flag != 0) {
 			tok += 3;
 			while (isspace(tok[0]))
@@ -1337,91 +1285,6 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	return bb_job;
 }
 
-/* Validate burst buffer configuration */
-static void _test_config()
-{
-		/* 24-day max time limit. (2073600 seconds) */
-	static uint32_t max_timeout = (60 * 60 * 24 * 24);
-	uint32_t max_groups = 2048;
- 	uint32_t max_datasets = 8192;
-	uint32_t max_node_per_groups = 1024;
-	if (bb_state.bb_config.get_sys_state) {
-		info("%s: get_sys_state is unused in this plugin, unsetting", plugin_type);
-		xfree(bb_state.bb_config.get_sys_state);
-	}
-	if (bb_state.bb_config.get_sys_status) {
-		info("%s: get_sys_status is unused in this plugin, unsetting", plugin_type);
-		xfree(bb_state.bb_config.get_sys_status);
-	}
-	if (bb_state.bb_config.flags & BB_FLAG_ENABLE_PERSISTENT) {
-		warning("%s: EnablePersistent is unsupported; forcing DisablePersistent",
-			plugin_type);
-		bb_state.bb_config.flags &= (~BB_FLAG_ENABLE_PERSISTENT);
-		bb_state.bb_config.flags |= BB_FLAG_DISABLE_PERSISTENT;
-	}
-	if (bb_state.bb_config.flags & BB_FLAG_EMULATE_CRAY) {
-		info("%s: flags=EmulateCray is invalid for this plugin, unsetting", plugin_type);
-		bb_state.bb_config.flags &= (~BB_FLAG_EMULATE_CRAY);
-	}
-
-
-	if (bb_state.bb_config.default_pool) {
-		info("%s: DefaultPool=%s is unused for this plugin, unsetting",
-		     plugin_type, bb_state.bb_config.default_pool);
-		xfree(bb_state.bb_config.default_pool);
-	}
-
-	/*
-	 * Burst buffer APIs that would use ValidateTimeout
-	 * (slurm_bb_job_process and slurm_bb_paths) are actually called
-	 * directly from slurmctld, not through SlurmScriptd. Because of this,
-	 * they cannot be killed, so there is no timeout for them. Therefore,
-	 * ValidateTimeout doesn't matter in this plugin.
-	 */
-	if (bb_state.bb_config.validate_timeout &&
-	    (bb_state.bb_config.validate_timeout != DEFAULT_VALIDATE_TIMEOUT))
-		info("%s: ValidateTimeout is not used in this plugin, ignoring",
-		     plugin_type);
-
-	/*
-	 * Test time limits. In order to prevent overflow when converting
-	 * the time limits in seconds to milliseconds (multiply by 1000),
-	 * the maximum value for time limits is 2073600 seconds (24 days).
-	 * 2073600 * 1000 is still less than the maximum 32-bit signed integer.
-	 */
-	if (bb_state.bb_config.other_timeout > max_timeout) {
-		warning("%s: OtherTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.other_timeout, max_timeout);
-		bb_state.bb_config.other_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.stage_in_timeout > max_timeout) {
-		warning("%s: StageInTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.stage_in_timeout, max_timeout);
-		bb_state.bb_config.stage_in_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.stage_out_timeout > max_timeout) {
-		warning("%s: StageOutTimeout=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.stage_out_timeout, max_timeout);
-		bb_state.bb_config.stage_out_timeout = max_timeout;
-	}
-	if (bb_state.bb_config.max_groups > max_groups) {
-		warning("%s: MaxGroups=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_groups, max_groups);
-		bb_state.bb_config.max_groups = max_groups;
-	}
-	if (bb_state.bb_config.max_datasets > max_datasets) {
-		warning("%s: MaxDatasets=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_datasets, max_datasets);
-		bb_state.bb_config.max_datasets = max_datasets;
-	}
-	if (bb_state.bb_config.max_clients_per_job > max_node_per_groups) {
-		warning("%s: MaxClientsPerJob=%u exceeds maximum %u, clamping",
-			plugin_type, bb_state.bb_config.max_clients_per_job,
-			max_node_per_groups);
-		bb_state.bb_config.max_clients_per_job = max_node_per_groups;
-	}
-}
-	
 /*
  * init() is called when the plugin is loaded, before any other functions
  * are called.  Put global initialization here.
@@ -1430,22 +1293,14 @@ extern int init(void)
 {
 	int rc = SLURM_SUCCESS;
 	int count = 3;
-	//parastor_script_path = get_extra_conf_path("burst_buffer.parastor");
-	//time_t parastor_script_last_loaded = (time_t) 0;
-	/*
-	 * slurmscriptd calls bb_g_init() and then bb_g_run_script(). We only
-	 * need to initialize lua to run the script. We don't want
-	 * slurmscriptd to read from or write to the state save location, nor
-	 * do we need slurmscriptd to load the configuration file.
-	 */
+
 	if (!running_in_slurmctld()) {
 		return SLURM_SUCCESS;
 	}
 	slurm_mutex_init(&parastor_thread_mutex);
 	slurm_mutex_init(&bb_state.bb_mutex);
 	slurm_mutex_lock(&bb_state.bb_mutex);
-	bb_load_config2(&bb_state, (char *)plugin_type); /* removes "const" */
-	_test_config();
+	parastorbb_load_config(&bb_state, (char *)plugin_type); /* removes "const" */
 	for (size_t i = 0; i < count; i++) {
 		rc = get_permanent_token(&bb_state.bb_config);
 		if(rc == SLURM_SUCCESS) {
@@ -1819,8 +1674,7 @@ extern int bb_p_reconfig(void)
 	int i;
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	log_flag(BURST_BUF, "");
-	bb_load_config2(&bb_state, (char *)plugin_type); /* Remove "const" */
-	_test_config();
+	parastorbb_load_config(&bb_state, (char *)plugin_type); /* Remove "const" */
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	/* reconfig is the place we make sure the pointers are correct */
 	for (i = 0; i < BB_HASH_SIZE; i++) {

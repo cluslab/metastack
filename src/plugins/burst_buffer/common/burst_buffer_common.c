@@ -86,11 +86,19 @@ static void	_bb_job_del2(bb_job_t *bb_job);
 static uid_t *	_parse_users(char *buf);
 static char *	_print_users(uid_t *buf);
 #ifdef __METASTACK_NEW_BURSTBUFFER
+
+
+
+
+
 static bool is_parent_path(const char *parent, const char *child);
 static int _is_the_dir_nested(const char *path_arry, uint32_t dir_number);
 static char *_dir_remove_spaces(char *s);
 static char ** split_paths(const char *input, uint32_t path_count);
 static char *convert_paths_str(const char *dirs, const char *mount_point, const char *mount_system);
+static void _parastorbb_test_config(bb_state_t *state_ptr, char *plugin_type);
+
+
 #endif
 
 /* Translate comma delimitted list of users into a UID array,
@@ -520,9 +528,171 @@ extern void bb_set_tres_pos(bb_state_t *state_ptr)
 }
 
 #ifdef __METASTACK_NEW_BURSTBUFFER
+static void _parastorbb_test_config(bb_state_t *state_ptr, char *plugin_type)
+{
+	const char *pt = plugin_type ? plugin_type : "burst_buffer";
+
+	if (state_ptr->bb_config.get_sys_state) {
+		info("%s: get_sys_state is unused in this plugin, unsetting", pt);
+		xfree(state_ptr->bb_config.get_sys_state);
+	}
+	if (state_ptr->bb_config.get_sys_status) {
+		info("%s: get_sys_status is unused in this plugin, unsetting", pt);
+		xfree(state_ptr->bb_config.get_sys_status);
+	}
+	if (state_ptr->bb_config.flags & BB_FLAG_ENABLE_PERSISTENT) {
+		warning("%s: EnablePersistent is unsupported; forcing DisablePersistent",
+			pt);
+		state_ptr->bb_config.flags &= (~BB_FLAG_ENABLE_PERSISTENT);
+		state_ptr->bb_config.flags |= BB_FLAG_DISABLE_PERSISTENT;
+	}
+	if (state_ptr->bb_config.flags & BB_FLAG_EMULATE_CRAY) {
+		info("%s: flags=EmulateCray is invalid for this plugin, unsetting",
+		     pt);
+		state_ptr->bb_config.flags &= (~BB_FLAG_EMULATE_CRAY);
+	}
+
+	if (state_ptr->bb_config.default_pool) {
+		info("%s: DefaultPool=%s is unused for this plugin, unsetting",
+		     pt, state_ptr->bb_config.default_pool);
+		xfree(state_ptr->bb_config.default_pool);
+	}
+
+	/*
+	 * Burst buffer APIs that would use ValidateTimeout are invoked from
+	 * slurmctld directly, not SlurmScriptd, so there is no killable timeout.
+	 */
+	if (state_ptr->bb_config.validate_timeout &&
+	    (state_ptr->bb_config.validate_timeout != DEFAULT_VALIDATE_TIMEOUT))
+		info("%s: ValidateTimeout is not used in this plugin, ignoring",
+		     pt);
+
+	/* MaxAccDirsPerJob: per-job access directory count (must be 4..8) */
+	if (state_ptr->bb_config.max_acc_dirs_per_job == 0) {
+		warning("%s: MaxAccDirsPerJob=%u is invalid, setting to %u",
+			pt, state_ptr->bb_config.max_acc_dirs_per_job,
+			PSBB_MIN_ACC_DIRS_PER_JOB);
+		state_ptr->bb_config.max_acc_dirs_per_job = PSBB_MIN_ACC_DIRS_PER_JOB;
+	} else if (state_ptr->bb_config.max_acc_dirs_per_job > PSBB_MAX_ACC_DIRS_PER_JOB) {
+		warning("%s: MaxAccDirsPerJob=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_acc_dirs_per_job,
+			PSBB_MAX_ACC_DIRS_PER_JOB);
+		state_ptr->bb_config.max_acc_dirs_per_job = PSBB_MAX_ACC_DIRS_PER_JOB;
+	}
+
+	/* MaxAccDirLen: path length check in validation; 0 disables useful checks */
+	if (state_ptr->bb_config.max_acc_dir_len == 0) {
+		warning("%s: MaxAccDirLen=0 is invalid, setting to %u",
+			pt, PSBB_DEFAULT_MAX_ACC_DIR_LEN);
+		state_ptr->bb_config.max_acc_dir_len = PSBB_DEFAULT_MAX_ACC_DIR_LEN;
+	} else if (state_ptr->bb_config.max_acc_dir_len > PSBB_MAX_ACC_DIR_LEN) {
+		warning("%s: MaxAccDirLen=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_acc_dir_len, PSBB_MAX_ACC_DIR_LEN);
+		state_ptr->bb_config.max_acc_dir_len = PSBB_MAX_ACC_DIR_LEN;
+	}
+
+	/* PollInterval: slurmd bb_p_wait_task_complete requires > 0 */
+	if (state_ptr->bb_config.poll_interval == 0) {
+		warning("%s: PollInterval=0 is invalid, setting to %u",
+			pt, DEFAULT_BB_POLL_INTERVAL);
+		state_ptr->bb_config.poll_interval = DEFAULT_BB_POLL_INTERVAL;
+	} else if (state_ptr->bb_config.poll_interval > PSBB_MAX_POLL_INTERVAL_SEC) {
+		warning("%s: PollInterval=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.poll_interval,
+			PSBB_MAX_POLL_INTERVAL_SEC);
+		state_ptr->bb_config.poll_interval = PSBB_MAX_POLL_INTERVAL_SEC;
+	}
+
+	/* RetryCount: API retry loops need at least one attempt */
+	if (state_ptr->bb_config.retry_count == 0) {
+		warning("%s: RetryCount=0 is invalid, setting to %u",
+			pt, PSBB_DEFAULT_RETRY_COUNT);
+		state_ptr->bb_config.retry_count = PSBB_DEFAULT_RETRY_COUNT;
+	} else if (state_ptr->bb_config.retry_count > PSBB_MAX_RETRY_COUNT) {
+		warning("%s: RetryCount=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.retry_count, PSBB_MAX_RETRY_COUNT);
+		state_ptr->bb_config.retry_count = PSBB_MAX_RETRY_COUNT;
+	}
+
+	/* TCP port for ParaStor API (already non-zero from loader) */
+	if (state_ptr->bb_config.para_stor_port > PSBB_MAX_TCP_PORT) {
+		error("%s: ParaStorAddrPort=%u exceeds maximum %u",
+			pt, state_ptr->bb_config.para_stor_port, PSBB_MAX_TCP_PORT);
+	}
+
+	/* Soft/hard timeouts: must be > 0 for slurmd wait paths; cap upper bound */
+	if (state_ptr->bb_config.other_timeout == 0) {
+		warning("%s: OtherTimeout=0 is invalid, setting to %u",
+			pt, DEFAULT_OTHER_TIMEOUT);
+		state_ptr->bb_config.other_timeout = DEFAULT_OTHER_TIMEOUT;
+	} else if (state_ptr->bb_config.other_timeout > PSBB_MAX_TIMEOUT_SEC) {
+		warning("%s: OtherTimeout=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.other_timeout, PSBB_MAX_TIMEOUT_SEC);
+		state_ptr->bb_config.other_timeout = PSBB_MAX_TIMEOUT_SEC;
+	}
+	if (state_ptr->bb_config.stage_in_timeout == 0) {
+		warning("%s: StageInTimeout=0 is invalid, setting to %u",
+			pt, DEFAULT_STATE_IN_TIMEOUT);
+		state_ptr->bb_config.stage_in_timeout = DEFAULT_STATE_IN_TIMEOUT;
+	} else if (state_ptr->bb_config.stage_in_timeout > PSBB_MAX_TIMEOUT_SEC) {
+		warning("%s: StageInTimeout=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.stage_in_timeout,
+			PSBB_MAX_TIMEOUT_SEC);
+		state_ptr->bb_config.stage_in_timeout = PSBB_MAX_TIMEOUT_SEC;
+	}
+	if (state_ptr->bb_config.stage_out_timeout == 0) {
+		warning("%s: StageOutTimeout=0 is invalid, setting to %u",
+			pt, DEFAULT_STATE_OUT_TIMEOUT);
+		state_ptr->bb_config.stage_out_timeout = DEFAULT_STATE_OUT_TIMEOUT;
+	} else if (state_ptr->bb_config.stage_out_timeout > PSBB_MAX_TIMEOUT_SEC) {
+		warning("%s: StageOutTimeout=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.stage_out_timeout,
+			PSBB_MAX_TIMEOUT_SEC);
+		state_ptr->bb_config.stage_out_timeout = PSBB_MAX_TIMEOUT_SEC;
+	}
+
+	/* Quota caps: zero would underflow free_* counters */
+	if (state_ptr->bb_config.max_groups == 0) {
+		warning("%s: MaxGroups=0 is invalid, setting to 1", pt);
+		state_ptr->bb_config.max_groups = 1;
+	} else if (state_ptr->bb_config.max_groups > PSBB_MAX_GROUPS) {
+		warning("%s: MaxGroups=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_groups, PSBB_MAX_GROUPS);
+		state_ptr->bb_config.max_groups = PSBB_MAX_GROUPS;
+	}
+	if (state_ptr->bb_config.max_datasets == 0) {
+		warning("%s: MaxDatasets=0 is invalid, setting to 1", pt);
+		state_ptr->bb_config.max_datasets = 1;
+	} else if (state_ptr->bb_config.max_datasets > PSBB_MAX_DATASETS) {
+		warning("%s: MaxDatasets=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_datasets, PSBB_MAX_DATASETS);
+		state_ptr->bb_config.max_datasets = PSBB_MAX_DATASETS;
+	}
+
+	/* MaxGroupsPerClients: 0 means use default quota in plugin; cap upper bound */
+	if (state_ptr->bb_config.max_clients_join > PSBB_MAX_NODE_PER_GROUP) {
+		warning("%s: MaxGroupsPerClients=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_clients_join,
+			PSBB_MAX_NODE_PER_GROUP);
+		state_ptr->bb_config.max_clients_join = PSBB_MAX_NODE_PER_GROUP;
+	}
+
+	if (state_ptr->bb_config.max_clients_per_job == 0) {
+		warning("%s: MaxClientsPerJob=0 is invalid, setting to %u",
+			pt, PSBB_DEFAULT_MAX_CLIENTS_PER_JOB);
+		state_ptr->bb_config.max_clients_per_job =
+			PSBB_DEFAULT_MAX_CLIENTS_PER_JOB;
+	} else if (state_ptr->bb_config.max_clients_per_job >
+		   PSBB_MAX_NODE_PER_GROUP) {
+		warning("%s: MaxClientsPerJob=%u exceeds maximum %u, clamping",
+			pt, state_ptr->bb_config.max_clients_per_job,
+			PSBB_MAX_NODE_PER_GROUP);
+		state_ptr->bb_config.max_clients_per_job = PSBB_MAX_NODE_PER_GROUP;
+	}
+}
 
 /* Load and process configuration parameters */
-extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
+extern void parastorbb_load_config(bb_state_t *state_ptr, char *plugin_type)
 {
 	s_p_hashtbl_t *bb_hashtbl = NULL;
 	char *bb_conf, *tmp = NULL, *value = NULL;
@@ -578,13 +748,13 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 	state_ptr->bb_config.stage_in_timeout = DEFAULT_STATE_IN_TIMEOUT;
 	state_ptr->bb_config.stage_out_timeout = DEFAULT_STATE_OUT_TIMEOUT;
 	state_ptr->bb_config.validate_timeout = DEFAULT_VALIDATE_TIMEOUT;
-	state_ptr->bb_config.retry_count = DEFAULT_RETRY_COUNT;
-	state_ptr->bb_config.max_groups = DEFAULT_MAX_GROUPS;
-	state_ptr->bb_config.max_datasets = DEFAULT_MAX_DATASETS;
-	state_ptr->bb_config.max_clients_join = DEFAULT_MAX_GROUPS_PER_CLIENTS;
-	state_ptr->bb_config.max_clients_per_job = DEFAULT_MAX_CLIENTS_PER_JOB;
-	state_ptr->bb_config.max_acc_dirs_per_job = DEFAULT_MAX_ACC_DIRS_PER_JOB;
-	state_ptr->bb_config.max_acc_dir_len = DEFAULT_MAX_ACC_DIR_LEN;
+	state_ptr->bb_config.retry_count = PSBB_DEFAULT_RETRY_COUNT;
+	state_ptr->bb_config.max_groups = PSBB_DEFAULT_MAX_GROUPS;
+	state_ptr->bb_config.max_datasets = PSBB_DEFAULT_MAX_DATASETS;
+	state_ptr->bb_config.max_clients_join = PSBB_DEFAULT_MAX_GROUPS_PER_CLIENTS;
+	state_ptr->bb_config.max_clients_per_job = PSBB_DEFAULT_MAX_CLIENTS_PER_JOB;
+	state_ptr->bb_config.max_acc_dirs_per_job = PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB;
+	state_ptr->bb_config.max_acc_dir_len = PSBB_DEFAULT_MAX_ACC_DIR_LEN;
 
 	/* First look for "burst_buffer.conf" then with "type" field,
 	 * for example "burst_buffer_datawarp.conf" */
@@ -695,12 +865,6 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dirs_per_job,
 			     "MaxAccDirsPerJob", bb_hashtbl);
-	if (state_ptr->bb_config.max_acc_dirs_per_job <= 0) {
-		state_ptr->bb_config.max_acc_dirs_per_job = 4;
-	}
-	if (state_ptr->bb_config.max_acc_dirs_per_job > 8)  {
-		state_ptr->bb_config.max_acc_dirs_per_job = 8;
-	}
 	(void) s_p_get_uint32(&state_ptr->bb_config.max_acc_dir_len,
 			     "MaxAccDirLen", bb_hashtbl);
 
@@ -719,6 +883,8 @@ extern void bb_load_config2(bb_state_t *state_ptr, char *plugin_type)
 	}
 	s_p_hashtbl_destroy(bb_hashtbl);
 	xfree(bb_conf);
+
+	_parastorbb_test_config(state_ptr, plugin_type);
 
 	if (slurm_conf.debug_flags & DEBUG_FLAG_BURST_BUF) {
 		value = _print_users(state_ptr->bb_config.allow_users);
