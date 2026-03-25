@@ -1027,6 +1027,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					xfree(tmp_type);
 				} else {
 					/* Default: temporary cache group */
+					/* Default: temporary cache group */
 					bb_job->type = GROUP_TYPE_TEMPORARY;
 				}
 
@@ -1067,6 +1068,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					}
 					//xfree(tmp_enforce);
 				} else {
+					/* Default: enforce burst buffer (wait for resources) */
 					/* Default: enforce burst buffer (wait for resources) */
 					bb_job->enforce_bb_flag = true;
 				}
@@ -1126,6 +1128,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					}
 					xfree(tmp_access);
 				} else {
+					/* Default: striped (shared) */
 					/* Default: striped (shared) */
 					bb_job->access_mode = DATASET_TYPE_STRIPED;
 				}
