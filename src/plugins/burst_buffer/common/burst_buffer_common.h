@@ -67,15 +67,15 @@
 #define PSBB_DEFAULT_RETRY_COUNT		3U
 #define PSBB_DEFAULT_MAX_GROUPS			2048U
 #define PSBB_DEFAULT_MAX_DATASETS		8192U
-#define PSBB_DEFAULT_MAX_GROUPS_PER_CLIENTS	4U
-#define PSBB_DEFAULT_MAX_CLIENTS_PER_JOB	4U
-#define PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB	8U
+#define PSBB_DEFAULT_MAX_GROUPS_PER_CLIENT	4U
+#define PSBB_DEFAULT_MAX_CLIENTS_PER_GROUP	4U
+#define PSBB_DEFAULT_MAX_ACC_DIRS_PER_JOB	4U
 #define PSBB_DEFAULT_MAX_ACC_DIR_LEN		512U
 #define PSBB_MAX_TIMEOUT_SEC	(60U * 60U * 24U * 24U)
 #define PSBB_MAX_GROUPS			2048U
 #define PSBB_MAX_DATASETS		8192U
-#define PSBB_MAX_NODE_PER_GROUP		1024U
-#define PSBB_MIN_ACC_DIRS_PER_JOB	4U
+#define PSBB_MAX_GROUPS_PER_CLIENT	1024U
+#define PSBB_MAX_CLIENTS_PER_GROUP	1024U
 #define PSBB_MAX_ACC_DIRS_PER_JOB	8U
 #define PSBB_MAX_ACC_DIR_LEN		4096U 
 #define PSBB_MAX_POLL_INTERVAL_SEC	3600U
@@ -112,8 +112,8 @@ typedef struct bb_config {
 #ifdef __METASTACK_NEW_BURSTBUFFER
 	uint32_t max_groups;
 	uint32_t max_datasets;
-	uint32_t max_clients_join;
-	uint32_t max_clients_per_job;	/* Cache group sizing: clients per group */
+	uint32_t max_groups_per_client;
+	uint32_t max_clients_per_group;	/* Cache group sizing: clients per group */
 	uint32_t max_acc_dir_len;	/* Max path length for one access (stage) directory */
 	uint32_t max_acc_dirs_per_job;	/* Max access directories to stage per job */
 	char    *file_system;		/* Storage backend / filesystem name */

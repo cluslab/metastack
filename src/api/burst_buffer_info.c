@@ -372,9 +372,9 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 		burst_buffer_ptr->free_datasets_cnt);
 
 	xstrcat(out_buf, line_end);
-	xstrfmtcat(out_buf, "MaxClientsJoin=%u MaxClientsPerJob=%u",
-		burst_buffer_ptr->max_clients_join,
-		burst_buffer_ptr->max_clients_per_job);
+	xstrfmtcat(out_buf, "MaxGroupsPerClient=%u MaxClientsPerGroup=%u",
+		burst_buffer_ptr->max_groups_per_client,
+		burst_buffer_ptr->max_clients_per_group);
 	xstrcat(out_buf, line_end);
 	xstrfmtcat(out_buf, "MaxAccDirLen=%u MaxAccDirsPerJob=%u",
 		burst_buffer_ptr->max_acc_dir_len,
@@ -464,7 +464,7 @@ extern void slurm_print_burst_buffer_parastor_record(FILE *out,
 
 		xstrcat(out_buf, "\n    ");
 		if (bb_resv_ptr->pfs) {
-			xstrfmtcat(out_buf, "PFS_Count=%u PFS=%s ", bb_resv_ptr->pfs_cnt, bb_resv_ptr->pfs);
+			xstrfmtcat(out_buf, "AccelDir_Count=%u AccelDir=%s ", bb_resv_ptr->pfs_cnt, bb_resv_ptr->pfs);
 		}
 
 		/****** Line 3 - Groups, Datasets, Tasks ******/

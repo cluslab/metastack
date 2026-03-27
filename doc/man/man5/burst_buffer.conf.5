@@ -230,26 +230,31 @@ syntax is documented in \fBsbatch\fR(1),\fBsrun\fR(1), and \fBsalloc\fR(1).
 \fBMaxAccDirLen\fR
 (ParaStor plugin.) Maximum length of accelerated directory path (characters).
 If omitted, the default is 512.
+A value of 0 is replaced with the default (512) at startup.
+\fBburst_buffer/parastor\fR clamps values greater than 4096 to 4096 at startup.
 .IP
 
 .TP
 \fBMaxAccDirsPerJob\fR
 (ParaStor plugin.) The maximum number of directories that can be accelerated for a single job.
-If omitted, the default is 8.
-Values less than or equal to 0 are raised to 4; values greater than 8 are reduced to 8.
+If omitted, the default is 4.
+A value of 0 is replaced with the default (4) at startup.
+\fBburst_buffer/parastor\fR clamps values greater than 8 to 8 at startup.
 .IP
 
 .TP
-\fBMaxClientsPerJob\fR
+\fBMaxClientsPerGroup\fR
 (ParaStor plugin.) Maximum number of clients per cache group.
 If omitted, the default is 4.
-\fBburst_buffer/parastor\fR clamp values greater than 1024 to 1024 at startup.
+A value of 0 is replaced with the default (4) at startup.
+\fBburst_buffer/parastor\fR clamps values greater than 1024 to 1024 at startup.
 .IP
 
 .TP
 \fBMaxDatasets\fR
 (ParaStor plugin.) Upper bound on datasets in the ParaStor burst buffer system.
 If omitted, the default is 8192.
+A value of 0 is replaced with the default (8192) at startup.
 \fBburst_buffer/parastor\fR clamps values greater than 8192 to 8192.
 .IP
 
@@ -257,13 +262,16 @@ If omitted, the default is 8192.
 \fBMaxGroups\fR
 (ParaStor plugin.) Upper bound on cache groups in the ParaStor burst buffer system.
 If omitted, the default is 2048.
-\fBburst_buffer/parastor\fR clamp values greater than 2048 to 2048 at startup.
+A value of 0 is replaced with the default (2048) at startup.
+\fBburst_buffer/parastor\fR clamps values greater than 2048 to 2048 at startup.
 .IP
 
 .TP
-\fBMaxGroupsPerClients\fR
+\fBMaxGroupsPerClient\fR
 (ParaStor plugin.) Maximum number of cache groups a client can join.
 If omitted, the default is 4.
+A value of 0 is replaced with the default (4) at startup.
+\fBburst_buffer/parastor\fR clamps values greater than 1024 to 1024 at startup.
 .IP
 
 .TP

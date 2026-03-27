@@ -75,7 +75,7 @@ typedef struct {
     /* Dataset query fields */
     const char *path; /* dataset path, fuzzy match */
     uint32_t group_id ;/* cache group id . Default value is 0, indicating no restriction */
-    uint32_t max_clients_join;
+    uint32_t max_groups_per_client;
 
     uint32_t task_id;
     uint32_t dataset_id;

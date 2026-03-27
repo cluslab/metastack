@@ -635,7 +635,7 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 		return rc;
 
 	bb_copy = xstrdup(job_desc->burst_buffer);
-	if ((tok = strstr(bb_copy, "capacity="))) {
+	if ((tok = xstrcasestr(bb_copy, "capacity="))) {
 		char *cap_val = tok + 9;
 
 		if (cap_val[0] == '\0' || isspace((unsigned char) cap_val[0])) {
@@ -655,23 +655,16 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 	}
 
 
-	if ((tok = strstr(bb_copy, "pfslist="))) {
-		pfs = xstrdup(tok + 8);
+	if ((tok = xstrcasestr(bb_copy, "acceldir="))) {
+		pfs = xstrdup(tok + 9);
 		sep = strchr(pfs, ' ');
 		if (sep)
 			sep[0] = '\0';
-		tok_len = strlen(pfs) + 8;
-		memset(tok, ' ', tok_len);
-	} else if ((tok = strstr(bb_copy, "pfs="))) {
-		pfs = xstrdup(tok + 4);
-		sep = strchr(pfs, ' ');
-		if (sep)
-			sep[0] = '\0';
-		tok_len = strlen(pfs) + 4;
+		tok_len = strlen(pfs) + 9;
 		memset(tok, ' ', tok_len);
 	}
 
-	if ((tok = strstr(bb_copy, "type="))) {
+	if ((tok = xstrcasestr(bb_copy, "type="))) {
 		type = xstrdup(tok + 5);
 		sep = strchr(type, ',');
 		if (sep)
@@ -683,7 +676,7 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 		memset(tok, ' ', tok_len);
 	}
 
-	if ((tok = strstr(bb_copy, "enforce_bb="))) {
+	if ((tok = xstrcasestr(bb_copy, "enforce_bb="))) {
 		enforce_bb = xstrdup(tok + 11);
 		sep = strchr(enforce_bb, ',');
 		if (sep)
@@ -715,7 +708,7 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 			xstrfmtcat(job_desc->burst_buffer, " capacity=%s",
 				   bb_get_size_str(buf_size));
 		if (pfs)
-			xstrfmtcat(job_desc->burst_buffer, " pfslist=%s", pfs);
+			xstrfmtcat(job_desc->burst_buffer, " AccelDir=%s", pfs);
 		if (type)
 			xstrfmtcat(job_desc->burst_buffer, " type=%s", type);
 		if (enforce_bb)
@@ -850,10 +843,10 @@ static int _parse_bb_opts(job_desc_msg_t *job_desc, uint64_t *bb_size,
 			tok += 3;
 			while (isspace(tok[0]))
 				tok++;
-			if (!xstrncmp(tok, "jobpara", 7)) {
+			if (xstrncasecmp(tok, "jobpara", 7) == 0) {
 				bb_pool = NULL;
 				have_bb = true;
-				if ((sub_tok = strstr(tok, "capacity="))) {
+				if ((sub_tok = xstrcasestr(tok, "capacity="))) {
 					tmp_cnt = bb_get_size_num(sub_tok + 9, 1);
 				}
 				//slurm_mutex_lock(&bb_state.bb_mutex);
@@ -931,11 +924,11 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 		}
 
 		if (bb_flag == BB_FLAG_PB_OP) {
-			if (!xstrncmp(tok, "jobpara", 7)) {
+			if (xstrncasecmp(tok, "jobpara", 7) == 0) {
 				saw_pb_jobpara = true;
 				bb_job->req_space = 0;
 				/* Parse capacity= (optional; zero means omitted or explicit zero) */
-				if ((sub_tok = strstr(tok, "capacity="))) {
+				if ((sub_tok = xstrcasestr(tok, "capacity="))) {
 					char *capacity_val = sub_tok + 9;
 					/* Require a value after capacity= */
 					if (capacity_val[0] == '\0' || isspace(capacity_val[0])) {
@@ -952,35 +945,32 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					bb_job->req_space = bb_get_size_num(capacity_val, 1);
 				}
 
-				/* Parse pfslist= */
-				if ((sub_tok = strstr(tok, "pfslist="))) {
-					char *pfs_val = sub_tok + 8;
-					/* Require a value after pfslist= */
+				/* Parse AccelDir= (case-insensitive key acceldir=) */
+				if ((sub_tok = xstrcasestr(tok, "acceldir="))) {
+					char *pfs_val = sub_tok + 9;
 					if (pfs_val[0] == '\0' || isspace(pfs_val[0])) {
 						xfree(pb_err_detail);
 						pb_err_detail = xstrdup(
-							"#PB jobpara: pfslist= requires a non-empty value");
+							"#PB jobpara: AccelDir requires a non-empty value");
 						log_flag(BURST_BUF, "%pJ: %s",
 							 job_ptr, pb_err_detail);
-						error_param = "pfslist";
+						error_param = "AccelDir";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
 					}
 					char *tmp_pfs = xstrdup(pfs_val);
-					/* Truncate at first whitespace */
 					sub_tok = strchr(tmp_pfs, ' ');
 					if (sub_tok)
 						sub_tok[0] = '\0';
-					/* Path must be non-empty */
 					if (tmp_pfs[0] == '\0') {
 						xfree(tmp_pfs);
 						xfree(pb_err_detail);
 						pb_err_detail = xstrdup(
-							"#PB jobpara: pfslist= path is empty after parsing");
+							"#PB jobpara: AccelDir path is empty after parsing");
 						log_flag(BURST_BUF, "%pJ: %s",
 							 job_ptr, pb_err_detail);
-						error_param = "pfslist";
+						error_param = "AccelDir";
 						have_status = true;
 						tok = strtok_r(NULL, "\n", &save_ptr);
 						continue;
@@ -988,7 +978,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					bb_job->pfs = tmp_pfs;
 				}
 				/* Parse type= */
-				if ((sub_tok = strstr(tok, "type="))) {
+				if ((sub_tok = xstrcasestr(tok, "type="))) {
 					char *type_val = sub_tok + 5;
 					/* Require a value after type= */
 					if (type_val[0] == '\0' || isspace(type_val[0])) {
@@ -1006,9 +996,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					sub_tok = xstrchr(tmp_type, ' ');
 					if (sub_tok)
 						sub_tok[0] = '\0';
-					if (xstrcmp(tmp_type, "persistent") == 0) {
+					if (xstrcasecmp(tmp_type, "persistent") == 0) {
 						bb_job->type = GROUP_TYPE_PERSISTENT;
-					} else if (xstrcmp(tmp_type, "temporary") == 0) {
+					} else if (xstrcasecmp(tmp_type, "temporary") == 0) {
 						bb_job->type = GROUP_TYPE_TEMPORARY;
 					} else {
 						/* Invalid type= value */
@@ -1032,13 +1022,13 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				}
 
 				/* Parse enforce_bb= */
-				if ((sub_tok = strstr(tok, "enforce_bb="))) {
+				if ((sub_tok = xstrcasestr(tok, "enforce_bb="))) {
 					char *enforce_val = sub_tok + 11;
 					/* Require a value after enforce_bb= */
 					if (enforce_val[0] == '\0' || isspace(enforce_val[0])) {
 						xfree(pb_err_detail);
 						pb_err_detail = xstrdup(
-							"#PB jobpara: enforce_bb= requires a non-empty value");
+							"#PB jobpara: enforce_bb requires a non-empty value");
 						log_flag(BURST_BUF, "%pJ: %s",
 							 job_ptr, pb_err_detail);
 						error_param = "enforce_bb";
@@ -1058,7 +1048,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 						/* Invalid enforce_bb= value */
 						xfree(pb_err_detail);
 						pb_err_detail = xstrdup(
-							"#PB jobpara: enforce_bb= must be yes/no, true/false, or 0/1");
+							"#PB jobpara: enforce_bb must be yes/no, true/false, or 0/1");
 						log_flag(BURST_BUF, "%pJ: %s",
 							 job_ptr, pb_err_detail);
 						error_param = "enforce_bb";
@@ -1086,15 +1076,15 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 								  &bb_grp_fail_msg,
 								  job_ptr);
 			}
-			if (!xstrncmp(tok, "pstage_in", 9)) {
+			if (xstrncasecmp(tok, "pstage_in", 9) == 0) {
 				/* Parse access_mode= */
-				if ((sub_tok = strstr(tok, "access_mode="))) {
+				if ((sub_tok = xstrcasestr(tok, "access_mode="))) {
 					char *access_val = sub_tok + 12;
 					/* Require a value after access_mode= */
 					if (access_val[0] == '\0' || isspace(access_val[0])) {
 						xfree(pb_err_detail);
 						pb_err_detail = xstrdup(
-							"#PB pstage_in: access_mode= requires a non-empty value");
+							"#PB pstage_in: access_mode requires a non-empty value");
 						log_flag(BURST_BUF, "%pJ: %s",
 							 job_ptr, pb_err_detail);
 						error_param = "access_mode";
@@ -1134,13 +1124,13 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				}
 
 				/* Parse metadata_acceleration= */
-				if ((sub_tok = strstr(tok, "metadata_acceleration="))) {
+				if ((sub_tok = xstrcasestr(tok, "metadata_acceleration="))) {
 					char *meta_val = sub_tok + 22;
 					/* Require a value after metadata_acceleration= */
 					if (meta_val[0] == '\0' || isspace(meta_val[0])) {
 						xfree(pb_err_detail);
 						pb_err_detail = xstrdup(
-							"#PB pstage_in: metadata_acceleration= requires a non-empty value");
+							"#PB pstage_in: metadata_acceleration requires a non-empty value");
 						log_flag(BURST_BUF, "%pJ: %s",
 							 job_ptr, pb_err_detail);
 						error_param = "metadata_acceleration";
@@ -1857,7 +1847,7 @@ extern int bb_p_job_validate2(job_record_t *job_ptr, char **err_msg)
 
 
 
-	job_ptr->max_clients_per_job  = bb_state.bb_config.max_clients_per_job;
+	job_ptr->max_clients_per_group  = bb_state.bb_config.max_clients_per_group;
 	job_ptr->bb_status			  = ESLURM_BB_STATE_INIT;
 	job_ptr->bb_enable_pb = true;	
 	// job_state_set_flag(job_ptr, JOB_BURSTBUFFER_STAGING);
@@ -2089,15 +2079,10 @@ static void _queue_teardown(job_record_t *job_ptr)
 	bb_state.free_datasets_cnt += job_ptr->need_database_counts;
 	bb_state.used_datasets_cnt -= job_ptr->need_database_counts;
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
-	uint32_t bb_quota = bb_state.bb_config.max_clients_join;
+	uint32_t bb_quota = bb_state.bb_config.max_groups_per_client;
 	bitstr_t *node_bitmap = NULL;
 
-	if (bb_state.bb_config.max_clients_join > 0) {
-		bb_quota = bb_state.bb_config.max_clients_join;
-		debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
-	} else {
-		debug3("max_clients_join not set, using default bb_quota: 4");
-	}
+	debug3("Using max_groups_per_client from config as bb_quota: %u", bb_quota);
 	/* Prefer job_resrcs node map during cleanup; fall back to job_ptr */
 	if (job_ptr->job_resrcs && job_ptr->job_resrcs->node_bitmap) {
 		node_bitmap = job_ptr->job_resrcs->node_bitmap;
@@ -2354,11 +2339,11 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 #endif
 		return SLURM_ERROR;
 	}
-	if (bb_state.bb_config.max_clients_per_job <= 0) {
-		bb_state.bb_config.max_clients_per_job = GROUP_SIZE;
+	if (bb_state.bb_config.max_clients_per_group <= 0) {
+		bb_state.bb_config.max_clients_per_group = GROUP_SIZE;
 	}
 
-	job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_job + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_job; 
+	job_ptr->need_group_counts    = (bb_state.bb_config.max_clients_per_group + bb_node_cnt - 1)  / bb_state.bb_config.max_clients_per_group; 
 	job_ptr->need_database_counts = job_ptr->need_group_counts * bb_job->pfs_cnt;
 	job_ptr->enforce_bb_flag = bb_job->enforce_bb_flag;
 	log_flag(BURST_BUF, "required number of cache groups %d", job_ptr->need_group_counts);
@@ -2429,15 +2414,10 @@ extern int bb_p_job_begin(job_record_t *job_ptr)
 	if (job_ptr->node_bitmap) {
 		int i, i_first, i_last;
 		node_record_t *node_ptr = NULL;
-		uint32_t bb_quota = 4;
+		/* Per-node burst-buffer group quota from config (0 normalized at load) */
+		uint32_t bb_quota = bb_state.bb_config.max_groups_per_client;
 
-		/* Per-node burst-buffer group quota from config */
-		if (bb_state.bb_config.max_clients_join > 0) {
-			bb_quota = bb_state.bb_config.max_clients_join;
-			debug3("Using max_clients_join from config as bb_quota: %u", bb_quota);
-		} else {
-			debug3("max_clients_join not set, using default bb_quota: 4");
-		}
+		debug3("Using max_groups_per_client from config as bb_quota: %u", bb_quota);
 
 		i_first = bit_ffs(job_ptr->node_bitmap);
 		i_last  = bit_fls(job_ptr->node_bitmap);
@@ -2837,8 +2817,8 @@ static void _bb_min_config_free(bb_minimal_config_t * config)
 #ifdef __METASTACK_OPT_SCHE_CHECK_BBQUOTA
 extern uint32_t bb_p_get_node_quota(void)
 {
-	/* max_clients_join is loaded from burst_buffer.conf */
-	return bb_state.bb_config.max_clients_join;
+	/* max_groups_per_client from burst_buffer.conf (0 -> default at load) */
+	return bb_state.bb_config.max_groups_per_client;
 }
 #endif
 
