@@ -5699,7 +5699,11 @@ extern time_t acct_policy_get_preemptable_time(job_record_t *job_ptr)
 	uint32_t min1, min2, conf_min;
 	time_t start = job_ptr->start_time;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (!para_sched && !para_submit) {
+#else
 	if (!para_sched) {
+#endif
 		xassert(verify_lock(CONF_LOCK, READ_LOCK));
 		xassert(verify_lock(JOB_LOCK, READ_LOCK));
 	}

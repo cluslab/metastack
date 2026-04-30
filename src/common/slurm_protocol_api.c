@@ -1067,17 +1067,8 @@ total_return:
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/**********************************************************************\
- * receive message functions
-\**********************************************************************/
-
-/*
- * NOTE: memory is allocated for the returned msg must be freed at
- *       some point using the slurm_free_functions.
- * IN fd	- file descriptor to receive msg on
- * OUT msg	- a slurm_msg struct to be filled in by the function
- * IN timeout	- how long to wait in milliseconds
- * RET int	- returns 0 on success, -1 on failure and sets errno
+/* This function is a modified version of the original "slurm_receive_msg()", 
+ * specifically created to fix bug 98700.
  */
 int slurm_receive_msg1(int fd, slurm_msg_t *msg, int timeout)
 {
@@ -1095,8 +1086,17 @@ int slurm_receive_msg1(int fd, slurm_msg_t *msg, int timeout)
 
 		buffer = slurm_persist_recv_msg1(msg->conn);
 		if (!buffer) {
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+			error("%s: No response to persist_init. If no response persists, "
+				 "it is recommended to check the network or increase the "
+				 "SendCtldUpdateTimeout setting appropriately.", __func__);
+			if (!(msg->conn->flags & PERSIST_FLAG_TIMEOUT)) {
+				slurm_persist_conn_close(msg->conn);
+			}
+#else
 			error("%s: No response to persist_init", __func__);
 			slurm_persist_conn_close(msg->conn);
+#endif
 			return SLURM_ERROR;
 		}
 		memset(&persist_msg, 0, sizeof(persist_msg_t));
@@ -2040,13 +2040,8 @@ skip_auth2:
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/**********************************************************************\
- * send message functions
-\**********************************************************************/
-
-/*
- * Send a slurm message over an open file descriptor `fd'
- * Returns the size of the message sent in bytes, or -1 on failure.
+/* This function is a modified version of the original "slurm_send_node_msg()", 
+ * specifically created to fix bug 98700.
  */
 extern int slurm_send_node_msg1(int fd, slurm_msg_t *msg)
 {
@@ -2445,14 +2440,8 @@ int slurm_send_reroute_msg(slurm_msg_t *msg,
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/*
- * Send and recv a slurm request and response on the open slurm descriptor
- * Doesn't close the connection.
- * IN fd	- file descriptor to receive msg on
- * IN req	- a slurm_msg struct to be sent by the function
- * OUT resp	- a slurm_msg struct to be filled in by the function
- * IN timeout	- how long to wait in milliseconds
- * RET int	- returns 0 on success, -1 on failure and sets errno
+/* This function is a modified version of the original "slurm_send_recv_msg()", 
+ * specifically created to fix bug 98700.
  */
 extern int slurm_send_recv_msg1(int fd, slurm_msg_t *req,
 			       slurm_msg_t *resp, int timeout)

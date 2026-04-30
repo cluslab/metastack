@@ -84,6 +84,10 @@
 #define MAX_SERVER_THREADS 256
 #endif
 
+#ifndef MAX_THREAD_POOL_SIZE
+#define MAX_THREAD_POOL_SIZE 1024
+#endif
+
 /* Maximum number of threads to service emails (see MailProg) */
 #ifndef MAX_MAIL_THREADS
 #define MAX_MAIL_THREADS 64
@@ -165,6 +169,9 @@ typedef struct slurmctld_config {
 	pthread_mutex_t query_thread_count_lock;
 	pthread_t thread_id_copy;
 	pthread_t thread_id_query;
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	pthread_t thread_id_pre_process;
 #endif
 } slurmctld_config_t;
 
@@ -279,6 +286,11 @@ extern bool slurmctld_primary;
 extern int   slurmctld_tres_cnt;
 extern slurmdb_cluster_rec_t *response_cluster_rec;
 
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+extern bool disable_change_proc_dist;
+#endif
+
+
 /*****************************************************************************\
  * Configless data structures, defined in src/slurmctld/proc_req.c
 \*****************************************************************************/
@@ -360,6 +372,9 @@ extern List part_list;			/* list of part_record entries */
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 extern List watch_dog_list;			/* watch dog list */
 extern time_t last_watch_dog_update;	/* time of last update to watch_dog records */
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SRUN_JOB_COM
+extern bool ignore_srun_job_complete;
 #endif
 extern time_t last_part_update;		/* time of last part_list update */
 extern part_record_t default_part;	/* default configuration values */
@@ -512,6 +527,15 @@ extern bitstr_t **para_sched_planned_update_bitmap;
 #endif
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 extern bitstr_t **para_sched_resv_node_bitmap;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+extern bitstr_t **para_submit_resv_node_bitmap;
+#endif
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+extern bool para_submit; 
+extern bitstr_t **para_submit_avail_node_bitmap; /* A collection of bitmaps for available nodes in each resource area */
+extern bitstr_t **para_submit_share_node_bitmap; /* A collection of bitmaps for sharable nodes in each resource area */
+extern bitstr_t **para_submit_idle_node_bitmap;  /* A collection of bitmaps for idle nodes in each resource area */
 #endif
 
 
@@ -521,6 +545,17 @@ extern void get_para_sched_part_names(void);
 extern int _get_job_part_index(char** part_names, part_record_t *part_ptr);
 #endif
 
+/*****************************************************************************\
+ *  Global enable_para_epilog variables
+\*****************************************************************************/
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern bool enable_para_epilog;
+extern bitstr_t **para_epilog_cg_node_bitmap; /* A collection of bitmaps for completing nodes in each resource area */
+extern bitstr_t **para_epilog_up_node_bitmap; /* A collection of bitmaps for up nodes, not DOWN in each resource area */
+extern bitstr_t **para_epilog_avail_node_bitmap; /* A collection of bitmaps for available nodes in each resource area */
+extern bitstr_t **para_epilog_bf_ignore_node_bitmap; /* A collection of bitmaps for nodes made available during backfill cycle in each resource area */
+extern bitstr_t **para_epilog_idle_node_bitmap; /* A collection of bitmaps for idle nodes in each resource area */
+#endif
 
 /*****************************************************************************\
  *  Global assoc_cache variables
@@ -739,6 +774,10 @@ extern int dump_all_node_state ( void );
 
 /* dump_all_part_state - save the state of all partitions to file */
 extern int dump_all_part_state ( void );
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+extern void *slurmctld_pre_process(void *no_data);
+#endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 /* copy_all_part_state - copy the state of all partitions */
@@ -973,7 +1012,11 @@ extern void excise_node_from_job(job_record_t *job_ptr,
 				 node_record_t *node_ptr);
 
 /* make_node_avail - flag specified node as available */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern void make_node_avail(node_record_t *node_ptr, bool can_para_epilog, int worker_index);
+#else
 extern void make_node_avail(node_record_t *node_ptr);
+#endif
 
 /*
  * Reset load & power statistics for node.
@@ -1280,11 +1323,20 @@ extern int job_alloc_info_ptr(uint32_t uid, job_record_t *job_ptr);
  *	default_part_loc - pointer to default partition
  * NOTE: lock_slurmctld on entry: Read config Write job, Write node, Read part
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
+			int will_run, will_run_response_msg_t **resp,
+			int allocate, uid_t submit_uid, bool cron,
+			job_record_t **job_pptr,
+			char **err_msg, uint16_t protocol_version,
+			bool submit, int worker_index);
+#else
 extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
 			int will_run, will_run_response_msg_t **resp,
 			int allocate, uid_t submit_uid, bool cron,
 			job_record_t **job_pptr,
 			char **err_msg, uint16_t protocol_version);
+#endif
 
 /* If this is a job array meta-job, prepare it for being scheduled */
 extern void job_array_pre_sched(job_record_t *job_ptr);
@@ -1352,8 +1404,13 @@ extern uint64_t job_get_tres_mem(struct job_resources *job_res,
  * IN return_code - return code from epilog script
  * RET true if job is COMPLETED, otherwise false
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern bool job_epilog_complete(uint32_t job_id, char *node_name,
+		uint32_t return_code, bool can_para_epilog, int worker_index);
+#else
 extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 		uint32_t return_code);
+#endif
 
 /*
  * job_end_time - Process JOB_END_TIME
@@ -1693,7 +1750,11 @@ extern void make_node_comp(node_record_t *node_ptr, job_record_t *job_ptr,
  * IN node_ptr - pointer to node reporting job completion
  * IN job_ptr - pointer to job that just completed or NULL if not applicable
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr, bool can_para_epilog, int worker_index);
+#else
 extern void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr);
+#endif
 
 /* msg_to_slurmd - send given msg_type every slurmd, no args */
 extern void msg_to_slurmd (slurm_msg_type_t msg_type);

@@ -544,10 +544,17 @@ extern void trigger_node_down(node_record_t *node_ptr)
 	slurm_mutex_unlock(&trigger_mutex);
 }
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern void trigger_node_drained(node_record_t *node_ptr, bool can_para_epilog)
+{
+	if (!enable_para_epilog || !can_para_epilog) {
+		xassert(verify_lock(NODE_LOCK, READ_LOCK));
+	}
+#else
 extern void trigger_node_drained(node_record_t *node_ptr)
 {
 	xassert(verify_lock(NODE_LOCK, READ_LOCK));
-
+#endif
 	slurm_mutex_lock(&trigger_mutex);
 	if (trigger_drained_nodes_bitmap == NULL)
 		trigger_drained_nodes_bitmap = bit_alloc(node_record_count);
@@ -577,9 +584,17 @@ extern void trigger_node_up(node_record_t *node_ptr)
 	slurm_mutex_unlock(&trigger_mutex);
 }
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern void trigger_node_draining(node_record_t *node_ptr, bool can_para_epilog)
+{
+	if (!enable_para_epilog || !can_para_epilog) {
+		xassert(verify_lock(NODE_LOCK, READ_LOCK));
+	}
+#else
 extern void trigger_node_draining(node_record_t *node_ptr)
 {
 	xassert(verify_lock(NODE_LOCK, READ_LOCK));
+#endif
 
 	slurm_mutex_lock(&trigger_mutex);
 	if (!trigger_draining_nodes_bitmap)

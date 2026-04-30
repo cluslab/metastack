@@ -917,6 +917,10 @@ extern resource_allocation_response_msg_t *build_alloc_msg(
 				    job_ptr->origin_cluster);
 
 	alloc_msg->tres_per_node = xstrdup(job_ptr->tres_per_node);
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	alloc_msg->tres_per_task = xstrdup(job_ptr->tres_per_task);
+	alloc_msg->tres_bind = xstrdup(job_ptr->tres_bind);
+#endif
 	alloc_msg->uid = job_ptr->user_id;
 	alloc_msg->user_name = user_from_job(job_ptr);
 	alloc_msg->gid = job_ptr->group_id;
@@ -1169,9 +1173,15 @@ static void _slurm_rpc_allocate_het_job(slurm_msg_t *msg)
 			}
 		}
 		job_desc_msg->het_job_offset = het_job_offset;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		error_code = job_allocate(job_desc_msg, false, false, NULL,
+					  true, msg->auth_uid, false, &job_ptr,
+					  &err_msg, msg->protocol_version, false, 0);
+#else
 		error_code = job_allocate(job_desc_msg, false, false, NULL,
 					  true, msg->auth_uid, false, &job_ptr,
 					  &err_msg, msg->protocol_version);
+#endif
 #ifdef __METASTACK_OPT_MSG_OUTPUT
 		if (enable_reason_detail && job_desc_msg->reason_detail) {
 			/** error_code = SLURM_ERROR */
@@ -1490,11 +1500,19 @@ static void _slurm_rpc_allocate_resources(slurm_msg_t *msg)
 			}
 		} else {
 			job_desc_msg->het_job_offset = NO_VAL;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			error_code = job_allocate(job_desc_msg, immediate,
+						  false, NULL, true,
+						  msg->auth_uid, false,
+						  &job_ptr, &err_msg,
+						  msg->protocol_version, false, 0);
+#else
 			error_code = job_allocate(job_desc_msg, immediate,
 						  false, NULL, true,
 						  msg->auth_uid, false,
 						  &job_ptr, &err_msg,
 						  msg->protocol_version);
+#endif
 			/* unlock after finished using the job structure
 			 * data */
 
@@ -2431,9 +2449,22 @@ static void _slurm_rpc_epilog_complete(slurm_msg_t *msg)
 	log_flag(ROUTE, "%s: node_name = %s, JobId=%u",
 		 __func__, epilog_msg->node_name, epilog_msg->job_id);
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	if ((rpc_queue_pool_enabled) && enable_para_epilog) {
+		if (job_epilog_complete(epilog_msg->job_id, epilog_msg->node_name,
+					epilog_msg->return_code, true, msg->index)){
+			run_scheduler = true;
+		}
+	} else {
+		if (job_epilog_complete(epilog_msg->job_id, epilog_msg->node_name,
+					epilog_msg->return_code, false, 0))
+		run_scheduler = true;
+	}
+#else
 	if (job_epilog_complete(epilog_msg->job_id, epilog_msg->node_name,
 				epilog_msg->return_code))
 		run_scheduler = true;
+#endif
 
 	job_ptr = find_job_record(epilog_msg->job_id);
 
@@ -2760,9 +2791,21 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t *msg)
 	    (slurm_job_preempt_mode(job_ptr) == PREEMPT_MODE_REQUEUE))
 		job_requeue = true;
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	if(job_ptr){
+		job_ptr->comp_batch_flag = true;
+		job_ptr->enable_stepd_send_term_job = false;
+	}
+#endif
+
 	/* Mark job allocation complete */
 	i = job_complete(comp_msg->job_id, msg->auth_uid, job_requeue, false,
 			 comp_msg->job_rc);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	if(job_ptr){
+		job_ptr->comp_batch_flag = false;
+	}
+#endif
 	error_code = MAX(error_code, i);
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
 		unlock_slurmctld(job_write_lock);
@@ -2777,12 +2820,30 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t *msg)
 	if (error_code) {
 		debug2("%s JobId=%u: %s ",
 		       __func__, comp_msg->job_id, slurm_strerror(error_code));
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+		if (job_ptr && job_ptr->enable_stepd_send_term_job) {
+			slurm_send_rc_msg(msg, error_code + ESLURMD_ENABLED_STEPD_SEND_TERM_JOB);
+			job_ptr->enable_stepd_send_term_job = false;
+		} else {
+			slurm_send_rc_msg(msg, error_code);
+		}
+#else
 		slurm_send_rc_msg(msg, error_code);
+#endif
 	} else {
 		debug2("%s JobId=%u %s", __func__, comp_msg->job_id, TIME_STR);
 		slurmctld_diag_stats.jobs_completed++;
 		dump_job = true;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+		if (job_ptr && job_ptr->enable_stepd_send_term_job) {
+			slurm_send_rc_msg(msg, SLURM_SUCCESS + ESLURMD_ENABLED_STEPD_SEND_TERM_JOB);
+			job_ptr->enable_stepd_send_term_job = false;
+		} else {
+			slurm_send_rc_msg(msg, SLURM_SUCCESS);
+		}
+#else
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);
+#endif
 	}
 
 	if (dump_job)
@@ -3154,12 +3215,21 @@ static void _slurm_rpc_job_will_run(slurm_msg_t *msg)
 			lock_slurmctld(job_write_lock);
 			if (job_desc_msg->job_id == NO_VAL) {
 				job_desc_msg->het_job_offset = NO_VAL;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				error_code = job_allocate(job_desc_msg, false,
+							  true, &resp, true,
+							  msg->auth_uid, false,
+							  &job_ptr,
+							  &err_msg,
+							  msg->protocol_version, false, 0);
+#else
 				error_code = job_allocate(job_desc_msg, false,
 							  true, &resp, true,
 							  msg->auth_uid, false,
 							  &job_ptr,
 							  &err_msg,
 							  msg->protocol_version);
+#endif
 #ifdef __METASTACK_OPT_MSG_OUTPUT
 				if (enable_reason_detail && job_desc_msg->reason_detail) {
 					/** error_code = SLURM_ERROR */
@@ -4206,7 +4276,15 @@ static void _slurm_rpc_step_complete(slurm_msg_t *msg)
 		 req->step_rc, slurm_strerror(req->step_rc));
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+		if(!(msg->flags & SLURM_NO_THROTTLE_LOCK)){
+			_throttle_start(&active_rpc_cnt);
+		}else{
+			log_flag(STEPS, "Disable the throttle lock for step_complete");
+		}
+#else
 		_throttle_start(&active_rpc_cnt);
+#endif
 		lock_slurmctld(job_write_lock);
 	}
 
@@ -4214,7 +4292,13 @@ static void _slurm_rpc_step_complete(slurm_msg_t *msg)
 
 	if (!(msg->flags & CTLD_QUEUE_PROCESSING)) {
 		unlock_slurmctld(job_write_lock);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+		if(!(msg->flags & SLURM_NO_THROTTLE_LOCK)){
+			_throttle_fini(&active_rpc_cnt);
+		}
+#else
 		_throttle_fini(&active_rpc_cnt);
+#endif
 	}
 
 	END_TIMER2(__func__);
@@ -4457,11 +4541,19 @@ static void _slurm_rpc_submit_batch_job(slurm_msg_t *msg)
 	} else {
 		/* Create new job allocation */
 		job_desc_msg->het_job_offset = NO_VAL;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		error_code = job_allocate(job_desc_msg,
+					  job_desc_msg->immediate,
+					  false, NULL, 0, msg->auth_uid, false,
+					  &job_ptr, &err_msg,
+					  msg->protocol_version, true, msg->index);
+#else
 		error_code = job_allocate(job_desc_msg,
 					  job_desc_msg->immediate,
 					  false, NULL, 0, msg->auth_uid, false,
 					  &job_ptr, &err_msg,
 					  msg->protocol_version);
+#endif
 		if (!job_ptr ||
 		    (error_code && job_ptr->job_state == JOB_FAILED))
 			reject_job = true;
@@ -4766,11 +4858,19 @@ static void _slurm_rpc_submit_batch_het_job(slurm_msg_t *msg)
 			}
 		}
 		job_desc_msg->het_job_offset = het_job_offset;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		error_code = job_allocate(job_desc_msg,
+					  job_desc_msg->immediate, false,
+					  NULL, alloc_only, msg->auth_uid,
+					  false, &job_ptr, &err_msg,
+					  msg->protocol_version, false, 0);
+#else
 		error_code = job_allocate(job_desc_msg,
 					  job_desc_msg->immediate, false,
 					  NULL, alloc_only, msg->auth_uid,
 					  false, &job_ptr, &err_msg,
 					  msg->protocol_version);
+#endif
 		if (!job_ptr ||
 		    (error_code && job_ptr->job_state == JOB_FAILED)) {
 			reject_job = true;
@@ -8114,6 +8214,10 @@ void slurmctld_req(slurm_msg_t *msg)
 			/* do not record RPC stats, we didn't process this */
 			return;
 		}
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+		if(this_rpc->no_throttle)
+			msg->flags |= SLURM_NO_THROTTLE_LOCK;
+#endif
 		(*(this_rpc->func))(msg);
 		END_TIMER;
 		record_rpc_stats(msg, DELTA_TIMER);

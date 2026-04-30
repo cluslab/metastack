@@ -2951,6 +2951,37 @@ _send_launch_resp(stepd_step_rec_t *step, int rc)
 	xfree(resp.node_name);
 }
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+void slurm_send_terminate_job(stepd_step_rec_t *step)
+{
+	slurm_msg_t msg;
+	kill_job_msg_t req;
+
+	slurm_msg_t_init(&msg);
+	memset(&req, 0, sizeof(kill_job_msg_t));
+	
+	req.step_id			= step->step_id;
+	req.nodes           = xstrdup(step->node_list);	
+	req.time            = time(NULL);
+	req.start_time      = step->job_start_time;
+	req.het_job_id      = step->het_job_id;
+	req.job_state       = STEP_SEND_TEMN_JOB;
+	msg.msg_type        = REQUEST_TERMINATE_JOB;
+	msg.data            = &req;
+
+	slurm_msg_set_r_uid(&msg, SLURM_AUTH_UID_ANY);
+
+	/* Get address for communication node */
+	if (slurm_conf_get_addr(req.nodes, &msg.address, 1) == SLURM_ERROR) {
+		error("Can't find address for host %s, check slurm.conf", req.nodes);
+		return;
+	}
+
+	/* Send message*/
+	slurm_send_msg_maybe(&msg);
+	debug("%s: send REQUEST_TERMINATE_JOB succeed", __func__);
+}
+#endif
 
 static int
 _send_complete_batch_script_msg(stepd_step_rec_t *step, int err, int status)
@@ -2987,6 +3018,14 @@ _send_complete_batch_script_msg(stepd_step_rec_t *step, int err, int status)
 		     &step->step_id, RETRY_DELAY);
 		sleep(RETRY_DELAY);
 	}
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	if (rc >= ESLURMD_ENABLED_STEPD_SEND_TERM_JOB) {
+		slurm_send_terminate_job(step);
+		debug("job %u has sent REQUEST_TERMINATE_JOB", step->step_id.job_id);
+		rc = rc % ESLURMD_ENABLED_STEPD_SEND_TERM_JOB;
+	}
+#endif
 
 	if ((rc == ESLURM_ALREADY_DONE) || (rc == ESLURM_INVALID_JOB_ID))
 		rc = SLURM_SUCCESS;

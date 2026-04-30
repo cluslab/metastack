@@ -61,7 +61,11 @@ int pmixp_stepd_send(const char *nodelist, const char *address,
 int pmixp_p2p_send(const char *nodename, const char *address, const char *data,
 		   uint32_t len, unsigned int start_delay,
 		   unsigned int retry_cnt, int silent);
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+int pmixp_mkdir(char *path, bool trusted);
+#else
 int pmixp_mkdir(char *path);
+#endif
 
 /* lightweight pmix list of pointers */
 #define PMIXP_LIST_DEBUG 0

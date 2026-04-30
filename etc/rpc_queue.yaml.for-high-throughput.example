@@ -1,0 +1,56 @@
+rpc_queue:
+  - type: "REQUEST_SUBMIT_BATCH_JOB"
+    max_per_cycle: 1000
+    yield_sleep: 230000
+    interval: 230000
+    # If only testing job submit performance, modify the values of yield_sleep and interval
+    # yield_sleep: 5000
+    # interval: 5000
+
+  - type: "REQUEST_JOB_USER_INFO"
+    disabled: true
+
+  - type: "REQUEST_JOB_INFO_SINGLE"
+    disabled: true
+
+  - type: "REQUEST_FED_INFO"
+    disabled: true
+
+  - type: "REQUEST_NODE_INFO"
+    disabled: true
+
+  - type: "REQUEST_PARTITION_INFO"
+    disabled: true
+
+  - type: "MESSAGE_EPILOG_COMPLETE"
+    max_per_cycle: 1000
+    yield_sleep: 5000
+    interval: 5000
+
+  - type: "REQUEST_COMPLETE_PROLOG"
+    max_per_cycle: 1000
+    yield_sleep: 5000
+    interval: 5000
+
+  - type: "REQUEST_COMPLETE_BATCH_SCRIPT"
+    max_per_cycle: 1000
+    yield_sleep: 5000
+    interval: 5000
+
+  - type: "REQUEST_JOB_STEP_CREATE"
+    disabled: true
+
+  - type: "MESSAGE_NODE_REGISTRATION_STATUS"
+    disabled: true
+
+  - type: "REQUEST_HET_JOB_ALLOC_INFO"
+    disabled: true
+
+  - type: "REQUEST_STEP_COMPLETE"
+    disabled: true
+
+  - type: "REQUEST_KILL_JOB"
+    disabled: true
+
+  - type: "REQUEST_JOB_INFO"
+    disabled: true

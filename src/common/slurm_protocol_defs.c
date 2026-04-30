@@ -236,6 +236,9 @@ extern void slurm_msg_t_init(slurm_msg_t *msg)
 	msg->conn_fd = -1;
 	msg->msg_type = NO_VAL16;
 	msg->protocol_version = NO_VAL16;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL
+	msg->index = 0;
+#endif
 
 #ifndef NDEBUG
 	msg->flags = drop_priv_flag;
@@ -1743,11 +1746,9 @@ extern void slurm_free_prolog_launch_msg(prolog_launch_msg_t * msg)
 		xfree(msg->watch_dog_script);
 #endif
 		FREE_NULL_LIST(msg->job_node_array);
-
 		FREE_NULL_BUFFER(msg->job_ptr_buf);
 		FREE_NULL_BUFFER(msg->job_node_array_buf);
 		FREE_NULL_BUFFER(msg->part_ptr_buf);
-
 		xfree(msg);
 	}
 }
@@ -1808,6 +1809,9 @@ extern void slurm_free_job_launch_msg(batch_job_launch_msg_t * msg)
 #endif
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		xfree(msg->apptype);
+#endif
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+		xfree(msg->tres_per_task);
 #endif
 		xfree(msg);
 	}
@@ -4123,6 +4127,10 @@ extern void slurm_free_resource_allocation_response_msg_members (
 		xfree(msg->tres_per_node);
 		slurmdb_destroy_cluster_rec(msg->working_cluster_rec);
 		xfree(msg->user_name);
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+		xfree(msg->tres_per_task);
+		xfree(msg->tres_bind);
+#endif
 	}
 }
 

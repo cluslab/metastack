@@ -101,7 +101,9 @@ extern ssize_t tls_p_recv(tls_conn_t *conn, void *buf, size_t n, int flags)
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/* Fixed bug 98700 */
+/* This function is a modified version of the original "tls_p_recv()", 
+ * specifically created to fix bug 98700. 
+ */
 extern ssize_t tls_p_recv1(tls_conn_t *conn, void *buf, size_t n, bool *connection_closed, int flags)
 {
 	ssize_t rc = recv(conn->fd, buf, n, 0);

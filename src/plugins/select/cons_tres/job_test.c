@@ -75,6 +75,10 @@ bool preempt_strict_order = false;
 bool preempt_for_licenses = false;
 int preempt_reorder_cnt	= 1;
 
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+bool disable_change_proc_dist;
+#endif
+
 /* Local functions */
 static avail_res_t *_allocate(job_record_t *job_ptr,
 			      bitstr_t *core_map,
@@ -2170,10 +2174,23 @@ alloc_job:
 	/** create the struct_job_res  **/
 	n = bit_set_count(node_bitmap);
 	cpu_count = xmalloc(sizeof(uint16_t) * n);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_BITMAP2NODENAME
+	node_record_t *n_ptr = NULL;
+	for (i = 0, j = 0; next_node_bitmap(node_bitmap, &i); i++) {
+		if (avail_res_array[i]) {
+			cpu_count[j++] = avail_res_array[i]->avail_cpus;
+			if (n == 1) {
+				n_ptr = node_record_table_ptr[i];
+			}
+		}
+	}
+#else
 	for (i = 0, j = 0; next_node_bitmap(node_bitmap, &i); i++) {
 		if (avail_res_array[i])
 			cpu_count[j++] = avail_res_array[i]->avail_cpus;
 	}
+#endif
+
 	if (j != n) {
 		error("problem building cpu_count array (%d != %d)",
 		      j, n);
@@ -2181,7 +2198,15 @@ alloc_job:
 
 	job_res                   = create_job_resources();
 	job_res->node_bitmap      = bit_copy(node_bitmap);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_BITMAP2NODENAME
+	if (n_ptr && n_ptr->name) {
+		job_res->nodes = xstrdup(n_ptr->name);
+	} else {
+		job_res->nodes = bitmap2node_name_sortable(node_bitmap, false);
+	}
+#else
 	job_res->nodes = bitmap2node_name_sortable(node_bitmap, false);
+#endif
 	job_res->nhosts           = n;
 	job_res->ncpus            = job_res->nhosts;
 	job_res->threads_per_core = job_ptr->details->mc_ptr->threads_per_core;
@@ -3204,7 +3229,11 @@ static avail_res_t *_allocate_sc(job_record_t *job_ptr, bitstr_t *core_map,
 				 bitstr_t *req_sock_map)
 {
 	uint16_t cpu_count = 0, part_cpu_limit = INFINITE16;
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+	uint16_t cps, avail_cpus = 0, num_tasks = 0, avail_cpus2 = 0;
+#else
 	uint16_t cps, avail_cpus = 0, num_tasks = 0;
+#endif
 	uint16_t req_sock_cpus = 0;
 	uint32_t c;
 	job_details_t *details_ptr = job_ptr->details;
@@ -3480,6 +3509,55 @@ static avail_res_t *_allocate_sc(job_record_t *job_ptr, bitstr_t *core_map,
 	 * If the job requests gres, then do not limit avail_cpus here.
 	 * avail_cpus will be limited later by gres_select_filter_sock_core.
 	 */
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+	if (disable_change_proc_dist && !job_ptr->gres_list_req) {
+		if (cpus_per_task < 2) {
+			avail_cpus = num_tasks;
+		} else if ((ntasks_per_core == 1) &&
+			   (cpus_per_task > threads_per_core)) {
+			/* find out how many cores a task will use */
+			int task_cores =
+				(cpus_per_task + threads_per_core - 1) /
+				threads_per_core;
+			int task_cpus  = task_cores * threads_per_core;
+			/* find out how many tasks can fit on a node */
+			int tasks = avail_cpus / task_cpus;
+			/* how many cpus the job would use on the node */
+			avail_cpus = tasks * task_cpus;
+			/* subtract out the extra cpus. */
+			avail_cpus -= (tasks * (task_cpus - cpus_per_task));
+		} else {
+			j = avail_cpus / cpus_per_task;
+			num_tasks = MIN(num_tasks, j);
+			avail_cpus = num_tasks * cpus_per_task;
+		}
+	} else if (!job_ptr->gres_list_req) {
+		if (cpus_per_task < 2) {
+			//avail_cpus = num_tasks;
+		} else if ((ntasks_per_core == 1) &&
+			   (cpus_per_task > threads_per_core)) {
+			/* find out how many cores a task will use */
+			int task_cores =
+				(cpus_per_task + threads_per_core - 1) /
+				threads_per_core;
+			int task_cpus  = task_cores * threads_per_core;
+			/* find out how many tasks can fit on a node */
+			int tasks = avail_cpus / task_cpus;
+			/* how many cpus the job would use on the node */
+			avail_cpus = tasks * task_cpus;
+			/* subtract out the extra cpus. */
+			avail_cpus -= (tasks * (task_cpus - cpus_per_task));
+		} else {
+			j = avail_cpus / cpus_per_task;
+			num_tasks = MIN(num_tasks, j);
+			avail_cpus2 = num_tasks * cpus_per_task;
+		}
+		log_flag(SELECT_TYPE, "disable_change_proc_dist = %s, %pJ: Node=%s core map will not be cleared in _allocate_sc() when using --ntasks-per-node or --cpus-per-task",
+			 disable_change_proc_dist ? "true" : "false",
+			 job_ptr,
+			 node_ptr->name);
+	}
+#else
 	if (!job_ptr->gres_list_req) {
 		if (cpus_per_task < 2) {
 			avail_cpus = num_tasks;
@@ -3501,7 +3579,8 @@ static avail_res_t *_allocate_sc(job_record_t *job_ptr, bitstr_t *core_map,
 			num_tasks = MIN(num_tasks, j);
 			avail_cpus = num_tasks * cpus_per_task;
 		}
-	}
+	}	
+#endif
 
 	/*
 	 * If there's an auto adjustment then use the max between the required
@@ -3614,6 +3693,11 @@ static avail_res_t *_allocate_sc(job_record_t *job_ptr, bitstr_t *core_map,
 	}
 
 fini:
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+	if (avail_cpus2 != 0) {
+		cpu_count = avail_cpus2;
+	}
+#endif
 	/* if num_tasks == 0 then clear all bits on this node */
 	if (num_tasks == 0) {
 		bit_clear_all(core_map);

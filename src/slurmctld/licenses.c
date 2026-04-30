@@ -223,8 +223,13 @@ static void _handle_consumed(licenses_t *license_entry, slurmdb_res_rec_t *rec)
 	if (rec->flags & SLURMDB_RES_FLAG_ABSOLUTE) {
 		license_entry->total = rec->clus_res_rec->allowed;
 	} else {
+#ifdef __METASTACK_BUG_ABNORMAL_LICENSE_COUNT
+		license_entry->total = (uint32_t)(((uint64_t)rec->count *
+					 rec->clus_res_rec->allowed) / 100);
+#else
 		license_entry->total = ((rec->count *
 					 rec->clus_res_rec->allowed) / 100);
+#endif
 	}
 
 	if (license_entry->total > rec->count) {

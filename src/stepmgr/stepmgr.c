@@ -75,6 +75,9 @@
 
 #include "src/stepmgr/gres_stepmgr.h"
 #include "src/stepmgr/srun_comm.h"
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+#include "src/slurmctld/slurmctld.h"
+#endif
 #ifdef __METASTACK_OPT_PMIX_AGENT
 #include "src/slurmctld/agent.h"
 
@@ -82,6 +85,9 @@ pthread_mutex_t agent_msg_mutex = PTHREAD_MUTEX_INITIALIZER;
 List signal_job_list = NULL;
 #endif
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+pthread_mutex_t last_job_update_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 typedef struct {
 	uint16_t flags;
@@ -556,7 +562,13 @@ extern void delete_step_records(job_record_t *job_ptr)
 	xassert(job_ptr);
 
 	remaining = list_count(job_ptr->step_list);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	slurm_mutex_lock(&last_job_update_mutex);
 	*stepmgr_ops->last_job_update = time(NULL);
+	slurm_mutex_unlock(&last_job_update_mutex);
+#else
+	*stepmgr_ops->last_job_update = time(NULL);
+#endif
 	list_delete_all(job_ptr->step_list, _step_not_cleaning, &remaining);
 }
 

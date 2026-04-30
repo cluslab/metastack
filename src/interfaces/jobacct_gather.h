@@ -342,6 +342,10 @@ extern void jobacct_gather_handle_mem_limit(uint64_t total_job_mem,
 
 extern jobacctinfo_t *jobacctinfo_create(jobacct_id_t *jobacct_id);
 extern void jobacctinfo_destroy(void *object);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+extern void mem_pool_jobacctinfo_destroy(void *object);
+extern void jobacctinfo_reuse(void *object);
+#endif
 extern int jobacctinfo_setinfo(jobacctinfo_t *jobacct,
 			       enum jobacct_data_type type, void *data,
 			       uint16_t protocol_version);

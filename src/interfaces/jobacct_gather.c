@@ -72,6 +72,10 @@
 #include "src/common/slurmdbd_defs.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+#include "src/common/pre_process.h"
+#endif
+
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
 #include "src/slurmdbd/read_config.h"
 #ifdef __METASTACK_OPT_SSTAT_CPUUTIL
@@ -2209,6 +2213,28 @@ extern jobacctinfo_t *jobacctinfo_create(jobacct_id_t *jobacct_id)
 
 	if (plugin_inited == PLUGIN_NOOP)
 		return NULL;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
+	if(pre_process_data && pre_process_data->pre_jobacctinfo_list){
+		assoc_mgr_lock(&locks);
+		while ((jobacct = list_pop(pre_process_data->pre_jobacctinfo_list))) {
+			if(jobacct->tres_count == g_tres_count){
+				break;
+			}else if(pre_process_data->purge_jobacctinfo_list){
+				list_append(pre_process_data->purge_jobacctinfo_list, jobacct);
+				jobacct = NULL;
+			}else{
+				mem_pool_jobacctinfo_destroy(jobacct);
+				jobacct = NULL;
+			}
+		}
+		assoc_mgr_unlock(&locks);
+		if(jobacct){
+			pre_process_update();
+			return jobacct;
+		}
+	}
+#endif
 
 	jobacct = xmalloc(sizeof(struct jobacctinfo));
 
@@ -2252,10 +2278,163 @@ extern jobacctinfo_t *jobacctinfo_create(jobacct_id_t *jobacct_id)
 extern void jobacctinfo_destroy(void *object)
 {
 	struct jobacctinfo *jobacct = (struct jobacctinfo *)object;
-
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	if(jobacct && pre_process_data && pre_process_data->purge_jobacctinfo_list){
+		list_append(pre_process_data->purge_jobacctinfo_list, jobacct);
+		return;
+	}
+#endif
 	_free_tres_usage(jobacct);
 	xfree(jobacct);
 }
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+extern void mem_pool_jobacctinfo_destroy(void *object)
+{
+	struct jobacctinfo *jobacct = (struct jobacctinfo *)object;
+	_free_tres_usage(jobacct);
+	xfree(jobacct);
+}
+
+/* Reset jobacctinfo structure data.*/
+extern void jobacctinfo_reuse(void *object)
+{
+	int i;
+	struct jobacctinfo *jobacct = (struct jobacctinfo *)object;
+
+	if (!jobacct)
+		return;
+
+	jobacct->pid = 0;
+	jobacct->act_cpufreq = 0;
+	jobacct->last_total_cputime = 0.0;
+	jobacct->this_sampled_cputime = 0.0;
+	jobacct->current_weighted_freq = 0;
+	jobacct->current_weighted_power = 0;
+	jobacct->last_tres_usage_in_tot = 0.0;
+	jobacct->last_tres_usage_out_tot = 0.0;
+	jobacct->cur_time = 0;
+	jobacct->last_time = 0;
+
+#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
+	jobacct->cur_time_ns = 0;
+#endif
+
+
+#ifdef __METASTACK_OPT_SSTAT_CPUUTIL
+	jobacct->first_acct_time.tv_sec = 0;
+	jobacct->first_acct_time.tv_usec = 0;
+	jobacct->pre1_acct_time.tv_sec = 0;
+	jobacct->pre1_acct_time.tv_usec = 0;
+	jobacct->cur_acct_time.tv_sec = 0;
+	jobacct->cur_acct_time.tv_usec = 0;
+
+	jobacct->first_total_cputime = 0.0;
+	jobacct->pre1_total_cputime = 0.0;
+
+	jobacct->avg_cpu_util = 0.0;
+	jobacct->max_cpu_util = 0.0;
+	jobacct->min_cpu_util = 0.0;
+	jobacct->cpu_util = 0.0;
+#endif
+
+#ifdef __METASTACK_NEW_LOAD_ABNORMAL
+	jobacct->cpu_step_ave = 0.0;
+	jobacct->cpu_step_max = 0.0;
+	jobacct->cpu_step_min = 0.0;
+	jobacct->cpu_step_real = 0.0;
+
+	jobacct->mem_step_max = 0;
+	jobacct->mem_step_min = 0;
+	jobacct->mem_step = 0;
+
+	jobacct->vmem_step_max = 0;
+	jobacct->vmem_step_min = 0;
+	jobacct->vmem_step = 0;
+
+	jobacct->node_alloc_cpu = 0;
+	jobacct->timer = 0;
+	jobacct->cpu_threshold = 100;
+
+	jobacct->flag = 0;
+
+	jobacct->step_pages = 0;
+	jobacct->acct_flag = 0;
+	jobacct->cpu_count = 0;
+	jobacct->pid_count = 0;
+	jobacct->node_count = 0;
+
+	int alloc_start_end_size = JOBACCTINFO_START_END_ARRAY_SIZE * sizeof(time_t);
+	if(jobacct->cpu_start){
+		memset(jobacct->cpu_start, 0, sizeof(*jobacct->cpu_start));
+	}else{
+		jobacct->cpu_start = xmalloc(alloc_start_end_size);
+	}
+	if(jobacct->cpu_end){
+		memset(jobacct->cpu_end, 0, sizeof(*jobacct->cpu_end));
+	}else{
+		jobacct->cpu_end = xmalloc(alloc_start_end_size);
+	}
+	if(jobacct->pid_start){
+		memset(jobacct->pid_start, 0, sizeof(*jobacct->pid_start));
+	}else{
+		jobacct->pid_start = xmalloc(alloc_start_end_size);
+	}
+	if(jobacct->pid_end){
+		memset(jobacct->pid_end, 0, sizeof(*jobacct->pid_end));
+	}else{
+		jobacct->pid_end = xmalloc(alloc_start_end_size);
+	}
+	if(jobacct->node_start){
+		memset(jobacct->node_start, 0, sizeof(*jobacct->node_start));
+	}else{
+		jobacct->node_start = xmalloc(alloc_start_end_size);
+	}
+	if(jobacct->node_end){
+		memset(jobacct->node_end, 0, sizeof(*jobacct->node_end));
+	}else{
+		jobacct->node_end = xmalloc(alloc_start_end_size);
+	}
+#endif
+	jobacct->dataset_id = -1;
+	jobacct->sys_cpu_sec = 0;
+	jobacct->sys_cpu_usec = 0;
+	jobacct->user_cpu_sec = 0;
+	jobacct->user_cpu_usec = 0;
+
+#ifdef __METASTACK_OPT_INFLUXDB_ENFORCE
+	if(jobacct->pjobs) 
+		FREE_NULL_LIST(jobacct->pjobs);
+	jobacct->pjobs = NULL;
+#endif
+	if (jobacct->tres_list && (jobacct->tres_list != assoc_mgr_tres_list)){
+		FREE_NULL_LIST(jobacct->tres_list);
+	}else if(jobacct->tres_list == assoc_mgr_tres_list){
+		jobacct->tres_list = NULL;
+	}
+		
+	for (i = 0; i < jobacct->tres_count; i++) {
+
+		jobacct->tres_usage_in_min[i] = INFINITE64;
+		jobacct->tres_usage_in_max[i] = INFINITE64;
+		jobacct->tres_usage_in_tot[i] = INFINITE64;
+		jobacct->tres_usage_out_max[i] = INFINITE64;
+		jobacct->tres_usage_out_min[i] = INFINITE64;
+		jobacct->tres_usage_out_tot[i] = INFINITE64;
+
+		jobacct->tres_usage_in_max_taskid[i] = INFINITE64;
+		jobacct->tres_usage_in_min_taskid[i] = INFINITE64;
+		jobacct->tres_usage_out_max_taskid[i] = INFINITE64;
+		jobacct->tres_usage_out_min_taskid[i] = INFINITE64;
+
+		jobacct->tres_usage_in_max_nodeid[i] = INFINITE64;
+		jobacct->tres_usage_in_min_nodeid[i] = INFINITE64;
+		jobacct->tres_usage_out_max_nodeid[i] = INFINITE64;
+		jobacct->tres_usage_out_min_nodeid[i] = INFINITE64;
+
+	}
+}
+#endif
 
 extern int jobacctinfo_setinfo(jobacctinfo_t *jobacct,
 			       enum jobacct_data_type type, void *data,
@@ -2284,7 +2463,6 @@ extern int jobacctinfo_setinfo(jobacctinfo_t *jobacct,
 		if (protocol_version >= SLURM_MIN_PROTOCOL_VERSION) {
 			int len;
 			assoc_mgr_lock_t locks = { .tres = READ_LOCK };
-
 			buffer = init_buf(0);
 
 			if (jobacct) {

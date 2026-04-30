@@ -120,6 +120,14 @@ uint16_t part_cachedup_realtime = 0;
 time_t last_node_info = 0;
 #endif
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+uint16_t throttle_flags = 0;
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+bool stepd_send_term_job = false;
+#endif
+
 #ifndef NDEBUG
 uint16_t drop_priv_flag = 0;
 #endif
@@ -1078,6 +1086,34 @@ static void _destroy_rl_users(void *ptr)
 		xfree(rl_users->rl_config);
 		xfree(ptr);
 	}
+}
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL
+int rpc_queue_pool_size = 0;
+bool rpc_queue_pool_enabled = false;
+
+extern void rpc_queue_thread_pool_init(void) {
+	char *tmp_ptr = NULL;
+	rpc_queue_pool_size = 0;
+
+	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params, "rpc_queue_pool_size="))) {
+		int tmp_cnt = atoi(tmp_ptr + 20);
+		if (tmp_cnt > 1) {
+			if (tmp_cnt > MAX_THREAD_POOL_SIZE) {
+				rpc_queue_pool_size = 0;
+				rpc_queue_pool_enabled = false;
+				error("rpc_queue_pool_size is too large, use default value 0.");
+			} else {
+				rpc_queue_pool_size = tmp_cnt;
+				rpc_queue_pool_enabled = true;
+			}
+		} else {
+			rpc_queue_pool_enabled = false;
+			error("The value of rpc_queue_pool_size in SlurmctldParameters is invalid. Ignore it.");
+		}
+	}
+	info("%s: rpc_queue_pool is %s, rpc_queue_pool_size: %d", __func__, rpc_queue_pool_enabled ? "enabled" : "disabled", rpc_queue_pool_size);
 }
 #endif
 
@@ -4145,6 +4181,7 @@ static int _init_slurm_conf(const char *file_name)
 		cachedup_realtime = 0;
 	}
 #endif
+
 	return rc;
 }
 
@@ -4360,6 +4397,30 @@ extern void slurm_conf_init_stepd(void)
 
 	conf_initialized = true;
 }
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+extern void step_complete_throttle_init(void) {
+	if (xstrcasestr(conf_ptr->slurmctld_params, "no_step_complete_throttle")) {
+		throttle_flags |= REQUEST_STEP_COMPLETE_THROTTLR;
+	}else{
+		throttle_flags = 0;
+	}
+}
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+extern void stepd_send_term_job_init(void) {
+	if (xstrcasestr(conf_ptr->slurmctld_params, "stepd_send_term_job")) {
+		if(conf_ptr->prolog_flags & PROLOG_FLAG_RUN_IN_JOB){
+			stepd_send_term_job = true;
+			debug("Batch stepd send terminated job msg is enabled.");
+		}else{
+			stepd_send_term_job = false;
+			warning("The batch terminated job message sending cannot be enabled when RunInJob is not set in PrologFlags.");
+		}
+	}
+}
+#endif
 
 extern int slurm_conf_init(const char *file_name)
 {

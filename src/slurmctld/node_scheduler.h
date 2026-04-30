@@ -144,9 +144,15 @@ extern void re_kill_job(job_record_t *job_ptr);
 			bitstr_t **select_node_bitmap, char **err_msg,
 			bool submission, uint32_t scheduler_type); */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+extern int select_nodes(job_record_t *job_ptr, bool test_only,
+			bitstr_t **select_node_bitmap, char **err_msg,		
+			bool submission, uint32_t scheduler_type, bool sched, int index, bool submit, int worker_index);
+#else
 extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			bitstr_t **select_node_bitmap, char **err_msg,		
 			bool submission, uint32_t scheduler_type, bool sched, int index);
+#endif
 #endif
 /*
  * get_node_cnts - determine the number of nodes for the requested job.

@@ -545,6 +545,10 @@ typedef struct {
  */
 extern bool slurm_option_get_tres_per_tres(
 	char *in_val, char *tres_name, uint64_t *cnt, char **save_ptr, int *rc);
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+/* Get cpus per task count from tres_per_task string */
+extern uint16_t slurm_opt_get_tres_per_task_cpu_cnt(char *tres_per_task);
+#endif
 
 extern struct option *slurm_option_table_create(slurm_opt_t *opt,
 						char **opt_string);

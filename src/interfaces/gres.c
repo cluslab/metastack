@@ -2299,8 +2299,8 @@ unpack_error:
 static void _pack_context_buf(void)
 {
 	FREE_NULL_BUFFER(gres_context_buf);
-
 	gres_context_buf = init_buf(0);
+
 	pack32(gres_context_cnt, gres_context_buf);
 	if (gres_context_cnt <= 0) {
 		debug3("%s: No GRES context count sent to stepd", __func__);
@@ -2346,8 +2346,8 @@ static void _pack_gres_conf(void)
 {
 	int len = 0;
 	FREE_NULL_BUFFER(gres_conf_buf);
-
 	gres_conf_buf = init_buf(0);
+
 	pack32(autodetect_flags, gres_conf_buf);
 
 	/* If there is no list to send, let the stepd know */

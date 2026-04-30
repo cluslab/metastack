@@ -443,6 +443,100 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_SCONTROL_UPDATE_JOBGRES
 #endif
 
+#ifndef __METASTACK_BUG_PROCESS_DISTRIBUTION
+#define __METASTACK_BUG_PROCESS_DISTRIBUTION
+#endif
+
+
+/*
+	Fix the bug where some environment variables were not updated after 
+	modifying the job resources.
+*/
+#ifndef __METASTACK_BUG_UPDATE_JOB_ENV
+#define __METASTACK_BUG_UPDATE_JOB_ENV
+#endif
+
+#ifndef __METASTACK_BUG_FORKSTEPD_FD_LEAK
+#define __METASTACK_BUG_FORKSTEPD_FD_LEAK
+#endif
+
+/*
+ * Fixed an issue where sending update_list from slurmdbd to slurmctld fails 
+ * when the connection file descriptor is -1, causing user addition failures in slurmctld memory.
+*/
+#ifndef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+#define __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+#endif
+
+/*****************************************************************************\
+ *	DEFINITIONS FOR HIGH THROUGHPUT OPTIMIZATION
+\*****************************************************************************/
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+#define __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+#endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+#define __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+#endif
+
+#ifndef __METASTACK_BUG_STEPD_CLOSE_FD
+#define __METASTACK_BUG_STEPD_CLOSE_FD
+#endif
+
+#ifndef __METASTACK_BUG_DEL_YAML_EVENT
+#define __METASTACK_BUG_DEL_YAML_EVENT
+#endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_SRUN_JOB_COM
+#define __METASTACK_OPT_HIGH_THROUGHPUT_SRUN_JOB_COM
+#endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_BITMAP2NODENAME
+#define __METASTACK_OPT_HIGH_THROUGHPUT_BITMAP2NODENAME
+#endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_AGENT_THREAD_POOL
+#define __METASTACK_OPT_HIGH_THROUGHPUT_AGENT_THREAD_POOL
+#endif
+
+/* Thread pool for RPC queue*/
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL
+#define __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL
+#endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+#define __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+#endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+#define __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+#endif
+
+#if (defined __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL) || (defined __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL)
+#define __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL
+#endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+#define __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+#endif
+
+#ifndef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+#define __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+#endif
+
+#ifndef __METASTACK_BUG_ABNORMAL_LICENSE_COUNT
+#define __METASTACK_BUG_ABNORMAL_LICENSE_COUNT
+#endif
+
+#ifndef __METASTACK_BUG_NULL_ASSOC_LIST
+#define __METASTACK_BUG_NULL_ASSOC_LIST
+#endif
+
+#ifndef __METASTACK_BUG_NULL_GS_PART_LIST
+#define __METASTACK_BUG_NULL_GS_PART_LIST
+#endif
+
 /*****************************************************************************\
  *	DEFINITIONS FOR POSIX VALUES
 \*****************************************************************************/
@@ -646,6 +740,10 @@ enum job_states {
 
 #ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
 #define JOB_PROLOG_MAXREQUEUE_HOLD  SLURM_BIT(27) /* Requeue jobs in hold when failed to run prologue for much times */
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+#define STEP_SEND_TEMN_JOB     SLURM_BIT(28) /* The step sends a temn job message */
 #endif
 
 #define READY_JOB_FATAL	   -2	/* fatal error */
@@ -1802,6 +1900,15 @@ typedef int (*ListForF) (void *x, void *arg);
  *  Function prototype for operating on each item in a list.
  *  Returns less-than-zero on error.
  */
+
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+/* TExtends the ListForF type by adding a retry_count 
+ * parameter to implement response timeout calculation 
+ * that increases with each retry attempt. 
+ */
+typedef int (*ListForF_FixBug) (void *x, void *arg, int retry_count);
+#endif
+
 #endif
 
 /* slurm_list_append():
@@ -3060,6 +3167,10 @@ typedef struct resource_allocation_response_msg {
 	char *qos;               /* allocation qos */
 	char *resv_name;         /* allocation reservation */
 	char *tres_per_node; /* comma delimited list of TRES=# values */
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	char *tres_per_task; /* comma delimited list of TRES=# values */
+	char *tres_bind;
+#endif
 	uid_t uid; /* resolved user id of job */
 	char *user_name; /* resolved user name of job */
 	void *working_cluster_rec; /* Cluster to direct remaining messages to.

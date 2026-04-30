@@ -295,8 +295,14 @@ extern void verify_job_state_cache_synced(void)
 extern void job_state_set(job_record_t *job_ptr, uint32_t state)
 {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
-	if (!para_sched) {		
+	if (!para_sched) {	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL	
+		if (!para_submit) {
+			xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+		}
+#else
 		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+#endif
 	}
 #endif
 	_check_job_state(state);
@@ -312,7 +318,19 @@ extern void job_state_set_flag(job_record_t *job_ptr, uint32_t flag)
 	uint32_t job_state;
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
-	if (!para_sched) {		
+	if (!para_sched) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (!enable_para_epilog) {
+			if (flag == JOB_UPDATE_DB)
+				/*
+				* As stated in _set_db_inx_thread(), a db update will use the
+				* JOB_READ_LOCK
+				*/
+				xassert(verify_lock(JOB_LOCK, READ_LOCK));
+			else
+				xassert(verify_lock(JOB_LOCK, WRITE_LOCK));		
+		}
+#else
 		if (flag == JOB_UPDATE_DB)
 			/*
 			* As stated in _set_db_inx_thread(), a db update will use the
@@ -321,6 +339,7 @@ extern void job_state_set_flag(job_record_t *job_ptr, uint32_t flag)
 			xassert(verify_lock(JOB_LOCK, READ_LOCK));
 		else
 			xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+#endif
 	}
 #endif
 
@@ -341,7 +360,13 @@ extern void job_state_unset_flag(job_record_t *job_ptr, uint32_t flag)
 	uint32_t job_state;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	if (!para_sched) {	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (!enable_para_epilog) {
+			xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+		}
+#else
 		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+#endif
 	}
 #endif
 		

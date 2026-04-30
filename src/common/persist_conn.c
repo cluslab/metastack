@@ -55,6 +55,10 @@
 #include "src/interfaces/auth.h"
 #include "src/interfaces/tls.h"
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+#include "src/slurmdbd/read_config.h"
+#endif
+
 #define MAX_THREAD_COUNT 100
 
 typedef struct {
@@ -112,8 +116,9 @@ static bool _comm_fail_log(persist_conn_t *persist_conn)
 /* } */
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/* Wait until a file is readable,
- * RET false if can not be read */
+/* This function is a modified version of the original "_conn_readable()", 
+ * specifically created to fix bug 98700. 
+ */
 static bool _conn_readable1(persist_conn_t *persist_conn)
 {
 	struct pollfd ufds;
@@ -123,7 +128,11 @@ static bool _conn_readable1(persist_conn_t *persist_conn)
 
 	/* Fixed bug 98700 */
 	if (!persist_conn->timeout) {
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+		persist_conn->timeout = slurmdbd_conf->send_ctld_update_timeout * 1000;
+#else
 		persist_conn->timeout = 5000;
+#endif
 	}
 
 	ufds.fd     = persist_conn->fd;
@@ -718,10 +727,9 @@ static int _open_persist_conn(persist_conn_t *persist_conn)
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/* Open a persistent socket connection
- * IN/OUT - persistent connection needing rem_host and rem_port filled in.
- * Returned completely filled in.
- * Returns SLURM_SUCCESS on success or SLURM_ERROR on failure */
+/* This function is a modified version of the original "slurm_persist_conn_open()", 
+ * specifically created to fix bug 98700. 
+ */
 extern int slurm_persist_conn_open1(persist_conn_t *persist_conn)
 {
 	int rc = SLURM_ERROR;
@@ -950,6 +958,9 @@ extern void slurm_persist_conn_close(persist_conn_t *persist_conn)
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
+/* This function is a modified version of the original "slurm_persist_conn_reopen()", 
+ * specifically created to fix bug 98700.
+ */
 extern int slurm_persist_conn_reopen1(persist_conn_t *persist_conn)
 {
 	slurm_persist_conn_close(persist_conn);
@@ -1168,10 +1179,8 @@ extern int slurm_persist_conn_writeable(persist_conn_t *persist_conn)
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/* Wait until a file is writeable,
- * RET 1 if file can be written now,
- *     0 if can not be written to within 5 seconds
- *     -1 if file has been closed POLLHUP
+/* This function is a modified version of the original "slurm_persist_conn_writeable()", 
+ * specifically created to fix bug 98700.
  */
 extern int slurm_persist_conn_writeable1(persist_conn_t *persist_conn)
 {
@@ -1271,6 +1280,9 @@ extern int slurm_persist_conn_writeable1(persist_conn_t *persist_conn)
 	return 0;
 }
 
+/* This function is a modified version of the original "slurm_persist_send_msg()", 
+ * specifically created to fix bug 98700.
+ */
 extern int slurm_persist_send_msg1(persist_conn_t *persist_conn,
 				  buf_t *buffer)
 {
@@ -1395,6 +1407,9 @@ extern int slurm_persist_send_msg(persist_conn_t *persist_conn,
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
+/* This function is a modified version of the original "_slurm_persist_recv_msg()", 
+ * specifically created to fix bug 98700.
+ */
 static buf_t *_slurm_persist_recv_msg1(persist_conn_t *persist_conn,
 				      bool reopen)
 {
@@ -1490,6 +1505,14 @@ static buf_t *_slurm_persist_recv_msg1(persist_conn_t *persist_conn,
 	return buffer;
 
 endit:
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+/* A response timeout does not necessarily indicate that the connection is broken, 
+ * so the connection is not reopened.
+ */
+	if (persist_conn->flags & PERSIST_FLAG_TIMEOUT) {
+		reopen = false;
+	}
+#endif
 	/* Close it since we abandoned it.  If the connection does still exist
 	 * on the other end we can't rely on it after this point since we didn't
 	 * listen long enough for this response.
@@ -1593,6 +1616,9 @@ endit:
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
+/* This function is a modified version of the original "slurm_persist_recv_msg()", 
+ * specifically created to fix bug 98700.
+ */
 extern buf_t *slurm_persist_recv_msg1(persist_conn_t *persist_conn)
 {
 	return _slurm_persist_recv_msg1(persist_conn, true);

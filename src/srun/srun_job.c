@@ -772,11 +772,18 @@ extern void init_srun(int argc, char **argv, log_options_t *logopt,
 /*
  * Modify options for a job step (after job allocaiton is complete
  */
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+static void _set_step_opts(slurm_opt_t *opt_local,
+			   resource_allocation_response_msg_t *resp)
+#else
 static void _set_step_opts(slurm_opt_t *opt_local)
+#endif
 {
 	srun_opt_t *srun_opt = opt_local->srun_opt;
 	xassert(srun_opt);
-
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	int new_cpt = 0;
+#endif
 	opt_local->time_limit = NO_VAL;/* not applicable for step, only job */
 	xfree(opt_local->constraint);	/* not applicable for this step */
 	if ((srun_opt->core_spec_set || srun_opt->exclusive)
@@ -788,6 +795,22 @@ static void _set_step_opts(slurm_opt_t *opt_local)
 		/* Step gets all CPUs in the job allocation. */
 		srun_opt->exclusive = false;
 	}
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	new_cpt = slurm_opt_get_tres_per_task_cpu_cnt(resp->tres_per_task);
+	if (new_cpt)
+		opt_local->cpus_per_task = new_cpt;
+
+	if (resp->tres_per_task) {
+		xfree(opt_local->tres_per_task);
+		SWAP(opt_local->tres_per_task, resp->tres_per_task);
+	}
+
+	if (resp->tres_bind) {
+		xfree(opt_local->tres_bind);
+		SWAP(opt_local->tres_bind, resp->tres_bind);
+	}
+#endif
+
 }
 
 static int _handle_het_step_exclude(srun_job_t *job, slurm_opt_t *opt_local,
@@ -1485,7 +1508,12 @@ extern void create_srun_job(void **p_job, bool *got_alloc)
 				job = job_create_allocation(resp, opt_local);
 				job->het_job_offset = het_job_offset;
 				list_append(srun_job_list, job);
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+				_set_step_opts(opt_local, resp);
+#else
 				_set_step_opts(opt_local);
+#endif
+
 			}
 			list_iterator_destroy(opt_iter);
 			list_iterator_destroy(resp_iter);
@@ -1508,7 +1536,12 @@ extern void create_srun_job(void **p_job, bool *got_alloc)
 				exit(error_exit);
 			}
 			job = job_create_allocation(resp, &opt);
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+			_set_step_opts(&opt, resp);
+#else
 			_set_step_opts(&opt);
+#endif
+
 		}
 		if (srun_job_list && (list_count(srun_job_list) > 1) &&
 		    opt_list && (list_count(opt_list) > 1) && my_job_id) {

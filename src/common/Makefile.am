@@ -1,4 +1,5 @@
 # Makefile for common library
+#__METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
 
 AUTOMAKE_OPTIONS = foreign
 
@@ -101,6 +102,8 @@ libcommon_la_SOURCES =				\
 	plugrack.h				\
 	port_mgr.c				\
 	port_mgr.h				\
+	pre_process.c				\
+	pre_process.h				\
 	print_fields.c				\
 	print_fields.h				\
 	proc_args.c				\

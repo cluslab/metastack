@@ -544,6 +544,10 @@ struct job_record {
 #ifdef __METASTACK_NEW_PENDING_ORDER
 	uint32_t pending_order;
 #endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	bool comp_batch_flag;		/* true if job is processed compute batch job message */
+	bool enable_stepd_send_term_job; /* true if stepd send terminal job message */
+#endif
 };
 
 #ifdef __METASTACK_OPT_REDUCE_REPEAT_SCHED

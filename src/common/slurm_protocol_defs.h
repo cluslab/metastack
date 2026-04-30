@@ -334,6 +334,9 @@ typedef struct slurm_msg {
 	forward_struct_t *forward_struct;
 	slurm_addr_t orig_addr;
 	List ret_list;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL
+	int index;
+#endif
 } slurm_msg_t;
 
 typedef struct ret_data_info {
@@ -982,6 +985,9 @@ typedef struct batch_job_launch_msg {
 	char *tres_bind;	/* task binding to TRES (e.g. GPUs),
 				 * included for possible future use */
 	char *tres_freq;	/* frequency/power for TRES (e.g. GPUs) */
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	char *tres_per_task;	/* semicolon delimited list of TRES=# values */
+#endif
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	char *watch_dog;
 	char *watch_dog_script;		/* location of the script */

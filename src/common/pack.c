@@ -61,6 +61,9 @@
 #include "src/common/pack.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xassert.h"
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+#include "src/common/pre_process.h"
+#endif
 #include "src/slurmdbd/read_config.h"
 
 /*
@@ -185,13 +188,52 @@ void free_buf(buf_t *my_buf)
 	if (!my_buf)
 		return;
 	xassert(my_buf->magic == BUF_MAGIC);
-	if (my_buf->mmaped)
+	if (my_buf->mmaped){
 		munmap(my_buf->head, my_buf->size);
-	else if (!my_buf->shadow)
+	}else if (!my_buf->shadow){
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+		if(my_buf->size == BUF_SIZE_16K || my_buf->size == BUF_SIZE_4K ||
+			my_buf->size == BUF_SIZE_256K || my_buf->size == BUF_SIZE_1M){
+			if(pre_process_data && pre_process_data->purge_buf_list){
+				list_append(pre_process_data->purge_buf_list, my_buf);
+				return;
+			}
+		}
+#endif
 		xfree(my_buf->head);
-
+	}
 	xfree(my_buf);
 }
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+extern void mem_pool_free_buf(void *buffer)
+{
+	buf_t *my_buf = buffer;
+	if (!my_buf)
+		return;
+	xassert(my_buf->magic == BUF_MAGIC);
+	if (my_buf->mmaped){
+		munmap(my_buf->head, my_buf->size);
+	}else if (!my_buf->shadow){
+		xfree(my_buf->head);
+	}
+	xfree(my_buf);
+}
+
+buf_t *mem_pool_init_buf(uint32_t size)
+{
+	buf_t *my_buf;
+
+	my_buf = xmalloc(sizeof(*my_buf));
+	my_buf->magic = BUF_MAGIC;
+	my_buf->size = size;
+	my_buf->processed = 0;
+	my_buf->head = xmalloc(size);
+	my_buf->mmaped = false;
+	my_buf->shadow = false;
+	return my_buf;
+}
+#endif
 
 /* Grow a buffer by the specified amount */
 void grow_buf(buf_t *buffer, uint32_t size)
@@ -262,6 +304,34 @@ buf_t *init_buf(uint32_t size)
 
 	if (size <= 0)
 		size = BUF_SIZE;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	list_t *buf_list = NULL;
+	if(pre_process_data){
+		switch (size) {
+			case BUF_SIZE_4K:
+				buf_list = pre_process_data->pre_init_buf_4K;
+				break;
+			case BUF_SIZE_16K:
+				buf_list = pre_process_data->pre_init_buf_16K;
+				break;
+			case BUF_SIZE_256K:
+				buf_list = pre_process_data->pre_init_buf_256K;
+				break;
+			case BUF_SIZE_1M:
+				buf_list = pre_process_data->pre_init_buf_1M;
+				break;
+			default:
+				buf_list = NULL;
+				break;
+		}
+		if(buf_list){
+			my_buf = list_pop(buf_list);
+			if(my_buf){
+				return my_buf;
+			}
+		}
+	}
+#endif
 	my_buf = xmalloc(sizeof(*my_buf));
 	my_buf->magic = BUF_MAGIC;
 	my_buf->size = size;

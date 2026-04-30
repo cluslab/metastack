@@ -118,6 +118,9 @@ static void _clear_slurmdbd_conf(void)
 		xfree(slurmdbd_conf->uid_save_location);
 		slurmdbd_conf->uid_save_interval = 0;
 #endif
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+		slurmdbd_conf->send_ctld_update_timeout	= NO_VAL16;
+#endif
 		xfree(slurmdbd_conf->storage_loc);
 		slurmdbd_conf->track_wckey = 0;
 		slurmdbd_conf->track_ctld = 0;
@@ -194,6 +197,9 @@ extern int read_slurmdbd_conf(void)
 		{"SaveUid", S_P_BOOLEAN},
 		{"UidSaveLocation", S_P_STRING},
 		{"UidSaveInterval", S_P_UINT16},
+#endif
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+		{"SendCtldUpdateTimeout", S_P_UINT16},
 #endif
 		{"StepPurge", S_P_UINT32},
 		{"StorageBackupHost", S_P_STRING},
@@ -640,6 +646,16 @@ extern int read_slurmdbd_conf(void)
 		}
 #endif
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+		if (!s_p_get_uint16(&slurmdbd_conf->send_ctld_update_timeout, 
+				   "SendCtldUpdateTimeout", tbl)) {
+			slurmdbd_conf->send_ctld_update_timeout = DEFAULT_SEND_CTLD_UPDATE_TIMEOUT;
+		} else if (slurmdbd_conf->send_ctld_update_timeout < 5) {
+			error("SendCtldUpdateTimeout value less than 5 seconds, replace with default value of %u seconds.", DEFAULT_SEND_CTLD_UPDATE_TIMEOUT);
+			slurmdbd_conf->send_ctld_update_timeout = DEFAULT_SEND_CTLD_UPDATE_TIMEOUT;	
+		}
+#endif
+
 		if (s_p_get_uint32(&slurmdbd_conf->purge_step,
 				   "StepPurge", tbl)) {
 			if (!slurmdbd_conf->purge_step)
@@ -1013,6 +1029,11 @@ extern List dump_config(void)
 #ifdef __METASTACK_ASSOC_HASH
 	add_key_pair_bool(my_list, "SaveUid", 
 			  slurmdbd_conf->save_uid);
+#endif
+
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+	add_key_pair(my_list, "SendCtldUpdateTimeout", "%u secs", 
+		     slurmdbd_conf->send_ctld_update_timeout);
 #endif
 
 	add_key_pair_own(my_list, "SLURMDBD_CONF",

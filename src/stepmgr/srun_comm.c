@@ -50,6 +50,10 @@
 
 #include "src/stepmgr/stepmgr.h"
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SRUN_JOB_COM
+bool ignore_srun_job_complete = false;
+#endif
+
 /* Launch the srun request. Note that retry is always zero since
  * we don't want to clog the system up with messages destined for
  * defunct srun processes
@@ -441,6 +445,22 @@ extern void srun_job_complete(job_record_t *job_ptr)
 	if (running_in_slurmctld() &&
 	    job_ptr->batch_host &&
 	    (job_ptr->bit_flags & STEPMGR_ENABLED)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SRUN_JOB_COM
+		if (ignore_srun_job_complete && IS_JOB_COMPLETE(job_ptr)) {
+			debug3("Skipping SRUN_JOB_COMPLETE message for job %u due to ignore_srun_job_complete setting", job_ptr->job_id);
+		} else {
+			srun_job_complete_msg_t *msg_arg;
+
+			msg_arg = xmalloc(sizeof(*msg_arg));
+			msg_arg->job_id = job_ptr->job_id;
+			msg_arg->step_id = NO_VAL;
+			msg_arg->step_het_comp = NO_VAL;
+
+			_srun_agent_launch(NULL, job_ptr->batch_host, SRUN_JOB_COMPLETE,
+					msg_arg, slurm_conf.slurmd_user_id,
+					job_ptr->start_protocol_ver);
+		}
+#else
 		srun_job_complete_msg_t *msg_arg;
 
 		msg_arg = xmalloc(sizeof(*msg_arg));
@@ -451,9 +471,10 @@ extern void srun_job_complete(job_record_t *job_ptr)
 		_srun_agent_launch(NULL, job_ptr->batch_host, SRUN_JOB_COMPLETE,
 				   msg_arg, slurm_conf.slurmd_user_id,
 				   job_ptr->start_protocol_ver);
-
+#endif
 		notify_job = false;
 	}
+
 
 	/* If step mgr, if enabled, will take care of notify the job. */
 	if (notify_job &&

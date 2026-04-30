@@ -62,6 +62,10 @@ extern "C" {
 #ifndef __METASTACK_NEW_CUSTOM_EXCEPTION
 #define __METASTACK_NEW_CUSTOM_EXCEPTION
 #endif
+
+#ifndef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+#define __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+#endif
 /* set errno to the specified value - then return -1 */
 #define slurm_seterrno_ret(errnum) do { \
 	slurm_seterrno(errnum);         \
@@ -72,6 +76,9 @@ extern "C" {
 #define SLURM_SUCCESS   0
 #define ESPANK_SUCCESS 0
 #define SLURM_ERROR    -1
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+#define ESLURMD_ENABLED_STEPD_SEND_TERM_JOB 20000
+#endif
 
 typedef enum {
 	/* General Message error codes */

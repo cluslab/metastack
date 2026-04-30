@@ -278,7 +278,11 @@ extern int stepd_connect(const char *directory, const char *nodename,
 	return fd;
 
 rwfail:
+#ifdef __METASTACK_BUG_STEPD_CLOSE_FD
+	fd_close(&fd);
+#else
 	close(fd);
+#endif
 fail1:
 	xfree(local_nodename);
 	return fd;

@@ -232,7 +232,7 @@ static int _list_part_node_lists(void *x, void *arg)
 
 static void _parse_exc_states(void)
 {
-	char *buf, *tok, *saveptr;
+	char *buf, *tok, *saveptr = NULL;
 	/* Flags in _node_state_suspendable() are already excluded */
 	uint32_t excludable_state_flags = NODE_STATE_CLOUD |
 					  NODE_STATE_DRAIN |
@@ -900,7 +900,11 @@ static void _do_power_work(time_t now)
 			if (!IS_NODE_DOWN(node_ptr) &&
 			    !IS_NODE_DRAIN(node_ptr) &&
 			    !IS_NODE_FAIL(node_ptr))
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				make_node_avail(node_ptr, false, 0);
+#else
 				make_node_avail(node_ptr);
+#endif
 
 			node_ptr->last_busy = 0;
 			node_ptr->power_save_req_time = 0;

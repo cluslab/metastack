@@ -3299,7 +3299,16 @@ extern int slurmdb_send_accounting_update_persist(list_t *update_list,
 
 	xassert(persist_conn);
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+	if (persist_conn->fd == -1) {
+		slurm_persist_conn_close(persist_conn);
+	}
+	
+	if ((persist_conn->fd == PERSIST_CONN_NOT_INITED) ||
+		(persist_conn->fd == -1)) {
+#else
 	if (persist_conn->fd == PERSIST_CONN_NOT_INITED) {
+#endif
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
 		if (slurm_persist_conn_open1(persist_conn) !=
 		    SLURM_SUCCESS) 

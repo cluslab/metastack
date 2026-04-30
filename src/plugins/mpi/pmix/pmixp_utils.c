@@ -481,10 +481,18 @@ int pmixp_p2p_send(const char *nodename, const char *address, const char *data,
 	return rc;
 }
 
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+int pmixp_mkdir(char *path, bool trusted)
+#else
 int pmixp_mkdir(char *path)
+#endif
 {
 	char *base = NULL, *newdir = NULL, *slash;
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+	int dirfd, flags;
+#else
 	int dirfd;
+#endif
 	mode_t rights = (S_IRUSR | S_IWUSR | S_IXUSR);
 
 	/* NOTE: we need user who owns the job to access PMIx usock
@@ -518,7 +526,15 @@ int pmixp_mkdir(char *path)
 	slash[0] = '\0';
 	newdir = slash + 1;
 
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+	flags = O_DIRECTORY;
+	if (!trusted)
+		flags |= O_NOFOLLOW;
+
+	if ((dirfd = open(base, flags)) < 0) {
+#else
 	if ((dirfd = open(base, O_DIRECTORY | O_NOFOLLOW)) < 0) {
+#endif
 		PMIXP_ERROR_STD("Could not open parent directory \"%s\"", base);
 		xfree(base);
 		return errno;
@@ -526,7 +542,15 @@ int pmixp_mkdir(char *path)
 
 #ifdef MULTIPLE_SLURMD
 	struct stat statbuf;
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+	flags = 0;
+	if (!trusted)
+		flags |= AT_SYMLINK_NOFOLLOW;
+
+	if (!fstatat(dirfd, newdir, &statbuf, flags)) {
+#else
 	if (!fstatat(dirfd, newdir, &statbuf, AT_SYMLINK_NOFOLLOW)) {
+#endif
 		if ((statbuf.st_mode & S_IFDIR) &&
 		    (statbuf.st_uid == pmixp_info_jobuid())) {
 			PMIXP_ERROR_STD("Directory \"%s\" already exists, but has correct uid",

@@ -4331,6 +4331,14 @@ To further improve scheduling efficiency, consider SlurmctldPort and Contain.
 .IP
 
 .TP
+\fBdisable_change_proc_dist\fR
+If set, it will follow the 3.X version logic: when --ntasks-per-node is specified in the job script,
+the core selection within the node will adopt a block allocation strategy.
+If not set,it will follow the 2.X version logic: when --ntasks-per-node is specified in the job script, 
+the core selection within the node will adopt a balanced allocation strategy.
+.IP
+
+.TP
 \fBenable_job_state_cache\fR
 Enables an independent cache of job state details within slurmctld. This allows
 processing of `\fBsqueue\fR \-\-only\-job\-state` and replaced RPCs with minimal
@@ -4371,6 +4379,13 @@ If set, and a job requests --prefer any features in the request that would
 create an invalid request with the current system will not generate an error.
 This is helpful for dynamic systems where nodes with features come and go.
 Please note using this option will not protect you from typos.
+.IP
+
+.TP
+\fBignore_test_only\fR
+If set, the node selection step in test-only mode will be skipped. Please note
+that using this option requires ensuring that the submitted jobs can run on the
+cluster.
 .IP
 
 .TP
@@ -5015,10 +5030,24 @@ Multiple options may be comma separated.
 .IP
 .RS
 .TP
+\fBagent_thread_pool_size=#\fR
+Agent thread pool size, the amount of agent_worker thread pre-created when the service
+starts.
+Default: 0, Min: 2, Max: 1024.
+.IP
+
+.TP
 \fBallow_user_triggers\fR
 Permit setting triggers from non\-root/slurm_user users. SlurmUser must also
 be set to root to permit these triggers to work. See the \fBstrigger\fR man
 page for additional details.
+.IP
+
+.TP
+\fBbuf_pool_size=#\fR
+Memory pool size, the maximum amount of memory occupied by buf-type data during
+service operation, in MB.
+Default: 0, Min: 0, Max: 1024.
 .IP
 
 .TP
@@ -5068,6 +5097,20 @@ time.
 .IP
 
 .TP
+\fBjob_pool_size=#\fR
+Memory pool size, the maximum amount of memory occupied by job-type data during
+service operation, in MB.
+Default: 0, Min: 0, Max: 1024.
+.IP
+
+.TP
+\fBignore_srun_job_complete\fR
+In high-throughput scenarios, for normally terminated srun processes, the 
+transmission of the SRUN_JOB_COMPLETE message is omitted to improve the 
+service's responsiveness.
+.IP
+
+.TP
 \fBnode_reg_mem_percent=#\fR
 Percentage of memory a node is allowed to register with without being marked as
 invalid with low memory. Default is 100. For State=CLOUD nodes, the default is
@@ -5085,6 +5128,15 @@ a buffer.
 By default starting a new instance of the slurmctld will kill the old one
 running before taking control. If this option is set this will not happen
 without the \fB-i\fR option.
+.IP
+
+.TP
+\fBno_step_complete_throttle\fR
+By default, the step complete process is protected by a serial lock. If this
+option is enabled, the serial lock for step completion will be removed, improving
+the processing efficiency of the step complete process in concurrent scenarios.
+However, this may cause other processes to temporarily experience contention for
+data locks, resulting in brief stalls.
 .IP
 
 .TP
@@ -5209,6 +5261,32 @@ The interval at which the client sends a request to the server is 1s..3s....57s.
 .IP
 
 .TP
+\fBenable_rpc_queue\fR
+Enables RPC queuing mechanism in slurmctld, which alleviate high contention between RPC processing threads in some environments.
+.IP
+
+.TP
+\fBrpc_queue_pool_size=\fR
+Configure the number of worker threads in the Slurm RPC queue thread pool to control the concurrent 
+processing capability of RPC types that support parallel processing. When configuring this option, 
+it is necessary to ensure that enable_rpc_queue is configured in SlurmctldParameters.
+Default: 0, Min: 2, Max: 1024.
+.IP
+
+.TP
+\fBpara_submit\fR
+Enable parallel processing of job submission messages, which is only valid if \fBenable_rpc_queue\fR is configured 
+in SlurmctldParameters and the value of \fBrpc_queue_pool_size\fR is greater than 1. See also \fBenable_rpc_queue\fR and 
+\fBrpc_queue_pool_size\fR in SlurmctldParameters.
+.IP
+
+.TP
+\fBpara_epilog\fR
+Configure the parallel processing capability of MESSAGE_EPILOG_COMPLETE messages. When configuring 
+this option, it is necessary to ensure that rpc_queue_pool_size is configured in SlurmctldParameters.
+.IP
+
+.TP
 \fBstep_pendlist_dedup\fR
 Reduce duplicate job step creation request records to improve server response performance.
 The same srun process periodically retries when there are not enough resources to create a job step.
@@ -5222,6 +5300,13 @@ Enable slurmstepd step management system wide. This enables job steps to be
 managed by a single extern slurmstepd associated with the job to manage steps.
 This is beneficial for jobs that submit many steps inside their allocations.
 \fBPrologFlags=contain\fR must be set.
+.IP
+
+.TP
+\fBstepd_send_term_job\fR
+When a single-node job submitted via sbatch terminates normally, slurmctld no longer sends the
+REQUEST_TERMINATE_JOB message. Instead, it is sent by the batch stepd. This feature depends on
+\fBPrologFlags=RunInJob\fR.
 .IP
 
 .TP

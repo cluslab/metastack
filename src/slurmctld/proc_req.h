@@ -45,6 +45,50 @@
 
 #include "src/slurmctld/locks.h"
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL	
+struct async_task_t;
+struct worker_data_t;
+struct async_queue_t;
+
+/* Asynchronous task structure */
+typedef struct async_task_t {
+	slurm_msg_t *msg;
+	void (*func)(slurm_msg_t *);
+	struct timeval start_time;                      // task start time
+	struct timeval end_time;                        // task end time
+	void (*stats_callback)(struct async_task_t *);  // statistics callback function
+} async_task_t;
+
+/* Work thread structure */
+typedef struct worker_data_t {
+	List tasks;             // thread's task list
+	pthread_mutex_t mutex;  // thread mutex for task synchronization
+	pthread_cond_t cond;    // thread condition variable for task synchronization
+	bool shutdown;          // thread shutdown flag
+	pthread_t thread;       // thread ID
+	uint16_t msg_type;
+	struct async_queue_t *queue;
+	int index;
+} worker_data_t;
+
+/* Asynchronous Task Queue Manager */
+typedef struct async_queue_t {
+	worker_data_t *workers;      // work thread structure array
+	int worker_count;            // number of work threads
+	int next_worker;             // index of the next work thread to use
+	pthread_mutex_t poll_mutex;
+
+	// statistics tracking for performance analysis
+	int total_processed;
+	long total_processed_usec;
+
+	// counter for pending tasks and a mutex to protect it
+	int pending_tasks;
+	pthread_mutex_t pending_mutex;
+	pthread_cond_t pending_cond;
+} async_queue_t;
+#endif
+
 typedef struct {
 	uint16_t msg_type;
 	void (*func)(slurm_msg_t *msg);
@@ -77,6 +121,12 @@ typedef struct {
 	uint64_t dropped;
 	uint16_t cycle_last;
 	uint16_t cycle_max;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL	
+	async_queue_t *async_queue;
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+	bool no_throttle;
+#endif
 } slurmctld_rpc_t;
 
 extern slurmctld_rpc_t slurmctld_rpcs[];
