@@ -3202,10 +3202,25 @@ extern int kill_running_job_by_node_name(char *node_name)
 #endif
 		} else if (IS_JOB_RUNNING(job_ptr) || suspended) {
 			kill_job_cnt++;
+#ifdef __METASTACK_BUG_BATCH_HOST_FAULT_HANG
+			bool is_batch_head_dead = false;
+			if (job_ptr->batch_flag && job_ptr->batch_host && node_name &&
+					(xstrcmp(job_ptr->batch_host, node_name) == 0)) {
+				is_batch_head_dead = true;
+				info("JobId=%u batch host %s failed. Bypassing --no-kill to terminate job.",
+					job_ptr->job_id, node_name);
+			}
+			if ((job_ptr->details) &&
+			    (job_ptr->kill_on_node_fail == 0) &&
+			    (job_ptr->node_cnt > 1) &&
+			    !IS_JOB_CONFIGURING(job_ptr) && 
+			    !is_batch_head_dead) {
+#else
 			if ((job_ptr->details) &&
 			    (job_ptr->kill_on_node_fail == 0) &&
 			    (job_ptr->node_cnt > 1) &&
 			    !IS_JOB_CONFIGURING(job_ptr)) {
+#endif
 				/* keep job running on remaining nodes */
 				srun_node_fail(job_ptr, node_name);
 				error("Removing failed node %s from %pJ",
@@ -18021,8 +18036,13 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 		     (node_ptr = next_node_bitmap(job_ptr->node_bitmap, &i));
 		     i++) {
 			if (return_code) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				drain_nodes(node_ptr->name, "Epilog error",
+				            slurm_conf.slurm_user_id, can_para_epilog);
+#else
 				drain_nodes(node_ptr->name, "Epilog error",
 				            slurm_conf.slurm_user_id);
+#endif
 			}
 			/* Change job from completing to completed */
 #ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
@@ -18036,8 +18056,13 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 	if (return_code) {
 		error("%s: %pJ epilog error on %s, draining the node",
 		      __func__, job_ptr, node_name);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		drain_nodes(node_name, "Epilog error",
+		            slurm_conf.slurm_user_id, can_para_epilog);
+#else
 		drain_nodes(node_name, "Epilog error",
 		            slurm_conf.slurm_user_id);
+#endif
 	}
 	/* Change job from completing to completed */
 	node_ptr = find_node_record(node_name);

@@ -653,7 +653,11 @@ bool return_over_borrowed_nodes(part_record_t *part_ptr, uint32_t nodes_over_bor
 			continue;
 		}
 		if (!IS_NODE_DRAIN(node_ptr)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id, false);
+#else
 			drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+#endif
 			nodes_over_borrowed--;
 			wait_return_borrow_nodes[*nodes_borrow_wait_return] = node_ptr->index;
 			(*nodes_borrow_wait_return)++;
@@ -733,7 +737,11 @@ static bool return_all_borrow_nodes(uint32_t nodes_borrowed, part_record_t *part
 			_return_borrowed_node(node_ptr);
 		} else {
 			if (!IS_NODE_DRAIN(node_ptr)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id, false);
+#else
 				drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+#endif
 			}
 		}
 	}
@@ -778,7 +786,11 @@ static bool return_unavail_borrowed_nodes(uint32_t nodes_borrowed, uint32_t *nod
 			_return_borrowed_node(node_ptr);
 		} else {
 			if ((!IS_NODE_DRAIN(node_ptr)) && (!IS_NODE_DOWN(node_ptr))) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id, false);
+#else
 				drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+#endif
 				(*nodes_borrowed_unavail) += 1;
 			} else {
 				(*nodes_borrowed_unavail) += 1;
@@ -1627,7 +1639,11 @@ static void _unlink_free_nodes(bitstr_t *old_bitmap, part_record_t *part_ptr)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 					_add_node_state_to_queue(node_ptr, false);
 #endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+					drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id, false);
+#else
 					drain_nodes(node_ptr->name, offline_reason, slurm_conf.slurm_user_id);
+#endif
 				}
 				continue;
 			}

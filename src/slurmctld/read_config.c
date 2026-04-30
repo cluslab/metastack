@@ -194,7 +194,9 @@ bitstr_t **para_epilog_idle_node_bitmap = NULL; /* A collection of bitmaps for i
 bool disable_change_proc_dist = false;
 #endif
 
-
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+bool enable_overlap_node_lb = false;
+#endif
 
 /*
  * build_sched_resource - build the resource array required for parallel scheduling
@@ -2283,6 +2285,10 @@ extern int read_slurm_conf(int recover)
 
 #ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
 	init_disable_change_proc_dist();
+#endif
+
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+	_init_enable_overlap_node_lb();
 #endif
 	_init_bitmaps();
 

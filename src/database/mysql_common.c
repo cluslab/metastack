@@ -1012,11 +1012,21 @@ extern int mysql_db_ping(mysql_conn_t *mysql_conn)
 {
 	int rc;
 
+#ifdef __METASTACK_BUG_DB_CONN_NULL_DEREF
+	/* clear out the old results so we don't get a 2014 error */
+	slurm_mutex_lock(&mysql_conn->lock);
+
+	if (!mysql_conn->db_conn) {
+		slurm_mutex_unlock(&mysql_conn->lock);
+		return -1;
+	}
+#else
 	if (!mysql_conn->db_conn)
 		return -1;
 
 	/* clear out the old results so we don't get a 2014 error */
 	slurm_mutex_lock(&mysql_conn->lock);
+#endif
 	_clear_results(mysql_conn->db_conn);
 	rc = mysql_ping(mysql_conn->db_conn);
 	/*
@@ -1033,10 +1043,19 @@ extern int mysql_db_commit(mysql_conn_t *mysql_conn)
 {
 	int rc = SLURM_SUCCESS;
 
+#ifdef __METASTACK_BUG_DB_CONN_NULL_DEREF
+	slurm_mutex_lock(&mysql_conn->lock);
+
+	if (!mysql_conn->db_conn) {
+		slurm_mutex_unlock(&mysql_conn->lock);
+		return SLURM_ERROR;
+	}
+#else
 	if (!mysql_conn->db_conn)
 		return SLURM_ERROR;
 
 	slurm_mutex_lock(&mysql_conn->lock);
+#endif
 	/* clear out the old results so we don't get a 2014 error */
 	_clear_results(mysql_conn->db_conn);
 	if (mysql_commit(mysql_conn->db_conn)) {
@@ -1054,10 +1073,18 @@ extern int mysql_db_rollback(mysql_conn_t *mysql_conn)
 {
 	int rc = SLURM_SUCCESS;
 
+#ifdef __METASTACK_BUG_DB_CONN_NULL_DEREF
+	slurm_mutex_lock(&mysql_conn->lock);
+	if (!mysql_conn->db_conn) {
+		slurm_mutex_unlock(&mysql_conn->lock);
+		return SLURM_ERROR;
+	}
+#else
 	if (!mysql_conn->db_conn)
 		return SLURM_ERROR;
 
 	slurm_mutex_lock(&mysql_conn->lock);
+#endif
 	/* clear out the old results so we don't get a 2014 error */
 	_clear_results(mysql_conn->db_conn);
 	if (mysql_rollback(mysql_conn->db_conn)) {

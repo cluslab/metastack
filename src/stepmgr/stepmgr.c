@@ -45,12 +45,14 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+#include <stdint.h>
+#endif
 #include <string.h>
 #include <sys/param.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-
 #include "stepmgr.h"
 
 #include "slurm/slurm_errno.h"
@@ -133,6 +135,11 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 static bitstr_t *_pick_step_nodes_cpus(job_record_t *job_ptr,
 				       bitstr_t *nodes_bitmap, int node_cnt,
 				       int cpu_cnt, uint32_t *usable_cpu_cnt);
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+static bitstr_t *_pick_step_nodes_cpus_lb(job_record_t *job_ptr,
+				       bitstr_t *nodes_bitmap, int node_cnt,
+				       int cpu_cnt, uint32_t *usable_cpu_cnt, uint32_t *used_cpu_cnt);
+#endif
 static void _step_dealloc_lps(step_record_t *step_ptr);
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 static step_record_t *_build_interactive_step(
@@ -148,6 +155,18 @@ static int _build_ext_launcher_step(step_record_t **new_step_record,
 static void _wake_pending_steps(job_record_t *job_ptr);
 
 stepmgr_ops_t *stepmgr_ops = NULL;
+
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+extern void _init_enable_overlap_node_lb(void) {
+	if (xstrcasestr(slurm_conf.launch_params, "enable_overlap_node_lb")) {
+		enable_overlap_node_lb = true;
+	} else {
+		enable_overlap_node_lb = false;
+	}
+	info("enable_overlap_node_lb is %s", 
+          enable_overlap_node_lb ? "true" : "false");
+}
+#endif
 
 extern void stepmgr_init(stepmgr_ops_t *ops)
 {
@@ -1066,6 +1085,143 @@ static bitstr_t *_pick_step_nodes_cpus(job_record_t *job_ptr,
 	return NULL;
 }
 
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+static bitstr_t *_pick_step_nodes_cpus_lb(job_record_t *job_ptr,
+						bitstr_t *nodes_bitmap, int node_cnt,
+						int cpu_cnt, uint32_t *usable_cpu_cnt, uint32_t *used_cpu_cnt)
+{
+	info("%s ENTER: step_id=%u, node_cnt=%d, cpu_cnt=%d",
+	         __func__, job_ptr->next_step_id, node_cnt, cpu_cnt);
+	bitstr_t *picked_node_bitmap = NULL;
+	int *usable_cpu_array = NULL;
+	int cpu_target = 0;	/* Target number of CPUs per allocated node */
+	int rem_nodes = 0, rem_cpus = 0, save_rem_nodes = 0, save_rem_cpus = 0;
+	int i = 0;
+	xassert(node_cnt > 0);
+	xassert(nodes_bitmap);
+	xassert(usable_cpu_cnt);
+	xassert(used_cpu_cnt);
+	cpu_target = (cpu_cnt + node_cnt - 1) / node_cnt;
+	if (cpu_target > 1024)
+		info("%s: high cpu_target (%d)", __func__, cpu_target);
+	if ((cpu_cnt <= node_cnt) || (cpu_target > 1024))
+		return bit_pick_cnt(nodes_bitmap, node_cnt);
+
+	/* Need to satisfy both a node count and a cpu count */
+
+	picked_node_bitmap = bit_alloc(node_record_count);
+	usable_cpu_array = xcalloc(cpu_target, sizeof(int));
+	rem_nodes = node_cnt;
+	rem_cpus  = cpu_cnt;
+
+	uint32_t min_cpu_val= UINT32_MAX;
+	int selected_node= -1; 
+	
+	for (i = 0; next_node_bitmap(nodes_bitmap, &i); i++) {
+		if (!bit_test(nodes_bitmap, i)){
+			continue;
+		}
+		if (usable_cpu_cnt[i] >= cpu_target) {
+			if (used_cpu_cnt[i] < min_cpu_val) {
+				min_cpu_val = used_cpu_cnt[i];
+				selected_node = i;
+			}  
+		}
+		else {
+			usable_cpu_array[usable_cpu_cnt[i]]++;
+		}
+	}
+	log_flag(SELECT_TYPE, "%s : FirstSelectedNode step_id=%u, node_idx=%d, min_used_cpu=%u, cpu_target=%u",
+		__func__, job_ptr->next_step_id, selected_node, min_cpu_val, cpu_target);
+	while (selected_node != -1 && rem_nodes > 0) {
+		bit_set(picked_node_bitmap, selected_node);
+		rem_cpus -= usable_cpu_cnt[selected_node];
+		rem_nodes--;
+		if ((rem_cpus <= 0) && (rem_nodes <= 0)) {
+			info("%s :step_id=%u: All resources satisfied, return picked nodes, rem_nodes=%d, rem_cpus=%d",
+				__func__, job_ptr->next_step_id, rem_nodes, rem_cpus);
+			xfree(usable_cpu_array);
+			return picked_node_bitmap;
+		}
+		if (rem_nodes == 0) {
+			error("%s :step_id=%u: Nodes exhausted but CPU insufficient, rem_cpus=%d",
+				__func__, job_ptr->next_step_id, rem_cpus);
+			xfree(usable_cpu_array);
+			FREE_NULL_BITMAP(picked_node_bitmap);
+			return NULL;
+		}
+
+		min_cpu_val = UINT32_MAX;
+		int next_selected = -1;
+		for (i = 0; next_node_bitmap(nodes_bitmap, &i); i++) {
+			if (!bit_test(nodes_bitmap, i) || bit_test(picked_node_bitmap, i)){
+				continue;
+			}
+			if (usable_cpu_cnt[i] >= cpu_target) {
+				if (used_cpu_cnt[i] < min_cpu_val) {
+					min_cpu_val = used_cpu_cnt[i];
+					next_selected = i;
+				}
+			}
+		}
+		if(next_selected != -1){
+			selected_node = next_selected;
+			log_flag(SELECT_TYPE, "%s :step_id=%u: The next node has been found, node_idx=%d",
+				__func__, job_ptr->next_step_id, selected_node);
+		}	
+	}
+
+	info("%s :step_id=%u: Current resources are insufficient, more resources are required",
+			 __func__, job_ptr->next_step_id);
+	/* Need more resources. Determine what CPU counts per node to use */
+	save_rem_nodes = rem_nodes;
+	save_rem_cpus  = rem_cpus;
+	usable_cpu_array[0] = 0;
+	for (i = (cpu_target - 1); i > 0; i--) {
+		if (usable_cpu_array[i] == 0)
+			continue;
+		if (usable_cpu_array[i] > rem_nodes)
+			usable_cpu_array[i] = rem_nodes;
+		if (rem_nodes > 0) {
+			rem_nodes -= usable_cpu_array[i];
+			rem_cpus  -= (usable_cpu_array[i] * i);
+		}
+	}
+
+	if ((rem_cpus > 0) || (rem_nodes > 0)){	/* Can not satisfy request */
+		xfree(usable_cpu_array);
+		FREE_NULL_BITMAP(picked_node_bitmap);
+		return NULL;
+	}
+	rem_nodes = save_rem_nodes;
+	rem_cpus  = save_rem_cpus;
+
+	/* Pick nodes with CPU counts below original target */
+	for (i = 0; next_node_bitmap(nodes_bitmap, &i); i++) {
+		if (usable_cpu_cnt[i] >= cpu_target)
+			continue;	/* already picked */
+		if (usable_cpu_array[usable_cpu_cnt[i]] == 0)
+			continue;
+		usable_cpu_array[usable_cpu_cnt[i]]--;
+		bit_set(picked_node_bitmap, i);
+		rem_cpus -= usable_cpu_cnt[i];
+		rem_nodes--;
+		if ((rem_cpus <= 0) && (rem_nodes <= 0)) {
+			/* Satisfied request */
+			xfree(usable_cpu_array);
+			return picked_node_bitmap;
+		}
+		if (rem_nodes == 0)	/* Reached node limit */
+			break;
+	}
+	/* Can not satisfy request */
+	xfree(usable_cpu_array);
+	FREE_NULL_BITMAP(picked_node_bitmap);
+	return NULL;
+}
+#endif
+
+
 static int _mark_busy_nodes(void *x, void *arg)
 {
 	step_record_t *step_ptr = (step_record_t *) x;
@@ -1242,6 +1398,7 @@ static void _set_max_num_tasks(job_step_create_request_msg_t *step_spec,
  * NOTE: returns all of a job's nodes if step_spec->node_count == INFINITE
  * NOTE: returned bitmap must be freed by the caller using FREE_NULL_BITMAP()
  */
+
 static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 				  job_step_create_request_msg_t *step_spec,
 				  List step_gres_list, int cpus_per_task,
@@ -1260,6 +1417,9 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 	int gres_invalid_nodes = 0;
 	job_resources_t *job_resrcs_ptr = job_ptr->job_resrcs;
 	uint32_t *usable_cpu_cnt = NULL;
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+	uint32_t *used_cpu_cnt = NULL;
+#endif
 	gres_stepmgr_step_test_args_t gres_test_args = {
 		.cpus_per_task = cpus_per_task,
 		.first_step_node = true,
@@ -1414,6 +1574,66 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 	}
 
 	usable_cpu_cnt = xcalloc(node_record_count, sizeof(uint32_t));
+
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+	if (enable_overlap_node_lb) {
+		if ((!job_ptr) || (!job_ptr->job_resrcs) || (job_ptr->job_resrcs->nhosts == 0)){
+			FREE_NULL_BITMAP(nodes_avail);
+			FREE_NULL_BITMAP(select_nodes_avail);
+			error("Failed to allocate CPU usage counter array: job resources unavailable (nhosts=0 or job/resources NULL)");
+			xfree(usable_cpu_cnt);
+			return NULL;
+		}
+		used_cpu_cnt = xcalloc(job_ptr->job_resrcs->nhosts, sizeof(uint32_t));
+		list_itr_t *step_iter = list_iterator_create(job_ptr->step_list);
+		step_record_t *prev_step_ptr = NULL;
+		while ((prev_step_ptr = (step_record_t *)list_next(step_iter))) {
+			if (!prev_step_ptr->step_layout || prev_step_ptr->state != JOB_RUNNING){
+				continue;
+			} 
+			slurm_step_layout_t *prev_layout = prev_step_ptr->step_layout;
+			int prev_step_node_inx = -1; 
+			int job_node_inx = -1;
+
+			for (int i = 0; (node_ptr = next_node_bitmap(job_ptr->job_resrcs->node_bitmap, &i)); i++) {
+				job_node_inx++;
+				if (!bit_test(prev_step_ptr->step_node_bitmap, i)){
+					continue;
+				}
+				prev_step_node_inx++; 
+				if (prev_step_node_inx >= prev_layout->node_cnt){
+					break;
+				}
+				uint16_t task_cnt = prev_layout->tasks[prev_step_node_inx];
+				if (task_cnt == 0){
+					continue;
+				}
+				uint32_t step_used = 0;
+				if(prev_step_ptr->flags & SSF_WHOLE){
+					step_used = (uint32_t)job_resrcs_ptr->cpus[job_node_inx];
+				}else{
+					uint16_t cpus_per_task = prev_step_ptr->cpus_per_task;
+					step_used = (uint32_t)task_cnt * cpus_per_task;
+				}
+
+				if (used_cpu_cnt[i] > (UINT32_MAX - step_used)) {
+					error("CPU count overflow: used_cpu_cnt[%d]=%u + step_used=%u > UINT32_MAX for job %u step %u",
+					i, used_cpu_cnt[i], step_used, job_ptr->job_id, prev_step_ptr->step_id.step_id);
+					for (int j = 0; j < job_ptr->job_resrcs->nhosts; j++) {
+						used_cpu_cnt[j] = 0;
+					}
+					continue;
+				}
+				used_cpu_cnt[i] += step_used;
+			}
+		}
+		list_iterator_destroy(step_iter);  
+		for (int i = 0; i < job_ptr->job_resrcs->nhosts; i++) {
+			info("%s ,step_id=%u, node_index=%d, used_cpu_cnt=%u", __func__, job_ptr->next_step_id,
+					i, used_cpu_cnt[i]);
+		}	
+	}
+#endif
 	for (int i = 0, node_inx = -1;
 	     (node_ptr = next_node_bitmap(job_resrcs_ptr->node_bitmap, &i));
 	     i++) {
@@ -1571,6 +1791,9 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 					FREE_NULL_BITMAP(nodes_avail);
 					FREE_NULL_BITMAP(select_nodes_avail);
 					xfree(usable_cpu_cnt);
+				#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+					xfree(used_cpu_cnt);
+				#endif
 					*return_code = ESLURM_NODES_BUSY;
 					if (total_tasks == 0) {
 						*return_code = fail_mode;
@@ -1600,6 +1823,9 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 		FREE_NULL_BITMAP(nodes_avail);
 		FREE_NULL_BITMAP(select_nodes_avail);
 		xfree(usable_cpu_cnt);
+	#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+		xfree(used_cpu_cnt);
+	#endif
 		return NULL;
 	}
 
@@ -1617,6 +1843,9 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 		}
 
 		xfree(usable_cpu_cnt);
+	#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+		xfree(used_cpu_cnt);
+	#endif
 		FREE_NULL_BITMAP(select_nodes_avail);
 		return nodes_avail;
 	}
@@ -2056,10 +2285,26 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 						     step_spec->max_nodes,
 						     node_avail_cnt,
 						     nodes_picked_cnt);
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+			if ((step_spec->flags & SSF_OVERLAP_FORCE) && (enable_overlap_node_lb)) {
+				node_tmp = _pick_step_nodes_cpus_lb(job_ptr, nodes_avail,
+												nodes_needed,
+												cpus_needed,
+												usable_cpu_cnt,
+												used_cpu_cnt);	
+				}
+			else {
+				node_tmp = _pick_step_nodes_cpus(job_ptr, nodes_avail,
+												nodes_needed,
+												cpus_needed,
+												usable_cpu_cnt);
+				}			
+#else
 			node_tmp = _pick_step_nodes_cpus(job_ptr, nodes_avail,
 							 nodes_needed,
 							 cpus_needed,
 							 usable_cpu_cnt);
+#endif
 			if (node_tmp == NULL) {
 				/* Count of nodes already picked for step */
 				int pick_node_cnt = bit_set_count(nodes_avail);
@@ -2169,6 +2414,9 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 	FREE_NULL_BITMAP(select_nodes_avail);
 	FREE_NULL_BITMAP(nodes_idle);
 	xfree(usable_cpu_cnt);
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+	xfree(used_cpu_cnt);
+#endif
 	return nodes_picked;
 
 cleanup:
@@ -2181,6 +2429,9 @@ cleanup:
 	FREE_NULL_BITMAP(nodes_idle);
 	FREE_NULL_BITMAP(nodes_picked);
 	xfree(usable_cpu_cnt);
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+	xfree(used_cpu_cnt);
+#endif	
 	if (*return_code == SLURM_SUCCESS) {
 		*return_code = ESLURM_REQUESTED_NODE_CONFIG_UNAVAILABLE;
 	} else if (*return_code == ESLURM_NODE_NOT_AVAIL) {
@@ -6117,3 +6368,67 @@ extern resource_allocation_response_msg_t *build_job_info_resp(
 
 	return job_info_resp_msg;
 }
+
+#ifdef __METASTACK_BUG_STEPMGR_STEP_STUCK
+/*
+ * Implement the job step completion for failed nodes in stepmgr, 
+ * modeling after the down-event-driven forced completion mechanism in slurmctld.
+ */
+extern void stepmgr_auto_heal_node(job_record_t *job_ptr, char *node_name)
+{
+	node_record_t *node_ptr = find_node_record(node_name);
+
+	if (!node_ptr || !job_ptr || !job_ptr->step_list)
+		return;
+
+	list_itr_t  *step_itr = NULL;
+	step_record_t *step_ptr = NULL;
+	List steps_to_finish = list_create(NULL); 
+
+	step_itr = list_iterator_create(job_ptr->step_list);
+	while ((step_ptr = list_next(step_itr))) {
+
+		if (step_ptr->state != JOB_RUNNING)
+			continue;
+
+		int bit_position = node_ptr->index;
+
+		if (bit_test(step_ptr->step_node_bitmap, bit_position)) {
+			int rem = 0;
+			uint32_t step_rc = 0;
+			step_complete_msg_t req;
+			/* 
+			 * When constructing step_complete_msg_t, 
+			 * the range_first and range_last fields require relative indices within the job step,
+			 * rather than global cluster indices. 
+			 */
+			int local_bit_pos = bit_set_count_range(step_ptr->step_node_bitmap, 0, bit_position);
+
+			debug("StepMgr [Auto-Heal]: Marking node %s (local bit %d) as completed for %pS.",
+				  node_name, local_bit_pos, step_ptr);
+
+			memset(&req, 0, sizeof(req));
+			memcpy(&req.step_id, &step_ptr->step_id, sizeof(req.step_id));
+			req.range_first = local_bit_pos;
+			req.range_last  = local_bit_pos;
+			req.step_rc     = 9;
+			req.jobacct     = NULL;
+
+			(void) _step_partial_comp(step_ptr, &req, false, &rem, &step_rc);
+
+			if (!rem) {
+				list_append(steps_to_finish, step_ptr);
+			}
+		}
+	}
+	list_iterator_destroy(step_itr);
+
+	/* Unified cleanup: directly invoke the static callback defined within the same file. */
+	if (list_count(steps_to_finish) > 0) {
+		info("StepMgr [Auto-Heal]: Forcing completion of %d steps on node %s.", 
+			 list_count(steps_to_finish), node_name);
+		list_delete_all(steps_to_finish, _finish_step_comp, NULL);
+	}
+	FREE_NULL_LIST(steps_to_finish);
+}
+#endif

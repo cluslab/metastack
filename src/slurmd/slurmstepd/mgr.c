@@ -817,16 +817,33 @@ _one_step_complete_msg(stepd_step_rec_t *step, int first, int last)
 		msg.send_to_stepmgr = true;
 		debug3("sending complete to step_ctld host:%s",
 		       step->stepmgr);
+#ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+		i = 1;
+		while (slurm_send_recv_stepmgr_msg(&req, &resp_msg, 0)) {
+			if (i++ == 1) {
+				error("Rank %d failed sending step completion message to stepmgr, retrying", step_complete.rank);
+			}
+			sleep(60);
+		}
+		return;
+#else
 		if (slurm_send_recv_node_msg(&req, &resp_msg, 0))
 			return;
 		goto finished;
+#endif
 	}
 
 	/* Retry step complete RPC send to slurmctld indefinitely.
 	 * Prevent orphan job step if slurmctld is down */
 	i = 1;
+#ifdef __METASTACK_BUG_CTLD_CONN_RETRY
+	while ((slurm_send_recv_controller_rc_msg(&req, &rc,
+			working_cluster_rec) < 0) || (rc == ESLURM_IN_STANDBY_MODE || 
+	    	rc == ESLURM_IN_STANDBY_USE_BACKUP)) {
+#else
 	while (slurm_send_recv_controller_rc_msg(&req, &rc,
 						 working_cluster_rec) < 0) {
+#endif
 		if (i++ == 1) {
 			error("Rank %d failed sending step completion message directly to slurmctld, retrying",
 			      step_complete.rank);
@@ -1231,7 +1248,11 @@ static int _run_prolog_epilog(stepd_step_rec_t *step, bool is_epilog)
 	memset(&job_env, 0, sizeof(job_env));
 
 	tmp_list = gres_g_prep_build_env(step->job_gres_list, step->node_list);
+#ifdef __METASTACK_BUG_SEGFAULT_PREP_RUNINJOB
+	gres_g_prep_set_env(&job_env.gres_job_env, tmp_list, 0);
+#else
 	gres_g_prep_set_env(&job_env.gres_job_env, tmp_list, step->nodeid);
+#endif
 	FREE_NULL_LIST(tmp_list);
 
 	job_env.jobid = step->step_id.job_id;
@@ -1448,6 +1469,15 @@ static int _spawn_job_container(stepd_step_rec_t *step)
 	while ((wait4(pid, &status, 0, &rusage) < 0) && (errno == EINTR)) {
 		;	       /* Wait until above process exits from signal */
 	}
+
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+	slurm_mutex_lock(&step->state_mutex);
+	while ((step->state < SLURMSTEPD_STEP_CANCELLED)) {
+		slurm_cond_wait(&step->state_cond, &step->state_mutex);
+	}
+	join_extern_threads();
+	slurm_mutex_unlock(&step->state_mutex);
+#endif
 
 	/* Wait for all steps other than extern (this one) to complete */
 	if (!pause_for_job_completion(jobid, MAX(slurm_conf.kill_wait, 5),
@@ -3012,8 +3042,14 @@ _send_complete_batch_script_msg(stepd_step_rec_t *step, int err, int status)
 	/*
 	 * Retry batch complete RPC, send to slurmctld indefinitely.
 	 */
+#ifdef __METASTACK_BUG_CTLD_CONN_RETRY
+	while (slurm_send_recv_controller_rc_msg(&req_msg, &rc,
+			working_cluster_rec) || (rc == ESLURM_IN_STANDBY_MODE || 
+	    	rc == ESLURM_IN_STANDBY_USE_BACKUP)) {
+#else
 	while (slurm_send_recv_controller_rc_msg(&req_msg, &rc,
 						 working_cluster_rec)) {
+#endif
 		info("Retrying job complete RPC for %ps [sleeping %us]",
 		     &step->step_id, RETRY_DELAY);
 		sleep(RETRY_DELAY);

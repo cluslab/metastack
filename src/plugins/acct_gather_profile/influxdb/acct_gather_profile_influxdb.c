@@ -192,86 +192,98 @@ static const char *retention_policy_keys[] = {
 };
 
 /**
- * @brief Parses the runtime policy string and extracts the policy value matching the specified type.
+ * @brief Extracts the policy value for a given type from a runtime policy string.
  *
- * This function takes a runtime policy string (rt_policy) and a target policy type (type), and parses the comma-separated
- * components of the policy string. If a matching type is found, it returns the associated value. If no matching policy is found,
- * it returns the default value "autogen". If the input rt_policy is NULL or an empty string, it directly returns "autogen".
+ * This function parses a runtime policy string (rt_policy), which may contain
+ * comma-separated key-value pairs (e.g., "type1=value1,type2=value2") or a
+ * standalone default value. It returns the policy value that matches the
+ * specified type.
  *
- * If the rt_policy string contains a standalone value (without any key-value pairs), it is treated as the default return value.
- * If no matching key is found, but a standalone value exists, the function returns that value.
- * If the string does not contain any valid key-value pairs, it is returned as is.
+ * Behavior:
+ *   - If a matching key is found, its associated value is returned.
+ *   - If no matching key is found but a standalone value exists, that value is returned.
+ *   - If the string contains no valid key-value pairs, the original string is returned.
+ *   - If rt_policy is NULL or empty, "autogen" is returned.
+ *   - If the string contains at least one key but does not include the requested type,
+ *     "autogen" is returned.
  *
- * @param rt_policy The runtime policy string, consisting of comma-separated key-value pairs (e.g., "type1=value1,type2=value2")
- *                  or a single default value.
- * @param type The target policy type, used to match a specific policy value. This is an enum representing different policy types.
+ * Examples:
+ *   - rt_policy = "type1=short,type2=long", type = TYPE2  →  returns "long"
+ *   - rt_policy = "default",                type = TYPE1  →  returns "default"
+ *   - rt_policy = "",                       type = TYPE1  →  returns "autogen"
  *
- * @return A string containing the policy value corresponding to the specified type.
- *         - If a matching key is found, returns its associated value.
- *         - If no matching key is found but a standalone default value exists, returns that value.
- *         - If no valid key-value pairs are found, returns the original rt_policy string.
- *         - If the input is NULL or empty, returns "autogen".
- *         - If at least one key is found but the requested type is missing, returns "autogen".
+ * @param rt_policy The runtime policy string, either a standalone value or
+ *                  comma-separated key-value pairs.
+ * @param type      The target policy type (enum) to look up.
+ *
+ * @return A string containing the policy value according to the rules above.
  */
-static char* _parse_rt_policy(const char *rt_policy, retention_policy_t type) {
-	int i = 0;
-	if (rt_policy == NULL || rt_policy[0] == '\0') {
-		return xstrdup("autogen");
-	}
+static void _parse_rt_policy(const char *rt_policy, retention_policy_t type,
+                             char *buf, size_t bufsize) {
+    int i = 0;
 
-	// If rt_policy does not contain ',' or '=', return it directly
-	if (strchr(rt_policy, ',') == NULL && strchr(rt_policy, '=') == NULL) {
-		return xstrdup(rt_policy);
-	}
+    if (rt_policy == NULL || rt_policy[0] == '\0') {
+        snprintf(buf, bufsize, "autogen");
+        return;
+    }
 
-	int found_any_keyword = 0;
-	char *default_value = NULL; 
-	char *policy_copy = xstrdup(rt_policy);
+    if (strchr(rt_policy, ',') == NULL && strchr(rt_policy, '=') == NULL) {
+        snprintf(buf, bufsize, "%s", rt_policy);
+        return;
+    }
 
-	char *saveptr = NULL;
-	char *token = strtok_r(policy_copy, ",", &saveptr);
+    int found_any_keyword = 0;
+    char default_value[256] = {0};  
+    char *policy_copy = xstrdup(rt_policy);
 
-	while (token) {
-		char *value = xstrchr(token, '=');
-		if (value) {
-			*value = '\0';  
-			value++;        
+    char *saveptr = NULL;
+    char *token = strtok_r(policy_copy, ",", &saveptr);
 
-			for (i = 0; i < RPCNT; i++) {
-				if (strcmp(token, retention_policy_keys[i]) == 0) {
-					found_any_keyword = 1;
-					if (i == (int)type) {
-						char *result = xstrdup(value);
-						xfree(default_value);
-						xfree(policy_copy);
-						return result;
-					}
-				}
-			}
-		} else {
-			// If no '=' is found, treat it as the default value
-			xfree(default_value);
-			default_value = xstrdup(token);
-		}
-		token = strtok_r(NULL, ",", &saveptr);
-	}
+    while (token) {
+        char *value = xstrchr(token, '=');
+        if (value) {
+            *value = '\0';
+            value++;
 
-	xfree(policy_copy);
+            for (i = 0; i < RPCNT; i++) {
+                if (strcmp(token, retention_policy_keys[i]) == 0) {
+                    found_any_keyword = 1;
+                    if (i == (int)type) {
+                        snprintf(buf, bufsize, "%s", value);
+                        xfree(policy_copy);
+                        return;
+                    }
+                }
+            }
+        } else {
+            snprintf(default_value, sizeof(default_value), "%s", token);
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+    }
 
-	// Return the default value if no match is found
-	if (default_value) {
-		return default_value;
-	}
+    xfree(policy_copy);
 
-	// If a key is found but no match for type, return "autogen"
-	if (found_any_keyword) {
-		return xstrdup("autogen");
-	}
+    if (default_value[0] != '\0') {
+        snprintf(buf, bufsize, "%s", default_value);
+        return;
+    }
 
-	// If no key-value structure is found, return the original string
-	return xstrdup(rt_policy);
+    if (found_any_keyword) {
+        snprintf(buf, bufsize, "autogen");
+        return;
+    }
+
+    snprintf(buf, bufsize, "%s", rt_policy);
 }
 
+static bool _all_policies_equal(const char *rt_policy) {
+	char step[256] = {0}, event[256] = {0};
+
+	_parse_rt_policy(rt_policy, STEPDRP, step, sizeof(step));
+	_parse_rt_policy(rt_policy, EVENTRP, event, sizeof(event));
+
+	return (xstrcmp(step, event) == 0);
+}
 #endif
 
 static void _free_tables(void)
@@ -338,9 +350,9 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, retent
 	int rc = SLURM_SUCCESS;
 	long response_code;
 	static int error_cnt = 0;
-	char *url = NULL;
 	//size_t length;
-	char *rt_policy = NULL, *tmp_datastr = NULL;
+	char *tmp_datastr = NULL, *url = NULL;
+	char buf[256];
 	switch (type) {
 		case EVENTRP:
 			tmp_datastr = event_datastr;
@@ -355,7 +367,7 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, retent
 #endif
 		default:
 			error("Unknown Retention Policy");
-			break;
+			return SLURM_ERROR;
 	}
 
 	debug3("%s %s called", plugin_type, __func__);
@@ -378,11 +390,9 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, retent
 		rc = SLURM_ERROR;
 		goto cleanup_easy_init;
 	}
-	rt_policy = _parse_rt_policy(influxdb_conf.rt_policy, type);
+	_parse_rt_policy(influxdb_conf.rt_policy, type, buf, sizeof(buf));
 	xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=s", influxdb_conf.host,
-		   influxdb_conf.database, rt_policy);
-	if(rt_policy) xfree(rt_policy);
-
+		   influxdb_conf.database, buf);
 	chunk.message = xmalloc(1);
 	chunk.size = 0;
 
@@ -399,6 +409,7 @@ static int _send_data2(const char *data, int send_jobid ,int send_stepid, retent
 				 influxdb_conf.username);
 	curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, _write_callback);
 	curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *) &chunk);
+	curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, influxdb_conf.timeout);
 
 	if ((res = curl_easy_perform(curl_handle)) != CURLE_OK) {
 		if ((error_cnt++ % 100) == 0)
@@ -449,99 +460,71 @@ cleanup_global_init:
 	END_TIMER;
 	log_flag(PROFILE, "%s %s: took %s to send data",
 		 plugin_type, __func__, TIME_STR);
-	struct stat st_tmp;
-	bool influx_dir = true;
-	if((rc == SLURM_ERROR) && (send_jobid > 0)) {
-
-		if(influxdb_conf.workdir == NULL) {
-			char tmp_dir[60]="/tmp/slurm_influxdb";
-			if (stat(tmp_dir, &st_tmp) == -1) {
-				if(mkdir(tmp_dir, 0700)==-1) {
-					error("can't create directory /tmp/slurm_influxdb");
-				}
-			}
-			influxdb_conf.workdir = xstrdup(tmp_dir);
-		} else if(xstrcasecmp(influxdb_conf.workdir, "None") == 0) {
-			influx_dir = false;
+	// Persistence logic for failures
+	if (rc == SLURM_ERROR && send_jobid > 0) {
+		// Check and prepare the work directory
+		if (!influxdb_conf.workdir) {
+			influxdb_conf.workdir = xstrdup("/tmp/slurm_influxdb");
 		}
-	}
-
-
-	if((send_jobid > 0) && (rc == SLURM_ERROR) && influx_dir) {
-		char *influxdb_file = NULL;
-		FILE *sys_file = NULL;
-#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-		switch (type) {
-			case EVENTRP:
-				xstrfmtcat(influxdb_file,"%s/job%d.%d.%s", influxdb_conf.workdir, send_jobid, send_stepid, "event");
-				if (buffer_file_event == NULL) 
+		
+		if (xstrcasecmp(influxdb_conf.workdir, "None") != 0) {
+			struct stat st;
+			if (stat(influxdb_conf.workdir, &st) == -1 && mkdir(influxdb_conf.workdir, 0700) == -1) {
+				error("can't create directory %s", influxdb_conf.workdir);
+			} else {
+				char *influxdb_file = NULL;
+				xstrfmtcat(influxdb_file, "%s/job%d.%d.%s", 
+							influxdb_conf.workdir, send_jobid, send_stepid, retention_policy_keys[type]);
+				if (type == EVENTRP && !buffer_file_event) 
 					buffer_file_event = xstrdup(influxdb_file);
-				break;
-			case STEPDRP:
-				xstrfmtcat(influxdb_file,"%s/job%d.%d.%s", influxdb_conf.workdir, send_jobid, send_stepid, "stepd");
-				if (buffer_file_stepd == NULL) 
+				else if (type == STEPDRP && !buffer_file_stepd) 
 					buffer_file_stepd = xstrdup(influxdb_file);
-				break;
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-			case APPTYPERP:
-				xstrfmtcat(influxdb_file,"%s/job%d.%d.%s", influxdb_conf.workdir, send_jobid, send_stepid, "apptype");
-				if (buffer_file_apptype == NULL) 
+				else if (type == APPTYPERP && !buffer_file_apptype) 
 					buffer_file_apptype = xstrdup(influxdb_file);
-				break;
 #endif
-			default:
-				error("Unknown Retention Policy");
-				break;
-		}
-#endif
-		struct stat st;
-		if (stat(influxdb_conf.workdir, &st) == -1) {
- 			if(mkdir(influxdb_conf.workdir, 0700)==-1) {
-				error("can't create directory influxdb_conf.workdir");
+				
+				FILE *sys_file = fopen(influxdb_file, "a+");
+				if (sys_file) {
+					fprintf(sys_file, "%s", tmp_datastr);
+					fclose(sys_file);
+				}
+				xfree(influxdb_file);
 			}
 		}
-
-		//slurm_mutex_lock(&file_lock);
-		sys_file = fopen(influxdb_file, "a+");
-		if (sys_file != NULL) {
-			fprintf(sys_file, "%s", tmp_datastr);
-			fclose(sys_file);
-		} else {
-			debug("Failed to write %s file. The file content is %s",influxdb_file, tmp_datastr);
-		}
-			
-		//slurm_mutex_unlock(&file_lock);
-
-		if (influxdb_file)
-			xfree(influxdb_file);
 	}
-	if (data) {
+	if (data)
 		tmp_datastr[0] = '\0';
-	}
 	return rc;	
 }
 #endif
 
 #ifdef __METASTACK_NEW_LOAD_ABNORMAL
-/*Get the total number of lines in a file*/
+/* Get the total number of lines in a file */
 static int count_file_row(char *path)
 {    
-	int count = 0;
-	char c;
-	FILE *file;
-	file = fopen(path, "r");
-	if (file == NULL) {
-		debug("Error opening file!");
-	} else {
-		while ((c = getc(file)) != EOF) {
-			if (c == '\n') {
-				count++;
-			}
-		}
+    int count = 0;
+    int c = 0; 
+    FILE *file;
 
-	}
-	return count;
+    if (!path || path[0] == '\0') {
+        return 0;
+    }
+
+    file = fopen(path, "r");
+    if (file == NULL) {
+        debug("Error opening file: %s", path);
+        return 0; 
+    }
+
+    while ((c = getc(file)) != EOF) {
+        if (c == '\n') {
+            count++;
+        }
+    }
+
     fclose(file);
+    return count;
 }
 #endif
 
@@ -555,7 +538,7 @@ static int _last_resend(const char *data, retention_policy_t type)
     int rc = SLURM_SUCCESS;
 	int rc2 = SLURM_SUCCESS;
 	bool send_buffer = false;
-	char tmp_str[300] = {'0'};
+	char tmp_str[1024] = {'0'};
 	int all_row = 0;
 	char *tmp_copy = NULL;  /* send_data2 clears the data if it fails to send, so it needs to be saved before it is sent */
 	bool send_flag = false; /* Used to mark whether to save failed data to temporary file */
@@ -563,13 +546,13 @@ static int _last_resend(const char *data, retention_policy_t type)
 	char *tmp_datastr = NULL;
 	char *buffer_file = NULL;
 	switch (type) {
-		case EVENTRP:
-			tmp_datastr = event_datastr;
-			buffer_file = buffer_file_event;
-			break;
 		case STEPDRP:
 			tmp_datastr = stepd_datastr;
 			buffer_file = buffer_file_stepd;
+			break;
+		case EVENTRP:
+			tmp_datastr = event_datastr;
+			buffer_file = buffer_file_event;
 			break;
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
 		case APPTYPERP:
@@ -635,7 +618,7 @@ static int _last_resend(const char *data, retention_policy_t type)
 		tmp_datastr[0] = '\0';
 		int tmp_datastr_len = 0;
 
-		while (fgets(tmp_str, 256, fp) != NULL)  {
+		while (fgets(tmp_str, sizeof(tmp_str), fp) != NULL)  {
 			line++;
 			/*
 				If the cache file is not full, the next line of data is read, otherwise the data is sent, 
@@ -710,9 +693,9 @@ static int _send_data(const char *data, retention_policy_t type)
 	long response_code;
 	static int error_cnt = 0;
 	char *url = NULL;
-	size_t length;
+	size_t length = 0;
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-	char* rt_policy = NULL;
+	char buf[256];
 #endif
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 	if(data == NULL && datastr && strlen(datastr) <= 0)
@@ -747,18 +730,17 @@ static int _send_data(const char *data, retention_policy_t type)
 	}
 
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-	rt_policy = _parse_rt_policy(influxdb_conf.rt_policy, type);
+	_parse_rt_policy(influxdb_conf.rt_policy, type, buf, sizeof(buf));
 	/* 
 		If open ProfileInfluxDBSeriesReduce, need to increase the time accuracy in order to avoid data overwrite 
 	*/
 	if (xstrncasecmp(influxdb_conf.series_reduce, "yes", 3) == 0) {
 		xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=ns", influxdb_conf.host,
-		   influxdb_conf.database, rt_policy);
+		   influxdb_conf.database, buf);
 	} else {
 		xstrfmtcat(url, "%s/write?db=%s&rp=%s&precision=s", influxdb_conf.host,
-		   influxdb_conf.database, rt_policy);
+		   influxdb_conf.database, buf);
 	}
-	xfree(rt_policy);
 #endif
 
 	chunk.message = xmalloc(1);
@@ -1263,14 +1245,13 @@ extern int acct_gather_profile_p_add_sample_data(int table_id, void *data,
 }
 
 #ifdef __METASTACK_NEW_LOAD_ABNORMAL
-extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* data,
-						 time_t sample_time)
+extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* data, time_t sample_time)
 {
-    char *str = NULL;
-	char *str1 = NULL;
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-	char *str2 = NULL;
-#endif
+    union data_t* d = (union data_t*)data;
+    char *str_stepd = NULL, *str_event = NULL, *str_apptype = NULL;
+    bool all_rt_equal = _all_policies_equal(influxdb_conf.rt_policy);
+    uint32_t send_flag = 0;
+
 	enum {
 		/*PROFILE*/
 		FIELD_STEPCPU,
@@ -1303,113 +1284,100 @@ extern int acct_gather_profile_p_add_sample_data_stepd(int dataset_id, void* dat
 #endif					
 		FIELD_CNT
 	};
-	
+
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	send_flag = d[FIELD_SENDFLAG].u;
+#endif
+
 	debug3("%s %s called", plugin_type, __func__);
-	enum {
-		SLUR_SEND_STEPD_TYPE = 1,
-		SLUR_SEND_EVENT_TYPE = 2,
+
+	/* Logical block: Processing Stepd data */
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-		SLUR_SEND_APPTYPE_TYPE = 3,
+	if (send_flag & JOBACCT_GATHER_PROFILE_ABNORMAL)
 #endif
-		SLUR_SEND_COUNT
-	};
-	for(int i = 1; i < SLUR_SEND_COUNT; i++) {
-		switch (i) {
-			case SLUR_SEND_STEPD_TYPE:	
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-				if (!(((union data_t*)data)[FIELD_SENDFLAG].u & JOBACCT_GATHER_PROFILE_ABNORMAL)) 
-					break;
-#endif	
-				xstrfmtcat(str1,"Stepd,username=%s,jobid=%d,step=%d stepcpu=%.2f,"
+	{
+		xstrfmtcat(str_stepd, "Stepd,username=%s,jobid=%d,step=%d stepcpu=%.2f,"
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-				"stepcpuave=%.2f,stepmem=%.2f,stepvmem=%.2f,interval_time=%"PRIu64","
+					"stepcpuave=%.2f,stepmem=%.2f,stepvmem=%.2f,interval_time=%"PRIu64","
 #endif
-				"steppages=%"PRIu64"  %"PRIu64"\n", 
-				g_job->user_name,
-				g_job->step_id.job_id, 
-				g_job->step_id.step_id,
-				((union data_t*)data)[FIELD_STEPCPU].d,
-				((union data_t*)data)[FIELD_STEPCPUAVE].d,
-				((union data_t*)data)[FIELD_STEPMEM].d,
-				((union data_t*)data)[FIELD_STEPVMEM].d,
-				((union data_t*)data)[FIELD_TIMER].u,
-				((union data_t*)data)[FIELD_STEPPAGES].u,
-				(uint64_t)sample_time);
+					"steppages=%"PRIu64" %"PRIu64"\n",
+					g_job->user_name, g_job->step_id.job_id, g_job->step_id.step_id,
+					d[FIELD_STEPCPU].d, d[FIELD_STEPCPUAVE].d, d[FIELD_STEPMEM].d,
+					d[FIELD_STEPVMEM].d, d[FIELD_TIMER].u, d[FIELD_STEPPAGES].u, (uint64_t)sample_time);
+	}
+
+    /* Logical block: Processing Event data */
 #ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
-				_send_data2(str1, g_job->step_id.job_id, g_job->step_id.step_id, STEPDRP);
-#endif				
-				xfree(str1);
-				break;
-			case SLUR_SEND_EVENT_TYPE:	
-#ifdef __METASTACK_OPT_INFLUXDB_PERFORMANCE
+	if (d[FIELD_FLAG].u != 0 
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-				if (((union data_t*)data)[FIELD_FLAG].u == 0 || 
-					!(((union data_t*)data)[FIELD_SENDFLAG].u & JOBACCT_GATHER_PROFILE_ABNORMAL)) 
-					break;	
+		&& (send_flag & JOBACCT_GATHER_PROFILE_ABNORMAL)
 #endif
-				for (int i = 0; i < EVENT_COUNT; i++) {
-					if (((union data_t*)data)[FIELD_FLAG].u & event_configs[i].flag) {
-						xstrfmtcat(str, "Event,username=%s,jobid=%d,step=%d,type=%s "
-										"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,"
-										"stepvmem=%.2f,steppages=%"PRIu64",start=%"PRIu64",end=%"PRIu64" %"PRIu64"\n",
-								g_job->user_name,
-								g_job->step_id.job_id,
-								g_job->step_id.step_id,
-								event_configs[i].name,
-								((union data_t*)data)[FIELD_CPUTHRESHOLD].d,
-								((union data_t*)data)[FIELD_STEPCPU].d,
-								((union data_t*)data)[FIELD_STEPMEM].d,
-								((union data_t*)data)[FIELD_STEPVMEM].d,
-								((union data_t*)data)[FIELD_STEPPAGES].u,
-								((union data_t*)data)[FIELD_EVENTTYPE1START].u,
-								((union data_t*)data)[FIELD_EVENTTYPE1END].u,
-								(uint64_t)sample_time);
-					}
-				}
-				_send_data2(str, g_job->step_id.job_id, g_job->step_id.step_id, EVENTRP);
-#endif
-				xfree(str);
-				break;
-#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-			case SLUR_SEND_APPTYPE_TYPE:
-				if (!(((union data_t*)data)[FIELD_SENDFLAG].u & JOBACCT_GATHER_PROFILE_APPTYPE)) 
-					break;
-				char buffer[21];
-				snprintf(buffer, sizeof(buffer), "%"PRIu64"", ((union data_t*)data)[FIELD_CPUTIME].u);
-				/*
-					curl does not support uint64 when sending data to influxdb, it will cause precision 
-					loss in the conversion process, so it will be converted to a string type to send, 
-					sjinfo will convert the string to uint64
-				*/
-				xstrfmtcat(str2,"Apptype,username=%s,jobid=%d,step=%d apptype_step=\"%s\",apptype_cli=\"%s\",cputime=\"%s\" %"PRIu64"\n",
-				g_job->user_name,
-				g_job->step_id.job_id,
-				g_job->step_id.step_id,
-				((union data_t*)data)[FIELD_APPTYPESTEP].str,
-				((union data_t*)data)[FIELD_APPTYPECLI].str,
-				buffer,
-				(uint64_t)sample_time);
-				if (!((union data_t*)data)[FIELD_HAVERECOGN].u) {
-					if(apptype_datastr) 
-						apptype_datastr[0] = '\0';
-					memcpy(apptype_datastr, str2, strlen(str2) + 1);
-				} else {
-					if (apptype_datastr) 
-						apptype_datastr[0] = '\0';
-					_send_data2(str2, g_job->step_id.job_id, g_job->step_id.step_id, APPTYPERP);
-				}
-				if (str2)
-					xfree(str2);
-				break;
-#endif
+	) {
+		for (int i = 0; i < EVENT_COUNT; i++) {
+			if (d[FIELD_FLAG].u & event_configs[i].flag) {
+				xstrfmtcat(str_event, "Event,username=%s,jobid=%d,step=%d,type=%s "
+							"cputhreshold=%.2f,stepcpu=%.2f,stepmem=%.2f,stepvmem=%.2f,"
+							"steppages=%"PRIu64",start=%"PRIu64",end=%"PRIu64" %"PRIu64"\n",
+							g_job->user_name, g_job->step_id.job_id, g_job->step_id.step_id,
+							event_configs[i].name, d[FIELD_CPUTHRESHOLD].d, d[FIELD_STEPCPU].d,
+							d[FIELD_STEPMEM].d, d[FIELD_STEPVMEM].d, d[FIELD_STEPPAGES].u,
+							d[FIELD_EVENTTYPE1START].u, d[FIELD_EVENTTYPE1END].u, (uint64_t)sample_time);
+			}
 		}
 	}
+#endif
+
+	/* Logical block: Processing Apptype data */
 #ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
-	if ((((union data_t*)data)[FIELD_SENDFLAG].u & JOBACCT_GATHER_PROFILE_APPTYPE)) {
-		xfree(((union data_t*)data)[FIELD_APPTYPESTEP].str);
-		xfree(((union data_t*)data)[FIELD_APPTYPECLI].str);
+	if (send_flag & JOBACCT_GATHER_PROFILE_APPTYPE) {
+		char buf_cpu[21];
+		snprintf(buf_cpu, sizeof(buf_cpu), "%"PRIu64"", d[FIELD_CPUTIME].u);
+		
+		xstrfmtcat(str_apptype, "Apptype,username=%s,jobid=%d,step=%d "
+					"apptype_step=\"%s\",apptype_cli=\"%s\",cputime=\"%s\" %"PRIu64"\n",
+					g_job->user_name, g_job->step_id.job_id, g_job->step_id.step_id,
+					d[FIELD_APPTYPESTEP].str, d[FIELD_APPTYPECLI].str, buf_cpu, (uint64_t)sample_time);
+		
+		/*
+			Special business logic: When identification fails, it is copied to the global buffer.
+		*/
+		if (!d[FIELD_HAVERECOGN].u && apptype_datastr) {
+			strncpy(apptype_datastr, str_apptype, 1024 - 1); 
+			apptype_datastr[1024 - 1] = '\0';
+		} else if (d[FIELD_HAVERECOGN].u && apptype_datastr){
+			apptype_datastr[0] = '\0';
+			_send_data2(str_apptype, g_job->step_id.job_id, g_job->step_id.step_id, APPTYPERP);
+		}
 	}
 #endif
+
+	/* Unified sending logic: Converging output */
+	if (all_rt_equal) {
+		char *merged = NULL;
+		if (str_stepd) xstrfmtcat(merged, "%s", str_stepd);
+		if (str_event) xstrfmtcat(merged, "%s", str_event);
+		
+		if (merged) {
+			_send_data2(merged, g_job->step_id.job_id, g_job->step_id.step_id, STEPDRP);
+			xfree(merged);
+		}
+	} else {
+		// Different strategies, sent separately.
+		if (str_stepd) _send_data2(str_stepd, g_job->step_id.job_id, g_job->step_id.step_id, STEPDRP);
+		if (str_event) _send_data2(str_event, g_job->step_id.job_id, g_job->step_id.step_id, EVENTRP);
+	}
+
+	/* free mem */
+#ifdef __METASTACK_NEW_APPTYPE_RECOGNITION
+	if (send_flag & JOBACCT_GATHER_PROFILE_APPTYPE) {
+		xfree(d[FIELD_APPTYPESTEP].str);
+		xfree(d[FIELD_APPTYPECLI].str);
+	}
+#endif
+	xfree(str_stepd);
+	xfree(str_event);
+	xfree(str_apptype);
+
 	return SLURM_SUCCESS;
 }
 #endif

@@ -293,6 +293,11 @@ int slurm_receive_msg_and_forward(int fd, slurm_addr_t *orig_addr,
  */
 int slurm_send_node_msg(int open_fd, slurm_msg_t *msg);
 
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+int slurm_send_node_msg_recv_msgpeek(int fd, slurm_msg_t *msg);
+int slurm_send_rc_msg_recv_msgpeek(slurm_msg_t *msg, int rc);
+#endif
+
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
 int slurm_send_node_msg1(int open_fd, slurm_msg_t *msg);
 #endif
@@ -462,6 +467,18 @@ extern int slurm_send_recv_controller_msg(slurm_msg_t * request_msg,
 int slurm_send_recv_node_msg(slurm_msg_t * request_msg,
 			     slurm_msg_t * response_msg,
 			     int timeout);
+
+#ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+/* slurm_send_recv_stepmgr_msg
+ * opens a connection to stepmgr with retry,
+ * and sends the nodes a message, listens
+ * for the response, then closes the connections
+ * IN request_msg	- slurm_msg request
+ * OUT response_msg	- slurm_msg response
+ * RET int 		- returns 0 on success, -1 on failure and sets errno
+ */
+int slurm_send_recv_stepmgr_msg(slurm_msg_t *req, slurm_msg_t *resp, int timeout);
+#endif
 
 /*
  *  Send a message to the nodelist specificed using fanout

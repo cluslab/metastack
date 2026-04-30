@@ -1728,9 +1728,15 @@ static int _eval_nodes_spread(topology_eval_t *topo_eval)
 			    bit_test(topo_eval->node_map, i))
 				continue;
 			eval_nodes_select_cores(topo_eval, i, min_rem_nodes);
+#ifdef __METASTACK_BUG_SPREAD_JOB_CRASH_CTLD
+			eval_nodes_cpus_to_use(topo_eval, i,
+					       rem_max_cpus, min_rem_nodes,
+					       &maxtasks, true);
+#else
 			eval_nodes_cpus_to_use(topo_eval, i,
 					       rem_max_cpus, min_rem_nodes,
 					       NULL, true);
+#endif
 			if (topo_eval->avail_cpus == 0)
 				continue;
 			total_cpus += topo_eval->avail_cpus;

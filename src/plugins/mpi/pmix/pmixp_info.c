@@ -678,6 +678,17 @@ static int _env_set(const stepd_step_rec_t *step, char ***env)
 	}
 #endif
 
+#ifdef __METASTACK_BUG_ENV_PMIX_UCX
+	p = getenvp(*env, "SLURM_SHCA_SHUT_UP_RTM");
+	if (p) {
+		setenv("SHCA_SHUT_UP_RTM", p, 1);
+	}
+	p = getenvp(*env, "SLURM_UCX_RC_VERBS_TX_CQ_MODERATION");
+	if (p) {
+		setenv("UCX_RC_VERBS_TX_CQ_MODERATION", p, 1);
+	}
+#endif
+
 #endif
 
 	return SLURM_SUCCESS;

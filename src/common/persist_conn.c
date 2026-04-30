@@ -1178,6 +1178,105 @@ extern int slurm_persist_conn_writeable(persist_conn_t *persist_conn)
 	return 0;
 }
 
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+/* This function is a modified version of the original "slurm_persist_conn_writeable()", 
+ * specifically created to fix bug 115879: Message framing corruption
+ */
+extern int slurm_persist_conn_writeable_recv_msgpeek(persist_conn_t *persist_conn)
+{
+	struct pollfd ufds;
+	int write_timeout = 5000;
+	int rc, time_left;
+	struct timeval tstart;
+	char temp[2];
+
+	if (!persist_conn || !persist_conn->shutdown)
+		fatal("%s: unexpected NULL persist_conn", __func__);
+	else if (*persist_conn->shutdown) {
+		log_flag(NET, "%s: called on shutdown fd:%d to host %s:%hu",
+		         __func__, persist_conn->fd,
+		         (persist_conn->rem_host ? persist_conn->rem_host :
+                                                   "unknown"),
+		         persist_conn->rem_port);
+		return -1;
+	} else if (persist_conn->fd < 0) {
+		log_flag(NET, "%s: called on invalid fd:%d to host %s:%hu",
+		         __func__, persist_conn->fd,
+		         (persist_conn->rem_host ? persist_conn->rem_host :
+                                                   "unknown"),
+		         persist_conn->rem_port);
+		return -1;
+	}
+
+	ufds.fd     = persist_conn->fd;
+	ufds.events = POLLOUT;
+	gettimeofday(&tstart, NULL);
+	while (!*persist_conn->shutdown) {
+		time_left = write_timeout - _tot_wait(&tstart);
+		rc = poll(&ufds, 1, time_left);
+		if (rc == -1) {
+			if ((errno == EINTR) || (errno == EAGAIN))
+				continue;
+			error("%s: poll error: %m", __func__);
+			return -1;
+		}
+		if (rc == 0)
+			return 0;
+		/*
+		 * Check here to make sure the socket really is there.
+		 * If not then exit out and notify the conn.  This
+		 * is here since a write doesn't always tell you the
+		 * socket is gone, but getting 0 back from a
+		 * nonblocking read means just that.
+		 */
+		if (ufds.revents & POLLHUP ||
+			/*
+			 * Fixed bug 115879: Message framing corruption
+			 * Replace recv(...,0) with MSG_PEEK to check connection without consuming protocol data.
+			 */
+		    (recv(persist_conn->fd, &temp, 1, MSG_PEEK | MSG_DONTWAIT) == 0)) {
+			log_flag(NET, "%s: persistent connection %d is closed for writes",
+				 __func__, persist_conn->fd);
+			if (persist_conn->trigger_callbacks.dbd_fail)
+				(persist_conn->trigger_callbacks.dbd_fail)();
+			return -1;
+		}
+		if (ufds.revents & POLLNVAL) {
+			error("%s: persistent connection %d is invalid",
+			      __func__, persist_conn->fd);
+			return 0;
+		}
+		if (ufds.revents & POLLERR) {
+			if (_comm_fail_log(persist_conn)) {
+				int rc, err;
+				if ((rc = fd_get_socket_error(persist_conn->fd,
+							      &err)))
+					error("%s: unable to get error for persistent connection %d: %s",
+					      __func__, persist_conn->fd,
+					      strerror(rc));
+				else
+					error("%s: persistent connection %d experienced an error: %s",
+					      __func__, persist_conn->fd,
+					      strerror(err));
+				slurm_seterrno(err);
+			}
+			if (persist_conn->trigger_callbacks.dbd_fail)
+				(persist_conn->trigger_callbacks.dbd_fail)();
+			return 0;
+		}
+		if ((ufds.revents & POLLOUT) == 0) {
+			error("%s: persistent connection %d events %d",
+			      __func__, persist_conn->fd, ufds.revents);
+			return 0;
+		}
+		/* revents == POLLOUT */
+		errno = 0;
+		return 1;
+	}
+	return 0;
+}
+#endif
+
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
 /* This function is a modified version of the original "slurm_persist_conn_writeable()", 
  * specifically created to fix bug 98700.
@@ -1230,7 +1329,15 @@ extern int slurm_persist_conn_writeable1(persist_conn_t *persist_conn)
 		 * nonblocking read means just that.
 		 */
 		if (ufds.revents & POLLHUP ||
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+			/*
+			 * Fixed bug 115879: Message framing corruption
+			 * Replace recv(...,0) with MSG_PEEK to check connection without consuming protocol data.
+			 */
+		    (recv(persist_conn->fd, &temp, 1, MSG_PEEK | MSG_DONTWAIT) == 0)) {
+#else
 		    (recv(persist_conn->fd, &temp, 1, 0) == 0)) {
+#endif
 			log_flag(NET, "%s: persistent connection %d is closed for writes",
 				 __func__, persist_conn->fd);
 			if (persist_conn->trigger_callbacks.dbd_fail)
@@ -1406,6 +1513,72 @@ extern int slurm_persist_send_msg(persist_conn_t *persist_conn,
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+/* This function is a modified version of the original "slurm_persist_send_msg()", 
+ * specifically created to fix bug 115879: Message framing corruption
+ */
+extern int slurm_persist_send_msg_recv_msgpeek(persist_conn_t *persist_conn,
+				  buf_t *buffer)
+{
+	uint32_t msg_size, nw_size;
+	char *msg;
+	ssize_t msg_wrote;
+	int rc, retry_cnt = 0;
+
+	xassert(persist_conn);
+
+	if (persist_conn->fd < 0)
+		return EAGAIN;
+
+	if (!buffer)
+		return SLURM_ERROR;
+
+	rc = slurm_persist_conn_writeable_recv_msgpeek(persist_conn);
+	if (rc == -1) {
+	re_open:
+		/* if errno is ACCESS_DENIED do not try to reopen to
+		   connection just return that */
+		if (errno == ESLURM_ACCESS_DENIED)
+			return ESLURM_ACCESS_DENIED;
+
+		if (retry_cnt++ > 3)
+			return SLURM_COMMUNICATIONS_SEND_ERROR;
+
+		if (persist_conn->flags & PERSIST_FLAG_RECONNECT) {
+			slurm_persist_conn_reopen(persist_conn);
+			rc = slurm_persist_conn_writeable(persist_conn);
+		} else
+			return SLURM_ERROR;
+	}
+	if (rc < 1)
+		return EAGAIN;
+
+	msg_size = get_buf_offset(buffer);
+	nw_size = htonl(msg_size);
+
+	msg_wrote = tls_g_send(persist_conn->tls_conn, &nw_size,
+			       sizeof(nw_size));
+	if (msg_wrote != sizeof(nw_size))
+		return EAGAIN;
+
+	msg = get_buf_data(buffer);
+	while (msg_size > 0) {
+		rc = slurm_persist_conn_writeable_recv_msgpeek(persist_conn);
+		if (rc == -1)
+			goto re_open;
+		if (rc < 1)
+			return EAGAIN;
+		msg_wrote = tls_g_send(persist_conn->tls_conn, msg, msg_size);
+		if (msg_wrote <= 0)
+			return EAGAIN;
+		msg += msg_wrote;
+		msg_size -= msg_wrote;
+	}
+
+	return SLURM_SUCCESS;
+}
+#endif
+
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
 /* This function is a modified version of the original "_slurm_persist_recv_msg()", 
  * specifically created to fix bug 98700.
@@ -1430,6 +1603,12 @@ static buf_t *_slurm_persist_recv_msg1(persist_conn_t *persist_conn,
 				 persist_conn->rem_port);
 		return NULL;
 	}
+
+	/*Fixed bug 115879*/
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+	char temp[2];
+redo:
+#endif
 
 	if (!_conn_readable1(persist_conn)) {
 		log_flag(NET, "%s: Unable to read from file descriptor (%d)",
@@ -1500,6 +1679,18 @@ static buf_t *_slurm_persist_recv_msg1(persist_conn_t *persist_conn,
 		xfree(msg);
 		goto endit;
 	}
+
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+	/**
+	 * Fixed bug 115879
+	 * Discard stale responses: slurmctld sends backlogged responses upon recovery.
+	 * Read until no data available to ensure the latest response is obtained.
+	 */
+	if (recv(persist_conn->fd, &temp, 1, MSG_PEEK | MSG_DONTWAIT) == 1) {
+		xfree(msg);
+		goto redo;
+	}
+#endif
 
 	buffer = create_buf(msg, msg_size);
 	return buffer;

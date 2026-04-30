@@ -280,7 +280,7 @@ function conversion_time_limit(minutes)
 
 	local minutes = math.floor(total_seconds / 60)
 	
-	local secs = total_seconds % 60
+	local secs = math.floor(total_seconds % 60)
 
 	-- 返回格式为标准时间格式
 	if days > 0 then
@@ -495,7 +495,7 @@ function calculate_average_time(time_list)
 	end
 
 	-- 计算平均时间
-	local average_seconds = total_seconds / count
+	local average_seconds = math.floor(total_seconds / count)
 	
 	-- 返回标准格式的时间
 	return format_time(average_seconds)

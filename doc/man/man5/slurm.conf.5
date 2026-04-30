@@ -2276,6 +2276,12 @@ https://slurm.schedmd.com/nss_slurm.html for more information.
 .IP
 
 .TP 24
+\fBenable_overlap_node_lb\fR
+If set, it will implement the balanced allocation strategy among nodes for multiple overlapping srun job steps submitted concurrently via sbatch.
+If not set, it will follow the legacy logic: the node selection will adopt an unbalanced allocation strategy among nodes for multiple srun job steps with the overlap parameter that are submitted concurrently via sbatch.
+.IP
+
+.TP 24
 \fBlustre_no_flush\fR
 If set on a Cray XC cluster, then do not flush the Lustre cache on job step
 completion. This setting will only take effect after reconfiguring, and will

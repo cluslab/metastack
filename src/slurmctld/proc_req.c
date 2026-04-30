@@ -2768,9 +2768,16 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t *msg)
 							      msg->auth_uid);
 			}
 #else
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			error_code = drain_nodes(comp_msg->node_name,
+			                         "batch job complete failure",
+			                         slurm_conf.slurm_user_id,
+									 false);
+#else
 			error_code = drain_nodes(comp_msg->node_name,
 			                         "batch job complete failure",
 			                         slurm_conf.slurm_user_id);
+#endif
 #endif	/* !HAVE_FRONT_END */
 			if ((comp_msg->job_rc != SLURM_SUCCESS) && job_ptr &&
 			    job_ptr->details && job_ptr->details->requeue)
@@ -6571,7 +6578,15 @@ static void _slurm_rpc_accounting_update_msg(slurm_msg_t *msg)
 	 * result would be the same if we wait or not since the update has
 	 * already happened in the database.
 	 */
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+	/*
+	* Fixed bug 115879: Message framing corruption
+	* Replace recv(...,0) with MSG_PEEK to check connection without consuming protocol data.
+	*/
+	slurm_send_rc_msg_recv_msgpeek(msg, rc);
+#else
 	slurm_send_rc_msg(msg, rc);
+#endif
 
 	/* Signal acct_update_thread to process list */
 	slurm_mutex_lock(&slurmctld_config.acct_update_lock);

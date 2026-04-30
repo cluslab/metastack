@@ -1278,11 +1278,21 @@ extern int kingbase_db_ping(kingbase_conn_t *kingbase_conn)
 {
 	int rc;
 
+#ifdef __METASTACK_BUG_DB_CONN_NULL_DEREF
+	/* clear out the old results so we don't get a 2014 error */
+	slurm_mutex_lock(&kingbase_conn->lock);
+
+	if (!kingbase_conn->db_conn) {
+		slurm_mutex_unlock(&kingbase_conn->lock);
+		return -1;
+	}
+#else
 	if (!kingbase_conn->db_conn)
 		return -1;
 
 	/* clear out the old results so we don't get a 2014 error */
 	slurm_mutex_lock(&kingbase_conn->lock);
+#endif
 	_clear_results(kingbase_conn->db_conn);
 	rc = KCIConnectionGetStatus(kingbase_conn->db_conn);
 	/*
@@ -1300,11 +1310,21 @@ extern int kingbase_db_commit(kingbase_conn_t *kingbase_conn)
 	int rc = SLURM_SUCCESS;
 	char *query = NULL;
 
+#ifdef __METASTACK_BUG_DB_CONN_NULL_DEREF
+	slurm_mutex_lock(&kingbase_conn->lock);
+	if (!kingbase_conn->db_conn) {
+		slurm_mutex_unlock(&kingbase_conn->lock);
+		return SLURM_ERROR;
+	}
+
+	query = xstrdup_printf("COMMIT");
+#else
 	if (!kingbase_conn->db_conn)
 		return SLURM_ERROR;
 
 	query = xstrdup_printf("COMMIT");
 	slurm_mutex_lock(&kingbase_conn->lock);
+#endif
 	/* clear out the old results so we don't get a 2014 error */
 	_clear_results(kingbase_conn->db_conn);
 	if (KCIStatementSend(kingbase_conn->db_conn, query)) {
@@ -1337,11 +1357,21 @@ extern int kingbase_db_rollback(kingbase_conn_t *kingbase_conn)
 	int rc = SLURM_SUCCESS;
 	char *query = NULL;
 
+#ifdef __METASTACK_BUG_DB_CONN_NULL_DEREF
+	slurm_mutex_lock(&kingbase_conn->lock);
+	if (!kingbase_conn->db_conn) {
+		slurm_mutex_unlock(&kingbase_conn->lock);
+		return SLURM_ERROR;
+	}
+
+	query = xstrdup_printf("ROLLBACK");
+#else
 	if (!kingbase_conn->db_conn)
 		return SLURM_ERROR;
 
 	query = xstrdup_printf("ROLLBACK");
 	slurm_mutex_lock(&kingbase_conn->lock);
+#endif
 	/* clear out the old results so we don't get a 2014 error */
 	_clear_results(kingbase_conn->db_conn);
 	if (KCIStatementSend(kingbase_conn->db_conn, query)) {

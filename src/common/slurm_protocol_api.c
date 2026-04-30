@@ -2192,6 +2192,81 @@ cleanup:
 	return rc;
 }
 
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+/* This function is a modified version of the original "slurm_send_node_msg()", 
+ * specifically created to fix bug 115879: Message framing corruption
+ */
+extern int slurm_send_node_msg_recv_msgpeek(int fd, slurm_msg_t *msg)
+{
+	msg_bufs_t buffers = { 0 };
+	int rc;
+
+	if (msg->conn) {
+		persist_msg_t persist_msg;
+		buf_t *buffer;
+		char *peer = NULL;
+
+		memset(&persist_msg, 0, sizeof(persist_msg_t));
+		persist_msg.msg_type  = msg->msg_type;
+		persist_msg.data      = msg->data;
+
+		buffer = slurm_persist_msg_pack(msg->conn, &persist_msg);
+		if (!buffer)    /* pack error */
+			return SLURM_ERROR;
+
+		rc = slurm_persist_send_msg_recv_msgpeek(msg->conn, buffer);
+		FREE_NULL_BUFFER(buffer);
+
+		if ((rc < 0) && (errno == ENOTCONN)) {
+			if (slurm_conf.debug_flags & DEBUG_FLAG_NET)
+				peer = fd_resolve_peer(fd);
+
+			log_flag(NET, "%s: [%s] persistent connection has disappeared for msg_type=%s",
+				__func__, peer, rpc_num2string(msg->msg_type));
+		} else if (rc < 0) {
+			peer = fd_resolve_peer(fd);
+			error("%s: [%s] slurm_persist_send_msg(msg_type=%s) failed: %m",
+			      __func__, peer, rpc_num2string(msg->msg_type));
+		}
+
+		xfree(peer);
+		return rc;
+	}
+
+	/*
+	 * Pack and send message
+	 */
+	if ((rc = slurm_buffers_pack_msg(msg, &buffers, true)))
+		goto cleanup;
+
+	rc = slurm_bufs_sendto(fd, &buffers);
+
+	if (rc >= 0) {
+		/* sent successfully */
+	} else if (errno == ENOTCONN) {
+		log_flag(NET, "%s: peer has disappeared for msg_type=%s",
+			 __func__, rpc_num2string(msg->msg_type));
+	} else if (errno == EBADF) {
+		/* failure of sendto() and peer lookup will never work */
+		error("%s: slurm_bufs_sendto(fd=%d) with msg_type=%s failed: %m",
+		      __func__, fd, rpc_num2string(msg->msg_type));
+	} else {
+		int err = errno;
+		char *peer = fd_resolve_path(fd);
+		error("%s: [%s] slurm_bufs_sendto(msg_type=%s) failed: %s",
+		      __func__, peer, rpc_num2string(msg->msg_type),
+		      slurm_strerror(err));
+		xfree(peer);
+	}
+
+cleanup:
+	FREE_NULL_BUFFER(buffers.header);
+	FREE_NULL_BUFFER(buffers.auth);
+	FREE_NULL_BUFFER(buffers.body);
+	return rc;
+}
+#endif
+
 /**********************************************************************\
  * stream functions
 \**********************************************************************/
@@ -2383,6 +2458,28 @@ int slurm_send_rc_msg(slurm_msg_t *msg, int rc)
 	/* send message */
 	return slurm_send_node_msg(msg->conn_fd, &resp_msg);
 }
+
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+/* This function is a modified version of the original "slurm_send_rc_msg()", 
+ * specifically created to fix bug 115879: Message framing corruption
+ */
+int slurm_send_rc_msg_recv_msgpeek(slurm_msg_t *msg, int rc)
+{
+	slurm_msg_t resp_msg;
+	return_code_msg_t rc_msg;
+
+	if (msg->conn_fd < 0) {
+		slurm_seterrno(ENOTCONN);
+		return SLURM_ERROR;
+	}
+	rc_msg.return_code = rc;
+
+	response_init(&resp_msg, msg, RESPONSE_SLURM_RC, &rc_msg);
+
+	/* send message */
+	return slurm_send_node_msg_recv_msgpeek(msg->conn_fd, &resp_msg);
+}
+#endif
 
 /* slurm_send_rc_err_msg
  * given the original request message this function sends a
@@ -2777,6 +2874,48 @@ int slurm_send_recv_node_msg(slurm_msg_t *req, slurm_msg_t *resp, int timeout)
 	return _send_and_recv_msg(fd, req, resp, timeout);
 
 }
+
+#ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+/* slurm_send_recv_stepmgr_msg
+ * opens a connection to node with retry, sends the stepmgr a message, listens
+ * for the response, then closes the connection
+ * IN request_msg	- slurm_msg request
+ * OUT response_msg	- slurm_msg response
+ * IN timeout		- how long to wait in milliseconds
+ * RET int		- returns 0 on success, -1 on failure and sets errno
+ */
+int slurm_send_recv_stepmgr_msg(slurm_msg_t *req, slurm_msg_t *resp, int timeout)
+{
+	int fd = -1;
+	int retry = 0;
+
+	resp->auth_cred = NULL;
+	
+	for (retry = 0; retry < slurm_conf.msg_timeout; retry++) {
+		if (retry) {
+			sleep(1);
+		}
+
+		fd = slurm_open_msg_conn(&req->address);
+
+		if (fd >= 0) {
+			break;
+		}
+
+		log_flag(NET, "%s: Failed to contact stepmgr(%pA): %m",
+				 __func__, &req->address);
+	}
+	
+	if (fd < 0) {
+		log_flag(NET, "%s: slurm_open_msg_conn(%pA): %m",
+			 __func__, &req->address);
+		return -1;
+	}
+
+	return _send_and_recv_msg(fd, req, resp, timeout);
+
+}
+#endif
 
 /* slurm_send_only_controller_msg
  * opens a connection to the controller, sends the controller a
