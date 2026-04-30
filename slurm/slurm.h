@@ -447,6 +447,9 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_PROCESS_DISTRIBUTION
 #endif
 
+#ifndef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+#define __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+#endif
 
 /*
 	Fix the bug where some environment variables were not updated after 
@@ -458,6 +461,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 
 #ifndef __METASTACK_BUG_FORKSTEPD_FD_LEAK
 #define __METASTACK_BUG_FORKSTEPD_FD_LEAK
+#endif
+
+#ifndef __METASTACK_BUG_OVERLAP_NODE_DIST
+#define __METASTACK_BUG_OVERLAP_NODE_DIST
 #endif
 
 /*
@@ -535,6 +542,73 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 
 #ifndef __METASTACK_BUG_NULL_GS_PART_LIST
 #define __METASTACK_BUG_NULL_GS_PART_LIST
+#endif
+
+// Fixed in Slurm 25.11.0-rc1.
+#ifndef __METASTACK_BUG_SEGFAULT_PREP_RUNINJOB
+#define __METASTACK_BUG_SEGFAULT_PREP_RUNINJOB
+#endif
+
+#ifndef __METASTACK_BUG_EXTERN_THREAD_FINISH
+#define __METASTACK_BUG_EXTERN_THREAD_FINISH
+#endif
+
+#ifndef __METASTACK_BUG_CANNOT_CANCEL_STEP
+#define __METASTACK_BUG_CANNOT_CANCEL_STEP
+#endif
+
+#ifndef __METASTACK_BUG_ENV_PMIX_UCX
+#define __METASTACK_BUG_ENV_PMIX_UCX
+#endif
+
+// Fixed bug 118019. In a scenario where the cluster has a large number of disconnected nodes, the REQUEST_RECONFIGURE agent operation takes an extremely long time.
+#ifndef __METASTACK_BUG_RECONFIG_AGENT_TIME_CONSUME
+#define __METASTACK_BUG_RECONFIG_AGENT_TIME_CONSUME
+#endif
+
+// Fixed task 49275. Optimize Gres logs in slurmctld.
+#ifndef __METASTACK_BUG_OPTIMIZE_GRES_LOG
+#define __METASTACK_BUG_OPTIMIZE_GRES_LOG
+#endif
+
+// Fixed Bug 115829. Enhanced message retry mechanism for messages sent to stepmgr.
+#ifndef __METASTACK_BUG_STEPMGR_CONN_RETRY
+#define __METASTACK_BUG_STEPMGR_CONN_RETRY
+#endif
+
+// Fixed Bug 115829. Enhanced message retry mechanism for messages sent to slurmctld.
+#ifndef __METASTACK_BUG_CTLD_CONN_RETRY
+#define __METASTACK_BUG_CTLD_CONN_RETRY
+#endif
+
+// Fixed Bug 118291. Stepmgr enabled, job steps fail to be delivered continuously and cannot be cancelled.
+#ifndef __METASTACK_BUG_STEPMGR_STEP_STUCK
+#define __METASTACK_BUG_STEPMGR_STEP_STUCK
+#endif
+
+// Fixed Bug 117009. Stepmgr enabled, job assigned to faulty node
+#ifndef __METASTACK_BUG_STEPMGR_ASSIGN_FAULT_NODE
+#define __METASTACK_BUG_STEPMGR_ASSIGN_FAULT_NODE
+#endif
+
+// Fixed Bug 118289. node fault causes job step delay (irrelevant to stepmgr)
+#ifndef __METASTACK_BUG_NODE_FAULT_STEP_DELAY
+#define __METASTACK_BUG_NODE_FAULT_STEP_DELAY
+#endif
+
+// Fixed Bug 118427. Batch host fault with --no-kill causes job to hang
+#ifndef __METASTACK_BUG_BATCH_HOST_FAULT_HANG
+#define __METASTACK_BUG_BATCH_HOST_FAULT_HANG
+#endif
+
+// Fixed Bug 118198. Slurmdbd crash caused by NULL dereference of db_conn when the MySQL service stops.
+#ifndef __METASTACK_BUG_DB_CONN_NULL_DEREF
+#define __METASTACK_BUG_DB_CONN_NULL_DEREF
+#endif
+
+// Fixed Bug 118449. Specifying both the --spread-job and GRES-related options in the job submission option causes the slurmctld to crash.
+#ifndef __METASTACK_BUG_SPREAD_JOB_CRASH_CTLD
+#define __METASTACK_BUG_SPREAD_JOB_CRASH_CTLD
 #endif
 
 /*****************************************************************************\

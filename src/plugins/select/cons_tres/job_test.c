@@ -2287,8 +2287,13 @@ alloc_job:
 			if (c >= c_size) {
 				error("core_bitmap index error on node %s (NODE_INX:%d, C_SIZE:%u)",
 				      node_ptr->name, i, c_size);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				drain_nodes(node_ptr->name, "Bad core count",
+					    getuid(), false);
+#else
 				drain_nodes(node_ptr->name, "Bad core count",
 					    getuid());
+#endif
 				_free_avail_res_array(avail_res_array);
 				free_job_resources(&job_res);
 				free_core_array(&free_cores);

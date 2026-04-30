@@ -1464,8 +1464,12 @@ int pmixp_server_direct_conn_early(void)
 				break;
 			case PMIXP_COLL_TYPE_FENCE_RING:
 				/* calculate the id of the next ring neighbor */
+#ifdef __METASTACK_BUG_NODE_FAULT_STEP_DELAY
+				ep.ep.nodeid = coll[i]->state.ring.next_peerid;
+#else
 				ep.ep.nodeid = (coll[i]->my_peerid + 1) %
 						coll[i]->peers_cnt;
+#endif
 				break;
 			default:
 				PMIXP_ERROR("Unknown coll type");

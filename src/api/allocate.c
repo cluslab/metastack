@@ -785,7 +785,11 @@ trystepmgr:
 		}
 		xfree(stepmgr_nodename);
 
+#ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+		if (slurm_send_recv_stepmgr_msg(&req_msg, &resp_msg, 0))
+#else
 		if (slurm_send_recv_node_msg(&req_msg, &resp_msg, 0))
+#endif
 			return SLURM_ERROR;
 	} else if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
 						  working_cluster_rec) < 0) {
@@ -923,7 +927,11 @@ extern int slurm_het_job_lookup(uint32_t jobid, List *info)
 		}
 		xfree(stepmgr_nodename);
 
+#ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+		if (slurm_send_recv_stepmgr_msg(&req_msg, &resp_msg, 0))
+#else
 		if (slurm_send_recv_node_msg(&req_msg, &resp_msg, 0))
+#endif
 			return SLURM_ERROR;
 	} else if (slurm_send_recv_controller_msg(&req_msg, &resp_msg,
 						  working_cluster_rec) < 0) {

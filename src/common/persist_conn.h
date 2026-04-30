@@ -180,6 +180,12 @@ extern int slurm_persist_send_msg(persist_conn_t *persist_conn,
 
 extern buf_t *slurm_persist_recv_msg(persist_conn_t *persist_conn);
 
+#ifdef __METASTACK_BUG_ADDUSER_TCP_BUFFER_CORRUPTION
+extern int slurm_persist_conn_writeable_recv_msgpeek(persist_conn_t *persist_conn);
+extern int slurm_persist_send_msg_recv_msgpeek(persist_conn_t *persist_conn,
+					  buf_t *buffer);
+#endif
+
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
 extern int slurm_persist_conn_writeable1(persist_conn_t *persist_conn);
 

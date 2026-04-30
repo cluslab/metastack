@@ -128,8 +128,13 @@ bitstr_t *resv_node_bitmap    = NULL;  /* bitmap of hetpart resv nodes */
 #endif
 
 static int _delete_node_ptr(node_record_t *node_ptr);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+static void	_drain_node(node_record_t *node_ptr, char *reason,
+			    uint32_t reason_uid, bool can_para_epilog);
+#else
 static void	_drain_node(node_record_t *node_ptr, char *reason,
 			    uint32_t reason_uid);
+#endif
 static front_end_record_t * _front_end_reg(
 				slurm_node_registration_status_msg_t *reg_msg);
 static void    _make_node_unavail(node_record_t *node_ptr);
@@ -2566,8 +2571,13 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 						(~NODE_STATE_POWERING_UP);
 				} else if (state_val & NODE_STATE_POWER_DRAIN) {
 					/* power down asap -- drain */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+					_drain_node(node_ptr, "POWER_DOWN_ASAP",
+						    node_ptr->reason_uid, false);
+#else
 					_drain_node(node_ptr, "POWER_DOWN_ASAP",
 						    node_ptr->reason_uid);
+#endif
 				}
 				if (IS_NODE_DOWN(node_ptr)) {
 					/* Abort any power up request */
@@ -3214,8 +3224,13 @@ static void _update_config_ptr(bitstr_t *bitmap, config_record_t *config_ptr)
 	}
 }
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+static void _drain_node(node_record_t *node_ptr, char *reason,
+			uint32_t reason_uid, bool can_para_epilog)
+#else
 static void _drain_node(node_record_t *node_ptr, char *reason,
 			uint32_t reason_uid)
+#endif
 {
 	time_t now = time(NULL);
 
@@ -3227,7 +3242,7 @@ static void _drain_node(node_record_t *node_ptr, char *reason,
 	}
 
 #ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
-	trigger_node_draining(node_ptr, false);
+	trigger_node_draining(node_ptr, can_para_epilog);
 #else
 	trigger_node_draining(node_ptr);
 #endif
@@ -3246,7 +3261,7 @@ static void _drain_node(node_record_t *node_ptr, char *reason,
 	    (node_ptr->comp_job_cnt == 0)) {
 		/* no jobs, node is drained */
 #ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
-		trigger_node_drained(node_ptr, false);
+		trigger_node_drained(node_ptr, can_para_epilog);
 #else
 		trigger_node_drained(node_ptr);
 #endif
@@ -3264,7 +3279,11 @@ static void _drain_node(node_record_t *node_ptr, char *reason,
  * RET SLURM_SUCCESS or error code
  * global: node_record_table_ptr - pointer to global node table
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern int drain_nodes(char *nodes, char *reason, uint32_t reason_uid, bool can_para_epilog)
+#else
 extern int drain_nodes(char *nodes, char *reason, uint32_t reason_uid)
+#endif
 {
 	int error_code = SLURM_SUCCESS;
 	node_record_t *node_ptr;
@@ -3290,7 +3309,11 @@ extern int drain_nodes(char *nodes, char *reason, uint32_t reason_uid)
 			break;
 		}
 		free (this_node_name);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		_drain_node(node_ptr, reason, reason_uid, can_para_epilog);
+#else
 		_drain_node(node_ptr, reason, reason_uid);
+#endif
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		_add_node_state_to_queue(node_ptr, true);
 #endif
@@ -3922,8 +3945,13 @@ extern int validate_node_specs(slurm_msg_t *slurm_msg, bool *newly_up)
 		if (!IS_NODE_DOWN(node_ptr)
 			&& !IS_NODE_DRAIN(node_ptr)
 			&& ! IS_NODE_FAIL(node_ptr)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			drain_nodes(reg_msg->node_name, reason_down,
+			            slurm_conf.slurm_user_id, false);
+#else
 			drain_nodes(reg_msg->node_name, reason_down,
 			            slurm_conf.slurm_user_id);
+#endif
 		} else if (xstrcmp(node_ptr->reason, reason_down)) {
 			if (was_invalid_reg) {
 				error("Setting node %s state to INVAL with reason:%s",
@@ -3944,8 +3972,13 @@ extern int validate_node_specs(slurm_msg_t *slurm_msg, bool *newly_up)
 				reason = "Prolog error";
 			else
 				reason = "Job env setup error";
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			drain_nodes(reg_msg->node_name, reason,
+			            slurm_conf.slurm_user_id, false);
+#else
 			drain_nodes(reg_msg->node_name, reason,
 			            slurm_conf.slurm_user_id);
+#endif
 			last_node_update = time (NULL);
 		}
 	} else {
@@ -4880,6 +4913,10 @@ void msg_to_slurmd (slurm_msg_type_t msg_type)
 	}
 #else
 	for (i = 0; (node_ptr = next_node(&i)); i++) {
+#ifdef __METASTACK_BUG_RECONFIG_AGENT_TIME_CONSUME
+		if (msg_type == REQUEST_RECONFIGURE && IS_NODE_DOWN(node_ptr))
+			continue;
+#endif
 		if (IS_NODE_FUTURE(node_ptr))
 			continue;
 		if (IS_NODE_CLOUD(node_ptr) &&

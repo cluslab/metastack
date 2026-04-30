@@ -1032,6 +1032,7 @@ static void _record_profile(struct jobacctinfo *jobacct)
 		double d;
 		uint64_t u64;
 	} data[FIELD_CNT];
+	
 	char str[256];
 
 	if (profile_gid == -1) {

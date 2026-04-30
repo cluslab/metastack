@@ -103,9 +103,16 @@ static stepd_step_rec_t *_step_setup(slurm_addr_t *cli, slurm_msg_t *msg);
 static void _step_cleanup(stepd_step_rec_t *step, slurm_msg_t *msg, int rc);
 #endif
 static void _process_cmdline(int argc, char **argv);
+#ifdef __METASTACK_BUG_CANNOT_CANCEL_STEP
+static void _kill_step_on_send_signal_fail(slurm_msg_t *msg);
+#endif
 
 static pthread_mutex_t cleanup_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool cleanup = false;
+
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+bool enable_overlap_node_lb = false;
+#endif
 
 /*
  *  List of signals to block in this process
@@ -143,6 +150,26 @@ static int _foreach_ret_data_info(void *x, void *arg)
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_BUG_CANNOT_CANCEL_STEP
+static int _foreach_ret_data_info_check_invalid_jobid(void *x, void *arg)
+{
+	int rc;
+	ret_data_info_t *ret_data_info = x;
+
+	if ((rc = slurm_get_return_code(ret_data_info->type,
+					ret_data_info->data))) {
+		error("stepmgr failed to send message %s: rc=%d(%s)",
+		      rpc_num2string(ret_data_info->type), rc,
+		      slurm_strerror(rc));
+		if (rc == ESLURM_INVALID_JOB_ID) {
+			return SLURM_ERROR;
+		}
+	}
+
+	return SLURM_SUCCESS;
+}
+#endif
+
 static void *_rpc_thread(void *data)
 {
 	agent_arg_t *agent_arg_ptr = data;
@@ -168,7 +195,19 @@ static void *_rpc_thread(void *data)
 						&msg, 0))) {
 			error("%s: no ret_list given", __func__);
 		} else {
+#ifdef __METASTACK_BUG_CANNOT_CANCEL_STEP
+			signal_tasks_msg_t *msg_ptr = msg.data;
+			if (agent_arg_ptr->msg_type == REQUEST_SIGNAL_TASKS && 
+				((msg_ptr->signal == SIGKILL) || (msg_ptr->signal == SIGTERM))) {
+				if (list_for_each(ret_list, _foreach_ret_data_info_check_invalid_jobid, NULL) < 0) {
+					_kill_step_on_send_signal_fail(&msg);
+				}
+			} else {
+				list_for_each(ret_list, _foreach_ret_data_info, NULL);
+			}
+#else
 			list_for_each(ret_list, _foreach_ret_data_info, NULL);
+#endif
 			FREE_NULL_LIST(ret_list);
 		}
 	}
@@ -189,6 +228,45 @@ extern job_record_t *find_job_record(uint32_t job_id)
 
 	return job_step_ptr;
 }
+
+#ifdef __METASTACK_BUG_CANNOT_CANCEL_STEP
+static void _kill_step_on_send_signal_fail(slurm_msg_t *msg) {
+	job_record_t *job_ptr = NULL;
+	step_record_t *step_ptr = NULL;
+	int rem;
+	uint32_t step_rc;
+	signal_tasks_msg_t *signal_msg = (signal_tasks_msg_t *) msg->data;
+	job_ptr = find_job_record((signal_msg->step_id).job_id);
+	if (job_ptr == NULL) {
+		error("%s: invalid JobId=%u", __func__, (signal_msg->step_id).job_id);
+		return;
+	}
+	step_ptr = list_find_first(job_ptr->step_list, find_step_id, &(signal_msg->step_id));
+	if (step_ptr == NULL) {
+		error("%s: invalid %ps", __func__, &signal_msg->step_id);
+		return;
+	}
+	if (step_ptr->state != JOB_RUNNING) {
+		debug("%s: Step %ps is not running, "
+				"does not need to be marked as completed again.", 
+				__func__, &signal_msg->step_id);
+		return;
+	}
+	step_complete_msg_t req = {
+		.step_id = signal_msg->step_id,
+		.range_first = 0,
+		.range_last = (step_ptr->step_layout)->node_cnt - 1,
+		.step_rc = SIGKILL,
+		.jobacct = step_ptr->jobacct,
+		.send_to_stepmgr = true,
+	};
+	
+	info("%s: Step %ps failed to signal, marking as complete",
+		__func__, &signal_msg->step_id);
+	
+	step_partial_comp(&req, job_ptr->user_id, true, &rem, &step_rc);
+}
+#endif
 
 static void *_step_time_limit_thread(void *data)
 {
@@ -320,6 +398,9 @@ main (int argc, char **argv)
 	/* Receive job parameters from the slurmd */
 	_init_from_slurmd(STDIN_FILENO, argv, &cli, &msg);
 
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+	_init_enable_overlap_node_lb();
+#endif
 	/* Create the stepd_step_rec_t, mostly from info in a
 	 * launch_tasks_request_msg_t or a batch_job_launch_msg_t */
 	if (!(step = _step_setup(cli, msg))) {

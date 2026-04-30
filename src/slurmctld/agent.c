@@ -107,6 +107,9 @@
 #include "src/slurmctld/state_save.h"
 
 #include "src/stepmgr/srun_comm.h"
+#ifdef __METASTACK_BUG_CANNOT_CANCEL_STEP
+#include "src/stepmgr/stepmgr.h"
+#endif
 #ifdef __METASTACK_NEW_TIME_SYNC_CHECK
 #include "src/common/xhash.h"
 #endif
@@ -1152,8 +1155,13 @@ static void _notify_slurmctld_nodes(agent_info_t *agent_ptr,
 #ifdef HAVE_FRONT_END
 				down_msg = "";
 #else
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				drain_nodes(*node_names, "Prolog/Epilog failure",
+				            slurm_conf.slurm_user_id, false);
+#else
 				drain_nodes(*node_names, "Prolog/Epilog failure",
 				            slurm_conf.slurm_user_id);
+#endif
 				down_msg = ", set to state DRAIN";
 #endif
 				error("Prolog/Epilog failure on nodes %s%s",
@@ -1167,8 +1175,13 @@ static void _notify_slurmctld_nodes(agent_info_t *agent_ptr,
 #ifdef HAVE_FRONT_END
 				down_msg = "";
 #else
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				drain_nodes(*node_names, "Duplicate jobid",
+				            slurm_conf.slurm_user_id, false);
+#else
 				drain_nodes(*node_names, "Duplicate jobid",
 				            slurm_conf.slurm_user_id);
+#endif
 				down_msg = ", set to state DRAIN";
 #endif
 				error("Duplicate jobid on nodes %s%s",
@@ -1194,8 +1207,13 @@ static void _notify_slurmctld_nodes(agent_info_t *agent_ptr,
 					lock_slurmctld(node_write_lock);
 				}
 				node_did_resp(*node_names);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				drain_nodes(*node_names, "Time Not sync",
+				            slurm_conf.slurm_user_id, false);
+#else
 				drain_nodes(*node_names, "Time Not sync",
 				            slurm_conf.slurm_user_id);
+#endif
 				break;
 #endif	
 			default:
@@ -1517,7 +1535,10 @@ static void *_thread_per_group_rpc(void *args)
 		}
 
 		if (msg_type == REQUEST_SIGNAL_TASKS) {
-			job_record_t *job_ptr;
+			job_record_t *job_ptr = NULL;
+#ifdef __METASTACK_BUG_CANNOT_CANCEL_STEP
+			step_record_t *step_ptr = NULL;
+#endif
 			signal_tasks_msg_t *msg_ptr =
 				task_ptr->msg_args_ptr;
 
@@ -1549,6 +1570,48 @@ static void *_thread_per_group_rpc(void *args)
 				}
 				unlock_slurmctld(job_write_lock);
 			}
+#ifdef __METASTACK_BUG_CANNOT_CANCEL_STEP
+			if (rc == ESLURM_INVALID_JOB_ID &&
+				((msg_ptr->signal == SIGKILL) ||
+				(msg_ptr->signal == SIGTERM))) {
+				job_id = msg_ptr->step_id.job_id;
+				lock_slurmctld(job_write_lock);
+				job_ptr = find_job_record(job_id);
+				if (job_ptr == NULL) {
+					error("%s: invalid JobId=%u", 
+							__func__, job_id);
+				} else {
+					step_ptr = list_find_first(job_ptr->step_list, 
+								find_step_id, &(msg_ptr->step_id));
+					if (step_ptr) {
+						int rem;
+						uint32_t step_rc;
+						if (step_ptr->state == JOB_RUNNING) {
+							step_complete_msg_t req = {
+								.step_id = msg_ptr->step_id,
+								.range_first = 0,
+								.range_last = (step_ptr->step_layout)->node_cnt - 1,
+								.step_rc = SIGKILL,
+								.jobacct = step_ptr->jobacct,
+								.send_to_stepmgr = true,
+							};
+							info("%s: Step %ps failed to signal, marking as complete",
+									__func__, &msg_ptr->step_id);
+
+							step_partial_comp(&req, job_ptr->user_id, true, &rem, &step_rc);
+						} else {
+							debug("%s: Step %ps is not running, " 
+									"does not need to be marked as completed again.", 
+									__func__, &msg_ptr->step_id);
+						}
+					} else {
+						error("%s: invalid StepId=%ps", 
+								__func__, &msg_ptr->step_id);
+					}
+				}
+				unlock_slurmctld(job_write_lock);
+			}
+#endif
 		}
 
 		if (((msg_type == REQUEST_SIGNAL_TASKS) ||

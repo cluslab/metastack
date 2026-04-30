@@ -26,7 +26,7 @@ KillOnBadExit=1
 MaxArraySize=50000
 MaxJobCount=3500000
 MpiDefault=none
-PrologFlags=CONTAIN,RunInJob
+PrologFlags=CONTAIN
 ReturnToService=2
 SlurmctldPidFile=/var/run/slurmctld.pid
 SlurmctldPort=10650-10700
@@ -53,7 +53,7 @@ SchedulerType=sched/builtin
 SelectType=select/cons_tres
 SelectTypeParameters=CR_CORE
 SchedulerParameters=defer_batch,sched_min_interval=150000,sched_interval=120,max_sched_time=2,default_queue_depth=800,partition_job_depth=800,enable_high_throughput,para_sched
-SlurmctldParameters=enable_stepmgr,enable_rpc_queue,rpc_queue_pool_size=10,para_submit,para_epilog,agent_thread_pool_size=64,no_step_complete_throttle,ignore_srun_job_complete,stepd_send_term_job,buf_pool_size=200,job_pool_size=200
+SlurmctldParameters=enable_stepmgr,enable_rpc_queue,rpc_queue_pool_size=10,para_submit,para_epilog,agent_thread_pool_size=64,no_step_complete_throttle,ignore_srun_job_complete,buf_pool_size=200,job_pool_size=200
 SchedulerTimeSlice=30
 AllowSpecResourcesUsage=No
 PriorityType=priority/basic

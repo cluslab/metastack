@@ -131,6 +131,13 @@ static char *socket_name;
 static pthread_mutex_t suspend_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool suspended = false;
 
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+static int extern_thread_cnt = 0;
+static pthread_t *extern_threads = NULL;
+static pthread_mutex_t extern_thread_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t extern_thread_cond = PTHREAD_COND_INITIALIZER;
+#endif
+
 struct request_params {
 	int fd;
 	stepd_step_rec_t *step;
@@ -673,6 +680,12 @@ static int _handle_srun_node_fail(int fd, stepd_step_rec_t *step, uid_t uid)
 	int rc;
 	slurm_msg_t msg;
 	srun_node_fail_msg_t *request;
+#ifdef __METASTACK_BUG_STEPMGR_ASSIGN_FAULT_NODE
+	node_record_t *node_ptr = NULL;
+#endif
+#ifdef __METASTACK_BUG_STEPMGR_STEP_STUCK
+	job_record_t *job_ptr = NULL;
+#endif
 
 	if ((rc = _handle_stepmgr_relay_msg(fd, uid, &msg, SRUN_NODE_FAIL,
 					    false)))
@@ -680,6 +693,31 @@ static int _handle_srun_node_fail(int fd, stepd_step_rec_t *step, uid_t uid)
 
 	request = msg.data;
 	slurm_mutex_lock(&stepmgr_mutex);
+#ifdef __METASTACK_BUG_STEPMGR_ASSIGN_FAULT_NODE
+	if (request->nodelist) {
+		node_ptr = find_node_record(request->nodelist);
+	}
+#endif
+
+#ifdef __METASTACK_BUG_STEPMGR_STEP_STUCK
+	if (request->step_id.job_id) {
+		job_ptr = stepmgr_ops->find_job_record(request->step_id.job_id);
+	}
+	if (job_ptr && node_ptr && (job_ptr->kill_on_node_fail == 0)) {
+		stepmgr_auto_heal_node(job_ptr, request->nodelist);
+	}
+#endif
+
+#ifdef __METASTACK_BUG_STEPMGR_ASSIGN_FAULT_NODE
+	if (node_ptr && job_step_ptr && (job_step_ptr->kill_on_node_fail == 0)) {
+		debug("StepMgr: Handling --no-kill failure for node %s (idx %d). Clearing allocation bitmap.",
+			 request->nodelist, node_ptr->index);
+
+		if (job_step_ptr->node_bitmap) {
+			bit_clear(job_step_ptr->node_bitmap, node_ptr->index);
+		}
+	}
+#endif
 	srun_node_fail(job_step_ptr, request->nodelist);
 	slurm_mutex_unlock(&stepmgr_mutex);
 
@@ -1528,6 +1566,23 @@ rwfail:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+static void _block_on_pid(pid_t pid, stepd_step_rec_t *step)
+{
+	struct timespec ts = { 0, 0 };
+
+	slurm_mutex_lock(&extern_thread_lock);
+	while (kill(pid, 0) != -1) {
+		if (step->state >= SLURMSTEPD_STEP_CANCELLED)
+			break;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_sec += 1;
+		slurm_cond_timedwait(&extern_thread_cond, &extern_thread_lock,
+				     &ts);
+	}
+	slurm_mutex_unlock(&extern_thread_lock);
+}
+#else
 static void _block_on_pid(pid_t pid)
 {
 	/* I wish there was another way to wait on a foreign pid, but
@@ -1536,6 +1591,7 @@ static void _block_on_pid(pid_t pid)
 	while (kill(pid, 0) != -1)
 		sleep(1);
 }
+#endif
 
 /* Wait for the pid given and when it ends get and children it might
  * of left behind and wait on them instead.
@@ -1559,7 +1615,11 @@ static void *_wait_extern_pid(void *args)
 	xfree(extern_pid);
 
 	//info("waiting on pid %d", pid);
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+	_block_on_pid(pid, step);
+#else
 	_block_on_pid(pid);
+#endif
 	//info("done with pid %d %d: %m", pid, rc);
 	jobacct = jobacct_gather_remove_task(pid);
 	if (jobacct) {
@@ -1568,7 +1628,10 @@ static void *_wait_extern_pid(void *args)
 		jobacctinfo_destroy(jobacct);
 	}
 	acct_gather_profile_g_task_end(pid);
-
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+	if (step->state >= SLURMSTEPD_STEP_CANCELLED)
+		goto end;
+#endif
 	/* See if we have any children of init left and add them to track. */
 	proctrack_g_get_pids(step->cont_id, &pids, &npids);
 	for (i = 0; i < npids; i++) {
@@ -1602,10 +1665,26 @@ static void *_wait_extern_pid(void *args)
 	next_pid:
 		fclose(stat_fp);
 	}
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+end:
+#endif
 	xfree(pids);
 
 	return NULL;
 }
+
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+static void _wait_extern_thr_create(extern_pid_t *extern_pid)
+{
+	/* Lock as several RPC can write to the same variable. */
+	slurm_mutex_lock(&extern_thread_lock);
+	extern_thread_cnt++;
+	xrecalloc(extern_threads, extern_thread_cnt, sizeof(pthread_t));
+	slurm_thread_create(&extern_threads[extern_thread_cnt - 1],
+			    _wait_extern_pid, extern_pid);
+	slurm_mutex_unlock(&extern_thread_lock);
+}
+#endif
 
 static int _handle_add_extern_pid_internal(stepd_step_rec_t *step, pid_t pid)
 {
@@ -1649,12 +1728,16 @@ static int _handle_add_extern_pid_internal(stepd_step_rec_t *step, pid_t pid)
 		return SLURM_ERROR;
 	}
 
+
 	if (xstrcasestr(slurm_conf.launch_params, "ulimit_pam_adopt"))
 		set_user_limits(step, pid);
-
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+	/* spawn a thread that will wait on the pid given */
+	_wait_extern_thr_create(extern_pid);
+#else
 	/* spawn a thread that will wait on the pid given */
 	slurm_thread_create_detached(_wait_extern_pid, extern_pid);
-
+#endif
 	return SLURM_SUCCESS;
 }
 
@@ -1662,7 +1745,14 @@ static int _handle_add_extern_pid(int fd, stepd_step_rec_t *step, uid_t uid)
 {
 	int rc = SLURM_SUCCESS;
 	pid_t pid;
-
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+	slurm_mutex_lock(&step->state_mutex);
+	if (step->state >= SLURMSTEPD_STEP_CANCELLED) {
+		error("Rejecting request to add extern pid from uid %u because step is ending",
+		      uid);
+		goto rwfail;
+	}
+#endif
 	safe_read(fd, &pid, sizeof(pid_t));
 
 	if (!_slurm_authorized_user(uid)) {
@@ -1676,8 +1766,14 @@ static int _handle_add_extern_pid(int fd, stepd_step_rec_t *step, uid_t uid)
 	safe_write(fd, &rc, sizeof(int));
 
 	debug("Leaving _handle_add_extern_pid");
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+	slurm_mutex_unlock(&step->state_mutex);
+#endif
 	return SLURM_SUCCESS;
 rwfail:
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+	slurm_mutex_unlock(&step->state_mutex);
+#endif
 	return SLURM_ERROR;
 }
 
@@ -2573,3 +2669,27 @@ extern void set_msg_node_id(stepd_step_rec_t *step)
 	if (ptr)
 		msg_target_node_id = atoi(ptr);
 }
+
+#ifdef __METASTACK_BUG_EXTERN_THREAD_FINISH
+extern void join_extern_threads()
+{
+	int th_cnt;
+
+	slurm_mutex_lock(&extern_thread_lock);
+	slurm_cond_broadcast(&extern_thread_cond);
+	th_cnt = extern_thread_cnt;
+	slurm_mutex_unlock(&extern_thread_lock);
+
+	for (int i = 0; i < th_cnt; i++) {
+		debug2("Joining extern pid thread %d", i);
+		slurm_thread_join(extern_threads[i]);
+	}
+
+	slurm_mutex_lock(&extern_thread_lock);
+	extern_thread_cnt = 0;
+	xfree(extern_threads);
+	slurm_mutex_unlock(&extern_thread_lock);
+
+	debug2("Done joining extern pid threads");
+}
+#endif

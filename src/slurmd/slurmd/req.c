@@ -2349,11 +2349,30 @@ static int _notify_slurmctld_prolog_fini(
 	 * slurm_send_recv_controller_rc_msg since it means there was a
 	 * communication failure and we may need to try again.
 	 */
+#ifdef __METASTACK_BUG_CTLD_CONN_RETRY
+	ret_c = slurm_send_recv_controller_rc_msg(
+		     &req_msg, &rc, working_cluster_rec);
+	if (ret_c) {
+		error("Error sending prolog completion notification: %m");
+		return ret_c;
+	}
+
+	/* Check if the controller is in standby mode, treat as failure */
+	if (rc == ESLURM_IN_STANDBY_MODE || 
+	    rc == ESLURM_IN_STANDBY_USE_BACKUP) {
+		error("Prolog completion notification failed: controller is in standby mode (rc=%d)",
+		      rc);
+		return SLURM_ERROR;
+	}
+
+	return SLURM_SUCCESS;
+#else
 	if ((ret_c = slurm_send_recv_controller_rc_msg(
 		     &req_msg, &rc, working_cluster_rec)))
 		error("Error sending prolog completion notification: %m");
 
 	return ret_c;
+#endif
 }
 
 /* Convert memory limits from per-CPU to per-node */

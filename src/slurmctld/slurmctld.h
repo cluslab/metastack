@@ -290,6 +290,10 @@ extern slurmdb_cluster_rec_t *response_cluster_rec;
 extern bool disable_change_proc_dist;
 #endif
 
+#ifdef __METASTACK_BUG_OVERLAP_NODE_DIST
+extern bool enable_overlap_node_lb;
+#endif
+
 
 /*****************************************************************************\
  * Configless data structures, defined in src/slurmctld/proc_req.c
@@ -734,7 +738,11 @@ extern List depended_list_copy(List depend_list_src);
  * RET SLURM_SUCCESS or error code
  * global: node_record_table_ptr - pointer to global node table
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern int drain_nodes ( char *nodes, char *reason, uint32_t reason_uid, bool can_para_epilog );
+#else
 extern int drain_nodes ( char *nodes, char *reason, uint32_t reason_uid );
+#endif
 
 /*
  * Set job state
