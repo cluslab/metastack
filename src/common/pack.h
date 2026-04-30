@@ -91,6 +91,12 @@ extern buf_t *create_mmap_buf(const char *file);
 extern buf_t *create_shadow_buf(char *data, uint32_t size);
 extern void free_buf(buf_t *my_buf);
 extern buf_t *init_buf(uint32_t size);
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+extern void mem_pool_free_buf(void *my_buf);
+extern buf_t *mem_pool_init_buf(uint32_t size);
+#endif
+
 /*
  * Try to create buffer by given number of bytes.
  * IN size - number of bytes in buffer

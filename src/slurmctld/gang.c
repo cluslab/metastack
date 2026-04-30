@@ -285,6 +285,9 @@ static void _build_parts(void)
 
 	FREE_NULL_LIST(gs_part_list);
 
+#ifdef __METASTACK_BUG_NULL_GS_PART_LIST
+	gs_part_list = list_create(_destroy_parts); /* always allocate */
+#endif
 	/* reset the sorted list, since it's currently
 	 * pointing to partitions we just destroyed */
 	num_sorted_part = 0;
@@ -293,7 +296,9 @@ static void _build_parts(void)
 	if (num_parts == 0)
 		return;
 
-	gs_part_list = list_create(_destroy_parts);
+#ifdef __METASTACK_BUG_NULL_GS_PART_LIST
+	//gs_part_list = list_create(_destroy_parts);
+#endif
 	part_iterator = list_iterator_create(part_list);
 	while ((p_ptr = list_next(part_iterator))) {
 		gs_part_ptr = xmalloc(sizeof(struct gs_part));

@@ -7099,6 +7099,26 @@ extern bool slurm_option_get_tres_per_tres(
 		return true;
 }
 
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+extern uint16_t slurm_opt_get_tres_per_task_cpu_cnt(char *tres_per_task)
+{
+	char *tres_type = "cpu";
+	char *name = NULL;
+	char *type = NULL;
+	char *save_ptr = NULL;
+	uint64_t cnt = 0;
+
+	slurm_get_next_tres(&tres_type, tres_per_task, &name, &type, &cnt,
+			    &save_ptr);
+	/* name and type should still be NULL, freeing just in case */
+	xfree(name);
+	xfree(type);
+
+	return (uint16_t) cnt;
+}
+#endif
+
+
 /*
  * Update part of the tres_per_task string and match it to the count given
  *

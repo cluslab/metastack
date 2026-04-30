@@ -36,6 +36,9 @@
 #include "src/common/port_mgr.h"
 #include "src/common/assoc_mgr.h"
 #include "src/common/slurm_protocol_pack.h"
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+#include "src/common/pre_process.h"
+#endif
 
 #include "src/interfaces/jobacct_gather.h"
 #include "src/interfaces/gres.h"
@@ -85,6 +88,10 @@ extern job_record_t *job_record_create(void)
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	slurm_mutex_init(&job_ptr->job_sched_lock);
 	job_ptr->is_lock_init = true;
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	job_ptr->enable_stepd_send_term_job = false;
+	job_ptr->comp_batch_flag = false;
 #endif
 	return job_ptr;
 }
@@ -2447,7 +2454,23 @@ extern int job_record_unpack(job_record_t **out,
 	uint16_t details, step_flag;
 	int error_code;
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	/* Retrieve data from the memory pool. */
+	job_record_t *job_ptr = NULL;
+	if(pre_process_data && pre_process_data->pre_job_record_list){
+		job_ptr = list_pop(pre_process_data->pre_job_record_list);
+		if(job_ptr){
+			job_ptr->details->submit_time = time(NULL);
+			pre_process_update();
+		}else{
+			job_ptr = job_record_create();
+		}
+	}else{
+		job_ptr = job_record_create();
+	}
+#else
 	job_record_t *job_ptr = job_record_create();
+#endif
 	*out = job_ptr;
 
 #ifdef __META_PROTOCOL
@@ -4105,13 +4128,13 @@ extern step_record_t *create_step_record(job_record_t *job_ptr,
 		info("%pJ has reached step id limit", job_ptr);
 		return NULL;
 	}
-
 	step_ptr = xmalloc(sizeof(*step_ptr));
 
 	step_ptr->job_ptr    = job_ptr;
 	step_ptr->exit_code  = NO_VAL;
 	step_ptr->time_limit = INFINITE;
-	step_ptr->jobacct    = jobacctinfo_create(NULL);
+	step_ptr->jobacct = jobacctinfo_create(NULL);
+
 	step_ptr->requid     = -1;
 	if (protocol_version)
 		step_ptr->start_protocol_ver = protocol_version;

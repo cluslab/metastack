@@ -65,8 +65,25 @@ extern uint16_t part_cachedup_realtime;
 extern time_t last_node_info;
 #endif
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+extern uint16_t throttle_flags;
+extern void step_complete_throttle_init(void);
+#define REQUEST_STEP_COMPLETE_THROTTLR	SLURM_BIT(0)
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+extern bool stepd_send_term_job;
+extern void stepd_send_term_job_init(void);
+#endif
+
 #ifndef NDEBUG
 extern uint16_t drop_priv_flag;
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_RPC_QUEUE_THREAD_POOL
+extern int rpc_queue_pool_size;
+extern bool rpc_queue_pool_enabled;
+extern void rpc_queue_thread_pool_init(void);
 #endif
 
 /*

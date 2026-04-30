@@ -620,6 +620,39 @@ extern int list_for_each_max(list_t *l, int *max, ListForF f, void *arg,
 	return n;
 }
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+extern int list_for_each_max_nobreak(list_t *l, int max, ListForF_FixBug f, void *arg,
+			     int retry_count, int write_lock)
+{
+	list_node_t *p = NULL;
+	int n = 0;
+	bool failed = false;
+
+	xassert(l != NULL);
+	xassert(f != NULL);
+	xassert(l->magic == LIST_MAGIC);
+
+	if (write_lock)
+		slurm_rwlock_wrlock(&l->mutex);
+	else
+		slurm_rwlock_rdlock(&l->mutex);
+
+	for (p = l->head; (max == -1 || n < max) && p; p = p->next) {
+		n++;
+		if (f(p->data, arg, retry_count) < 0) {
+			failed = true;
+		}
+	}
+	max = l->count - n;
+	slurm_rwlock_unlock(&l->mutex);
+
+	if (failed)
+		n = -n;
+
+	return n;
+}
+#endif
+
 extern int list_flush(list_t *l)
 {
 	return list_flush_max(l, -1);

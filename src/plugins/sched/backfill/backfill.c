@@ -3353,8 +3353,13 @@ static int _start_job(job_record_t *job_ptr, bitstr_t *resv_bitmap)
 	if (job_ptr->array_recs)
 		is_job_array_head = true;
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	rc = select_nodes(job_ptr, false, NULL, NULL, false,
+				  SLURMDB_JOB_FLAG_BACKFILL, false, 0, false, 0);
+#else
 	rc = select_nodes(job_ptr, false, NULL, NULL, false,
 				  SLURMDB_JOB_FLAG_BACKFILL, false, 0);
+#endif
 #endif
 	if (is_job_array_head && job_ptr->details) {
 		job_record_t *base_job_ptr;

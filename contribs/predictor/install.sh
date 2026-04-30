@@ -21,6 +21,9 @@ FILES=("predictUsers" "predictionTool.lua" "getParameter.lua" "README.md" "updat
 # AI随机森林文件
 SKLEARN_FILES=("prediction_methods/sklearn/generative_model.py" "prediction_methods/sklearn/prediction_time.py" "prediction_methods/sklearn/update_model.sh")
 
+# 新增：refresh-script模式仅更新的核心脚本文件
+REFRESH_SCRIPTS=("predictionTool.lua" "getParameter.lua" "README.md" "updateJobHistory.sh")
+
 # 获取当前日期
 current_date=$(date +%Y-%m-%d)
 
@@ -100,6 +103,70 @@ install_files() {
 	echo "安装 sklearn 目录的文件完成。"
 }
 
+# 新增：refresh-script模式（包含cli_filter.lua、核心脚本、sklearn文件的更新）
+refresh_script() {
+
+		# 第一步：更新cli_filter.lua（客户端插件目录）
+		echo "开始刷新客户端插件文件到 $clinte_dir..."
+
+		# 定义目标路径
+		cli_target="$clinte_dir/cli_filter.lua"
+
+		# 备份原文件
+		backup_if_exists "$cli_target"
+
+		# 安装（刷新）新文件
+		install -m 755 "cli_filter.lua" "$cli_target"
+		echo "刷新文件 cli_filter.lua 到 $clinte_dir 已完成"
+
+		# 第二步：更新核心脚本文件（预测工具目录）
+		echo "开始刷新核心脚本文件到 $predictor_dir..."
+
+		# 确保目标目录存在
+		mkdir -p "$predictor_dir"
+		echo "目标目录 $predictor_dir 验证/创建完成"
+
+		for script in "${REFRESH_SCRIPTS[@]}"; do
+
+				# 定义目标路径
+				script_target="$predictor_dir/$(basename "$script")"
+
+				# 备份原文件
+				backup_if_exists "$script_target"
+
+				# 安装（刷新）新文件
+				install -m 755 "$script" "$script_target"
+				echo "刷新脚本文件 $script 到 $predictor_dir 已完成"
+
+		done
+
+		echo "刷新 predictor 目录核心脚本文件已完成。"
+
+		# 第三步：更新sklearn相关文件（AI环境目录）
+		echo "开始刷新 sklearn 相关文件到 $sklearn_dir..."
+
+		# 确保目标目录存在
+		mkdir -p "$sklearn_dir"
+		echo "目标目录 $sklearn_dir 验证/创建完成"
+
+		for file in "${SKLEARN_FILES[@]}"; do
+
+				# 定义目标路径
+				sklearn_target="$sklearn_dir/$(basename "$file")"
+
+				# 备份原文件
+				backup_if_exists "$sklearn_target"
+
+				# 安装（刷新）新文件
+				install -m 755 "$file" "$sklearn_target"
+				echo "刷新文件 $file 到 $sklearn_dir 已完成"
+
+		done
+
+		echo "刷新 sklearn 目录的文件完成。"
+		echo "=== 所有refresh-script相关文件刷新完成 ==="
+}
+
 # 清理临时文件
 clean() {
 
@@ -121,8 +188,25 @@ main() {
 
 # 检测命令行参数并执行相应功能
 if [[ "$1" == "clean" ]]; then
-	clean
+		clean
+elif [[ "$1" == "script" ]]; then
+		echo "======================================"
+		echo "执行【脚本更新】（更新script模式）"
+		echo "更新范围：cli_filter.lua + 4个核心脚本 + sklearn相关文件"
+		echo "======================================"
+		refresh_script
+elif [[ "$1" == "all" ]]; then
+		echo "======================================"
+		echo "执行【全部更新】（完整部署模式）"
+		echo "更新范围：所有目录创建 + 所有文件安装/更新"
+		echo "======================================"
+		main
 else
-	main
+		echo "错误：无效参数 '$1'"
+		echo "支持的参数："
+		echo "  all        - 执行【全部更新】（完整部署）"
+		echo "  script     - 执行【脚本更新】（核心文件刷新）"
+		echo "  clean      - 清理临时文件"
+		exit 1
 fi
 

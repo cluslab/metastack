@@ -59,6 +59,10 @@
 #define DEFAULT_UIDSAVE_INTERVAL   300
 #endif
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+#define DEFAULT_SEND_CTLD_UPDATE_TIMEOUT 5
+#endif
+
 /* Define slurmdbd_conf_t flags */
 #define DBD_CONF_FLAG_ALLOW_NO_DEF_ACCT SLURM_BIT(0)
 #define DBD_CONF_FLAG_ALL_RES_ABS SLURM_BIT(1)
@@ -105,6 +109,10 @@ typedef struct {
 	uint16_t	save_uid;    /* Whether or not to save user's uid*/
 	char *		uid_save_location; /* Pathname of user's uid save directory*/
 	uint16_t	uid_save_interval; /* Uid save time interval*/
+#endif
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+	uint16_t	send_ctld_update_timeout;	/* slurmdbd response timeout for 
+					* update requests sent to slurmctld */
 #endif
 	char *		storage_loc;	/* database name		*/
 	uint16_t	syslog_debug;	/* output to both logfile and syslog*/

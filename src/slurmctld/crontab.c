@@ -119,11 +119,15 @@ static int _handle_job(void *x, void *y)
 			   ((cron_entry_t *) job->crontab_entry)->line_end);
 		return -1;
 	}
-
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	args->return_code = job_allocate(job, 0, false, NULL, 0, args->uid,
+					 true, &job_ptr, args->err_msg,
+					 args->protocol_version, false, 0);
+#else	
 	args->return_code = job_allocate(job, 0, false, NULL, 0, args->uid,
 					 true, &job_ptr, args->err_msg,
 					 args->protocol_version);
-
+#endif
 	/*
 	 * job_allocate() will return non-terminal error codes.
 	 * job rejection is designated by the job being set to JOB_FAILED

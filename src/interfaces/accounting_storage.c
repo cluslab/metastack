@@ -1044,17 +1044,6 @@ extern int acct_storage_g_fix_borrowaway_nodes(void *db_conn,
 	return (*(ops.fix_borrowaway_nodes))(db_conn, uid, nodes);
 }
 
-extern int slurmdb_nodes_fix_borrowaway(void *db_conn,
-					   uint32_t uid, List nodes)
-{
-	xassert(plugin_inited != PLUGIN_NOT_INITED);
-
-	if (plugin_inited == PLUGIN_NOOP)
-		return SLURM_SUCCESS;
-
-	return (*(ops.fix_borrowaway_nodes))(db_conn, uid, nodes);
-}
-
 extern List acct_storage_g_get_borrow(void *db_conn, uint32_t uid,
 				      slurmdb_borrow_cond_t *borrow_cond)
 {

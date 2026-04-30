@@ -468,6 +468,19 @@ static int _env_set(const stepd_step_rec_t *step, char ***env)
 	_parse_pmix_conf_env(env, slurm_pmix_conf.env);
 
 	if (step->container) {
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+		/*
+		 * In this case PMIx tmp files/dirs are created under:
+		 * ContainerPath/oci-<jobid>-<stepid>/
+		 *
+		 * ContainerPath could be considered trusted, but oci subdir has
+		 * user permissions and contents can be modified. oci subdir is
+		 * created by stepd and is not a symlink, so we don't need that
+		 * flexibility anyway, thus let's be conservative.
+		 *
+		 * See: src/slurmd/slurmstepd/container.[ch]
+		 */
+#endif
 		_pmixp_job_info.server_addr_unfmt =
 			xstrdup(step->container->spool_dir);
 		_pmixp_job_info.client_lib_tmpdir =
@@ -475,6 +488,9 @@ static int _env_set(const stepd_step_rec_t *step, char ***env)
 	} else {
 		_pmixp_job_info.server_addr_unfmt =
 			xstrdup(slurm_conf.slurmd_spooldir);
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+		_pmixp_job_info.flags |= PMIXP_FLAG_TRUSTED_LIB_TMPDIR;
+#endif
 	}
 
 	debug2("set _pmixp_job_info.server_addr_unfmt = %s",
@@ -506,12 +522,24 @@ static int _env_set(const stepd_step_rec_t *step, char ***env)
 	} else if (step->container) {
 		_pmixp_job_info.cli_tmpdir_base = xstrdup(
 			step->container->spool_dir);
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+	} else if (slurm_pmix_conf.cli_tmpdir_base) {
+#else
 	} else if (slurm_pmix_conf.cli_tmpdir_base)
+#endif
 		_pmixp_job_info.cli_tmpdir_base =
 			xstrdup(slurm_pmix_conf.cli_tmpdir_base);
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+		_pmixp_job_info.flags |= PMIXP_FLAG_TRUSTED_CLI_TMPDIR;
+	} else {
+#else
 	else {
+#endif
 		_pmixp_job_info.cli_tmpdir_base = slurm_get_tmp_fs(
 					_pmixp_job_info.hostname);
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+		_pmixp_job_info.flags |= PMIXP_FLAG_TRUSTED_CLI_TMPDIR;
+#endif
 	}
 
 	_pmixp_job_info.cli_tmpdir =
@@ -654,3 +682,11 @@ static int _env_set(const stepd_step_rec_t *step, char ***env)
 
 	return SLURM_SUCCESS;
 }
+
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+extern uint32_t pmixp_info_flags()
+{
+	xassert(_pmixp_job_info.magic == PMIXP_INFO_MAGIC);
+	return _pmixp_job_info.flags;
+}
+#endif

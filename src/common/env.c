@@ -1001,6 +1001,9 @@ extern int env_array_for_job(char ***dest,
 	slurm_step_layout_req_t step_layout_req;
 	uint16_t cpus_per_task_array[1];
 	uint32_t cpus_task_reps[1];
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	int new_cpt = 0;
+#endif
 
 	if (!alloc || !desc)
 		return SLURM_ERROR;
@@ -1200,11 +1203,35 @@ extern int env_array_for_job(char ***dest,
 					    het_job_offset,
 					    "%d", desc->num_tasks);
 	}
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	new_cpt = slurm_opt_get_tres_per_task_cpu_cnt(alloc->tres_per_task);
+	if (new_cpt) {
+		env_array_overwrite_het_fmt(dest, "SLURM_CPUS_PER_TASK",
+					    het_job_offset, "%d", new_cpt);
+	} else if (desc->bitflags & JOB_CPUS_SET) {
+		env_array_overwrite_het_fmt(dest, "SLURM_CPUS_PER_TASK",
+					    het_job_offset, "%d",
+					     desc->cpus_per_task);
+	}
+
+	if (alloc->tres_per_task) {
+		env_array_overwrite_het_fmt(dest, "SLURM_TRES_PER_TASK",
+					    het_job_offset, "%s",
+					    alloc->tres_per_task);
+	}
+
+	if (alloc->tres_bind) {
+		env_array_overwrite_het_fmt(dest, "SLURM_TRES_BIND",
+					    het_job_offset, "%s",
+					    alloc->tres_bind);
+	}
+#else
 	if (desc->bitflags & JOB_CPUS_SET) {
 		env_array_overwrite_het_fmt(dest, "SLURM_CPUS_PER_TASK",
 					    het_job_offset, "%d",
 					     desc->cpus_per_task);
 	}
+#endif
 	if (desc->ntasks_per_node && (desc->ntasks_per_node != NO_VAL16)) {
 		env_array_overwrite_het_fmt(dest, "SLURM_NTASKS_PER_NODE",
 					    het_job_offset, "%d",
@@ -1331,6 +1358,14 @@ env_array_for_batch_job(char ***dest, const batch_job_launch_msg_t *batch,
 	if (getenvp(*dest, "SLURM_CPUS_PER_TASK"))
 		env_array_overwrite_fmt(dest, "SLURM_CPUS_PER_TASK", "%u",
 					cpus_per_task);
+
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	if (batch->tres_per_task)
+		env_array_overwrite_fmt(dest, "SLURM_TRES_PER_TASK", "%s",
+					batch->tres_per_task);
+	if (batch->tres_bind)
+		env_array_overwrite_fmt(dest, "SLURM_TRES_BIND", "%s", batch->tres_bind);
+#endif
 
 	if (step_layout_req.num_tasks) {
 		env_array_overwrite_fmt(dest, "SLURM_NTASKS", "%u",

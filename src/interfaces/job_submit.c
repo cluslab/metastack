@@ -186,10 +186,19 @@ extern int job_submit_g_submit(job_desc_msg_t *job_desc, uint32_t submit_uid,
 	DEF_TIMERS;
 	int i, rc = SLURM_SUCCESS;
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (!para_submit) {
+		xassert(verify_lock(CONF_LOCK, READ_LOCK));
+		xassert(verify_lock(JOB_LOCK, READ_LOCK));
+		xassert(verify_lock(NODE_LOCK, READ_LOCK));
+		xassert(verify_lock(PART_LOCK, READ_LOCK));
+	}
+#else
 	xassert(verify_lock(CONF_LOCK, READ_LOCK));
 	xassert(verify_lock(JOB_LOCK, READ_LOCK));
 	xassert(verify_lock(NODE_LOCK, READ_LOCK));
 	xassert(verify_lock(PART_LOCK, READ_LOCK));
+#endif
 
 	START_TIMER;
 

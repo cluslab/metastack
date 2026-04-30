@@ -112,3 +112,13 @@ Python 3.9.19、pandas、numpy、sklearnjoblib、os、sys、argparse、warnings
 ​			首次安装需执行updateJobHistory脚本获取历史作业集，及生成对应的AI预测模型。
 
 ​			若历史作业集需频繁更新，建议将updateJobHistory脚本放置在系统级crontab定时任务中，作业集和AI预测模型会对应更新。
+
+###### 			关键更新说明
+
+​			1. 安装脚本新增两种模式，适配不同部署场景：
+​			    首次完整部署：执行命令 sh install.sh all，自动创建所有依赖目录并安装全部文件，适用于初次部署；
+​			    后续升级：执行命令 sh install.sh script，仅更新核心功能文件，避免重复安装无关内容，提升部署效率；
+
+​			2. 脚本更新模式（script）聚焦核心依赖更新，执行命令 sh install.sh script 即可触发，不改动目录结构和非核心配置（如 configuration 配置文件、白名单文件、作业历史数据等）；
+
+​			3. 所有更新操作均会自动备份原有文件（备份文件后缀为当前日期，格式：文件名.YYYY-MM-DD），无需手动备份，避免文件覆盖导致的数据丢失。

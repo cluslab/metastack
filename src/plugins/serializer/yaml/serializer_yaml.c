@@ -366,7 +366,9 @@ static parse_state_t _yaml_to_data(int depth, yaml_parser_t *parser,
 				   _yaml_event_type_string(event.type));
 
 		state = _on_parse_event(depth, parser, &event, dst, rc, state);
-
+#ifdef __METASTACK_BUG_DEL_YAML_EVENT
+		yaml_event_delete(&event);
+#endif
 		if (state == PARSE_POP) {
 			log_flag(DATA, "%pD{%d} -> POP", dst, depth);
 			state = PARSE_CONTINUE;

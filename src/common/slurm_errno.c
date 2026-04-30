@@ -66,6 +66,10 @@ slurm_errtab_t slurm_errtab[] = {
 	{ ERRTAB_ENTRY(SLURM_SUCCESS), "No error"},
 	{ ERRTAB_ENTRY(SLURM_ERROR), "Unspecified error"},
 	{ ERRTAB_ENTRY(EINPROGRESS), "Operation now in progress"},
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	{ ERRTAB_ENTRY(ESLURMD_ENABLED_STEPD_SEND_TERM_JOB),
+	 "Sending TERM JOB message to slurmd by slurmstepd is enabled"},
+#endif
 
 	/* General Message error codes */
 	{ ERRTAB_ENTRY(SLURM_UNEXPECTED_MSG_ERROR),

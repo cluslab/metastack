@@ -1791,7 +1791,7 @@ char* influxdb_connect(slurm_influxdb *data, const char* sql, int type)
         else
             sprintf(url1, "%s/query?db=%s&rp=%s&precision=s", data->host, data->database, policy);
         xfree(policy);
-        sprintf(url2,"q=%s;",sql);
+        sprintf(url2,"q=%s",sql);
         curl_easy_setopt(curl, CURLOPT_URL, url1);
 
 		curl_easy_setopt(curl, CURLOPT_USERNAME,

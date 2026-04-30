@@ -12,6 +12,8 @@
 # even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 # PARTICULAR PURPOSE.
 
+#__METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+
 @SET_MAKE@
 
 # Makefile for common library
@@ -168,9 +170,9 @@ am_libcommon_la_OBJECTS = assoc_mgr.lo bitstring.lo callerid.lo \
 	msg_type.lo net.lo node_conf.lo oci_config.lo openapi.lo \
 	optz.lo pack.lo parse_config.lo parse_time.lo parse_value.lo \
 	part_record.lo persist_conn.lo plugin.lo plugrack.lo \
-	port_mgr.lo print_fields.lo proc_args.lo read_config.lo \
-	reverse_tree.lo run_command.lo run_in_daemon.lo sack_api.lo \
-	setproctitle.lo slurm_errno.lo slurm_opt.lo \
+	port_mgr.lo pre_process.lo print_fields.lo proc_args.lo \
+	read_config.lo reverse_tree.lo run_command.lo run_in_daemon.lo \
+	sack_api.lo setproctitle.lo slurm_errno.lo slurm_opt.lo \
 	slurm_protocol_api.lo slurm_protocol_defs.lo \
 	slurm_protocol_pack.lo slurm_protocol_util.lo \
 	slurm_protocol_socket.lo slurm_resolv.lo \
@@ -231,6 +233,7 @@ am__depfiles_remade = ./$(DEPDIR)/assoc_mgr.Plo \
 	./$(DEPDIR)/parse_value.Plo ./$(DEPDIR)/part_record.Plo \
 	./$(DEPDIR)/persist_conn.Plo ./$(DEPDIR)/plugin.Plo \
 	./$(DEPDIR)/plugrack.Plo ./$(DEPDIR)/port_mgr.Plo \
+	./$(DEPDIR)/pre_process.Plo \
 	./$(DEPDIR)/print_fields.Plo ./$(DEPDIR)/proc_args.Plo \
 	./$(DEPDIR)/read_config.Plo ./$(DEPDIR)/reverse_tree.Plo \
 	./$(DEPDIR)/run_command.Plo ./$(DEPDIR)/run_in_daemon.Plo \
@@ -655,6 +658,8 @@ libcommon_la_SOURCES = \
 	plugrack.h				\
 	port_mgr.c				\
 	port_mgr.h				\
+	pre_process.c				\
+	pre_process.h				\
 	print_fields.c				\
 	print_fields.h				\
 	proc_args.c				\
@@ -866,6 +871,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/plugin.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/plugrack.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/port_mgr.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pre_process.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/print_fields.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/proc_args.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/read_config.Plo@am__quote@ # am--include-marker
@@ -1083,6 +1089,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/plugin.Plo
 	-rm -f ./$(DEPDIR)/plugrack.Plo
 	-rm -f ./$(DEPDIR)/port_mgr.Plo
+	-rm -f ./$(DEPDIR)/pre_process.Plo
 	-rm -f ./$(DEPDIR)/print_fields.Plo
 	-rm -f ./$(DEPDIR)/proc_args.Plo
 	-rm -f ./$(DEPDIR)/read_config.Plo
@@ -1220,6 +1227,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/plugin.Plo
 	-rm -f ./$(DEPDIR)/plugrack.Plo
 	-rm -f ./$(DEPDIR)/port_mgr.Plo
+	-rm -f ./$(DEPDIR)/pre_process.Plo
 	-rm -f ./$(DEPDIR)/print_fields.Plo
 	-rm -f ./$(DEPDIR)/proc_args.Plo
 	-rm -f ./$(DEPDIR)/read_config.Plo

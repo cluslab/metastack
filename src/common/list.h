@@ -33,6 +33,7 @@
  *  with LSD-Tools; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
  *****************************************************************************/
+ #include "slurm/slurm.h"
 
 #ifndef LSD_LIST_H
 #define LSD_LIST_H
@@ -86,6 +87,14 @@ typedef int (*ListFindF) (void *x, void *key);
  *  Returns less-than-zero on error.
  */
 typedef int (*ListForF) (void *x, void *arg);
+
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+/* TExtends the ListForF type by adding a retry_count 
+ * parameter to implement response timeout calculation 
+ * that increases with each retry attempt. 
+ */
+typedef int (*ListForF_FixBug) (void *x, void *arg, int retry_count);
+#endif
 
 #endif
 
@@ -273,6 +282,18 @@ extern int list_for_each_nobreak(list_t *l, ListForF f, void *arg);
  */
 extern int list_for_each_max(list_t *l, int *max, ListForF f, void *arg,
 			     int break_on_fail, int write_lock);
+
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+/* This function is a modified version of the original "list_for_each_max()",  
+ * specifically created to fix bug 112603.
+ * For each item in list [l], invokes the function [f] passing [arg] and [retry_count] as arguments.
+ * Returns a count of the number of items on which [f] was invoked.
+ * If [f] returns <0 for a given item, the iteration is NOT aborted but the
+ * return value (count of items processed) will be negated.
+ */
+extern int list_for_each_max_nobreak(list_t *l, int max, ListForF_FixBug f, void *arg,
+			     int retry_count, int write_lock);
+#endif
 
 /*
  *  Traverses list [l] and removes all items in list

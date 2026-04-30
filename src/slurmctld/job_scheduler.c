@@ -729,9 +729,6 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 		 * is created elsewhere.
 		 */
 		(void) bb_g_job_validate2(job_ptr, NULL);
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(new_job_ptr);
-#endif
 	}
 
 	/* Create individual job records for job arrays with
@@ -786,9 +783,6 @@ extern List build_job_queue(bool clear_start, bool backfill, List* sched_job_que
 		 * Do NOT clear db_index here, it is handled when task_id_str
 		 * is created elsewhere.
 		 */
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(new_job_ptr);
-#endif
 	}
 
 	list_iterator_reset(job_iterator);
@@ -1516,17 +1510,25 @@ static bool _is_resources_equal(job_record_t *job_ptr, RR_job_record_t **job_res
 		{
 			if(!xstrcmp(job_resource_ptr_t->job_resource_str,job_resource_ptr->job_resource_str))
 			{
-				job_ptr->state_reason = job_resource_ptr_t->state_reason;
 				xfree(job_ptr->state_desc);
-				if ((job_ptr->state_reason == WAIT_NO_REASON) ||
-					(job_ptr->state_reason == WAIT_RESOURCES))
-					{
+				if ((job_resource_ptr_t->state_reason == WAIT_NO_REASON) || (job_resource_ptr_t->state_reason == WAIT_RESOURCES))
+				{
+					job_ptr->state_desc = xstrdup_printf("Priority | ReqResource Same as %u", job_resource_ptr_t->job_id);
+					if(job_ptr->state_reason != WAIT_PRIORITY){
 						job_ptr->state_reason = WAIT_PRIORITY;
-					}
-				job_ptr->state_desc = xstrdup_printf("%s | ReqResource Same as %u",job_state_reason_string(job_ptr->state_reason), job_resource_ptr_t->job_id);
 #ifdef __METASTACK_OPT_CACHE_QUERY
-				_add_job_state_to_queue(job_ptr);
+						_add_job_state_to_queue(job_ptr);
 #endif
+					}
+				}else{
+					job_ptr->state_desc = xstrdup_printf("%s | ReqResource Same as %u",job_state_reason_string(job_resource_ptr_t->state_reason), job_resource_ptr_t->job_id);
+					if(job_ptr->state_reason != job_resource_ptr_t->state_reason){
+						job_ptr->state_reason = job_resource_ptr_t->state_reason;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+					_add_job_state_to_queue(job_ptr);
+#endif
+					}
+				}
 				sched_debug("%pJ unable to schedule in Partition=%s (per _is_resources_equal()). State=PENDING. Previous-Reason=%s. Previous-Desc=%s. New-Reason=Priority. Priority=%u.",
 							job_ptr, job_ptr->partition, job_state_reason_string(job_resource_ptr_t->state_reason),
 							job_ptr->state_desc, job_ptr->priority);
@@ -2886,8 +2888,13 @@ next_task:
 		job_ptr->lic_main_schedule =true;
 #endif
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		error_code = select_nodes(job_ptr, false, NULL, NULL, false,
+					  SLURMDB_JOB_FLAG_SCHED, true, index, false, 0);
+#else
 		error_code = select_nodes(job_ptr, false, NULL, NULL, false,
 					  SLURMDB_JOB_FLAG_SCHED, true, index);
+#endif
 		do_sched_assoc_lock_unlock(false, job_ptr);
 #endif	
 #ifdef __METASTACK_OPT_MAIN_SCHED_LICENSE
@@ -3764,7 +3771,10 @@ static batch_job_launch_msg_t *_build_launch_job_msg(job_record_t *job_ptr,
 	 */
 	if (job_ptr->resv_ptr)
 		launch_msg_ptr->resv_name = xstrdup(job_ptr->resv_ptr->name);
-
+#ifdef __METASTACK_BUG_UPDATE_JOB_ENV
+	launch_msg_ptr->tres_per_task = xstrdup(job_ptr->tres_per_task);
+	launch_msg_ptr->tres_bind = xstrdup(job_ptr->tres_bind);
+#endif
 	xassert(!fail_why);
 	return launch_msg_ptr;
 
@@ -4153,6 +4163,10 @@ extern void launch_job(job_record_t *job_ptr)
 	agent_arg_ptr->msg_args = (void *) launch_msg_ptr;
 	set_agent_arg_r_uid(agent_arg_ptr, SLURM_AUTH_UID_ANY);
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_AGENT_THREAD_POOL
+	agent_arg_ptr->addr = xcalloc(1, sizeof(slurm_addr_t));
+	slurm_conf_get_addr(launch_job_ptr->batch_host, agent_arg_ptr->addr, 0);
+#endif
 	/* Launch the RPC via agent */
 	agent_queue_request(agent_arg_ptr);
 }

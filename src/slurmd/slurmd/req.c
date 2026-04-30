@@ -1148,7 +1148,6 @@ _forkexec_slurmstepd(uint16_t type, void *req, slurm_addr_t *cli,
 		/* no memory checking, default */
 		char *const argv[2] = { (char *)conf->stepd_loc, NULL};
 #endif
-		int i;
 		int failed = 0;
 
 		/*
@@ -1173,9 +1172,14 @@ _forkexec_slurmstepd(uint16_t type, void *req, slurm_addr_t *cli,
 		 * setting it for those that we open.  The number 256
 		 * is an arbitrary number based off test7.9.
 		 */
+#ifdef __METASTACK_BUG_FORKSTEPD_FD_LEAK
+		set_open_fd_close_on_exec(3);
+#else
+		int i;
 		for (i=3; i<256; i++) {
 			(void) fcntl(i, F_SETFD, FD_CLOEXEC);
 		}
+#endif
 
 		/*
 		 * Grandchild exec's the slurmstepd
@@ -5630,6 +5634,15 @@ _rpc_terminate_job(slurm_msg_t *msg)
 	int		delay;
 
 	debug("%s: uid = %u %ps", __func__, msg->auth_uid, &req->step_id);
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	if ((msg->conn_fd >= 0) && (req->job_state & STEP_SEND_TEMN_JOB)){
+		debug3("%s: send REQUEST_TERMINATE_JOB rc", __func__);
+		if (close(msg->conn_fd) < 0)
+			error ("rpc_kill_job: close(%d): %m", msg->conn_fd);
+		msg->conn_fd = -1;
+	}
+#endif
 	/*
 	 * check that requesting user ID is the Slurm UID
 	 */
@@ -5796,6 +5809,7 @@ _rpc_terminate_job(slurm_msg_t *msg)
 	 *  At this point, if connection still open, we send controller
 	 *   a "success" reply to indicate that we've recvd the msg.
 	 */
+
 	if (msg->conn_fd >= 0) {
 		debug4("sent SUCCESS");
 		slurm_send_rc_msg(msg, SLURM_SUCCESS);

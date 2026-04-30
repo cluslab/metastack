@@ -96,7 +96,6 @@
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 static pthread_mutex_t _diag_job_start_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
-
 struct node_set {		/* set of nodes with same configuration */
 	uint16_t cpus_per_node;	/* NOTE: This is the minimum count */
 	char     *features;		/* Node features */
@@ -146,7 +145,18 @@ static int _nodes_in_sets(bitstr_t *req_bitmap,
 			    List preemptee_candidates,
 			    List *preemptee_job_list, bool has_xand,
 			    resv_exc_t *resv_exc_ptr, bool resv_overlap); */
-#ifdef __METASTACK_NEW_PART_PARA_SCHED			  
+#ifdef __METASTACK_NEW_PART_PARA_SCHED			
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+static int _pick_best_nodes(struct node_set *node_set_ptr,
+				int node_set_size, bitstr_t ** select_bitmap,
+				job_record_t *job_ptr, part_record_t *part_ptr,
+				uint32_t min_nodes, uint32_t max_nodes,
+				uint32_t req_nodes, bool test_only,
+				List preemptee_candidates,
+				List *preemptee_job_list, bool has_xand,
+				resv_exc_t *resv_exc_ptr, bool resv_overlap, bool sched, int index,
+				bool submit, int worker_index);
+#else
 static int _pick_best_nodes(struct node_set *node_set_ptr,
 				int node_set_size, bitstr_t ** select_bitmap,
 				job_record_t *job_ptr, part_record_t *part_ptr,
@@ -155,6 +165,7 @@ static int _pick_best_nodes(struct node_set *node_set_ptr,
 				List preemptee_candidates,
 				List *preemptee_job_list, bool has_xand,
 				resv_exc_t *resv_exc_ptr, bool resv_overlap, bool sched, int index);
+#endif
 #endif					
 static void _set_err_msg(bool cpus_ok, bool mem_ok, bool disk_ok,
 			 bool job_mc_ok, char **err_msg);
@@ -476,8 +487,13 @@ extern void deallocate_nodes(job_record_t *job_ptr, bool timeout,
 				     (node_ptr = next_node_bitmap(
 					     job_ptr->node_bitmap_cg, &i));
 			     i++) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				job_epilog_complete(job_ptr->job_id,
+						    node_ptr->name, 0, false, 0);
+#else
 				job_epilog_complete(job_ptr->job_id,
 						    node_ptr->name, 0);
+#endif
 			}
 		}
 
@@ -495,13 +511,38 @@ extern void deallocate_nodes(job_record_t *job_ptr, bool timeout,
 		return;
 	}
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	if (timeout) {
+		agent_args = xmalloc(sizeof(agent_arg_t));
+		agent_args->msg_type = REQUEST_KILL_TIMELIMIT;
+	} else if (preempted) {
+		agent_args = xmalloc(sizeof(agent_arg_t));
+		agent_args->msg_type = REQUEST_KILL_PREEMPTED;
+	} else {
+		if (stepd_send_term_job && job_ptr->comp_batch_flag &&
+			(hostlist_count(hostlist) == 1)) {
+			char *nodename = hostlist_nth(hostlist, 0);
+			if(!xstrcmp(nodename, job_ptr->nodes)){
+				hostlist_destroy(hostlist);
+				job_ptr->enable_stepd_send_term_job = true;
+				free(nodename);
+				return; /* Let batch stepd send REQUEST_TERMINATE_JOB */
+			}
+			free(nodename);
+		}
+		agent_args = xmalloc(sizeof(agent_arg_t));
+		agent_args->msg_type = REQUEST_TERMINATE_JOB;
+	}
+#else
 	agent_args = xmalloc(sizeof(agent_arg_t));
+
 	if (timeout)
 		agent_args->msg_type = REQUEST_KILL_TIMELIMIT;
 	else if (preempted)
 		agent_args->msg_type = REQUEST_KILL_PREEMPTED;
 	else
 		agent_args->msg_type = REQUEST_TERMINATE_JOB;
+#endif
 	agent_args->retry = 0;	/* re_kill_job() resends as needed */
 	agent_args->protocol_version = use_protocol_version;
 	agent_args->hostlist = hostlist;
@@ -951,9 +992,16 @@ extern void filter_by_node_mcs(job_record_t *job_ptr, int mcs_select,
 				    struct node_set *node_set_ptr,
 				    int node_set_size) */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+static void _filter_by_node_feature(job_record_t *job_ptr,
+				    struct node_set *node_set_ptr,
+				    int node_set_size, bool sched, int index, 
+					bool submit, int worker_index)
+#else
 static void _filter_by_node_feature(job_record_t *job_ptr,
 				    struct node_set *node_set_ptr,
 				    int node_set_size, bool sched, int index)
+#endif
 #endif					
 {
 	int i;
@@ -970,9 +1018,19 @@ static void _filter_by_node_feature(job_record_t *job_ptr,
 			if(para_sched && sched)
 				bit_and_not(para_sched_avail_node_bitmap[index],
 						node_set_ptr[i].my_bitmap);
-			else			
+			else {	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			if (para_submit && submit)
+				bit_and_not(para_submit_avail_node_bitmap[worker_index],
+						node_set_ptr[i].my_bitmap);
+			else
 				bit_and_not(avail_node_bitmap,
 						node_set_ptr[i].my_bitmap);
+#else	
+				bit_and_not(avail_node_bitmap,
+						node_set_ptr[i].my_bitmap);
+#endif
+			}
 #endif
 		}
 	}
@@ -1097,12 +1155,22 @@ static bitstr_t *_find_grp_node_bitmap(job_record_t *job_ptr)
 			     bool test_only, List *preemptee_job_list,
 			     bool can_reboot, bool submission) */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
+			     bitstr_t **select_bitmap, job_record_t *job_ptr,
+			     part_record_t *part_ptr, uint32_t min_nodes,
+			     uint32_t max_nodes, uint32_t req_nodes,
+			     bool test_only, List *preemptee_job_list,
+			     bool can_reboot, bool submission, bool sched, int index, 
+				 bool submit, int worker_index)
+#else
 static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 			     bitstr_t **select_bitmap, job_record_t *job_ptr,
 			     part_record_t *part_ptr, uint32_t min_nodes,
 			     uint32_t max_nodes, uint32_t req_nodes,
 			     bool test_only, List *preemptee_job_list,
 			     bool can_reboot, bool submission, bool sched, int index)
+#endif
 #endif					 
 {
 	uint32_t saved_min_nodes, saved_job_min_nodes, saved_job_num_tasks;
@@ -1138,9 +1206,19 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 			if(para_sched && sched){
 				save_avail_node_bitmap = para_sched_avail_node_bitmap[index];
 				para_sched_avail_node_bitmap[index] = bit_alloc(node_record_count);
-			} else {				
+			} else {	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				if (para_submit && submit) {
+					save_avail_node_bitmap = para_submit_avail_node_bitmap[worker_index];
+					para_submit_avail_node_bitmap[worker_index] = bit_alloc(node_record_count);
+				} else {
+					save_avail_node_bitmap = avail_node_bitmap;
+					avail_node_bitmap = bit_alloc(node_record_count);
+				}
+#else				
 				save_avail_node_bitmap = avail_node_bitmap;
 				avail_node_bitmap = bit_alloc(node_record_count);
+#endif
 			}
 #endif					
 			FREE_NULL_BITMAP(resv_bitmap);
@@ -1172,6 +1250,26 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 			para_sched_avail_node_bitmap[index] = resv_bitmap;
 			resv_bitmap = NULL;				
 		} else if(resv_bitmap &&
+#endif		
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			para_submit && submit &&
+			!bit_equal(resv_bitmap, para_submit_avail_node_bitmap[worker_index])
+		) {
+			bit_and(resv_bitmap, para_submit_avail_node_bitmap[worker_index]);
+			save_avail_node_bitmap = para_submit_avail_node_bitmap[worker_index];
+			if (slurm_conf.debug_flags & DEBUG_FLAG_RESERVATION &&
+				!bit_equal(para_submit_avail_node_bitmap[worker_index], resv_bitmap)) {
+				bitstr_t *removed_nodes =
+					bit_copy(save_avail_node_bitmap);
+				bit_and_not(removed_nodes, resv_bitmap);
+				log_flag(RESERVATION, "Advanced reservation removed nodes:%s from consideration for %pJ",
+						bitmap2node_name(removed_nodes),
+						job_ptr);
+				FREE_NULL_BITMAP(removed_nodes);
+			}
+			para_submit_avail_node_bitmap[worker_index] = resv_bitmap;
+			resv_bitmap = NULL;				
+		} else if(resv_bitmap &&																																																		
 #endif				
 			   (!bit_equal(resv_bitmap, avail_node_bitmap))) {
 			bit_and(resv_bitmap, avail_node_bitmap);
@@ -1211,17 +1309,35 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 			save_avail_node_bitmap = bit_copy(para_sched_avail_node_bitmap[index]);
 		save_share_node_bitmap = bit_copy(para_sched_share_node_bitmap[index]);
 		filter_by_node_owner(job_ptr, para_sched_share_node_bitmap[index]);
-	} else {		
+	} else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		if (para_submit && submit) {
+			if (!save_avail_node_bitmap)
+				save_avail_node_bitmap = bit_copy(para_submit_avail_node_bitmap[worker_index]);
+			save_share_node_bitmap = bit_copy(para_submit_share_node_bitmap[worker_index]);
+			filter_by_node_owner(job_ptr, para_submit_share_node_bitmap[worker_index]);
+		} else {
+			if (!save_avail_node_bitmap)
+				save_avail_node_bitmap = bit_copy(avail_node_bitmap);
+			save_share_node_bitmap = bit_copy(share_node_bitmap);
+			filter_by_node_owner(job_ptr, share_node_bitmap);
+		}
+#else		
 		if (!save_avail_node_bitmap)
 			save_avail_node_bitmap = bit_copy(avail_node_bitmap);
 		save_share_node_bitmap = bit_copy(share_node_bitmap);
 		filter_by_node_owner(job_ptr, share_node_bitmap);
+#endif
 	}
 #endif
 
 	if (can_reboot && !test_only)
 #ifdef __METASTACK_NEW_PART_PARA_SCHED	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		_filter_by_node_feature(job_ptr, node_set_ptr, node_set_size, sched, index, submit, worker_index);
+#else
 		_filter_by_node_feature(job_ptr, node_set_ptr, node_set_size, sched, index);
+#endif
 #else		
 		_filter_by_node_feature(job_ptr, node_set_ptr, node_set_size);
 #endif
@@ -1231,8 +1347,16 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 		if(para_sched && sched)
 			filter_by_node_mcs(job_ptr, mcs_select, para_sched_share_node_bitmap[index]);
-		else		
+		else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			if(para_submit && submit)
+				filter_by_node_mcs(job_ptr, mcs_select, para_submit_share_node_bitmap[worker_index]);
+			else
+				filter_by_node_mcs(job_ptr, mcs_select, share_node_bitmap);																																																																																																																																																																																																
+#else
 			filter_by_node_mcs(job_ptr, mcs_select, share_node_bitmap);
+#endif
+		}
 #endif			
 	}
 
@@ -1428,6 +1552,15 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 					preemptee_job_list, false,
 					&resv_exc, resv_overlap); */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			error_code = _pick_best_nodes(tmp_node_set_ptr,
+					tmp_node_set_size, &feature_bitmap,
+					job_ptr, part_ptr, min_nodes,
+					max_nodes, req_nodes, test_only,
+					preemptee_candidates,
+					preemptee_job_list, false,
+					&resv_exc, resv_overlap, sched, index, submit, worker_index);
+#else
 			error_code = _pick_best_nodes(tmp_node_set_ptr,
 					tmp_node_set_size, &feature_bitmap,
 					job_ptr, part_ptr, min_nodes,
@@ -1435,6 +1568,7 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 					preemptee_candidates,
 					preemptee_job_list, false,
 					&resv_exc, resv_overlap, sched, index);
+#endif
 #endif					
 			job_ptr->details->num_tasks = saved_job_num_tasks;
 			if (job_ptr->details->pn_min_memory) {
@@ -1551,11 +1685,19 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 				preemptee_candidates, preemptee_job_list,
 				has_xand, &resv_exc, resv_overlap); */
 #ifdef  __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		error_code = _pick_best_nodes(node_set_ptr, node_set_size,
+				select_bitmap, job_ptr, part_ptr, min_nodes,
+				max_nodes, req_nodes, test_only,
+				preemptee_candidates, preemptee_job_list,
+				has_xand, &resv_exc, resv_overlap, sched, index, submit, worker_index);
+#else
 		error_code = _pick_best_nodes(node_set_ptr, node_set_size,
 				select_bitmap, job_ptr, part_ptr, min_nodes,
 				max_nodes, req_nodes, test_only,
 				preemptee_candidates, preemptee_job_list,
 				has_xand, &resv_exc, resv_overlap, sched, index);
+#endif
 #endif				
 	}
 
@@ -1589,6 +1731,17 @@ static int _get_req_features(struct node_set *node_set_ptr, int node_set_size,
 			FREE_NULL_BITMAP(para_sched_share_node_bitmap[index]);
 			para_sched_share_node_bitmap[index] = save_share_node_bitmap;
 		}
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	} else if (para_submit && submit) {
+		if (save_avail_node_bitmap) {
+			FREE_NULL_BITMAP(para_submit_avail_node_bitmap[worker_index]);
+			para_submit_avail_node_bitmap[worker_index] = save_avail_node_bitmap;
+		}
+		if (save_share_node_bitmap) {
+			FREE_NULL_BITMAP(para_submit_share_node_bitmap[worker_index]);
+			para_submit_share_node_bitmap[worker_index] = save_share_node_bitmap;
+		}
+#endif
 	} else {	
 		if (save_avail_node_bitmap) {
 			FREE_NULL_BITMAP(avail_node_bitmap);
@@ -1694,6 +1847,16 @@ static void _bit_or_cond(job_record_t *job_ptr, bitstr_t *bitmap)
 			    List *preemptee_job_list, bool has_xand,
 			    resv_exc_t *resv_exc_ptr, bool resv_overlap) */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
+			    bitstr_t **select_bitmap, job_record_t *job_ptr,
+			    part_record_t *part_ptr, uint32_t min_nodes,
+			    uint32_t max_nodes, uint32_t req_nodes,
+			    bool test_only, List preemptee_candidates,
+			    List *preemptee_job_list, bool has_xand,
+			    resv_exc_t *resv_exc_ptr, bool resv_overlap, bool sched, int index, 
+				bool submit, int worker_index)
+#else
 static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 			    bitstr_t **select_bitmap, job_record_t *job_ptr,
 			    part_record_t *part_ptr, uint32_t min_nodes,
@@ -1701,6 +1864,7 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 			    bool test_only, List preemptee_candidates,
 			    List *preemptee_job_list, bool has_xand,
 			    resv_exc_t *resv_exc_ptr, bool resv_overlap, bool sched, int index)
+#endif
 #endif
 {
 	int error_code = SLURM_SUCCESS, i, j, pick_code = SLURM_SUCCESS;
@@ -1827,10 +1991,24 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 				return ESLURM_NODE_NOT_AVAIL;
 			}
 		} else{		
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			if(para_submit && submit){
+				if (!bit_super_set(job_ptr->details->req_node_bitmap,
+						para_submit_avail_node_bitmap[worker_index])) {
+					return ESLURM_NODE_NOT_AVAIL;
+				}
+			} else {
+				if (!bit_super_set(job_ptr->details->req_node_bitmap,
+						avail_node_bitmap)) {
+					return ESLURM_NODE_NOT_AVAIL;
+				}
+			}
+#else
 			if (!bit_super_set(job_ptr->details->req_node_bitmap,
 					avail_node_bitmap)) {
 				return ESLURM_NODE_NOT_AVAIL;
 			}
+#endif
 		}
 #endif			
 
@@ -1858,11 +2036,21 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 		debug3("%s: %pJ idle_nodes %u share_nodes %u",
 	     	__func__, job_ptr, bit_set_count(para_sched_idle_node_bitmap[index]),
 			bit_set_count(para_sched_share_node_bitmap[index]));
-	else		
+	else {
 #endif	
-		debug3("%s: %pJ idle_nodes %u share_nodes %u",
-			__func__, job_ptr, bit_set_count(idle_node_bitmap),
-			bit_set_count(share_node_bitmap));
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		if (para_submit && submit)
+			debug3("%s: %pJ idle_nodes %u share_nodes %u",
+				__func__, job_ptr, bit_set_count(para_submit_idle_node_bitmap[worker_index]),
+				bit_set_count(para_submit_share_node_bitmap[worker_index]));
+		else	
+#endif
+			debug3("%s: %pJ idle_nodes %u share_nodes %u",
+				__func__, job_ptr, bit_set_count(idle_node_bitmap),
+				bit_set_count(share_node_bitmap));
+#ifdef __METASTACK_NEW_PART_PARA_SCHED
+		}
+#endif
 
 	if (slurm_select_cr_type() == SELECT_TYPE_CONS_TRES)
 		_sync_node_weight(node_set_ptr, node_set_size);
@@ -1887,10 +2075,17 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 					if(para_sched && sched)
 						bit_and(node_set_map,
 							para_sched_idle_node_bitmap[index]);
-					else					
-						bit_and(node_set_map,
-							idle_node_bitmap);
-#endif							
+					else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+						if (para_submit && submit)
+							bit_and(node_set_map,
+								para_submit_idle_node_bitmap[worker_index]);
+						else						
+#endif				
+							bit_and(node_set_map,
+								idle_node_bitmap);
+					}
+#endif	
 					/*
 					 * Powered up cloud nodes can't be
 					 * rebooted to get new features. Must be
@@ -1924,10 +2119,16 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			if(para_sched && sched)
 				bit_and_not(avail_bitmap, para_sched_resv_node_bitmap[index]);
-			else
-				bit_and_not(avail_bitmap, resv_node_bitmap);
+			else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				if (para_submit && submit)
+					bit_and_not(avail_bitmap, para_submit_resv_node_bitmap[worker_index]);
+				else
 #endif
-#endif			
+				bit_and_not(avail_bitmap, resv_node_bitmap);
+			}
+#endif
+#endif
 		}
 		for (i = 0; i < node_set_size; i++) {
 			int count1 = 0, count2 = 0;
@@ -1955,9 +2156,16 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 				if(para_sched && sched)
 					bit_and(node_set_ptr[i].my_bitmap,
 						para_sched_idle_node_bitmap[index]);		
-				else							   
-					bit_and(node_set_ptr[i].my_bitmap,
-						idle_node_bitmap);
+				else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+					if (para_submit && submit)
+						bit_and(node_set_ptr[i].my_bitmap,
+							para_submit_idle_node_bitmap[worker_index]);
+					else						
+#endif				   
+						bit_and(node_set_ptr[i].my_bitmap,
+							idle_node_bitmap);
+				}
 #endif						
 				/*
 				 * Powered up cloud nodes can't be rebooted to
@@ -1973,9 +2181,15 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 #ifdef __METASTACK_NEW_PART_PARA_SCHED							   
 			if(para_sched && sched)
 				bit_and(node_set_ptr[i].my_bitmap, para_sched_avail_node_bitmap[index]);
-			else			
-				bit_and(node_set_ptr[i].my_bitmap, avail_node_bitmap);
-#endif				
+			else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				if (para_submit && submit)
+					bit_and(node_set_ptr[i].my_bitmap, para_submit_avail_node_bitmap[worker_index]);
+				else
+#endif			
+					bit_and(node_set_ptr[i].my_bitmap, avail_node_bitmap);
+			}
+#endif		
 			if (!nodes_busy) {
 				count1 = bit_set_count(node_set_ptr[i].
 						       my_bitmap);
@@ -2007,7 +2221,62 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 				}
 #endif
 			} else {
-#endif							
+#endif	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				if(para_submit && submit) {
+					if (!preempt_flag) {
+						if (shared) {
+							bit_and(node_set_ptr[i].my_bitmap,
+								para_submit_share_node_bitmap[worker_index]);
+							bit_and_not(node_set_ptr[i].my_bitmap,
+									cg_node_bitmap);
+						} else {
+							bit_and(node_set_ptr[i].my_bitmap,
+								para_submit_idle_node_bitmap[worker_index]);
+							/* IDLE nodes are not COMPLETING */
+						}
+					} else {
+						bit_and_not(node_set_ptr[i].my_bitmap,
+								cg_node_bitmap);
+					}
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+					if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+						/*Before the job select_g_job_test, remove the nodes in the blacklist from the bitmap.*/
+						bit_and_not(node_set_ptr[i].my_bitmap, para_submit_resv_node_bitmap[worker_index]);
+						FREE_NULL_BITMAP(job_ptr->resv_bitmap);
+						job_ptr->resv_bitmap = bit_copy(idle_node_bitmap);
+						bit_and_not(job_ptr->resv_bitmap, para_submit_resv_node_bitmap[worker_index]);
+					}
+#endif
+				} else {
+					if (!preempt_flag) {
+						if (shared) {
+							bit_and(node_set_ptr[i].my_bitmap,
+								share_node_bitmap);
+							bit_and_not(node_set_ptr[i].my_bitmap,
+									cg_node_bitmap);
+						} else {
+							bit_and(node_set_ptr[i].my_bitmap,
+								idle_node_bitmap);
+							/* IDLE nodes are not COMPLETING */
+						}
+					} else {
+						bit_and_not(node_set_ptr[i].my_bitmap,
+								cg_node_bitmap);
+					}
+#ifdef __METASTACK_NEW_PART_PARA_SCHED	
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+					if (sched && job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART){
+						/*Before the job select_g_job_test, remove the nodes in the blacklist from the bitmap.*/
+						bit_and_not(node_set_ptr[i].my_bitmap, resv_node_bitmap);
+						FREE_NULL_BITMAP(job_ptr->resv_bitmap);
+						job_ptr->resv_bitmap = bit_copy(idle_node_bitmap);
+						bit_and_not(job_ptr->resv_bitmap, resv_node_bitmap);
+					}
+#endif
+#endif
+				}
+#else									
 				if (!preempt_flag) {
 					if (shared) {
 						bit_and(node_set_ptr[i].my_bitmap,
@@ -2033,6 +2302,9 @@ static int _pick_best_nodes(struct node_set *node_set_ptr, int node_set_size,
 					bit_and_not(job_ptr->resv_bitmap, resv_node_bitmap);
 				}
 #endif
+#endif
+#endif
+#ifdef __METASTACK_NEW_PART_PARA_SCHED	
 			}
 #endif
 
@@ -2087,10 +2359,25 @@ try_sched:
 
 				bit_and(avail_bitmap, para_sched_share_node_bitmap[index]);
 			} else{
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				if (para_submit && submit){
+					if (job_ptr->details->req_node_bitmap == NULL)
+						bit_and(avail_bitmap, para_submit_avail_node_bitmap[worker_index]);
+
+					bit_and(avail_bitmap, para_submit_share_node_bitmap[worker_index]);
+				} else{				
+					if (job_ptr->details->req_node_bitmap == NULL)
+						bit_and(avail_bitmap, avail_node_bitmap);
+
+					bit_and(avail_bitmap, share_node_bitmap);
+				}
+					
+#else
 				if (job_ptr->details->req_node_bitmap == NULL)
 					bit_and(avail_bitmap, avail_node_bitmap);
 
 				bit_and(avail_bitmap, share_node_bitmap);
+#endif
 			}
 #endif			
 
@@ -2119,8 +2406,14 @@ try_sched:
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 				if(para_sched && sched)
 					bit_and(avail_bitmap, para_sched_avail_node_bitmap[index]);
-				else				
-					bit_and(avail_bitmap, avail_node_bitmap);
+				else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+					if (para_submit && submit)
+						bit_and(avail_bitmap, para_submit_avail_node_bitmap[worker_index]);
+					else
+#endif				
+						bit_and(avail_bitmap, avail_node_bitmap);
+				}
 #endif					
 				bit_and(avail_bitmap, total_bitmap);
 				preemptee_cand = preemptee_candidates;
@@ -2232,8 +2525,14 @@ try_sched:
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 				if(para_sched && sched)
 				   bit_and(avail_bitmap, para_sched_avail_node_bitmap[index]);
-				else				
-					bit_and(avail_bitmap, avail_node_bitmap);
+				else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+					if (para_submit && submit)
+						bit_and(avail_bitmap, para_submit_avail_node_bitmap[worker_index]);
+					else
+#endif			
+						bit_and(avail_bitmap, avail_node_bitmap);
+				}
 #endif					
 				job_ptr->details->pn_min_memory = orig_req_mem;
 				pick_code = select_g_job_test(job_ptr,
@@ -2359,7 +2658,22 @@ try_sched:
 					error_code = ESLURM_NODES_BUSY;
 				}
 #endif
-			} else {			
+			} else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				if (para_submit && submit) {
+					if (!bit_super_set(job_ptr->details->req_node_bitmap,
+							para_submit_share_node_bitmap[worker_index])) {
+						error_code = ESLURM_NODES_BUSY;
+					}
+#ifdef __METASTACK_NEW_HETPART_SUPPORT
+					if (job_ptr->part_ptr->meta_flags & PART_METAFLAG_HETPART && 
+						!bit_super_set(job_ptr->details->req_node_bitmap, para_submit_share_node_bitmap[worker_index])) {
+						error_code = ESLURM_NODES_BUSY;
+					}
+#endif
+				} else {
+
+#else				
 				if (!bit_super_set(job_ptr->details->req_node_bitmap,
 						share_node_bitmap)) {
 					error_code = ESLURM_NODES_BUSY;
@@ -2370,6 +2684,10 @@ try_sched:
 					error_code = ESLURM_NODES_BUSY;
 				}
 #endif 
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			}
+#endif
 			} 
 #endif							
 			if (bit_overlap_any(job_ptr->details->req_node_bitmap,
@@ -2380,7 +2698,12 @@ try_sched:
 		} else if (para_sched && sched && 
 				(!bit_super_set(job_ptr->details->req_node_bitmap, para_sched_idle_node_bitmap[index]))) {
 			error_code = ESLURM_NODES_BUSY;
-#endif				
+#endif			
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		} else if (para_submit && submit && 
+				(!bit_super_set(job_ptr->details->req_node_bitmap, para_submit_idle_node_bitmap[worker_index]))) {
+			error_code = ESLURM_NODES_BUSY;
+#endif		
 		} else if (!bit_super_set(job_ptr->details->req_node_bitmap,
 					  idle_node_bitmap)) {
 			error_code = ESLURM_NODES_BUSY;
@@ -2779,10 +3102,16 @@ static int _get_resv_mpi_ports(job_record_t *job_ptr,
 			bitstr_t **select_node_bitmap, char **err_msg,
 			bool submission, uint32_t scheduler_type) */
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+extern int select_nodes(job_record_t *job_ptr, bool test_only,
+			bitstr_t **select_node_bitmap, char **err_msg,
+			bool submission, uint32_t scheduler_type, bool sched, int index, bool submit, int worker_index)
+#else
 extern int select_nodes(job_record_t *job_ptr, bool test_only,
 			bitstr_t **select_node_bitmap, char **err_msg,
 			bool submission, uint32_t scheduler_type, bool sched, int index)
 #endif	
+#endif
 {
 	int bb, error_code = SLURM_SUCCESS, i, node_set_size = 0;
 	bitstr_t *select_bitmap = NULL;
@@ -2965,14 +3294,23 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 					       req_nodes, test_only,
 					       &preemptee_job_list, can_reboot,
 					       submission); */
-#ifdef __METASTACK_NEW_PART_PARA_SCHED				   
+#ifdef __METASTACK_NEW_PART_PARA_SCHED		
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		error_code = _get_req_features(node_set_ptr, node_set_size,
+					       &select_bitmap, job_ptr,
+					       part_ptr, min_nodes, max_nodes,
+					       req_nodes, test_only,
+					       &preemptee_job_list, can_reboot,
+					       submission, sched, index, submit, worker_index);
+#else			   
 		error_code = _get_req_features(node_set_ptr, node_set_size,
 					       &select_bitmap, job_ptr,
 					       part_ptr, min_nodes, max_nodes,
 					       req_nodes, test_only,
 					       &preemptee_job_list, can_reboot,
 					       submission, sched, index);
-#endif							   
+#endif	
+#endif						   
 	}
 
 	/* Set this guess here to give the user tools an idea
@@ -3123,8 +3461,14 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 			if(para_sched && sched)
 				unavail_bitmap = bit_copy(para_sched_avail_node_bitmap[index]);
-			else
-				unavail_bitmap = bit_copy(avail_node_bitmap);
+			else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+				if(para_submit && submit)
+					unavail_bitmap = bit_copy(para_submit_avail_node_bitmap[worker_index]);
+				else
+#endif
+					unavail_bitmap = bit_copy(avail_node_bitmap);
+			}
 #endif
 			filter_by_node_owner(job_ptr, unavail_bitmap);
 			bit_not(unavail_bitmap);
@@ -3374,11 +3718,23 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 		!bit_super_set(job_ptr->node_bitmap, para_sched_avail_node_bitmap[index]))) {
 		/* This handles nodes explicitly requesting node reboot */
 		job_state_set_flag(job_ptr, JOB_CONFIGURING);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	} else if ((para_submit && submit) && (configuring || IS_JOB_POWER_UP_NODE(job_ptr) ||
+		!bit_super_set(job_ptr->node_bitmap, para_submit_avail_node_bitmap[worker_index]))) {
+		/* This handles nodes explicitly requesting node reboot */
+		job_state_set_flag(job_ptr, JOB_CONFIGURING);
 	} else if (configuring || IS_JOB_POWER_UP_NODE(job_ptr) ||
 	    !bit_super_set(job_ptr->node_bitmap, avail_node_bitmap)) {
 		/* This handles nodes explicitly requesting node reboot */
 		job_state_set_flag(job_ptr, JOB_CONFIGURING);
 	}
+#else
+	} else if (configuring || IS_JOB_POWER_UP_NODE(job_ptr) ||
+	    !bit_super_set(job_ptr->node_bitmap, avail_node_bitmap)) {
+		/* This handles nodes explicitly requesting node reboot */
+		job_state_set_flag(job_ptr, JOB_CONFIGURING);
+	}
+#endif
 #endif
 
 	/*
@@ -3395,11 +3751,6 @@ extern int select_nodes(job_record_t *job_ptr, bool test_only,
 
 cleanup:
 
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	if (!test_only) {
-		_add_job_state_to_queue(job_ptr);
-	}
-#endif
 	if (job_ptr->array_recs && job_ptr->array_recs->task_id_bitmap &&
 	    !IS_JOB_STARTED(job_ptr) &&
 	    (bit_ffs(job_ptr->array_recs->task_id_bitmap) != -1)) {
@@ -3436,6 +3787,11 @@ cleanup:
 	} else
 		FREE_NULL_LIST(gres_list_pre);
 
+#ifdef __METASTACK_OPT_CACHE_QUERY
+	if (!test_only) {
+		_add_job_state_to_queue(job_ptr);
+	}
+#endif
 	/*
 	 * Unless the job is allocated resources now, we need to restore the
 	 * original whole_node/share_res values since _resolve_shared_status()
@@ -3725,6 +4081,12 @@ extern void launch_prolog(job_record_t *job_ptr)
 #else
 	agent_arg_ptr->hostlist = hostlist_create(job_ptr->nodes);
 	agent_arg_ptr->node_count = job_ptr->node_cnt;
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_AGENT_THREAD_POOL
+	if (agent_arg_ptr->node_count == 1) {
+		agent_arg_ptr->addr = xcalloc(1, sizeof(slurm_addr_t));
+		slurm_conf_get_addr(job_ptr->nodes, agent_arg_ptr->addr, 0);
+	}	
 #endif
 	agent_arg_ptr->msg_type = REQUEST_LAUNCH_PROLOG;
 	agent_arg_ptr->msg_args = (void *) prolog_msg_ptr;
@@ -5085,11 +5447,12 @@ extern void re_kill_job(job_record_t *job_ptr)
 			if (PACK_FANOUT_ADDRS(node_ptr))
 				agent_args->msg_flags |= SLURM_PACK_ADDRS;
 		}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+		_add_job_state_to_queue(job_ptr);
+#endif
 	}
 #endif
-#ifdef __METASTACK_OPT_CACHE_QUERY
-	_add_job_state_to_queue(job_ptr);
-#endif
+
 	if (agent_args->node_count == 0) {
 		FREE_NULL_HOSTLIST(agent_args->hostlist);
 		xfree(agent_args);

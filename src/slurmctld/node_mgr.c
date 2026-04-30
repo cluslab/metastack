@@ -186,7 +186,11 @@ extern void _update_node_borrow_state(node_record_t *node_ptr, part_record_t *pa
 		if (IS_NODE_DRAIN(node_ptr) && 
 			(!xstrcasecmp(node_ptr->reason, offline_reason))) {
 			node_ptr->node_state &= (~NODE_STATE_DRAIN);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			make_node_avail(node_ptr, false, 0);
+#else
 			make_node_avail(node_ptr);
+#endif
 			clusteracct_storage_g_node_up(
 				acct_db_conn,
 				node_ptr,
@@ -2442,7 +2446,11 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 				node_ptr->node_state &= (~NODE_STATE_FAIL);
 				if (!IS_NODE_NO_RESPOND(node_ptr) ||
 				     IS_NODE_POWERED_DOWN(node_ptr))
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+					make_node_avail(node_ptr, false, 0);
+#else
 					make_node_avail(node_ptr);
+#endif
 				bit_set (idle_node_bitmap, node_ptr->index);
 				bit_set (up_node_bitmap, node_ptr->index);
 				if (IS_NODE_POWERED_DOWN(node_ptr))
@@ -2453,7 +2461,11 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 				if (!IS_NODE_DRAIN(node_ptr) &&
 				    !IS_NODE_FAIL(node_ptr)  &&
 				    !IS_NODE_NO_RESPOND(node_ptr))
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+					make_node_avail(node_ptr, false, 0);
+#else
 					make_node_avail(node_ptr);
+#endif
 				bit_set (up_node_bitmap, node_ptr->index);
 				bit_clear (idle_node_bitmap, node_ptr->index);
 			} else if ((state_val == NODE_STATE_DRAIN) ||
@@ -2466,14 +2478,22 @@ int update_node(update_node_msg_t *update_node_msg, uid_t auth_uid)
 					kill_running_job_by_node_name(
 								this_node_name);
 				}
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				trigger_node_draining(node_ptr, false);
+#else
 				trigger_node_draining(node_ptr);
+#endif
 				bit_clear (avail_node_bitmap, node_ptr->index);
 				node_ptr->node_state &= (~NODE_STATE_DRAIN);
 				node_ptr->node_state &= (~NODE_STATE_FAIL);
 				state_val = node_ptr->node_state |= state_val;
 				if ((node_ptr->run_job_cnt  == 0) &&
 				    (node_ptr->comp_job_cnt == 0)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+					trigger_node_drained(node_ptr, false);
+#else
 					trigger_node_drained(node_ptr);
+#endif
 					clusteracct_storage_g_node_down(
 						acct_db_conn,
 						node_ptr, now, NULL,
@@ -3206,7 +3226,11 @@ static void _drain_node(node_record_t *node_ptr, char *reason,
 		return;
 	}
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	trigger_node_draining(node_ptr, false);
+#else
 	trigger_node_draining(node_ptr);
+#endif
 	node_ptr->node_state |= NODE_STATE_DRAIN;
 	bit_clear(avail_node_bitmap, node_ptr->index);
 	info("drain_nodes: node %s state set to DRAIN",
@@ -3221,7 +3245,11 @@ static void _drain_node(node_record_t *node_ptr, char *reason,
 	if ((node_ptr->run_job_cnt  == 0) &&
 	    (node_ptr->comp_job_cnt == 0)) {
 		/* no jobs, node is drained */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		trigger_node_drained(node_ptr, false);
+#else
 		trigger_node_drained(node_ptr);
+#endif
 		clusteracct_storage_g_node_down(acct_db_conn,
 						node_ptr, now, NULL,
 						reason_uid);
@@ -4472,7 +4500,11 @@ static void _sync_bitmaps(node_record_t *node_ptr, int job_count)
 	    IS_NODE_FAIL(node_ptr) || IS_NODE_NO_RESPOND(node_ptr))
 		bit_clear (avail_node_bitmap, node_ptr->index);
 	else
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		make_node_avail(node_ptr, false, 0);
+#else
 		make_node_avail(node_ptr);
+#endif
 	if (IS_NODE_DOWN(node_ptr))
 		bit_clear (up_node_bitmap, node_ptr->index);
 	else
@@ -5060,18 +5092,38 @@ extern void make_node_alloc(node_record_t *node_ptr, job_record_t *job_ptr)
 }
 
 /* make_node_avail - flag specified node as available */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern void make_node_avail(node_record_t *node_ptr, bool can_para_epilog, int worker_index)
+#else
 extern void make_node_avail(node_record_t *node_ptr)
+#endif
 {
 	if (IS_NODE_POWER_DOWN(node_ptr) || IS_NODE_POWERING_DOWN(node_ptr))
 		return;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	if (can_para_epilog && enable_para_epilog) {
+		bit_set(para_epilog_avail_node_bitmap[worker_index], node_ptr->index);
+	} else {
+		bit_set(avail_node_bitmap, node_ptr->index);
+	}
+#else
 	bit_set(avail_node_bitmap, node_ptr->index);
+#endif
 
 	/*
 	 * If we are in the middle of a backfill cycle, this bitmap is
 	 * used (when bf_continue is enabled) to avoid scheduling lower
 	 * priority jobs on to newly available resources.
 	 */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	if (can_para_epilog && enable_para_epilog) {
+		bit_set(para_epilog_bf_ignore_node_bitmap[worker_index], node_ptr->index);
+	} else {
+		bit_set(bf_ignore_node_bitmap, node_ptr->index);
+	}
+#else
 	bit_set(bf_ignore_node_bitmap, node_ptr->index);
+#endif
 }
 
 extern void node_mgr_make_node_blocked(job_record_t *job_ptr, bool set)
@@ -5153,9 +5205,17 @@ extern void make_node_comp(node_record_t *node_ptr, job_record_t *job_ptr,
 		bit_set(idle_node_bitmap, node_ptr->index);
 	}
 	if (IS_NODE_DRAIN(node_ptr) || IS_NODE_FAIL(node_ptr)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		trigger_node_draining(node_ptr, false);
+#else
 		trigger_node_draining(node_ptr);
+#endif
 		if (!node_ptr->run_job_cnt && !node_ptr->comp_job_cnt) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			trigger_node_drained(node_ptr, false);
+#else
 			trigger_node_drained(node_ptr);
+#endif
 			clusteracct_storage_g_node_down(
 				acct_db_conn,
 				node_ptr, now, NULL,
@@ -5236,7 +5296,11 @@ static void _make_node_down(node_record_t *node_ptr, time_t event_time)
  * IN node_ptr - pointer to node reporting job completion
  * IN job_ptr - pointer to job that just completed or NULL if not applicable
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr, bool can_para_epilog, int worker_index)
+#else
 void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
+#endif
 {
 	uint32_t node_flags;
 	time_t now = time(NULL);
@@ -5256,6 +5320,12 @@ void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
 		/* Not a replay */
 		last_job_update = now;
 		bit_clear(node_bitmap, node_ptr->index);
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (can_para_epilog && enable_para_epilog) {
+			slurm_mutex_lock(&job_ptr->job_sched_lock);
+		}
+#endif
 
 		if (!IS_JOB_FINISHED(job_ptr))
 			job_update_tres_cnt(job_ptr, node_ptr->index);
@@ -5303,14 +5373,36 @@ void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
 				error("%s: %pJ node %s comp_job_cnt underflow",
 				      __func__, job_ptr, node_ptr->name);
 			}
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			if (node_ptr->comp_job_cnt > 0) {
+				if (can_para_epilog && enable_para_epilog) {
+					slurm_mutex_unlock(&job_ptr->job_sched_lock);
+				}
+				goto fini;	/* More jobs completing */
+			}
+#else
 			if (node_ptr->comp_job_cnt > 0)
 				goto fini;	/* More jobs completing */
+#endif
 		}
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (can_para_epilog && enable_para_epilog) {
+			slurm_mutex_unlock(&job_ptr->job_sched_lock);
+		}
+#endif
 	}
 
 	if (node_ptr->comp_job_cnt == 0) {
 		node_ptr->node_state &= (~NODE_STATE_COMPLETING);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (can_para_epilog && enable_para_epilog) {
+			bit_clear(para_epilog_cg_node_bitmap[worker_index], node_ptr->index);
+		} else {
+			bit_clear(cg_node_bitmap, node_ptr->index);
+		}
+#else
 		bit_clear(cg_node_bitmap, node_ptr->index);
+#endif
 		if (IS_NODE_IDLE(node_ptr)) {
 			node_ptr->owner = NO_VAL;
 			xfree(node_ptr->mcs_label);
@@ -5324,23 +5416,60 @@ void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
 		       node_state_base_string(node_ptr->node_state));
 		goto fini;
 	}
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	if (can_para_epilog && enable_para_epilog) {
+		bit_set(para_epilog_up_node_bitmap[worker_index], node_ptr->index);
+	} else {
+		bit_set(up_node_bitmap, node_ptr->index);
+	}
+#else
 	bit_set(up_node_bitmap, node_ptr->index);
+#endif
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	if (IS_NODE_DRAIN(node_ptr) || IS_NODE_FAIL(node_ptr) ||
+	    IS_NODE_NO_RESPOND(node_ptr)) {
+		if (can_para_epilog && enable_para_epilog) {
+			bit_clear(para_epilog_avail_node_bitmap[worker_index], node_ptr->index);
+		} else {
+			bit_clear(avail_node_bitmap, node_ptr->index);
+		}
+	} else {
+		make_node_avail(node_ptr, can_para_epilog, worker_index);
+	}
+#else
 	if (IS_NODE_DRAIN(node_ptr) || IS_NODE_FAIL(node_ptr) ||
 	    IS_NODE_NO_RESPOND(node_ptr))
 		bit_clear(avail_node_bitmap, node_ptr->index);
 	else
 		make_node_avail(node_ptr);
+#endif
 
 	if (IS_NODE_DRAIN(node_ptr) || IS_NODE_FAIL(node_ptr)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		trigger_node_draining(node_ptr, can_para_epilog);
+#else
 		trigger_node_draining(node_ptr);
+#endif
 		if (!node_ptr->run_job_cnt && !node_ptr->comp_job_cnt) {
 			node_ptr->node_state = NODE_STATE_IDLE | node_flags;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			if (can_para_epilog && enable_para_epilog) {
+				bit_set(para_epilog_idle_node_bitmap[worker_index], node_ptr->index);
+			} else {
+				bit_set(idle_node_bitmap, node_ptr->index);
+			}
+#else
 			bit_set(idle_node_bitmap, node_ptr->index);
+#endif
 			debug3("%s: %pJ node %s is DRAINED",
 			       __func__, job_ptr, node_ptr->name);
 			node_ptr->last_busy = now;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			trigger_node_drained(node_ptr, can_para_epilog);
+#else
 			trigger_node_drained(node_ptr);
+#endif
 			if (!IS_NODE_REBOOT_REQUESTED(node_ptr) &&
 			    !IS_NODE_REBOOT_ISSUED(node_ptr))
 				clusteracct_storage_g_node_down(
@@ -5351,15 +5480,34 @@ void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
 		node_ptr->node_state = NODE_STATE_ALLOCATED | node_flags;
 		if (!IS_NODE_NO_RESPOND(node_ptr) &&
 		     !IS_NODE_FAIL(node_ptr) && !IS_NODE_DRAIN(node_ptr))
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			make_node_avail(node_ptr, can_para_epilog, worker_index);
+#else
 			make_node_avail(node_ptr);
+#endif
 	} else {
 		node_ptr->node_state = NODE_STATE_IDLE | node_flags;
 		if (!IS_NODE_NO_RESPOND(node_ptr) &&
 		     !IS_NODE_FAIL(node_ptr) && !IS_NODE_DRAIN(node_ptr))
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			make_node_avail(node_ptr, can_para_epilog, worker_index);
+#else
 			make_node_avail(node_ptr);
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (!IS_NODE_NO_RESPOND(node_ptr) &&
+		    !IS_NODE_COMPLETING(node_ptr)) {
+			if (can_para_epilog && enable_para_epilog) {
+				bit_set(para_epilog_idle_node_bitmap[worker_index], node_ptr->index);
+			} else {
+				bit_set(idle_node_bitmap, node_ptr->index);
+			}
+		}
+#else
 		if (!IS_NODE_NO_RESPOND(node_ptr) &&
 		    !IS_NODE_COMPLETING(node_ptr))
 			bit_set(idle_node_bitmap, node_ptr->index);
+#endif
 		node_ptr->last_busy = now;
 	}
 #ifdef __METASTACK_OPT_CACHE_QUERY
@@ -5371,7 +5519,15 @@ void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
 		 * from the avail_node_bitmap to prevent jobs being scheduled on
 		 * the node before it power's off.
 		 */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (can_para_epilog && enable_para_epilog) {
+			bit_clear(para_epilog_avail_node_bitmap[worker_index], node_ptr->index);
+		} else {
+			bit_clear(avail_node_bitmap, node_ptr->index);
+		}
+#else
 		bit_clear(avail_node_bitmap, node_ptr->index);
+#endif
 	}
 
 fini:
@@ -5743,7 +5899,11 @@ static int _build_node_callback(char *alias, char *hostname, char *address,
 	if (IS_NODE_FUTURE(node_ptr)) {
 		bit_set(future_node_bitmap, node_ptr->index);
 	} else if (IS_NODE_CLOUD(node_ptr)) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		make_node_idle(node_ptr, NULL, false, 0);
+#else
 		make_node_idle(node_ptr, NULL);
+#endif
 		bit_set(cloud_node_bitmap, node_ptr->index);
 		bit_set(power_down_node_bitmap, node_ptr->index);
 
@@ -6034,7 +6194,11 @@ extern int create_dynamic_reg_node(slurm_msg_t *msg)
 		_make_node_down(node_ptr, now);
 		node_ptr->node_state = state_val;
 	} else
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		make_node_idle(node_ptr, NULL, false, 0);
+#else
 		make_node_idle(node_ptr, NULL);
+#endif
 
 	node_ptr->node_state |= NODE_STATE_DYNAMIC_NORM;
 

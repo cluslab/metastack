@@ -84,6 +84,9 @@
 #include "src/common/xsignal.h"
 #include "src/common/xstring.h"
 #include "src/common/xsystemd.h"
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+#include "src/common/pre_process.h"
+#endif
 
 #include "src/interfaces/accounting_storage.h"
 #include "src/interfaces/acct_gather_profile.h"
@@ -485,6 +488,10 @@ int main(int argc, char **argv)
 	slurmscriptd_init(argc, argv);
 	run_command_init();
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	pre_process_init();
+#endif
+
 	accounting_enforce = slurm_conf.accounting_storage_enforce;
 	if (slurm_with_slurmdbd()) {
 		/* we need job_list not to be NULL */
@@ -744,6 +751,14 @@ int main(int argc, char **argv)
 					slurmctld_state_copy, NULL);
 #endif
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+		/*
+			* create attached thread for memory pool
+			*/
+		slurm_thread_create(&slurmctld_config.thread_id_pre_process,
+					slurmctld_pre_process, NULL);
+#endif
+
 		/*
 		 * create attached thread for node power management
   		 */
@@ -790,6 +805,9 @@ int main(int argc, char **argv)
 		switch_g_save();
 		priority_g_fini();
 		shutdown_state_save();
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+		pre_process_shutdown();
+#endif
 		slurm_mutex_lock(&purge_thread_lock);
 		slurm_cond_signal(&purge_thread_cond); /* wake up last time */
 		slurm_mutex_unlock(&purge_thread_lock);
@@ -799,7 +817,10 @@ int main(int argc, char **argv)
 #ifdef __METASTACK_OPT_CACHE_QUERY
 		slurm_thread_join(slurmctld_config.thread_id_query);
 		slurm_thread_join(slurmctld_config.thread_id_copy);
-#endif		
+#endif	
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+		slurm_thread_join(slurmctld_config.thread_id_pre_process);
+#endif	
 		slurm_mutex_lock(&slurmctld_config.acct_update_lock);
 		slurm_cond_broadcast(&slurmctld_config.acct_update_cond);
 		slurm_mutex_unlock(&slurmctld_config.acct_update_lock);
@@ -875,6 +896,10 @@ int main(int argc, char **argv)
 	jobcomp_g_fini();
 #ifdef __METASTACK_OPT_CACHE_QUERY	
 	cache_queue_fini();
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	pre_process_fini();
 #endif
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
@@ -964,6 +989,317 @@ int main(int argc, char **argv)
 	else
 		exit(0);
 }
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+ /* Memory preprocessing background thread.*/
+extern void *slurmctld_pre_process(void *no_data)
+{
+	int i, j;
+	int job_pool_size = 0;
+	int buf_pool_size = 0;
+	int buf_pool_num = 0;
+	int buf_4K_pool_num = 0;
+	int buf_16K_pool_num = 0;
+	int buf_256K_pool_num = 0;
+	int buf_1M_pool_num = 0;
+	int job_record_pool_num = 0;
+	int jobacctinfo_pool_num = 0;
+	int pool_left_num = 0;
+	double job_record_size = 0;
+	double jobacctinfo_size = 0;
+	uint32_t local_tres_count = 0;
+	list_t *buf_list = NULL;
+	static time_t sched_update = 0;
+	struct timespec ts = {0, 0};
+	struct timeval now;
+	job_record_t *job_ptr = NULL;
+	jobacctinfo_t *jobacct = NULL;
+	buf_t *buffer = NULL;
+	slurmctld_lock_t conf_read_lock = {
+		READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+	assoc_mgr_lock_t locks = { .tres = READ_LOCK };
+#if HAVE_SYS_PRCTL_H
+	if (prctl(PR_SET_NAME, "predata", NULL, NULL, NULL) < 0) {
+		error("%s: cannot set my name to %s %m", __func__, "perdata");
+	}
+#endif
+	while (true) {
+		lock_slurmctld(conf_read_lock);
+		if (sched_update != slurm_conf.last_update) {
+			char *tmp_ptr;
+			if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
+						"job_pool_size="))) {
+				j = atoi(tmp_ptr + 14);
+				if (j < 0 || j > 1024) {
+					job_pool_size = 0;
+					error("The job_pool_size configuration in SlurmctldParameters is incorrect, must be between 0 and 1024.");
+				} else {
+					job_pool_size = j;
+					if(job_pool_size == 0){
+						debug("%s SlurmctldParameters : job_pool_size = %dMB, job pool disabled", __func__, job_pool_size);
+					}else{
+						assoc_mgr_lock(&locks);
+						local_tres_count = g_tres_count;
+						assoc_mgr_unlock(&locks);
+						job_record_size = (sizeof(job_record_t) + sizeof(job_details_t) + sizeof(priority_factors_t) + sizeof(List)) / 1024.0;
+						jobacctinfo_size = (sizeof(struct jobacctinfo) + sizeof(jobacct_id_t) + local_tres_count * sizeof(uint32_t) +
+							 local_tres_count * sizeof(uint32_t) * 14 + JOBACCTINFO_START_END_ARRAY_SIZE * sizeof(time_t) * 6) / 1024.0;
+						job_record_pool_num = job_pool_size * 1024 / JOB_POOL_NUM / job_record_size;   // job_pool_size * 1024 / BUF_POOL_NUM / sizeof(job_record)
+						jobacctinfo_pool_num = job_pool_size * 1024 / JOB_POOL_NUM / jobacctinfo_size; // job_pool_size * 1024 / BUF_POOL_NUM / sizeof(jobacctinfo)
+						debug("%s SlurmctldParameters : job_pool_size = %dMB job_record_pool_num = %d  jobacctinfo_pool_num = %d",
+							 __func__, job_pool_size, job_record_pool_num, jobacctinfo_pool_num);
+					}
+				}
+			}else{
+				job_pool_size = 0;
+				debug("%s SlurmctldParameters : job_pool_size = %dMB, job pool disabled", __func__, job_pool_size);
+			}
+			if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params,
+						"buf_pool_size="))) {
+				j = atoi(tmp_ptr + 14);
+				if (j < 0 || j > 1024) {
+					buf_pool_size = 0;
+					error("The buf_pool_size configuration in SlurmctldParameters is incorrect, must be between 0 and 1024.");
+				} else {
+					buf_pool_size = j;
+					if(buf_pool_size == 0){
+						debug("%s SlurmctldParameters : buf_pool_size = %dMB, buf pool disabled", __func__, buf_pool_size);
+					}else{
+						buf_4K_pool_num = buf_pool_size * 256 * BUF_POOL_RATIO_4K;  // buf_pool_size * 1024 * BUF_POOL_RATIO_4K / 4
+						buf_16K_pool_num = buf_pool_size * 64 * BUF_POOL_RATIO_16K;  // buf_pool_size * 1024 * BUF_POOL_RATIO_16K / 16
+						buf_256K_pool_num = buf_pool_size * 4 * BUF_POOL_RATIO_256K;  // buf_pool_size * 1024 * BUF_POOL_RATIO_256K / 256
+						buf_1M_pool_num = buf_pool_size * BUF_POOL_RATIO_1M;         // buf_pool_size * 1024 * BUF_POOL_RATIO_1M / 1024
+						debug("%s SlurmctldParameters : buf_pool_size = %dMB buf_4K_pool_num = %d buf_16K_pool_num = %d buf_256K_pool_num = %d buf_1M_pool_num = %d",
+							 __func__, buf_pool_size, buf_4K_pool_num, buf_16K_pool_num, buf_256K_pool_num, buf_1M_pool_num);
+					}
+				}
+			}else{
+				buf_pool_size = 0;
+				debug("%s SlurmctldParameters : buf_pool_size = %dMB, buf pool disabled", __func__, buf_pool_size);
+			}
+			sched_update = slurm_conf.last_update;
+		}
+		unlock_slurmctld(conf_read_lock);
+		if(pre_process_data){
+			if(job_pool_size > 0){
+				if(!pre_process_data->pre_jobacctinfo_list){
+					pre_process_data->pre_jobacctinfo_list = list_create(mem_pool_jobacctinfo_destroy);
+				}
+				if(!pre_process_data->purge_jobacctinfo_list){
+					pre_process_data->purge_jobacctinfo_list = list_create(mem_pool_jobacctinfo_destroy);
+				}
+				if(!pre_process_data->pre_job_record_list){
+					pre_process_data->pre_job_record_list = list_create(job_record_delete);
+				}
+			}else{
+				if(pre_process_data->pre_jobacctinfo_list){
+					FREE_NULL_LIST(pre_process_data->pre_jobacctinfo_list);
+					pre_process_data->pre_jobacctinfo_list = NULL;
+				}
+				if(pre_process_data->purge_jobacctinfo_list){
+					FREE_NULL_LIST(pre_process_data->purge_jobacctinfo_list);
+					pre_process_data->purge_jobacctinfo_list = NULL;
+				}
+				if(pre_process_data->pre_job_record_list){
+					FREE_NULL_LIST(pre_process_data->pre_job_record_list);
+					pre_process_data->pre_job_record_list = NULL;
+				}
+			}
+
+			if(buf_pool_size > 0){
+				if(!pre_process_data->purge_buf_list){
+					pre_process_data->purge_buf_list = list_create(mem_pool_free_buf);
+				}
+				if(!pre_process_data->pre_init_buf_4K){
+					pre_process_data->pre_init_buf_4K = list_create(mem_pool_free_buf);
+				}
+				if(!pre_process_data->pre_init_buf_16K){
+					pre_process_data->pre_init_buf_16K = list_create(mem_pool_free_buf);
+				}
+				if(!pre_process_data->pre_init_buf_256K){
+					pre_process_data->pre_init_buf_256K = list_create(mem_pool_free_buf);
+				}
+				if(!pre_process_data->pre_init_buf_1M){
+					pre_process_data->pre_init_buf_1M = list_create(mem_pool_free_buf);
+				}
+			}else{
+				if(pre_process_data->purge_buf_list){
+					FREE_NULL_LIST(pre_process_data->purge_buf_list);
+					pre_process_data->purge_buf_list = NULL;
+				}
+				if(pre_process_data->pre_init_buf_4K){
+					FREE_NULL_LIST(pre_process_data->pre_init_buf_4K);
+					pre_process_data->pre_init_buf_4K = NULL;
+				}
+				if(pre_process_data->pre_init_buf_16K){
+					FREE_NULL_LIST(pre_process_data->pre_init_buf_16K);
+					pre_process_data->pre_init_buf_16K = NULL;
+				}
+				if(pre_process_data->pre_init_buf_256K){
+					FREE_NULL_LIST(pre_process_data->pre_init_buf_256K);
+					pre_process_data->pre_init_buf_256K = NULL;
+				}
+				if(pre_process_data->pre_init_buf_1M){
+					FREE_NULL_LIST(pre_process_data->pre_init_buf_1M);
+					pre_process_data->pre_init_buf_1M = NULL;
+				}
+			}
+		}
+		slurm_mutex_lock(&pre_process_data->mutex);
+		if (pre_process_data->shutdown) {
+			pre_process_data->shutdown = false;
+			slurm_mutex_unlock(&pre_process_data->mutex);
+			if(pre_process_data->purge_jobacctinfo_list)
+				list_flush(pre_process_data->purge_jobacctinfo_list);
+			if(pre_process_data->pre_jobacctinfo_list)
+				list_flush(pre_process_data->pre_jobacctinfo_list);
+			if(pre_process_data->pre_job_record_list)
+				list_flush(pre_process_data->pre_job_record_list);
+			if(pre_process_data->purge_buf_list)
+				list_flush(pre_process_data->purge_buf_list);
+			if(pre_process_data->pre_init_buf_4K)
+				list_flush(pre_process_data->pre_init_buf_4K);
+			if(pre_process_data->pre_init_buf_16K)
+				list_flush(pre_process_data->pre_init_buf_16K);
+			if(pre_process_data->pre_init_buf_256K)
+				list_flush(pre_process_data->pre_init_buf_256K);
+			if(pre_process_data->pre_init_buf_1M)
+				list_flush(pre_process_data->pre_init_buf_1M);
+			debug2("%s pre_process_data shutdown", __func__);
+			return NULL;	/* shutdown */
+		} 
+		slurm_mutex_unlock(&pre_process_data->mutex);
+
+		if(job_pool_size > 0){
+			assoc_mgr_lock(&locks);
+			local_tres_count = g_tres_count;
+			assoc_mgr_unlock(&locks);
+
+			if (list_count(pre_process_data->purge_jobacctinfo_list)){
+				while ((jobacct = list_pop(pre_process_data->purge_jobacctinfo_list))) {
+					if(jobacct->tres_count == local_tres_count){
+						if(pre_process_data->pre_jobacctinfo_list && (pool_left_num = list_count(pre_process_data->pre_jobacctinfo_list)) < jobacctinfo_pool_num){
+							jobacctinfo_reuse(jobacct);
+							list_append(pre_process_data->pre_jobacctinfo_list, jobacct);
+						}else{
+							mem_pool_jobacctinfo_destroy(jobacct);
+						}
+					}else{
+						mem_pool_jobacctinfo_destroy(jobacct);
+					}
+				}
+			}
+
+			if (pre_process_data->pre_jobacctinfo_list && (pool_left_num = list_count(pre_process_data->pre_jobacctinfo_list)) > jobacctinfo_pool_num){
+				for (i = 0; i < (pool_left_num - jobacctinfo_pool_num); i++) {
+					jobacct = list_pop(pre_process_data->pre_jobacctinfo_list);
+					mem_pool_jobacctinfo_destroy(jobacct);
+				}
+			}
+
+			if (pre_process_data->pre_job_record_list && (pool_left_num = list_count(pre_process_data->pre_job_record_list)) < job_record_pool_num){
+				for (i = 0; i < (job_record_pool_num - pool_left_num); i++) {
+					job_ptr = job_record_create();
+					list_append(pre_process_data->pre_job_record_list, job_ptr);
+				}
+			}
+		}
+
+		if(buf_pool_size > 0){
+			if (list_count(pre_process_data->purge_buf_list)){
+				while ((buffer = list_pop(pre_process_data->purge_buf_list))) {
+					switch (buffer->size) {
+						case BUF_SIZE_4K:
+							buf_list = pre_process_data->pre_init_buf_4K;
+							buf_pool_num = buf_4K_pool_num;
+							break;
+						case BUF_SIZE_16K:
+							buf_list = pre_process_data->pre_init_buf_16K;
+							buf_pool_num = buf_16K_pool_num;
+							break;
+						case BUF_SIZE_256K:
+							buf_list = pre_process_data->pre_init_buf_256K;
+							buf_pool_num = buf_256K_pool_num;
+							break;
+						case BUF_SIZE_1M:
+							buf_list = pre_process_data->pre_init_buf_1M;
+							buf_pool_num = buf_1M_pool_num;
+							break;
+						default:
+							buf_list = NULL;
+							break;
+					}
+					if(buf_list && list_count(buf_list) < buf_pool_num){
+						buffer->magic = BUF_MAGIC;
+						buffer->processed = 0;
+						memset(buffer->head, 0, buffer->size);
+						list_append(buf_list, buffer);
+					}else{
+						mem_pool_free_buf(buffer);
+					}
+				}
+			}
+
+			if (pre_process_data->pre_init_buf_4K && (pool_left_num = list_count(pre_process_data->pre_init_buf_4K)) < buf_4K_pool_num){
+				for (i = 0; i < (buf_4K_pool_num - pool_left_num); i++) {
+					buffer = mem_pool_init_buf(BUF_SIZE_4K);
+					list_append(pre_process_data->pre_init_buf_4K, buffer);
+				}
+			}else if(pre_process_data->pre_init_buf_4K && (pool_left_num = list_count(pre_process_data->pre_init_buf_4K)) > buf_4K_pool_num){
+				for (i = 0; i < (pool_left_num - buf_4K_pool_num); i++) {
+					buffer = list_pop(pre_process_data->pre_init_buf_4K);
+					mem_pool_free_buf(buffer);
+				}
+			}
+
+			if (pre_process_data->pre_init_buf_16K && (pool_left_num = list_count(pre_process_data->pre_init_buf_16K)) < buf_16K_pool_num){
+				for (i = 0; i < (buf_16K_pool_num - pool_left_num); i++) {
+					buffer = mem_pool_init_buf(BUF_SIZE_16K);
+					list_append(pre_process_data->pre_init_buf_16K, buffer);
+				}
+			}else if(pre_process_data->pre_init_buf_16K && (pool_left_num = list_count(pre_process_data->pre_init_buf_16K)) > buf_16K_pool_num){
+				for (i = 0; i < (pool_left_num - buf_16K_pool_num); i++) {
+					buffer = list_pop(pre_process_data->pre_init_buf_16K);
+					mem_pool_free_buf(buffer);
+				}
+			}
+
+			if (pre_process_data->pre_init_buf_256K && (pool_left_num = list_count(pre_process_data->pre_init_buf_256K)) < buf_256K_pool_num){
+				for (i = 0; i < (buf_256K_pool_num - pool_left_num); i++) {
+					buffer = mem_pool_init_buf(BUF_SIZE_256K);
+					list_append(pre_process_data->pre_init_buf_256K, buffer);
+				}
+			}else if(pre_process_data->pre_init_buf_256K && (pool_left_num = list_count(pre_process_data->pre_init_buf_256K)) > buf_256K_pool_num){
+				for (i = 0; i < (pool_left_num - buf_256K_pool_num); i++) {
+					buffer = list_pop(pre_process_data->pre_init_buf_256K);
+					mem_pool_free_buf(buffer);
+				}
+			}
+
+			if (pre_process_data->pre_init_buf_1M && (pool_left_num = list_count(pre_process_data->pre_init_buf_1M)) < buf_1M_pool_num){
+				for (i = 0; i < (buf_1M_pool_num - pool_left_num); i++) {
+					buffer = mem_pool_init_buf(BUF_SIZE_1M);
+					list_append(pre_process_data->pre_init_buf_1M, buffer);
+				}
+			}else if(pre_process_data->pre_init_buf_1M && (pool_left_num = list_count(pre_process_data->pre_init_buf_1M)) > buf_1M_pool_num){
+				for (i = 0; i < (pool_left_num - buf_1M_pool_num); i++) {
+					buffer = list_pop(pre_process_data->pre_init_buf_1M);
+					mem_pool_free_buf(buffer);
+				}
+			}
+		}
+
+		gettimeofday(&now, NULL);
+		ts.tv_sec = now.tv_sec + 2;
+		ts.tv_nsec = now.tv_usec * 1000;
+		slurm_mutex_lock(&pre_process_data->mutex);
+		slurm_cond_timedwait(&pre_process_data->cond,
+				     &pre_process_data->mutex, &ts);
+		slurm_mutex_unlock(&pre_process_data->mutex);
+		usleep(5000);
+	}
+}
+#endif
 
 static int _find_node_event(void *x, void *key)
 {
@@ -1090,6 +1426,9 @@ static void  _init_config(void)
 	slurmctld_config.thread_id_rpc     = (pthread_t) 0;
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	slurmctld_config.thread_id_query   = (pthread_t) 0;
+#endif
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	slurmctld_config.thread_id_pre_process   = (pthread_t) 0;
 #endif
 }
 
@@ -1439,6 +1778,22 @@ static void *_slurmctld_rpc_mgr(void *no_data)
 
 	rate_limit_init();
 	rpc_queue_init();
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_TERMNAL_JOB_MESSAGE
+	stepd_send_term_job_init();
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_NO_THROTTLE
+	step_complete_throttle_init();
+	if(throttle_flags){
+		for (i = 0; slurmctld_rpcs[i].msg_type; i++) {
+			if ((slurmctld_rpcs[i].msg_type == REQUEST_STEP_COMPLETE) && (throttle_flags & REQUEST_STEP_COMPLETE_THROTTLR)){
+				slurmctld_rpcs[i].no_throttle = true;
+				break;
+			}
+		}
+	}
+#endif
 
 	/*
 	 * Prepare to catch SIGUSR1 to interrupt accept().
@@ -2896,6 +3251,17 @@ extern void ctld_assoc_mgr_init(void)
 	assoc_init_arg.state_save_location = &slurm_conf.state_save_location;
 	/* Don't save state but blow away old lists if they exist. */
 	assoc_mgr_fini(0);
+
+#ifdef __METASTACK_BUG_NULL_ASSOC_LIST
+	/*
+	 * errno is used to get an error when establishing the persistent
+	 * connection. Set errno to 0 here to avoid a previous value for
+	 * errno causing us to think there was a problem.
+	 * FIXME: Stop using errno for control flow here.
+	 */
+	 
+	errno = 0;
+#endif
 
 	if (acct_db_conn)
 		acct_storage_g_close_connection(&acct_db_conn);

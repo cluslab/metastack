@@ -54,6 +54,9 @@ typedef struct {
 #define PMIXP_INFO_MAGIC 0xCAFE01F0
 	int magic;
 #endif
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+	uint32_t flags;
+#endif
 	pmix_nspace_t nspace;
 	slurm_step_id_t step_id; /* Current step id (or NO_VAL) */
 	uint32_t nnodes; /* number of nodes in current step */
@@ -83,6 +86,10 @@ typedef struct {
 } pmix_jobinfo_t;
 
 extern pmix_jobinfo_t _pmixp_job_info;
+
+#ifdef __METASTACK_BUG_SLURMDSPOOLDIR_SYMBOLIC_LINK
+extern uint32_t pmixp_info_flags();
+#endif
 
 /* slurmd contact information */
 void pmixp_info_srv_usock_set(char *path, int fd);

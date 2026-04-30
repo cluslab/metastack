@@ -504,7 +504,7 @@ cleanup_global_init:
 		//slurm_mutex_lock(&file_lock);
 		sys_file = fopen(influxdb_file, "a+");
 		if (sys_file != NULL) {
-			fprintf(sys_file, tmp_datastr);
+			fprintf(sys_file, "%s", tmp_datastr);
 			fclose(sys_file);
 		} else {
 			debug("Failed to write %s file. The file content is %s",influxdb_file, tmp_datastr);

@@ -299,16 +299,6 @@ function read_properties(file_path)
 	return hash_table
 end
 
-
--- Define a function to resolve the script path
-function resolve_path(work_dir, script)
-	if script:sub(1, 1) == "/" then
-		return script -- Absolute path, return directly
-	else
-		return work_dir .. "/" .. script -- Relative path, append the working directory
-	end
-end
-
 -- Process the script file and match using the hash table
 function process_script(script_path, hash_table)
 	local file = io.open(script_path, "r")
@@ -345,7 +335,7 @@ function process_script(script_path, hash_table)
 						end
 					else
 						-- Third-level tokenization: Split by ".", "-", "=", "_", "+"
-						for fine_word in slash_word:gmatch("[^%.%-=_%+]+") do
+						for fine_word in slash_word:gmatch("[^%.%-=_%+,:]+") do
 							local lower_fine_word = fine_word:lower() -- Convert token to lowercase
 							if hash_table[lower_fine_word] then
 								local value = hash_table[lower_fine_word]
@@ -454,7 +444,9 @@ function get_apptype(options)
 	-- 1. Retrieve submit_line, work_dir, and apptype
 	local submit_line = options["submit-line"]
 	local work_dir = options["chdir"] or ""
-	local apptype = options["apptype"] 
+	local apptype = options["apptype"]
+	local argv = options["argv"]
+	local script_path = argv and argv[1]
 
 	if apptype ~= nil and apptype == "unset" then
 		return "unset"
@@ -482,11 +474,9 @@ function get_apptype(options)
 
 	-- 5. Handle different submission methods
 	if submit_type == 0 then
-		-- Extract the script path
-		local script = submit_line:match("%S+$")
-		-- Construct the script path using workdir
-		if not work_dir then return nil end
-		local script_path = resolve_path(work_dir, script)
+		if not script_path then
+			return nil
+		end
 		-- Process the script and return the application type
 		local result = process_script(script_path, hash_table)
 		-- Log the application type

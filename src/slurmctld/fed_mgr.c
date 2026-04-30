@@ -50,6 +50,7 @@
 #include "src/common/slurmdbd_defs.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+
 #include "src/slurmctld/fed_mgr.h"
 #include "src/slurmctld/job_scheduler.h"
 #include "src/slurmctld/locks.h"
@@ -1721,9 +1722,15 @@ static int _fed_mgr_job_allocate_sib(char *sib_name, job_desc_msg_t *job_desc,
 
 	/* Create new job allocation */
 	job_desc->het_job_offset = NO_VAL;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	error_code = job_allocate(job_desc, job_desc->immediate, false, NULL,
+				  interactive_job, uid, false, &job_ptr,
+				  &err_msg, start_protocol_version, false, 0);
+#else
 	error_code = job_allocate(job_desc, job_desc->immediate, false, NULL,
 				  interactive_job, uid, false, &job_ptr,
 				  &err_msg, start_protocol_version);
+#endif
 	if (!job_ptr ||
 	    (error_code && job_ptr->job_state == JOB_FAILED))
 		reject_job = true;
@@ -3406,7 +3413,6 @@ extern int fed_mgr_state_save(char *state_save_location)
 	char *old_file = NULL, *new_file = NULL, *reg_file = NULL;
 	slurmctld_lock_t fed_read_lock = {
 		NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK, READ_LOCK };
-
 	buf_t *buffer = init_buf(0);
 
 	DEF_TIMERS;
@@ -4375,9 +4381,15 @@ extern int fed_mgr_job_allocate(slurm_msg_t *msg, job_desc_msg_t *job_desc,
 	 * fails, then don't worry about sending to the siblings.
 	 */
 	job_desc->het_job_offset = NO_VAL;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	*alloc_code = job_allocate(job_desc, job_desc->immediate, false, NULL,
+				   alloc_only, msg->auth_uid, false, &job_ptr,
+				   err_msg, msg->protocol_version, false, 0);
+#else
 	*alloc_code = job_allocate(job_desc, job_desc->immediate, false, NULL,
 				   alloc_only, msg->auth_uid, false, &job_ptr,
 				   err_msg, msg->protocol_version);
+#endif
 
 	if (!job_ptr || (*alloc_code && job_ptr->job_state == JOB_FAILED)) {
 		/* There may be an rc but the job won't be failed. Will sit in

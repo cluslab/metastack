@@ -897,6 +897,17 @@ The default value is 300 seconds.
 .IP
 
 .TP
+\fBSendCtldUpdateTimeout\fR
+Specifies the response timeout, in seconds, for update requests sent from 
+\fBslurmdbd\fR to \fBslurmctld\fR. The value range is 5 to 65533 seconds. 
+The default value is 5 seconds.
+
+If the response times out or the request fails to send, \fBslurmdbd\fR will 
+automatically retry up to 9 times.For each retry, the response timeout is increased 
+by 2 seconds compared to the previous attempt.
+.IP
+
+.TP
 \fBStorageBackupHost\fR
 Define the name of the backup host the database is running where we are going
 to store the data. This can be viewed as a backup solution when the

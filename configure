@@ -23622,6 +23622,20 @@ fi
   _x_ac_hwloc_dirs="/usr /usr/local"
   _x_ac_hwloc_libs="lib64 lib"
 
+# Update contribs/sge_wrapper/Makefile if this file exists
+if [ "$prefix" = "NONE" ] || [ -z "$prefix" ]; then
+    sge_wrapper_prefix="$ac_default_prefix"
+else
+    sge_wrapper_prefix="$prefix"
+fi
+
+sge_wrapper_makefile=contribs/sge_wrapper/Makefile
+
+if test -f "$sge_wrapper_makefile"; then
+    sed -i '/^PREFIX/d' $sge_wrapper_makefile
+    sed -i "1i\PREFIX ?= \$(DESTDIR)$sge_wrapper_prefix"  $sge_wrapper_makefile
+fi
+
 # Update contribs/sjinfoexit/Makefile if this file exists
 if [ "$prefix" = "NONE" ] || [ -z "$prefix" ]; then
     sjinfo_prefix="$ac_default_prefix"

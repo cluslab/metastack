@@ -162,6 +162,12 @@ bitstr_t **para_sched_node_bitmap = NULL;       /* A collection of bitmaps for a
 bitstr_t **para_sched_avail_node_bitmap = NULL; /* A collection of bitmaps for available nodes in each resource area */
 bitstr_t **para_sched_share_node_bitmap = NULL; /* A collection of bitmaps for sharable nodes in each resource area */
 bitstr_t **para_sched_idle_node_bitmap = NULL;  /* A collection of bitmaps for idle nodes in each resource area */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+bool para_submit = false; 
+bitstr_t **para_submit_avail_node_bitmap = NULL; /* A collection of bitmaps for available nodes in each resource area */
+bitstr_t **para_submit_share_node_bitmap = NULL; /* A collection of bitmaps for sharable nodes in each resource area */
+bitstr_t **para_submit_idle_node_bitmap = NULL;  /* A collection of bitmaps for idle nodes in each resource area */
+#endif
 #ifdef __METASTACK_NEW_MAIN_SCHED_PLANNED
 bitstr_t **para_sched_main_planned_bitmap = NULL;
 /* To be compatible with cache. */
@@ -170,7 +176,24 @@ bitstr_t **para_sched_planned_update_bitmap = NULL;
 #endif
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
 bitstr_t **para_sched_resv_node_bitmap = NULL;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+bitstr_t **para_submit_resv_node_bitmap = NULL;
 #endif
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+bool enable_para_epilog = false;
+bitstr_t **para_epilog_cg_node_bitmap = NULL; /* A collection of bitmaps for completing nodes in each resource area */
+bitstr_t **para_epilog_up_node_bitmap = NULL; /* A collection of bitmaps for up nodes, not DOWN in each resource area */
+bitstr_t **para_epilog_avail_node_bitmap = NULL; /* A collection of bitmaps for available nodes in each resource area */
+bitstr_t **para_epilog_bf_ignore_node_bitmap = NULL; /* A collection of bitmaps for nodes made available during backfill cycle in each resource area */
+bitstr_t **para_epilog_idle_node_bitmap = NULL; /* A collection of bitmaps for idle nodes in each resource area */
+#endif
+
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+bool disable_change_proc_dist = false;
+#endif
+
 
 
 /*
@@ -544,6 +567,18 @@ extern hostlist_t *nodespec_to_hostlist(const char *nodes, bool uniq,
 		hostlist_uniq(hl);
 	return hl;
 }
+
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+static void init_disable_change_proc_dist(void) {
+	if (xstrcasestr(slurm_conf.sched_params, "disable_change_proc_dist")) {
+		disable_change_proc_dist = true;
+	} else {
+		disable_change_proc_dist = false;
+	}
+    debug("disable_change_proc_dist is %s", 
+          disable_change_proc_dist ? "true" : "false");
+}
+#endif
 
 static void _init_bitmaps(void)
 {
@@ -960,7 +995,11 @@ static void _build_bitmaps(void)
 		      NODE_RESUME))) {
 			if ((drain_flag == 0) &&
 			    (!IS_NODE_NO_RESPOND(node_ptr)))
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+				make_node_avail(node_ptr, false, 0);
+#else
 				make_node_avail(node_ptr);
+#endif
 			bit_set(up_node_bitmap, node_ptr->index);
 		}
 		if (IS_NODE_POWERED_DOWN(node_ptr)) {
@@ -2124,6 +2163,15 @@ extern int read_slurm_conf(int recover)
 		enable_reason_detail = true;
 #endif
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SRUN_JOB_COM
+	if (xstrcasestr(slurm_conf.slurmctld_params, "ignore_srun_job_complete")) {
+		ignore_srun_job_complete = true;
+	} else {
+		ignore_srun_job_complete = false;
+	}
+	debug("ignore_srun_job_complete is %s", ignore_srun_job_complete ? "enabled" : "disabled");
+#endif
+
 	if (slurm_conf.job_acct_oom_kill && cgroup_mem_confinement)
 		fatal("Jobs memory is being constrained by both TaskPlugin cgroup and JobAcctGather plugin. This enables two incompatible memory enforcement mechanisms, one of them must be disabled.");
 	else if (slurm_conf.job_acct_oom_kill)
@@ -2233,6 +2281,9 @@ extern int read_slurm_conf(int recover)
 
 	_stat_slurm_dirs();
 
+#ifdef __METASTACK_BUG_PROCESS_DISTRIBUTION
+	init_disable_change_proc_dist();
+#endif
 	_init_bitmaps();
 
 	/*
@@ -2837,24 +2888,21 @@ static void _gres_reconfig(void)
 	struct timeval start, end;
 	long seconds = 0, useconds = 0;
 	double mtime = 0.0;
-	if(slurm_conf.slurmctld_load_gres){
+	char *gres_conf_file = NULL;
+	int max_parsed_lines = 0;
+	gres_conf_file = get_extra_conf_path("gres.conf");
+	max_parsed_lines = count_gres_config_lines(gres_conf_file);
+	if (slurm_conf.slurmctld_load_gres && max_parsed_lines >= 0) {
 		int gres_number = -1;
-		int max_parsed_lines = 0;
 		int num_parsed_lines = 0;
-		char *gres_conf_file = NULL;
 		slurmctld_load_gres_flag = true;
 		gettimeofday(&start, NULL);
-		gres_conf_file = get_extra_conf_path("gres.conf");
-		max_parsed_lines = count_gres_config_lines(gres_conf_file);
-		if (max_parsed_lines < 0) {
-			xfree(gres_conf_file);
-			return;
-		}
 		max_parsed_lines++;
 
 		parsed_lines = xmalloc(sizeof(parsed_line_t) * max_parsed_lines);
 		if (parsed_lines == NULL) {
 			error("_gres_reconfig:Memory allocation failed");
+			xfree(gres_conf_file);
 			return;
 		}
 		s_p_hashtbl_t *tbl = NULL;
@@ -2900,7 +2948,7 @@ static void _gres_reconfig(void)
 		mtime = (seconds * 1000) + (useconds / 1000.0);
 		slurmctld_load_gres_flag = false;
 		debug("Slurmctld load Gres config time: %.2f ms\n", mtime);
-	}else{
+	} else {
 		for (i = 0; (node_ptr = next_node(&i)); i++) {
 			if (node_ptr->gres)
 				gres_name = node_ptr->gres;
@@ -2927,7 +2975,8 @@ static void _gres_reconfig(void)
 				node_ptr->config_ptr->cores,
 				node_ptr->config_ptr->tot_sockets,
 				slurm_conf.conf_flags & CONF_FLAG_OR, NULL);
-		}		
+		}
+		xfree(gres_conf_file);
 	}
 #endif
 
@@ -3228,10 +3277,10 @@ static int _sync_nodes_to_comp_job(void)
 			/* The job in completing state at slurmctld restart or
 			 * reconfiguration, do not log completion again.
 			 * job_completion_logger(job_ptr, false); */
-		}
 #ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
+			_add_job_state_to_queue(job_ptr);
 #endif
+		}
 	}
 	list_iterator_destroy(job_iterator);
 	if (update_cnt)

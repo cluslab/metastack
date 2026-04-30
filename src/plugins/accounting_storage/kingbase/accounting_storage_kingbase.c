@@ -67,6 +67,11 @@
 
 #include "src/slurmdbd/proc_req.h"
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+#include "src/slurmdbd/read_config.h"
+#include "src/common/list.h"
+#endif
+
 /* These are defined here so when we link with something other than
  * the slurmctld we will have these symbols defined.  They will get
  * overwritten when linking with the slurmctld.
@@ -3210,7 +3215,11 @@ error:
 	return SLURM_ERROR;
 }
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+static int _send_ctld_update(void *x, void *arg, int retry_count)
+#else
 static int _send_ctld_update(void *x, void *arg)
+#endif
 {
 	slurmdbd_conn_t *db_conn = x;
 	List update_list = arg;
@@ -3230,8 +3239,21 @@ static int _send_ctld_update(void *x, void *arg)
 		return 0;
 	}
 
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+	db_conn->conn_send->timeout = slurmdbd_conf->send_ctld_update_timeout * 1000;
+	if (retry_count > 0) {
+		db_conn->conn_send->timeout += retry_count * 2 * 1000;
+		debug2("Retry #%d sending update to cluster '%s', response timeout set to: %d ms",
+				retry_count, db_conn->conn_send->cluster_name, db_conn->conn_send->timeout);
+	}
+
+	int rc = SLURM_SUCCESS;
+	rc = slurmdb_send_accounting_update_persist(
+		update_list, db_conn->conn_send);
+#else
 	(void) slurmdb_send_accounting_update_persist(
 		update_list, db_conn->conn_send);
+#endif
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
 	/* Fixed bug 98700
@@ -3256,7 +3278,11 @@ static int _send_ctld_update(void *x, void *arg)
 #endif
 
 	slurm_mutex_unlock(&db_conn->conn_send_lock);
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+	return rc;
+#else
 	return 0;
+#endif
 }
 
 /*
@@ -3554,20 +3580,26 @@ extern int acct_storage_p_commit(kingbase_conn_t *kingbase_conn, bool commit)
 		 * already locked as well.
 		 */
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-		// (void) list_for_each(registered_clusters,
-		// 		     _send_ctld_update, update_list);
-
 		/* Fixed bug 98700
 		 * If the sending fails, sleep for 10 seconds and try to send again.
 		 */
-		int i = 0, n = 0;
+		int i = 0, successful_clusters = 0;
 		for (i = 0; i < 10; i++) {
-			n = list_for_each(registered_clusters,
-		 		     _send_ctld_update, update_list);
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+			successful_clusters = list_for_each_max_nobreak(registered_clusters, -1, 
+		 		     _send_ctld_update, update_list, i, true);
+#else
+			successful_clusters = list_for_each(registered_clusters,
+							_send_ctld_update, update_list);
+#endif
 
-			if (n < 0) {
+			if (successful_clusters < 0) {
 				if (!has_registered_lock) {
-					sleep(10);
+#ifdef __METASTACK_BUG_SEND_UPDATE_ON_BAD_FD
+					sleep(slurmdbd_conf->send_ctld_update_timeout + i * 2);
+#else
+					sleep(10);				
+#endif
 				} else {
 					list_transfer(kingbase_conn->update_list, update_list);
 					
@@ -3579,6 +3611,9 @@ extern int acct_storage_p_commit(kingbase_conn_t *kingbase_conn, bool commit)
 				break;
 			}
 		}
+#else
+		(void) list_for_each(registered_clusters,
+		 		     _send_ctld_update, update_list);
 #endif
 
 		(void) assoc_mgr_update(update_list, 0);

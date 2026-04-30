@@ -76,6 +76,9 @@
 #include "src/common/tres_frequency.h"
 #include "src/common/xassert.h"
 #include "src/common/xstring.h"
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+#include "src/common/pre_process.h"
+#endif
 
 #include "src/interfaces/accounting_storage.h"
 #include "src/interfaces/acct_gather.h"
@@ -138,8 +141,14 @@
 /* No need to change we always pack SLURM_PROTOCOL_VERSION */
 #define JOB_STATE_VERSION     "PROTOCOL_VERSION"
 
-#ifdef __METASTACK_NEW_PART_PARA_SCHED
+#if (defined __METASTACK_NEW_PART_PARA_SCHED) || (defined __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL)
 static pthread_mutex_t get_jobid_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+static pthread_rwlock_t lowest_prio_lock = PTHREAD_RWLOCK_INITIALIZER;
+static pthread_mutex_t job_count_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t submit_diag_stats_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 #ifdef __METASTACK_OPT_PROLOG_SLURMCTLD
@@ -697,12 +706,33 @@ static job_array_resp_msg_t *_resp_array_xlate(resp_array_struct_t *resp,
 
 static int _add_job_record(job_record_t *job_ptr, int num_jobs)
 {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_submit) {
+		slurm_mutex_lock(&job_count_lock);
+		if ((job_count + num_jobs) >= slurm_conf.max_job_cnt) {
+			error("%s: MaxJobCount limit from slurm.conf reached (%u)",
+		    	  __func__, slurm_conf.max_job_cnt);
+			slurm_mutex_unlock(&job_count_lock);
+			return SLURM_ERROR;
+		}
+		job_count += num_jobs;
+		slurm_mutex_unlock(&job_count_lock);
+	} else {
+		if ((job_count + num_jobs) >= slurm_conf.max_job_cnt) {
+			error("%s: MaxJobCount limit from slurm.conf reached (%u)",
+				__func__, slurm_conf.max_job_cnt);
+			return SLURM_ERROR;
+		}
+		job_count += num_jobs;
+	}
+#else
 	if ((job_count + num_jobs) >= slurm_conf.max_job_cnt) {
 		error("%s: MaxJobCount limit from slurm.conf reached (%u)",
 		      __func__, slurm_conf.max_job_cnt);
 		return SLURM_ERROR;
 	}
 	job_count += num_jobs;
+#endif
 	last_job_update = time(NULL);
 	list_append(job_list, job_ptr);
 
@@ -722,7 +752,23 @@ static int _add_job_record(job_record_t *job_ptr, int num_jobs)
  */
 static job_record_t *_create_job_record(uint32_t num_jobs, bool list_add)
 {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_MEM_POOL
+	/* Retrieve data from the memory pool.*/
+	job_record_t *job_ptr = NULL;
+	if(pre_process_data && pre_process_data->pre_job_record_list){
+		job_ptr = list_pop(pre_process_data->pre_job_record_list);
+		if(job_ptr){
+			job_ptr->details->submit_time = time(NULL);
+			pre_process_update();
+		}else{
+			job_ptr = job_record_create();
+		}
+	}else{
+		job_ptr = job_record_create();
+	}
+#else
 	job_record_t *job_ptr = job_record_create();
+#endif
 
 	if (list_add) {
 		_add_job_record(job_ptr, num_jobs);
@@ -1442,7 +1488,17 @@ extern int job_mgr_load_job_state(buf_t *buffer,
 
 	if ((job_ptr->priority > 1) && (job_ptr->direct_set_prio == 0)) {
 		highest_prio = MAX(highest_prio, job_ptr->priority);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		if (para_submit) {
+			slurm_rwlock_wrlock(&lowest_prio_lock);
+			lowest_prio  = MIN(lowest_prio,  job_ptr->priority);
+			slurm_rwlock_unlock(&lowest_prio_lock);
+		} else {
+			lowest_prio  = MIN(lowest_prio,  job_ptr->priority);	
+		}
+#else
 		lowest_prio  = MIN(lowest_prio,  job_ptr->priority);
+#endif
 	}
 
 	job_ptr->part_ptr = find_part_record(job_ptr->partition);
@@ -1480,8 +1536,21 @@ extern int job_mgr_load_job_state(buf_t *buffer,
 		job_id_sequence = local_job_id + 1;
 #endif
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_submit) {
+		if (job_ptr->array_recs && (job_ptr->array_recs->task_cnt > 1)) {
+			slurm_mutex_lock(&job_count_lock);
+			job_count += (job_ptr->array_recs->task_cnt - 1);
+			slurm_mutex_unlock(&job_count_lock);
+		}
+	} else {
+		if (job_ptr->array_recs && (job_ptr->array_recs->task_cnt > 1))
+			job_count += (job_ptr->array_recs->task_cnt - 1);
+	}
+#else
 	if (job_ptr->array_recs && (job_ptr->array_recs->task_cnt > 1))
 		job_count += (job_ptr->array_recs->task_cnt - 1);
+#endif
 
 	xstrtolower(job_ptr->account);
 	job_state_set(job_ptr, job_ptr->job_state);
@@ -3101,6 +3170,9 @@ extern int kill_running_job_by_node_name(char *node_name)
 			jobacct_storage_g_job_suspend(acct_db_conn, job_ptr);
 			job_state_set(job_ptr, suspend_job_state);
 			suspended = true;
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
 		}
 
 		if (IS_JOB_COMPLETING(job_ptr)) {
@@ -3125,6 +3197,9 @@ extern int kill_running_job_by_node_name(char *node_name)
 				error("Node %s comp_job_cnt underflow, %pJ",
 				      node_ptr->name, job_ptr);
 			}
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
 		} else if (IS_JOB_RUNNING(job_ptr) || suspended) {
 			kill_job_cnt++;
 			if ((job_ptr->details) &&
@@ -3220,11 +3295,10 @@ extern int kill_running_job_by_node_name(char *node_name)
 				deallocate_nodes(job_ptr, false, suspended,
 						 false);
 			}
-		}
-
 #ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
+			_add_job_state_to_queue(job_ptr);
 #endif
+		}
 	}
 	list_iterator_destroy(job_iterator);
 	if (kill_job_cnt)
@@ -3237,7 +3311,11 @@ extern int kill_running_job_by_node_name(char *node_name)
 extern void excise_node_from_job(job_record_t *job_ptr,
 				 node_record_t *node_ptr)
 {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	make_node_idle(node_ptr, job_ptr, false, 0); /* updates bitmap */
+#else
 	make_node_idle(node_ptr, job_ptr); /* updates bitmap */
+#endif
 	xfree(job_ptr->nodes);
 	job_ptr->nodes = bitmap2node_name(job_ptr->node_bitmap);
 
@@ -3497,7 +3575,17 @@ void dump_job_desc(job_desc_msg_t *job_desc)
 void init_job_conf(void)
 {
 	if (job_list == NULL) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		if (para_submit) {
+			slurm_mutex_lock(&job_count_lock);
+			job_count = 0;
+			slurm_mutex_unlock(&job_count_lock);
+		} else {
+			job_count = 0;
+		}
+#else
 		job_count = 0;
+#endif
 		job_list = list_create(_move_to_purge_jobs_list);
 	}
 
@@ -3955,8 +4043,21 @@ static void _create_job_array(job_record_t *job_ptr, job_desc_msg_t *job_desc)
 	job_desc->array_bitmap = NULL;
 	job_ptr->array_recs->task_cnt =
 		bit_set_count(job_ptr->array_recs->task_id_bitmap);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		if (para_submit) {
+			if (job_ptr->array_recs->task_cnt > 1) {
+				slurm_mutex_lock(&job_count_lock);
+				job_count += (job_ptr->array_recs->task_cnt - 1);
+				slurm_mutex_unlock(&job_count_lock);
+			}
+		} else {
+			if (job_ptr->array_recs->task_cnt > 1) 
+				job_count += (job_ptr->array_recs->task_cnt - 1);
+		}
+#else
 	if (job_ptr->array_recs->task_cnt > 1)
 		job_count += (job_ptr->array_recs->task_cnt - 1);
+#endif
 
 	if (job_desc->array_inx)
 		sep = strchr(job_desc->array_inx, '%');
@@ -4014,17 +4115,31 @@ static int _select_nodes_parts_resvs(job_record_t *job_ptr, bool *test_only,
 
 	if (*part_limits_rc == WAIT_NO_REASON) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		*rc = select_nodes(job_ptr, *test_only,
+				   select_node_bitmap, err_msg,
+				   true,
+				   SLURMDB_JOB_FLAG_SUBMIT, false, 0, false, 0);
+#else
 		*rc = select_nodes(job_ptr, *test_only,
 				   select_node_bitmap, err_msg,
 				   true,
 				   SLURMDB_JOB_FLAG_SUBMIT, false, 0);
+#endif
 #endif	
 	} else {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		*rc = select_nodes(job_ptr, true,
+				   select_node_bitmap, err_msg,
+				   true,
+				   SLURMDB_JOB_FLAG_SUBMIT, false, 0, false, 0);
+#else
 		*rc = select_nodes(job_ptr, true,
 				   select_node_bitmap, err_msg,
 				   true,
 				   SLURMDB_JOB_FLAG_SUBMIT, false, 0);
+#endif
 #endif
 		if ((*rc == SLURM_SUCCESS) &&
 		    (*part_limits_rc == WAIT_PART_DOWN))
@@ -4130,8 +4245,14 @@ static int _select_nodes_resvs(job_record_t *job_ptr, bool *test_only,
  *	must free
  * OUT err_msg - error message for job, caller must xfree
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
+			       bitstr_t **select_node_bitmap, char **err_msg, 
+				   bool submit, int worker_index)
+#else
 static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
 			       bitstr_t **select_node_bitmap, char **err_msg)
+#endif
 {
 	part_record_t *part_ptr;
 	list_itr_t *iter;
@@ -4139,8 +4260,15 @@ static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
 	int best_rc = -1, part_limits_rc = WAIT_NO_REASON;
 	bitstr_t *save_avail_node_bitmap = NULL;
 
-	save_avail_node_bitmap = bit_copy(avail_node_bitmap);
-	bit_or(avail_node_bitmap, rs_node_bitmap);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if(para_submit && submit) {
+		save_avail_node_bitmap = bit_copy(para_submit_avail_node_bitmap[worker_index]);
+		bit_or(para_submit_avail_node_bitmap[worker_index], rs_node_bitmap);
+	} else {
+		save_avail_node_bitmap = bit_copy(avail_node_bitmap);
+		bit_or(avail_node_bitmap, rs_node_bitmap);		
+	}
+#endif
 
 	if (job_ptr->part_ptr_list) {
 		list_sort(job_ptr->part_ptr_list, priority_sort_part_tier);
@@ -4185,15 +4313,27 @@ static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
 		part_limits_rc = job_limits_check(&job_ptr, false);
 		if (part_limits_rc == WAIT_NO_REASON) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			rc = select_nodes(job_ptr, test_only,
+					  select_node_bitmap, err_msg, true,
+					  SLURMDB_JOB_FLAG_SUBMIT, false, 0, submit, worker_index);			
+#else
 			rc = select_nodes(job_ptr, test_only,
 					  select_node_bitmap, err_msg, true,
 					  SLURMDB_JOB_FLAG_SUBMIT, false, 0);
+#endif
 #endif	
 		} else if (part_limits_rc == WAIT_PART_DOWN) {
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			rc = select_nodes(job_ptr, true,
+					  select_node_bitmap, err_msg, true,
+					  SLURMDB_JOB_FLAG_SUBMIT, false, 0, submit, worker_index);
+#else
 			rc = select_nodes(job_ptr, true,
 					  select_node_bitmap, err_msg, true,
 					  SLURMDB_JOB_FLAG_SUBMIT, false, 0);
+#endif
 #endif	
 			if (rc == SLURM_SUCCESS)
 				rc = ESLURM_PARTITION_DOWN;
@@ -4225,8 +4365,15 @@ static int _select_nodes_parts(job_record_t *job_ptr, bool test_only,
 	else if (rc == ESLURM_INVALID_ACCOUNT)
 		job_ptr->state_reason = FAIL_ACCOUNT;
 
-	FREE_NULL_BITMAP(avail_node_bitmap);
-	avail_node_bitmap = save_avail_node_bitmap;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if(para_submit && submit) {
+		FREE_NULL_BITMAP(para_submit_avail_node_bitmap[worker_index]);
+		para_submit_avail_node_bitmap[worker_index] = save_avail_node_bitmap;
+	} else {		
+		FREE_NULL_BITMAP(avail_node_bitmap);
+		avail_node_bitmap = save_avail_node_bitmap;
+	}
+#endif
 
 	return rc;
 }
@@ -4260,11 +4407,19 @@ static inline bool _has_deadline(job_record_t *job_ptr)
  *	list_part - global list of partition info
  *	default_part_loc - pointer to default partition
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
+			int will_run, will_run_response_msg_t **resp,
+			int allocate, uid_t submit_uid, bool cron,
+			job_record_t **job_pptr, char **err_msg,
+			uint16_t protocol_version, bool submit, int worker_index)
+#else
 extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
 			int will_run, will_run_response_msg_t **resp,
 			int allocate, uid_t submit_uid, bool cron,
 			job_record_t **job_pptr, char **err_msg,
 			uint16_t protocol_version)
+#endif
 {
 	static time_t sched_update = 0;
 	static bool defer_batch = false, defer_sched = false;
@@ -4276,10 +4431,19 @@ extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
 	bool held_user = false;
 	bool defer_this = false;
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (!para_submit) {
+		xassert(verify_lock(CONF_LOCK, READ_LOCK));
+		xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
+		xassert(verify_lock(NODE_LOCK, WRITE_LOCK));
+		xassert(verify_lock(PART_LOCK, READ_LOCK));
+	}
+#else
 	xassert(verify_lock(CONF_LOCK, READ_LOCK));
 	xassert(verify_lock(JOB_LOCK, WRITE_LOCK));
 	xassert(verify_lock(NODE_LOCK, WRITE_LOCK));
 	xassert(verify_lock(PART_LOCK, READ_LOCK));
+#endif
 
 	if (sched_update != slurm_conf.last_update) {
 		char *tmp_ptr;
@@ -4323,11 +4487,30 @@ extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
 	else
 		i = 1;
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		if (para_submit) {
+			slurm_mutex_lock(&job_count_lock);
+			if ((job_count + i) >= slurm_conf.max_job_cnt) {
+				error("%s: MaxJobCount limit from slurm.conf reached (%u)",
+					__func__, slurm_conf.max_job_cnt);
+				slurm_mutex_unlock(&job_count_lock);
+				return EAGAIN;
+			}
+			slurm_mutex_unlock(&job_count_lock);
+		} else {
+			if ((job_count + i) >= slurm_conf.max_job_cnt) {
+				error("%s: MaxJobCount limit from slurm.conf reached (%u)",
+					__func__, slurm_conf.max_job_cnt);
+				return EAGAIN;
+			}
+		}
+#else
 	if ((job_count + i) >= slurm_conf.max_job_cnt) {
 		error("%s: MaxJobCount limit from slurm.conf reached (%u)",
 		      __func__, slurm_conf.max_job_cnt);
 		return EAGAIN;
 	}
+#endif
 
 	error_code = _job_create(job_desc, allocate, will_run, cron,
 				 &job_ptr, submit_uid, err_msg,
@@ -4463,7 +4646,11 @@ extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
 	 */
 	set_job_features_use(job_ptr->details);
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	error_code = _select_nodes_parts(job_ptr, no_alloc, NULL, err_msg, submit, worker_index);
+#else
 	error_code = _select_nodes_parts(job_ptr, no_alloc, NULL, err_msg);
+#endif
 
 	if ((error_code == ESLURM_REQUESTED_NODE_CONFIG_UNAVAILABLE) &&
 	    (job_ptr->details->features_use == job_ptr->details->prefer) &&
@@ -4471,8 +4658,13 @@ extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
 		job_ptr->details->features_use = job_ptr->details->features;
 		job_ptr->details->feature_list_use =
 			job_ptr->details->feature_list;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		error_code = _select_nodes_parts(job_ptr, no_alloc, NULL,
+						 err_msg, submit, worker_index);
+#else
 		error_code = _select_nodes_parts(job_ptr, no_alloc, NULL,
 						 err_msg);
+#endif
 		set_job_features_use(job_ptr->details);
 	}
 
@@ -4490,9 +4682,23 @@ extern int job_allocate(job_desc_msg_t *job_desc, int immediate,
 	 */
 	_create_job_array(job_ptr, job_desc);
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_submit) {
+		slurm_mutex_lock(&submit_diag_stats_lock);
+		slurmctld_diag_stats.jobs_submitted +=
+			(job_ptr->array_recs && job_ptr->array_recs->task_cnt) ?
+			job_ptr->array_recs->task_cnt : 1;
+		slurm_mutex_unlock(&submit_diag_stats_lock);
+	} else {
+		slurmctld_diag_stats.jobs_submitted +=
+			(job_ptr->array_recs && job_ptr->array_recs->task_cnt) ?
+			job_ptr->array_recs->task_cnt : 1;		
+	}
+#else
 	slurmctld_diag_stats.jobs_submitted +=
 		(job_ptr->array_recs && job_ptr->array_recs->task_cnt) ?
 		job_ptr->array_recs->task_cnt : 1;
+#endif
 
 	acct_policy_add_job_submit(job_ptr, false);
 
@@ -5675,10 +5881,30 @@ static void _signal_pending_job_array_tasks(job_record_t *job_ptr,
 			 * Master job record, even wihtout tasks,
 			 * counts as one job record
 			 */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			if (para_submit) {
+				slurm_mutex_lock(&job_count_lock);
+				job_count -= (orig_task_cnt - 1);
+				slurm_mutex_unlock(&job_count_lock);
+			} else {
+				job_count -= (orig_task_cnt - 1);
+			}
+#else
 			job_count -= (orig_task_cnt - 1);
+#endif
 		} else {
 			_job_array_comp(job_ptr, false, false);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+			if (para_submit) {
+				slurm_mutex_lock(&job_count_lock);
+				job_count -= (orig_task_cnt - new_task_count);
+				slurm_mutex_unlock(&job_count_lock);
+			} else {
+				job_count -= (orig_task_cnt - new_task_count);
+			}
+#else
 			job_count -= (orig_task_cnt - new_task_count);
+#endif
 			/*
 			 * Since we are altering the job array's
 			 * task_cnt we must go alter this count in the
@@ -8835,6 +9061,7 @@ static int _copy_job_desc_to_job_record(job_desc_msg_t *job_desc,
 	job_ptr = _create_job_record(1, true);
 
 	*job_rec_ptr = job_ptr;
+
 	job_ptr->partition = xstrdup(job_desc->partition);
 	if (job_desc->profile != ACCT_GATHER_PROFILE_NOT_SET)
 		job_ptr->profile = job_desc->profile;
@@ -9593,6 +9820,9 @@ void job_time_limit(void)
 			_job_timed_out(job_ptr, false);
 			job_ptr->state_reason = FAIL_INACTIVE_LIMIT;
 			xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
 			goto time_check;
 		}
 		if (job_ptr->time_limit != INFINITE) {
@@ -9683,6 +9913,9 @@ void job_time_limit(void)
 						_job_timed_out(job_ptr, false);
 						job_ptr->state_reason = FAIL_TIMEOUT;
 						xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+						_add_job_state_to_queue(job_ptr);
+#endif
 						goto time_check;
 					}
 				}
@@ -9693,6 +9926,9 @@ void job_time_limit(void)
 					_job_timed_out(job_ptr, false);
 					job_ptr->state_reason = FAIL_TIMEOUT;
 					xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+					_add_job_state_to_queue(job_ptr);
+#endif
 					goto time_check;
 				}
 			}
@@ -9710,6 +9946,9 @@ void job_time_limit(void)
 			_job_timed_out(job_ptr, false);
 			job_ptr->state_reason = FAIL_TIMEOUT;
 			xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
 			goto time_check;
 		}
 
@@ -9726,6 +9965,9 @@ void job_time_limit(void)
 			last_job_update = now;
 			_job_timed_out(job_ptr, false);
 			xfree(job_ptr->state_desc);
+#ifdef __METASTACK_OPT_CACHE_QUERY
+			_add_job_state_to_queue(job_ptr);
+#endif
 			goto time_check;
 		}
 
@@ -9759,10 +10001,7 @@ void job_time_limit(void)
 			lock_slurmctld(job_write_lock);
 			START_TIMER;
 			job_test_count = 0;
-		}
-#ifdef __METASTACK_OPT_CACHE_QUERY
-		_add_job_state_to_queue(job_ptr);
-#endif		
+		}		
 	}
 	list_iterator_destroy(job_iterator);
 	node_features_updated = false;
@@ -10228,12 +10467,32 @@ static void _move_to_purge_jobs_list(void *job_entry)
 		job_array_size = 1;
 	}
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_submit) {
+		slurm_mutex_lock(&job_count_lock);
+		if (job_array_size > job_count) {
+			error("job_count underflow");
+			job_count = 0;
+		} else {
+			job_count -= job_array_size;
+		}
+		slurm_mutex_unlock(&job_count_lock);
+	} else {
+		if (job_array_size > job_count) {
+			error("job_count underflow");
+			job_count = 0;
+		} else {
+			job_count -= job_array_size;
+		}
+	}
+#else
 	if (job_array_size > job_count) {
 		error("job_count underflow");
 		job_count = 0;
 	} else {
 		job_count -= job_array_size;
 	}
+#endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY
 	if(purge_old_cache_job && job_cachedup_realtime == 1){
@@ -13090,9 +13349,17 @@ extern uint32_t get_next_job_id(bool test_only)
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
 	if (!para_sched) {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+		if (!para_submit) {
+			xassert(verify_lock(JOB_LOCK, READ_LOCK));
+			xassert(test_only || verify_lock(JOB_LOCK, WRITE_LOCK));
+			xassert(verify_lock(FED_LOCK, READ_LOCK));
+		}
+#else
 		xassert(verify_lock(JOB_LOCK, READ_LOCK));
 		xassert(test_only || verify_lock(JOB_LOCK, WRITE_LOCK));
 		xassert(verify_lock(FED_LOCK, READ_LOCK));
+#endif
 	}
 #endif
 
@@ -13138,7 +13405,11 @@ static int _set_job_id(job_record_t *job_ptr)
 	xassert (job_ptr->magic == JOB_MAGIC);
 
 #ifdef __METASTACK_NEW_PART_PARA_SCHED
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_sched || para_submit) {
+#else
 	if(para_sched) {
+#endif
 		/* for para_sched, multi threaded get job_id requires mutual exclusion */
 		slurm_mutex_lock(&get_jobid_lock);		
 		if ((new_id = get_next_job_id(false)) != SLURM_ERROR) {
@@ -13181,7 +13452,17 @@ extern void set_job_prio(job_record_t *job_ptr)
 
 	if (IS_JOB_FINISHED(job_ptr))
 		return;
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_submit) {
+		slurm_rwlock_rdlock(&lowest_prio_lock);
+		job_ptr->priority = priority_g_set(lowest_prio, job_ptr);
+		slurm_rwlock_unlock(&lowest_prio_lock);
+	} else {
+		job_ptr->priority = priority_g_set(lowest_prio, job_ptr);
+	}
+#else
 	job_ptr->priority = priority_g_set(lowest_prio, job_ptr);
+#endif
 	if ((job_ptr->priority == 0) || (job_ptr->direct_set_prio))
 		return;
 
@@ -13191,7 +13472,17 @@ extern void set_job_prio(job_record_t *job_ptr)
 		offset -= NICE_OFFSET;
 		relative_prio += offset;
 	}
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_submit) {
+		slurm_rwlock_wrlock(&lowest_prio_lock);
+		lowest_prio = MIN(relative_prio, lowest_prio);
+		slurm_rwlock_unlock(&lowest_prio_lock);
+	} else {
+		lowest_prio = MIN(relative_prio, lowest_prio);
+	}
+#else
 	lowest_prio = MIN(relative_prio, lowest_prio);
+#endif
 }
 
 /* After recovering job state, if using priority/basic then we increment the
@@ -13204,7 +13495,17 @@ extern void sync_job_priorities(void)
 		prio_boost = TOP_PRIORITY - highest_prio;
 
 	prio_boost = priority_g_recover(prio_boost);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_SUBMIT_PARALLEL
+	if (para_submit) {
+		slurm_rwlock_wrlock(&lowest_prio_lock);
+		lowest_prio += prio_boost;
+		slurm_rwlock_unlock(&lowest_prio_lock);
+	} else {
+		lowest_prio += prio_boost;
+	}
+#else
 	lowest_prio += prio_boost;
+#endif
 }
 
 /*
@@ -17634,8 +17935,13 @@ extern uint64_t job_get_tres_mem(struct job_resources *job_res,
  * IN return_code - return code from epilog script
  * RET true if job is COMPLETED, otherwise false
  */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+extern bool job_epilog_complete(uint32_t job_id, char *node_name,
+				uint32_t return_code, bool can_para_epilog, int worker_index)
+#else
 extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 				uint32_t return_code)
+#endif
 {
 	job_record_t *job_ptr = find_job_record(job_id);
 	node_record_t *node_ptr;
@@ -17719,7 +18025,11 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 				            slurm_conf.slurm_user_id);
 			}
 			/* Change job from completing to completed */
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+			make_node_idle(node_ptr, job_ptr, false, 0);
+#else
 			make_node_idle(node_ptr, job_ptr);
+#endif
 		}
 	}
 #else
@@ -17731,8 +18041,13 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 	}
 	/* Change job from completing to completed */
 	node_ptr = find_node_record(node_name);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	if (node_ptr)
+		make_node_idle(node_ptr, job_ptr, can_para_epilog, worker_index);
+#else
 	if (node_ptr)
 		make_node_idle(node_ptr, job_ptr);
+#endif
 #endif
 
 #ifdef __METASTACK_OPT_CACHE_QUERY

@@ -242,7 +242,9 @@ extern ssize_t tls_g_recv(void *conn, void *buf, size_t n)
 }
 
 #ifdef __METASTACK_BUG_CTLD_RESTART_POLL_HANG_FIX
-/* Fixed bug 98700 */
+/* This function is a modified version of the original "tls_g_recv()", 
+ * specifically created to fix bug 98700. 
+ */
 extern ssize_t tls_g_recv1(void *conn, void *buf, size_t n, bool *connection_closed)
 {
 	tls_wrapper_t *wrapper = conn;
