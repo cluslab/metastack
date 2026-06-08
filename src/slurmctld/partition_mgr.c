@@ -44,6 +44,9 @@
 
 #include <ctype.h>
 #include <errno.h>
+#ifdef __METASTACK_OPT_SCPNTROL_API
+#include <stdarg.h>
+#endif
 #include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,6 +135,292 @@ static void   _unlink_free_nodes(bitstr_t *old_bitmap, part_record_t *part_ptr);
 #ifdef __METASTACK_OPT_PART_VISIBLE
 static int _find_acct_in_list(void *x, void *arg);
 #endif
+
+#ifdef __METASTACK_OPT_SCPNTROL_API
+static int _match_acl_token(void *x, void *key)
+{
+	return !xstrcasecmp((char *) x, (char *) key);
+}
+
+static void _load_acl_tokens(List token_list, const char *csv)
+{
+	char *tmp = NULL, *save_ptr = NULL, *token = NULL;
+
+	if (!csv || !csv[0])
+		return;
+
+	tmp = xstrdup(csv);
+	token = strtok_r(tmp, ",", &save_ptr);
+	while (token) {
+		char *start = token;
+		char *end = NULL;
+
+		while (*start && isspace(*start))
+			start++;
+		end = start + strlen(start);
+		while ((end > start) && isspace(end[-1]))
+			*--end = '\0';
+
+		if (start[0])
+			list_append(token_list, xstrdup(start));
+
+		token = strtok_r(NULL, ",", &save_ptr);
+	}
+	xfree(tmp);
+}
+
+static char *_acl_tokens_to_csv(List token_list)
+{
+	list_itr_t *iter;
+	char *token = NULL, *out = NULL;
+
+	iter = list_iterator_create(token_list);
+	while ((token = list_next(iter))) {
+		if (out)
+			xstrcat(out, ",");
+		xstrcat(out, token);
+	}
+	list_iterator_destroy(iter);
+
+	return out;
+}
+
+static void _set_part_acl_user_msg(char **err_msg, const char *fmt, ...)
+{
+	va_list ap;
+
+	if (!err_msg)
+		return;
+	xfree(*err_msg);
+	va_start(ap, fmt);
+	*err_msg = vxstrfmt(fmt, ap);
+	va_end(ap);
+}
+
+static int _update_part_acl_delta(part_record_t *part_ptr, char **current_acl,
+				  const char *new_acl, bool null_is_all,
+				  const char *field_name, char **err_msg)
+{
+	List token_list = NULL;
+	List update_list = NULL;
+	List added_list = NULL;
+	List removed_list = NULL;
+	List skipped_list = NULL;
+	char *updated_acl = NULL;
+	char *added_print = NULL, *removed_print = NULL;
+	char *skipped_print = NULL;
+	list_itr_t *iter = NULL;
+	char *token = NULL;
+	char op;
+	bool changed = false;
+	int orig_token_count = 0;
+
+	if (!new_acl || (new_acl[1] != '=')) {
+		error("%s: malformed incremental %s update on partition %s: "
+		      "expected '%s+=<list>' or '%s-=<list>' (not '%s=...'). "
+		      "See scontrol(1).", __func__, field_name,
+		      part_ptr->name, field_name, field_name,
+		      new_acl ? new_acl : "");
+		_set_part_acl_user_msg(err_msg,
+				       "Malformed incremental %s update on "
+				       "partition '%s': use '%s+=<list>' or "
+				       "'%s-=<list>'. See scontrol(1).",
+				       field_name, part_ptr->name,
+				       field_name, field_name);
+		return EINVAL;
+	}
+
+	op = new_acl[0];
+	if ((op != '+') && (op != '-')) {
+		error("%s: malformed incremental %s update on partition %s: "
+		      "invalid operator in '%s'. See scontrol(1).", __func__,
+		      field_name, part_ptr->name, new_acl);
+		_set_part_acl_user_msg(err_msg,
+				       "Malformed incremental %s update on "
+				       "partition '%s': use '%s+=<list>' or "
+				       "'%s-=<list>'. See scontrol(1).",
+				       field_name, part_ptr->name,
+				       field_name, field_name);
+		return EINVAL;
+	}
+
+	if (new_acl[2] == '\0') {
+		error("%s: %s incremental update (%s) on partition %s has "
+		      "empty token list, request rejected", __func__,
+		      field_name, new_acl, part_ptr->name);
+		_set_part_acl_user_msg(err_msg,
+				       "%s incremental update (%s) on "
+				       "partition '%s' has empty token list.",
+				       field_name, new_acl, part_ptr->name);
+		return EINVAL;
+	}
+
+	if (null_is_all &&
+	    ((*current_acl == NULL) || ((*current_acl)[0] == '\0') ||
+	     (xstrcasecmp(*current_acl, "ALL") == 0))) {
+		error("%s: %s on partition %s is currently ALL; incremental "
+		      "update (%s) is not allowed - switch to a concrete "
+		      "list first (use '%s=...' to overwrite)", __func__,
+		      field_name, part_ptr->name, new_acl, field_name);
+		_set_part_acl_user_msg(err_msg,
+				       "%s on partition '%s' is ALL: "
+				       "incremental '+='/'-=' is not allowed. "
+				       "Use '%s=...' to set a concrete list "
+				       "first.",
+				       field_name, part_ptr->name, field_name);
+		return EINVAL;
+	}
+
+	token_list = list_create(xfree_ptr);
+	_load_acl_tokens(token_list, *current_acl);
+	orig_token_count = list_count(token_list);
+
+	update_list = list_create(xfree_ptr);
+	_load_acl_tokens(update_list, new_acl + 2);
+	if (list_count(update_list) == 0) {
+		error("%s: %s incremental update (%s) on partition %s parsed "
+		      "to no tokens, request rejected", __func__, field_name,
+		      new_acl, part_ptr->name);
+		_set_part_acl_user_msg(err_msg,
+				       "%s incremental update (%s) on "
+				       "partition '%s' parsed to no tokens.",
+				       field_name, new_acl, part_ptr->name);
+		FREE_NULL_LIST(token_list);
+		FREE_NULL_LIST(update_list);
+		return EINVAL;
+	}
+
+	if (op == '+') {
+		added_list = list_create(xfree_ptr);
+		iter = list_iterator_create(update_list);
+		while ((token = list_next(iter))) {
+			list_append(token_list, xstrdup(token));
+			list_append(added_list, xstrdup(token));
+			changed = true;
+		}
+		list_iterator_destroy(iter);
+	} else {
+		removed_list = list_create(xfree_ptr);
+		skipped_list = list_create(xfree_ptr);
+		iter = list_iterator_create(update_list);
+		while ((token = list_next(iter))) {
+			if (list_delete_all(token_list, _match_acl_token,
+					    token) > 0) {
+				list_append(removed_list, xstrdup(token));
+				changed = true;
+			} else {
+				list_append(skipped_list, xstrdup(token));
+			}
+		}
+		list_iterator_destroy(iter);
+		if (list_count(token_list) == 0) {
+			if (orig_token_count == 0) {
+				error("%s: refusing to apply %s on partition %s, "
+				      "%s list is already empty", __func__,
+				      new_acl, part_ptr->name, field_name);
+				_set_part_acl_user_msg(err_msg,
+						       "%s on partition '%s': "
+						       "list is already empty; "
+						       "incremental '-=' is not "
+						       "allowed.",
+						       field_name,
+						       part_ptr->name);
+			} else {
+				if (null_is_all) {
+					error("%s: refusing to apply %s on partition %s, "
+						"%s list would become empty (use '%s=' "
+						"or '%s=ALL' to clear)", __func__,
+						new_acl, part_ptr->name, field_name,
+						field_name, field_name);
+					_set_part_acl_user_msg(err_msg,
+								"%s on partition '%s': "
+								"'%s' would leave the "
+								"list empty; incremental "
+								"'-=' cannot clear the "
+								"list. Use '%s=' or "
+								"'%s=ALL' to clear.",
+								field_name,
+								part_ptr->name, new_acl,
+								field_name, field_name);
+				} else {
+					error("%s: refusing to apply %s on partition %s, "
+						"%s list would become empty (use '%s=' "
+						"to clear)", __func__, new_acl,
+						part_ptr->name, field_name,
+						field_name);
+					_set_part_acl_user_msg(err_msg,
+								"%s on partition '%s': "
+								"'%s' would leave the "
+								"list empty; incremental "
+								"'-=' cannot clear the "
+								"list. Use '%s=' to "
+								"clear.",
+								field_name,
+								part_ptr->name, new_acl,
+								field_name);
+				}
+			}
+			FREE_NULL_LIST(token_list);
+			FREE_NULL_LIST(update_list);
+			FREE_NULL_LIST(removed_list);
+			FREE_NULL_LIST(skipped_list);
+			return EINVAL;
+		}
+	}
+
+	skipped_print = skipped_list ? _acl_tokens_to_csv(skipped_list) : NULL;
+	if (!changed) {
+		info("%s: %s on partition %s: no entries removed; "
+				"not present [%s]",
+				__func__, field_name, part_ptr->name,
+				skipped_print ? skipped_print : "");
+		xfree(skipped_print);
+		FREE_NULL_LIST(token_list);
+		FREE_NULL_LIST(update_list);
+		FREE_NULL_LIST(added_list);
+		FREE_NULL_LIST(removed_list);
+		FREE_NULL_LIST(skipped_list);
+		return SLURM_SUCCESS;
+	}
+
+	updated_acl = _acl_tokens_to_csv(token_list);
+	added_print = added_list ? _acl_tokens_to_csv(added_list) : NULL;
+	removed_print = removed_list ? _acl_tokens_to_csv(removed_list) : NULL;
+
+
+	if (skipped_print && skipped_print[0]) {
+		info("%s: %s on partition %s: not present [%s] "
+				"(left unchanged)",
+				__func__, field_name, part_ptr->name,
+				skipped_print);
+	}
+
+	if (op == '+') {
+		info("%s: %s on partition %s: added [%s]",
+		     __func__, field_name, part_ptr->name,
+		     added_print ? added_print : "");
+	} else {
+		info("%s: %s on partition %s: removed [%s]",
+		     __func__, field_name, part_ptr->name,
+		     removed_print ? removed_print : "");
+	}
+
+	xfree(*current_acl);
+	*current_acl = updated_acl;
+	updated_acl = NULL;
+
+	xfree(added_print);
+	xfree(removed_print);
+	xfree(skipped_print);
+	FREE_NULL_LIST(token_list);
+	FREE_NULL_LIST(update_list);
+	FREE_NULL_LIST(added_list);
+	FREE_NULL_LIST(removed_list);
+	FREE_NULL_LIST(skipped_list);
+
+	return SLURM_SUCCESS;
+}
+#endif /* __METASTACK_OPT_SCPNTROL_API */
 
 static int _calc_part_tres(void *x, void *arg)
 {
@@ -3417,7 +3706,12 @@ extern bool partition_has_prio_weight(part_record_t *part_ptr, int PRIO_TYPE)
  * global: part_list - list of partition entries
  *	last_part_update - update time of partition records
  */
+#ifdef __METASTACK_OPT_SCPNTROL_API
+extern int update_part(update_part_msg_t * part_desc, bool create_flag,
+		       char **err_msg)
+#else
 extern int update_part(update_part_msg_t * part_desc, bool create_flag)
+#endif
 {
 	int error_code;
 	part_record_t *part_ptr;
@@ -3748,6 +4042,18 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 				(double)part_max_priority;
 		}
 	}
+#ifdef __METASTACK_BUG_PART_CREATE_NORM_PRIORITY
+	else if (create_flag) {
+		if (part_max_priority == 0)
+			part_ptr->norm_priority = 0;
+		else
+			part_ptr->norm_priority =
+				(double)part_ptr->priority_job_factor /
+				(double)part_max_priority;
+		info("%s: setting norm_priority to %f for partition %s",
+		     __func__, part_ptr->norm_priority, part_desc->name);
+	}
+#endif
 
 #ifdef __METASTACK_NEW_SUSPEND_KEEP_IDLE
     if (part_desc->suspend_idle != NO_VAL) {
@@ -3820,6 +4126,19 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 #endif
 
 	if (part_desc->allow_accounts != NULL) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		if ((part_desc->allow_accounts[0] == '+') ||
+		    (part_desc->allow_accounts[0] == '-')) {
+			int rc = _update_part_acl_delta(
+				part_ptr, &part_ptr->allow_accounts,
+				part_desc->allow_accounts, true,
+				"AllowAccounts", err_msg);
+			if (rc != SLURM_SUCCESS) {
+				error_code = rc;
+				goto fini;
+			}
+		} else {
+#endif
 		xfree(part_ptr->allow_accounts);
 		if ((xstrcasecmp(part_desc->allow_accounts, "ALL") == 0) ||
 		    (part_desc->allow_accounts[0] == '\0')) {
@@ -3832,12 +4151,36 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 			     __func__, part_ptr->allow_accounts,
 			     part_desc->name);
 		}
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		}
+#endif
 		FREE_NULL_LIST(part_ptr->allow_accts_list);
 		part_ptr->allow_accts_list =
 			accounts_list_build(part_ptr->allow_accounts, false);
 	}
 
 	if (part_desc->allow_groups != NULL) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		if ((part_desc->allow_groups[0] == '+') ||
+		    (part_desc->allow_groups[0] == '-')) {
+			int rc = _update_part_acl_delta(
+				part_ptr, &part_ptr->allow_groups,
+				part_desc->allow_groups, true,
+				"AllowGroups", err_msg);
+			if (rc != SLURM_SUCCESS) {
+				error_code = rc;
+				goto fini;
+			} else {
+				xfree(part_ptr->allow_uids);
+				part_ptr->allow_uids_cnt = 0;
+				part_ptr->allow_uids =
+					get_groups_members(
+						part_ptr->allow_groups,
+						&part_ptr->allow_uids_cnt);
+				clear_group_cache();
+			}
+		} else {
+#endif
 		xfree(part_ptr->allow_groups);
 		xfree(part_ptr->allow_uids);
 		part_ptr->allow_uids_cnt = 0;
@@ -3855,9 +4198,25 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 						   &part_ptr->allow_uids_cnt);
 			clear_group_cache();
 		}
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		}
+#endif
 	}
 
 	if (part_desc->allow_qos != NULL) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		if ((part_desc->allow_qos[0] == '+') ||
+		    (part_desc->allow_qos[0] == '-')) {
+			int rc = _update_part_acl_delta(
+				part_ptr, &part_ptr->allow_qos,
+				part_desc->allow_qos, true,
+				"AllowQOS", err_msg);
+			if (rc != SLURM_SUCCESS) {
+				error_code = rc;
+				goto fini;
+			}
+		} else {
+#endif
 		xfree(part_ptr->allow_qos);
 		if ((xstrcasecmp(part_desc->allow_qos, "ALL") == 0) ||
 		    (part_desc->allow_qos[0] == '\0')) {
@@ -3869,6 +4228,9 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 			info("%s: setting AllowQOS to %s for partition %s",
 			     __func__, part_ptr->allow_qos, part_desc->name);
 		}
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		}
+#endif
 		qos_list_build(part_ptr->allow_qos,&part_ptr->allow_qos_bitstr);
 	}
 
@@ -4011,6 +4373,19 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 	}
 
 	if (part_desc->deny_accounts != NULL) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		if ((part_desc->deny_accounts[0] == '+') ||
+		    (part_desc->deny_accounts[0] == '-')) {
+			int rc = _update_part_acl_delta(
+				part_ptr, &part_ptr->deny_accounts,
+				part_desc->deny_accounts, false,
+				"DenyAccounts", err_msg);
+			if (rc != SLURM_SUCCESS) {
+				error_code = rc;
+				goto fini;
+			}
+		} else {
+#endif
 		xfree(part_ptr->deny_accounts);
 		if (part_desc->deny_accounts[0] == '\0')
 			xfree(part_desc->deny_accounts);
@@ -4018,6 +4393,9 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 		part_desc->deny_accounts = NULL;
 		info("%s: setting DenyAccounts to %s for partition %s",
 		     __func__, part_ptr->deny_accounts, part_desc->name);
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		}
+#endif
 		FREE_NULL_LIST(part_ptr->deny_accts_list);
 		part_ptr->deny_accts_list =
 			accounts_list_build(part_ptr->deny_accounts, false);
@@ -4028,13 +4406,29 @@ extern int update_part(update_part_msg_t * part_desc, bool create_flag)
 	}
 
 	if (part_desc->deny_qos != NULL) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		if ((part_desc->deny_qos[0] == '+') ||
+		    (part_desc->deny_qos[0] == '-')) {
+			int rc = _update_part_acl_delta(
+				part_ptr, &part_ptr->deny_qos,
+				part_desc->deny_qos, false,
+				"DenyQOS", err_msg);
+			if (rc != SLURM_SUCCESS) {
+				error_code = rc;
+				goto fini;
+			}
+		} else {
+#endif
 		xfree(part_ptr->deny_qos);
 		if (part_desc->deny_qos[0] == '\0')
-			xfree(part_ptr->deny_qos);
+			xfree(part_desc->deny_qos);
 		part_ptr->deny_qos = part_desc->deny_qos;
 		part_desc->deny_qos = NULL;
 		info("%s: setting DenyQOS to %s for partition %s", __func__,
 		     part_ptr->deny_qos, part_desc->name);
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		}
+#endif
 		qos_list_build(part_ptr->deny_qos, &part_ptr->deny_qos_bitstr);
 	}
 	if (part_desc->allow_qos && part_desc->deny_qos) {

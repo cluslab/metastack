@@ -156,6 +156,18 @@ static pthread_cond_t message_cond = PTHREAD_COND_INITIALIZER;
 static int message_connections = 0;
 static int msg_target_node_id = 0;
 
+#ifdef __METASTACK_BUG_EXTERN_ORPHAN_LOCK_CONTENTION
+static bool _jobacct_no_immediate_poll_enabled(void)
+{
+	if (!slurm_conf.job_acct_gather_params)
+		return false;
+
+	/* JobAcctGatherParams=... ,NoImmediatePoll,... */
+	return (xstrcasestr(slurm_conf.job_acct_gather_params,
+			    "NoImmediatePoll") != NULL);
+}
+#endif
+
 /*
  *  Returns true if "uid" is a "slurm authorized user" - i.e. uid == 0
  *   or uid == slurm user id at this time.
@@ -1032,7 +1044,9 @@ int _handle_request(int fd, stepd_step_rec_t *step, uid_t uid, pid_t remote_pid)
 		_handle_srun_timeout(fd, step, uid);
 		break;
 	case REQUEST_UPDATE_JOB_STEP:
-		debug("Handling REQUEST_CANCEL_JOB_STEP");
+#ifdef __METASTACK_NEW_TIME_PREDICT
+		debug("Handling REQUEST_UPDATE_JOB_STEP");
+#endif
 		rc = _handle_update_step(fd, step, uid);
 		break;
 	case REQUEST_STEP_LAYOUT:
@@ -1621,7 +1635,14 @@ static void *_wait_extern_pid(void *args)
 	_block_on_pid(pid);
 #endif
 	//info("done with pid %d %d: %m", pid, rc);
+#ifdef __METASTACK_BUG_EXTERN_ORPHAN_LOCK_CONTENTION
+	if (_jobacct_no_immediate_poll_enabled())
+		jobacct = jobacct_gather_remove_task_extern(pid);
+	else
+		jobacct = jobacct_gather_remove_task(pid);
+#else
 	jobacct = jobacct_gather_remove_task(pid);
+#endif
 	if (jobacct) {
 		step->jobacct->energy.consumed_energy = 0;
 		jobacctinfo_aggregate(step->jobacct, jobacct);
@@ -1721,12 +1742,29 @@ static int _handle_add_extern_pid_internal(stepd_step_rec_t *step, pid_t pid)
 		      __func__, step->step_id.job_id, pid);
 		return SLURM_ERROR;
 	}
-
+#ifdef __METASTACK_BUG_EXTERN_ORPHAN_LOCK_CONTENTION
+	if (_jobacct_no_immediate_poll_enabled()) {
+		if (jobacct_gather_add_task(pid, &jobacct_id, 0) !=
+		    SLURM_SUCCESS) {
+			error("%s: Job %u can't add pid %d to jobacct_gather plugin in the extern_step.",
+			      __func__, step->step_id.job_id, pid);
+			return SLURM_ERROR;
+		}
+	} else {
+		if (jobacct_gather_add_task(pid, &jobacct_id, 1) !=
+		    SLURM_SUCCESS) {
+			error("%s: Job %u can't add pid %d to jobacct_gather plugin in the extern_step.",
+			      __func__, step->step_id.job_id, pid);
+			return SLURM_ERROR;
+		}
+	}
+#else
 	if (jobacct_gather_add_task(pid, &jobacct_id, 1) != SLURM_SUCCESS) {
 		error("%s: Job %u can't add pid %d to jobacct_gather plugin in the extern_step.",
 		      __func__, step->step_id.job_id, pid);
 		return SLURM_ERROR;
 	}
+#endif
 
 
 	if (xstrcasestr(slurm_conf.launch_params, "ulimit_pam_adopt"))

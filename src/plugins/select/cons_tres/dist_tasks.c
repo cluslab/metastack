@@ -1018,6 +1018,7 @@ static int _cyclic_sync_core_bitmap(job_record_t *job_ptr,
 #ifdef __METASTACK_NEW_PART_LLS
 			/* Select according to the configuration of LLS */
 			if (part_lls_flag) {
+				bool advanced = false;
 				for (s=0; s < sockets && cpus > 0; s++){
 					if (sock_avoid[s])
 					/* avoid using this socket */
@@ -1030,16 +1031,18 @@ static int _cyclic_sync_core_bitmap(job_record_t *job_ptr,
 						core_cnt++;
 						if (cpus < vpus){
 							cpus = 0; 
+							sock_start[s]++;
 							break;
 						} else
 							cpus -= vpus;
 					}
 					// core in sock_start[s] is alloced or not idle    
 					sock_start[s]++;
+					advanced = true;
 				}
 				// determine whether all required cores have been applied for 
 				// or no idle cores have been applied for in this round
-				if ((prev_cpus != cpus) || (core_cnt == 0))
+				if ((prev_cpus != cpus) || advanced)
 					continue;
 			} else {
 				for (s = 0; s < sockets && cpus > 0; s++) {

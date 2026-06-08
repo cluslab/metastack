@@ -2118,6 +2118,40 @@ The default value is "ALL". This list is hierarchical, meaning subaccounts
 are included automatically.
 \fBNOTE\fR: If AllowAccounts is used then DenyAccounts will not be enforced.
 Also refer to DenyAccounts.
+.br
+The \fBscontrol update\fR command also accepts incremental updates that only
+change the specified partition without touching other partitions:
+.br
+The "+=" and "\-=" forms are Metastack extensions.
+.RS
+.IP \(bu 4
+"\fBAllowAccounts+=\fIacct1,acct2\fR" appends the listed accounts to the
+existing list. Existing accounts will also be appended without causing an error;
+.IP \(bu 4
+"\fBAllowAccounts\-=\fIacct1,acct2\fR" removes only the listed accounts and
+keeps the rest of the existing list.  Accounts that are not present are left
+unchanged and do not cause an error;
+.IP \(bu 4
+"\fBAllowAccounts=\fIacct1,acct2\fR" still replaces the entire list (full
+overwrite).
+.IP \(bu 4
+"\fBAllowAccounts=ALL\fR" or an empty value still clears the list and
+permits all accounts.
+.RE
+.IP
+Incremental updates are only valid when a concrete list is currently
+configured.  If AllowAccounts is currently ALL (the default), "+=" and "-="
+are rejected; switch to a concrete list first using a normal "=" assignment.
+A "-=" that would remove every remaining entry is rejected (use "=" or
+"=ALL" to clear).  Each successful incremental change is logged with the
+specific accounts that were added or removed and the allow_accts_list used
+by the scheduler is rebuilt immediately so the new permissions take effect
+for subsequent job submissions.
+.IP
+The literal token "NULL" is treated like any other account name.  If the
+partition was previously configured with AllowAccounts=NULL (which blocks
+all submissions because no real account is named "NULL"), then
+"AllowAccounts+=test1" is accepted and yields "NULL,test1".
 .IP
 
 .TP
@@ -2125,6 +2159,39 @@ Also refer to DenyAccounts.
 Identify the user groups which may use this partition.
 Multiple groups may be specified in a comma separated list.
 To permit all groups to use the partition specify "AllowGroups=ALL".
+.br
+The \fBscontrol update\fR command also accepts incremental updates that only
+change the specified partition without touching other partitions:
+.br
+The "+=" and "\-=" forms are Metastack extensions.
+.RS
+.IP \(bu 4
+"\fBAllowGroups+=\fIgroup1,group2\fR" appends the listed groups to the
+existing list. Existing groups will also be appended without causing an error.;
+.IP \(bu 4
+"\fBAllowGroups\-=\fIgroup1,group2\fR" removes only the listed groups and
+keeps the rest of the existing list.  Groups that are not present are left
+unchanged and do not cause an error;
+.IP \(bu 4
+"\fBAllowGroups=\fIgroup1,group2\fR" still replaces the entire list (full
+overwrite).
+.IP \(bu 4
+"\fBAllowGroups=ALL\fR" or an empty value still clears the list and permits
+all groups.
+.RE
+.IP
+Incremental updates are only valid when a concrete list is currently
+configured.  If AllowGroups is currently ALL (the default), "+=" and "-="
+are rejected; switch to a concrete list first using a normal "=" assignment.
+A "-=" that would remove every remaining entry is rejected (use "=" or
+"=ALL" to clear).  Each successful incremental change is logged with the
+specific groups that were added or removed, the list of allowed UIDs is
+recomputed immediately, and the group cache is cleared so the new
+permissions take effect for subsequent job submissions.
+.IP
+\fBDenyGroups\fR is not a partition option.  The DenyGroups keyword documented
+in \fBslurm.conf\fR applies to front end nodes only and cannot be used with
+\fBscontrol update PartitionName=\fR.
 .IP
 
 .TP
@@ -2132,6 +2199,34 @@ To permit all groups to use the partition specify "AllowGroups=ALL".
 Identify the QOSs which may use this partition.
 Multiple QOSs may be specified in a comma separated list.
 To permit all QOSs to use the partition specify "AllowQOS=ALL".
+.br
+The \fBscontrol update\fR command also accepts incremental updates that only
+change the specified partition without touching other partitions:
+.br
+The "+=" and "\-=" forms are Metastack extensions.
+.RS
+.IP \(bu 4
+"\fBAllowQOS+=\fIqos1,qos2\fR" appends the listed QOS values to the existing
+list. Existing QOS values will also be appended without causing an error;
+.IP \(bu 4
+"\fBAllowQOS\-=\fIqos1,qos2\fR" removes only the listed QOS values and keeps
+the rest of the existing list.  QOS values that are not present are left
+unchanged and do not cause an error;
+.IP \(bu 4
+"\fBAllowQOS=\fIqos1,qos2\fR" still replaces the entire list (full overwrite).
+.IP \(bu 4
+"\fBAllowQOS=ALL\fR" or an empty value still clears the list and permits all
+QOS values.
+.RE
+.IP
+Incremental updates are only valid when a concrete list is currently
+configured.  If AllowQOS is currently ALL (the default), "+=" and "-="
+are rejected; switch to a concrete list first using a normal "=" assignment.
+A "-=" that would remove every remaining entry is rejected (use "=" or
+"=ALL" to clear).  Each successful incremental change is logged with the
+specific QOS values that were added or removed and the allow_qos bitstring
+used by the scheduler is rebuilt immediately so the new permissions take
+effect for subsequent job submissions.
 .IP
 
 .TP
@@ -2183,12 +2278,64 @@ By default, no accounts are denied access. This list is hierarchical,
 meaning subaccounts are included automatically.
 \fBNOTE\fR: If AllowAccounts is used then DenyAccounts will not be enforced.
 Also refer to AllowAccounts.
+Unlike \fBAllowAccounts\fR, the keyword \fBALL\fR is not supported.
+.br
+The \fBscontrol update\fR command also accepts incremental updates that only
+change the specified partition without touching other partitions:
+.br
+The "+=" and "\-=" forms are Metastack extensions.
+.RS
+.IP \(bu 4
+"\fBDenyAccounts+=\fIacct1,acct2\fR" appends the listed accounts to the
+existing deny list. Existing accounts will also be appended without causing an error;
+.IP \(bu 4
+"\fBDenyAccounts\-=\fIacct1,acct2\fR" removes only the listed accounts and
+keeps the rest of the existing deny list.  Accounts that are not present are
+left unchanged and do not cause an error;
+.IP \(bu 4
+"\fBDenyAccounts=\fIacct1,acct2\fR" still replaces the entire deny list (full
+overwrite).
+.IP \(bu 4
+An empty value still clears the deny list and disables account denial.
+.RE
+.IP
+A "-=" that would remove every remaining entry is rejected (use "=" with an
+empty value to clear).  Each successful incremental change is logged with
+the specific accounts that were added or removed and the deny_accts_list
+used by the scheduler is rebuilt immediately so the new permissions take
+effect for subsequent job submissions.
 .IP
 
 .TP
 \fBDenyQOS\fR=<\fIname\fR>
 Identify the QOSs which should be denied access to this partition.
 Multiple QOSs may be specified in a comma separated list.
+Unlike \fBAllowQOS\fR, the keyword \fBALL\fR is not supported.
+.br
+The \fBscontrol update\fR command also accepts incremental updates that only
+change the specified partition without touching other partitions:
+.br
+The "+=" and "\-=" forms are Metastack extensions.
+.RS
+.IP \(bu 4
+"\fBDenyQOS+=\fIqos1,qos2\fR" appends the listed QOS values to the existing
+deny list. Existing QOS values will also be appended without causing an error;
+.IP \(bu 4
+"\fBDenyQOS\-=\fIqos1,qos2\fR" removes only the listed QOS values and keeps
+the rest of the existing deny list.  QOS values that are not present are left
+unchanged and do not cause an error;
+.IP \(bu 4
+"\fBDenyQOS=\fIqos1,qos2\fR" still replaces the entire deny list (full
+overwrite).
+.IP \(bu 4
+An empty value still clears the deny list and disables QOS denial.
+.RE
+.IP
+A "-=" that would remove every remaining entry is rejected (use "=" with an
+empty value to clear).  Each successful incremental change is logged with
+the specific QOS values that were added or removed and the deny_qos
+bitstring used by the scheduler is rebuilt immediately so the new
+permissions take effect for subsequent job submissions.
 .IP
 
 .TP

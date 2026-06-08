@@ -5358,12 +5358,6 @@ void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
 		last_job_update = now;
 		bit_clear(node_bitmap, node_ptr->index);
 
-#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
-		if (can_para_epilog && enable_para_epilog) {
-			slurm_mutex_lock(&job_ptr->job_sched_lock);
-		}
-#endif
-
 		if (!IS_JOB_FINISHED(job_ptr))
 			job_update_tres_cnt(job_ptr, node_ptr->index);
 
@@ -5410,23 +5404,10 @@ void make_node_idle(node_record_t *node_ptr, job_record_t *job_ptr)
 				error("%s: %pJ node %s comp_job_cnt underflow",
 				      __func__, job_ptr, node_ptr->name);
 			}
-#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
-			if (node_ptr->comp_job_cnt > 0) {
-				if (can_para_epilog && enable_para_epilog) {
-					slurm_mutex_unlock(&job_ptr->job_sched_lock);
-				}
-				goto fini;	/* More jobs completing */
-			}
-#else
+
 			if (node_ptr->comp_job_cnt > 0)
 				goto fini;	/* More jobs completing */
-#endif
 		}
-#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
-		if (can_para_epilog && enable_para_epilog) {
-			slurm_mutex_unlock(&job_ptr->job_sched_lock);
-		}
-#endif
 	}
 
 	if (node_ptr->comp_job_cnt == 0) {

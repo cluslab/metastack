@@ -1707,7 +1707,7 @@ extern void jag_common_poll_data(List task_list, uint64_t cont_id,
 
 					jobacct->cpu_step_max  = MAX(data->cpu_step_real, jobacct->cpu_step_max);
 					jobacct->cpu_step_min  = MIN(data->cpu_step_real, jobacct->cpu_step_min);
-					jobacct->mem_step_max  = MAX( data->mem_step,  data->mem_step);
+					jobacct->mem_step_max  = MAX( data->mem_step, jobacct->mem_step_max);
 					jobacct->mem_step_min  = MIN( data->mem_step, jobacct->mem_step_min);
 					jobacct->vmem_step_max = MAX(data->vmem_step, jobacct->vmem_step_max);
 					jobacct->vmem_step_min = MIN(data->vmem_step, jobacct->vmem_step_min);				

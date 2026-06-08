@@ -2592,6 +2592,20 @@ enum {
 extern int set_partition_billing_weights(char *billing_weights_str,
 					 part_record_t *part_ptr, bool fail);
 
+#ifdef __METASTACK_OPT_SCPNTROL_API
+/*
+ * update_part - create or update a partition's configuration data
+ * IN part_desc - description of partition changes
+ * IN create_flag - create a new partition
+ * OUT err_msg - user-visible error string (set on some failures, caller must
+ *		 xfree); may be NULL
+ * RET 0 or an error code
+ * global: part_list - list of partition entries
+ *	last_part_update - update time of partition records
+ */
+extern int update_part (update_part_msg_t * part_desc, bool create_flag,
+			char **err_msg);
+#else
 /*
  * update_part - create or update a partition's configuration data
  * IN part_desc - description of partition changes
@@ -2601,6 +2615,7 @@ extern int set_partition_billing_weights(char *billing_weights_str,
  *	last_part_update - update time of partition records
  */
 extern int update_part (update_part_msg_t * part_desc, bool create_flag);
+#endif
 
 /*
  * validate_alloc_node - validate that the allocating node

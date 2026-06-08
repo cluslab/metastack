@@ -962,9 +962,16 @@ static int _log_gres_slurmd_conf(void *x, void *arg)
 
 	if (!(slurm_conf.debug_flags & DEBUG_FLAG_GRES)) {
 #ifdef __METASTACK_BUG_OPTIMIZE_GRES_LOG
-		debug("Gres Name=%s Type=%s Count=%"PRIu64" Flags=%s",
-			p->name, p->type_name, p->count,
-			gres_flags2str(p->config_flags));
+		if (running_in_slurmctld()) {
+			debug("Gres Name=%s Type=%s Count=%"PRIu64" Flags=%s",
+				p->name, p->type_name, p->count,
+				gres_flags2str(p->config_flags));
+		} else {
+			verbose("Gres Name=%s Type=%s Count=%"PRIu64" Flags=%s",
+				p->name, p->type_name, p->count,
+				gres_flags2str(p->config_flags));
+		}
+
 #else
 		verbose("Gres Name=%s Type=%s Count=%"PRIu64" Flags=%s",
 			p->name, p->type_name, p->count,
@@ -986,45 +993,88 @@ static int _log_gres_slurmd_conf(void *x, void *arg)
 	}
 
 #ifdef __METASTACK_BUG_OPTIMIZE_GRES_LOG
-	if (p->cpus && (index != -1)) {
-		debug("Gres Name=%s Type=%s Count=%"PRIu64" Index=%d ID=%u File=%s Cores=%s CoreCnt=%u Links=%s Flags=%s",
-		     p->name,
-		     p->type_name,
-		     p->count,
-		     index,
-		     p->plugin_id,
-		     p->file,
-		     p->cpus,
-		     p->cpu_cnt,
-		     p->links,
-		     gres_flags2str(p->config_flags));
-	} else if (index != -1) {
-		debug("Gres Name=%s Type=%s Count=%"PRIu64" Index=%d ID=%u File=%s Links=%s Flags=%s",
-		     p->name,
-		     p->type_name,
-		     p->count,
-		     index,
-		     p->plugin_id,
-		     p->file,
-		     p->links,
-		     gres_flags2str(p->config_flags));
-	} else if (p->file) {
-		debug("Gres Name=%s Type=%s Count=%"PRIu64" ID=%u File=%s Links=%s Flags=%s",
-		     p->name,
-		     p->type_name,
-		     p->count,
-		     p->plugin_id,
-		     p->file,
-		     p->links,
-		     gres_flags2str(p->config_flags));
+	if (running_in_slurmctld()) {
+		if (p->cpus && (index != -1)) {
+			debug("Gres Name=%s Type=%s Count=%"PRIu64" Index=%d ID=%u File=%s Cores=%s CoreCnt=%u Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				index,
+				p->plugin_id,
+				p->file,
+				p->cpus,
+				p->cpu_cnt,
+				p->links,
+				gres_flags2str(p->config_flags));
+		} else if (index != -1) {
+			debug("Gres Name=%s Type=%s Count=%"PRIu64" Index=%d ID=%u File=%s Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				index,
+				p->plugin_id,
+				p->file,
+				p->links,
+				gres_flags2str(p->config_flags));
+		} else if (p->file) {
+			debug("Gres Name=%s Type=%s Count=%"PRIu64" ID=%u File=%s Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				p->plugin_id,
+				p->file,
+				p->links,
+				gres_flags2str(p->config_flags));
+		} else {
+			debug("Gres Name=%s Type=%s Count=%"PRIu64" ID=%u Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				p->plugin_id,
+				p->links,
+				gres_flags2str(p->config_flags));
+		}
 	} else {
-		debug("Gres Name=%s Type=%s Count=%"PRIu64" ID=%u Links=%s Flags=%s",
-		     p->name,
-		     p->type_name,
-		     p->count,
-		     p->plugin_id,
-		     p->links,
-		     gres_flags2str(p->config_flags));
+		if (p->cpus && (index != -1)) {
+			info("Gres Name=%s Type=%s Count=%"PRIu64" Index=%d ID=%u File=%s Cores=%s CoreCnt=%u Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				index,
+				p->plugin_id,
+				p->file,
+				p->cpus,
+				p->cpu_cnt,
+				p->links,
+				gres_flags2str(p->config_flags));
+		} else if (index != -1) {
+			info("Gres Name=%s Type=%s Count=%"PRIu64" Index=%d ID=%u File=%s Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				index,
+				p->plugin_id,
+				p->file,
+				p->links,
+				gres_flags2str(p->config_flags));
+		} else if (p->file) {
+			info("Gres Name=%s Type=%s Count=%"PRIu64" ID=%u File=%s Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				p->plugin_id,
+				p->file,
+				p->links,
+				gres_flags2str(p->config_flags));
+		} else {
+			info("Gres Name=%s Type=%s Count=%"PRIu64" ID=%u Links=%s Flags=%s",
+				p->name,
+				p->type_name,
+				p->count,
+				p->plugin_id,
+				p->links,
+				gres_flags2str(p->config_flags));
+		}
 	}
 #else
 	if (p->cpus && (index != -1)) {

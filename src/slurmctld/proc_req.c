@@ -5365,6 +5365,9 @@ static void _slurm_rpc_delete_node(slurm_msg_t *msg)
 static void _slurm_rpc_update_partition(slurm_msg_t *msg)
 {
 	int error_code = SLURM_SUCCESS;
+#ifdef __METASTACK_OPT_SCPNTROL_API
+	char *err_msg = NULL;
+#endif
 	DEF_TIMERS;
 	update_part_msg_t *part_desc_ptr = msg->data;
 	/* Locks: Read config, write job, write node, write partition
@@ -5401,7 +5404,11 @@ static void _slurm_rpc_update_partition(slurm_msg_t *msg)
 				part_cachedup_realtime = 2;
 			}
 #endif
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			error_code = update_part(part_desc_ptr, true, &err_msg);
+#else
 			error_code = update_part(part_desc_ptr, true);
+#endif
 #ifdef __METASTACK_OPT_CACHE_QUERY
 			part_cachedup_realtime = 0;
 #endif
@@ -5414,7 +5421,11 @@ static void _slurm_rpc_update_partition(slurm_msg_t *msg)
 #endif
 		} else {
 			lock_slurmctld(part_write_lock);
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			error_code = update_part(part_desc_ptr, false, &err_msg);
+#else
 			error_code = update_part(part_desc_ptr, false);
+#endif
 			unlock_slurmctld(part_write_lock);
 		}
 		END_TIMER2(__func__);
@@ -5424,7 +5435,11 @@ static void _slurm_rpc_update_partition(slurm_msg_t *msg)
 	if (error_code) {
 		info("%s partition=%s: %s",
 		     __func__, part_desc_ptr->name, slurm_strerror(error_code));
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		slurm_send_rc_err_msg(msg, error_code, err_msg);
+#else
 		slurm_send_rc_msg(msg, error_code);
+#endif
 	} else {
 		debug2("%s complete for %s %s",
 		       __func__, part_desc_ptr->name, TIME_STR);
@@ -5433,6 +5448,9 @@ static void _slurm_rpc_update_partition(slurm_msg_t *msg)
 		schedule_part_save();		/* Has its locking */
 		queue_job_scheduler();
 	}
+#ifdef __METASTACK_OPT_SCPNTROL_API
+	xfree(err_msg);
+#endif
 }
 
 /* _slurm_rpc_delete_partition - process RPC to delete a partition */

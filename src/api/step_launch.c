@@ -397,8 +397,8 @@ extern int slurm_step_launch(slurm_step_ctx_t *ctx,
 	launch.num_resp_port = ctx->launch_state->num_resp_port;
 	launch.resp_port = xcalloc(launch.num_resp_port, sizeof(uint16_t));
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
-	launch.watch_dog         = ctx->step_resp->watch_dog;	
-	launch.watch_dog_script  = ctx->step_resp->watch_dog_script;	
+	launch.watch_dog         = xstrdup(ctx->step_resp->watch_dog);	
+	launch.watch_dog_script  = xstrdup(ctx->step_resp->watch_dog_script);	
 	launch.init_time         = ctx->step_resp->init_time;	
 	launch.period            = ctx->step_resp->period;	
 	launch.enable_all_nodes  = ctx->step_resp->enable_all_nodes;	
@@ -544,8 +544,8 @@ extern int slurm_step_launch_add(slurm_step_ctx_t *ctx,
 		launch.flags |= LAUNCH_PTY;
 	launch.acctg_freq	= params->acctg_freq;
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
-	launch.watch_dog         = ctx->step_resp->watch_dog;	
-	launch.watch_dog_script  = ctx->step_resp->watch_dog_script;	
+	launch.watch_dog         = xstrdup(ctx->step_resp->watch_dog);	
+	launch.watch_dog_script  = xstrdup(ctx->step_resp->watch_dog_script);	
 	launch.init_time         = ctx->step_resp->init_time;	
 	launch.period            = ctx->step_resp->period;	
 	launch.enable_all_nodes  = ctx->step_resp->enable_all_nodes;	
@@ -623,7 +623,10 @@ fail1:
 	xfree(io_key);
 	xfree(launch.resp_port);
 	xfree(launch.io_port);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION	
+	xfree(launch.watch_dog);
+	xfree(launch.watch_dog_script);
+#endif
 	xfree(launch.cwd);
 	env_array_free(env);
 	FREE_NULL_LIST(launch.options);

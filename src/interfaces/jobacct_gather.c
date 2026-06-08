@@ -2142,6 +2142,48 @@ error:
 	slurm_mutex_unlock(&task_list_lock);
 	return jobacct;
 }
+#ifdef __METASTACK_BUG_EXTERN_ORPHAN_LOCK_CONTENTION
+/*
+ * Like jobacct_gather_remove_task() but does not call _poll_data() first.
+ * Used by slurmstepd extern orphan threads to avoid task_list_lock contention.
+ */
+extern jobacctinfo_t *jobacct_gather_remove_task_extern(pid_t pid)
+{
+	struct jobacctinfo *jobacct = NULL;
+	list_itr_t *itr = NULL;
+
+	if (plugin_inited == PLUGIN_NOOP)
+		return NULL;
+
+	if (_jobacct_shutdown_test())
+		return NULL;
+
+	slurm_mutex_lock(&task_list_lock);
+	if (!task_list) {
+		error("no task list created!");
+		goto error;
+	}
+
+	itr = list_iterator_create(task_list);
+	while((jobacct = list_next(itr))) {
+		if (!pid || (jobacct->pid == pid)) {
+			list_remove(itr);
+			break;
+		}
+	}
+	list_iterator_destroy(itr);
+	if (jobacct) {
+		debug2("removing task %u pid %d from jobacct",
+		       jobacct->id.taskid, jobacct->pid);
+	} else {
+		if (pid)
+			debug2("pid(%d) not being watched in jobacct!", pid);
+	}
+error:
+	slurm_mutex_unlock(&task_list_lock);
+	return jobacct;
+}
+#endif
 
 extern int jobacct_gather_set_proctrack_container_id(uint64_t id)
 {
