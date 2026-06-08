@@ -226,8 +226,13 @@ extern int topology_g_split_hostlist(hostlist_t *hl,
 		 * split_hostlise call.  */
 		nnodes = hostlist_count(hl);
 		buf = hostlist_ranged_string_xmalloc(hl);
+#ifdef __METASTACK_BUG_SRUN_REDUNDANT_LOG
+		verbose("ROUTE: split_hostlist: hl=%s tree_width %u",
+			buf, tree_width);
+#else
 		info("ROUTE: split_hostlist: hl=%s tree_width %u",
 		     buf, tree_width);
+#endif
 		xfree(buf);
 	}
 
@@ -246,9 +251,15 @@ extern int topology_g_split_hostlist(hostlist_t *hl,
 			nnodex += hostlist_count((*sp_hl)[j]);
 		}
 		if (nnodex != nnodes) {	/* CLANG false positive */
+#ifdef __METASTACK_BUG_SRUN_REDUNDANT_LOG
+			verbose("ROUTE: number of nodes in split lists (%d)"
+				" is not equal to number in input list (%d)",
+				nnodex, nnodes);
+#else
 			info("ROUTE: number of nodes in split lists (%d)"
-			     " is not equal to number in input list (%d)",
-			     nnodex, nnodes);
+				" is not equal to number in input list (%d)",
+				nnodex, nnodes);
+#endif
 		}
 	}
 

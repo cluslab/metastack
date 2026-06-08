@@ -43,13 +43,288 @@
 #include "src/common/slurm_resource_info.h"
 #include "src/scontrol/scontrol.h"
 
+#ifdef __METASTACK_OPT_SCPNTROL_API
+#include <ctype.h>
+
+#define PART_ACL_LIST_CHAR_OK		0
+#define PART_ACL_LIST_CHAR_QUOTE	1
+#define PART_ACL_LIST_CHAR_EQUALS	2
+#define PART_ACL_UTF8_CURLY_QUOTE_LEN	3
+
+/*
+ * UTF-8 curly quotes (3 bytes each), often pasted from word processors
+ * instead of ASCII ' (0x27) and " (0x22):
+ *
+ *   \xe2\x80\x9c  U+201C  “  left double quotation mark
+ *   \xe2\x80\x9d  U+201D  ”  right double quotation mark
+ *   \xe2\x80\x98  U+2018  ‘  left single quotation mark
+ *   \xe2\x80\x99  U+2019  ’  right single quotation mark
+ */
+#define PART_ACL_UTF8_LEFT_DOUBLE_QUOTE	"\xe2\x80\x9c"	/* U+201C “ */
+#define PART_ACL_UTF8_RIGHT_DOUBLE_QUOTE	"\xe2\x80\x9d"	/* U+201D ” */
+#define PART_ACL_UTF8_LEFT_SINGLE_QUOTE	"\xe2\x80\x98"	/* U+2018 ‘ */
+#define PART_ACL_UTF8_RIGHT_SINGLE_QUOTE	"\xe2\x80\x99"	/* U+2019 ’ */
+
+#define PART_ACL_SEEN_ALLOW_ACCOUNTS (1 << 0)
+#define PART_ACL_SEEN_ALLOW_GROUPS   (1 << 1)
+#define PART_ACL_SEEN_ALLOW_QOS      (1 << 2)
+#define PART_ACL_SEEN_DENY_ACCOUNTS  (1 << 3)
+#define PART_ACL_SEEN_DENY_QOS       (1 << 4)
+
+typedef struct {
+	const char *name;
+	int len;
+} _part_acl_reserved_t;
+
+static const _part_acl_reserved_t _part_acl_reserved[] = {
+	{ "ALL",   3 },
+	{ "NULL",  4 },
+	{ "ROOT",  4 },
+	{ "ADMIN", 5 },
+	{ NULL,    0 }
+};
+
+static bool _part_acl_token_is_reserved(const char *tok, int len)
+{
+	const _part_acl_reserved_t *r;
+
+	for (r = _part_acl_reserved; r->name; r++) {
+		if ((len == r->len) && !xstrncasecmp(tok, r->name, len))
+			return true;
+	}
+	return false;
+}
+
+static int _part_acl_check_token(const char *tok, int len, const char *tag,
+				 int taglen, char op)
+{
+	if (len <= 0) {
+		error("Invalid syntax for %.*s: list contains an empty "
+		      "token. See scontrol(1).", taglen, tag);
+		return SLURM_ERROR;
+	}
+	if (_part_acl_token_is_reserved(tok, len)) {
+		error("Invalid syntax for %.*s: token '%.*s' is a reserved "
+		      "name (ALL, NULL, ROOT, ADMIN) and is not allowed in "
+		      "'%.*s%c=' lists. See scontrol(1).",
+		      taglen, tag, len, tok, taglen, tag, op);
+		return SLURM_ERROR;
+	}
+	return SLURM_SUCCESS;
+}
+
+
+static bool _part_acl_is_utf8_curly_quote(const unsigned char *s)
+{
+	if (!s[0] || !s[1] || !s[2])
+		return false;
+
+	return !xstrncmp((const char *) s, PART_ACL_UTF8_LEFT_DOUBLE_QUOTE,
+			 PART_ACL_UTF8_CURLY_QUOTE_LEN) ||
+	       !xstrncmp((const char *) s, PART_ACL_UTF8_RIGHT_DOUBLE_QUOTE,
+			 PART_ACL_UTF8_CURLY_QUOTE_LEN) ||
+	       !xstrncmp((const char *) s, PART_ACL_UTF8_LEFT_SINGLE_QUOTE,
+			 PART_ACL_UTF8_CURLY_QUOTE_LEN) ||
+	       !xstrncmp((const char *) s, PART_ACL_UTF8_RIGHT_SINGLE_QUOTE,
+			 PART_ACL_UTF8_CURLY_QUOTE_LEN);
+}
+
+/*
+ * Check if *p points to a disallowed character in an incremental ACL list.
+ * Returns PART_ACL_LIST_CHAR_QUOTE, PART_ACL_LIST_CHAR_EQUALS, or OK.
+ * On UTF-8 curly quote match, advance *p past the full sequence.
+ */
+static int _part_acl_check_disallowed_list_char(const char **p)
+{
+	const unsigned char *s = (const unsigned char *) *p;
+
+	if (*s == '=')
+		return PART_ACL_LIST_CHAR_EQUALS;
+
+	if ((*s == '\'') || (*s == '"'))
+		return PART_ACL_LIST_CHAR_QUOTE;
+
+	if (_part_acl_is_utf8_curly_quote(s)) {
+		*p += 2;
+		return PART_ACL_LIST_CHAR_QUOTE;
+	}
+
+	return PART_ACL_LIST_CHAR_OK;
+}
+
+/*
+ * Validate comma-separated list for Allow* and Deny* += / -= on scontrol.
+ */
+static int _validate_part_acl_csv_list(const char *list, const char *tag,
+				       int taglen, char op)
+{
+	char *compact = NULL;
+	const char *p;
+	int clen = 0;
+	int token_start = -1;
+
+	if (!list) {
+		error("Invalid syntax for %.*s: '%.*s%c=' is missing a list "
+		      "after '='. See scontrol(1).",
+		      taglen, tag, taglen, tag, op);
+		goto fail;
+	}
+
+	for (p = list; *p; p++) {
+		int bad_char = _part_acl_check_disallowed_list_char(&p);
+
+		if (bad_char == PART_ACL_LIST_CHAR_QUOTE) {
+			error("Invalid syntax for %.*s: list must not contain "
+			      "quotation marks (' \" \" ' '). "
+			      "See scontrol(1).", taglen, tag);
+			goto fail;
+		}
+		if (bad_char == PART_ACL_LIST_CHAR_EQUALS) {
+			error("Invalid syntax for %.*s: list must not contain "
+			      "equals sign (=). See scontrol(1).",
+			      taglen, tag);
+			goto fail;
+		}
+		if (isspace((unsigned char) *p))
+			continue;
+
+		if (*p == ',') {
+			if (token_start < 0) {
+				error("Invalid syntax for %.*s: list must not "
+				      "have a leading or consecutive comma. "
+				      "See scontrol(1).", taglen, tag);
+				goto fail;
+			}
+			if (_part_acl_check_token(compact + token_start,
+						  clen - token_start,
+						  tag, taglen, op) !=
+			    SLURM_SUCCESS)
+				goto fail;
+			token_start = -1;
+			continue;
+		}
+
+		if (token_start < 0)
+			token_start = clen;
+		xstrcatchar(compact, *p);
+		clen++;
+	}
+
+	if (!list[0]) {
+		error("Invalid syntax for %.*s: '%.*s%c=' is missing a list "
+		      "after '='. See scontrol(1).",
+		      taglen, tag, taglen, tag, op);
+		goto fail;
+	}
+	if (clen == 0) {
+		error("Invalid syntax for %.*s: '%.*s%c=' contains only "
+		      "whitespace. See scontrol(1).",
+		      taglen, tag, taglen, tag, op);
+		goto fail;
+	}
+	if (token_start < 0) {
+		error("Invalid syntax for %.*s: list must not end with a "
+		      "comma. See scontrol(1).", taglen, tag);
+		goto fail;
+	}
+	if (_part_acl_check_token(compact + token_start, clen - token_start,
+				  tag, taglen, op) != SLURM_SUCCESS)
+		goto fail;
+
+	xfree(compact);
+	return SLURM_SUCCESS;
+
+fail:
+	xfree(compact);
+	return SLURM_ERROR;
+}
+
+/*
+ * Validate Metastack incremental ACL syntax on the scontrol client.
+ * Only Allow*+=tok,... and Allow*-=tok,... (and Deny*) are accepted.
+ */
+static int _check_part_acl_incremental_syntax(const char *tag, int taglen,
+					      const char *val, char *add_info)
+{
+	const char *list;
+
+	if (add_info) {
+		if (((add_info[0] != '+') && (add_info[0] != '-')) ||
+		    (add_info[1] != '=')) {
+			error("Invalid syntax for %.*s: use '%.*s=<list>', '%.*s+=<list>', "
+				"or '%.*s-=<list>'. See scontrol(1).",
+				taglen, tag, taglen, tag, taglen, tag, taglen, tag);
+			return SLURM_ERROR;
+		}
+
+		list = add_info + 2;
+		if (_validate_part_acl_csv_list(list, tag, taglen, add_info[0])
+		    != SLURM_SUCCESS)
+			return SLURM_ERROR;
+
+		return SLURM_SUCCESS;
+	}
+
+	if (val && ((val[0] == '+') || (val[0] == '-') || (val[0] == '='))) {
+		error("Invalid syntax for %.*s: use '%.*s=<list>', '%.*s+=<list>', "
+		      "or '%.*s-=<list>'. See scontrol(1).",
+		      taglen, tag, taglen, tag, taglen, tag, taglen, tag);
+		return SLURM_ERROR;
+	}
+
+	return SLURM_SUCCESS;
+}
+
+/*
+ * Reject duplicate Allow/Deny ACL options (=, +=, -=) in one update.
+ */
+static int _reject_duplicate_part_acl(uint16_t *seen, uint16_t bit,
+				      const char *field_name,
+				      const char *argv_entry)
+{
+	if (*seen & bit) {
+		error("Duplicate %s in partition update: use only one of "
+		      "'%s=<list>', '%s+=<list>', or '%s-=<list>' per "
+		      "scontrol update command (duplicate: %s). "
+		      "See scontrol(1).",
+		      field_name, field_name, field_name, field_name,
+		      argv_entry);
+		return SLURM_ERROR;
+	}
+	*seen |= bit;
+	return SLURM_SUCCESS;
+}
+
+/*
+ * True if tag/taglen matches an Allow/Deny ACL field name (same rules as
+ * the AllowAccounts / DenyAccounts / ... branches below).
+ */
+ static bool _part_acl_field_tag_matches(const char *tag, int taglen)
+ {
+	 if (!xstrncasecmp(tag, "AllowGroups", MAX(taglen, 6)))
+		 return true;
+	 if (!xstrncasecmp(tag, "AllowAccounts", MAX(taglen, 6)))
+		 return true;
+	 if (!xstrncasecmp(tag, "AllowQos", MAX(taglen, 6)))
+		 return true;
+	 if (!xstrncasecmp(tag, "DenyAccounts", MAX(taglen, 5)))
+		 return true;
+	 if (!xstrncasecmp(tag, "DenyQos", MAX(taglen, 5)))
+		 return true;
+	 return false;
+ }
+#endif
+
 extern int
 scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			     update_part_msg_t *part_msg_ptr)
 {
-	int i, min, max;
-	char *tag, *val;
-	int taglen, vallen;
+	int i = 0, min = 0, max = 0;
+	char *tag = NULL, *val = NULL;
+	int taglen = 0, vallen = 0;
+#ifdef __METASTACK_OPT_SCPNTROL_API
+	uint16_t part_acl_seen = 0;
+#endif
 
 #ifdef __METASTACK_PART_PRIORITY_WEIGHT
 	bool prio_mul = false, with_slurmdbd = false;
@@ -78,20 +353,50 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 
 	for (i = 0; i < argc; i++) {
 		char plus_minus = '\0';
+#ifdef __METASTACK_OPT_SCPNTROL_API
+		char *add_info = NULL;
+#endif
 		tag = argv[i];
 		val = strchr(argv[i], '=');
 		if (val) {
 			taglen = val - argv[i];
 			if ((val[-1] == '+') || (val[-1] == '-')) {
 				plus_minus = val[-1];
+#ifdef __METASTACK_OPT_SCPNTROL_API
+				add_info = val - 1;
+#endif
 				taglen--;
 			}
 			val++;
 			vallen = strlen(val);
 		} else {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			char *add_val = strchr(argv[i], '+');
+			char *remove_val = strchr(argv[i], '-');
+			if (!add_val && !remove_val) {
+				exit_code = 1;
+				error("Invalid input: %s  Request aborted", argv[i]);
+				return SLURM_ERROR;
+			}
+			if (add_val && remove_val)
+				val = (add_val < remove_val) ? add_val : remove_val;
+			else
+				val = add_val ? add_val : remove_val;
+			taglen = val - argv[i];
+			add_info = val;
+			val++;
+			vallen = strlen(val);
+			plus_minus = add_info[0];
+			if (!_part_acl_field_tag_matches(tag, taglen)) {
+				exit_code = 1;
+				error("Invalid input: %s  Request aborted", argv[i]);
+				return SLURM_ERROR;
+			}
+#else
 			exit_code = 1;
 			error("Invalid input: %s  Request aborted", argv[i]);
 			return SLURM_ERROR;
+#endif
 		}
 
 		if (xstrncasecmp(tag, "PartitionName", MAX(taglen, 2)) == 0) {
@@ -595,23 +900,78 @@ scontrol_parse_part_options (int argc, char **argv, int *update_cnt_ptr,
 			(*update_cnt_ptr)++;
 		}
 		else if (!xstrncasecmp(tag, "AllowGroups", MAX(taglen, 6))) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			if (_check_part_acl_incremental_syntax(tag, taglen, val,
+							      add_info))
+				return SLURM_ERROR;
+			if (_reject_duplicate_part_acl(&part_acl_seen,
+					PART_ACL_SEEN_ALLOW_GROUPS,
+					"AllowGroups", argv[i]))
+				return SLURM_ERROR;
+			part_msg_ptr->allow_groups = add_info ? add_info : val;
+#else
 			part_msg_ptr->allow_groups = val;
+#endif
 			(*update_cnt_ptr)++;
 		}
 		else if (!xstrncasecmp(tag, "AllowAccounts", MAX(taglen, 6))) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			if (_check_part_acl_incremental_syntax(tag, taglen, val,
+							      add_info))
+				return SLURM_ERROR;
+			if (_reject_duplicate_part_acl(&part_acl_seen,
+					PART_ACL_SEEN_ALLOW_ACCOUNTS,
+					"AllowAccounts", argv[i]))
+				return SLURM_ERROR;
+			part_msg_ptr->allow_accounts = add_info ? add_info : val;
+#else
 			part_msg_ptr->allow_accounts = val;
+#endif
 			(*update_cnt_ptr)++;
 		}
 		else if (!xstrncasecmp(tag, "AllowQos", MAX(taglen, 6))) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			if (_check_part_acl_incremental_syntax(tag, taglen, val,
+							      add_info))
+				return SLURM_ERROR;
+			if (_reject_duplicate_part_acl(&part_acl_seen,
+					PART_ACL_SEEN_ALLOW_QOS,
+					"AllowQos", argv[i]))
+				return SLURM_ERROR;
+			part_msg_ptr->allow_qos = add_info ? add_info : val;
+#else
 			part_msg_ptr->allow_qos = val;
+#endif
 			(*update_cnt_ptr)++;
 		}
 		else if (!xstrncasecmp(tag, "DenyAccounts", MAX(taglen, 5))) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			if (_check_part_acl_incremental_syntax(tag, taglen, val,
+							      add_info))
+				return SLURM_ERROR;
+			if (_reject_duplicate_part_acl(&part_acl_seen,
+					PART_ACL_SEEN_DENY_ACCOUNTS,
+					"DenyAccounts", argv[i]))
+				return SLURM_ERROR;
+			part_msg_ptr->deny_accounts = add_info ? add_info : val;
+#else
 			part_msg_ptr->deny_accounts = val;
+#endif
 			(*update_cnt_ptr)++;
 		}
 		else if (!xstrncasecmp(tag, "DenyQos", MAX(taglen, 5))) {
+#ifdef __METASTACK_OPT_SCPNTROL_API
+			if (_check_part_acl_incremental_syntax(tag, taglen, val,
+							      add_info))
+				return SLURM_ERROR;
+			if (_reject_duplicate_part_acl(&part_acl_seen,
+					PART_ACL_SEEN_DENY_QOS,
+					"DenyQos", argv[i]))
+				return SLURM_ERROR;
+			part_msg_ptr->deny_qos = add_info ? add_info : val;
+#else
 			part_msg_ptr->deny_qos = val;
+#endif
 			(*update_cnt_ptr)++;
 		}
 		else if (!xstrncasecmp(tag, "AllocNodes", MAX(taglen, 6))) {

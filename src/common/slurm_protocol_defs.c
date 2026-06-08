@@ -4180,7 +4180,10 @@ extern void slurm_free_job_step_create_response_msg(
 			select_g_select_jobinfo_free(msg->select_jobinfo);
 		if (msg->switch_step)
 			switch_g_free_stepinfo(msg->switch_step);
-
+#ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
+		xfree(msg->watch_dog);
+		xfree(msg->watch_dog_script);
+#endif
 		xfree(msg);
 	}
 

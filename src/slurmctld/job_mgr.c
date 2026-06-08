@@ -15257,6 +15257,22 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_desc,
 			 */
 			job_ptr->limit_set.time = acct_policy_limit_set.time;
 			update_accounting = true;
+#ifdef __METASTACK_NEW_TIME_PREDICT
+			// fix bug 124189
+			if ((IS_JOB_RUNNING(job_ptr) ||
+			     IS_JOB_SUSPENDED(job_ptr)) &&
+			    (job_ptr->bit_flags & STEPMGR_ENABLED) &&
+			    job_ptr->batch_host && job_ptr->batch_host[0]) {
+				step_update_request_msg_t step_msg = {
+					.job_id = job_ptr->job_id,
+					.step_id = NO_VAL,
+					.time_limit = job_ptr->time_limit,
+				};
+				verbose("%s: update_step sync %pJ timelimit=%u",
+				  	__func__, job_ptr, job_ptr->time_limit);
+				(void) update_step(&step_msg, uid);
+			}
+#endif
 		} else if (IS_JOB_PENDING(job_ptr) && job_ptr->part_ptr &&
 			   (job_ptr->part_ptr->max_time >=
 			    job_desc->time_limit)) {
@@ -15313,6 +15329,20 @@ static int _update_job(job_record_t *job_ptr, job_desc_msg_t *job_desc,
 			 * since if set by a super user it be set correctly */
 			job_ptr->limit_set.time = acct_policy_limit_set.time;
 			update_accounting = true;
+#ifdef __METASTACK_NEW_TIME_PREDICT
+			// fix bug 124189
+			if ((job_ptr->bit_flags & STEPMGR_ENABLED) &&
+			    job_ptr->batch_host && job_ptr->batch_host[0]) {
+				step_update_request_msg_t step_msg = {
+					.job_id = job_ptr->job_id,
+					.step_id = NO_VAL,
+					.time_limit = job_ptr->time_limit,
+				};
+				verbose("%s: update_step sync %pJ timelimit=%u",
+				  	__func__, job_ptr, job_ptr->time_limit);
+				(void) update_step(&step_msg, uid);
+			}
+#endif
 		} else {
 			sched_info("%s: Attempt to extend end time for %pJ",
 				   __func__, job_ptr);
@@ -18001,6 +18031,19 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 		return false;
 	}
 
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+	/*
+	 * can_para_epilog is only true when epilog RPCs are dispatched to the
+	 * async worker pool (para_epilog + rpc queue). Otherwise different
+	 * nodes of the same job could run job_epilog_complete concurrently, 
+	 * which would make any modification to elements in the job_ptr for 
+	 * that job unsafe.
+	 */
+	if (can_para_epilog) {
+		slurm_mutex_lock(&job_ptr->job_sched_lock);
+	}
+#endif
+
 #ifdef HAVE_FRONT_END
 	xassert(job_ptr->batch_host);
 	/*
@@ -18082,9 +18125,20 @@ extern bool job_epilog_complete(uint32_t job_id, char *node_name,
 	xfree(job_ptr->nodes_completing);
 	if (!IS_JOB_COMPLETING(job_ptr)) {	/* COMPLETED */
 		batch_requeue_fini(job_ptr);
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (can_para_epilog) {
+			slurm_mutex_unlock(&job_ptr->job_sched_lock);
+		}
+#endif
 		return true;
-	} else
+	} else {
+#ifdef __METASTACK_OPT_HIGH_THROUGHPUT_EPILOG_PARALLEL
+		if (can_para_epilog) {
+			slurm_mutex_unlock(&job_ptr->job_sched_lock);
+		}
+#endif
 		return false;
+	}
 }
 
 /* Complete a batch job requeue logic after all steps complete so that

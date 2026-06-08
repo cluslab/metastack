@@ -257,6 +257,11 @@ extern int stepmgr_get_job_sbcast_cred_msg(
 extern resource_allocation_response_msg_t *build_job_info_resp(
 	job_record_t *job_ptr);
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+//fix bug 123323
+void stepmgr_job_snapshot_normalize_hard_end(job_record_t *job_ptr);
+#endif
+
 #ifdef __METASTACK_BUG_STEPMGR_STEP_STUCK
 extern void stepmgr_auto_heal_node(job_record_t *job_ptr, char *node_name);
 #endif

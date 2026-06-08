@@ -333,7 +333,9 @@ extern jobacctinfo_t *jobacct_gather_stat_task(pid_t pid, bool update_data);
  * RET ptr (must free jobacctinfo_t if not NULL)
  */
 extern jobacctinfo_t *jobacct_gather_remove_task(pid_t pid);
-
+#ifdef __METASTACK_BUG_EXTERN_ORPHAN_LOCK_CONTENTION
+extern jobacctinfo_t *jobacct_gather_remove_task_extern(pid_t pid);
+#endif
 extern int jobacct_gather_set_proctrack_container_id(uint64_t id);
 extern int jobacct_gather_set_mem_limit(slurm_step_id_t *step_id,
 					uint64_t mem_limit);

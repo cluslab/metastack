@@ -999,6 +999,10 @@ _init_from_slurmd(int sock, char **argv, slurm_addr_t **_cli,
 				       job_step_ptr->node_cnt *
 				       sizeof(slurm_addr_t));
 			}
+#ifdef __METASTACK_NEW_TIME_PREDICT
+			// fix bug 123323
+			stepmgr_job_snapshot_normalize_hard_end(job_step_ptr);
+#endif
 		}
 
 		break;
