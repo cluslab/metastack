@@ -341,9 +341,9 @@ void print_max_min_detail(uint32_t step_id)
 			printf("Current mem utilization of job steps please waitting\n");		
 		}
 		if(print_resource.all_task_vmem_tmp_max >= 0 ) {
-			printf("Maximum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp);
-			printf("Minimum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_max);
-			printf("Current vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_min);
+			printf("Maximum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_max);
+			printf("Minimum vmem utilization of job steps    %s  \n", vmem_outbuf_tmp_min);
+			printf("Current vmem utilization of job steps    %s  \n", vmem_outbuf_tmp);
 		} else {
 			printf("Maximum vmem utilization of job steps please waitting \n");
 			printf("Minimum vmem utilization of job steps please waitting\n");

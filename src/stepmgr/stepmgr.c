@@ -3865,6 +3865,39 @@ static int _switch_setup(step_record_t *step_ptr)
 	return SLURM_SUCCESS;
 }
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+/*
+ * fix bug 123323. slurmstepd holds a launch snapshot of job_record_t; predict_job + time_min
+ * may leave soft end_time. Set hard wall once at batch stepmgr init so sbcast,
+ * srun timeout, and gates see start_time + time_limit (unless already equal).
+ */
+void stepmgr_job_snapshot_normalize_hard_end(job_record_t *job_ptr)
+{
+	time_t hard_end;
+
+	if (!job_ptr || running_in_slurmctld()) {
+		return;
+	}
+	if (!(job_ptr->bit_flags & STEPMGR_ENABLED)) {
+		return;
+	}
+	if (!job_ptr->predict_job || !job_ptr->time_min) {
+		return;
+	}
+	if (job_ptr->time_limit == INFINITE || !job_ptr->start_time) {
+		return;
+	}
+	hard_end = job_ptr->start_time + (job_ptr->time_limit * 60);
+	if (job_ptr->end_time == hard_end && job_ptr->end_time_exp == hard_end) {
+		return;
+	}
+	debug("STEPMGR: updating %pJ endtime to hard timelimit",
+	     job_ptr);
+	job_ptr->end_time = hard_end;
+	job_ptr->end_time_exp = hard_end;
+}
+#endif
+
 #ifdef __METASTACK_NEW_CUSTOM_EXCEPTION
 extern int step_create(job_record_t *job_ptr,
 				job_step_create_request_msg_t *step_specs,
@@ -5218,6 +5251,43 @@ extern int update_step(step_update_request_msg_t *req, uid_t uid)
 	 * any steps with any time limit
 	 */
 	if (req->step_id == NO_VAL) {
+#ifdef __METASTACK_NEW_TIME_PREDICT
+		/*
+		 * fix bug 124189. Wildcard step update: refresh job_record time fields on this
+		 * side (ctld job table and batch-host stepmgr snapshot) so
+		 * they stay in sync when job TimeLimit / end time is changed
+		 * administratively. Step records use _update_step below; job_ptr
+		 * must mirror job_mgr.c logic for running/suspended jobs.
+		 */
+		if (req->time_limit &&
+		    (req->time_limit != job_ptr->time_limit)) {
+			time_t now = time(NULL);
+			time_t old_time = job_ptr->time_limit;
+
+			job_ptr->time_limit = req->time_limit;
+			if (IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr)) {
+				if (!job_ptr->preempt_time) {
+					if (job_ptr->time_limit == INFINITE) {
+						job_ptr->end_time = now +
+							(365 * 24 * 60 * 60);
+					} else {
+						if (old_time == INFINITE)
+							old_time = (365 * 24 * 60);
+						job_ptr->end_time =
+							job_ptr->end_time +
+							((job_ptr->time_limit -
+							  old_time) * 60);
+					}
+					debug("STEPMGR: Will update %pJ time limit to %u",
+					     job_ptr, req->time_limit);
+					if (job_ptr->end_time < now)
+						job_ptr->end_time = now;
+					job_ptr->end_time_exp =
+						job_ptr->end_time;
+				}
+			}
+		}
+#endif
 		args.time_limit = req->time_limit;
 		list_for_each(job_ptr->step_list, _update_step, &args);
 	} else {

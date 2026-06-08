@@ -611,6 +611,38 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_SPREAD_JOB_CRASH_CTLD
 #endif
 
+// Fixed bug 121740. Extern orphan path: skip final jobacct _poll_data (task_list_lock contention).
+#ifndef __METASTACK_BUG_EXTERN_ORPHAN_LOCK_CONTENTION
+#define __METASTACK_BUG_EXTERN_ORPHAN_LOCK_CONTENTION
+#endif
+
+// Fixed Bug 117103. The stderr log of the assignment contains redundant information.
+#ifndef __METASTACK_BUG_SRUN_REDUNDANT_LOG
+#define __METASTACK_BUG_SRUN_REDUNDANT_LOG
+#endif
+
+// Fixed Bug 123064. Dynamic partition creation without PriorityJobFactor causes incorrect partition priority calculation. */
+#ifndef __METASTACK_BUG_PART_CREATE_NORM_PRIORITY
+#define __METASTACK_BUG_PART_CREATE_NORM_PRIORITY
+#endif
+
+/*
+ * scontrol update partition: incremental "+="/"-=" semantics for partition
+ * ACL fields (AllowAccounts/AllowGroups/AllowQOS/DenyAccounts/DenyQOS).
+ *
+ * When defined, "scontrol update PartitionName=<part> <FIELD>+=tok1,tok2"
+ * appends tokens to the existing list, "<FIELD>-=tok1,tok2" removes only
+ * the listed tokens, and "<FIELD>=..." retains its original full-list
+ * replacement semantics. Validation, logging and rebuild of the cached
+ * lookup lists (allow_accts_list, deny_accts_list, allow_qos_bitstr,
+ * deny_qos_bitstr, allow_uids) are performed by slurmctld so that the new
+ * ACL takes effect for scheduling immediately.
+ */
+#ifndef __METASTACK_OPT_SCPNTROL_API
+#define __METASTACK_OPT_SCPNTROL_API
+#endif
+
+
 /*****************************************************************************\
  *	DEFINITIONS FOR POSIX VALUES
 \*****************************************************************************/

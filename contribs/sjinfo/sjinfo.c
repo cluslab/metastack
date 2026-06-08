@@ -3926,7 +3926,7 @@ int parse_command_and_query(int argc, char **argv, slurm_influxdb *data)
 
         const char and[] = " and ";
         const char or[] = " or ";
-        const char prefix[] = "type = ";
+        const char prefix[] = "\"type\" = ";
         const char delimiters[] = ",";
         if(events == NULL) {
             events = xmalloc(strlen(deauft_events)+1);

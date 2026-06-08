@@ -1486,12 +1486,16 @@ static int _try_to_reconfig(void)
 
 	if (pipe(to_parent) < 0) {
 		error("%s: pipe() failed: %m", __func__);
+		env_array_free(child_env);
 		return SLURM_ERROR;
 	}
 
 	setenvf(&child_env, "SLURMCTLD_RECONF_PARENT_FD", "%d", to_parent[1]);
 	if ((pid = fork()) < 0) {
 		error("%s: fork() failed, cannot reconfigure.", __func__);
+		(void) close(to_parent[1]);
+		close(to_parent[0]);
+		env_array_free(child_env);
 		return SLURM_ERROR;
 	} else if (pid > 0) {
 		pid_t grandchild_pid;
@@ -1513,6 +1517,8 @@ static int _try_to_reconfig(void)
 			waitpid(pid, &rc, 0);
 			xsystemd_change_mainpid(grandchild_pid);
 		}
+		close(to_parent[0]);
+		env_array_free(child_env);
 		return SLURM_SUCCESS;
 
 rwfail:
