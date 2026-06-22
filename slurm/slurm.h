@@ -3120,8 +3120,8 @@ typedef struct job_defaults {
 #endif
 
 #ifdef __METASTACK_NEW_PART_LLS
-#define PART_METAFLAG_LLS 	0x0003  /* Set if least loaded socket selection is desired */
-#define PART_METAFLAG_LLS_CLR 	0x0300  /* Clear LLS partition flag */
+#define PART_METAFLAG_LLS 	0x0004  /* Set if least loaded socket selection is desired */
+#define PART_METAFLAG_LLS_CLR 	0x0400  /* Clear LLS partition flag */
 #endif
 
 #ifdef __METASTACK_NEW_HETPART_SUPPORT
