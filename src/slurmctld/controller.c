@@ -2866,7 +2866,12 @@ static void *_slurmctld_background(void *no_data)
 		slurm_mutex_lock(&shutdown_mutex);
 		if (!slurmctld_config.shutdown_time) {
 			struct timespec ts = {0, 0};
+#ifdef __METASTACK_BUG_CTLD_BACKGROUND_WAIT_ACCURACY
+			clock_gettime(CLOCK_REALTIME, &ts);
+			ts.tv_sec += 1;
+#else
 			ts.tv_sec = time(NULL) + 1;
+#endif
 			slurm_cond_timedwait(&shutdown_cond, &shutdown_mutex,
 					     &ts);
 		}

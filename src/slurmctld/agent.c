@@ -289,18 +289,20 @@ static char **rpc_host_list = NULL;
 static time_t cache_build_time = 0;
 
 #ifdef __METASTACK_OPT_HIGH_THROUGHPUT_AGENT_THREAD_POOL
-
 typedef struct {
-	pthread_t thread;
+	pthread_t *workers;
+	int worker_count;
+
+	/* shared task queue: all worker threads compete for tasks from
+	 * this single queue instead of each worker owning a private queue.
+	 * This avoids head-of-line blocking: a worker stuck processing a
+	 * slow RPC (e.g. SRUN_TIMEOUT against an unreachable node) will not
+	 * block any other task, since tasks are never bound to a specific
+	 * worker until that worker actually pops them off the queue. */
+	List task_queue;
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
-	List task_queue;
 	bool stop;
-} agent_worker_t;
-
-typedef struct {
-	agent_worker_t *workers;
-	int next_worker;
 } agent_thread_pool_t;
 
 
@@ -311,41 +313,26 @@ static agent_thread_pool_t agent_pool;
 static void agent_pool_init(void);
 static void agent_pool_fini(void);
 static void agent_enqueue(agent_arg_t *agent_arg_ptr);
-static void *agent_worker(void *arg);
 
 static void agent_enqueue(agent_arg_t *agent_arg_ptr)
 {
-	int worker_index = 0;
-	agent_worker_t *worker = NULL;
-
 	if (!enable_agent_pool || agent_arg_ptr == NULL) {
 		return;
 	}
 
-	/* get worker index */
-	worker_index = agent_pool.next_worker++ % agent_thread_pool_size;
-	if (agent_pool.next_worker >= agent_thread_pool_size) {
-		agent_pool.next_worker = 0;
-	}
-
-	/* get worker */
-	if (worker_index >= agent_thread_pool_size) {
-		error("%s: invalid worker index %d", __func__, worker_index);
+	/* Push onto the shared queue. Any idle worker thread will pick it
+	 * up on its own; no per-worker routing decision is needed here,
+	 * which also means a busy/stuck worker can never be selected. */
+	slurm_mutex_lock(&agent_pool.mutex);
+	if (agent_pool.stop || !agent_pool.task_queue) {
+		slurm_mutex_unlock(&agent_pool.mutex);
 		purge_agent_args(agent_arg_ptr);
 		return;
 	}
-
-	if (!(worker = &agent_pool.workers[worker_index])) {
-		error("%s: invalid worker %d", __func__, worker_index);
-		purge_agent_args(agent_arg_ptr);
-		return;
-	}
-
 	/* enqueue agent task */
-	slurm_mutex_lock(&worker->mutex);
-	list_append(worker->task_queue, agent_arg_ptr);
-	slurm_cond_signal(&worker->cond);
-	slurm_mutex_unlock(&worker->mutex);
+	list_append(agent_pool.task_queue, agent_arg_ptr);
+	slurm_cond_signal(&agent_pool.cond);
+	slurm_mutex_unlock(&agent_pool.mutex);
 }
 
 /*
@@ -355,7 +342,7 @@ static void agent_enqueue(agent_arg_t *agent_arg_ptr)
  * IN pointer to agent_arg_t, which is xfree'd (including hostlist,
  *	and msg_args) upon completion
  */
-void *agent_worker(void *args)
+static void *agent_worker(void *args)
 {
 	int i, delay;
 	pthread_t thread_wdog = 0;
@@ -368,7 +355,6 @@ void *agent_worker(void *args)
 	int rpc_thread_cnt;
 	static time_t sched_update = 0;
 	static bool reboot_from_ctld = false;
-	agent_worker_t *worker = (agent_worker_t *)args;
 	struct timespec ts = {0, 0};
 
 #if HAVE_SYS_PRCTL_H
@@ -378,19 +364,21 @@ void *agent_worker(void *args)
 #endif
 
 	while (1) {
-		slurm_mutex_lock(&worker->mutex);
-		while (!worker->stop && !list_count(worker->task_queue)) {
+		slurm_mutex_lock(&agent_pool.mutex);
+		while (!agent_pool.stop && !list_count(agent_pool.task_queue)) {
 			ts.tv_sec = time(NULL) + AGENT_SHUTDOWN_WAIT;
-            pthread_cond_timedwait(&worker->cond, &worker->mutex, &ts);
+			pthread_cond_timedwait(&agent_pool.cond, &agent_pool.mutex, &ts);
 		}
 
-		if (worker->stop && !list_count(worker->task_queue)) {
-			slurm_mutex_unlock(&worker->mutex);
+		if (agent_pool.stop && !list_count(agent_pool.task_queue)) {
+			slurm_mutex_unlock(&agent_pool.mutex);
 			break;
 		}
 
-		agent_arg_ptr = list_pop(worker->task_queue);
-		slurm_mutex_unlock(&worker->mutex);		
+		agent_arg_ptr = list_pop(agent_pool.task_queue);
+		slurm_mutex_unlock(&agent_pool.mutex);
+
+		spawn_retry_agent = false;
 
 		log_flag(AGENT, "%s: Agent_cnt=%d agent_thread_cnt=%d with msg_type=%s retry_list_size=%d",
 			__func__, agent_cnt, agent_thread_cnt,
@@ -431,6 +419,16 @@ void *agent_worker(void *args)
 		/* start the watchdog thread */
 		slurm_thread_create(&thread_wdog, _wdog, agent_info_ptr);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+		log_flag(AGENT, "%s: New agent thread_count:%d threads_active:%d retry:%c get_reply:%c r_uid:%u msg_type:%s protocol_version:%hu agent_arg=%p",
+			__func__, agent_info_ptr->thread_count,
+			agent_info_ptr->threads_active,
+			agent_info_ptr->retry ? 'T' : 'F',
+			agent_info_ptr->get_reply ? 'T' : 'F',
+			agent_info_ptr->r_uid,
+			rpc_num2string(agent_arg_ptr->msg_type),
+			agent_info_ptr->protocol_version, (void *) agent_arg_ptr);
+#else
 		log_flag(AGENT, "%s: New agent thread_count:%d threads_active:%d retry:%c get_reply:%c r_uid:%u msg_type:%s protocol_version:%hu",
 			__func__, agent_info_ptr->thread_count,
 			agent_info_ptr->threads_active,
@@ -439,6 +437,7 @@ void *agent_worker(void *args)
 			agent_info_ptr->r_uid,
 			rpc_num2string(agent_arg_ptr->msg_type),
 			agent_info_ptr->protocol_version);
+#endif
 
 		/* start all the other threads (up to AGENT_THREAD_COUNT active) */
 		for (i = 0; i < agent_info_ptr->thread_count; i++) {
@@ -481,6 +480,16 @@ void *agent_worker(void *args)
 
 		slurm_mutex_unlock(&agent_info_ptr->thread_mutex);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+		delay = (int) difftime(time(NULL), begin_time);
+		log_flag(AGENT, "%s: end agent thread_count:%d threads_active:%d retry:%c get_reply:%c msg_type:%s protocol_version:%hu agent_arg=%p run_time=%d",
+			__func__, agent_info_ptr->thread_count,
+			agent_info_ptr->threads_active,
+			agent_info_ptr->retry ? 'T' : 'F',
+			agent_info_ptr->get_reply ? 'T' : 'F',
+			rpc_num2string(agent_arg_ptr->msg_type),
+			agent_info_ptr->protocol_version, (void *) agent_arg_ptr, delay);
+#else
 		log_flag(AGENT, "%s: end agent thread_count:%d threads_active:%d retry:%c get_reply:%c msg_type:%s protocol_version:%hu",
 			__func__, agent_info_ptr->thread_count,
 			agent_info_ptr->threads_active,
@@ -488,6 +497,7 @@ void *agent_worker(void *args)
 			agent_info_ptr->get_reply ? 'T' : 'F',
 			rpc_num2string(agent_arg_ptr->msg_type),
 			agent_info_ptr->protocol_version);
+#endif
 
 	cleanup:
 		purge_agent_args(agent_arg_ptr);
@@ -530,6 +540,9 @@ static void agent_pool_init(void)
 	int i = 0;
 	char *tmp_ptr = NULL;
 
+	enable_agent_pool = false;
+	agent_thread_pool_size = 0;
+
 	if ((tmp_ptr = xstrcasestr(slurm_conf.slurmctld_params, "agent_thread_pool_size="))) {
 		int tmp_cnt = atoi(tmp_ptr + 23);
 		if (tmp_cnt > 1 && tmp_cnt <= MAX_THREAD_POOL_SIZE) {
@@ -537,7 +550,6 @@ static void agent_pool_init(void)
 			enable_agent_pool = true;
 			debug("%s: agent_thread_pool_size: %d, agent thread pool enabled", __func__, agent_thread_pool_size);
 		} else {
-			enable_agent_pool = false;
 			error("The agent_thread_pool_size configuration in SlurmctldParameters is incorrect, must be between 2 and 1024.");
 		}
 	}
@@ -546,40 +558,67 @@ static void agent_pool_init(void)
 		return;
 	}
 
-	agent_pool.next_worker = 0;
-	agent_pool.workers = xmalloc(sizeof(agent_worker_t) * agent_thread_pool_size);
+	agent_pool.worker_count = agent_thread_pool_size;
+	agent_pool.workers = xmalloc(sizeof(pthread_t) * agent_thread_pool_size);
+
+	/* shared queue + single mutex/cond used by all worker threads */
+	agent_pool.task_queue = list_create(NULL);
+	slurm_mutex_init(&agent_pool.mutex);
+	slurm_cond_init(&agent_pool.cond, NULL);
+	agent_pool.stop = false;
 
 	for (i = 0; i < agent_thread_pool_size; i++) {
-		slurm_mutex_init(&agent_pool.workers[i].mutex);
-		slurm_cond_init(&agent_pool.workers[i].cond, NULL);
-		agent_pool.workers[i].task_queue = list_create(NULL);
-		agent_pool.workers[i].stop = false;
-		slurm_thread_create(&agent_pool.workers[i].thread,
+		slurm_thread_create(&agent_pool.workers[i],
 							agent_worker,
-							&agent_pool.workers[i]);
+							NULL);
 	}
 }
 
 static void agent_pool_fini(void)
 {
 	int i = 0;
+	int queued = 0;
 
 	if (!enable_agent_pool) {
 		return;
 	}
 
-	for (i = 0; i < agent_thread_pool_size; i++) {
-		agent_worker_t *worker = &agent_pool.workers[i];
-		slurm_mutex_lock(&worker->mutex);
-		worker->stop = true;
-		slurm_cond_signal(&worker->cond);
-		slurm_mutex_unlock(&worker->mutex);
+	slurm_mutex_lock(&agent_pool.mutex);
+	agent_pool.stop = true;
+	queued = list_count(agent_pool.task_queue);
+
+	/* Wake up all workers. They will exit after the shared queue is drained
+	* and no more queued tasks remain. */
+	slurm_cond_broadcast(&agent_pool.cond);
+	slurm_mutex_unlock(&agent_pool.mutex);
+
+	if (queued) {
+		info("%s: waiting for agent thread pool (%d worker(s)) to finish, %d agent request(s) still queued",
+		     __func__, agent_pool.worker_count, queued);
+	} else {
+		verbose("%s: waiting for agent thread pool (%d worker(s)) to finish",
+			__func__, agent_pool.worker_count);
 	}
 
-	for (i = 0; i < agent_thread_pool_size; i++) {
-		slurm_thread_join(agent_pool.workers[i].thread);
-		list_destroy(agent_pool.workers[i].task_queue);
+	for (i = 0; i < agent_pool.worker_count; i++) {
+		slurm_thread_join(agent_pool.workers[i]);
+	
+		slurm_mutex_lock(&agent_pool.mutex);
+		queued = list_count(agent_pool.task_queue);
+		slurm_mutex_unlock(&agent_pool.mutex);
+		
+		if (queued) {
+			verbose("%s: agent worker %d/%d exited, %d requests still queued", __func__, i + 1, agent_pool.worker_count, queued);
+		} else {
+			verbose("%s: agent worker %d/%d exited, no requests queued", __func__, i + 1, agent_pool.worker_count);
+		}
 	}
+
+	verbose("%s: agent thread pool finished", __func__);
+
+	list_destroy(agent_pool.task_queue);
+	slurm_mutex_destroy(&agent_pool.mutex);
+	slurm_cond_destroy(&agent_pool.cond);
 
 	xfree(agent_pool.workers);
 }
@@ -603,7 +642,7 @@ void *agent(void *args)
 	task_info_t *task_specific_ptr;
 	time_t begin_time;
 	bool spawn_retry_agent = false;
-	int rpc_thread_cnt;
+	int rpc_thread_cnt = 0;
 	static time_t sched_update = 0;
 	static bool reboot_from_ctld = false;
 
@@ -661,6 +700,16 @@ void *agent(void *args)
 	/* start the watchdog thread */
 	slurm_thread_create(&thread_wdog, _wdog, agent_info_ptr);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	log_flag(AGENT, "%s: New agent thread_count:%d threads_active:%d retry:%c get_reply:%c r_uid:%u msg_type:%s protocol_version:%hu agent_arg=%p",
+		 __func__, agent_info_ptr->thread_count,
+		 agent_info_ptr->threads_active,
+		 agent_info_ptr->retry ? 'T' : 'F',
+		 agent_info_ptr->get_reply ? 'T' : 'F',
+		 agent_info_ptr->r_uid,
+		 rpc_num2string(agent_arg_ptr->msg_type),
+		 agent_info_ptr->protocol_version, (void *) agent_arg_ptr);
+#else
 	log_flag(AGENT, "%s: New agent thread_count:%d threads_active:%d retry:%c get_reply:%c r_uid:%u msg_type:%s protocol_version:%hu",
 		 __func__, agent_info_ptr->thread_count,
 		 agent_info_ptr->threads_active,
@@ -669,6 +718,7 @@ void *agent(void *args)
 		 agent_info_ptr->r_uid,
 		 rpc_num2string(agent_arg_ptr->msg_type),
 		 agent_info_ptr->protocol_version);
+#endif
 
 	/* start all the other threads (up to AGENT_THREAD_COUNT active) */
 	for (i = 0; i < agent_info_ptr->thread_count; i++) {
@@ -709,6 +759,16 @@ void *agent(void *args)
 		slurm_thread_join(thread_ptr[i].thread);
 	slurm_mutex_unlock(&agent_info_ptr->thread_mutex);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	delay = (int) difftime(time(NULL), begin_time);
+	log_flag(AGENT, "%s: end agent thread_count:%d threads_active:%d retry:%c get_reply:%c msg_type:%s protocol_version:%hu agent_arg=%p run_time=%d",
+		 __func__, agent_info_ptr->thread_count,
+		 agent_info_ptr->threads_active,
+		 agent_info_ptr->retry ? 'T' : 'F',
+		 agent_info_ptr->get_reply ? 'T' : 'F',
+		 rpc_num2string(agent_arg_ptr->msg_type),
+		 agent_info_ptr->protocol_version, (void *) agent_arg_ptr, delay);
+#else
 	log_flag(AGENT, "%s: end agent thread_count:%d threads_active:%d retry:%c get_reply:%c msg_type:%s protocol_version:%hu",
 		 __func__, agent_info_ptr->thread_count,
 		 agent_info_ptr->threads_active,
@@ -716,6 +776,7 @@ void *agent(void *args)
 		 agent_info_ptr->get_reply ? 'T' : 'F',
 		 rpc_num2string(agent_arg_ptr->msg_type),
 		 agent_info_ptr->protocol_version);
+#endif
 
 cleanup:
 	purge_agent_args(agent_arg_ptr);

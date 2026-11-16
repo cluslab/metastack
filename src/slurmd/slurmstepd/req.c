@@ -513,6 +513,14 @@ rwfail:
 	return NULL;
 }
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+static void _free_stepmgr_relay_msg(slurm_msg_t *msg)
+{
+	fd_close(&msg->conn_fd);
+	slurm_free_msg_members(msg);
+}
+#endif
+
 static int _handle_stepmgr_relay_msg(int fd,
 				     uid_t uid,
 				     slurm_msg_t *msg,
@@ -523,7 +531,11 @@ static int _handle_stepmgr_relay_msg(int fd,
 	buf_t *buffer;
 	char *data = NULL;
 	uint16_t protocol_version;
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	int client_fd = -1;
+#else
 	uint32_t client_fd;
+#endif
 	uint32_t data_size;
 
 	safe_read(fd, &protocol_version, sizeof(uint16_t));
@@ -562,12 +574,19 @@ done:
 	if (rc) {
 		if (reply)
 			slurm_send_rc_msg(msg, rc);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+		_free_stepmgr_relay_msg(msg);
+#else
 		slurm_free_msg_members(msg);
+#endif
 	}
 
 	return rc;
 
 rwfail:
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	fd_close(&client_fd);
+#endif
 	xfree(data);
 	return SLURM_ERROR;
 }
@@ -594,7 +613,11 @@ static int _handle_step_create(int fd, stepd_step_rec_t *step, uid_t uid)
 
 	slurm_mutex_unlock(&stepmgr_mutex);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 	return SLURM_SUCCESS;
 
@@ -634,7 +657,11 @@ static int _handle_job_step_get_info(int fd, stepd_step_rec_t *step, uid_t uid)
 		      buffer);
 	slurm_send_node_msg(msg.conn_fd, &response_msg);
 	FREE_NULL_BUFFER(buffer);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -658,7 +685,11 @@ static int _handle_cancel_job_step(int fd, stepd_step_rec_t *step, uid_t uid)
 	slurm_mutex_unlock(&stepmgr_mutex);
 
 	slurm_send_rc_msg(&msg, rc);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -681,7 +712,11 @@ static int _handle_srun_job_complete(int fd, stepd_step_rec_t *step, uid_t uid)
 	srun_job_complete(job_step_ptr);
 	slurm_mutex_unlock(&stepmgr_mutex);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -733,7 +768,11 @@ static int _handle_srun_node_fail(int fd, stepd_step_rec_t *step, uid_t uid)
 	srun_node_fail(job_step_ptr, request->nodelist);
 	slurm_mutex_unlock(&stepmgr_mutex);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -756,7 +795,11 @@ static int _handle_srun_timeout(int fd, stepd_step_rec_t *step, uid_t uid)
 	srun_timeout(job_step_ptr);
 	slurm_mutex_unlock(&stepmgr_mutex);
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -780,7 +823,11 @@ static int _handle_update_step(int fd, stepd_step_rec_t *step, uid_t uid)
 	slurm_mutex_unlock(&stepmgr_mutex);
 
 	slurm_send_rc_msg(&msg, rc);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -812,7 +859,11 @@ static int _handle_step_layout(int fd, stepd_step_rec_t *step, uid_t uid)
 		slurm_send_rc_msg(&msg, rc);
 	}
 
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -846,12 +897,20 @@ static int _handle_job_sbcast_cred(int fd, stepd_step_rec_t *step, uid_t uid)
 	slurm_send_node_msg(msg.conn_fd, &response_msg);
 
 	slurm_free_sbcast_cred_msg(job_info_resp_msg);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 	return rc;
 
 resp:
 	slurm_send_rc_msg(&msg, rc);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;
@@ -898,12 +957,20 @@ static int _handle_het_job_alloc_info(int fd, stepd_step_rec_t *step, uid_t uid)
 		      resp_list);
 	slurm_send_node_msg(msg.conn_fd, &response_msg);
 	FREE_NULL_LIST(resp_list);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 	return rc;
 
 resp:
 	slurm_send_rc_msg(&msg, rc);
+#ifdef __METASTACK_BUG_STEPMGR_FD_LEAK
+	_free_stepmgr_relay_msg(&msg);
+#else
 	slurm_free_msg_members(&msg);
+#endif
 
 done:
 	return rc;

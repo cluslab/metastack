@@ -6629,6 +6629,23 @@ static int _job_complete(job_record_t *job_ptr, uid_t uid, bool requeue,
 			over_time_limit = slurm_conf.over_time_limit;
 		}
 
+#ifdef __METASTACK_NEW_TIME_PREDICT
+		/* Soft end may lag; classify TIMEOUT by hard TimeLimit. */
+		if ((job_ptr->predict_job == 1) && job_ptr->time_min &&
+		    job_ptr->start_time &&
+		    (job_ptr->time_limit != INFINITE) &&
+		    !job_ptr->preempt_time) {
+			time_t hard_end = job_ptr->start_time +
+				(time_t)job_ptr->time_limit * 60;
+
+			if (hard_end > job_ptr->end_time) {
+				verbose("%s: %pJ raise soft end_time to hard TimeLimit for TIMEOUT check",
+					__func__, job_ptr);
+				job_ptr->end_time = hard_end;
+			}
+		}
+#endif
+
 		if (node_fail) {
 			job_state_set(job_ptr, (JOB_NODE_FAIL | job_comp_flag));
 			job_ptr->requid = uid;
@@ -9987,8 +10004,31 @@ void job_time_limit(void)
 		}
 
 		/* Give srun command warning message about pending timeout */
+#ifdef __METASTACK_NEW_TIME_PREDICT
+		/*
+		 * predict_job may keep a soft end_time that is repeatedly
+		 * extended. Warn srun from the hard TimeLimit in that case so
+		 * we do not send SRUN_TIMEOUT before a soft-end extension.
+		 */
+		{
+			time_t warn_end = job_ptr->end_time;
+
+			if ((job_ptr->predict_job == 1) && job_ptr->time_min &&
+			    job_ptr->start_time &&
+			    (job_ptr->time_limit != INFINITE)) {
+				time_t hard_end = job_ptr->start_time +
+					(job_ptr->time_limit * 60);
+
+				if (hard_end > job_ptr->end_time)
+					warn_end = hard_end;
+			}
+			if (warn_end <= (now + PERIODIC_TIMEOUT * 2))
+				srun_timeout(job_ptr);
+		}
+#else
 		if (job_ptr->end_time <= (now + PERIODIC_TIMEOUT * 2))
 			srun_timeout (job_ptr);
+#endif
 
 		/*
 		 * _job_timed_out() and other calls can take a long time on

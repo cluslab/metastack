@@ -142,6 +142,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_CONN_FIX
 #endif
 
+#ifndef __METASTACK_BUG_STEPMGR_FD_LEAK
+#define __METASTACK_BUG_STEPMGR_FD_LEAK
+#endif
+
 #ifndef __METASTACK_OPT_RPC_USER_FIX
 #define __METASTACK_OPT_RPC_USER_FIX
 #endif
@@ -624,6 +628,11 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 // Fixed Bug 123064. Dynamic partition creation without PriorityJobFactor causes incorrect partition priority calculation. */
 #ifndef __METASTACK_BUG_PART_CREATE_NORM_PRIORITY
 #define __METASTACK_BUG_PART_CREATE_NORM_PRIORITY
+#endif
+
+// Fixed Bug 133541. Fix inaccurate one-second waiting in _slurmctld_background().
+#ifndef __METASTACK_BUG_CTLD_BACKGROUND_WAIT_ACCURACY
+#define __METASTACK_BUG_CTLD_BACKGROUND_WAIT_ACCURACY
 #endif
 
 #ifndef __METASTACK_BUG_SRUN_EXCLUDE_NODE
