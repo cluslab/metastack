@@ -65,5 +65,4 @@ autom4te.cache
 /testsuite/log
 /testsuite/python/pytest.ini
 TAGS
-*.json
 .gitignore
