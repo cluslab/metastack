@@ -999,6 +999,13 @@ _forkexec_slurmstepd(uint16_t type, void *req, slurm_addr_t *cli,
 		return SLURM_ERROR;
 	}
 
+#ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+        char timeout_str[16];
+        snprintf(timeout_str, sizeof(timeout_str), "%u",
+                 slurm_conf.slurmd_timeout);
+        setenv("SLURM_SLURMD_TIMEOUT", timeout_str, 1);
+#endif
+
 	if ((pid = fork()) < 0) {
 		error("%s: fork: %m", __func__);
 		close(to_stepd[0]);

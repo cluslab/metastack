@@ -626,6 +626,10 @@ typedef struct sbcast_cred sbcast_cred_t;		/* opaque data type */
 #define __METASTACK_BUG_PART_CREATE_NORM_PRIORITY
 #endif
 
+#ifndef __METASTACK_BUG_SRUN_EXCLUDE_NODE
+#define __METASTACK_BUG_SRUN_EXCLUDE_NODE
+#endif
+
 /*
  * scontrol update partition: incremental "+="/"-=" semantics for partition
  * ACL fields (AllowAccounts/AllowGroups/AllowQOS/DenyAccounts/DenyQOS).

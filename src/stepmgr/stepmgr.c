@@ -1472,11 +1472,17 @@ static bitstr_t *_pick_step_nodes(job_record_t *job_ptr,
 		bitstr_t *exc_bitmap = NULL;
 		error_code = node_name2bitmap(step_spec->exc_nodes, false,
 					      &exc_bitmap);
+#ifdef __METASTACK_BUG_SRUN_EXCLUDE_NODE
+		/* Slurm 25.11.0-rc1 (593b351): stepmgr srun -x step create fail; backport to MetaStack.*/
+		if (error_code)
+			debug("Assuming invalid nodename requested for exclusion from step is excluded");
+#else
 		if (error_code) {
 			*return_code = ESLURM_INVALID_NODE_NAME;
 			FREE_NULL_BITMAP(exc_bitmap);
 			goto cleanup;
 		}
+#endif
 		bit_and_not(nodes_avail, exc_bitmap);
 
 		if (step_spec->node_list) {

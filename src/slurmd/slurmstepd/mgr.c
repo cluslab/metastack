@@ -126,6 +126,18 @@
 
 #define RETRY_DELAY 15		/* retry every 15 seconds */
 
+#ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+/*
+ * Fallback SlurmdTimeout (seconds) used only when the SLURM_SLURMD_TIMEOUT
+ * environment variable is missing or malformed. This can happen if the on-disk
+ * slurmstepd binary was upgraded while the running slurmd is still the old
+ * version and therefore does not yet set the env var before forking. Keeping
+ * this as a plain constant (not derived from other timeouts) keeps the
+ * fallback behavior predictable across upgrades.
+ */
+#define FALLBACK_SLURMD_TIMEOUT 900
+#endif
+
 step_complete_t step_complete = {
 	PTHREAD_COND_INITIALIZER,
 	PTHREAD_MUTEX_INITIALIZER,
@@ -818,10 +830,65 @@ _one_step_complete_msg(stepd_step_rec_t *step, int first, int last)
 		debug3("sending complete to step_ctld host:%s",
 		       step->stepmgr);
 #ifdef __METASTACK_BUG_STEPMGR_CONN_RETRY
+		time_t retry_start = time(NULL);
+		uint16_t slurmd_timeout = FALLBACK_SLURMD_TIMEOUT;
+		bool env_timeout_ok = false;
+		const char *env_timeout = getenv("SLURM_SLURMD_TIMEOUT");
+		if (env_timeout && *env_timeout) {
+			char *end = NULL;
+			long v;
+			errno = 0;
+			v = strtol(env_timeout, &end, 10);
+			if (!errno && end != env_timeout && *end == '\0' &&
+			    v > 0 && v <= UINT16_MAX) {
+				slurmd_timeout = (uint16_t) v;
+				env_timeout_ok = true;
+			}
+		}
+		if (!env_timeout_ok) {
+			warning("Rank %d: SLURM_SLURMD_TIMEOUT env var missing or invalid (value=\"%s\"), "
+					"using fallback %u seconds for stepmgr retry bound.",
+				step_complete.rank,
+				env_timeout ? env_timeout : "",
+				(unsigned int) FALLBACK_SLURMD_TIMEOUT);
+		}
+
+		/*
+		 * Bound the stepmgr retry so that a hung stepmgr does not
+		 * keep the step in CG forever. Formula:
+		 *
+		 *   max_retry_time = 5 * MAX(SlurmdTimeout / 3,
+		 *                            4 * MessageTimeout +
+		 *                            MIN(MessageTimeout, 10))
+		 *
+		 * Rationale: slurmctld sends REQUEST_PING to check node
+		 * liveness and needs at most 5 rounds of failed pings before
+		 * marking a node DOWN. Each round's wall-clock cost is the
+		 * MAX of:
+		 *   - the ping interval itself: SlurmdTimeout / 3
+		 *   - the tree-forward delay for one ping round, which under
+		 *     current cluster size and TreeWidth is composed of:
+		 *         connect timeout = MIN(MessageTimeout, 10)
+		 *         send    timeout = MessageTimeout
+		 *         recv    timeout = 3 * MessageTimeout
+		 *     -> 4 * MessageTimeout + MIN(MessageTimeout, 10)
+		 *
+		 * By the time 5 such rounds elapse, slurmctld has already
+		 * DOWN'd the stepmgr node, so we can safely give up too.
+		 */
+		uint16_t max_retry_time =
+			5 * MAX(slurmd_timeout / 3,
+				(4 * slurm_conf.msg_timeout) +
+				MIN(slurm_conf.msg_timeout, 10));
 		i = 1;
 		while (slurm_send_recv_stepmgr_msg(&req, &resp_msg, 0)) {
 			if (i++ == 1) {
 				error("Rank %d failed sending step completion message to stepmgr, retrying", step_complete.rank);
+			}
+			if ((time(NULL) - retry_start) >= max_retry_time) {
+				error("Rank %d giving up sending step completion message to stepmgr after %u seconds, stepmgr may be unreachable",
+				      step_complete.rank, max_retry_time);
+				goto finished;
 			}
 			sleep(60);
 		}
