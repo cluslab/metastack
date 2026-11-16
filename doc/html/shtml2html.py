@@ -38,9 +38,9 @@ def include_virtual(matchobj):
 
     if os.access(filename, os.F_OK):
         #print('Including file', filename)
-        #lines = open(filename, 'r').read()
-        with open(filename, 'r', encoding='utf-8', errors='replace') as f:
-            lines = f.read()
+        f = codecs.open(filename, 'r', encoding='utf-8', errors='replace')
+        lines = f.read()
+        f.close()
         return lines
     else:
         return matchobj.group(0)
